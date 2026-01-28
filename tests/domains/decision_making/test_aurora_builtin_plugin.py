@@ -1,9 +1,12 @@
 """
-Tests for AuroraBuiltinPlugin kill-switch logic.
+Tests for AuroraBuiltinPlugin.
+
+SCORCHED-EARTH-2026-01-27: Legacy path tests removed.
+Migration to AuroraHandler complete. _NoopHandler deleted.
 
 Verifies:
-1. NoopHandler returned when legacy_tick_path_enabled=True
-2. Real handler wrapper returned when legacy_tick_path_enabled=False
+1. Real handler wrapper returned when aurora config present
+2. ValueError raised when aurora config missing (fail-closed)
 """
 import pytest
 from types import SimpleNamespace
@@ -11,44 +14,21 @@ from unittest.mock import MagicMock
 
 from apps.reference.domains.strategies.plugins.aurora_builtin import (
     AuroraBuiltinPlugin,
-    _NoopHandler,
     _AuroraHandlerWrapper,
 )
 
 
-class TestAuroraBuiltinKillSwitch:
-    """Tests for kill-switch behavior."""
+class TestAuroraBuiltinPlugin:
+    """Tests for AuroraBuiltinPlugin behavior."""
 
-    def test_returns_noop_when_legacy_enabled(self):
-        """Plugin should return NoopHandler when legacy_tick_path_enabled=True."""
+    # SCORCHED-EARTH-2026-01-27: test_returns_noop_when_legacy_enabled DELETED
+    # Legacy path removed. No more _NoopHandler.
+
+    def test_returns_real_handler_when_config_present(self):
+        """Plugin should return real handler when aurora config is present."""
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
-                    legacy_tick_path_enabled=True,
-                    decision=SimpleNamespace(
-                        signal_threshold=0.1,
-                        side_bias_window_sec=420,
-                        regime_threshold_multipliers={"DEFAULT": 1.0},
-                        direction_strength_scoring=None,
-                        signals=None,
-                    ),
-                    assets={},
-                )
-            )
-        )
-        fsm = MagicMock()
-        plugin = AuroraBuiltinPlugin()
-        
-        handler = plugin.create_handler(fsm=fsm, config=config)
-        
-        assert isinstance(handler, _NoopHandler)
-
-    def test_returns_real_handler_when_legacy_disabled(self):
-        """Plugin should return real handler when legacy_tick_path_enabled=False."""
-        config = SimpleNamespace(
-            strategies=SimpleNamespace(
-                aurora=SimpleNamespace(
-                    legacy_tick_path_enabled=False,
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
@@ -71,8 +51,8 @@ class TestAuroraBuiltinKillSwitch:
         
         assert isinstance(handler, _AuroraHandlerWrapper)
 
-    def test_returns_noop_when_aurora_config_missing(self):
-        """Plugin should return NoopHandler when aurora config is missing."""
+    def test_raises_when_aurora_config_missing(self):
+        """Plugin should raise ValueError when aurora config is missing (fail-closed)."""
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=None,
@@ -81,16 +61,15 @@ class TestAuroraBuiltinKillSwitch:
         fsm = MagicMock()
         plugin = AuroraBuiltinPlugin()
         
-        handler = plugin.create_handler(fsm=fsm, config=config)
-        
-        assert isinstance(handler, _NoopHandler)
+        # SCORCHED-EARTH-2026-01-27: Changed from returning _NoopHandler to raising ValueError
+        with pytest.raises(ValueError, match="Aurora strategy configuration missing"):
+            plugin.create_handler(fsm=fsm, config=config)
 
     def test_handler_wrapper_registers_listeners(self):
         """Handler wrapper should register event listeners on FSM."""
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
-                    legacy_tick_path_enabled=False,
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,

@@ -20,6 +20,9 @@ instruments:
       max_notional_utilization: 0.8
     sizing:
       margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3
     
   ETHUSDT:
     symbol: "ETHUSDT"
@@ -34,6 +37,9 @@ instruments:
       max_notional_utilization: 0.8
     sizing:
       margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3
     
   BTCUSDT:
     symbol: "BTCUSDT"
@@ -49,6 +55,9 @@ instruments:
       max_notional_utilization: 0.8
     sizing:
       margin_pct: 0.10
+    flip:
+      enabled: true
+      hysteresis_mult: 3.0
     
   DOGEUSDT:
     symbol: "DOGEUSDT"
@@ -63,6 +72,9 @@ instruments:
       max_notional_utilization: 0.8
     sizing:
       margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3
     
   XRPUSDT:
     symbol: "XRPUSDT"
@@ -77,3 +89,6 @@ instruments:
       max_notional_utilization: 0.8
     sizing:
       margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3

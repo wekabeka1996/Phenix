@@ -78,6 +78,7 @@ def _mk_cfg(*, symbol: str, position_mode: str):
                     max_notional_utilization=0.8,
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.3),
             )
         },
         strategies=SimpleNamespace(

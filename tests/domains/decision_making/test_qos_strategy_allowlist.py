@@ -61,7 +61,7 @@ def test_qos_is_applied_only_for_allowlisted_strategies_in_strategy_gateway() ->
 
     calls: list[str] = []
 
-    def fake_qos_allow(sym: str, is_exposure_block: bool = False):
+    def fake_qos_allow(sym: str, is_exposure_block: bool = False, strategy_id: str | None = None):
         calls.append(sym)
         return False, "symbol_cooldown_active_9.9s_remaining_limit=10s"
 
@@ -146,7 +146,7 @@ def test_empty_allowlist_applies_qos_to_all_strategies() -> None:
 
     calls: list[str] = []
 
-    def fake_qos_allow(sym: str, is_exposure_block: bool = False):
+    def fake_qos_allow(sym: str, is_exposure_block: bool = False, strategy_id: str | None = None):
         calls.append(sym)
         return True, None
 
@@ -179,7 +179,7 @@ def test_allowlist_can_enable_qos_for_mean_reversion_and_block() -> None:
 
     qos_called: list[str] = []
 
-    def fake_qos_allow(sym: str, is_exposure_block: bool = False):
+    def fake_qos_allow(sym: str, is_exposure_block: bool = False, strategy_id: str | None = None):
         qos_called.append(sym)
         return False, "symbol_cooldown_active_9.9s_remaining_limit=10s"
 

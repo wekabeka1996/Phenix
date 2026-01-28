@@ -50,7 +50,7 @@ def fsm_config():
     btc_spec.min_qty = Decimal("0.001")
     btc_spec.min_notional = Decimal("5.0")
     
-    # cfg.instruments has built-in .get(), no need to mock it
+    cfg.instruments = {"BTCUSDT": btc_spec}
     
     
     # Mock domains.execution_position.exposure_guard fields (used by DomainConfigResolver)

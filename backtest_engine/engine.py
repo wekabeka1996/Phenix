@@ -256,14 +256,22 @@ class BacktestEngine:
             # DecisionMaking requires latest_portfolio to be set, otherwise it blocks ALL signals
             # with "NRR-PORTFOLIO-UNKNOWN". We emit initial portfolio AFTER clock is set to
             # first bar's timestamp so ExposureGuard staleness check passes.
-            if not initial_portfolio_emitted:
-                self._emit_initial_portfolio()
-                initial_portfolio_emitted = True
-            else:
-                # BACKTEST-ARCH-FIX: Emit portfolio heartbeat on EVERY bar.
-                # ExposureGuard checks staleness: stale_sec = now_sec() - (positions_last_ts_ms / 1000)
-                # Without heartbeat, positions_last_ts_ms stays at first bar and becomes stale.
-                self._emit_portfolio_heartbeat()
+           # NOTE: PositionTracking is "truth-first" and intentionally skips emitting an initial
+            # EVT:PORTFOLIO_STATE_UPDATED at startup. In backtest, that creates a deadlock:
+            # - DecisionMaking blocks all intents without portfolio (NRR-PORTFOLIO-UNKNOWN)
+            # - No trades occur -> PositionTracking never emits portfolio
+            # Therefore, backtest engine must be the authoritative portfolio emitter.
+            position_tracking_initialized = bool(
+                getattr(self, "_position_tracking_initialized", False)
+            )
+            if not position_tracking_initialized:
+                if not initial_portfolio_emitted:
+                    self._emit_initial_portfolio()
+                    initial_portfolio_emitted = True
+                else:
+                    # Emit portfolio heartbeat on EVERY bar to keep staleness guards satisfied.
+                    # ExposureGuard checks staleness: stale_sec = now_sec() - (positions_last_ts_ms / 1000)
+                    self._emit_portfolio_heartbeat()
 
             # Emit deferred ACKs before matching this bar (keeps ACK->FILL ordering sane)
             try:

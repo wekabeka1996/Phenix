@@ -83,19 +83,15 @@ class ExposureGuard:
         # Fields ending in _pct are treated as percentage (divided by 100).
         # Fields ending in _fraction are treated as ratio (0..1).
         
-        def _to_dec(val: Any) -> Decimal:
-            if val is None: return Decimal("0")
-            return Decimal(str(val))
-
-        self.max_equity_utilization_pct = _to_dec(eg_config.max_equity_utilization_pct) / Decimal("100")
-        self.max_portfolio_fraction = _to_dec(eg_config.max_portfolio_fraction)
-        self.max_long_utilization_pct = _to_dec(eg_config.max_long_utilization_pct) / Decimal("100")
-        self.max_short_utilization_pct = _to_dec(eg_config.max_short_utilization_pct) / Decimal("100")
-        self.max_concentration_pct = _to_dec(eg_config.max_concentration_pct) / Decimal("100")
+        self.max_equity_utilization_pct = self._to_dec(eg_config.max_equity_utilization_pct, path="domains.execution_position.exposure_guard.max_equity_utilization_pct") / Decimal("100")
+        self.max_portfolio_fraction = self._to_dec(eg_config.max_portfolio_fraction, path="domains.execution_position.exposure_guard.max_portfolio_fraction")
+        self.max_long_utilization_pct = self._to_dec(eg_config.max_long_utilization_pct, path="domains.execution_position.exposure_guard.max_long_utilization_pct") / Decimal("100")
+        self.max_short_utilization_pct = self._to_dec(eg_config.max_short_utilization_pct, path="domains.execution_position.exposure_guard.max_short_utilization_pct") / Decimal("100")
+        self.max_concentration_pct = self._to_dec(eg_config.max_concentration_pct, path="domains.execution_position.exposure_guard.max_concentration_pct") / Decimal("100")
 
         # Directional ratio (legacy support)
         # Fail-closed: ExposureGuardConfig is strict and requires this field.
-        self.max_directional_ratio = _to_dec(eg_config.max_directional_ratio)
+        self.max_directional_ratio = self._to_dec(eg_config.max_directional_ratio, path="domains.execution_position.exposure_guard.max_directional_ratio")
 
         # TTL configurations
         self.pending_ttl_sec = eg_config.pending_ttl_sec
@@ -193,13 +189,34 @@ class ExposureGuard:
         
         config = {
             "policy": fallback_cfg.policy,
-            "risk_reduction_pct": Decimal(str(fallback_cfg.risk_reduction_pct)),
-            "backoff_ms": list(fallback_cfg.backoff_ms)
+            "risk_reduction_pct": self._to_dec(
+                fallback_cfg.risk_reduction_pct,
+                path="domains.execution_position.fallback.risk_reduction_pct",
+                default_on_error=Decimal("0"),
+            ),
+            "backoff_ms": list(fallback_cfg.backoff_ms),
         }
         self.logger.info(
             f"FALLBACK_CONFIG loaded: policy={config['policy']}, risk_reduction_pct={config['risk_reduction_pct']}, backoff_ms={config['backoff_ms']}"
         )
         return config
+
+    def _to_dec(self, val: Any, *, path: str, default_on_error: Optional[Decimal] = None) -> Decimal:
+        """Convert to Decimal with fail-closed validation."""
+        if val is None:
+            if default_on_error is not None:
+                self.logger.error("CONFIG_DECIMAL_MISSING: %s is None; defaulting to %s", path, default_on_error)
+                return default_on_error
+            self.logger.error("CONFIG_DECIMAL_MISSING: %s is None", path)
+            raise ConfigContractError(path=path, why="Missing required decimal value")
+        try:
+            return Decimal(str(val))
+        except (InvalidOperation, ValueError, TypeError) as e:
+            if default_on_error is not None:
+                self.logger.error("CONFIG_DECIMAL_INVALID: %s value=%r; defaulting to %s", path, val, default_on_error)
+                return default_on_error
+            self.logger.error("CONFIG_DECIMAL_INVALID: %s value=%r", path, val)
+            raise ConfigContractError(path=path, why=f"Invalid decimal value: {val!r}") from e
 
     def enter_fallback_mode(self, reason: str) -> None:
         """

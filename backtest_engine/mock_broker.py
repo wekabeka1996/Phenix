@@ -9,6 +9,7 @@ Implements the AbstractExchangeAdapter interface using in-memory state.
 import logging
 import uuid
 import time
+import random
 from typing import Any, Dict, List, Optional
 
 from vfoundation.core.adapters.base import (
@@ -42,9 +43,26 @@ class MockBroker(AbstractExchangeAdapter):
     - Account Balance management
     - Commission simulation
     - Latency simulation (optional - currently 0ms)
+    
+    Realism Features (Hardening):
+    - SL Priority: Stop-loss orders execute BEFORE take-profit in same-bar conflicts
+    - Trade-Through: Limit orders require price to trade THROUGH limit (not just touch)
+    - Slippage: Market orders incur configurable slippage (default 2 bps)
+    - Volume Cap: Orders capped at % of bar volume (default 5%)
     """
 
-    def __init__(self, initial_balance_usdt: float = 10000.0, commission_maker: float = 0.0002, commission_taker: float = 0.0004, leverage_map: Optional[Dict[str, int]] = None):
+    def __init__(
+        self,
+        initial_balance_usdt: float = 10000.0,
+        commission_maker: float = 0.0002,
+        commission_taker: float = 0.0004,
+        leverage_map: Optional[Dict[str, int]] = None,
+        # Realism parameters (Backtest Hardening)
+        slippage_bps: float = 2.0,  # Default 2 bps slippage for market orders
+        slippage_map: Optional[Dict[str, float]] = None,  # Per-symbol slippage override
+        fill_probability_at_touch: float = 0.0,  # Probability of fill when price == limit (0.0 = conservative)
+        max_volume_participation: float = 0.05,  # Max 5% of bar volume per order
+    ):
         self.initial_balance = initial_balance_usdt
         self.balance_usdt = initial_balance_usdt
         self.commission_maker = commission_maker
@@ -58,6 +76,12 @@ class MockBroker(AbstractExchangeAdapter):
         # Optional backrefs (wired by BacktestExecPosFSM wrapper)
         self.exec_fsm: Any | None = None
         self.fsm_core: Any | None = None
+        
+        # Realism parameters (Backtest Hardening)
+        self._slippage_bps = slippage_bps
+        self._slippage_map = slippage_map or {}
+        self._fill_probability_at_touch = fill_probability_at_touch
+        self._max_volume_participation = max_volume_participation
         
         # State
         self._orders: Dict[str, ExchangeOrderResponse] = {} # order_id -> Order
@@ -75,6 +99,23 @@ class MockBroker(AbstractExchangeAdapter):
         
         # Market Data State (Last seen price)
         self._last_prices: Dict[str, float] = {}
+        
+        # Cancelled orders tracking (for SL priority logic)
+        self._cancelled_this_bar: set[str] = set()
+
+    # --- Realism Helpers ---
+    
+    def _get_slippage(self, symbol: str) -> float:
+        """Get slippage multiplier for symbol. Returns 0.0002 for 2 bps."""
+        bps = self._slippage_map.get(symbol, self._slippage_bps)
+        return bps / 10000.0
+    
+    def _check_volume_cap(self, qty: float, bar_volume: float) -> float:
+        """Cap order quantity to max % of bar volume."""
+        if bar_volume <= 0 or self._max_volume_participation <= 0:
+            return qty
+        max_qty = bar_volume * self._max_volume_participation
+        return min(qty, max_qty)
 
     # --- Market Simulation Methods ---
 
@@ -82,9 +123,14 @@ class MockBroker(AbstractExchangeAdapter):
         """
         Matching Engine: Process incoming market data and fill orders.
         
+        HARDENING (Worst-Case Execution):
+        1. SL Priority: STOP_MARKET orders checked BEFORE TAKE_PROFIT_MARKET
+        2. Trade-Through: Limit orders require price to trade THROUGH limit (not touch)
+        3. Slippage: Market orders incur configurable slippage
+        4. Volume Cap: Orders capped at % of bar volume
+        
         Args:
-            candle_or_tick: Dictionary containing 'symbol', 'open', 'high', 'low', 'close' OR 'price'.
-                            Assumes 'close' is the execution price for simplicity unless High/Low logic applies.
+            candle_or_tick: Dictionary containing 'symbol', 'open', 'high', 'low', 'close', 'volume' OR 'price'.
                             
         Returns:
             List of fill event payloads (dicts) for any orders filled during this step.
@@ -94,90 +140,210 @@ class MockBroker(AbstractExchangeAdapter):
         if not symbol:
             return []
 
+        # Reset per-bar tracking
+        self._cancelled_this_bar.clear()
+
         # Determine price points for matching
-        # If candle: we have O, H, L, C.
-        # If tick: we have price.
-        
         current_price = float(candle_or_tick.get('close', candle_or_tick.get('price', 0)))
         high_price = float(candle_or_tick.get('high', current_price))
         low_price = float(candle_or_tick.get('low', current_price))
+        bar_volume = float(candle_or_tick.get('volume', 0))
         
         self._last_prices[symbol] = current_price
         
-        # check for fills (iterate over copy keys to allow modification)
-        for order_id in list(self._orders.keys()):
-            order = self._orders[order_id]
-            if order.symbol != symbol:
-                continue
-            
-            if order.status != "ACCEPTED": # NEW
-                continue
-
-            # Matching Logic
-            filled = False
-            fill_price = current_price
-            role = "TAKER" # Default
-            meta = self._order_meta.get(order_id, {})
-
-            try:
-                qty = float(order.quantity)
-                limit_price = float(order.price) if order.price else None
-                stop_price = float(meta.get("stopPrice")) if meta.get("stopPrice") is not None else None
-            except Exception:
-                continue
-            if qty <= 0 and bool(meta.get("closePosition")):
-                try:
-                    pos = self._positions.get(symbol)
-                    if pos is None:
-                        continue
-                    qty = abs(float(pos.position_amount))
-                    if qty <= 0:
-                        continue
-                except Exception:
-                    continue
-
-            side = order.side.upper()
+        # Collect active orders for this symbol
+        active_orders = [
+            (oid, self._orders[oid])
+            for oid in list(self._orders.keys())
+            if self._orders[oid].symbol == symbol and self._orders[oid].status == "ACCEPTED"
+        ]
+        
+        # --- PHASE 1: Identify SL and TP orders ---
+        sl_orders = []  # STOP_MARKET
+        tp_orders = []  # TAKE_PROFIT_MARKET
+        other_orders = []  # LIMIT, MARKET, etc.
+        
+        for oid, order in active_orders:
+            meta = self._order_meta.get(oid, {})
             order_type = str(meta.get("type") or "").upper()
-            if not order_type:
-                order_type = "LIMIT" if limit_price is not None else "MARKET"
-            
-            if order_type == "LIMIT" and limit_price is not None:
-                if side == "BUY":
-                    if low_price <= limit_price:
-                        filled = True
-                        fill_price = limit_price # Limit order fills at limit price (or better, but simplifed)
-                        role = "MAKER"
-                elif side == "SELL":
-                    if high_price >= limit_price:
-                        filled = True
-                        fill_price = limit_price
-                        role = "MAKER"
-            elif order_type == "MARKET":
-                filled = True
-                fill_price = current_price
-                role = "TAKER"
-            elif order_type in ("STOP_MARKET", "TAKE_PROFIT_MARKET") and stop_price is not None:
-                # Simplified triggers for backtest OHLC matching.
-                if order_type == "STOP_MARKET":
-                    if side == "SELL" and low_price <= stop_price:
-                        filled = True
-                    elif side == "BUY" and high_price >= stop_price:
-                        filled = True
-                else:  # TAKE_PROFIT_MARKET
-                    if side == "SELL" and high_price >= stop_price:
-                        filled = True
-                    elif side == "BUY" and low_price <= stop_price:
-                        filled = True
-
-                if filled:
-                    fill_price = current_price
-                    role = "TAKER"
-
-            if filled:
-                fill_event = self._execute_fill(order_id, fill_price, qty, role, side, symbol)
-                fills.append(fill_event)
+            if order_type == "STOP_MARKET":
+                sl_orders.append((oid, order, meta))
+            elif order_type == "TAKE_PROFIT_MARKET":
+                tp_orders.append((oid, order, meta))
+            else:
+                other_orders.append((oid, order, meta))
+        
+        # --- PHASE 2: Process SL FIRST (Worst-Case Assumption) ---
+        for oid, order, meta in sl_orders:
+            if oid in self._cancelled_this_bar:
+                continue
+            fill_result = self._try_fill_order(
+                oid, order, meta, current_price, high_price, low_price, bar_volume
+            )
+            if fill_result:
+                fills.append(fill_result)
+                # Cancel related TP orders for same position (SL wins)
+                self._cancel_related_bracket_orders(symbol, oid, tp_orders)
+        
+        # --- PHASE 3: Process TP (only if SL didn't trigger) ---
+        for oid, order, meta in tp_orders:
+            if oid in self._cancelled_this_bar:
+                continue
+            fill_result = self._try_fill_order(
+                oid, order, meta, current_price, high_price, low_price, bar_volume
+            )
+            if fill_result:
+                fills.append(fill_result)
+        
+        # --- PHASE 4: Process other orders (LIMIT, MARKET) ---
+        for oid, order, meta in other_orders:
+            if oid in self._cancelled_this_bar:
+                continue
+            fill_result = self._try_fill_order(
+                oid, order, meta, current_price, high_price, low_price, bar_volume
+            )
+            if fill_result:
+                fills.append(fill_result)
 
         return fills
+
+    def _try_fill_order(
+        self,
+        order_id: str,
+        order: ExchangeOrderResponse,
+        meta: Dict[str, Any],
+        current_price: float,
+        high_price: float,
+        low_price: float,
+        bar_volume: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Attempt to fill a single order with hardened matching logic.
+        
+        Returns fill event dict if filled, None otherwise.
+        """
+        filled = False
+        fill_price = current_price
+        role = "TAKER"
+        symbol = order.symbol
+
+        try:
+            qty = float(order.quantity)
+            limit_price = float(order.price) if order.price else None
+            stop_price = float(meta.get("stopPrice")) if meta.get("stopPrice") is not None else None
+        except Exception:
+            return None
+            
+        if qty <= 0 and bool(meta.get("closePosition")):
+            try:
+                pos = self._positions.get(symbol)
+                if pos is None:
+                    return None
+                qty = abs(float(pos.position_amount))
+                if qty <= 0:
+                    return None
+            except Exception:
+                return None
+
+        side = order.side.upper()
+        order_type = str(meta.get("type") or "").upper()
+        if not order_type:
+            order_type = "LIMIT" if limit_price is not None else "MARKET"
+        
+        # --- LIMIT: Trade-Through Logic ---
+        if order_type == "LIMIT" and limit_price is not None:
+            if side == "BUY":
+                # Trade-Through: low must be BELOW limit (not equal)
+                if low_price < limit_price:
+                    filled = True
+                    fill_price = limit_price
+                    role = "MAKER"
+                # Touch: probability-based fill
+                elif low_price == limit_price and random.random() < self._fill_probability_at_touch:
+                    filled = True
+                    fill_price = limit_price
+                    role = "MAKER"
+            elif side == "SELL":
+                # Trade-Through: high must be ABOVE limit (not equal)
+                if high_price > limit_price:
+                    filled = True
+                    fill_price = limit_price
+                    role = "MAKER"
+                # Touch: probability-based fill
+                elif high_price == limit_price and random.random() < self._fill_probability_at_touch:
+                    filled = True
+                    fill_price = limit_price
+                    role = "MAKER"
+                    
+        # --- MARKET: Apply Slippage ---
+        elif order_type == "MARKET":
+            filled = True
+            slippage = self._get_slippage(symbol)
+            if side == "BUY":
+                fill_price = current_price * (1 + slippage)
+            else:
+                fill_price = current_price * (1 - slippage)
+            role = "TAKER"
+            
+        # --- STOP_MARKET (SL) ---
+        elif order_type == "STOP_MARKET" and stop_price is not None:
+            if side == "SELL" and low_price <= stop_price:
+                filled = True
+            elif side == "BUY" and high_price >= stop_price:
+                filled = True
+            if filled:
+                # Apply slippage to stop execution price
+                slippage = self._get_slippage(symbol)
+                if side == "BUY":
+                    fill_price = current_price * (1 + slippage)
+                else:
+                    fill_price = current_price * (1 - slippage)
+                role = "TAKER"
+                
+        # --- TAKE_PROFIT_MARKET (TP) ---
+        elif order_type == "TAKE_PROFIT_MARKET" and stop_price is not None:
+            if side == "SELL" and high_price >= stop_price:
+                filled = True
+            elif side == "BUY" and low_price <= stop_price:
+                filled = True
+            if filled:
+                # Apply slippage to TP execution price
+                slippage = self._get_slippage(symbol)
+                if side == "BUY":
+                    fill_price = current_price * (1 + slippage)
+                else:
+                    fill_price = current_price * (1 - slippage)
+                role = "TAKER"
+
+        if not filled:
+            return None
+            
+        # Apply volume participation cap
+        if bar_volume > 0:
+            qty = self._check_volume_cap(qty, bar_volume)
+            if qty <= 0:
+                LOG.debug(f"[MockBroker] Order {order_id} skipped: volume cap exceeded")
+                return None
+
+        return self._execute_fill(order_id, fill_price, qty, role, side, symbol)
+
+    def _cancel_related_bracket_orders(
+        self,
+        symbol: str,
+        triggered_order_id: str,
+        tp_orders: List[tuple],
+    ) -> None:
+        """
+        Cancel related TP orders when SL triggers (SL Priority rule).
+        
+        In bracket orders (entry + SL + TP), when SL fills, TP should be cancelled.
+        """
+        for oid, order, meta in tp_orders:
+            if order.symbol == symbol and oid != triggered_order_id:
+                if oid not in self._cancelled_this_bar:
+                    self._orders[oid].status = "CANCELED"
+                    self._cancelled_this_bar.add(oid)
+                    LOG.debug(f"[MockBroker] Cancelled TP {oid} due to SL priority")
 
     def _order_to_dict(self, order_id: str) -> Dict[str, Any]:
         """Convert internal order record to exchange-like dict (Binance-ish keys)."""

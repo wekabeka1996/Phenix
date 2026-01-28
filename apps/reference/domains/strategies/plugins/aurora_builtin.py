@@ -16,19 +16,15 @@ class StrategyHandlerProtocol(Protocol):
     def register(self) -> None: ...
 
 
-@dataclass(frozen=True)
-class _NoopHandler:
-    """Noop handler when legacy path is active."""
-    def register(self) -> None:
-        logger.warning("⚠️ Aurora Strategy: NOOP Handler Registered (Legacy Path Active)")
-        return
+# SCORCHED-EARTH-2026-01-27: _NoopHandler DELETED
+# Migration to AuroraHandler complete. legacy_tick_path_enabled was always False in config.
 
 
 class _AuroraHandlerWrapper:
     """
     Wrapper that registers AuroraHandler event listeners.
     
-    Only active when legacy_tick_path_enabled is False.
+    SCORCHED-EARTH-2026-01-27: This is now the ONLY handler (legacy path removed).
     """
     
     def __init__(self, handler: AuroraHandler, fsm: "FSMCore"):
@@ -76,9 +72,7 @@ class AuroraBuiltinPlugin:
     """
     Plugin for the built-in Aurora strategy.
     
-    Phase 4: Routes to either:
-    - _NoopHandler when legacy_tick_path_enabled=True (DM-driven)
-    - _AuroraHandlerWrapper when legacy_tick_path_enabled=False (Handler-driven)
+    SCORCHED-EARTH-2026-01-27: Legacy path removed. Always uses AuroraHandler.
     """
 
     strategy_id: str = "aurora"
@@ -87,7 +81,7 @@ class AuroraBuiltinPlugin:
         self, *, fsm: "FSMCore", config: AuroraConfig, monotonic_fn: Optional[Callable[[], float]] = None
     ) -> StrategyHandlerProtocol:
         """
-        Create Aurora handler based on config.
+        Create Aurora handler.
         
         Args:
             fsm: Event bus for emitting events.
@@ -95,22 +89,17 @@ class AuroraBuiltinPlugin:
             monotonic_fn: Optional monotonic clock function for deterministic backtest.
                           If None, uses get_clock().monotonic() (live or global clock).
         
-        Returns NoopHandler if legacy path is enabled (default),
-        or real AuroraHandler wrapper if legacy path is disabled.
+        Returns AuroraHandler wrapper (legacy path removed).
         """
         aurora_cfg = getattr(config.strategies, "aurora", None)
         if not aurora_cfg:
             logger.error("❌ Aurora Strategy: Configuration missing (config.strategies.aurora)")
-            return _NoopHandler()
+            raise ValueError("Aurora strategy configuration missing - cannot create handler")
         
-        # Check kill-switch
-        legacy_enabled = getattr(aurora_cfg, "legacy_tick_path_enabled", True)
-        if legacy_enabled:
-            logger.warning("⚠️ Aurora Strategy: LEGACY PATH ENABLED. AuroraHandler is SILENT (Noop).")
-            logger.warning("   Please set 'legacy_tick_path_enabled: false' in config to activate new architecture.")
-            return _NoopHandler()
+        # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled check REMOVED
+        # Migration complete. Always use AuroraHandler.
         
-        logger.info("✅ Aurora Strategy: ACTIVATING New Architecture (AuroraHandler)")
+        logger.info("✅ Aurora Strategy: Creating AuroraHandler")
         
         # Create real handler
         def emit_fn(event_name: str, payload: dict) -> None:
@@ -127,3 +116,4 @@ class AuroraBuiltinPlugin:
         logger.info("   - Contract: v7 (Readiness/QoS Partitioned)")
         
         return _AuroraHandlerWrapper(handler, fsm)
+

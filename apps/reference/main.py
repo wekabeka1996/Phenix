@@ -532,13 +532,11 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     fsm.register_domain("risk_management", risk_management)
     
     # Position Tracking (Portfolio State SSOT)
-    # BACKTEST-ARCH-FIX: Initialize PositionTracking to maintain production parity.
-    # This domain listens to EVT:TRADE_EXECUTED and emits EVT:PORTFOLIO_STATE_UPDATED.
-    position_tracking = PositionTracking(fsm=fsm, config=config)
-    fsm.register_domain("position_tracking", position_tracking)
-    # Mark engine so it knows to skip manual portfolio emission (PositionTracking handles it)
-    engine._position_tracking_initialized = True
-    LOG.info("✅ PositionTracking initialized for Backtest (production parity)")
+    # Backtest uses BacktestEngine as the authoritative portfolio emitter.
+    # Reason: PositionTracking is truth-first and expects initial account sync / DR replay.
+    # In backtest there is no live account sync, so disabling engine portfolio emission
+    # would deadlock DecisionMaking with NRR-PORTFOLIO-UNKNOWN.
+    LOG.info("ℹ️ Backtest: BacktestEngine will emit EVT:PORTFOLIO_STATE_UPDATED (no PositionTracking domain)")
     
     # Decision Making (Strategy Logic)
     # Task 18: DecisionMaking requires AuroraConfig object

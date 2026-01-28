@@ -12,10 +12,10 @@
 | `market_data` | `dict` | ✅ | 🟢 Active | Конфігурація джерел даних та агрегаторів |
 | `execution` | `dict` | ✅ | 🟢 Active | Параметри виконання, ризик-гварди та Watchdog |
 | `ops.panic_killswitch` | `bool` | ✅ | 🟢 Active | Аварійне припинення торгівлі та скасування ордерів |
-| `tca_prefs` | `dict` | ❌ (Dict)| 🟢 Active | Налаштування TCA (проковзування, пріоритет) |
-| `risk_budgets` | `dict` | ❌ (Dict)| 🔵 Legacy | Ліміти CVaR (частково замінені на `exposure`) |
-| `risk.soft_limits` | `dict` | ❌ (Dict)| 🟢 Active | "М'які" ліміти на експозицію та сайзінг |
-| `risk.regime_adaptation`|`dict`| ❌ (Dict)| 🟢 Active | Динамічна зміна лімітів залежно від режиму |
+| `tca_prefs` | `TCAPrefsConfig` | ✅ **TYPED** | 🟢 Active | Налаштування TCA з strict validation (Scorched-Earth 2026-01-27) |
+| `risk_budgets` | `RiskBudgetsConfig` | ✅ **TYPED** | 🟢 Active | Ліміти ризику з strict validation (Scorched-Earth 2026-01-27) |
+| `risk.soft_limits` | `dict` | ✅ | 🟢 Active | "М'які" ліміти на експозицію та сайзінг |
+| `risk.regime_adaptation`|`dict`| ✅ | 🟢 Active | Динамічна зміна лімітів залежно від режиму |
 
 ---
 
@@ -29,10 +29,10 @@
 * **Валідація:** Модель `BinanceApiConfig` у `config_models.py`.
 
 ### 2. `trading.mode`
-* **Суть:** Визначає поведінку всієї системи. Якщо встановлено `backtest`, завантажуються файли-оверлеї (`backtest_override.yaml`).
+* **Суть:** Визначає поведінку всієї системи (live/testnet/backtest). Backtest очікується як **SSOT-only**: без додаткових YAML-оверлеїв.
 * **Домен:** `System Core`.
 * **Code Trace:**
-    * [apps/reference/config_loader.py](apps/reference/config_loader.py#L460) — логіка завантаження оверлеїв для бектесту.
+    * [apps/reference/config_loader.py](apps/reference/config_loader.py) — завантаження та валідація SSOT конфігів.
     * [apps/reference/main.py](apps/reference/main.py#L80) — ініціалізація компонентів відповідно до режиму.
 
 ### 3. `trading.tca_prefs`
@@ -47,7 +47,7 @@
 ### 4. `trading.risk.soft_limits`
 * **Суть:** Захисний механізм, що обрізає (clip) розмір позиції, якщо вона перевищує задані ліміти в USDT або плече.
 * **Домен:** `Execution Position (Exposure Guard)`.
-* **Режими роботи:** Live та Hybrid. Виключено в Backtest через `backtest_override.yaml`.
+* **Режими роботи:** визначається SSOT конфігом; у backtest має поводитися так само, як і в live (якщо не закладено інакше в коді/контракті).
 * **Code Trace:**
     * [apps/reference/domains/execution_position/soft_clip.py](apps/reference/domains/execution_position/soft_clip.py#L45) — логіка обрізки сайзу.
     * [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L210) — перевірка `side_exposure_usdt`.
@@ -59,6 +59,51 @@
 * **Code Trace:**
     * [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L235) — застосування дельта-коефіцієнтів до софт-лімітів.
 * **Математичний вплив:** `Adjusted Limit = Base Limit * (1 + delta)`.
+
+---
+
+### 5.5 **🟢 TYPED CONFIGS (Scorched-Earth 2026-01-27): `tca_prefs` & `risk_budgets`**
+
+**Статус:** ✅ **FIXED** — Обидва конфіги тепер типізовані через Pydantic моделі з `extra='forbid'` (fail-fast на помилки).
+
+**Що було:**
+```yaml
+tca_prefs: Dict[str, Any]      # Silent defaults на невідомі ключі
+risk_budgets: Dict[str, Any]   # Тип-помилки проходили без помилок
+```
+
+**Що стало:**
+```python
+class TCAPrefsConfig(BaseModel):
+    """Typed TCA Preferences (was Dict[str, Any])"""
+    model_config = ConfigDict(extra='forbid')
+    
+    maker_fee_pct: float = Field(description='Maker fee percentage')
+    taker_fee_pct: float = Field(description='Taker fee percentage')
+    max_price_distance_bps: int = Field(description='Max price distance in basis points')
+
+class RiskBudgetsConfig(BaseModel):
+    """Typed Risk Budgets (was Dict[str, Any])"""
+    model_config = ConfigDict(extra='forbid')
+    
+    daily_loss_limit_pct: float = Field(description='Daily loss limit %')
+    hourly_loss_limit_pct: float = Field(description='Hourly loss limit %')
+    max_exposure_pct: float = Field(description='Max total exposure %')
+```
+
+**Де знаходиться код:** [apps/reference/config_models.py](apps/reference/config_models.py#L2607-L2665)
+- Line 2607-2608: `TCAPrefsConfig` definition
+- Line 2626-2627: `RiskBudgetsConfig` definition  
+- Line 2664-2665: Both used in `TradingConfig` (не як Dict!)
+
+**Вплив:**
+- ✅ **Fail-closed валідація:** Будь-яка помилка у YAML → `ValidationError` при завантаженні (no silent defaults)
+- ✅ **IDE код-автозаповнення:** Тепер IDE знає типи (не `Dict[str, Any]`)
+- ✅ **Runtime гарантії:** Тип дозолений — зменшує risk фіненціальних помилок
+
+**Тести:**
+- ✅ [tests/config/test_tca_prefs_strict_validation.py](tests/config/test_tca_prefs_strict_validation.py) — перевірка що `extra='forbid'` не дозволяє невідомі ключі
+- ✅ [tests/config/test_risk_budgets_strict_validation.py](tests/config/test_risk_budgets_strict_validation.py) — перевірка що types дозволяються
 
 ---
 

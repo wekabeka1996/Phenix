@@ -655,7 +655,11 @@ class FeatureCalculationEngine:
             return self.cfg.neutral_value
         
         current_vol = state.vol_window_trades
-        z_score = FeatureUtils.compute_z_score(current_vol, state.vol_stats, clip_sigma=5.0)
+        z_score = FeatureUtils.compute_z_score(
+            current_vol,
+            state.vol_stats,
+            clip_sigma=self.cfg.volume_zscore_clip_sigma,
+        )
         
         # Normalize to [0, 1] using tanh: phi = (tanh(z) + 1) / 2
         phi = (math.tanh(z_score) + 1.0) / 2.0

@@ -310,11 +310,10 @@ class DecisionMaking:
         self.features_ttl_sec = dm_cfg.features.ttl_sec
 
         # Flip orchestration smoothing (domain config)
-        flip_cfg = getattr(dm_cfg, "flip", None)
-        self.flip_hysteresis_enabled = flip_cfg.enabled if flip_cfg else True
-        self.flip_hysteresis_mult = flip_cfg.hysteresis_mult if flip_cfg else 1.0
-        if self.flip_hysteresis_mult < 1.0:
-            self.flip_hysteresis_mult = 1.0
+        # Flip orchestration (domain config)
+        # STRICT SSOT: Global killswitch only (no defaults)
+        # Per-symbol logic is in _get_flip_config()
+        self.flip_global_enabled = dm_cfg.flip.enabled
         
         self.logger.info(
             f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
@@ -322,8 +321,8 @@ class DecisionMaking:
             f"symbol_cooldown=per-symbol (default={self._default_symbol_cooldown_sec}s), "
             f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
             f"features_ttl={self.features_ttl_sec}s, "
-            f"flip_hysteresis={'on' if self.flip_hysteresis_enabled else 'off'} "
-            f"(mult={self.flip_hysteresis_mult})"
+            f"flip_global={'on' if self.flip_global_enabled else 'off'} "
+            f"(per-symbol override instruments.yaml)"
         )
         if self._qos_apply_to_strategies:
             self.logger.info(
@@ -1924,26 +1923,44 @@ class DecisionMaking:
         return decimal.Decimal(str(decision_config.signal_threshold))
 
     def _get_flip_config(self, symbol: str) -> Tuple[bool, float]:
-        """
-        Get flip orchestration config with per-symbol override.
+        """Get flip orchestration config for symbol (STRICT - no defaults).
 
-        Fallback chain:
-        1. config.instruments.<SYMBOL>.flip (per-symbol from instruments.yaml)
-        2. domains.decision_making.flip (global from domains.yaml)
-        3. Default: (enabled=True, mult=1.0)
+        Hierarchy:
+        1. Global killswitch OFF → (False, 1.0)
+        2. Per-symbol config from instruments.yaml (REQUIRED)
+
+        Raises:
+            ConfigContractError: if per-symbol flip config is missing for an active symbol.
 
         Returns:
             Tuple of (flip_enabled: bool, hysteresis_mult: float)
         """
-        # 1. Try per-symbol config from instruments.yaml
+        # 1. Global killswitch (fast path)
+        if not self.flip_global_enabled:
+            return (False, 1.0)
+
+        # 2. Per-symbol config (REQUIRED)
         instr = self.config.instruments.get(symbol)
-        if instr and hasattr(instr, 'flip') and instr.flip:
-            return (
-                bool(instr.flip.enabled),
-                max(1.0, float(instr.flip.hysteresis_mult)),
+        if not instr:
+            # Should be unreachable for active symbols if config validation passes,
+            # but critical for runtime safety.
+            raise ConfigContractError(
+                path=f"instruments.{symbol}",
+                why=f"Missing instruments config for active symbol {symbol}"
             )
-        # 2. Global fallback (already loaded in __init__)
-        return (self.flip_hysteresis_enabled, self.flip_hysteresis_mult)
+
+        # Pydantic ensures instr.flip is present and valid if the model is loaded correctly.
+        # But we double-check for absolute safety.
+        if not instr.flip:
+             raise ConfigContractError(
+                path=f"instruments.{symbol}.flip",
+                why=f"Missing REQUIRED flip config for symbol {symbol}. Add flip.enabled + flip.hysteresis_mult."
+            )
+
+        return (
+            bool(instr.flip.enabled),
+            max(1.0, float(instr.flip.hysteresis_mult)),
+        )
 
 
     def on_features(self, event: Message) -> None:
@@ -2829,6 +2846,15 @@ class DecisionMaking:
             pm_cfg = self.config.domains.decision_making.price_motion_sanity
             pm_enabled = bool(pm_cfg.enabled)
 
+            # BACKTEST-COMPATIBLE: Skip price_motion gate in backtest mode.
+            # Bar-based backtests lack tick-level granularity for pm_norm_* computation,
+            # causing pm_norm_60s/300s to be None and triggering fail-closed NRR-028.
+            # This gate is designed for LIVE tick-level anti-FOMO protection.
+            try:
+                is_backtest = str(getattr(self.config, "trading_mode", "")).strip().lower() == "backtest"
+            except Exception:
+                is_backtest = False
+
             def _select_pm(window_sec: int) -> float | None:
                 if window_sec == 10:
                     return pm_norm_10s
@@ -2842,7 +2868,7 @@ class DecisionMaking:
                     symbol=symbol,
                 )
 
-            if (not apply_safety_gates) or reduce_only or (not pm_enabled):
+            if (not apply_safety_gates) or reduce_only or (not pm_enabled) or is_backtest:
                 pass
             else:
                 flash_window = int(pm_cfg.flash_window_sec)
@@ -3504,8 +3530,8 @@ class DecisionMaking:
 
         IMPORTANT: Use the originating strategy_id for registry arbitration.
         Otherwise, the close can be silently blocked when the symbol is assigned to a
-        different strategy (e.g. BTCUSDT assigned to mean_reversion) which leaves the
-        position stuck and effectively halts trading (observed in backtests).
+        different strategy, which leaves the position stuck and effectively halts
+        trading (observed in backtests).
         """
         qty_signed, curr_pos = self._get_portfolio_position_qty_signed(symbol)
         if qty_signed is None:

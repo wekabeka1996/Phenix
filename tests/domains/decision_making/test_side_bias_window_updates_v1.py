@@ -63,6 +63,7 @@ def _dm_cfg():
             threshold_pct_production=50.0,
             min_intents_for_check=10,
         ),
+        flip=SimpleNamespace(enabled=True),
         fail_closed_on_degraded_context=False,
         degraded_context_critical_keys=[],
         degraded_context_critical_keys_by_strategy={},
@@ -105,6 +106,7 @@ def _mk_cfg(*, symbol: str):
                     max_notional_utilization=0.8,
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.3),
             )
         },
         strategies=SimpleNamespace(

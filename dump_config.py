@@ -10,36 +10,15 @@ sys.path.append(os.getcwd())
 from apps.reference.config_loader import ConfigLoader
 
 def dump_resolved_config():
-    print("Loading config with trading_mode='backtest'...")
+    print("Loading resolved config (SSOT-only)...")
     
     # Force env var for strict mode if needed, or rely on defaults
     # Simulate Backtest Mode
     loader = ConfigLoader()
     
-    # We need to ensure the loader knows we are in backtest.
-    # ConfigLoader reads system/trading/etc.
-    # We can try to manually inject 'backtest' into the loaded raw dicts if needed, 
-    # but the loader usually reads from files.
-    # However, _apply_backtest_overlay checks resolved_config.get("trading_mode") or trading.mode.
-    
-    # Let's load normally. The trading.yaml should have mode: backtest 
-    # (or we rely on backtest_override.yaml if applied? No, overlay is applied IF mode is backtest).
-    # So headers in trading.yaml must say backtest, OR we must force it.
-    
-    # Actually, main.py might set it? 
-    # Let's check how main.py works. It usually loads config first.
-    
-    # For this dump, we want to see what happens when trading.yaml has mode: backtest.
-    # I will assume trading.yaml is already set to backtest or I might need to tweak it temporarily.
-    # Based on previous turns, trading.yaml had "mode: backtest".
-    
     try:
         config = loader.load_config()
-        
-        # Checking if overlay was applied
-        # We can look for something specific from backtest_override.yaml
-        # e.g. trading.backtest (dates) or relaxed TCA
-        
+
         output_path = Path("reports/resolved_backtest_config.yaml")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         

@@ -28,7 +28,7 @@ class TestConfigContractNormalization:
             decision={},
             tca_prefs={},
             risk_budgets={},
-            domains__decision_making__flip_hysteresis_mult=1.0
+            domains__decision_making__flip__enabled=True
         )
         
         fsm_mock = MagicMock()

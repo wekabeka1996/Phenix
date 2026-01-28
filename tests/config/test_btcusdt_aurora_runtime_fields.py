@@ -50,13 +50,20 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
         trading_data["trading"]["mode"] = "live"
     _write_yaml(trading_path, trading_data)
 
+    # ── Instruments SSOT leverage (used by ExecPos bootstrap) ──
+    instruments_path = cfg_dir / "instruments.yaml"
+    instruments_data = yaml.safe_load(instruments_path.read_text(encoding="utf-8"))
+    instruments_data["instruments"]["BTCUSDT"]["execution"]["target_leverage"] = 21
+    instruments_data["instruments"]["BTCUSDT"]["execution"]["margin_mode"] = "isolated"
+    _write_yaml(instruments_path, instruments_data)
+
     aurora_path = cfg_dir / "strategies" / "aurora.yaml"
     data = yaml.safe_load(aurora_path.read_text(encoding="utf-8"))
     assert isinstance(data, dict)
     aurora = data["aurora"]
     btc = aurora["assets"]["BTCUSDT"]
 
-    # Leverage
+    # Leverage (stale copy in aurora.yaml, kept for legacy audit)
     btc["leverage"]["target"] = 21
     btc["leverage"]["mode"] = "ISOLATED"
 

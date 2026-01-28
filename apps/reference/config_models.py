@@ -50,10 +50,10 @@ class InstrumentPrecisionSpec(BaseModel):
         description="Per-symbol sizing SSOT (margin-first: margin_pct)"
     )
 
-    # Per-symbol flip orchestration (overrides domains.decision_making.flip)
-    flip: Optional["FlipOrchestrationConfig"] = Field(
-        default=None,
-        description="Per-symbol flip config (if None, uses global from domains.yaml)"
+    # Per-symbol flip orchestration (REQUIRED SSOT)
+    flip: "FlipOrchestrationConfig" = Field(
+        ...,  # REQUIRED - no default
+        description="Per-symbol flip config (enabled + hysteresis_mult). REQUIRED for all active symbols."
     )
 
 
@@ -715,13 +715,16 @@ class EmergencyConfig(BaseModel):
 class OrphanMonitorConfig(BaseModel):
     """Orphan bracket monitor configuration.
     
-    CFG-DICT-ANY-BURN-13: Typed config (consumption in fsm.py L166, but keys unknown).
-    extra='allow' temporary until consumption analysis complete.
+    CFG-DICT-ANY-BURN-13: Typed config (consumption in fsm.py L166).
     """
-    model_config = ConfigDict(extra='forbid')  # TODO: Convert to forbid when keys known
+    model_config = ConfigDict(extra='forbid')
     
     enabled: bool = Field(description='Enable orphan monitoring')
-    # Add fields when consumption patterns are documented
+    run_on_startup: bool = Field(description='Run orphan check immediately on FSM startup')
+    periodic_interval_sec: int = Field(ge=5, description='Interval between orphan checks')
+    min_order_age_sec: int = Field(ge=0, description='Minimum age of order before considering it for orphan cleanup')
+    batch_cancel_limit: int = Field(ge=1, description='Max number of orders to cancel in one batch')
+    rate_limit_per_min: int = Field(ge=1, description='Rate limit for cancel requests per minute')
 
 
 class ManageConfig(BaseModel):
@@ -1067,8 +1070,10 @@ class PriceMotionSanityConfig(BaseModel):
 
 
 class FlipOrchestrationConfig(BaseModel):
-    """Flip-orchestration tuning (close-on-reversal) for DecisionMaking.
+    """Per-symbol flip-orchestration tuning (close-on-reversal).
 
+    STRICT SSOT: No defaults. Every active symbol MUST have explicit flip config.
+    
     This is a *smoothing* layer for tick-based signals:
     it prevents immediate flip-closes on marginal opposite signals.
     """
@@ -1076,16 +1081,33 @@ class FlipOrchestrationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description="Enable flip hysteresis checks (does not disable flip itself).",
+        ...,  # REQUIRED - no default
+        description="Enable flip hysteresis for this symbol.",
     )
     hysteresis_mult: float = Field(
-        default=1.0,
+        ...,  # REQUIRED - no default
         ge=1.0,
         description=(
             "Require stronger opposite signal before emitting reduce-only CLOSE during flip. "
             "Example: 1.3 means opposite score must exceed its threshold by 30%."
         ),
+    )
+
+
+class GlobalFlipKillswitchConfig(BaseModel):
+    """Global FLIP killswitch for DecisionMaking.
+    
+    STRICT SSOT: No defaults. Must be explicitly set in domains.yaml.
+    
+    If disabled, ALL flip logic is OFF regardless of per-symbol settings.
+    Per-symbol tuning (enabled + hysteresis_mult) is in instruments.yaml.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        ...,  # REQUIRED - no default
+        description="Master killswitch for FLIP. If false, all flip disabled globally.",
     )
 
 
@@ -1171,7 +1193,10 @@ class DecisionMakingDomainConfig(BaseModel):
     # DM-DIR-SSOT-STRICT-01: SSOT-required (no silent defaults)
     directional_sanity: DirectionalSanityConfig = Field()
     price_motion_sanity: PriceMotionSanityConfig = Field()
-    flip: FlipOrchestrationConfig = Field(default_factory=FlipOrchestrationConfig)
+    flip: GlobalFlipKillswitchConfig = Field(
+        ...,  # REQUIRED - no default
+        description="Global FLIP killswitch. Per-symbol config in instruments.yaml."
+    )
 
     # Optional hardening toggles (backward-compatible defaults)
     fail_closed_on_degraded_context: bool = Field(
@@ -1277,6 +1302,17 @@ class VolumeSpikeConfig(BaseModel):
     cap_max: float = Field(gt=1.0, le=10.0, description='Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)')
     sma_len: int = Field(ge=2, le=1000, description='SMA length for time-normalized volume rate samples')
     eps: float = Field(gt=0.0, le=1.0, description='Epsilon for spike denominator (avoid divide-by-zero)')
+
+
+class VolumeZScoreConfig(BaseModel):
+    """Volume Z-score configuration (FTR-03)."""
+    model_config = ConfigDict(extra='forbid')
+
+    clip_sigma: float = Field(
+        gt=0.0,
+        le=10.0,
+        description='Clamp Z-score to [-clip_sigma, +clip_sigma] before tanh normalization'
+    )
 
 
 class LargeTradeImbalanceConfig(BaseModel):
@@ -1657,6 +1693,7 @@ class FeatureEngineeringDomainConfig(BaseModel):
     # Normalization configs
     ema_bias: EmaBiasConfig = Field()
     volume_spike: VolumeSpikeConfig = Field()
+    volume_zscore: VolumeZScoreConfig = Field()
     large_trade_imbalance: LargeTradeImbalanceConfig = Field()
     volatility_state: VolatilityStateConfig = Field()
     depth_imbalance: DepthImbalanceConfig = Field()
@@ -1905,6 +1942,12 @@ class PendingEntryTTLConfig(BaseModel):
     cancel_on_panic: bool = Field(
         description="Cancel pending entry immediately when panic_killswitch is activated"
     )
+    # DET-BT-13-FIX: Explicit timeout for supersede cancel wait (STRICT SSOT)
+    supersede_cancel_timeout_sec: float = Field(
+        ...,
+        ge=1.0, le=60.0,
+        description="Timeout (seconds) to wait for supersede cancel confirmation before forcing new open. Explicit config required."
+    )
     
     @model_validator(mode='after')
     def validate_ttl_values(self) -> 'PendingEntryTTLConfig':
@@ -2048,7 +2091,7 @@ class GuardianConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     poll_interval_ms: int = Field(
-        default=500,
+        ...,
         ge=100, le=5000,
         description="Polling interval for OrderGuardian reconciliation loop."
     )
@@ -2495,12 +2538,8 @@ class AuroraStrategyConfig(BaseModel):
     # ORDER-POLICY-01: Execution policy
     execution: StrategyExecutionConfig = Field(description="Execution policy (SSOT)")
 
-    # Phase 4: Migration control (DecisionMaking refactor plan).
-    # When True, Aurora remains on the legacy tick-based DecisionMaking path and the AuroraHandler must be silent.
-    legacy_tick_path_enabled: bool = Field(
-        default=False,
-        description="Kill-switch: keep legacy Aurora tick path enabled (AuroraHandler silent)",
-    )
+    # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled DELETED
+    # Migration to AuroraHandler complete. Always using new architecture.
     
     # Phase 3: Shadow mode for kernel validation.
     # When enabled, legacy path also calls the kernel and logs divergences (no side effects).
@@ -2596,6 +2635,38 @@ class BacktestConfig(BaseModel):
     initial_balance: float = Field(default=10000.0, description="Initial USDT balance")
 
 
+# SCORCHED-EARTH-2026-01-27: Typed TCAPrefsConfig (was Dict[str, Any])
+class TCAPrefsConfig(BaseModel):
+    """Transaction Cost Analysis (TCA) preferences."""
+    model_config = ConfigDict(extra='forbid')
+
+    max_slippage_pct: float = Field(default=0.5, description="Max allowed slippage %")
+    max_slippage_bps: int = Field(default=10, description="Max allowed slippage in basis points")
+    max_latency_ms: int = Field(default=500, description="Max allowed latency (intent to filled) in ms")
+    maker_preference: Literal["maker", "taker", "neutral", "any"] = Field(
+        default="neutral", 
+        description="Execution preference (maker/taker/neutral)"
+    )
+    preferred_venue: str = Field(default="binance", description="Preferred execution venue")
+    execution_priority: Literal["speed", "price", "balanced"] = Field(
+        default="speed", 
+        description="Execution priority: speed (market) vs price (limit)"
+    )
+
+
+# SCORCHED-EARTH-2026-01-27: Typed RiskBudgetsConfig (was Dict[str, Any])
+class RiskBudgetsConfig(BaseModel):
+    """Risk budgeting configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    trade_cvar95_max_bps: int = Field(..., description="Max CVaR-95 per trade (bps)")
+    session_cvar95_max_bps: int = Field(..., description="Max CVaR-95 per session (bps)")
+    max_portfolio_risk_pct: float = Field(..., description="Max total portfolio risk %")
+    max_single_position_risk_pct: float = Field(..., description="Max single position risk %")
+    max_daily_loss_pct: float = Field(..., description="Max daily loss %")
+
+
+
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
     model_config = ConfigDict(extra='forbid')
@@ -2620,9 +2691,9 @@ class TradingConfig(BaseModel):
     # Legacy risk config (still used by DailyRiskState etc)
     risk: Dict[str, Any] = Field(description='Legacy risk configuration (daily gate, etc)')
     
-    # TCA and Risk Budgets (Dicts for now but typed access via field)
-    tca_prefs: Dict[str, Any] = Field(description='TCA Preferences')
-    risk_budgets: Dict[str, Any] = Field(description='Risk Budgeting Configuration')
+    # TCA and Risk Budgets (Strictly Typed)
+    tca_prefs: TCAPrefsConfig = Field(description='TCA Preferences')
+    risk_budgets: RiskBudgetsConfig = Field(description='Risk Budgeting Configuration')
 
     # Risk management data sources (used for hybrid/live/testnet wiring)
     risk_management: "TradingRiskManagementConfig" = Field(...)
@@ -2772,18 +2843,8 @@ class ObservabilityConfig(BaseModel):
     # Future: metrics, tracing
 
 
-# Legacy LoggingConfig for backward compatibility with system.yaml
-# TODO: Remove after migration to observability.yaml is complete
-class LegacyLoggingConfig(BaseModel):
-    """Legacy logging configuration (from system.yaml - DEPRECATED)."""
-    model_config = ConfigDict(extra='forbid')
+# SCORCHED-EARTH-2026-01-27: LegacyLoggingConfig DELETED (zombie code, observability.yaml is SSOT)
 
-    level: str = Field(default="INFO")
-    file: str = Field(default="logs/aurora_core.log")
-    format: str = Field(default="text")
-    rotation: Dict[str, int] = Field(default_factory=lambda: {"max_bytes": 10485760, "backup_count": 5})
-    
-    
 class SystemMarketDataConfig(BaseModel):
     """System-level Market Data configuration."""
     model_config = ConfigDict(extra='forbid')
@@ -2809,8 +2870,7 @@ class SystemConfig(BaseModel):
     """System configuration (framework-level)."""
     model_config = ConfigDict(extra='forbid')
 
-    # DEPRECATED: Use observability.logging instead. Kept for backward compat with system.yaml.
-    logging: LegacyLoggingConfig = Field(default_factory=LegacyLoggingConfig)
+    # SCORCHED-EARTH-2026-01-27: logging field DELETED (LegacyLoggingConfig zombie, observability.yaml is SSOT)
     market_data: Optional[SystemMarketDataConfig] = Field(default=None, description='Market data system settings')
 
     # Startup Guard Configuration (TASK-EXF-WIRE-STARTUP-09)
@@ -2922,8 +2982,7 @@ class AuroraConfig(BaseModel):
         description='If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, '
                     'block trading. Default: 3 (i.e., 15 minutes for 5m basis).'
     )
-    hmm: Dict[str, Any] = Field(description='HMM regime detector config (from regime.yaml)')
-    features: Dict[str, Any] = Field(description='Regime features config (from regime.yaml)')
+    # SCORCHED-EARTH-2026-01-27: hmm and features fields DELETED (zero runtime references, regime.yaml not read by code)
     # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
 
     @field_validator('trading_mode')

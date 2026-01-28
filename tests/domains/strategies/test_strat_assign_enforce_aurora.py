@@ -48,7 +48,7 @@ def test_strat_assign_enforce_aurora_filters_unassigned_symbols(monkeypatch) -> 
 
     fsm = _FSM()
     cfg = SimpleNamespace(
-        strategies=SimpleNamespace(aurora=SimpleNamespace(legacy_tick_path_enabled=False)),
+        strategies=SimpleNamespace(aurora=SimpleNamespace(timeframe_sec=300)),
         strategies_registry=SimpleNamespace(assignments={"DOGEUSDT": ["mean_reversion"], "BTCUSDT": ["aurora"]}),
     )
 

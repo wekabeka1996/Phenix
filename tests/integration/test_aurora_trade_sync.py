@@ -26,7 +26,7 @@ def _make_config():
                     anti_churn=None,
                 ),
                 assets={"BTCUSDT": SimpleNamespace(enabled=True)},
-                legacy_tick_path_enabled=False,
+
             )
         )
     )

@@ -20,6 +20,7 @@ from apps.reference.config_models import (
     InstrumentPrecisionSpec,
     InstrumentExecutionConfig,
     InstrumentSizingConfig,
+    FlipOrchestrationConfig,
     SignalWeights,
 )
 
@@ -200,7 +201,8 @@ class TestInstrumentPrecisionSpec:
                 leverage_policy="verify_only",
                 max_notional_utilization=0.5
             ),
-            sizing=InstrumentSizingConfig(margin_pct=0.1)
+            sizing=InstrumentSizingConfig(margin_pct=0.1),
+            flip=FlipOrchestrationConfig(enabled=True, hysteresis_mult=1.3),
         )
         assert spec.symbol == "BTCUSDT"
         assert spec.execution.target_leverage == 10
@@ -221,7 +223,8 @@ class TestInstrumentPrecisionSpec:
                     leverage_policy="verify_only",
                     max_notional_utilization=0.5
                 ),
-                sizing=InstrumentSizingConfig(margin_pct=0.1)
+                sizing=InstrumentSizingConfig(margin_pct=0.1),
+                flip=FlipOrchestrationConfig(enabled=True, hysteresis_mult=1.3),
             )
         assert "target_leverage" in str(exc_info.value)
 

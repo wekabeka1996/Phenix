@@ -12,9 +12,6 @@ import sys
 import os
 sys.path.insert(0, os.getcwd())
 
-# Mock httpx globally BEFORE imports
-sys.modules["httpx"] = MagicMock()
-
 # Import adapters
 from apps.reference.adapters.contract import ExchangeOrderParams, ExchangeOrderResponse, ExchangePosition
 from apps.reference.adapters.simulated_adapter import SimulatedAdapter
@@ -48,9 +45,6 @@ async def test_simulated_adapter_strict_contract():
 @pytest.mark.asyncio
 async def test_binance_adapter_concurrency_fix():
     print("\n[Test B] BinanceAdapter Concurrency (Using Lock)")
-    # Mock httpx dependency to avoid import error if missing
-    sys.modules["httpx"] = MagicMock()
-    
     adapter = BinanceAdapter(api_key="k", api_secret="s")
     
     client_order_id = "concurrent_id"

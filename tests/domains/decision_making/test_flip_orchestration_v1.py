@@ -103,6 +103,7 @@ def _mk_cfg(*, symbol: str, position_mode: str, stale_ttl_sec: int = 15):
                     max_notional_utilization=0.8,
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.3),
             )
         },
         strategies=SimpleNamespace(
@@ -263,7 +264,7 @@ def test_emit_reduce_only_close_uses_legacy_positionAmt_when_net_position_missin
 
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
 
-    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close")
+    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close", strategy_id="aurora")
 
     assert proposed, "Expected close intent to be proposed"
     assert str(proposed[0]["qty"]) == "0.7"
@@ -290,7 +291,7 @@ def test_emit_reduce_only_close_fail_closed_on_invalid_qty_skips_emit():
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
     dm._get_position_state = lambda _symbol: "LONG"  # type: ignore[method-assign]
 
-    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close")
+    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close", strategy_id="aurora")
     assert not proposed, "Expected fail-closed: invalid qty should skip emit"
 
 
@@ -312,7 +313,7 @@ def test_emit_reduce_only_close_noop_when_position_not_long_or_short():
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
     dm._get_position_state = lambda _symbol: "FLAT"  # type: ignore[method-assign]
 
-    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close")
+    dm._emit_reduce_only_close(symbol, reason="r", rid="rid-close", strategy_id="aurora")
     assert not proposed
 
 

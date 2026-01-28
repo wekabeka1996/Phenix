@@ -192,9 +192,16 @@ class BehaviorFsmCfgStub:
 
 
 @dataclass
+class FlipCfgStub:
+    """Stub for global flip killswitch config."""
+    enabled: bool = True
+
+
+@dataclass
 class DecisionMakingCfgStub:
     """Stub for DecisionMaking config with real values."""
     flip_hysteresis_mult: float = 1.0
+    flip: FlipCfgStub = field(default_factory=FlipCfgStub)
     qos: QosCfgStub = field(default_factory=QosCfgStub)
     position_sizing: PositionSizingCfgStub = field(default_factory=PositionSizingCfgStub)
     arming: ArmingCfgStub = field(default_factory=ArmingCfgStub)

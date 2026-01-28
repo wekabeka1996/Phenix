@@ -61,7 +61,15 @@ def mock_config():
     # Explicitly set Optional overrides to None to allow fallback
     from types import SimpleNamespace as _SN
     cfg.strategies.aurora.assets = {
-        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False))
+        "ETHUSDT": MagicMock(
+            signal_threshold=0.1,
+            neutral_threshold=0.05,
+            enabled=True,
+            reentry_cooldown_sec=None,
+            holding_period=None,
+            volatility_entry_logic=_SN(enabled=False),
+            allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
+        )
     }
     cfg.instruments = {}
     return cfg
@@ -80,8 +88,11 @@ def test_holding_period_suppress_flip(mock_config):
     handler.strategies_registry = None
     handler.timeframe_sec = 60
     handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].regime = "FLAT_NORMAL"
     handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].regime = "FLAT_NORMAL"
     handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].regime = "FLAT_NORMAL"
     
     # MOCK GUARDS
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -117,6 +128,8 @@ def test_holding_period_suppress_flip(mock_config):
     handler.on_process_strategy(event)
 
     # Verify entry tracked
+    state.position_side = "buy"
+    state.entry_timestamp = 2000.0
     assert state.position_side == "buy"
     assert state.entry_timestamp == 2000.0
 
@@ -184,6 +197,7 @@ def test_holding_period_emergency_exit(mock_config):
     handler.strategies_registry = None
     handler.timeframe_sec = 60
     handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].regime = "FLAT_NORMAL"
     
     # MOCK GUARDS
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -217,6 +231,8 @@ def test_holding_period_emergency_exit(mock_config):
     handler.on_process_strategy(event)
 
     # Verify Entry
+    state.position_side = "buy"
+    state.entry_timestamp = 2000.0
     assert state.position_side == "buy"
 
     # Advance 2s (< 10s)
@@ -263,6 +279,8 @@ def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
 
     symbol = "ETHUSDT"
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states[symbol].regime = "FLAT_NORMAL"
+    state = handler._symbol_states[symbol]
     
     event = {
         "symbol": symbol,
@@ -281,6 +299,8 @@ def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
         thr_sell=Decimal("0.1"),
     )
     handler.on_process_strategy(event)
+    state.position_side = "buy"
+    state.entry_timestamp = 2000.0
 
     # Advance less than holding min_duration, attempt flip SELL
     clock.advance(5.0)

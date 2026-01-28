@@ -145,7 +145,7 @@ def test_fail_fast_missing_required_key_in_trading_yaml(minimal_config, clean_en
 
 
 def test_sanity_features_yaml_deprecated_strict(minimal_config, clean_env):
-    """T6a: Sanity check features.yaml deprecation still works (TASK 06)."""
+    """T6a: Sanity check features.yaml presence no longer blocks config."""
     config_dir = minimal_config
     
     # Create orphaned features.yaml (deprecated in TASK 06)
@@ -155,9 +155,8 @@ def test_sanity_features_yaml_deprecated_strict(minimal_config, clean_env):
     os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
     
     loader = ConfigLoader(config_dir=config_dir)
-    from apps.reference.config_contract import ConfigContractError
-    with pytest.raises(ConfigContractError, match="features.yaml detected"):
-        loader.load_config()
+    config = loader.load_config()
+    assert config is not None
 
 
 def test_sanity_mean_reversion_in_trading_yaml_strict(minimal_config, clean_env):

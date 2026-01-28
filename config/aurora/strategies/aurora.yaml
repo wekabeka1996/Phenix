@@ -9,8 +9,7 @@
 
 aurora:
   enabled: true
-  # Migration control: keep Aurora on legacy DecisionMaking tick-path until AuroraHandler is validated.
-  legacy_tick_path_enabled: false
+  # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled DELETED from schema
   type: bar_driven
   description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
@@ -148,7 +147,7 @@ aurora:
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.
     # After exiting a position, wait this many seconds before allowing new entry.
-    reentry_cooldown_sec: 60  # Global default: 60 seconds
+    reentry_cooldown_sec: 300  # Global default: 60 seconds
 
     feature_neutrals:
       obi: 0.0
@@ -234,6 +233,35 @@ aurora:
       exit:
         sl_pct: 0.019
         max_hold_sec: 3000
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          # ETH менш волатильна → консервативніші мультиплікатори
+          sl_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.65        # Tight for flat low
+            LOW_VOLATILITY: 0.70
+            FLAT_NORMAL: 0.80
+            MEAN_REVERSION: 0.90
+            TREND_UP: 1.05        # Дещо шире для тренду
+            TREND_DOWN: 1.05
+            HIGH_VOLATILITY: 1.25 # Wider for high vol
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.70
+            LOW_VOLATILITY: 0.75
+            FLAT_NORMAL: 0.85
+            MEAN_REVERSION: 0.80
+            TREND_UP: 1.20        # ETH trend-following → higher TP
+            TREND_DOWN: 1.20
+            HIGH_VOLATILITY: 1.00
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.002       # 0.2% - ETH дозволяє тісніший SL
+          max_sl_pct: 0.055       # 5.5% max
+          min_tp_rr: 0.3
+          max_tp_rr: 3.0
+          min_dist_bps: 12        # 12 bps for ETH (більш ліквідна)
 
       take_profit:
         tp_low_ratio: 0.4
@@ -268,8 +296,10 @@ aurora:
 
     # SOLUSDT - Phase 3 Optuna optimized parameters
     SOLUSDT:
-      # Holding period: uses global defaults (30s)
-      # holding_period: null  # Explicit: inherit from decision.holding_period
+      # Holding period: SOL волатильна → довша утримання
+      holding_period:
+        min_duration_sec: 35
+        emergency_exit_threshold: 0.65
       
       # P1: Active Leverage Management
       leverage:
@@ -306,6 +336,12 @@ aurora:
         window_sec: 300
         target_ratio: 0.5
       
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.35    # SOL волатильна → вищий поріг
+        LOW_VOLATILITY: 0.80
+        MEAN_REVERSION: 1.10
+        DEFAULT: 1.0
+      
       regime_sizing:
         HIGH_VOLATILITY: 5.0
         LOW_VOLATILITY: 6.0
@@ -314,6 +350,35 @@ aurora:
       exit:
         sl_pct: 0.01512
         max_hold_sec: 3000
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          # SOL дуже волатильна → більші мультиплікатори
+          sl_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.60        # Tight SL для flat
+            LOW_VOLATILITY: 0.65
+            FLAT_NORMAL: 0.75
+            MEAN_REVERSION: 0.85
+            TREND_UP: 1.15        # Wide SL для тренду
+            TREND_DOWN: 1.15
+            HIGH_VOLATILITY: 1.50 # Найширший SL для SOL (найбільша вол)
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.65
+            LOW_VOLATILITY: 0.70
+            FLAT_NORMAL: 0.80
+            MEAN_REVERSION: 0.75
+            TREND_UP: 1.30        # Higher TP for trends
+            TREND_DOWN: 1.30
+            HIGH_VOLATILITY: 1.10
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.0025      # 0.25% - дозволяємо тіснішу SL
+          max_sl_pct: 0.065       # 6.5% max (більш ніж BTC для вол)
+          min_tp_rr: 0.25         # Нижчий мін RR для SOL (менше потенціалу)
+          max_tp_rr: 3.5          # Вищий макс RR для SOL
+          min_dist_bps: 18        # 18 bps (менш ліквідна ніж BTC/ETH)
 
       take_profit:
         tp_low_ratio: 0.36
@@ -328,7 +393,6 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      regime_thresholds: null
       signal_threshold:
         enabled: true
         value: 0.09
@@ -386,7 +450,7 @@ aurora:
         emergency_exit_threshold: 0.7
       
       # Re-entry cooldown: faster for BTC due to high liquidity
-      reentry_cooldown_sec: 45
+      reentry_cooldown_sec: 300
       
       liquidity_gate:
         enabled: true
@@ -400,8 +464,8 @@ aurora:
         target_ratio: 0.6
 
       regime_thresholds:
-        HIGH_VOLATILITY: 1.2
-        LOW_VOLATILITY: 0.9
+        HIGH_VOLATILITY: 1.2    # Keep (Aggressive entry allowed)
+        LOW_VOLATILITY: 1.3     # <--- CHANGE: Was 0.9. New effective: 0.12 * 1.3 = 0.156
         MEAN_REVERSION: 1.05
         DEFAULT: 1.0
 

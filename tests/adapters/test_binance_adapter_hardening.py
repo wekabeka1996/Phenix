@@ -14,11 +14,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Mock httpx before importing BinanceAdapter
-import sys
-mock_httpx = MagicMock()
-mock_httpx.AsyncClient = MagicMock
-sys.modules['httpx'] = mock_httpx
-
 from apps.reference.adapters.binance_adapter import (
     BinanceAdapter,
     BinanceAPIError,

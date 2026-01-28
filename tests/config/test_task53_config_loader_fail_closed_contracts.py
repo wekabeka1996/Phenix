@@ -167,20 +167,6 @@ class TestMissingRequiredNumericCrashes:
             del domains["decision_making"]["qos"]["symbol_cooldown_sec"]
         _write_yaml(domains_path, domains)
         
-        # TASK53-FIX: Also remove from backtest_override.yaml since it provides fallback
-        override_path = cfg_dir / "backtest_override.yaml"
-        if override_path.exists():
-            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
-            if (
-                isinstance(override, dict)
-                and "domains" in override
-                and "decision_making" in override["domains"]
-                and "qos" in override["domains"]["decision_making"]
-                and "symbol_cooldown_sec" in override["domains"]["decision_making"]["qos"]
-            ):
-                del override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"]
-                _write_yaml(override_path, override)
-        
         loader = ConfigLoader(config_dir=cfg_dir)
         with pytest.raises(ValidationError) as exc_info:
             loader.load_config()

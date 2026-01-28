@@ -36,11 +36,6 @@ class TestRegimeYamlStrictValidation:
             "basis_tf_sec": 300,
             "uncertain_cutoff": 0.35,
             "liveness_factor": 3,
-            "hmm": {
-                "enabled": True,
-                "K": 3
-            },
-            "features": {},
             # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist - 2026-01-25
             "models": {
                 "sma_trend": {
@@ -90,10 +85,9 @@ class TestRegimeYamlStrictValidation:
         
         # regime.yaml with EXTRA KEY in models
         regime_yaml = {
-            "hmm": {
-                "enabled": True
-            },
-            "features": {},
+            "basis_tf_sec": 300,
+            "uncertain_cutoff": 0.35,
+            "liveness_factor": 3,
             # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist - 2026-01-25
             "models": {
                 "sma_trend": {

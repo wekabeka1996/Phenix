@@ -55,12 +55,14 @@ def handler(mock_config, mock_emit, manual_clock):
         signal_threshold=None,
         neutral_threshold=None,
         holding_period=None,
-        volatility_entry_logic=SimpleNamespace(enabled=False)
+        volatility_entry_logic=SimpleNamespace(enabled=False),
+        allowed_regimes=["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY"],
     )
     h._check_warmup = lambda s: True
     state = SymbolState()
     # DM-CRITICAL-PATCHES-02: Inject heartbeat to satisfy liveness guard
     state.last_regime_heartbeat_ms = int(time.time() * 1000)
+    state.regime = "TREND_UP"
     h._symbol_states["BTCUSDT"] = state
     # Explicitly disable holding period to prevent interference in other tests
     h.holding_period_enabled = False
@@ -164,6 +166,7 @@ class TestReentryCooldown:
         handler._symbol_states[symbol] = SymbolState()
         state = handler._symbol_states[symbol]
         state.last_regime_heartbeat_ms = int(manual_clock.now_sec() * 1000)
+        state.regime = "TREND_UP"
         
         mock_instr_cfg = MagicMock()
         mock_instr_cfg.reentry_cooldown_sec = 30
@@ -171,6 +174,7 @@ class TestReentryCooldown:
         mock_instr_cfg.signal_threshold = None 
         mock_instr_cfg.neutral_threshold = None
         mock_instr_cfg.holding_period = None
+        mock_instr_cfg.allowed_regimes = ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY"]
         
         handler._get_instrument_config = lambda s: mock_instr_cfg if s == symbol else MagicMock(reentry_cooldown_sec=None)
         

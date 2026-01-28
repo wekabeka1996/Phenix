@@ -756,7 +756,7 @@ declared_keys:
 * **Домен:** DecisionMaking → Startup gate
 * **Режими роботи:**
   - LIVE: `fail_fast` (вимагати warmup)
-  - Backtest: може бути overridden через backtest_override.yaml
+  - Backtest: SSOT-only (без окремих оверлеїв), очікувана поведінка як у LIVE
 * **Code Trace:**
   - `config_loader.py` (читання warmup config)
   - Feature engine (warmup state machine)
@@ -1199,6 +1199,36 @@ execution_position:
 
 ---
 
+# 🔧 SCORCHED-EARTH 2026-01-27: РЕФАКТОРИНГ КОНФІГУ
+
+## Видалені zombie-поля та структури:
+
+| Поле | Було | Статус | Дія | Посилання |
+|---|---|---|---|---|
+| `legacy_tick_path_enabled` | AuroraStrategyConfig | ✅ ВИДАЛЕНО | Deleted from schema; single exec path | [config_models.py:2510](apps/reference/config_models.py#L2510) |
+| `hmm` (HMM режим) | regime.yaml | ✅ ВИДАЛЕНО | Zero references; not implemented | [config_models.py:2954](apps/reference/config_models.py#L2954) |
+| `features` (Feature params) | regime.yaml | ✅ ВИДАЛЕНО | Consolidated in feature_engineering domain | [config_models.py:2954](apps/reference/config_models.py#L2954) |
+| `LegacyLoggingConfig` | SystemConfig | ✅ ВИДАЛЕНО | Consolidated into logging_config.py | config_loader.py |
+
+## Типізовані конфіги (раніше Dict[str, Any]):
+
+| Конфіг | Було | Стало | Вплив | Посилання |
+|---|---|---|---|---|
+| `tca_prefs` | Dict[str, Any] | `TCAPrefsConfig` (Pydantic) | Fail-fast validation | [config_models.py:2607-2608](apps/reference/config_models.py#L2607) |
+| `risk_budgets` | Dict[str, Any] | `RiskBudgetsConfig` (Pydantic) | Fail-fast validation | [config_models.py:2626-2627](apps/reference/config_models.py#L2626) |
+
+**Вплив:** Обидва конфіги тепер мають `extra='forbid'` — невідомі ключі → миттєва помилка.
+
+## SSOT консолідація:
+
+| Проблема | Було | Стало | Посилання |
+|---|---|---|---|
+| Дублювання `symbols_to_track` | trading.yaml + strategies.yaml | Auto-derived from strategies.assignments | config_loader.py |
+
+**Інваріант:** `symbols_to_track` в trading.yaml тепер **забороне** (forbidden); SSOT = strategy assignments.
+
+---
+
 # 🏁 РЕЗЮМЕ: СТАТУС ДОКУМЕНТАЦІЇ
 
 **Паспорт ЗАВЕРШЕНИЙ:**
@@ -1208,11 +1238,13 @@ execution_position:
 - ✅ Трасування коду до runtime  
 - ✅ Тести перевірені  
 - ✅ LIVE рекомендації надані  
+- ✅ Scorched-Earth рефакторинг (2026-01-27) інтегрований
 
 **Ключові артефакти:**
 - 📄 `apps/reference/config_models.py` — SSOT для моделей
 - ⚙️ `config/aurora/domains.yaml` — SSOT для значень  
 - 📋 `config/docs/domains_passport.md` — ЦЕЙ документ
+- 📋 `config/docs/CONSOLIDATED_AUDIT_REPORT_2026-01-27.md` — Аудит рефакторингу
 - 🔍 Code traces до `apps/reference/domains/**` (decision_making, feature_engineering, execution_position, risk_management)
 
 ---

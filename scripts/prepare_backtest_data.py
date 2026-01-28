@@ -186,12 +186,14 @@ def main():
     LOG.info("=" * 60)
     LOG.info("Enriching processed klines with aggTrades (high-fidelity backtest inputs)...")
     enrich_total = 0
+    raw_dir = target_root.parent / "raw"
     for symbol, timeframe in sorted(klines_pairs):
         if symbol not in has_aggtrades:
             continue
         try:
             results = enrich_symbol_timeframe(
                 processed_dir=target_root,
+                raw_dir=raw_dir,
                 symbol=symbol,
                 timeframe=timeframe,
             )

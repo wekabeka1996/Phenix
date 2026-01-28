@@ -21,7 +21,7 @@ class _FSM:
 
 
 class _DummyAuroraHandler:
-    def __init__(self, *, config: object, emit_fn, strategy_id: str) -> None:
+    def __init__(self, *, config: object, emit_fn, strategy_id: str, monotonic_fn=None, **_kwargs) -> None:
         self.config = config
         self.emit_fn = emit_fn
         self.strategy_id = strategy_id
@@ -90,7 +90,7 @@ def test_assignments_block_aurora_signals_for_mr_only_symbols(monkeypatch) -> No
     registry.register(_NoopPlugin(strategy_id="mean_reversion"))
 
     cfg = SimpleNamespace(
-        strategies=SimpleNamespace(aurora=SimpleNamespace(legacy_tick_path_enabled=False)),
+        strategies=SimpleNamespace(aurora=SimpleNamespace(timeframe_sec=300)),
         strategies_registry=SimpleNamespace(assignments={"DOGEUSDT": ["mean_reversion"], "BTCUSDT": ["aurora"]}),
     )
 

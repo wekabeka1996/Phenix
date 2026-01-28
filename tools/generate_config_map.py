@@ -678,11 +678,6 @@ def normalize_yaml_sources() -> tuple[dict[str, dict[str, Any]], dict[str, set[s
         flat = _flatten(raw)
         add(f"config/aurora/strategies/{profile.name}", {f"strategies.{strategy_id}.{k}": v for k, v in flat.items()})
 
-    # backtest_override.yaml is merged at root (override layer, backtest only)
-    bto = CONFIG_DIR / "backtest_override.yaml"
-    if bto.exists():
-        add("config/aurora/backtest_override.yaml", _flatten(_load_yaml(bto)))
-
     return out_by_file, sources_by_path
 
 

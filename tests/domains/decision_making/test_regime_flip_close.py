@@ -66,6 +66,7 @@ def _dm_cfg():
         threshold_pct_production=50.0,
         min_intents_for_check=10,
     )
+    flip = SimpleNamespace(enabled=True)
     return SimpleNamespace(
         qos=qos,
         position_sizing=position_sizing,
@@ -75,6 +76,7 @@ def _dm_cfg():
         behavior_fsm=behavior_fsm,
         risk_skew=risk_skew,
         risk_gate=risk_gate,
+        flip=flip,
     )
 
 
@@ -121,6 +123,7 @@ def _mk_cfg(*, symbol: str, stale_ttl_sec: int = 15):
                     leverage_policy="verify_only",
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.3),
             )
         },
         strategies_registry=None,

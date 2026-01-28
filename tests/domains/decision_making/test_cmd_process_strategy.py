@@ -72,7 +72,7 @@ class TestAuroraRunsOnCMD:
         cfg.strategies = MagicMock()
         cfg.strategies.aurora = MagicMock()
         cfg.strategies.aurora.timeframe_sec = 300
-        cfg.strategies.aurora.legacy_tick_path_enabled = False
+        # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled removed (migration complete)
         cfg.strategies.aurora.execution = MagicMock()
         cfg.strategies.aurora.execution.entry_order_type = "LIMIT"
         cfg.strategies.aurora.execution.entry_tif = "GTX"

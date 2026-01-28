@@ -34,10 +34,10 @@
 - `config/aurora/domains.yaml`, `config/aurora/system.yaml`, `config/aurora/regime.yaml`, `config/aurora/trading.yaml`  
   Домени, режими, режим роботи, TTL тощо.
 
-### Важливо про backtest_override.yaml (ігноруємо в цьому аудиті)
+### Важливо про backtest режим
 
-Файл `config/aurora/backtest_override.yaml` **може** оверрайдити `strategies.*` при `trading_mode == backtest`.  
-У runtime-тесті ми **явно вимикаємо backtest режим**, щоб перевірити “чистий” SSOT без оверрайдів.
+Backtest очікується як **SSOT-only**: без додаткових YAML-оверлеїв.  
+У runtime-тесті ми **явно фіксуємо режим**, щоб перевіряти “чистий” SSOT.
 
 ---
 
@@ -181,7 +181,7 @@
 
 ## 4) Дублювання по YAML (backtest YAML ігноруємо)
 
-Пошук `BTCUSDT:` у `config/aurora/**` (без `archive/**` і без `backtest_override.yaml`) дає:
+Пошук `BTCUSDT:` у `config/aurora/**` (без `archive/**`) дає:
 
 - `config/aurora/strategies/aurora.yaml` — Aurora per-symbol params (цей аудит).
 - `config/aurora/strategies/mean_reversion.yaml` — MR profile також містить блок BTCUSDT, але **не активний**, якщо BTC не призначений MR у `strategies.yaml`.

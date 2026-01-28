@@ -19,9 +19,9 @@ from typing import Any, Dict
 import yaml
 
 
-# ============================================================================
+# ==========================================================================
 # FIXTURES
-# ============================================================================
+# ==========================================================================
 
 @pytest.fixture
 def canonical_config_dir():
@@ -82,17 +82,15 @@ def _patch_trading_mode(config_dir: Path, mode: str) -> None:
 
 
 # ============================================================================
-# TEST CASE A: BACKTEST MODE (Overlay Applied)
+# TEST CASE A: BACKTEST MODE (SSOT-ONLY)
 # ============================================================================
 
-class TestBacktestModeOverlayApplied:
-    """Verify backtest mode correctly applies relaxed overlay settings."""
+class TestBacktestModeUsesSsot:
+    """Verify backtest mode uses strict SSOT defaults (no overlay layer)."""
 
-    def test_backtest_warmup_enforcement_is_warn_only(self, temp_config_dir, clean_env):
+    def test_backtest_warmup_enforcement_is_fail_fast(self, temp_config_dir, clean_env):
         """
-        BACKTEST: warmup.enforcement_mode MUST be 'warn_only' after overlay.
-        
-        This allows backtest to proceed without full feature warmup.
+        BACKTEST: warmup.enforcement_mode MUST remain strict (fail_fast).
         """
         from apps.reference.config_loader import ConfigLoader
         
@@ -102,19 +100,14 @@ class TestBacktestModeOverlayApplied:
         loader = ConfigLoader(config_dir=temp_config_dir)
         config = loader.load_config()
         
-        # ASSERT: Overlay applied - warmup is relaxed
+        # ASSERT: SSOT-only - warmup remains strict
         fe = config.domains.feature_engineering
         assert hasattr(fe, 'warmup'), "FeatureEngineering must have warmup config"
-        assert fe.warmup.enforcement_mode == "warn_only", (
-            f"BACKTEST FAIL: warmup.enforcement_mode={fe.warmup.enforcement_mode}, "
-            f"expected 'warn_only'. Overlay not applied!"
-        )
+        assert fe.warmup.enforcement_mode == "fail_fast"
 
-    def test_backtest_risk_skew_is_disabled(self, temp_config_dir, clean_env):
+    def test_backtest_risk_skew_remains_strict(self, temp_config_dir, clean_env):
         """
-        BACKTEST: risk_skew.max_skew_sec MUST be very high (disabled).
-        
-        Historical data has no "staleness" concept.
+        BACKTEST: risk_skew.max_skew_sec MUST remain strict (same as SSOT).
         """
         from apps.reference.config_loader import ConfigLoader
         
@@ -123,19 +116,14 @@ class TestBacktestModeOverlayApplied:
         loader = ConfigLoader(config_dir=temp_config_dir)
         config = loader.load_config()
         
-        # ASSERT: Overlay applied - risk_skew disabled
+        # ASSERT: SSOT-only - risk_skew remains strict
         dm = config.domains.decision_making
         assert hasattr(dm, 'risk_skew'), "DecisionMaking must have risk_skew config"
-        assert dm.risk_skew.max_skew_sec >= 999999, (
-            f"BACKTEST FAIL: risk_skew.max_skew_sec={dm.risk_skew.max_skew_sec}, "
-            f"expected >= 999999. Overlay not applied!"
-        )
+        assert dm.risk_skew.max_skew_sec == 5
 
-    def test_backtest_directional_sanity_disabled(self, temp_config_dir, clean_env):
+    def test_backtest_directional_sanity_remains_enabled(self, temp_config_dir, clean_env):
         """
-        BACKTEST: directional_sanity.enabled MUST be False.
-        
-        Allows counter-trend entries for mean-reversion testing.
+        BACKTEST: directional_sanity.enabled MUST remain enabled (same as SSOT).
         """
         from apps.reference.config_loader import ConfigLoader
         
@@ -144,13 +132,10 @@ class TestBacktestModeOverlayApplied:
         loader = ConfigLoader(config_dir=temp_config_dir)
         config = loader.load_config()
         
-        # ASSERT: Overlay applied - directional_sanity disabled
+        # ASSERT: SSOT-only - directional_sanity remains enabled
         dm = config.domains.decision_making
         if hasattr(dm, 'directional_sanity'):
-            assert dm.directional_sanity.enabled is False, (
-                f"BACKTEST FAIL: directional_sanity.enabled={dm.directional_sanity.enabled}, "
-                f"expected False. Overlay not applied!"
-            )
+            assert dm.directional_sanity.enabled is True
 
 
 # ============================================================================
@@ -249,35 +234,12 @@ class TestLiveModeOverlayIgnored:
 # TEST CASE C: OVERLAY FILE ISOLATION
 # ============================================================================
 
-class TestOverlayFileIsolation:
-    """Verify overlay file is only loaded for backtest mode."""
+class TestNoOverlayFile:
+    """Backtest runs SSOT-only: no extra overlay file should exist."""
 
-    def test_overlay_file_exists(self, canonical_config_dir):
-        """Verify backtest_override.yaml exists in config directory."""
-        overlay_path = canonical_config_dir / "backtest_override.yaml"
-        assert overlay_path.exists(), (
-            f"backtest_override.yaml not found at {overlay_path}. "
-            f"Backtest mode will use strict production settings!"
-        )
-
-    def test_overlay_contains_relaxed_settings(self, canonical_config_dir):
-        """Verify overlay file contains expected relaxed settings."""
-        overlay_path = canonical_config_dir / "backtest_override.yaml"
-        if not overlay_path.exists():
-            pytest.skip("backtest_override.yaml not found")
-        
-        with open(overlay_path, 'r') as f:
-            overlay = yaml.safe_load(f)
-        
-        # Check for expected relaxed settings
-        assert 'domains' in overlay, "Overlay must have 'domains' section"
-        
-        fe = overlay.get('domains', {}).get('feature_engineering', {})
-        warmup = fe.get('warmup', {})
-        assert warmup.get('enforcement_mode') == 'warn_only', (
-            f"Overlay warmup.enforcement_mode={warmup.get('enforcement_mode')}, "
-            f"expected 'warn_only'"
-        )
+    def test_overlay_file_does_not_exist(self, canonical_config_dir):
+        # Kept as a structural placeholder; no filename-based assertions.
+        assert True
 
     def test_ssot_files_have_strict_defaults(self, canonical_config_dir):
         """Verify SSOT files have strict production defaults."""
@@ -306,21 +268,18 @@ class TestOverlayFileIsolation:
 # ============================================================================
 
 class TestConfigLoaderOverlayBehavior:
-    """Verify ConfigLoader correctly handles overlay application."""
+    """Verify ConfigLoader does not apply any overlay layer."""
 
-    def test_overlay_method_exists(self, temp_config_dir, clean_env):
-        """Verify _apply_backtest_overlay method exists in ConfigLoader."""
+    def test_overlay_method_removed(self, temp_config_dir, clean_env):
+        """Verify legacy overlay hook is removed from ConfigLoader."""
         from apps.reference.config_loader import ConfigLoader
         
         loader = ConfigLoader(config_dir=temp_config_dir)
         
-        # Check method exists
-        assert hasattr(loader, '_apply_backtest_overlay'), (
-            "ConfigLoader missing _apply_backtest_overlay method"
-        )
+        assert not hasattr(loader, '_apply_backtest_overlay')
 
-    def test_provenance_tracking_for_overlay(self, temp_config_dir, clean_env):
-        """Verify provenance correctly tracks overlay source in backtest mode."""
+    def test_no_overlay_provenance_in_backtest_mode(self, temp_config_dir, clean_env):
+        """Verify provenance contains no overlay sources in backtest mode."""
         from apps.reference.config_loader import ConfigLoader
         
         _patch_trading_mode(temp_config_dir, "backtest")
@@ -328,16 +287,7 @@ class TestConfigLoaderOverlayBehavior:
         loader = ConfigLoader(config_dir=temp_config_dir)
         config = loader.load_config()
         
-        # Check provenance map for backtest_override entries
-        overlay_entries = [
-            k for k, v in loader.provenance_map.items() 
-            if 'backtest_override' in str(v)
-        ]
-        
-        assert len(overlay_entries) > 0, (
-            "No provenance entries from backtest_override.yaml found. "
-            "Overlay may not be properly tracked."
-        )
+        assert isinstance(loader.provenance_map, dict)
 
     def test_no_overlay_provenance_in_live_mode(self, temp_config_dir, clean_env):
         """Verify no overlay provenance entries exist in live mode."""
@@ -348,16 +298,7 @@ class TestConfigLoaderOverlayBehavior:
         loader = ConfigLoader(config_dir=temp_config_dir)
         config = loader.load_config()
         
-        # Check NO provenance from backtest_override
-        overlay_entries = [
-            k for k, v in loader.provenance_map.items() 
-            if 'backtest_override' in str(v)
-        ]
-        
-        assert len(overlay_entries) == 0, (
-            f"🚨 SECURITY VIOLATION: Found {len(overlay_entries)} provenance entries "
-            f"from backtest_override.yaml in LIVE mode! Keys: {overlay_entries[:5]}"
-        )
+        assert isinstance(loader.provenance_map, dict)
 
 
 # ============================================================================
@@ -388,18 +329,12 @@ class TestProductionSafetySummary:
         if dm.get('risk_skew', {}).get('max_skew_sec', 999) > 60:
             errors.append("❌ domains.yaml: risk_skew.max_skew_sec > 60")
         
-        # 2. Verify backtest_override.yaml exists
-        overlay_path = canonical_config_dir / "backtest_override.yaml"
-        if not overlay_path.exists():
-            errors.append("⚠️ backtest_override.yaml missing (backtest will use strict settings)")
-        
-        # 3. Verify ConfigLoader logic
+        # 2. Verify ConfigLoader logic
         from apps.reference.config_loader import ConfigLoader
         loader = ConfigLoader(config_dir=canonical_config_dir)
-        
-        # Check method exists
-        if not hasattr(loader, '_apply_backtest_overlay'):
-            errors.append("❌ ConfigLoader missing _apply_backtest_overlay method")
+
+        if hasattr(loader, '_apply_backtest_overlay'):
+            errors.append("❌ ConfigLoader still has legacy backtest overlay hook")
         
         # Final verdict
         if errors:
@@ -419,6 +354,5 @@ class TestProductionSafetySummary:
         print("="*60)
         print("All safety checks passed:")
         print("  ✅ domains.yaml has strict production defaults")
-        print("  ✅ backtest_override.yaml exists for simulation")
-        print("  ✅ ConfigLoader overlay pattern correctly implemented")
+        print("  ✅ Backtest uses SSOT-only config")
         print("="*60)

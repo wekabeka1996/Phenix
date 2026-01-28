@@ -337,6 +337,10 @@ class FeatureEngineeringConfig:
         return decimal.Decimal(str(self._cfg.volume_spike.eps))
 
     @property
+    def volume_zscore_clip_sigma(self) -> float:
+        return float(self._cfg.volume_zscore.clip_sigma)
+
+    @property
     def large_trade_imbalance_window_ms(self) -> int:
         return int(self._cfg.large_trade_imbalance.window_ms)
 

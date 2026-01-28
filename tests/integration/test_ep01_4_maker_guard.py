@@ -29,40 +29,9 @@ class TestMakerOnlyEntryConfig:
         
         config = MakerOnlyEntryConfig(
             enabled=True,
-            tif_value="GTX",
-            reject_on_fail=True,
         )
         
         assert config.enabled is True
-        assert config.tif_value == "GTX"
-        assert config.reject_on_fail is True
-    
-    def test_reject_on_fail_must_be_true_when_enabled(self):
-        """MakerOnlyEntryConfig should reject reject_on_fail=False when enabled."""
-        from apps.reference.config_models import MakerOnlyEntryConfig
-        from pydantic import ValidationError
-        
-        with pytest.raises(ValidationError) as exc_info:
-            MakerOnlyEntryConfig(
-                enabled=True,
-                tif_value="GTX",
-                reject_on_fail=False,  # NOT ALLOWED when enabled
-            )
-        
-        assert "reject_on_fail MUST be True" in str(exc_info.value)
-    
-    def test_disabled_allows_reject_on_fail_false(self):
-        """When disabled, reject_on_fail can be any value."""
-        from apps.reference.config_models import MakerOnlyEntryConfig
-        
-        # Should not raise when disabled
-        config = MakerOnlyEntryConfig(
-            enabled=False,
-            tif_value="GTX",
-            reject_on_fail=False,
-        )
-        
-        assert config.enabled is False
     
     def test_extra_fields_forbidden(self):
         """MakerOnlyEntryConfig should reject unknown fields."""
@@ -217,10 +186,6 @@ class TestDomainsYamlConfig:
         maker = ep["maker_only_entry"]
         
         assert "enabled" in maker
-        assert "tif_value" in maker
-        assert maker["tif_value"] == "GTX"
-        assert "reject_on_fail" in maker
-        assert maker["reject_on_fail"] is True
 
 
 # ============================================================================

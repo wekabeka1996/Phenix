@@ -84,6 +84,7 @@ def _dm_domain_cfg() -> SimpleNamespace:
         features=features,
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
+        flip=SimpleNamespace(enabled=True),
         risk_skew=SimpleNamespace(
             max_skew_sec=5,
             max_defer_count=3,
@@ -120,6 +121,7 @@ def _mk_dm_cfg(*, symbol: str, stale_ttl_sec: int) -> SimpleNamespace:
                     max_notional_utilization=0.8,
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.7),
             )
         },
         strategies=SimpleNamespace(

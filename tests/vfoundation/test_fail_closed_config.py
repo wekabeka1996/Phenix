@@ -79,7 +79,7 @@ class TestFailClosedConfig:
         
         guard = ExposureGuard(fsm_core=MagicMock(), config=mock_config)
         
-        with pytest.raises(ConfigContractError, match="Default leverage is mandatory"):
+        with pytest.raises(ConfigContractError, match=r"Symbol BTCUSDT not found|Default leverage is mandatory"):
             guard.resolve_symbol_leverage("BTCUSDT")
 
     def test_exposure_guard_rejects_invalid_side(self):

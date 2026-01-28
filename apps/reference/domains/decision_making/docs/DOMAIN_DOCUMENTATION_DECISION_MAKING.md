@@ -201,7 +201,8 @@
     *   **Перевірка:** Перевірити доступність режиму `warn_only` для бектестів.
 
 5.  **Тихий Гейт Ліквідності Kappa:**
-    *   **Гіпотеза:** `MeanReversionHandler` перевіряє `_check_liquidity_gate`. Якщо фіча `liquidity_kappa` відсутня (помилка ключа), вона може дефолтити до 0 і тихо блокувати всі угоди.
+    *   **Гіпотеза [ВИРІШЕНО]:** `MeanReversionHandler` перевіряє `_check_liquidity_gate`.
+    *   **Статус:** **FIXED**. Тепер кидає явний `RuntimeError`, якщо `liquidity_kappa` відсутня. Fail-Fast реалізовано.
     *   **Код:** `mean_reversion_handler.py` -> `_check_liquidity_gate`.
 
 ---
@@ -299,6 +300,26 @@
 13. **`strategies.aurora` vs `strategies.mean_reversion`**: Окремі секції конфігурації. Конфлікти в карті призначених символів мають вирішуватися через `strategies_registry`.
 14. **Ковтання Винятків**: Блоки `try...except Exception` в Обробниках ловлять все, щоб запобігти падінню, але можуть приховувати критичні баги логіки (наприклад, NameError).
 15. **Збої Запису WAL**: Якщо дисковий IO для WAL падає, `write_trade_intent_rejected` придушує помилку. Логування зберігається, але в аудиторському сліді можуть бути прогалини.
-16. **[CRITICAL] Fail-Open Anti-Pyramiding**: Метод `_has_active_position_same_side` (L1953) ковтає помилки і повертає `False`, дозволяючи нескінченне накопичення позиції при збої Portfolio-компонента.
+16. **[RESOLVED] Fail-Open Anti-Pyramiding**: Метод `_handle_flip_orchestration` тепер явно перевіряє стан позиції. Якщо стан "UNKNOWN", повертає помилку `NRR-PORTFOLIO-UNKNOWN` (Fail-Closed). Стара проблема з ковтанням помилок усунена.
 17. **[CRITICAL] Hardcoded Anchor**: Символ `BTCUSDT` захардкоджений як якірний актив в `aurora_handler.py`. Це унеможливлює використання стратегії на ринках без USDT або з іншим якорем (ETH).
 18. **[HIGH] In-Memory State Loss**: Стани `_pending_flips` та `_qos_state` живуть в пам'яті. Рестарт процесу призводить до втрати контексту "очікування закриття" та скидання лімітів рейт-лімітеру.
+
+---
+
+## 10) Виправлення та Покращення (Changelog)
+
+**2026-01-27: Critical Fixes Audit**
+
+1.  **[RESOLVED] Silent Liquidity Kappa Gate:**
+    -   Раніше: `_check_liquidity_gate` тихо повертав `True` при відсутності фічі (дефолт 0).
+    -   Тепер: Викликає `RuntimeError` (Fail-Fast), гарантуючи наявність даних ліквідності перед рішенням.
+    
+2.  **[RESOLVED] Fail-Open Anti-Pyramiding:**
+    -   Раніше: `_has_active_position_same_side` міг приховати помилку `AttributeError` і дозволити відкриття позиції.
+    -   Тепер: `_handle_flip_orchestration` повертає `NRR-PORTFOLIO-UNKNOWN` (Fail-Closed), якщо стан позиції неможливо визначити.
+
+3.  **[CONFIRMED] Hardcoded Anchor (Technical Debt):**
+    -   Проблема підтверджена: `BTCUSDT` використовується як дефолтний якір. Потребує рефакторингу в майбутньому.
+
+4.  **[CONFIRMED] ATR Zero Fallback (User Risk):**
+    -   Проблема підтверджена: При `require_atr=False` стопи ставляться на 1bp. Рекомендовано enforcing `require_atr=True`.

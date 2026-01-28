@@ -43,6 +43,10 @@ from .config_models import SystemRuntimeMeta
 from .config_models import ObservabilityConfig
 from .config_contract import ConfigContractError
 
+# SCORCHED-EARTH-2026-01-27: Separation of Concerns (Backtest Logic)
+from apps.reference.backtest.symbol_filter import apply_backtest_symbols_filter
+
+
 LOG = logging.getLogger(__name__)
 
 
@@ -579,69 +583,41 @@ class ConfigLoader:
 
         return []
 
-    def _apply_trading_symbols_to_track_ssot(self, resolved_config: Dict[str, Any]) -> None:
-        """Ensure trading.symbols_to_track exists and is SSOT-consistent.
+    def _derive_symbols_to_track_ssot(self, resolved_config: Dict[str, Any]) -> None:
+        """One-way derivation: strategies.yaml (assignments) → trading.symbols_to_track.
 
-        Canonical rule (CFG-STRATEGY-SSOT-FREEZE-03):
-        - SSOT source for tracked symbols is strategies.yaml assignments keys.
-        - trading.symbols_to_track may be explicitly set, but must match SSOT in strict mode.
+        STRICT SSOT RULE (CFG-STRATEGY-SSOT-FREEZE-03):
+        - trading.yaml MUST NOT contain 'symbols_to_track'.
+        - The list is derived exclusively from strategy assignments.
+        - Backtest filtering (if applicable) has already modified assignments in place.
         """
-        if not isinstance(resolved_config, dict):
-            return
-
         trading = resolved_config.get("trading")
         if not isinstance(trading, dict):
-            return
+            return  # Pydantic will fail later due to missing 'trading'
 
-        sr = resolved_config.get("strategies_registry")
-        assignments: dict[str, Any] = {}
-        if isinstance(sr, dict):
-            a = sr.get("assignments")
-            if isinstance(a, dict):
-                assignments = a
-
-        ssot_symbols = [str(s) for s in assignments.keys()] if assignments else []
-        existing = trading.get("symbols_to_track")
-        existing_symbols: list[str] = []
-        if isinstance(existing, list) and existing:
-            existing_symbols = [str(s) for s in existing]
-
-        strict_mode = self._get_strict_mode()
-
-        if ssot_symbols:
-            if existing_symbols and set(existing_symbols) != set(ssot_symbols):
-                msg = (
-                    "SSOT conflict: trading.symbols_to_track disagrees with strategies.yaml assignments. "
-                    f"trading.symbols_to_track={sorted(set(existing_symbols))} "
-                    f"strategies.yaml(assignments)={sorted(set(ssot_symbols))}. "
-                    "Fix: remove trading.symbols_to_track or make it match assignments keys."
+        # 1. Enforce Absence in YAML (Strict Mode)
+        if "symbols_to_track" in trading:
+            if self._get_strict_mode():
+                raise ConfigContractError(
+                    path="trading.symbols_to_track",
+                    why=(
+                        "SSOT VIOLATION: 'symbols_to_track' found in trading.yaml. "
+                        "This field is auto-derived from strategies.yaml assignments. "
+                        "Action: Delete 'symbols_to_track' from trading.yaml."
+                    )
                 )
-                if strict_mode:
-                    raise ConfigContractError(path="trading.symbols_to_track", why=msg)
-                LOG.warning("⚠️  %s", msg)
-                existing_symbols = []
-
-            if not existing_symbols:
-                trading["symbols_to_track"] = sorted(set(ssot_symbols))
-                self.provenance_map["trading.symbols_to_track"] = "strategies.yaml"
-                resolved_config["trading"] = trading
-                return
-
-            trading["symbols_to_track"] = sorted(set(existing_symbols))
-            resolved_config["trading"] = trading
-            return
-
-        # No assignments present: require explicit trading.symbols_to_track (fail-closed).
-        if not existing_symbols:
-            raise ConfigContractError(
-                path="trading.symbols_to_track",
-                why=(
-                    "Missing trading.symbols_to_track and strategies.yaml assignments is empty. "
-                    "Provide explicit trading.symbols_to_track or add assignments."
-                ),
+            LOG.warning(
+                "⚠️ DEPRECATED: trading.symbols_to_track in YAML will be ignored (SSOT: strategies.yaml)"
             )
-        trading["symbols_to_track"] = sorted(set(existing_symbols))
-        resolved_config["trading"] = trading
+
+        # 2. Derive from assignments (already filtered by backtest if applicable)
+        sr = resolved_config.get("strategies_registry", {})
+        assignments = sr.get("assignments", {}) if isinstance(sr, dict) else {}
+        derived_symbols = sorted(str(k) for k in assignments.keys())
+
+        # 3. Inject (Pydantic validates non-empty constraint)
+        trading["symbols_to_track"] = derived_symbols
+        self.provenance_map["trading.symbols_to_track"] = "strategies.yaml (derived)"
 
     def _validate_ssot_conflicts(self, resolved_config: Dict[str, Any]) -> None:
         """
@@ -826,171 +802,8 @@ class ConfigLoader:
                 f"Missing: {missing_sorted}{more}"
             )
 
-    def _apply_backtest_overlay(self, resolved_config: Dict[str, Any]) -> None:
-        """Apply backtest-specific configuration overlay (Configuration Overlay Pattern).
+    # SCORCHED-EARTH-2026-01-27: _apply_backtest_symbols_filter MOVED to apps.reference.backtest.symbol_filter
 
-        CFG-BACKTEST-OVERLAY-01:
-        This method loads config/aurora/backtest_override.yaml and deep-merges it
-        ON TOP of the resolved config when trading_mode == "backtest".
-
-        This allows:
-        - Production SSOT files (domains.yaml, trading.yaml) to remain strict
-        - Backtest-specific relaxations to be isolated in a single overlay file
-        - Clear separation between LIVE safety and simulation convenience
-
-        SAFETY: This overlay is ONLY applied for backtest mode, never for live/production.
-        """
-        # Detect backtest mode from multiple sources
-        is_backtest = False
-
-        # Check root trading_mode
-        root_mode = resolved_config.get("trading_mode")
-        if isinstance(root_mode, str) and root_mode.strip().lower() == "backtest":
-            is_backtest = True
-
-        # Check trading.mode (secondary, but respected if set)
-        trading_block = resolved_config.get("trading")
-        if isinstance(trading_block, dict):
-            trading_mode = trading_block.get("mode")
-            if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
-                is_backtest = True
-
-        if not is_backtest:
-            LOG.debug("[overlay] Not backtest mode, skipping backtest_override.yaml")
-            return
-
-        # Load overlay file (optional - graceful if missing)
-        overlay_path = self.config_dir / "backtest_override.yaml"
-        if not overlay_path.exists():
-            LOG.info("[overlay] backtest_override.yaml not found, using base config only")
-            return
-
-        try:
-            with open(overlay_path, "r", encoding="utf-8-sig", errors="replace") as f:
-                overlay_data = yaml.safe_load(f)
-
-            if not isinstance(overlay_data, dict) or not overlay_data:
-                LOG.warning("[overlay] backtest_override.yaml is empty or invalid, skipping")
-                return
-
-            # Deep-merge overlay into resolved_config
-            LOG.warning(
-                "⚠️ BACKTEST OVERRIDE APPLIED: Loaded settings from backtest_override.yaml. "
-                "These settings are NOT safe for LIVE trading!"
-            )
-
-            # Apply overlay sections
-            if "domains" in overlay_data and isinstance(overlay_data["domains"], dict):
-                domains_block = resolved_config.get("domains")
-                if isinstance(domains_block, dict):
-                    deep_merge(
-                        overlay_data["domains"],
-                        domains_block,
-                        _provenance=self.provenance_map,
-                        _source_name="backtest_override.yaml",
-                    )
-                    LOG.info("[overlay] Applied domains overrides from backtest_override.yaml")
-
-            if "trading" in overlay_data and isinstance(overlay_data["trading"], dict):
-                trading_block = resolved_config.get("trading")
-                if isinstance(trading_block, dict):
-                    deep_merge(
-                        overlay_data["trading"],
-                        trading_block,
-                        _provenance=self.provenance_map,
-                        _source_name="backtest_override.yaml",
-                    )
-                    LOG.info("[overlay] Applied trading overrides from backtest_override.yaml")
-
-            # CFG-OVERLAY-STRATEGIES-01: Support strategies override for backtest
-            # Allows enabling/disabling features like regime_tpsl in backtest only
-            if "strategies" in overlay_data and isinstance(overlay_data["strategies"], dict):
-                strategies_block = resolved_config.get("strategies")
-                if isinstance(strategies_block, dict):
-                    deep_merge(
-                        overlay_data["strategies"],
-                        strategies_block,
-                        _provenance=self.provenance_map,
-                        _source_name="backtest_override.yaml",
-                    )
-                    LOG.info("[overlay] Applied strategies overrides from backtest_override.yaml")
-
-            # Log what was applied for debugging
-            for section_key in overlay_data:
-                if section_key not in ("domains", "trading", "strategies"):
-                    LOG.warning(
-                        f"[overlay] Unexpected section '{section_key}' in backtest_override.yaml - ignored"
-                    )
-
-        except Exception as e:
-            LOG.error(f"[overlay] Failed to load backtest_override.yaml: {e}")
-            raise ConfigContractError(
-                path="backtest_override.yaml",
-                why=f"Failed to parse backtest overlay: {e}",
-            )
-
-    def _apply_backtest_symbols_filter(self, resolved_config: Dict[str, Any]) -> None:
-        """Backtest-only: allow running on a strict subset of SSOT symbols.
-
-        Problem:
-        - SSOT for active symbols is strategies.yaml assignments keys.
-        - In backtest we often have historical data only for a subset (e.g., BTCUSDT).
-
-        Contract:
-        - If trading_mode == backtest and trading.symbols_to_track is set,
-          then we FILTER strategies_registry.assignments down to that subset.
-        - After filtering, the regular SSOT enforcement stays intact.
-        """
-        if not isinstance(resolved_config, dict):
-            return
-
-        root_mode = resolved_config.get("trading_mode")
-        trading = resolved_config.get("trading")
-        trading_mode = None
-        if isinstance(trading, dict):
-            trading_mode = trading.get("mode")
-
-        is_backtest = False
-        if isinstance(root_mode, str) and root_mode.strip().lower() == "backtest":
-            is_backtest = True
-        if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
-            is_backtest = True
-        if not is_backtest:
-            return
-
-        if not isinstance(trading, dict):
-            return
-        wanted = trading.get("symbols_to_track")
-        if not (isinstance(wanted, list) and wanted):
-            return
-        wanted_symbols = [str(s) for s in wanted if str(s).strip()]
-        if not wanted_symbols:
-            return
-
-        sr = resolved_config.get("strategies_registry")
-        if not isinstance(sr, dict):
-            return
-        assignments = sr.get("assignments")
-        if not isinstance(assignments, dict):
-            return
-
-        filtered = {k: v for k, v in assignments.items() if str(k) in set(wanted_symbols)}
-        if not filtered:
-            raise ConfigContractError(
-                path="strategies_registry.assignments",
-                why=(
-                    "Backtest symbols filter removed all assignments. "
-                    f"trading.symbols_to_track={wanted_symbols} had no overlap with strategies.yaml assignments."
-                ),
-            )
-
-        if set(filtered.keys()) != set(assignments.keys()):
-            sr["assignments"] = filtered
-            resolved_config["strategies_registry"] = sr
-            LOG.warning(
-                "[backtest] Filtered strategies_registry.assignments to symbols_to_track=%s",
-                sorted(set(wanted_symbols)),
-            )
 
     def load_config(
         self,
@@ -1044,24 +857,9 @@ class ConfigLoader:
 
         system_meta = self._extract_system_meta(system_config, regime_config)
         
-        # =========================================================================
-        # DEPRECATED FILE DETECTION (CFG-FEATURES-REGIME-SSOT-04)
-        # =========================================================================
-        # features.yaml is ORPHANED (not loaded, duplicate of domains.yaml)
-        # Detect its presence and fail/warn based on strict mode
-        # =========================================================================
-        import os
-        strict_mode = self._get_strict_mode()
+        # SCORCHED-EARTH-2026-01-27: features.yaml check DELETED
+        # File moved to archive/, check was dead code.
         
-        features_yaml_path = self.config_dir / "features.yaml"
-        if features_yaml_path.exists():
-            msg = (
-                "⚠️  DEPRECATED: features.yaml detected! "
-                "This file is NOT loaded by ConfigLoader (orphaned config). "
-                "Feature engineering config is read from domains.yaml (SSOT). "
-                "Action required: Remove features.yaml or migrate to domains.yaml."
-            )
-            raise ConfigContractError(path="features.yaml", why=msg)
         
         # =========================================================================
         # DEPRECATED MR DETECTION (CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN)
@@ -1097,20 +895,8 @@ class ConfigLoader:
                     ),
                 )
 
-        # =========================================================================
-        # CFG-STRATEGY-SSOT-FREEZE-02: aurora_instruments.yaml retired
-        # =========================================================================
-        # Per-symbol Aurora params SSOT moved to strategies/aurora.yaml (aurora.assets).
-        aurora_instruments_yaml_path = self.config_dir / "aurora_instruments.yaml"
-        if aurora_instruments_yaml_path.exists():
-            raise ConfigContractError(
-                path="aurora_instruments.yaml",
-                why=(
-                    "⚠️  DEPRECATED: aurora_instruments.yaml detected! "
-                    "Per-symbol Aurora params SSOT moved to strategies/aurora.yaml (aurora.assets). "
-                    "Action required: Remove/migrate aurora_instruments.yaml."
-                ),
-            )
+        # SCORCHED-EARTH-2026-01-27: aurora_instruments.yaml check DELETED
+        # File moved to archive/, check was dead code.
         
         # =========================================================================
         # DEPRECATED FEATURE_ENGINEERING DETECTION (CFG-FREEZE-SSOT-06)
@@ -1222,21 +1008,15 @@ class ConfigLoader:
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
 
-        # =========================================================================
-        # CFG-BACKTEST-OVERLAY-01: Apply backtest overlay (if in backtest mode)
-        # =========================================================================
-        # This MUST happen after env resolution but BEFORE mode overrides,
-        # so backtest_override.yaml values take precedence over base config.
-        self._apply_backtest_overlay(resolved_config)
-
         # BACKTEST BTC-only support: allow subset run when data is limited.
-        self._apply_backtest_symbols_filter(resolved_config)
+        # SCORCHED-EARTH-2026-01-27: Use externalized logic (Separation of Concerns)
+        apply_backtest_symbols_filter(resolved_config)
 
         # Apply mode-specific decision overrides
         self._resolve_mode_overrides(resolved_config)
 
         # Ensure tracked symbols are SSOT-consistent and present for strict TradingConfig
-        self._apply_trading_symbols_to_track_ssot(resolved_config)
+        self._derive_symbols_to_track_ssot(resolved_config)
 
         # Startup fail-fast: precision check for active symbols
         self._fail_fast_validate_instruments_precision(resolved_config)

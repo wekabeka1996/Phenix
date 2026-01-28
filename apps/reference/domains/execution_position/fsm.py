@@ -256,29 +256,26 @@ class ExecPosFSM:
         # Symbols currently waiting for cancel confirmation before executing queued open
         self._supersede_canceling: set = set()
 
-        # Orphan-monitor configuration (additive, safe defaults)
-        orphan_cfg = {}
-        try:
-            if self.config.trading and self.config.trading.execution and self.config.trading.execution.manage:
-                orphan_cfg = self.config.trading.execution.manage.orphan_monitor or {}
-        except Exception:
-            orphan_cfg = {}
-
-        if not isinstance(orphan_cfg, dict):
-            orphan_cfg = {}
-
-        # Safe extraction of orphan_monitor settings
-        def get_orphan_setting(key: str, default):
-            return orphan_cfg[key] if key in orphan_cfg else default
-
-        self._orphan_cfg: Dict[str, Any] = {
-            "enabled": bool(get_orphan_setting("enabled", True)),
-            "run_on_startup": bool(get_orphan_setting("run_on_startup", True)),
-            "periodic_interval_sec": int(get_orphan_setting("periodic_interval_sec", 300)),
-            "min_order_age_sec": int(get_orphan_setting("min_order_age_sec", 0)),
-            "batch_cancel_limit": int(get_orphan_setting("batch_cancel_limit", 50)),
-            "rate_limit_per_min": int(get_orphan_setting("rate_limit_per_min", 120)),
-        }
+        # Orphan-monitor configuration (Strict SSOT)
+        # CFG-NO-DEFAULTS: All values must come from config.trading.execution.manage.orphan_monitor
+        self._orphan_monitor_cfg = getattr(self.config.trading.execution.manage, "orphan_monitor", None)
+        
+        # If config is missing entirely, disable functionality (safe fallback for optional section)
+        # But if section exists, it MUST have all fields (Pydantic enforced)
+        self._orphan_cfg: Dict[str, Any] = {}
+        if self._orphan_monitor_cfg:
+             self._orphan_cfg = {
+                "enabled": self._orphan_monitor_cfg.enabled,
+                "run_on_startup": self._orphan_monitor_cfg.run_on_startup,
+                "periodic_interval_sec": self._orphan_monitor_cfg.periodic_interval_sec,
+                "min_order_age_sec": self._orphan_monitor_cfg.min_order_age_sec,
+                "batch_cancel_limit": self._orphan_monitor_cfg.batch_cancel_limit,
+                "rate_limit_per_min": self._orphan_monitor_cfg.rate_limit_per_min,
+             }
+             LOG.info(f"OrphanMonitor configured: interval={self._orphan_cfg['periodic_interval_sec']}s")
+        else:
+             self._orphan_cfg = {"enabled": False}
+             LOG.info("OrphanMonitor disabled (no config)")
         # Orphan-monitor runtime counters/metrics
         self._orphan_metrics: Dict[str, int] = {
             "loops": 0,
@@ -2452,7 +2449,9 @@ class ExecPosFSM:
                         if loop:
                             async def _supersede_timeout():
                                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
-                                await get_clock().sleep_sec(5.0)  # 5 second timeout
+                                # STRICT SSOT: Timeout from config (fail-closed)
+                                timeout_sec = float(pe_ttl_cfg.supersede_cancel_timeout_sec)
+                                await get_clock().sleep_sec(timeout_sec)
                                 if symbol in self._supersede_canceling:
                                     LOG.warning(
                                         f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open"
@@ -4432,8 +4431,8 @@ class ExecPosFSM:
         """Periodic orphaned-order cleanup loop (interval from config)."""
         while True:
             try:
-                interval = max(
-                    5, int(self._orphan_cfg["periodic_interval_sec"]))
+                # STRICT SSOT: interval validated by schema (ge=5)
+                interval = int(self._orphan_cfg["periodic_interval_sec"])
                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
                 await get_clock().sleep_sec(interval)
                 await self.order_guardian.cleanup_orphans()

@@ -344,9 +344,10 @@ class TestMRSymbolState:
 class TestMeanReversion1mStrategy:
     """Test MeanReversion1mStrategy core logic."""
     
-    def test_init_default(self):
-        """Strategy initializes with defaults."""
-        strategy = MeanReversion1mStrategy()
+    def test_init_with_explicit_config(self):
+        """Strategy initializes with explicit MRStrategyConfig (P0: no implicit defaults)."""
+        config = MRStrategyConfig()  # Explicit config required after P0 fix
+        strategy = MeanReversion1mStrategy(config=config)
         
         assert strategy.config.bb_window == 20
         assert strategy.timeframe_sec == 60
@@ -362,7 +363,7 @@ class TestMeanReversion1mStrategy:
     
     def test_get_state_creates_new(self):
         """get_state creates new state for unknown symbol."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         state = strategy.get_state("BTCUSDT")
         
@@ -372,7 +373,7 @@ class TestMeanReversion1mStrategy:
     
     def test_get_state_returns_existing(self):
         """get_state returns existing state."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         state1 = strategy.get_state("BTCUSDT")
         state1.add_bar(Bar(
@@ -389,7 +390,7 @@ class TestMeanReversion1mStrategy:
     
     def test_set_and_get_regime(self):
         """Set and get regime for symbol."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         assert strategy.get_regime("BTCUSDT") == "MEAN_REVERSION"
@@ -399,7 +400,7 @@ class TestMeanReversion1mStrategy:
     
     def test_on_tick_no_bar_complete(self):
         """on_tick returns None when bar not complete."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         # Single tick doesn't complete bar
         signal = strategy.on_tick("BTCUSDT", Decimal("100"), Decimal("1"), 1000)
@@ -409,7 +410,7 @@ class TestMeanReversion1mStrategy:
     @pytest.mark.skip(reason="T2B-02: on_tick deprecated, MR now uses on_bar (bar-driven)")
     def test_on_tick_insufficient_bars(self):
         """on_tick returns neutral when not enough bars."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         
         # Feed enough ticks for 5 bars (not enough for min_bars=25)
@@ -436,7 +437,7 @@ class TestMeanReversion1mStrategy:
     @pytest.mark.skip(reason="T2B-02: resampler removed, reset_symbol needs refactor")
     def test_reset_symbol(self):
         """reset_symbol clears state."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         strategy.get_state("BTCUSDT")
         
@@ -450,7 +451,7 @@ class TestMeanReversion1mStrategy:
     @pytest.mark.skip(reason="T2B-02: resampler removed, reset_all needs refactor")
     def test_reset_all(self):
         """reset_all clears all state."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         strategy.set_regime("ETHUSDT", "LOW_VOLATILITY")
         strategy.get_state("BTCUSDT")
@@ -468,7 +469,7 @@ class TestMRStrategyRegimeFiltering:
     @pytest.mark.skip(reason="T2B-02: on_tick/feed_bars deprecated, needs on_bar refactor")
     def test_trending_regime_blocked(self):
         """Trending regime should not generate MR signal."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "TREND_UP")
         
         # Feed enough bars
@@ -496,7 +497,7 @@ class TestMRStrategyRegimeFiltering:
     
     def test_mean_reversion_regime_allowed(self):
         """MEAN_REVERSION regime should allow MR signals."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         
         # Feed bars with normal volatility
@@ -528,7 +529,7 @@ class TestMRStrategyCooldown:
     
     def test_no_cooldown_initially(self):
         """No cooldown on first signal."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         state = strategy.get_state("BTCUSDT")
         
         # No previous signal
@@ -542,7 +543,7 @@ class TestMRStrategyForceClose:
     @pytest.mark.skip(reason="T2B-02: resampler removed, force_close_all needs refactor")
     def test_force_close_all(self):
         """force_close_all closes all pending bars."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         # Add some ticks (not completing bars)
         strategy.on_tick("BTCUSDT", Decimal("100"), Decimal("1"), 1000)
@@ -574,7 +575,7 @@ class TestP0UncertainRegimeBlocksMRTrading:
 
     def test_unknown_symbol_returns_uncertain(self):
         """Unknown symbol returns UNCERTAIN regime."""
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         # Symbol with no regime set returns UNCERTAIN
         regime = strategy.get_regime("UNKNOWN_SYMBOL")
@@ -585,7 +586,7 @@ class TestP0UncertainRegimeBlocksMRTrading:
         """P0: UNCERTAIN regime must block MR signals (return regime_not_flat)."""
         from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
         
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         
         # Do NOT set regime (symbol defaults to UNCERTAIN)
         # Feed enough bars to generate signal
@@ -638,7 +639,7 @@ class TestP0UncertainRegimeBlocksMRTrading:
         """MEAN_REVERSION with ATR should allow MR signals."""
         from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
         
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
         
         # Feed enough bars (strategy computes ATR internally from bars)
@@ -657,7 +658,7 @@ class TestP0UncertainRegimeBlocksMRTrading:
         """LOW_VOLATILITY should always allow MR signals (no ATR required)."""
         from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
         
-        strategy = MeanReversion1mStrategy()
+        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "LOW_VOLATILITY")
         
         # LOW_VOLATILITY doesn't need ATR

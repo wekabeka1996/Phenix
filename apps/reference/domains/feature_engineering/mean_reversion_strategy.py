@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum, auto
 from typing import Optional, Dict, List, Any
-import time
 
 
 
@@ -106,6 +105,11 @@ class MRSignal:
 class MRStrategyConfig:
     """
     Configuration for Mean Reversion 1m Strategy.
+    
+    WARNING: Default values below are for UNIT TESTS ONLY.
+    In Production, this object MUST be populated explicitly from
+    'MeanReversion1mStrategyConfig' (YAML SSOT via mean_reversion_handler.py).
+    Do NOT rely on these defaults in production code paths.
     
     Attributes:
         bb_window: Bollinger Bands window (default 20 bars)
@@ -231,7 +235,7 @@ class MeanReversion1mStrategy:
     
     def __init__(
         self,
-        config: Optional[MRStrategyConfig] = None,
+        config: MRStrategyConfig,
         timeframe_sec: int = 60,
         regime_sizing: Optional[Dict[str, Any]] = None,
         regime_thresholds: Optional[FlatRegimeThresholds] = None,
@@ -240,12 +244,16 @@ class MeanReversion1mStrategy:
         Initialize MR strategy.
         
         Args:
-            config: Strategy configuration
+            config: Strategy configuration (MANDATORY).
+                    Do not rely on dataclass defaults in production.
             timeframe_sec: Bar timeframe in seconds (default 60 = 1m)
             regime_sizing: Optional dict with regime sizing multipliers from YAML
                            e.g., {"FLAT_LOW": {"sizing_mult": 0.8, "stop_mult": 0.6}}
+        
+        Raises:
+            TypeError: If config is not provided (enforced by type signature).
         """
-        self.config = config or MRStrategyConfig()
+        self.config = config
         self.timeframe_sec = timeframe_sec
         self._regime_sizing = regime_sizing or {}
         self._flat_regime_thresholds = regime_thresholds

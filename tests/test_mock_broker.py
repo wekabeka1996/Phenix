@@ -60,7 +60,7 @@ class TestMockBroker(IsolatedAsyncioTestCase):
         self.assertAlmostEqual(broker.balance_usdt, expected_balance)
         
     async def test_market_sell_fill(self):
-        broker = MockBroker(initial_balance_usdt=10000.0)
+        broker = MockBroker(initial_balance_usdt=10000.0, slippage_bps=0.0)
         
         # 1. Place Market Sell
         params = ExchangeOrderParams(

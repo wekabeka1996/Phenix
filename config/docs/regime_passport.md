@@ -19,11 +19,11 @@
 | `basis_tf_sec` | `int` | ✅ | 🟢 Active | Таймфрейм обробки (5 хвилин = 300сек). Повинні обробляватися тільки бари цього розміру |
 | `uncertain_cutoff` | `float` | ✅ | 🟢 Active | Min confidence для випуску режиму (< цього → UNCERTAIN) |
 | `liveness_factor` | `int` | ✅ | 🟢 Active | Множник для "heartbeat guard" (запобігає торгівлі якщо режим застарів) |
-| `hmm.enabled` | `bool` | ❌ (Dict) | 🔵 Legacy | Прапорець для HMM-режиму (не реалізовано у поточному коді) |
-| `hmm.K` | `int` | ❌ (Dict) | 🔵 Legacy | Кількість прихованих станів для HMM (не активна) |
-| `hmm.update_interval` | `int` | ❌ (Dict) | 🔵 Legacy | Інтервал оновлення HMM (не активна) |
-| `features.rv_window` | `int` | ❌ (Dict) | 🟢 Active | Вікно для розрахунку realized volatility |
-| `features.trend_window` | `int` | ❌ (Dict) | 🟢 Active | Вікно для trend slope регресії |
+| ~~`hmm.enabled`~~ | ~~`bool`~~ | ❌ REMOVED | ✅ Deleted 2026-01-27 | ~~Прапорець для HMM-режиму~~ (REMOVED — не реалізовано) |
+| ~~`hmm.K`~~ | ~~`int`~~ | ❌ REMOVED | ✅ Deleted 2026-01-27 | ~~Кількість прихованих станів~~ (REMOVED) |
+| ~~`hmm.update_interval`~~ | ~~`int`~~ | ❌ REMOVED | ✅ Deleted 2026-01-27 | ~~Інтервал оновлення~~ (REMOVED) |
+| ~~`features.rv_window`~~ | ~~`int`~~ | ❌ REMOVED | ✅ Deleted 2026-01-27 | ~~Вікно realized volatility~~ (REMOVED — в feature_engineering) |
+| ~~`features.trend_window`~~ | ~~`int`~~ | ❌ REMOVED | ✅ Deleted 2026-01-27 | ~~Вікно тренда~~ (REMOVED) |
 | `models.sma_trend.*` | `Object` | ✅ | 🟢 Active | SMA-тренд модель (детектує TREND_UP/DOWN/MR) |
 | `models.volatility.*` | `Object` | ✅ | 🟢 Active | ATR-волатильність модель (HIGH_VOL / LOW_VOL) |
 | `models.mean_reversion.*` | `Object` | ✅ | 🟢 Active | Mean reversion модель (MEAN_REVERSION режим) |
@@ -114,42 +114,23 @@
 
 ---
 
-### 4. `hmm` (HMM режим — Legacy)
-* **Суть:** Конфіг для Hidden Markov Model детектування режиму. **НЕ АКТИВНА У ПОТОЧНОМУ КОДІ** — вказана в коментарях як NOT IMPLEMENTED.
-* **Домен:** N/A (не використовується).
-* **Статус:** 🔵 **DEPRECATED/LEGACY** — конфіг присутній для майбутнього розширення, але код ігнорує його.
-* **Під-поля:**
-  * `hmm.enabled` — прапорець (not checked in code)
-  * `hmm.K` — кількість Markov станів (not used)
-  * `hmm.update_interval` — EM update cadence (not implemented)
-  * `hmm.history_hours` — lookback window (not implemented)
-  * `hmm.confidence_threshold` — (not implemented)
-* **Code Trace:** 
-    * [apps/reference/config_models.py](apps/reference/config_models.py#L2925) — `hmm: Dict[str, Any] = Field(...)` (зберігається як generic Dict, no type checking)
-    * **НЕ ЗНАЙДЕНО використання** у коді (grep на `hmm\.enabled`, `hmm\.K` повертає порожній результат)
-* **Тести:** ❌ Немає прямих тестів для HMM логіки.
+### 4. ~~`hmm` (HMM режим — Legacy)~~ — **REMOVED**
 
-**Вердикт:** Видаліть з конфіг-файлу або позначте як `# TODO: HMM implementation (future)`.
+🟢 **STATUS:** ✅ REMOVED (Scorched-Earth 2026-01-27)
+
+Field completely deleted from config_models.py (line 2954 comment: "hmm and features fields DELETED — zero runtime references").
+
+This section was previously documented as "NOT IMPLEMENTED" and has been eliminated entirely.
 
 ---
 
-### 5. `features` (Feature engineering params — Legacy)
-* **Суть:** Параметри для розрахунку **ознак** для режимної детекції (realized volatility, trend, order book imbalance).
-* **Домен:** N/A (не реалізовано у поточному коді).
-* **Статус:** 🔵 **LEGACY** — параметри присутні у конфіг, але вся логіка зберігається у `feature_engineering` домені з іншими параметрами (не в режимній детекції).
-* **Під-поля:**
-  * `features.rv_window` — вікно realized volatility (120 samples)
-  * `features.trend_window` — вікно тренда (180 samples)
-  * `features.obi_window` — вікно order book imbalance (60 samples)
-  * `features.spread_min_ticks` — мін spread для нормалізації (1)
-  * `features.micro_return_window` — вікно micro returns (1)
-* **Code Trace:** 
-    * [apps/reference/config_models.py](apps/reference/config_models.py#L2927) — `features: Dict[str, Any] = Field(...)`
-    * **Фактичне використання** — у домені `feature_engineering` але з інших джерел (не з regime.yaml)
-    * Очікується що režime.yaml.features переосмислити
-* **Тести:** ❌ Режимна детекція не використовує ці параметри прямо.
+### 5. ~~`features` (Feature engineering params — Legacy)~~ — **REMOVED**
 
-**Рекомендація:** Перемістити в `features.yaml` або видалити з `regime.yaml`.
+🟢 **STATUS:** ✅ REMOVED (Scorched-Earth 2026-01-27)
+
+Field completely deleted from config_models.py (line 2954 comment: "hmm and features fields DELETED — zero runtime references").
+
+This section was previously documented as "LEGACY" and has been eliminated entirely. All feature engineering is now centralized in the `feature_engineering` domain with its own configuration.
 
 ---
 

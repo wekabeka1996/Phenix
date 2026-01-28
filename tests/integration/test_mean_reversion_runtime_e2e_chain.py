@@ -52,6 +52,7 @@ def _dm_cfg():
         position_sizing=position_sizing,
         arming=arming,
         features=features,
+        flip=SimpleNamespace(enabled=True),
         # Used by DecisionMaking._get_regime_thresholds()
         regime_threshold_multipliers={"DEFAULT": 1.0},
         bar_gating=bar_gating,
@@ -190,6 +191,7 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
                     max_notional_utilization=0.8,
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.7),
             )
         },
         strategies=SimpleNamespace(

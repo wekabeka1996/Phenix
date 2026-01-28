@@ -14,7 +14,7 @@ trading:
   mode: backtest
   backtest:
     start_date: "2023-05-14"
-    end_date: "2023-05-31"
+    end_date: "2023-06-30"
     initial_balance: 1000.0
   tca_prefs:
     max_slippage_pct: 0.5
@@ -50,7 +50,6 @@ trading:
     profile: balanced
     soft_limits:
       # LIVE SAFETY: Soft clipping for position sizing risk management.
-      # Backtest override: see config/aurora/backtest_override.yaml
       mode: clip
       clip_min_notional_usdt: 10
       directional_ratio_max: 20.0
@@ -105,6 +104,11 @@ trading:
           fixed_bps: 80
       orphan_monitor:
         enabled: true
+        run_on_startup: true
+        periodic_interval_sec: 300
+        min_order_age_sec: 0
+        batch_cancel_limit: 50
+        rate_limit_per_min: 120
       # Emergency mode config (optional - set enabled: false to disable)
       emergency:
         enabled: false

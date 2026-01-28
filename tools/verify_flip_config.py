@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""
-Diagnostic script to verify flip orchestration config loading in backtest.
+"""Diagnostic script to verify flip orchestration config loading.
+
+Backtest is expected to use the same SSOT config as live (no overlay layer).
 
 Run: python3 tools/verify_flip_config.py
 """
@@ -34,32 +35,8 @@ def main():
     print(f"   flip.enabled:        {flip_cfg.enabled}")
     print(f"   flip.hysteresis_mult: {flip_cfg.hysteresis_mult}")
     
-    # Expected backtest values
-    if trading_mode.lower() == "backtest":
-        print(f"\n✅ Backtest mode detected - verifying overlay applied:")
-        
-        if flip_cfg.hysteresis_mult == 2.5:
-            print(f"   ✅ hysteresis_mult=2.5 (from backtest_override.yaml)")
-        else:
-            print(f"   ❌ hysteresis_mult={flip_cfg.hysteresis_mult} (expected 2.5)")
-            
-        if flip_cfg.enabled is True:
-            print(f"   ✅ enabled=True")
-        else:
-            print(f"   ❌ enabled={flip_cfg.enabled}")
-            
-        # Check other backtest overrides
-        print(f"\n📊 Other Backtest Overrides:")
-        print(f"   risk_skew.max_skew_sec:         {dm_cfg.risk_skew.max_skew_sec} (expected 999999)")
-        print(f"   directional_sanity.enabled:    {dm_cfg.directional_sanity.enabled} (expected False)")
-        print(f"   price_motion_sanity.enabled:   {dm_cfg.price_motion_sanity.enabled} (expected False)")
-        print(f"   qos.symbol_cooldown_sec:       {dm_cfg.qos.symbol_cooldown_sec} (expected 10)")
-    else:
-        print(f"\n⚠️  Live mode detected - overlay should NOT be applied")
-        if flip_cfg.hysteresis_mult == 2.5:
-            print(f"   ⚠️  WARNING: hysteresis_mult=2.5 in live mode!")
-        else:
-            print(f"   ✅ hysteresis_mult={flip_cfg.hysteresis_mult} (base config)")
+    print("\nℹ️  Note: no backtest overlay layer is applied.")
+    print("   Values should come directly from SSOT YAMLs under config/aurora/.")
     
     print("\n" + "=" * 60)
     print("VERIFICATION COMPLETE")

@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional, Deque, Dict
 from collections import deque
-import time
+
+from apps.reference.core.time.clock import Clock, LiveClock
 
 
 @dataclass
@@ -102,6 +103,7 @@ class BarResampler:
         self,
         timeframe_sec: int = 60,
         max_bars: int = 1000,
+        clock: Clock | None = None,
     ):
         """
         Initialize bar resampler.
@@ -116,6 +118,7 @@ class BarResampler:
         self.timeframe_sec = timeframe_sec
         self.timeframe_ms = timeframe_sec * 1000
         self.max_bars = max_bars
+        self._clock: Clock = clock or LiveClock()
         
         # Current incomplete bar (None if no ticks yet)
         self._current_bar: Optional[Bar] = None
@@ -148,7 +151,7 @@ class BarResampler:
             Completed Bar if this tick caused a bar close, None otherwise
         """
         if ts_ms is None:
-            ts_ms = int(time.time() * 1000)
+            ts_ms = self._clock.now_ms()
         
         self._ticks_processed += 1
         
@@ -265,7 +268,7 @@ class BarResampler:
             return None
         
         if ts_ms is None:
-            ts_ms = int(time.time() * 1000)
+            ts_ms = self._clock.now_ms()
         
         self._current_bar.end_ts_ms = ts_ms
         closed_bar = self._current_bar
@@ -311,6 +314,7 @@ class MultiSymbolBarResampler:
         self,
         timeframe_sec: int = 60,
         max_bars: int = 1000,
+        clock: Clock | None = None,
     ):
         """
         Initialize multi-symbol bar resampler.
@@ -321,6 +325,7 @@ class MultiSymbolBarResampler:
         """
         self.timeframe_sec = timeframe_sec
         self.max_bars = max_bars
+        self._clock: Clock = clock or LiveClock()
         self._resamplers: Dict[str, BarResampler] = {}
 
     def add_tick(
@@ -346,6 +351,7 @@ class MultiSymbolBarResampler:
             self._resamplers[symbol] = BarResampler(
                 timeframe_sec=self.timeframe_sec,
                 max_bars=self.max_bars,
+                clock=self._clock,
             )
         
         return self._resamplers[symbol].add_tick(symbol, price, volume, ts_ms)

@@ -1,6 +1,6 @@
 ---
 name: replay-determinism
-description: Use for backtest/replay determinism, reproducibility, and ordering guarantees. Anchors to backtest_engine/, tools/strategy_replay.py, tools/feature_integrity_replay_check.py, and config/aurora/backtest_override.yaml.
+description: Use for backtest/replay determinism, reproducibility, and ordering guarantees. Anchors to backtest_engine/, tools/strategy_replay.py, tools/feature_integrity_replay_check.py, and SSOT YAMLs under config/aurora/.
 ---
 
 # Replay Determinism Skill
@@ -30,7 +30,7 @@ BLOCKED: missing <item1>, <item2>, ...
 
 ## Deterministic procedure
 1) Identify replay harness in backtest_engine/ and tools/strategy_replay.py.
-2) Verify data sources and contracts in data/, schemas/, and config/aurora/backtest_override.yaml.
+2) Verify data sources and contracts in data/, schemas/, and config/aurora/.
 3) Check replay integrity via tools/feature_integrity_replay_check.py.
 4) Validate RNG usage and seed control.
 5) Verify deterministic ordering and checkpoint usage (data/checkpoints/ if applicable).

@@ -86,6 +86,7 @@ class AuroraAssetCfg:
     neutral_threshold: float = 0.05
     reentry_cooldown_sec: Optional[float] = None
     holding_period: Optional[HoldingPeriodCfg] = None
+    allowed_regimes: list[str] = field(default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"])
 
 
 @dataclass
@@ -145,6 +146,7 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
     )
     # DM-CRITICAL-PATCHES-02: Inject heartbeat
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states[symbol].regime = "FLAT_NORMAL"
 
     handler.scoring_kernel_cls = QueueKernel
     QueueKernel.queue = [
@@ -165,12 +167,14 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
 
     # open
     handler.on_process_strategy(event)
+    state = handler._symbol_states[symbol]
+    state.position_side = "buy"
+    state.entry_timestamp = clock.now()
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" in _types(events)
 
     # close
     event["bar_close_ts"] = int(clock.now())
     handler.on_process_strategy(event)
-    state = handler._symbol_states[symbol]
     assert state.position_side == ""
     assert state.last_exit_timestamp == 5000.0
 
@@ -213,6 +217,7 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
     )
     # DM-CRITICAL-PATCHES-02: Inject heartbeat
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states[symbol].regime = "FLAT_NORMAL"
 
     handler.scoring_kernel_cls = QueueKernel
     QueueKernel.queue = [
@@ -233,6 +238,8 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
     # open buy
     handler.on_process_strategy(event)
     state = handler._symbol_states[symbol]
+    state.position_side = "buy"
+    state.entry_timestamp = clock.now()
     assert state.position_side == "buy"
     assert state.entry_timestamp == 2000.0
 

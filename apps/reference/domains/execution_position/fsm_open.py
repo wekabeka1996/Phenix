@@ -192,18 +192,27 @@ class OpenFlowFSM:
         min_notional = MIN_NOTIONAL
 
         if specs:
+            def _parse_positive_decimal(raw: Any, field: str) -> Decimal:
+                try:
+                    value = Decimal(str(raw))
+                except (InvalidOperation, TypeError, ValueError) as e:
+                    raise ValueError(f"Invalid {field} for {symbol}: {raw!r}") from e
+                if value <= 0:
+                    raise ValueError(f"Invalid {field} for {symbol}: {raw!r} (must be > 0)")
+                return value
+
             # Pydantic model InstrumentPrecisionSpec fields, convert to Decimal
             # Primary fields (tick_size/step_size are float in canonical model)
             if hasattr(specs, 'tick_size') and specs.tick_size is not None:
-                tick_size = Decimal(str(specs.tick_size))
+                tick_size = _parse_positive_decimal(specs.tick_size, "tick_size")
             if hasattr(specs, 'step_size') and specs.step_size is not None:
-                step_size = Decimal(str(specs.step_size))
-            
+                step_size = _parse_positive_decimal(specs.step_size, "step_size")
+
             # Optional legacy fields (may not be in InstrumentPrecisionSpec)
             if hasattr(specs, 'min_qty') and specs.min_qty is not None:
-                min_qty = Decimal(str(specs.min_qty))
+                min_qty = _parse_positive_decimal(specs.min_qty, "min_qty")
             if hasattr(specs, 'min_notional') and specs.min_notional is not None:
-                min_notional = Decimal(str(specs.min_notional))
+                min_notional = _parse_positive_decimal(specs.min_notional, "min_notional")
 
         return {
             "min_qty": min_qty,
@@ -461,6 +470,13 @@ class OpenFlowFSM:
 
                 return dec
 
+            except (InvalidOperation, ValueError) as e:
+                self._metrics["fsm_guard_rejects_total"] += 1
+                self.state = OpenState.ERROR
+                self.logger.error(
+                    f"GUARD_REJECT: Invalid instrument specs for {symbol} - {e}, rid={msg.rid}"
+                )
+                return self._reject(msg, "OPEN_GUARD_FAIL", "invalid instrument specs")
             except Exception as e:
                 self._metrics["fsm_errors_total"] += 1
                 self.state = OpenState.ERROR

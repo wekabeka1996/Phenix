@@ -163,7 +163,13 @@ def test_daily_gate_fails_closed_missing_config():
 def test_decision_making_contract_missing_sl(mock_fsm):
     """DecisionMaking must raise ConfigContractError if SL config is missing."""
     config = MagicMock()
-    config.instruments = {"BTCUSDT": MagicMock(tick_size=0.1, step_size=0.001)}
+    config.instruments = {
+        "BTCUSDT": MagicMock(
+            tick_size=0.1,
+            step_size=0.001,
+            flip=MagicMock(enabled=True, hysteresis_mult=1.3),
+        )
+    }
     config.trading = MagicMock()
     config.trading.tca_prefs = {}
     config.trading.risk_budgets = {}
@@ -187,7 +193,7 @@ def test_decision_making_contract_missing_sl(mock_fsm):
             domains__decision_making__behavior_fsm__enable=False,
             domains__decision_making__behavior_fsm__high_vol_multiplier=2.0,
             domains__decision_making__behavior_fsm__low_vol_multiplier=0.5,
-            domains__decision_making__flip_hysteresis_mult=1.0
+            domains__decision_making__flip__enabled=True
         ).domains.decision_making
 
         mock_res_inst.get_decision_making.return_value = dm_cfg

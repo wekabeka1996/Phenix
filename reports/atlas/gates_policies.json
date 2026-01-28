@@ -12,12 +12,7 @@
       "execution": null,
       "ops": {
         "panic_killswitch": false,
-        "panic_ttl_sec": null,
-        "quiet_hours_utc": [
-          "22:00-06:00"
-        ],
-        "allowlist_symbols": [],
-        "metrics_url": "http://localhost:8000/metrics",
+        "metrics_url": "http://127.0.0.1:8000/metrics",
         "reports_dir": "reports"
       }
     },
@@ -25,7 +20,7 @@
     "config/aurora/trading.yaml": {},
     "config/aurora/domains.yaml": {},
     "config/aurora/strategies.yaml": {},
-    "config/aurora/backtest_override.yaml": {},
+    "config/aurora/observability.yaml": {},
     "config/aurora/strategies/aurora.yaml": {},
     "config/aurora/strategies/mean_reversion.yaml": {},
     "config/aurora/archive/trading_1m_best_optuna.yaml": {},
@@ -81,9 +76,7 @@
     "apps/reference/domains/neocortex/config/system.yaml": {},
     "apps/reference/domains/neocortex/config/neuro.yaml": {},
     "apps/reference/domains/neocortex/config/ingest.yaml": {},
-    "apps/reference/domains/neocortex/config/replay.yaml": {},
-    "reports/gate_effect/gate_effect_summary.yaml": {},
-    "reports/confidence_calibration/recommendations.yaml": {}
+    "apps/reference/domains/neocortex/config/replay.yaml": {}
   },
   "merged_master": {}
 }

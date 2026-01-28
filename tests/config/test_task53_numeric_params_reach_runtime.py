@@ -131,15 +131,6 @@ class TestQosSymbolCooldownSecReachesRuntime:
         domains["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
         _write_yaml(domains_path, domains)
         
-        # TASK53-FIX: Also update backtest_override.yaml since it takes precedence in backtest mode
-        override_path = cfg_dir / "backtest_override.yaml"
-        if override_path.exists():
-            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
-            if "domains" in override and "decision_making" in override["domains"]:
-                if "qos" in override["domains"]["decision_making"]:
-                    override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
-                    _write_yaml(override_path, override)
-        
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         
@@ -156,15 +147,6 @@ class TestQosSymbolCooldownSecReachesRuntime:
         TEST_VALUE = 99
         domains["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
         _write_yaml(domains_path, domains)
-        
-        # TASK53-FIX: Also update backtest_override.yaml since it takes precedence in backtest mode
-        override_path = cfg_dir / "backtest_override.yaml"
-        if override_path.exists():
-            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
-            if "domains" in override and "decision_making" in override["domains"]:
-                if "qos" in override["domains"]["decision_making"]:
-                    override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
-                    _write_yaml(override_path, override)
         
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()

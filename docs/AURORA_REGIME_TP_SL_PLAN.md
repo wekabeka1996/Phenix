@@ -220,11 +220,11 @@ exit:
 
 ### Крок 4 — Backtest-only увімкнення
 Файли:
-- `config/aurora/backtest_override.yaml` (або окремий override для aurora strategy)
+- Рекомендовано: окремий `config_dir` для backtest (копія SSOT + явні зміни) або feature-flag/rollout у SSOT.
 
 Підхід:
-- Увімкнути `regime_tpsl.enabled=true` тільки для бектесту.
-- Залишити live конфіги без змін (або shadow mode, див. rollout нижче).
+- Увімкнути `regime_tpsl.enabled=true` тільки для backtest-окруження через окремий `config_dir`.
+- Live конфіги лишити без змін (або shadow mode, див. rollout нижче).
 
 ### Крок 5 — Репортинг/summary (опційно, але дуже бажано)
 Щоб потім реально аналізувати:

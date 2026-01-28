@@ -103,6 +103,7 @@ def _mk_cfg(*, symbol: str, stale_ttl_sec: int = 15):
                     leverage_policy="verify_only",
                 ),
                 sizing=SimpleNamespace(margin_pct=0.02),
+                flip=SimpleNamespace(enabled=True, hysteresis_mult=1.3),
             )
         },
         strategies_registry=None,

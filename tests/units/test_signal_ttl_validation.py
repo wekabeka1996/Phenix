@@ -31,6 +31,7 @@ class _MockDomainConfig:
         self.qos = MagicMock()
         self.position_sizing = MagicMock()
         self.risk_skew = MagicMock()
+        self.flip = SimpleNamespace(enabled=True)
         self.regime_thresholds = {}
         self.regime_threshold_multipliers = {}
         self.gates = MagicMock()

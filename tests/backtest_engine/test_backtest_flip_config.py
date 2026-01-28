@@ -1,10 +1,6 @@
-"""
-Tests for flip orchestration config loading in backtest mode.
+"""Tests for flip orchestration config loading.
 
-Verifies that:
-1. backtest_override.yaml flip config is correctly merged
-2. DecisionMaking receives flip.hysteresis_mult = 1.5 from overlay
-3. Flip logic respects backtest config values
+Backtest is expected to run on the same SSOT config as live (no extra overlay layer).
 """
 from __future__ import annotations
 
@@ -20,7 +16,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 
 
 class TestBacktestFlipConfigLoading:
-    """Tests for flip config loading via backtest_override.yaml."""
+    """Tests for flip config loading is consistent across modes."""
     
     @pytest.fixture
     def backtest_config_dir(self, tmp_path):
@@ -59,8 +55,8 @@ class TestBacktestFlipConfigLoading:
         
         return tmp_path
     
-    def test_config_loader_merges_flip_from_backtest_overlay(self, backtest_config_dir):
-        """Verify ConfigLoader deep-merges flip config from backtest_override.yaml."""
+    def test_backtest_mode_uses_same_flip_config_as_ssot(self, backtest_config_dir):
+        """Verify backtest mode uses SSOT flip config (no overlay)."""
         # 1. Load config with config_dir pointing to backtest mode config
         loader = ConfigLoader(config_dir=backtest_config_dir)
         config = loader.load_config()
@@ -69,17 +65,16 @@ class TestBacktestFlipConfigLoading:
         dm_cfg = config.domains.decision_making
         flip_cfg = dm_cfg.flip
         
-        # 3. Assert backtest overlay values (from backtest_override.yaml)
-        # flip:
-        #   enabled: true
-        #   hysteresis_mult: 1.5
-        assert flip_cfg.enabled is True, "flip.enabled should be True from backtest_override.yaml"
-        assert flip_cfg.hysteresis_mult == 1.5, (
-            f"flip.hysteresis_mult should be 1.5 from backtest_override.yaml, got {flip_cfg.hysteresis_mult}"
-        )
+        # 3. Assert expected SSOT defaults (config/aurora/domains.yaml)
+        assert flip_cfg.enabled is True
+
+        # Per-symbol flip config lives in instruments.yaml (SSOT)
+        btc_flip = config.instruments["BTCUSDT"].flip
+        assert btc_flip.enabled is True
+        assert btc_flip.hysteresis_mult == 3.0
     
-    def test_live_mode_has_different_flip_config(self, live_config_dir):
-        """Verify live mode does NOT get backtest overlay flip values."""
+    def test_live_mode_matches_ssot_flip_config(self, live_config_dir):
+        """Verify live mode uses the same SSOT flip config."""
         # 1. Load config with config_dir pointing to live mode config
         loader = ConfigLoader(config_dir=live_config_dir)
         config = loader.load_config()
@@ -88,12 +83,11 @@ class TestBacktestFlipConfigLoading:
         dm_cfg = config.domains.decision_making
         flip_cfg = dm_cfg.flip
         
-        # 3. Live mode should have base config, NOT backtest overlay
-        # Base domains.yaml has hysteresis_mult = 1.3 (default)
-        # This test confirms backtest overlay is NOT applied in live mode
-        assert flip_cfg.hysteresis_mult != 1.5 or flip_cfg.hysteresis_mult == 1.3, (
-            "Live mode should not have backtest overlay flip.hysteresis_mult=1.5"
-        )
+        assert flip_cfg.enabled is True
+
+        btc_flip = config.instruments["BTCUSDT"].flip
+        assert btc_flip.enabled is True
+        assert btc_flip.hysteresis_mult == 3.0
 
 
 class TestDecisionMakingFlipInit:
@@ -117,7 +111,7 @@ class TestDecisionMakingFlipInit:
             symbol_cooldown_sec=0,
             enforce=False,
         )
-        flip = SimpleNamespace(enabled=True, hysteresis_mult=2.5)  # Backtest value
+        flip = SimpleNamespace(enabled=True)  # Global killswitch only
         return SimpleNamespace(
             qos=qos,
             position_sizing=SimpleNamespace(min_position_size_usd=10, liquidity_based_cap_usd=10_000),
@@ -164,6 +158,7 @@ class TestDecisionMakingFlipInit:
                     min_notional="5",
                     execution=SimpleNamespace(margin_mode="isolated", target_leverage=20, leverage_policy="verify_only", max_notional_utilization=0.8),
                     sizing=SimpleNamespace(margin_pct=0.02),
+                    flip=SimpleNamespace(enabled=True, hysteresis_mult=2.5),
                 )
             },
             strategies=SimpleNamespace(
@@ -191,14 +186,14 @@ class TestDecisionMakingFlipInit:
             
             dm = DecisionMaking(fsm=mock_bus, config=base_config)
         
-        # Verify flip settings were loaded correctly
-        assert dm.flip_hysteresis_enabled is True
-        assert dm.flip_hysteresis_mult == 2.5, (
-            f"DecisionMaking.flip_hysteresis_mult should be 2.5, got {dm.flip_hysteresis_mult}"
-        )
+        assert dm.flip_global_enabled is True
+        enabled, mult = dm._get_flip_config("BTCUSDT")
+        assert enabled is True
+        assert mult == 2.5
     
     def test_get_flip_config_returns_global_fallback(self, mock_bus, dm_cfg_with_flip, base_config):
-        """Verify _get_flip_config returns global settings when no per-symbol override."""
+        """Verify global killswitch disables flip even when per-symbol is enabled."""
+        dm_cfg_with_flip.flip.enabled = False
         with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
             MockResolver.return_value.get_decision_making.return_value = dm_cfg_with_flip
             
@@ -207,8 +202,8 @@ class TestDecisionMakingFlipInit:
         # Get flip config for symbol (no per-symbol override)
         enabled, mult = dm._get_flip_config("BTCUSDT")
         
-        assert enabled is True
-        assert mult == 2.5
+        assert enabled is False
+        assert mult == 1.0
 
 
 class TestFlipHysteresisEffect:
@@ -244,7 +239,7 @@ class TestFlipHysteresisEffect:
             features=SimpleNamespace(ttl_sec=60),
             bar_gating=SimpleNamespace(enable=False, bar_ms=60_000),
             behavior_fsm=SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5),
-            flip=SimpleNamespace(enabled=True, hysteresis_mult=2.5),
+            flip=SimpleNamespace(enabled=True),
             risk_skew=SimpleNamespace(
                 max_skew_sec=999999,
                 max_defer_count=3,
@@ -280,6 +275,7 @@ class TestFlipHysteresisEffect:
                     min_notional="5",
                     execution=SimpleNamespace(margin_mode="isolated", target_leverage=20, leverage_policy="verify_only", max_notional_utilization=0.8),
                     sizing=SimpleNamespace(margin_pct=0.02),
+                    flip=SimpleNamespace(enabled=True, hysteresis_mult=2.5),
                 )
             },
             strategies=SimpleNamespace(
@@ -304,8 +300,9 @@ class TestFlipHysteresisEffect:
             MockResolver.return_value.get_decision_making.return_value = dm_cfg
             dm = DecisionMaking(fsm=mock_bus_with_emit, config=config)
         
-        # Verify mult=2.5 is stored
-        assert dm.flip_hysteresis_mult == 2.5
+        enabled, mult = dm._get_flip_config("BTCUSDT")
+        assert enabled is True
+        assert mult == 2.5
         
         # The hysteresis mult affects the minimum time between flips
         # A higher mult means longer cooldown between direction changes
@@ -333,11 +330,11 @@ class TestBacktestFlipE2E:
     @pytest.mark.slow
     def test_full_backtest_loads_flip_config(self, backtest_config_dir):
         """
-        E2E: Verify full backtest simulation loads flip.hysteresis_mult=2.5.
+        E2E: Verify backtest loads SSOT flip config (no overlay).
         
         This test:
         1. Loads AuroraConfig with trading_mode=backtest
-        2. Verifies domains.decision_making.flip.hysteresis_mult = 2.5
+        2. Verifies domains.decision_making.flip is the SSOT default
         """
         loader = ConfigLoader(config_dir=backtest_config_dir)
         config = loader.load_config()
@@ -345,25 +342,17 @@ class TestBacktestFlipE2E:
         # Access via config object
         flip_cfg = config.domains.decision_making.flip
         
-        assert flip_cfg.enabled is True, "Backtest should have flip.enabled=True"
-        assert flip_cfg.hysteresis_mult == 2.5, (
-            f"Backtest flip.hysteresis_mult should be 2.5 from overlay, got {flip_cfg.hysteresis_mult}"
-        )
+        assert flip_cfg.enabled is True
+
+        btc_flip = config.instruments["BTCUSDT"].flip
+        assert btc_flip.enabled is True
+        assert btc_flip.hysteresis_mult == 3.0
         
         # Verify other backtest-specific overrides as well
         dm_cfg = config.domains.decision_making
         
-        # risk_skew.max_skew_sec should be 999999 (disabled for historical data)
-        assert dm_cfg.risk_skew.max_skew_sec == 999999, (
-            f"Backtest risk_skew.max_skew_sec should be 999999, got {dm_cfg.risk_skew.max_skew_sec}"
-        )
+        assert dm_cfg.risk_skew.max_skew_sec == 5
         
-        # directional_sanity.enabled should be False
-        assert dm_cfg.directional_sanity.enabled is False, (
-            "Backtest directional_sanity.enabled should be False"
-        )
+        assert dm_cfg.directional_sanity.enabled is True
         
-        # price_motion_sanity.enabled should be False
-        assert dm_cfg.price_motion_sanity.enabled is False, (
-            "Backtest price_motion_sanity.enabled should be False"
-        )
+        assert dm_cfg.price_motion_sanity.enabled is True

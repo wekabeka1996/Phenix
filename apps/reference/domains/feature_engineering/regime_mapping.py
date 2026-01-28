@@ -121,10 +121,7 @@ def map_to_flat_regime(
     if regime_upper == "MEAN_REVERSION":
         if atr_pct is not None:
             return thresholds.classify(atr_pct)
-        else:
-            # DET-BT-15: Fallback to FLAT_NORMAL when atr_pct not available
-            # This allows backtest trading while being conservative
-            return FlatRegime.FLAT_NORMAL
+        return None
     
     # P0 FIX: UNCERTAIN → None (fail-closed)
     # MR must NOT trade when regime is uncertain/uninitialized.

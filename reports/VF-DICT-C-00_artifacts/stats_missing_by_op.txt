@@ -1,4 +1,0 @@
-     31 EVT
-      6 DEC
-      1 UPD
-      1 ERR
