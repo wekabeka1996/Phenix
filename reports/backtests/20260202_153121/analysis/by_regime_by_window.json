@@ -1,0 +1,90 @@
+[
+  {
+    "window": "A",
+    "regime": "HIGH_VOLATILITY",
+    "side": "LONG",
+    "trades": 100,
+    "net_pnl": 550.0870845283857,
+    "win_rate": 0.3
+  },
+  {
+    "window": "A",
+    "regime": "HIGH_VOLATILITY",
+    "side": "SHORT",
+    "trades": 86,
+    "net_pnl": 803.8890972088575,
+    "win_rate": 0.26744186046511625
+  },
+  {
+    "window": "A",
+    "regime": "TREND_DOWN",
+    "side": "LONG",
+    "trades": 1,
+    "net_pnl": 25.449049124472445,
+    "win_rate": 1.0
+  },
+  {
+    "window": "A",
+    "regime": "TREND_DOWN",
+    "side": "SHORT",
+    "trades": 15,
+    "net_pnl": -266.94532863727943,
+    "win_rate": 0.2
+  },
+  {
+    "window": "A",
+    "regime": "TREND_UP",
+    "side": "LONG",
+    "trades": 16,
+    "net_pnl": 38.726642293970556,
+    "win_rate": 0.5
+  },
+  {
+    "window": "A",
+    "regime": "TREND_UP",
+    "side": "SHORT",
+    "trades": 1,
+    "net_pnl": 21.912827312032338,
+    "win_rate": 1.0
+  },
+  {
+    "window": "B",
+    "regime": "HIGH_VOLATILITY",
+    "side": "LONG",
+    "trades": 12,
+    "net_pnl": -340.57737953430956,
+    "win_rate": 0.08333333333333333
+  },
+  {
+    "window": "B",
+    "regime": "HIGH_VOLATILITY",
+    "side": "SHORT",
+    "trades": 11,
+    "net_pnl": -269.0844537850272,
+    "win_rate": 0.18181818181818182
+  },
+  {
+    "window": "B",
+    "regime": "TREND_DOWN",
+    "side": "SHORT",
+    "trades": 2,
+    "net_pnl": -102.7899840097986,
+    "win_rate": 0.0
+  },
+  {
+    "window": "B",
+    "regime": "TREND_UP",
+    "side": "LONG",
+    "trades": 3,
+    "net_pnl": -28.770166929118226,
+    "win_rate": 0.3333333333333333
+  },
+  {
+    "window": "B",
+    "regime": "TREND_UP",
+    "side": "SHORT",
+    "trades": 1,
+    "net_pnl": -43.15458203425628,
+    "win_rate": 0.0
+  }
+]

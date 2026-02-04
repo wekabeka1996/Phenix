@@ -1,0 +1,13 @@
+{
+  "post_peak_first_big_sl_streak_ts": 1692380100000,
+  "counts": {
+    "A": {
+      "SL": 153,
+      "TP": 66
+    },
+    "B": {
+      "SL": 25,
+      "TP": 4
+    }
+  }
+}

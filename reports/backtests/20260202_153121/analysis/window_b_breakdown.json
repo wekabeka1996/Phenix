@@ -1,0 +1,32 @@
+[
+  {
+    "regime": "HIGH_VOLATILITY",
+    "side": "LONG",
+    "trades": 12,
+    "net_pnl": -340.57737953430956
+  },
+  {
+    "regime": "HIGH_VOLATILITY",
+    "side": "SHORT",
+    "trades": 11,
+    "net_pnl": -269.0844537850272
+  },
+  {
+    "regime": "TREND_DOWN",
+    "side": "SHORT",
+    "trades": 2,
+    "net_pnl": -102.7899840097986
+  },
+  {
+    "regime": "TREND_UP",
+    "side": "SHORT",
+    "trades": 1,
+    "net_pnl": -43.15458203425628
+  },
+  {
+    "regime": "TREND_UP",
+    "side": "LONG",
+    "trades": 3,
+    "net_pnl": -28.770166929118226
+  }
+]

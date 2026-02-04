@@ -215,6 +215,15 @@ class BacktestEngine:
         full_df = pl.concat(frames)
         full_df = full_df.sort("ts")
         
+        # ALPHA-SEARCH: Optionally augment with TA indicators
+        try:
+            from backtest_engine.feature_augmenter import BacktestFeatureAugmenter
+            augmenter = BacktestFeatureAugmenter(full_df)
+            full_df = augmenter.augment()
+            LOG.info(f"Feature augmentation complete: {augmenter.get_feature_names()}")
+        except Exception as aug_err:
+            LOG.warning(f"Feature augmentation skipped: {aug_err}")
+        
         self.feed = full_df
         LOG.info(f"Data ready: {len(self.feed)} rows.")
 
@@ -267,11 +276,17 @@ class BacktestEngine:
             if not position_tracking_initialized:
                 if not initial_portfolio_emitted:
                     self._emit_initial_portfolio()
+                    # FIX-BACKTEST-RACE: Wait for async exposure cache update to finish
+                    if self.execpos_fsm and hasattr(self.execpos_fsm, "drain_pending_tasks"):
+                        self.execpos_fsm.drain_pending_tasks()
                     initial_portfolio_emitted = True
                 else:
                     # Emit portfolio heartbeat on EVERY bar to keep staleness guards satisfied.
                     # ExposureGuard checks staleness: stale_sec = now_sec() - (positions_last_ts_ms / 1000)
                     self._emit_portfolio_heartbeat()
+                    # FIX-BACKTEST-RACE: Wait for async exposure cache update to finish
+                    if self.execpos_fsm and hasattr(self.execpos_fsm, "drain_pending_tasks"):
+                        self.execpos_fsm.drain_pending_tasks()
 
             # Emit deferred ACKs before matching this bar (keeps ACK->FILL ordering sane)
             try:
@@ -423,6 +438,19 @@ class BacktestEngine:
                 "close": close_px,
                 "volume": volume,
             }
+            
+            # ALPHA-SEARCH: Include augmented TA features if present in feed
+            # These are added by BacktestFeatureAugmenter during load_data()
+            augmented_cols = [
+                "macd_line", "macd_signal", "macd_histogram",
+                "stochastic_k", "stochastic_d",
+                "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
+                "volume_momentum_5m", "rsi_14"
+            ]
+            for col in augmented_cols:
+                if col in row and row[col] is not None:
+                    payload[col] = float(row[col])
+
 
             # --- DEBUG SNIFFER START ---
             if not hasattr(self, "_sniff_count"):

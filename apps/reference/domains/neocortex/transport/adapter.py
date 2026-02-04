@@ -87,12 +87,21 @@ class NeocortexAdapter:
         except Exception as e:
             logger.warning("Failed to load normalizer state (starting fresh): %s", e, exc_info=True)
 
-        # Phase R1.5/R2: Episode collection + dream/PPO trigger (lowered for debugging)
-        self.dream_threshold = 10
+        # Phase R1.5/R2: Episode collection + dream/PPO trigger
+        # Configurable via neuro.yaml, default=1 for immediate PPO training in backtest
+        self.dream_threshold = getattr(config.neuro, 'dream_episode_threshold', 1)
         self._completed_episodes: List[Dict[str, Any]] = []
         self._dream_in_progress = False
         self._dreams_triggered = 0
         self._ppo_trains_triggered = 0
+        
+        # Backpressure control
+        self._backpressure_threshold = self._train_batch_size * 2
+        self._backpressure_sleep_sec = 0.01
+        self._backpressure_events = 0
+        
+        # Pending async tasks for clean shutdown
+        self._pending_tasks: List[asyncio.Task] = []
         
         # Telemetry logging
         self.telemetry = TelemetryLogger(log_dir=self.config.system.data_dir.parent / "logs")
@@ -105,6 +114,7 @@ class NeocortexAdapter:
         Callback for EVT:FEATURES_CALCULATED.
         
         Full pipeline:
+        0. Backpressure (wait if buffer overloaded)
         1. Parse -> MarketObservation
         2. Value -> Importance
         3. Memorize -> Buffer
@@ -113,6 +123,15 @@ class NeocortexAdapter:
         6. Train -> Background
         """
         try:
+            # 0. Backpressure: Wait if buffer is too full (prevents ingestion outpacing training)
+            while len(self.buffer) > self._backpressure_threshold:
+                self._backpressure_events += 1
+                if self._backpressure_events % 100 == 1:
+                    logger.debug(
+                        f"Backpressure active: buffer={len(self.buffer)} > threshold={self._backpressure_threshold}"
+                    )
+                await asyncio.sleep(self._backpressure_sleep_sec)
+            
             # 1. Parse (String -> Float32 Typed Observation)
             obs = self.parser.parse(payload)
 
@@ -432,14 +451,82 @@ class NeocortexAdapter:
                     if loaded:
                         logger.info("Restored from checkpoint")
 
+    async def shutdown_async(self):
+        """
+        Async graceful shutdown with final checkpoint save.
+        
+        This ensures all pending training completes and weights are persisted.
+        """
+        logger.info("NeocortexAdapter: Starting async shutdown...")
+        
+        # 1. Wait for pending training tasks
+        if self._pending_tasks:
+            logger.info(f"Waiting for {len(self._pending_tasks)} pending tasks...")
+            pending_valid = [t for t in self._pending_tasks if not t.done()]
+            if pending_valid:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*pending_valid, return_exceptions=True),
+                        timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for pending tasks")
+        
+        # 2. Force final PPO training if episodes are buffered
+        if self._completed_episodes and self.brain_bridge is not None:
+            logger.info(f"Final PPO training on {len(self._completed_episodes)} buffered episodes...")
+            try:
+                await self._trigger_ppo_training(list(self._completed_episodes))
+                self._completed_episodes.clear()
+            except Exception as e:
+                logger.warning(f"Final PPO training failed: {e}")
+        
+        # 3. Save final checkpoint (CRITICAL)
+        if self.brain_bridge is not None:
+            checkpoint_dir = self.config.system.checkpoint_dir
+            logger.info(f"Saving final checkpoint at step {self._total_train_steps}...")
+            try:
+                success = await self.brain_bridge.save_async(str(checkpoint_dir))
+                if success:
+                    logger.info(f"✓ Final checkpoint saved at step {self._total_train_steps}")
+                else:
+                    logger.warning("Final checkpoint save returned False")
+            except Exception as e:
+                logger.error(f"Final checkpoint save failed: {e}")
+        
+        # 4. Save normalizer state
+        self._save_normalizer_state()
+        
+        # 5. Close shadow intent log
+        if self._shadow_intent_log is not None:
+            try:
+                self._shadow_intent_log.close()
+            except Exception:
+                pass
+        
+        # 6. Shutdown brain bridge
+        if self.brain_bridge is not None:
+            self.brain_bridge.shutdown()
+        
+        logger.info(
+            f"NeocortexAdapter async shutdown complete: "
+            f"TrainSteps={self._total_train_steps} "
+            f"ShadowIntents={self._shadow_intents_emitted} "
+            f"BackpressureEvents={self._backpressure_events}"
+        )
+    
     def shutdown(self):
         """
-        Graceful shutdown with final checkpoint.
+        Sync shutdown fallback (prefer shutdown_async when possible).
         """
+        logger.warning("Using sync shutdown - checkpoint may not be saved!")
         self._save_normalizer_state()
+        if self._shadow_intent_log is not None:
+            try:
+                self._shadow_intent_log.close()
+            except Exception:
+                pass
         if self.brain_bridge is not None:
-            # Note: Can't do async save in sync shutdown
-            # In production, would convert to async shutdown
             self.brain_bridge.shutdown()
         logger.info(
             f"NeocortexAdapter shutdown: "

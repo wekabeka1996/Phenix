@@ -150,6 +150,15 @@ def parse_bar_jsonl(line: str) -> Optional[Dict[str, Any]]:
 def load_regime_events(log_dir: Path) -> List[RegimeEvent]:
     """Load regime detection events from logs."""
     events = []
+
+    def _rotated_logs(base_name: str) -> List[Path]:
+        out = []
+        for p in log_dir.glob(f"{base_name}.*"):
+            suffix = p.name.split(".")[-1]
+            if suffix.isdigit():
+                out.append((int(suffix), p))
+        out.sort(key=lambda t: t[0])
+        return [p for _, p in out]
     
     # Parse domain_regime_detector.log
     log_file = log_dir / 'domain_regime_detector.log'
@@ -161,14 +170,14 @@ def load_regime_events(log_dir: Path) -> List[RegimeEvent]:
                     events.append(evt)
     
     # Also check rotated logs
-    for i in range(1, 10):
-        rotated = log_dir / f'domain_regime_detector.log.{i}'
-        if rotated.exists():
-            with open(rotated, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    evt = parse_regime_log_line(line)
-                    if evt:
-                        events.append(evt)
+    for rotated in _rotated_logs('domain_regime_detector.log'):
+        if not rotated.exists():
+            continue
+        with open(rotated, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                evt = parse_regime_log_line(line)
+                if evt:
+                    events.append(evt)
     
     # Sort by timestamp
     events.sort(key=lambda e: e.ts_ms)

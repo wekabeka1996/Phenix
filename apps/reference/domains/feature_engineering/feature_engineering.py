@@ -570,6 +570,17 @@ class FeatureEngineering:
             "ask": last_tick.get("ask"),
         }
         
+        # ALPHA-SEARCH SUPPORT: Pass through augmented keys to bar_tick
+        aug_keys = [
+            "macd_line", "macd_signal", "macd_histogram",
+            "stochastic_k", "stochastic_d",
+            "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
+            "volume_momentum_5m", "rsi_14"
+        ]
+        for k in aug_keys:
+            if k in last_tick and last_tick[k] is not None:
+                bar_tick[k] = last_tick[k]
+        
         # Extract bar's open price for correct delta_price
         if isinstance(bar_data, dict):
             bar_open = bar_data.get("open")
@@ -787,6 +798,7 @@ class FeatureEngineering:
                         # Compute
                         macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
                     
+
                     # FIX-AUDITED-ISSUES-01 (Part C): Fail-closed emission.
                     # If not ready (warmup or missing anchor), emit None instead of 0.0 (neutral).
                     if macro_resid_ready:
@@ -797,16 +809,32 @@ class FeatureEngineering:
                     try:
                         prev_ready = self._last_macro_resid_ready.get(symbol)
                         prev_reason = self._last_macro_resid_reason.get(symbol)
-                        reason_str = str(macro_resid_reason) if macro_resid_reason is not None else None
-                        if (prev_ready is None) or (bool(prev_ready) != bool(macro_resid_ready)) or (prev_reason != reason_str):
-                            self.logger.info(
-                                f"[{symbol}] MACRO_RESID_WARMUP: ready={bool(macro_resid_ready)} "
-                                f"reason={reason_str} value={str(macro_resid_val)}"
-                            )
-                            self._last_macro_resid_ready[symbol] = bool(macro_resid_ready)
-                            self._last_macro_resid_reason[symbol] = reason_str
+                        # reason_str = str(macro_resid_reason) if macro_resid_reason is not None else None
+                        pass
                     except Exception:
                         pass
+            
+            # ================================================================
+            # ALPHA-SEARCH SUPPORT: AUGMENTED FEATURE PASS-THROUGH
+            # ================================================================
+            # In backtest mode, BacktestEngine injects TA features (RSI, MACD etc) 
+            # into the tick payload. FeatureEngineering natively ignores unknown keys.
+            # We explicitly pass them through here to ensure AlphaSearch receives them.
+            aug_keys = [
+                "macd_line", "macd_signal", "macd_histogram",
+                "stochastic_k", "stochastic_d",
+                "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
+                "volume_momentum_5m", "rsi_14"
+            ]
+            for k in aug_keys:
+                if k in current_tick and current_tick[k] is not None:
+                    # Keep as string to match FE string-heavy contract, or native float?
+                    # Alpha models cast strictly, so string is safest for parity with FE.
+                    features[k] = str(current_tick[k])
+
+            # ================================================================
+            # EMISSION
+            # ================================================================
                 else:
                     # Disabled: emit neutral, mark not ready
                     features["macro_resid"] = str(self.cfg.zero_value)

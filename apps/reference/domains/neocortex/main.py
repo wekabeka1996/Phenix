@@ -139,7 +139,8 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
                     config=multi_config,
                     feature_handler=adapter.handle_features,
                     episode_handler=adapter.add_completed_episode if hasattr(adapter, 'add_completed_episode') else None,
-                    state_path=config.system.data_dir / "multi_tailer_state.json"
+                    state_path=config.system.data_dir / "multi_tailer_state.json",
+                    run_mode=config.system.run_mode
                 )
                 tailer_task = asyncio.create_task(tailer.run())
                 
@@ -204,9 +205,13 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
             except asyncio.CancelledError:
                 pass
                 
-        # Graceful shutdown
+        # Graceful async shutdown (with final checkpoint)
         if adapter is not None:
-            adapter.shutdown()
+            try:
+                await adapter.shutdown_async()
+            except Exception as e:
+                logger.error(f"Async shutdown failed, falling back to sync: {e}")
+                adapter.shutdown()
         logger.info("Reactor shutdown complete")
 
 

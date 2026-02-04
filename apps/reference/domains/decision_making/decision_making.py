@@ -1365,36 +1365,7 @@ class DecisionMaking:
             f"[{symbol}] QoS intent count updated: count={intent_data['count']} strategy={strategy_id}"
         )
 
-    def _check_qos_rules(self, symbol: str) -> dict:
-        """Check QoS rules for symbol and return result dict.
-        
-        T2B-08: Uses injected Clock for deterministic testing.
-        """
-        current_time = self._clock.now_sec()
-
-        # Check exposure block cooldown
-        last_exposure_block: float = float(
-            dget(self._qos_state, "last_exposure_block", 0.0))
-        if current_time - last_exposure_block < self.qos_exposure_block_cooldown_sec:
-            return {"allowed": False, "reason": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED}
-
-        # Check symbol cooldown (per-symbol limit)
-        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
-        last_decision: float = float(dget(symbol_cooldowns, symbol, 0.0))
-        symbol_cooldown_limit = self._get_symbol_cooldown(symbol)
-        if current_time - last_decision < symbol_cooldown_limit:
-            return {"allowed": False, "reason": NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE}
-
-        # Check rate limit
-        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts[symbol] if symbol in symbol_intent_counts else {"count": 0, "window_start": current_time}
-        window_start = float(intent_data["window_start"] if "window_start" in intent_data else current_time)
-        window_end: float = window_start + 60
-        intent_count: int = int(intent_data["count"] if "count" in intent_data else 0)
-        if current_time < window_end and intent_count >= self.qos_max_intents_per_minute_per_symbol:
-            return {"allowed": False, "reason": NormalizedRejectReasons.RATE_LIMIT_EXCEEDED}
-
-        return {"allowed": True, "reason": None}
+    # [DELETED] _check_qos_rules (Legacy/Unreachable code removed in P2-Lite Audit)
 
     def _calculate_next_allowed_time(self, symbol: str, strategy_id: str = "aurora") -> int:
         """Calculate next allowed timestamp for symbol based on QoS rules.
@@ -1467,6 +1438,10 @@ class DecisionMaking:
         self.logger.debug(
             f"[{symbol}] QoS state updated ({strategy_id}): cooldown={current_time}, intents={intent_data['count']}")
 
+    # TODO: [P2-REFACTOR] EXPOSURE BLOCK IS NOT WIRED!
+    # This method is effectively dead code (no callers) and contains a bug (Split-Brain).
+    # It writes to flat 'last_exposure_block' which is NEVER read by _qos_allow (which reads partitioned).
+    # ACTION: Wire this to a relevant event (e.g. GUARD_REJECTION) AND refactor to use QoSState.
     def _handle_exposure_block(self, symbol: str) -> None:
         """Handle exposure block event by updating QoS state.
         
@@ -1475,7 +1450,7 @@ class DecisionMaking:
         current_time = self._clock.now_sec()
         self._qos_state["last_exposure_block"] = current_time
         self.logger.warning(
-            f"[{symbol}] Exposure block recorded at {current_time}")
+            f"[{symbol}] Exposure block recorded at {current_time} (WARNING: This may have no effect due to Split-Brain bug)")
 
     # =========================================================================
     # Phase 3: Shadow Mode - Kernel Comparison
@@ -2094,11 +2069,31 @@ class DecisionMaking:
 
                         # VERIFY-ALPHA-CAPTURE: Write alpha scores to WAL for traceability
                         try:
+                            # Convert non-JSON-serializable values (Decimal, datetime, etc.)
+                            import json
+                            from decimal import Decimal as Dec
+                            from datetime import datetime as dt
+                            
+                            def json_safe_value(v):
+                                if isinstance(v, Dec):
+                                    return float(v)
+                                elif isinstance(v, dt):
+                                    return v.isoformat()
+                                elif isinstance(v, dict):
+                                    return {k: json_safe_value(val) for k, val in v.items()}
+                                elif isinstance(v, (list, tuple)):
+                                    return [json_safe_value(item) for item in v]
+                                return v
+                            
+                            def json_safe_dict(score):
+                                d = score.dict()
+                                return {k: json_safe_value(v) for k, v in d.items()}
+                            
                             wal_record = {
                                 "op": "EVT",
                                 "verb": "ALPHA_SCORE_CALCULATED",
                                 "symbol": symbol,
-                                "scores": [score.dict() for score in alpha_scores],
+                                "scores": [json_safe_dict(score) for score in alpha_scores],
                                 "timestamp": self._clock.now_ms(),
                                 "why": "alpha_calculation"
                             }
@@ -2701,18 +2696,73 @@ class DecisionMaking:
         max_latency_ms: int | None = None,
         risk_score: float | None = None,
     ) -> None:
+        # DM-SAFETY-BYPASSES-P1: Config-based safety gates (no hardcoded strategy_id checks).
+        # Directional/price-motion sanity are designed for trend-following entry safety.
+        # Mean reversion intentionally trades against trend; set safety_gates.enabled=false.
+        # FAIL-CLOSED: If safety_gates config is missing, BLOCK intent.
+        apply_safety_gates = False
+        try:
+            strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
+            if strat_cfg is None:
+                # Strategy not in config — cannot determine gates, FAIL-CLOSED
+                self.logger.error(
+                    f"[{symbol}] CONFIG_SAFETY_GATES_MISSING: strategy={strategy_id} not in config"
+                )
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING,
+                    reason="DECISION",
+                    context="safety_gates config missing for strategy",
+                    why_chain=why_chain,
+                )
+                self._record_blocked_intent(symbol)
+                return
+            safety_gates_cfg = getattr(strat_cfg, "safety_gates", None)
+            if safety_gates_cfg is None:
+                # safety_gates block missing — FAIL-CLOSED
+                self.logger.error(
+                    f"[{symbol}] CONFIG_SAFETY_GATES_MISSING: strategy={strategy_id}.safety_gates not configured"
+                )
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING,
+                    reason="DECISION",
+                    context="safety_gates.enabled missing in strategy config",
+                    why_chain=why_chain,
+                )
+                self._record_blocked_intent(symbol)
+                return
+            apply_safety_gates = bool(getattr(safety_gates_cfg, "enabled", False))
+        except Exception as e:
+            # Config access error — FAIL-CLOSED
+            self.logger.error(
+                f"[{symbol}] CONFIG_SAFETY_GATES_MISSING: error reading safety_gates: {e}"
+            )
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code=NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING,
+                reason="DECISION",
+                context=f"safety_gates config error: {str(e)[:40]}",
+                why_chain=why_chain,
+            )
+            self._record_blocked_intent(symbol)
+            return
+
         # DM-DIR-FORENSIC-01: Directional sanity gate (fail-closed when enabled).
         trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else self._clock.now_ms()
         intent_side = "LONG" if str(side).upper() == "BUY" else "SHORT"
 
-        # Strategy-aware safety gates:
-        # Directional/price-motion sanity are designed for trend-following entry safety.
-        # Mean reversion intentionally trades against trend; applying these gates would
-        # systematically deny MR entries (observed NRR-026/027/030 in logs).
-        # Default policy: enforce these gates only for the primary "aurora" strategy.
-        apply_safety_gates = str(strategy_id) == "aurora"
-
         # PRICE-MOTION-V1: Extract latest price_motion block (best-effort, monitoring + gating).
+
         pm_norm_10s: float | None = None
         pm_norm_60s: float | None = None
         pm_norm_300s: float | None = None
@@ -3895,19 +3945,26 @@ class DecisionMaking:
         """
         Pre-check exposure limits using cached exposure summary.
 
-        Returns True if trade should be allowed, False if blocked by exposure limits.
+        DM-SAFETY-BYPASSES-P1: FAIL-CLOSED behavior.
+        Returns True if trade should be allowed, False if blocked.
+        Missing/stale/error cache -> BLOCK (not allow).
         """
         if not self._exposure_cache:
-            # No cache available, allow trade (fail-open for safety)
-            return True
+            # DM-SAFETY-BYPASSES-P1: No cache = FAIL-CLOSED
+            self.logger.warning(
+                f"[{symbol}] EXPOSURE_CACHE_UNAVAILABLE: No cache, blocking trade"
+            )
+            return False
 
         try:
             # Check if cache is stale (older than 30 seconds)
             cache_age = self._clock.now_sec() - self._exposure_cache_timestamp
             if cache_age > 30.0:
-                self.logger.debug(
-                    f"Exposure cache stale ({cache_age:.1f}s), allowing trade")
-                return True
+                # DM-SAFETY-BYPASSES-P1: Stale cache = FAIL-CLOSED
+                self.logger.warning(
+                    f"[{symbol}] EXPOSURE_CACHE_UNAVAILABLE: stale ({cache_age:.1f}s>30s)"
+                )
+                return False
 
             # Get exposure data for symbol
             symbol_exposure = self._exposure_cache[symbol] if symbol in self._exposure_cache else {}
@@ -3931,9 +3988,12 @@ class DecisionMaking:
             return True
 
         except Exception as e:
+            # DM-SAFETY-BYPASSES-P1: Exception = FAIL-CLOSED
             self.logger.warning(
-                f"Error in exposure cache precheck: {e}, allowing trade")
-            return True
+                f"[{symbol}] EXPOSURE_CACHE_UNAVAILABLE: error ({e}), blocking trade"
+            )
+            return False
+
 
     # === D3: FLIP ORCHESTRATION (Plan v1) ===
 

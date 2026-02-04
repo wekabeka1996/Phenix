@@ -1766,6 +1766,13 @@ class AuroraHandler:
         
         # Calculate RR (Risk:Reward ratio) = TP distance / SL distance
         current_rr = tp_dist_pct / sl_dist_pct if sl_dist_pct > 0 else decimal.Decimal("1.0")
+
+        # Telemetry: capture RR before RR clamp (post SL clamp).
+        # This is the RR implied by the pre-guardrail TP distance at this point.
+        try:
+            tpsl_ctx["rr_pre"] = float(current_rr)
+        except Exception:
+            pass
         
         # Clamp RR to min/max (adjusts TP, not SL)
         if current_rr < min_tp_rr:
@@ -1812,6 +1819,11 @@ class AuroraHandler:
         tpsl_ctx["sl_pct_eff"] = float(sl_dist_pct)
         tpsl_ctx["tp_pct_eff"] = float(tp_dist_pct)
         tpsl_ctx["rr_eff"] = float(current_rr)
+
+        # Convenience aliases for post-clamp observability.
+        # Keep existing *_eff fields for backward compatibility.
+        tpsl_ctx["sl_pct_post"] = float(sl_dist_pct)
+        tpsl_ctx["rr_post"] = float(current_rr)
         
         return {
             "stop_price": stop_price,
@@ -2120,8 +2132,9 @@ class AuroraHandler:
             tpsl_why = (
                 f"tpsl:regime={tpsl_ctx.get('regime_used')} "
                 f"mode={tpsl_ctx.get('mode')} "
-                f"sl_pct={tpsl_ctx.get('sl_pct_eff', 0):.4f} "
-                f"tp_rr={tpsl_ctx.get('tp_rr_eff', tpsl_ctx.get('rr', 0)):.2f}"
+                f"sl_pct_post={tpsl_ctx.get('sl_pct_post', tpsl_ctx.get('sl_pct_eff', 0)):.4f} "
+                f"tp_rr_pre={tpsl_ctx.get('rr_pre', tpsl_ctx.get('tp_rr_eff', tpsl_ctx.get('rr', 0))):.2f} "
+                f"rr_post={tpsl_ctx.get('rr_post', tpsl_ctx.get('rr_eff', 0)):.2f}"
             )
             payload["why_chain"] = result.why_chain + [tpsl_why]
             

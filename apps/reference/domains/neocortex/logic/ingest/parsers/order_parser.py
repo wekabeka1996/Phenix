@@ -26,6 +26,7 @@ class OrderEventType(Enum):
     PLACED = "ORDER_PLACED"
     REJECTED = "ORDER_REJECTED"
     FILLED = "ORDER_FILLED"
+    CANCELLED = "ORDER_CANCELLED"  # Added for backtest regime changes
     UNKNOWN = "UNKNOWN"
 
 

@@ -82,7 +82,11 @@ class NormalizedRejectReasons:
     LIMIT_PRICE_MISSING = "NRR-050"
     MARKET_PRICE_PRESENT = "NRR-051"
     TIF_REQUIRED_FOR_LIMIT = "NRR-052"
+    # DM-SAFETY-BYPASSES-P1: Fail-closed exposure cache and safety gates config
+    EXPOSURE_CACHE_UNAVAILABLE = "NRR-053"
+    CONFIG_SAFETY_GATES_MISSING = "NRR-054"
     UNKNOWN_ERROR = "NRR-999"
+
 
     # Regex patterns for normalization
     PATTERNS = {
@@ -364,7 +368,10 @@ class NormalizedRejectReasons:
             cls.LIQUIDITY_LOW: "Liquidity is too low (kappa gate)",
             cls.LIQUIDITY_NOT_READY: "Liquidity metrics are missing",
             cls.REGIME_UNSUPPORTED: "Current regime is not allowed for trading",
+            cls.EXPOSURE_CACHE_UNAVAILABLE: "Exposure cache missing/stale/error (fail-closed)",
+            cls.CONFIG_SAFETY_GATES_MISSING: "Strategy safety_gates.enabled config missing (fail-closed)",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
+
 
         return descriptions.get(nrr_code)

@@ -439,6 +439,43 @@ class TestTpslGuardrails:
         sl_dist = (Decimal("50000") - result["stop_price"]) / Decimal("50000")
         assert float(sl_dist) <= 0.06 + 0.0001  # ~6%
 
+    def test_guardrail_clamps_rr_to_max_records_pre_post(self, mock_handler):
+        """RR above max_tp_rr gets clamped down and telemetry records rr_pre/rr_post."""
+        from apps.reference.config_models import RegimeTpSlConfig
+
+        regime_tpsl = RegimeTpSlConfig(
+            enabled=True,
+            mode="pct_mult",
+            sl_mult={"DEFAULT": 1.0},
+            tp_mult={"DEFAULT": 1.0},
+            max_tp_rr=3.0,
+        )
+
+        mock_exit = MagicMock()
+        mock_exit.sl_pct = 0.02
+        mock_exit.regime_tpsl = regime_tpsl
+
+        instr_cfg = MagicMock()
+        instr_cfg.exit = mock_exit
+        # tp_low_ratio is used as RR multiplier in pct_mult mode.
+        instr_cfg.take_profit = MagicMock(tp_low_ratio=4.0)
+
+        result = mock_handler._compute_regime_tpsl(
+            symbol="BTCUSDT",
+            entry_price=Decimal("50000"),
+            side="BUY",
+            regime="DEFAULT",
+            instr_cfg=instr_cfg,
+            features={},
+        )
+
+        assert result is not None
+        ctx = result["tpsl_ctx"]
+        assert ctx.get("guardrail_rr_clamp") == "max"
+        assert ctx.get("rr_pre") == pytest.approx(4.0)
+        assert ctx.get("rr_post") == pytest.approx(3.0)
+        assert ctx.get("rr_eff") == pytest.approx(3.0)
+
 
 class TestAtrMode:
     """Test ATR-based TP/SL calculation."""

@@ -72,6 +72,7 @@ class BrainBridge:
             self._process.start()
             
             # Wait for INIT response (blocking get, execute in thread)
+            logger.info("Waiting up to 300s for BrainCore initialization (PyTorch/CUDA)...")
             init_result = await self._loop.run_in_executor(None, self._wait_for_init)
             
             if init_result and init_result.success:
@@ -97,9 +98,9 @@ class BrainBridge:
     def _wait_for_init(self) -> Optional[BridgeResult]:
         """Blocking wait for INIT message."""
         try:
-            # 30s timeout for model loading
+            # 300s timeout for PyTorch/CUDA model loading
             if self._result_queue:
-                return self._result_queue.get(block=True, timeout=30.0)
+                return self._result_queue.get(block=True, timeout=300.0)
         except Exception:
             return None
         return None

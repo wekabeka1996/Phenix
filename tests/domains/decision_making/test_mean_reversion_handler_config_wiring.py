@@ -74,6 +74,7 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             entry_order_type="MARKET",
             entry_tif=None,
         ),
+        safety_gates={"enabled": False},
     )
 
     cfg = SimpleNamespace(
@@ -142,6 +143,7 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
             entry_order_type="MARKET",
             entry_tif=None,
         ),
+        safety_gates={"enabled": False},
     )
 
     cfg = SimpleNamespace(

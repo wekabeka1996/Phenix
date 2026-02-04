@@ -127,6 +127,14 @@ class RegimeDetector:
             lambda: deque(maxlen=self.atr_sma_length))
         self._atr_last: Dict[str, Decimal] = {}
         self._ticks_seen: Dict[str, int] = defaultdict(int)
+        
+        # HYSTERESIS-SLOPE-GATE-01: State storage
+        self._hysteresis_stable: Dict[str, str] = {}  # symbol -> stable_regime
+        self._hysteresis_pending: Dict[str, str] = {}  # symbol -> pending_regime
+        self._hysteresis_count: Dict[str, int] = defaultdict(int)  # confirm count
+        self._stable_confidence: Dict[str, Decimal] = {}  # symbol -> stable confidence
+        self._vol_ratio_buf: Dict[str, deque] = defaultdict(lambda: deque(maxlen=6))
+        self._slope_reject_count: Dict[str, int] = defaultdict(int)
 
         self.logger.info(
             f"RegimeDetector initialized with model: {self.model_name}")
@@ -180,6 +188,17 @@ class RegimeDetector:
         bounded_confidence = min(
             max(abs(confidence), conf_min), conf_max)
         return bounded_confidence
+
+    @staticmethod
+    def _ema(values: list, span: int) -> float:
+        """Simple EMA calculation for slope gate."""
+        if not values:
+            return 0.0
+        alpha = 2.0 / (span + 1)
+        ema = float(values[0])
+        for v in values[1:]:
+            ema = alpha * float(v) + (1 - alpha) * ema
+        return ema
 
     def handle_event(self, event: Message) -> None:
         """
@@ -405,6 +424,41 @@ class RegimeDetector:
                 calm = low_vol_multiplier - vol_ratio
                 conf_mult = Decimal(str(vol_cfg.low_vol_confidence_multiplier))
                 confidence = min(conf_max, conf_min + calm * conf_mult)
+        
+        # HYSTERESIS-SLOPE-GATE-01: Volatility Slope Gate
+        storm_rejected = False
+        vol_ratio_slope = 0.0
+        vol_ratio_val = None
+        
+        if atr_baseline_ready and atr_val is not None and atr_baseline is not None and atr_baseline > 0:
+            vol_ratio_val = float(atr_val / atr_baseline)
+            self._vol_ratio_buf[symbol].append(vol_ratio_val)
+            
+            # Slope gate for HIGH_VOLATILITY
+            if self.config.vol_slope_gate_enabled and regime == "HIGH_VOLATILITY":
+                buf = list(self._vol_ratio_buf[symbol])
+                if len(buf) >= 6:
+                    ema3 = self._ema(buf, 3)
+                    ema6 = self._ema(buf, 6)
+                    vol_ratio_slope = ema3 - ema6
+                    
+                    if vol_ratio_slope <= self.config.vol_slope_gate_eps:
+                        self._slope_reject_count[symbol] += 1
+                        if self._slope_reject_count[symbol] >= self.config.vol_slope_gate_confirm_bars:
+                            data_notes.append(f"slope_gate_reject:slope={vol_ratio_slope:.4f}")
+                            self.logger.debug(
+                                f"[{symbol}] Slope Gate: HIGH_VOL rejected (dying storm) "
+                                f"slope={vol_ratio_slope:.4f} <= eps={self.config.vol_slope_gate_eps}"
+                            )
+                            regime = "UNCERTAIN"
+                            confidence = conf_min
+                            source_model = "slope_gate"
+                            storm_rejected = True
+                    else:
+                        self._slope_reject_count[symbol] = 0
+        
+        # Lock: if storm_rejected, block TREND_*/MEAN_REVERSION re-classification
+        # (This should not happen logically since regime is already UNCERTAIN, but defensive)
 
         # Priority 2: Mean reversion (requires SMAs)
         mr_cfg = self.config.models.mean_reversion  # typed
@@ -428,6 +482,16 @@ class RegimeDetector:
         if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short < sma_long and price < sma_short:
             regime = "TREND_DOWN"
             confidence = self._calculate_confidence(sma_short, sma_long)
+        
+        # HYSTERESIS-SLOPE-GATE-01: Explicit lock - if storm_rejected, block MR/TREND
+        if storm_rejected and regime in ("TREND_UP", "TREND_DOWN", "MEAN_REVERSION"):
+            data_notes.append(f"slope_gate_lock:blocked_{regime}")
+            self.logger.debug(
+                f"[{symbol}] Slope Gate Lock: {regime} blocked (storm_rejected=True)"
+            )
+            regime = "UNCERTAIN"
+            confidence = conf_min
+            source_model = "slope_gate_lock"
 
         # TASK24.D5: Data-quality gates are fail-closed (no regime claims on stale/invalid data).
         if data_drops:
@@ -477,14 +541,46 @@ class RegimeDetector:
         # DM-CRITICAL-PATCHES-02: Heartbeat emission with changed flag
         # EVT:REGIME_DETECTED is emitted on EVERY basis bar close (heartbeat).
         # 'changed' indicates if regime actually transitioned.
+        
+        # HYSTERESIS-SLOPE-GATE-01: Apply hysteresis
+        raw_regime = regime
+        raw_confidence = confidence
+        hysteresis_bars = self.config.hysteresis_bars
+        
+        # Initialize hysteresis state if needed
+        if symbol not in self._hysteresis_stable:
+            self._hysteresis_stable[symbol] = "UNCERTAIN"
+            self._hysteresis_pending[symbol] = "UNCERTAIN"
+            self._stable_confidence[symbol] = conf_min
+        
+        # Update hysteresis counters
+        if raw_regime == self._hysteresis_pending[symbol]:
+            self._hysteresis_count[symbol] += 1
+        else:
+            self._hysteresis_pending[symbol] = raw_regime
+            self._hysteresis_count[symbol] = 1
+        
+        # Transition stable regime if confirmed
+        if self._hysteresis_count[symbol] >= hysteresis_bars:
+            if self._hysteresis_stable[symbol] != raw_regime:
+                self.logger.info(
+                    f"[{symbol}] Hysteresis: stable regime transition "
+                    f"{self._hysteresis_stable[symbol]} -> {raw_regime} (confirmed {hysteresis_bars} bars)"
+                )
+            self._hysteresis_stable[symbol] = raw_regime
+            self._stable_confidence[symbol] = raw_confidence
+        
+        stable_regime = self._hysteresis_stable[symbol]
+        stable_confidence = self._stable_confidence[symbol]
+        
         last_regime = self._last_emitted_regime.get(symbol)
-        changed = (last_regime is None) or (last_regime != regime)
+        changed = (last_regime is None) or (last_regime != stable_regime)  # Use stable_regime
 
         payload: Dict[str, Any] = {
             "ts": ts_ms,
             "symbol": symbol,
-            "regime": regime,
-            "confidence": str(confidence),
+            "regime": stable_regime,  # HYSTERESIS: emit stable_regime
+            "confidence": str(stable_confidence),
             "source_model": source_model,
             "warmup": warmup,
             "data_quality": {"drops": data_drops, "notes": data_notes},
@@ -492,12 +588,20 @@ class RegimeDetector:
             "changed": changed,
             "last_update_ts_ms": now_monotonic_ms,  # Heartbeat timestamp (monotonic)
             "calc_lag_ms": now_wall_ms - ts_ms, # Latency for audit
+            # HYSTERESIS-SLOPE-GATE-01: Telemetry metrics
+            "raw_regime": raw_regime,
+            "raw_confidence": str(raw_confidence),
+            "stable_confidence": str(stable_confidence),
+            "vol_ratio": str(vol_ratio_val) if vol_ratio_val is not None else None,
+            "vol_ratio_slope": vol_ratio_slope if vol_ratio_val is not None else None,
+            "storm_rejected": storm_rejected,
+            "hysteresis_confirm_count": self._hysteresis_count[symbol],
         }
 
         self.fsm.emit(
             "EVT:REGIME_DETECTED",
             payload,
-            why=f"Regime '{regime}' detected by {source_model} for {symbol}" + (" (unchanged)" if not changed else ""),
+            why=f"Regime '{stable_regime}' detected by {source_model} for {symbol}" + (" (unchanged)" if not changed else ""),
         )
 
         # Log only on meaningful transitions (avoid hot-path log spam).
@@ -509,6 +613,7 @@ class RegimeDetector:
 
         if changed:
             self.logger.info(
-                f"[{symbol}] Regime updated: {last_regime or '∅'} → {regime} (confidence={confidence}, model={source_model})"
+                f"[{symbol}] Regime updated: {last_regime or '∅'} → {stable_regime} "
+                f"(raw={raw_regime}, confidence={stable_confidence}, model={source_model})"
             )
-        self._last_emitted_regime[symbol] = regime
+        self._last_emitted_regime[symbol] = stable_regime

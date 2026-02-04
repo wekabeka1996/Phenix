@@ -583,6 +583,18 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         traceback.print_exc()
     
     LOG.info("✅ Domains initialized and wired for Backtest.")
+
+    # 3d. Initialize AlphaSearch Backtest Plugin (Shadow Advisor)
+    # ALPHA-SEARCH: Wire plugin to enable virtual trading and ensemble learning
+    try:
+        from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
+        alpha_plugin = AlphaSearchBacktestPlugin(
+            event_bus=fsm,
+            config={"enabled": True, "shadow_mode": True}
+        )
+        LOG.info("✅ AlphaSearch Backtest Plugin (Shadow) registered.")
+    except Exception as e:
+        LOG.error(f"Failed to register AlphaSearch Plugin: {e}")
     
     # 4. Run Simulation
     try:
@@ -644,7 +656,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         print("="*60 + "\n")
 
         # 2. JSON Report
-        from backtest_engine.reporting import build_backtest_report
+        from backtest_engine.reporting import build_backtest_report, save_backtest_run_bundle
 
         report_data = build_backtest_report(
             run_id=run_id,
@@ -669,8 +681,25 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             order_log_path=str(order_log_path) if order_log_path is not None else None,
         )
         
+        # Inject Alpha Search Summary (since it's a standalone plugin)
+        try:
+            if 'alpha_plugin' in locals() and alpha_plugin:
+                report_data["alpha_search"] = alpha_plugin.get_summary()
+                LOG.info("✅ Alpha Search summary injected into report")
+        except Exception as e:
+            LOG.warning(f"Failed to inject Alpha summary: {e}")
+        
         reports_dir = project_root / "reports" / "backtests"
         reports_dir.mkdir(parents=True, exist_ok=True)
+
+        # Reproducible run bundle (fail-closed on missing declared config YAMLs)
+        bundle_dir = save_backtest_run_bundle(
+            run_id=run_id,
+            report=report_data,
+            config=config,
+            reports_root=reports_dir,
+        )
+        LOG.info(f"📦 Backtest run bundle saved to: {bundle_dir}")
         
         # Filename: backtest_{iso_timestamp}.json
         report_path = reports_dir / f"backtest_{run_id}.json"
@@ -726,6 +755,26 @@ def main() -> None:
     config_loader = ConfigLoader(config_dir=project_root / "config" / "aurora")
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
+
+    # BACKTEST OVERRIDE: keep more rotated log files for longer runs.
+    # RotatingFileHandler keeps: <current> + backupCount files.
+    if config.trading_mode == "backtest":
+        try:
+            obs_logging = config.observability.logging
+            desired_backup_count = 50
+
+            obs_logging.rotation.backup_count = desired_backup_count
+            obs_logging.core.backup_count = desired_backup_count
+            obs_logging.event_chain.backup_count = desired_backup_count
+            for domain_cfg in obs_logging.domains.values():
+                domain_cfg.backup_count = desired_backup_count
+
+            LOG.warning(
+                "BACKTEST OVERRIDE: observability.logging.*.backup_count=50 "
+                "(rotation/core/event_chain/domains)"
+            )
+        except Exception as e:
+            LOG.warning(f"BACKTEST OVERRIDE failed (logging backup_count=50): {e}")
 
     # Step 1.5: Setup full logging from observability.yaml (CFG-OBS-001)
     from apps.reference.logging_setup import setup_logging

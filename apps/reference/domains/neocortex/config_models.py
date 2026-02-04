@@ -50,6 +50,12 @@ class SystemConfig(BaseModel):
     log_to_file: bool = Field(
         description="Whether to write logs to file"
     )
+    
+    # Run Mode
+    run_mode: Literal["live", "backtest"] = Field(
+        default="backtest",
+        description="Execution mode: 'live' (real logs) or 'backtest' (historical/simulated logs)"
+    )
 
     # Reproducibility
     rng_seed: int = Field(
@@ -257,6 +263,13 @@ class NeuroConfig(BaseModel):
     keep_last_n_checkpoints: int = Field(
         ge=1, le=100,
         description="Number of recent checkpoints to retain"
+    )
+    
+    # Dream / PPO Training Trigger
+    dream_episode_threshold: int = Field(
+        default=1,
+        ge=1,
+        description="Number of completed episodes before triggering PPO training. 1=immediate (backtest), 10+=batched (prod)"
     )
 
 

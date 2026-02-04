@@ -1,0 +1,138 @@
+# ==============================================================================
+# Alpha Search Configuration — SSOT
+# ==============================================================================
+# ALPHA-A4: Multi-provider alpha search configuration.
+# Loaded by AlphaSearchBacktestPlugin (separate loader, no core changes).
+#
+# Architecture:
+# - Two-phase bridge: EVT:FEATURES_CALCULATED → cache → CMD:PROCESS_STRATEGY
+# - Multi-provider: aurora + ta_ensemble can run simultaneously
+# - Shadow mode: signals logged but not traded (for analysis)
+# ==============================================================================
+
+alpha_search:
+  enabled: true
+  shadow_mode: true  # If true, signals are logged but not traded
+
+  # ============================================================================
+  # Event Bridge Configuration (A3.1)
+  # ============================================================================
+  triggers:
+    feature_event: "EVT:FEATURES_CALCULATED"  # Provides features → cache
+    decision_event: "CMD:PROCESS_STRATEGY"    # Triggers scoring → read cache
+    emit_event: "EVT:ALPHA_SCORE_CALCULATED"  # Output event
+
+  # Cache for features between events
+  cache:
+    max_per_symbol: 4           # Keep last 4 bars per symbol
+    require_same_bar_close_ts: true
+
+  # ============================================================================
+  # Providers (A3.2) — aurora and/or ta_ensemble
+  # ============================================================================
+  providers:
+    aurora:
+      enabled: true
+      symbols:
+        - BTCUSDT
+        - ETHUSDT
+        - SOLUSDT
+      threshold: 0.12
+      fail_closed: true
+
+      adapter:
+        scoring_version: "v2"
+        essential_features:
+          - obi
+          - delta_price
+          - macro_resid
+
+    ta_ensemble:
+      enabled: false           # Disabled by default (Aurora-first)
+      symbols: null            # All symbols when enabled
+      threshold: 0.20
+      fail_closed: true
+
+      ensemble:
+        rebalance_frequency_days: 7
+        performance_window_days: 30
+        risk_adjustment: true
+        models:
+          mean_reversion_v1:
+            enabled: true
+          momentum_v1:
+            enabled: true
+          volatility_v1:
+            enabled: true
+
+  # ============================================================================
+  # Virtual Trader (shadow PnL tracking)
+  # ============================================================================
+  virtual_trader:
+    enabled: true
+    per_provider: true         # Separate PnL per provider
+    max_positions_per_symbol: 1
+    notional_size: 1000
+    exit:
+      max_bars: 12
+      max_hold_sec: 3600
+
+  # ============================================================================
+  # LEGACY: All deprecated fields moved under 'legacy' key for strict validation
+  # These fields are ignored by new code but kept for migration/reference
+  # ============================================================================
+  legacy:
+    augmenter:
+      macd:
+        fast: 12
+        slow: 26
+        signal: 9
+
+      stochastic:
+        k_period: 14
+        d_period: 3
+
+      rsi:
+        period: 14
+
+      momentum:
+        windows_bars: [5, 60, 1440]
+
+      volume_momentum:
+        window: 5
+
+    ensemble:
+      rebalance_frequency_days: 7
+      performance_window_days: 30
+      min_weight: 0.1
+      max_weight: 0.6
+      risk_adjustment: true
+      variance_cap: 0.5
+
+    signals:
+      long_threshold: 0.1
+      short_threshold: -0.1
+      pnl_normalization: 100.0
+
+    models:
+      momentum:
+        short_weight: 0.3
+        medium_weight: 0.4
+        long_weight: 0.3
+        volume_confirm_multiplier: 1.2
+        volume_contradict_multiplier: 0.8
+        base_confidence: 0.8
+        rsi_overbought: 70
+        rsi_oversold: 30
+        rsi_confidence_penalty: 0.7
+        macd_confirm_boost: 1.1
+        macd_contradict_penalty: 0.9
+
+      mean_reversion:
+        bb_threshold: 2.0
+        stoch_overbought: 80
+        stoch_oversold: 20
+
+      volatility:
+        atr_period: 14
+        volatility_threshold: 1.5

@@ -20,10 +20,10 @@ decision_making:
     entry_k_atr: 0.3  # Entry offset = 0.3 * ATR from ref price
     sl_k_atr: 1.5  # Stop-loss = 1.5 * ATR distance
     tp_k_atr: 2.0  # Take-profit = 2.0 * ATR distance
-    obi_weight: 0.3  # OBI modulation weight (0 = off, 1 = full)
+    obi_weight: 0.1       # <--- ГОЛОВНЕ: Зменшення впливу (0.3 → 0.1)
     obi_mod_clamp_min: 0.8  # Anti-taker drift: min multiplier
     obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
-    require_atr: true  # Fail-closed: reject if ATR not ready
+    require_atr: true     # Fail-closed
     obi_missing_policy: neutral  # EXPLICIT: use multiplier=1.0 when OBI missing
   
   qos:

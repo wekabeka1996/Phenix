@@ -1,5 +1,52 @@
 # Engineering Journal
 
+
+
+## 2026-01-30: DM QoS P2-Lite Purge and Wiring Audit
+
+**Task:** DM_QOS_P2_LITE_PURGE_AND_WIRING_AUDIT
+**Context:** Audited DecisionMaking QoS logic to reduce cognitive load and verify "Exposure Block" feature status without full refactor.
+
+**Findings:**
+1. **Dead Code Confirmed:** `_check_qos_rules` was strictly unreachable (0 callsites).
+2. **Missing Wiring:** `_handle_exposure_block` is UNWIRED (no event listener calls it). It also contains a SPLIT-BRAIN BUG (writes to flat key, read by partitioned query). "Global Exposure Block" logic is effectively non-existent despite config presence.
+3. **P2-Lite Action:**
+    - **DELETED** `_check_qos_rules`.
+    - **ANNOTATED** `_handle_exposure_block` with failure warning/TODO.
+    - **VERIFIED** QoS tests pass.
+
+## 2026-01-30: DM_SAFETY_BYPASSES_P1 — Critical Security Hardening
+
+**Task:** DM_SAFETY_BYPASSES_P1
+**Context:** Identified and fixed two critical security vulnerabilities in the `decision_making` domain.
+
+**Vulnerabilities Fixed:**
+1. **Hardcoded safety gates bypass:** `apply_safety_gates = str(strategy_id) == "aurora"` allowed any non-Aurora strategy to bypass directional sanity and price motion gates.
+2. **Fail-open exposure cache:** Missing/stale/error cache conditions allowed trades, violating fail-closed principle.
+
+**Changes:**
+1. `decision_making.py`: Safety gates now read from `strategies.<id>.safety_gates.enabled` config. Missing config → FAIL-CLOSED (NRR-054).
+2. `decision_making.py`: Exposure cache precheck now returns `False` (block) on missing/stale/error (NRR-053).
+3. `normalized_reject_reasons.py`: Added NRR-053 (EXPOSURE_CACHE_UNAVAILABLE), NRR-054 (CONFIG_SAFETY_GATES_MISSING).
+4. `config_models.py`: Added `SafetyGatesConfig` Pydantic model.
+5. `aurora.yaml`, `mean_reversion.yaml`: Added explicit `safety_gates.enabled` field.
+
+**Risk Note — Mean Reversion safety_gates.enabled=false:**
+MR intentionally trades against trend (counter-trend), so directional sanity and price motion gates are DISABLED.
+**Alternative guards protecting MR:**
+- Regime gating: MR only trades in FLAT regimes (`allowed_regimes`).
+- Bollinger Band boundaries: BB upper/lower provide entry structure.
+- ATR-based stops: `sl_atr_mult` prevents runaway losses.
+- Per-asset `max_risk_score` filtering in Phase 3+.
+
+**P2 TODO:** Consider `safety_gates.profile: "counter_trend"` to formalize MR-specific gate logic (e.g., require oversold/overbought RSI instead of trend confirmation).
+
+**Verification:**
+- NRR-053/054 uniqueness confirmed.
+- All strategy YAMLs updated.
+- 22/22 tests passed.
+
+
 ## 2026-01-08: VF-DICT Forensics (Global/Domain Dictionaries)
 
 **Task:** VF-DICT-FORENSIC (01..05)

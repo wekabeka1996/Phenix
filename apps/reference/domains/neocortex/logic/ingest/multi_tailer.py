@@ -147,7 +147,8 @@ class MultiTailer:
         config: MultiSourceConfig,
         feature_handler: Callable[[Dict[str, Any]], Awaitable[None]],
         episode_handler: Optional[Callable[[Episode], Awaitable[None]]] = None,
-        state_path: Optional[Path] = None
+        state_path: Optional[Path] = None,
+        run_mode: str = "live"
     ):
         """
         Args:
@@ -155,8 +156,12 @@ class MultiTailer:
             feature_handler: Handler for feature events (passed to adapter)
             episode_handler: Optional handler for complete episodes
             state_path: Path to persist tailer state
+            run_mode: "live" or "backtest" (modifies path resolution)
         """
         self.config = config
+        self.run_mode = run_mode
+        self._resolve_paths()
+        
         self.feature_handler = feature_handler
         self.episode_handler = episode_handler
         self.state_path = state_path or Path("data/multi_tailer_state.json")
@@ -181,6 +186,32 @@ class MultiTailer:
         self._features_processed = 0
         self._orders_processed = 0
         self._episodes_completed = 0
+        
+    def _resolve_paths(self):
+        """Resolve log paths based on run_mode."""
+        if self.run_mode != "backtest":
+            return
+
+        logger.info("Running in BACKTEST mode - Routing paths to logs/backtests/...")
+        
+        # 1. Features (still use base logs/ for now - backtest doesn't generate separate features)
+        # self.config.features_dir = Path("logs/backtests/features")
+        
+        # 2. Core Log (backtest uses main log)
+        # self.config.core_log = Path("logs/backtests/aurora_core.log")
+        
+        # 3. Order Log (dynamic resolution)
+        # Find latest order_log_*.jsonl in logs/backtests/ (with 's'!)
+        try:
+            order_logs = sorted(glob("logs/backtests/order_log_*.jsonl"))
+            if order_logs:
+                latest_log = Path(order_logs[-1])
+                self.config.orders_file = latest_log
+                logger.info(f"Resolved latest backtest order log: {latest_log}")
+            else:
+                logger.warning("No backtest order logs found in logs/backtests/")
+        except Exception as e:
+            logger.error(f"Failed to resolve backtest order logs: {e}")
         
     async def load_state(self) -> bool:
         """Load persisted offsets."""
@@ -219,6 +250,14 @@ class MultiTailer:
         logger.info(f"  Features: {self.config.features_dir}")
         logger.info(f"  Orders: {self.config.orders_file}")
         logger.info(f"  Core: {self.config.core_log}")
+        
+        # DEBUG: Show if files exist
+        logger.info(f"  DEBUG: Features dir exists = {self.config.features_dir.exists()}")
+        logger.info(f"  DEBUG: Orders file exists = {self.config.orders_file.exists()}")
+        logger.info(f"  DEBUG: Core log exists = {self.config.core_log.exists()}")
+        if self.config.features_dir.exists():
+            feature_files = list(self.config.features_dir.glob("*.log"))
+            logger.info(f"  DEBUG: Feature files found = {[f.name for f in feature_files]}")
         
         # Initial stats logging
         last_log_time = 0
@@ -393,6 +432,21 @@ class MultiTailer:
                 await self.episode_handler(episode)
             self._episodes_completed += 1
             logger.info(f"ORDER_REJECTED: {symbol} {order.side} reason={order.nrr_code}")
+        
+        elif order.event_type == OrderEventType.CANCELLED:
+            # Handle cancelled orders (e.g., regime change cancellations in backtest)
+            # Complete pending episode with zero reward (position was never really opened)
+            if symbol in self._pending_episodes:
+                episode = self._pending_episodes.pop(symbol)
+                episode.reward = 0.0  # No PnL since cancelled before fill
+                episode.position_closed = True
+                
+                if self.episode_handler:
+                    await self.episode_handler(episode)
+                self._episodes_completed += 1
+                
+                reason = order.raw.get("reason", "UNKNOWN")
+                logger.info(f"ORDER_CANCELLED: {symbol} reason={reason} (episode completed with reward=0)")
     
     async def _process_core(self):
         """Process core log for position closes and equity updates."""

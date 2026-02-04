@@ -12,5 +12,7 @@ brain_workers: 1  # Start with single worker, scale up later
 queue_maxsize: 1000
 
 # Logging
+# Logging
 log_level: "INFO"
 log_to_file: true
+run_mode: "backtest"

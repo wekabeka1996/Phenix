@@ -1,0 +1,579 @@
+version: 1
+run_id: '20260202_153121'
+symbol: BTCUSDT
+timeframe: 5m
+basis_tf_sec: 300
+horizons_bars:
+- 3
+- 6
+- 12
+costs:
+  fees_bps_rt: 6.0
+  slippage_bps_rt: 20.0
+  buffer_bps: 15
+  min_dist_bps: 41
+  min_dist_pct: 0.0041
+quantile_policy:
+  sl_quantile: 0.9
+  tp_quantile: 0.8
+  guard_min_quantile: 0.5
+  guard_max_quantile: 0.95
+recommendations:
+  HIGH_VOLATILITY:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.004575783831064302
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.00701426383439614
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.006261436793506832
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.8960213487721431
+      H6:
+        sl:
+          reco_pct: 0.006224954320056647
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.008869962398274374
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.007763614273246499
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.658639371342839
+      H12:
+        sl:
+          reco_pct: 0.008206817362143036
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.011666697543650215
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.004925468498767857
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.010221616313735624
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.6001679191117854
+    short:
+      H3:
+        sl:
+          reco_pct: 0.004183642035684417
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.006261436793506832
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.00701426383439614
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.980007363208661
+      H6:
+        sl:
+          reco_pct: 0.005628126036288934
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.007763614273246499
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.008869962398274374
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.7284840413246062
+      H12:
+        sl:
+          reco_pct: 0.007169327466386278
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.010221616313735624
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0054072947078415805
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.011666697543650215
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.7542262134340956
+  LOW_VOLATILITY:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0025495701489759532
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.00301387591000271
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H6:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.003624084741446973
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.012702992244625917
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H12:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.004514113258248779
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.014931308166189788
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+    short:
+      H3:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.00301387591000271
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0025495701489759532
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H6:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.012702992244625917
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.003624084741446973
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H12:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.014931308166189788
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.004514113258248779
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+  MEAN_REVERSION:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0034172113796439195
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0033647475539597903
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H6:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.005097117805209707
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0049803082829343245
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H12:
+        sl:
+          reco_pct: 0.00529290935895766
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.007588578161816559
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0073348334675643456
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.7746212379513371
+    short:
+      H3:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0033647475539597903
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0034172113796439195
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H6:
+        sl:
+          reco_pct: 0.0041
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0049803082829343245
+          bumped_to_min_dist: true
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.005097117805209707
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 1.0
+      H12:
+        sl:
+          reco_pct: 0.0050416014476530584
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0073348334675643456
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0041
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.007588578161816559
+          bumped_to_min_dist: true
+        rr_reco: 1.0
+        rr_raw: 0.8132336604886949
+  TREND_DOWN:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.010302870417902569
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.01533511048024736
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.006125707003746647
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.008804810787850245
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.5945631416563718
+      H6:
+        sl:
+          reco_pct: 0.011683174719408497
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.017192131525014625
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.00870864380849096
+          quantile: 0.8
+          min_pct: 0.004646074704555624
+          max_pct: 0.010695736431777847
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.7454004598616383
+      H12:
+        sl:
+          reco_pct: 0.014682904658085874
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.021811112271137554
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.010196649837259559
+          quantile: 0.8
+          min_pct: 0.005906646662459507
+          max_pct: 0.013979366826251165
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.6944572667809475
+    short:
+      H3:
+        sl:
+          reco_pct: 0.00784297493680024
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.008804810787850245
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.007717953472886371
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.01533511048024736
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.9840594334520626
+      H6:
+        sl:
+          reco_pct: 0.009981058488343155
+          quantile: 0.9
+          min_pct: 0.004646074704555624
+          max_pct: 0.010695736431777847
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.00936747238127354
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.017192131525014625
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.9385249462483143
+      H12:
+        sl:
+          reco_pct: 0.011284515287878268
+          quantile: 0.9
+          min_pct: 0.005906646662459507
+          max_pct: 0.013979366826251165
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.010107079818062288
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.021811112271137554
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.8956591896259141
+  TREND_UP:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.006071946756642348
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.008095749678197067
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.0070090701483686195
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.015868670823403007
+          bumped_to_min_dist: false
+        rr_reco: 1.1543365627673061
+        rr_raw: 1.1543365627673061
+      H6:
+        sl:
+          reco_pct: 0.008636390322434835
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.011061782426471914
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.010005164505798737
+          quantile: 0.8
+          min_pct: 0.004504868490161989
+          max_pct: 0.01809620266312745
+          bumped_to_min_dist: false
+        rr_reco: 1.1584891525581265
+        rr_raw: 1.1584891525581265
+      H12:
+        sl:
+          reco_pct: 0.012693831137408454
+          quantile: 0.9
+          min_pct: 0.004434328768198407
+          max_pct: 0.01957028082012766
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.01345533614103381
+          quantile: 0.8
+          min_pct: 0.006126157814515211
+          max_pct: 0.022118089611167617
+          bumped_to_min_dist: false
+        rr_reco: 1.0599901633622033
+        rr_raw: 1.0599901633622033
+    short:
+      H3:
+        sl:
+          reco_pct: 0.01016673873089278
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.015868670823403007
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.00511809187132581
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.008095749678197067
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.5034153042385079
+      H6:
+        sl:
+          reco_pct: 0.012451778969524489
+          quantile: 0.9
+          min_pct: 0.004504868490161989
+          max_pct: 0.01809620266312745
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.005917590796204587
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.011061782426471914
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.47524059097802707
+      H12:
+        sl:
+          reco_pct: 0.018149979027761047
+          quantile: 0.9
+          min_pct: 0.006126157814515211
+          max_pct: 0.022118089611167617
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.008376537737335852
+          quantile: 0.8
+          min_pct: 0.004434328768198407
+          max_pct: 0.01957028082012766
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.46151776398879774
+  UNCERTAIN:
+    long:
+      H3:
+        sl:
+          reco_pct: 0.011072630785421624
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.011240070507977836
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.004920123228774418
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.0082205585948748
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.44434997645296
+      H6:
+        sl:
+          reco_pct: 0.014355078447563948
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.014533800402474473
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.007806095897633002
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.011590852624415247
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.5437863628643349
+      H12:
+        sl:
+          reco_pct: 0.017738447034217193
+          quantile: 0.9
+          min_pct: 0.005556293023344016
+          max_pct: 0.02064767397783603
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.009453589022194862
+          quantile: 0.8
+          min_pct: 0.0042140165588393135
+          max_pct: 0.014185581422441383
+          bumped_to_min_dist: false
+        rr_reco: 1.0
+        rr_raw: 0.5329434422280053
+    short:
+      H3:
+        sl:
+          reco_pct: 0.007449976415009337
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.0082205585948748
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.007727913596339477
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.011240070507977836
+          bumped_to_min_dist: false
+        rr_reco: 1.0373071223111774
+        rr_raw: 1.0373071223111774
+      H6:
+        sl:
+          reco_pct: 0.009306142787006573
+          quantile: 0.9
+          min_pct: 0.0041
+          max_pct: 0.011590852624415247
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.009617803580067731
+          quantile: 0.8
+          min_pct: 0.0041
+          max_pct: 0.014533800402474473
+          bumped_to_min_dist: false
+        rr_reco: 1.033489792730916
+        rr_raw: 1.033489792730916
+      H12:
+        sl:
+          reco_pct: 0.011590852624415247
+          quantile: 0.9
+          min_pct: 0.0042140165588393135
+          max_pct: 0.014185581422441383
+          bumped_to_min_dist: false
+        tp:
+          reco_pct: 0.013128923189455037
+          quantile: 0.8
+          min_pct: 0.005556293023344016
+          max_pct: 0.02064767397783603
+          bumped_to_min_dist: false
+        rr_reco: 1.1326969304915466
+        rr_raw: 1.1326969304915466

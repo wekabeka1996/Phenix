@@ -418,7 +418,24 @@ class MRRegimeSizingConfig(BaseModel):
     target_mult: float = Field()
 
 
+# DM-SAFETY-BYPASSES-P1: Safety gates configuration
+class SafetyGatesConfig(BaseModel):
+    """Safety gates control for directional sanity and price motion gates.
+    
+    DM-SAFETY-BYPASSES-P1: Replaces hardcoded strategy_id == 'aurora' check.
+    - Aurora (trend-following): enabled=true → gates APPLY
+    - Mean Reversion (counter-trend): enabled=false → gates SKIPPED
+    - Missing config → FAIL-CLOSED (trade blocked)
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        description='Enable directional sanity and price motion gates for this strategy'
+    )
+
+
 class MeanReversion1mStrategyConfig(BaseModel):
+
     """
     Full configuration for Mean Reversion 1m Strategy.
     
@@ -452,6 +469,12 @@ class MeanReversion1mStrategyConfig(BaseModel):
 
     # ORDER-POLICY-01: Execution policy
     execution: "StrategyExecutionConfig" = Field(description="Execution policy (SSOT)")
+
+    # DM-SAFETY-BYPASSES-P1: Safety gates configuration
+    safety_gates: SafetyGatesConfig = Field(
+        description="Safety gates control (directional/price motion gates)"
+    )
+
 
 # ==============================================================================
 # STRATEGIES REGISTRY (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
@@ -2538,6 +2561,12 @@ class AuroraStrategyConfig(BaseModel):
     # ORDER-POLICY-01: Execution policy
     execution: StrategyExecutionConfig = Field(description="Execution policy (SSOT)")
 
+    # DM-SAFETY-BYPASSES-P1: Safety gates configuration
+    safety_gates: SafetyGatesConfig = Field(
+        description="Safety gates control (directional/price motion gates)"
+    )
+
+
     # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled DELETED
     # Migration to AuroraHandler complete. Always using new architecture.
     
@@ -2982,6 +3011,27 @@ class AuroraConfig(BaseModel):
         description='If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, '
                     'block trading. Default: 3 (i.e., 15 minutes for 5m basis).'
     )
+    
+    # HYSTERESIS-SLOPE-GATE-01: Regime stability
+    hysteresis_bars: int = Field(
+        default=3, ge=1, le=10,
+        description='Number of consecutive bars to confirm regime change before switching stable_regime.'
+    )
+    
+    # Volatility Slope Gate: block HIGH_VOL with dying momentum
+    vol_slope_gate_enabled: bool = Field(
+        default=True,
+        description='Enable vol_ratio slope gate to detect "dying storm" (HIGH_VOL with falling momentum).'
+    )
+    vol_slope_gate_eps: float = Field(
+        default=0.0, ge=-0.1, le=0.1,
+        description='Slope threshold: if vol_ratio slope <= eps for confirm_bars, force UNCERTAIN.'
+    )
+    vol_slope_gate_confirm_bars: int = Field(
+        default=2, ge=1, le=5,
+        description='Number of bars slope must stay below eps to trigger gate.'
+    )
+    
     # SCORCHED-EARTH-2026-01-27: hmm and features fields DELETED (zero runtime references, regime.yaml not read by code)
     # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
 

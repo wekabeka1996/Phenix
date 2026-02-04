@@ -1,0 +1,91 @@
+{
+  "leverage": {},
+  "risk_manager": {},
+  "strategy": {},
+  "execution": {
+    "allow_trade_with_guardian_tidy_only": false,
+    "anti_race_close_ms": 800,
+    "cooldown_after_close_ms": 60000,
+    "exposure": {
+      "count_pending_orders": true,
+      "exclude_reduce_only": true,
+      "leverage_defaults": {
+        "BTCUSDT": 20,
+        "DOGEUSDT": 20,
+        "ETHUSDT": 20,
+        "SOLUSDT": 20,
+        "XRPUSDT": 20,
+        "__default__": 20
+      },
+      "max_directional_ratio": 50.0,
+      "max_equity_utilization_pct": 150.0,
+      "max_portfolio_fraction": 150.0,
+      "pending_ttl_sec": 90,
+      "post_fill_hold_ttl_sec": 5
+    },
+    "fallback": null,
+    "fsm_periodic_cleanup_enabled": false,
+    "limit_orders": null,
+    "manage": {
+      "auto": true,
+      "brackets": {
+        "oco_emulation": true,
+        "offset_bps": 5,
+        "sl": {
+          "fixed_bps": 40
+        },
+        "tp": {
+          "fixed_bps": 80
+        }
+      },
+      "emergency": {
+        "emergency_sl_bps": 100,
+        "enabled": false,
+        "wait_mode_bars": 2
+      },
+      "orphan_monitor": {
+        "batch_cancel_limit": 50,
+        "enabled": true,
+        "min_order_age_sec": 0,
+        "periodic_interval_sec": 300,
+        "rate_limit_per_min": 120,
+        "run_on_startup": true
+      }
+    },
+    "order_guardian": {
+      "ledger_db_path": "data/order_ledger.db",
+      "unified": true
+    },
+    "order_params": {
+      "LIMIT": {
+        "timeInForce": "GTC"
+      },
+      "STOP_MARKET": {
+        "workingType": "MARK_PRICE"
+      },
+      "TAKE_PROFIT_MARKET": {
+        "workingType": "MARK_PRICE"
+      },
+      "TRAILING_STOP_MARKET": {
+        "callbackRate": "0.5"
+      }
+    },
+    "orders": {
+      "default_ttl_seconds": 15
+    },
+    "preflight_backoff_ms": [
+      120,
+      250,
+      400,
+      800,
+      1200,
+      1800
+    ],
+    "watchdog": {
+      "ack_ttl_ms": 8000,
+      "check_interval_ms": 1000,
+      "fill_ttl_ms": 60000,
+      "rps_limit": 10
+    }
+  }
+}

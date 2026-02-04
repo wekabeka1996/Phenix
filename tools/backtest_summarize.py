@@ -479,12 +479,33 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
         by_regime_by_strategy[regime][strategy].exit_modes[exit_mode] += 1  # type: ignore[index]
         by_regime_by_strategy[regime][strategy].pnl_buckets[_bucket_pnl_usdt(float(pnl_net), pnl_edges)] += 1  # type: ignore[index]
 
+    # Extract Alpha Search stats (NEW)
+    alpha_search = report.get("alpha_search")
+    alpha_summary = None
+    if isinstance(alpha_search, dict) and alpha_search.get("enabled"):
+         ensemble = alpha_search.get("ensemble") or {}
+         virtual = alpha_search.get("virtual_trader") or {}
+         perf = ensemble.get("performance") or {}
+         
+         alpha_summary = {
+             "enabled": True,
+             "mode": alpha_search.get("mode"),
+             "signals": alpha_search.get("signals_generated"),
+             "virtual_trader": {
+                 "pnl_usdt": _safe_float(virtual.get("total_pnl")),
+                 "win_rate": _safe_float(virtual.get("win_rate")),
+                 "trades": virtual.get("trades_count")
+             },
+             "ensemble_perf": _safe_float(perf.get("ensemble_performance"))
+         }
+
     # Top-level metrics (keep compact)
     metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
 
     out: dict[str, Any] = {
         "summary_version": "1.0.0",
         "run_id": report.get("run_id"),
+        "alpha_search": alpha_summary,  # Added here
         "range": {
             "start_date": (report.get("metadata") or {}).get("start_date") if isinstance(report.get("metadata"), dict) else None,
             "end_date": (report.get("metadata") or {}).get("end_date") if isinstance(report.get("metadata"), dict) else None,

@@ -271,6 +271,7 @@ def enrich_symbol_timeframe(
     raw_dir: Path,
     symbol: str,
     timeframe: str,
+    include_bookticker: bool = True,
     output_suffix: str = "_enriched",
     months: Optional[Iterable[str]] = None,
 ) -> list[EnrichmentResult]:
@@ -317,17 +318,18 @@ def enrich_symbol_timeframe(
 
         # Discovery Logic for BookTicker
         bt_file = None
-        # 1. Check standard structure: symbol/bookTicker/YYYY-MM.parquet
-        c1 = bt_dir_standard / f"{month}.parquet"
-        if c1.exists():
-            bt_file = c1
-        else:
-            # 2. Check for loose files in symbol dir or processed dir containing "bookTicker" and month
-            # pattern: *bookTicker*2023-05*
-            # Look in symbol root
-            c2_list = list((processed_dir / symbol).glob(f"*{month}*bookTicker*.parquet"))
-            if c2_list:
-                bt_file = c2_list[0]
+        if include_bookticker:
+            # 1. Check standard structure: symbol/bookTicker/YYYY-MM.parquet
+            c1 = bt_dir_standard / f"{month}.parquet"
+            if c1.exists():
+                bt_file = c1
+            else:
+                # 2. Check for loose files in symbol dir or processed dir containing "bookTicker" and month
+                # pattern: *bookTicker*2023-05*
+                # Look in symbol root
+                c2_list = list((processed_dir / symbol).glob(f"*{month}*bookTicker*.parquet"))
+                if c2_list:
+                    bt_file = c2_list[0]
         
         out_dir = processed_dir / symbol / timeframe
         out_file = out_dir / f"{month}{output_suffix}.parquet"
@@ -354,6 +356,11 @@ def main() -> None:
     parser.add_argument("--symbol", type=str, required=True, help="Symbol, e.g. BTCUSDT")
     parser.add_argument("--timeframe", type=str, required=True, help="Kline timeframe, e.g. 5m")
     parser.add_argument("--month", type=str, default=None, help="Optional single month YYYY-MM")
+    parser.add_argument(
+        "--skip-bookticker",
+        action="store_true",
+        help="Skip bookTicker enrichment even if bookTicker parquet exists",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -366,6 +373,7 @@ def main() -> None:
         raw_dir=raw_dir,
         symbol=str(args.symbol).upper(),
         timeframe=str(args.timeframe),
+        include_bookticker=not args.skip_bookticker,
         months=months,
     )
     LOG.info("Enrichment complete: %d files", len(res))

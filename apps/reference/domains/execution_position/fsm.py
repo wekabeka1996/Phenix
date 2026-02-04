@@ -1433,13 +1433,33 @@ class ExecPosFSM:
                 },
                 why="exposure_summary_updated_after_portfolio_change",
             )
+            # FIX-EMIT-COMPAT: FSMCore.emit signature is (event, pld, why, ref), but emit_compat calls (op, verb, pld, why).
+            # This argument shift causes the event to be emitted as "EVT" with verb as payload.
+            # We explicitly handle the emission here.
+            
+            async def _do_emit_exposure():
+                try:
+                    # Try FSMCore signature first (event_name, payload, why)
+                    self.fsm.emit(
+                        "EVT:EXPOSURE_SUMMARY_UPDATED",
+                        {
+                            "exposure_summary": exposure_summary,
+                            "portfolio_state": self._latest_portfolio_state,
+                            "timestamp_ms": get_clock().now_ms()
+                        },
+                        "exposure_summary_updated_after_portfolio_change"
+                    )
+                except TypeError:
+                    # Fallback for Actor/AsyncFSM (accepts Message)
+                    await emit_compat(self.fsm, exposure_msg, logger=LOG)
+                except Exception as ex:
+                    LOG.error(f"Failed to emit exposure summary: {ex}")
+
             loop = self._get_async_loop()
             if loop:
-                self._submit_async(
-                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
-                )
+                self._submit_async(_do_emit_exposure(), loop)
         except Exception as e:
-            LOG.debug(f"Failed to emit exposure summary update: {e}")
+            LOG.debug(f"Failed to prepare exposure summary update: {e}")
 
         # ✅ FIX: Detect position closures robustly (including symbols disappearing from snapshot).
         # When position becomes 0, TP/SL orders become orphaned and need cleanup.

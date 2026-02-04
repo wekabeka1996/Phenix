@@ -87,6 +87,11 @@ class EnsembleModel(AlphaModel):
 
         # Set name after initialization
         self.name = self.get_model_name()
+        
+        # ALPHA-SEARCH: Track pending signals for PnL attribution
+        # Maps signal_id -> (model_name, score, symbol, timestamp)
+        self._pending_signals: Dict[str, Tuple[str, float, str, float]] = {}
+        self._signal_counter: int = 0
 
     def get_model_name(self) -> str:
         """Return unique model name for identification."""
@@ -116,7 +121,8 @@ class EnsembleModel(AlphaModel):
             [market_data]) if market_data else pd.DataFrame()
         portfolio_state = context.get("portfolio_state") if context else None
 
-        return self.generate_signal(market_df, portfolio_state, symbol)
+        # A1-FIX: Pass features to generate_signal
+        return self.generate_signal(market_df, portfolio_state, symbol, features)
 
     def _initialize_weights(self) -> None:
         """Initialize equal weights for all models."""
@@ -134,7 +140,8 @@ class EnsembleModel(AlphaModel):
         self,
         market_data: pd.DataFrame,
         portfolio_state: Optional[Dict[str, Any]] = None,
-        symbol: str = ""
+        symbol: str = "",
+        features: Optional[Dict[str, Any]] = None  # A1-FIX: Accept features from caller
     ) -> AlphaScore:
         """
         Generate ensemble signal by combining model predictions.
@@ -164,15 +171,15 @@ class EnsembleModel(AlphaModel):
                 # Convert DataFrame to dict format expected by calculate_alpha
                 market_dict = market_data.to_dict(
                     'records')[0] if not market_data.empty else {}
-                # Would be populated from feature store in real usage
-                features: Dict[str, Any] = {}
+                # A1-FIX: Use features from caller, not empty dict
+                model_features = features if features else {}
                 context = {
                     "portfolio_state": portfolio_state} if portfolio_state else {}
 
                 score = model.calculate_alpha(
-                    symbol="",  # Would be determined from market_data
+                    symbol=symbol,  # A1-FIX: Pass actual symbol
                     market_data=market_dict,
-                    features=features,
+                    features=model_features,  # A1-FIX: Pass actual features
                     context=context
                 )
                 model_scores[model_name] = score
@@ -201,6 +208,19 @@ class EnsembleModel(AlphaModel):
 
         # Check if rebalancing is needed
         self._check_rebalance()
+        
+        # ALPHA-SEARCH: Track signal for PnL attribution
+        self._signal_counter += 1
+        signal_id = f"sig_{self._signal_counter}"
+        combined_score.why.append(f"signal_id={signal_id}")
+        self._pending_signals[signal_id] = (
+            "ensemble", float(combined_score.score), symbol, get_clock().now_sec()
+        )
+        
+        self.logger.debug(
+            f"[{symbol}] Ensemble signal: score={combined_score.score:.4f} "
+            f"conf={combined_score.confidence:.4f} models={len(valid_scores)} id={signal_id}"
+        )
 
         return combined_score
 
@@ -328,6 +348,42 @@ class EnsembleModel(AlphaModel):
                 len(performance_scores)
 
             self.logger.info(f"Rebalanced ensemble weights: {new_weights}")
+
+    def on_trade_result(
+        self,
+        signal_id: str,
+        pnl: float,
+        model_name: Optional[str] = None,
+    ) -> None:
+        """
+        Callback for trade PnL feedback - enables online learning.
+        
+        ALPHA-SEARCH: Called by BacktestPlugin after trade closes.
+        Updates model performance based on actual PnL, not just confidence.
+        
+        Args:
+            signal_id: ID from signal's why field (e.g. "signal_id=sig_123")
+            pnl: Profit/loss in USD
+            model_name: Optional specific model to attribute (else uses ensemble)
+        """
+        # Normalize PnL to -1..1 range for performance tracking
+        # Assume typical trade PnL is -100 to +100 USD
+        normalized_pnl = max(-1.0, min(1.0, pnl / 100.0))
+        
+        if signal_id in self._pending_signals:
+            source_model, score, symbol, ts = self._pending_signals.pop(signal_id)
+            # Attribute to all models that contributed (if ensemble) or specific model
+            if model_name and model_name in self.model_performance:
+                self.model_performance[model_name].append(normalized_pnl)
+                self.logger.debug(f"Trade result: {model_name} pnl={pnl:.2f} -> perf={normalized_pnl:.4f}")
+            else:
+                # Distribute to all models by weight
+                for m_name, m_weight in self.weights.model_weights.items():
+                    weighted_pnl = normalized_pnl * m_weight
+                    self.model_performance[m_name].append(weighted_pnl)
+                self.logger.debug(f"Trade result (ensemble): pnl={pnl:.2f} distributed to {len(self.weights.model_weights)} models")
+        else:
+            self.logger.warning(f"Unknown signal_id: {signal_id}")
 
     def get_model_contributions(self) -> Dict[str, Any]:
         """Get current model contributions and weights."""

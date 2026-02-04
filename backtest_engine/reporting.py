@@ -2,12 +2,287 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
+import subprocess
+import shutil
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 LOG = logging.getLogger(__name__)
+
+
+def _repo_root() -> Path:
+    # backtest_engine/ -> repo root
+    return Path(__file__).resolve().parents[1]
+
+
+def _safe_git_sha() -> Optional[str]:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(_repo_root()),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out or None
+    except Exception:
+        return None
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _canonical_json_bytes(obj: Any) -> bytes:
+    return json.dumps(
+        _to_jsonable(obj),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def _hash_file_sha256(path: Path) -> Optional[str]:
+    try:
+        if not path.exists() or not path.is_file():
+            return None
+        return _sha256_hex(path.read_bytes())
+    except Exception:
+        return None
+
+
+def _collect_config_files() -> list[dict[str, Any]]:
+    base = _repo_root() / "config" / "aurora"
+    candidates = [
+        base / "system.yaml",
+        base / "trading.yaml",
+        base / "regime.yaml",
+        base / "domains.yaml",
+        base / "instruments.yaml",
+        base / "strategies.yaml",
+        base / "observability.yaml",
+        base / "strategies" / "aurora.yaml",
+    ]
+    out: list[dict[str, Any]] = []
+    for p in candidates:
+        h = _hash_file_sha256(p)
+        if h is None:
+            continue
+        try:
+            rel = p.resolve().relative_to(_repo_root().resolve())
+            rel_str = str(rel)
+        except Exception:
+            rel_str = str(p)
+        out.append({"path": rel_str.replace('\\\\', '/'), "sha256": h})
+    out.sort(key=lambda x: str(x.get("path") or ""))
+    return out
+
+
+def _get_nested(d: Any, path: list[str]) -> Any:
+    cur = d
+    for k in path:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    return cur
+
+
+def _fail(msg: str) -> None:
+    raise RuntimeError(msg)
+
+
+def _config_dir_from_runtime_config(config: Any) -> Path:
+    """Fail-closed: resolve config directory used for this run."""
+    # Pydantic AuroraConfig path
+    try:
+        rt = getattr(getattr(getattr(config, "system_meta", None), "runtime", None), "config_dir", None)
+        if isinstance(rt, str) and rt:
+            return Path(rt)
+    except Exception:
+        pass
+
+    # Dict fallback (tests)
+    if isinstance(config, dict):
+        rt = _get_nested(config, ["system_meta", "runtime", "config_dir"])
+        if isinstance(rt, str) and rt:
+            return Path(rt)
+
+    _fail("Run bundle fail-closed: missing system_meta.runtime.config_dir")
+    raise AssertionError("unreachable")
+
+
+def _resolved_config_dict(config: Any) -> dict[str, Any]:
+    if isinstance(config, dict):
+        return config
+    if hasattr(config, "model_dump") and callable(getattr(config, "model_dump")):
+        out = config.model_dump()
+        return out if isinstance(out, dict) else {"raw": _to_jsonable(out)}
+    return {"raw": _to_jsonable(config)}
+
+
+def _extract_assignments(resolved_config: dict[str, Any]) -> dict[str, list[str]]:
+    """Best-effort: derive per-symbol strategy assignments from resolved config."""
+    assignments: dict[str, list[str]] = {}
+    # Primary SSOT: strategies_registry.assignments
+    sr = resolved_config.get("strategies_registry")
+    if isinstance(sr, dict):
+        raw = sr.get("assignments")
+        if isinstance(raw, dict):
+            for sym, lst in raw.items():
+                if isinstance(sym, str) and isinstance(lst, list):
+                    strategies = [str(x) for x in lst if isinstance(x, str) and x]
+                    assignments[sym] = strategies
+
+    # Compatibility fallback: instruments.<sym>.strategies (if present in some configs)
+    if not assignments:
+        inst = resolved_config.get("instruments")
+        if isinstance(inst, dict):
+            for sym, spec in inst.items():
+                if not isinstance(sym, str):
+                    continue
+                if not isinstance(spec, dict):
+                    continue
+                lst = spec.get("strategies")
+                if isinstance(lst, list):
+                    strategies = [str(x) for x in lst if isinstance(x, str) and x]
+                    if strategies:
+                        assignments[sym] = strategies
+
+    return assignments
+
+
+def _active_strategies_from_assignments(assignments: dict[str, list[str]]) -> list[str]:
+    s: set[str] = set()
+    for lst in assignments.values():
+        for x in lst:
+            if isinstance(x, str) and x:
+                s.add(x)
+    return sorted(s)
+
+
+def _read_bytes_fail_closed(path: Path, *, label: str) -> bytes:
+    if not path.exists() or not path.is_file():
+        _fail(f"Run bundle fail-closed: missing required {label}: {path}")
+    return path.read_bytes()
+
+
+def _write_bytes(path: Path, data: bytes) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return _sha256_hex(data)
+
+
+def save_backtest_run_bundle(
+    *,
+    run_id: str,
+    report: dict[str, Any],
+    config: Any,
+    reports_root: Path,
+) -> Path:
+    """Persist a reproducible run bundle under reports/backtests/<run_id>/.
+
+    Fail-closed rules:
+    - If a strategy is declared active by resolved assignments, its YAML must exist.
+    - Required SSOT YAML files must exist.
+    - git sha must be resolvable.
+    """
+    if not isinstance(run_id, str) or not run_id:
+        _fail("Run bundle fail-closed: run_id must be non-empty str")
+
+    git_sha = _safe_git_sha()
+    if not isinstance(git_sha, str) or not git_sha:
+        _fail("Run bundle fail-closed: unable to resolve git SHA")
+
+    config_dir = _config_dir_from_runtime_config(config)
+    resolved = _resolved_config_dict(config)
+    assignments = _extract_assignments(resolved)
+    active_strategies = _active_strategies_from_assignments(assignments)
+
+    bundle_dir = (reports_root / run_id)
+    # deterministic overwrite for repeated runs with same run_id
+    if bundle_dir.exists():
+        shutil.rmtree(bundle_dir)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- Write result + resolved_config (canonical JSON) ---
+    result_sha = _write_bytes(bundle_dir / "result.json", _canonical_json_bytes(report))
+    resolved_sha = _write_bytes(bundle_dir / "resolved_config.json", _canonical_json_bytes(resolved))
+
+    # --- Copy SSOT YAML files that influence the run (fail-closed) ---
+    ssot_dir = bundle_dir / "config" / "ssot"
+    ssot_required = [
+        ("system.yaml", "system.yaml"),
+        ("trading.yaml", "trading.yaml"),
+        ("regime.yaml", "regime.yaml"),
+        ("instruments.yaml", "instruments.yaml"),
+        ("strategies.yaml", "strategies.yaml"),
+    ]
+    ssot_optional = [
+        ("execution.yaml", "execution.yaml"),
+    ]
+
+    saved_files: list[dict[str, Any]] = []
+    saved_files.append({"path": "result.json", "sha256": result_sha})
+    saved_files.append({"path": "resolved_config.json", "sha256": resolved_sha})
+
+    for src_name, dst_name in ssot_required:
+        src = config_dir / src_name
+        data = _read_bytes_fail_closed(src, label=f"SSOT config file {src_name}")
+        sha = _write_bytes(ssot_dir / dst_name, data)
+        saved_files.append({"path": f"config/ssot/{dst_name}", "sha256": sha})
+
+    for src_name, dst_name in ssot_optional:
+        src = config_dir / src_name
+        if src.exists() and src.is_file():
+            data = src.read_bytes()
+            sha = _write_bytes(ssot_dir / dst_name, data)
+            saved_files.append({"path": f"config/ssot/{dst_name}", "sha256": sha})
+
+    # --- Copy strategy YAMLs used by this run (fail-closed on declared usage) ---
+    strategy_src_dir = config_dir / "strategies"
+    strategy_out_dir = bundle_dir / "config"
+    strategy_id_to_bundle_name = {
+        "aurora": "aurora.yaml",
+        "mean_reversion": "mean_reversion.yaml",
+    }
+    for strategy_id, bundle_name in strategy_id_to_bundle_name.items():
+        if strategy_id in active_strategies:
+            src = strategy_src_dir / f"{strategy_id}.yaml"
+            data = _read_bytes_fail_closed(src, label=f"strategy config strategies/{strategy_id}.yaml")
+            sha = _write_bytes(strategy_out_dir / bundle_name, data)
+            saved_files.append({"path": f"config/{bundle_name}", "sha256": sha})
+
+    # Deterministic ordering
+    saved_files.sort(key=lambda x: str(x.get("path") or ""))
+
+    # config_hash: based ONLY on config artifacts (not manifest.json)
+    config_files_for_hash = [
+        f for f in saved_files
+        if isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"].startswith("config/")
+    ] + [
+        f for f in saved_files
+        if isinstance(f, dict) and f.get("path") == "resolved_config.json"
+    ]
+    config_files_for_hash.sort(key=lambda x: str(x.get("path") or ""))
+    config_hash_material = {
+        "files": config_files_for_hash,
+    }
+    config_hash = _sha256_hex(_canonical_json_bytes(config_hash_material))
+
+    manifest = {
+        "run_id": run_id,
+        "git_sha": git_sha,
+        "config_hash": config_hash,
+        "config_hash_algo": "sha256",
+        "saved_files": saved_files,
+        "active_strategies": active_strategies,
+        "assignments": assignments,
+    }
+    _write_bytes(bundle_dir / "manifest.json", _canonical_json_bytes(manifest))
+
+    return bundle_dir
 
 
 def _to_jsonable(value: Any, *, _seen: set[int] | None = None, _depth: int = 0) -> Any:
@@ -183,8 +458,36 @@ def _extract_strategies_registry(config: Any) -> dict[str, Any]:
 
 def _extract_backtest_config_snapshot(config: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
+    cfg_dict: dict[str, Any] = {}
+    try:
+        if isinstance(config, dict):
+            cfg_dict = config
+        elif hasattr(config, "model_dump") and callable(getattr(config, "model_dump")):
+            cfg_dict = config.model_dump()  # type: ignore[assignment]
+    except Exception:
+        cfg_dict = {}
+
+    # Repro anchors
+    out["git_sha"] = _safe_git_sha()
+    out["config_files"] = _collect_config_files()
     try:
         out["trading_mode"] = getattr(config, "trading_mode", None)
+    except Exception:
+        pass
+
+    # Resolved minimal slices for reproducibility.
+    try:
+        btc = _get_nested(cfg_dict, ["strategies", "aurora", "assets", "BTCUSDT"])
+        regime_slice = {
+            "basis_tf_sec": cfg_dict.get("basis_tf_sec"),
+            "uncertain_cutoff": cfg_dict.get("uncertain_cutoff"),
+            "liveness_factor": cfg_dict.get("liveness_factor"),
+            "models": cfg_dict.get("models"),
+        }
+        out["resolved_config"] = {
+            "strategies": {"aurora": {"assets": {"BTCUSDT": btc}}},
+            "regime.yaml": regime_slice,
+        }
     except Exception:
         pass
 
@@ -203,6 +506,19 @@ def _extract_backtest_config_snapshot(config: Any) -> dict[str, Any]:
             out["trading.execution"] = _to_jsonable(ex.model_dump())
         elif ex is not None:
             out["trading.execution"] = _to_jsonable(ex)
+    except Exception:
+        pass
+
+    # Deterministic hash of reproducibility-critical snapshot fields.
+    try:
+        material = {
+            "config_files": out.get("config_files"),
+            "resolved_config": out.get("resolved_config"),
+        }
+        out["config_hash"] = _sha256_hex(
+            json.dumps(_to_jsonable(material), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        )
+        out["config_hash_algo"] = "sha256"
     except Exception:
         pass
 
@@ -735,6 +1051,14 @@ def build_backtest_report(
             "close_reason classification is derived from broker order type/clientOrderId and flip detection",
         ],
     }
+    
+    # ALPHA-SEARCH: Add shadow mode metrics if plugin was active
+    try:
+        alpha_plugin = getattr(engine, "alpha_search_plugin", None)
+        if alpha_plugin is not None and hasattr(alpha_plugin, "get_summary"):
+            report_data["alpha_search"] = _to_jsonable(alpha_plugin.get_summary())
+    except Exception as e:
+        LOG.debug(f"No AlphaSearch metrics: {e}")
 
     by_strategy: dict[str, int] = {}
     for item in trade_intents:

@@ -126,7 +126,8 @@ class BrainCore:
                 clip_range=ppo_cfg.clip_epsilon,
                 hidden_size=ppo_cfg.hidden_dims[0] if ppo_cfg.hidden_dims else 64,
                 epochs=ppo_cfg.num_epochs,
-                batch_size=ppo_cfg.minibatch_size
+                batch_size=ppo_cfg.minibatch_size,
+                continuous_head="categorical"  # Force discrete action space
             )
             
             train_config = TrainConfig(

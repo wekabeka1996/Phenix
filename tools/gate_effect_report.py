@@ -186,13 +186,18 @@ def parse_reject_event(line: str) -> Optional[RejectEvent]:
 def load_gate_events(log_dir: Path) -> List[GateEvent]:
     """Load gate events from decision_making logs."""
     events = []
+
+    def _rotated_logs(base_name: str) -> List[Path]:
+        out = []
+        for p in log_dir.glob(f"{base_name}.*"):
+            suffix = p.name.split(".")[-1]
+            if suffix.isdigit():
+                out.append((int(suffix), p))
+        out.sort(key=lambda t: t[0])
+        return [p for _, p in out]
     
-    log_files = [
-        log_dir / 'domain_decision_making.log',
-    ]
-    # Add rotated logs
-    for i in range(1, 10):
-        log_files.append(log_dir / f'domain_decision_making.log.{i}')
+    log_files = [log_dir / 'domain_decision_making.log']
+    log_files.extend(_rotated_logs('domain_decision_making.log'))
     
     for log_file in log_files:
         if not log_file.exists():
@@ -211,14 +216,22 @@ def load_gate_events(log_dir: Path) -> List[GateEvent]:
 def load_reject_events(log_dir: Path) -> List[RejectEvent]:
     """Load rejection events from logs."""
     events = []
+
+    def _rotated_logs(base_name: str) -> List[Path]:
+        out = []
+        for p in log_dir.glob(f"{base_name}.*"):
+            suffix = p.name.split(".")[-1]
+            if suffix.isdigit():
+                out.append((int(suffix), p))
+        out.sort(key=lambda t: t[0])
+        return [p for _, p in out]
     
     log_files = [
         log_dir / 'domain_decision_making.log',
         log_dir / 'event_chain.log',
     ]
-    for i in range(1, 10):
-        log_files.append(log_dir / f'domain_decision_making.log.{i}')
-        log_files.append(log_dir / f'event_chain.log.{i}')
+    log_files.extend(_rotated_logs('domain_decision_making.log'))
+    log_files.extend(_rotated_logs('event_chain.log'))
     
     for log_file in log_files:
         if not log_file.exists():
