@@ -116,7 +116,7 @@ class AuroraConfig(PydanticAuroraConfig):
 class ConfigLoader:
     _ENV_VAR_PATTERN = re.compile(r"\$\{\s*(\w+)\s*\}")
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Optional[Path] = None, optuna_overlay: Optional[Dict[str, Any]] = None):
         # Prefer explicit arg
         if config_dir is not None:
             self.config_dir = config_dir
@@ -140,6 +140,9 @@ class ConfigLoader:
         
         # CFG-RUNTIME-BOOTSTRAP-07: Store config name for diagnostic logging
         self.config_name = "aurora"  # Default config name
+        
+        # OPTUNA-OVERLAY-01: Optional overlay dict to override SSOT params during optimization
+        self.optuna_overlay = optuna_overlay
         
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
@@ -414,6 +417,11 @@ class ConfigLoader:
 
         # Attach system_meta under dedicated namespace (no runtime injection here)
         merged_config["system_meta"] = system_meta
+
+        # OPTUNA-OVERLAY-01: Apply Optuna overlay LAST (highest priority)
+        if self.optuna_overlay:
+            deep_merge(self.optuna_overlay, merged_config, _provenance=self.provenance_map, _source_name="optuna_overlay")
+            LOG.info(f"✅ Optuna overlay applied: {list(self.optuna_overlay.keys())}")
 
         return merged_config
 

@@ -60,3 +60,7 @@ BINANCE_MAINNET_API_SECRET=your_mainnet_secret
 
 - `kill_python.bat` / `kill_python.ps1`: Kill all running Python processes (useful for cleanup after crashes)
 - See `UTILITY_SCRIPTS.md` for detailed usage instructions
+
+## Optimization Docs
+
+- `docs/optimization_concept_v1.md`: SSOT concept for hierarchical optimization stages.

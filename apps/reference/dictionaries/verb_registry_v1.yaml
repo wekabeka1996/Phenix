@@ -68,8 +68,8 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: ALPHA_SCORE_CALCULATED
-  owner: unknown
-  status: experimental
+  owner: alpha_search
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT

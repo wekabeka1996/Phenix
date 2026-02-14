@@ -934,6 +934,30 @@
 - **Invariant/Constraints:** `>= 1`.
 
 ---
+### `trading.backtest.profit_withdrawal_enabled`
+- **Type:** `bool` *(nullable)*
+- **Logic Owner:** `backtest_engine`
+- **Code Reference:** `apps/reference/main.py:495` (backtest config read); `apps/reference/config_models.py:2681` (model: `BacktestConfig`); `backtest_engine/engine.py:587` (func: `_profit_withdrawal_enabled_effective`)
+- **Mathematical/Architectural Role:**
+    > Backtest-only toggle: вмикає/вимикає симуляцію виводу прибутку. Якщо `None`, режим авто-вмикання залежить від наявності `profit_withdrawal_roi_pct`.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` ⇒ активні виводи прибутку при досягненні порогу.
+    - 🔽 **Too Low:** `false` ⇒ повне вимкнення механізму.
+- **Invariant/Constraints:** Backtest-only; у live/testnet не використовується. `None` дозволяє auto-enable коли задано `profit_withdrawal_roi_pct`.
+
+---
+### `trading.backtest.profit_withdrawal_roi_pct`
+- **Type:** `float` *(percent, nullable)*
+- **Logic Owner:** `backtest_engine`
+- **Code Reference:** `apps/reference/main.py:496` (backtest config read); `apps/reference/config_models.py:2688` (model: `BacktestConfig`); `backtest_engine/engine.py:596` (func: `_profit_withdrawal_trigger_balance`); `backtest_engine/engine.py:620` (func: `_maybe_withdraw_profits`)
+- **Mathematical/Architectural Role:**
+    > Задає ROI-поріг для симуляції виводу прибутку: коли `equity_free_usdt >= initial_balance*(1+roi_pct/100)`, система виводить весь прибуток понад `initial_balance` і продовжує торгівлю з базового балансу.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Вищий поріг ⇒ рідші/пізніші виводи, більше реінвестування.
+    - 🔽 **Too Low:** Нижчий поріг ⇒ частіші виводи, менший ефект компаундингу.
+- **Invariant/Constraints:** `None` або `<= 0` ⇒ тригер не активується; вивід відбувається лише коли портфель flat.
+
+---
 
 ### `trading.execution.manage.orphan_monitor.rate_limit_per_min`
 - **Type:** `int`

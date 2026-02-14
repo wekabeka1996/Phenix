@@ -33,13 +33,25 @@ class BacktestExecPosFSM(ExecPosFSM):
     def _initialize_adapter(self):
         print("🛡️ [BacktestWrapper] INTERCEPTED: Initializing MockBroker (Offline Mode)")
         initial_balance = 10000.0
+        stress_kwargs: dict[str, Any] = {}
         try:
             if getattr(self.config, "trading", None) and getattr(self.config.trading, "backtest", None):
                 initial_balance = float(self.config.trading.backtest.initial_balance)
+                stress = getattr(self.config.trading.backtest, "stress_overrides", None)
+                if stress is not None:
+                    stress_kwargs = {
+                        "fee_mult": float(getattr(stress, "fee_mult", 1.0)),
+                        "slippage_mult": float(getattr(stress, "slippage_mult", 1.0)),
+                        "latency_ms": int(getattr(stress, "latency_ms", 0)),
+                        "funding_bps_per_day": float(getattr(stress, "funding_bps_per_day", 0.0)),
+                    }
+                    slippage_bps = getattr(stress, "slippage_bps", None)
+                    if slippage_bps is not None:
+                        stress_kwargs["slippage_bps"] = float(slippage_bps)
         except Exception:
             pass
 
-        self.adapter = MockBroker(initial_balance_usdt=initial_balance)
+        self.adapter = MockBroker(initial_balance_usdt=initial_balance, **stress_kwargs)
 
         # Wire adapter back into the system for event emission + correlation lookup.
         # (Backtest uses FSMCore, not real exchange/websocket)

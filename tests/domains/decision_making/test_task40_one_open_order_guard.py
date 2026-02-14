@@ -50,6 +50,8 @@ def _mk_dm(*, fsm):
         strategies=SimpleNamespace(
             mean_reversion=SimpleNamespace(
                 execution=SimpleNamespace(entry_order_type="MARKET"),
+                # DM-SAFETY-BYPASSES-P1: Required for fail-closed safety_gates check
+                safety_gates=SimpleNamespace(enabled=False),
             ),
         ),
     )

@@ -114,6 +114,8 @@ def _mk_cfg(*, symbol: str):
                 execution=SimpleNamespace(
                     entry_order_type="MARKET",
                 ),
+                # DM-SAFETY-BYPASSES-P1: Required for fail-closed safety_gates check
+                safety_gates=SimpleNamespace(enabled=False),
                 decision=SimpleNamespace(
                     signal_threshold=0.0,
                     retry_ttl_ms=1000,

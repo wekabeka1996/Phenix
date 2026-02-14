@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Literal, Optional
 
@@ -10,6 +11,8 @@ from vfoundation.dr import wal
 RejectStage = Literal["RISK", "STRATEGY", "DECISION", "EXECUTION"]
 
 logger = logging.getLogger(__name__)
+_MEMORY_REJECT_LOG: list[dict[str, Any]] = []
+_MEMORY_REJECT_CAP = 200_000
 
 
 def write_trade_intent_rejected(
@@ -65,6 +68,13 @@ def write_trade_intent_rejected(
         payload["bar_close_ts"] = int(bar_close_ts)
     if entry_plan is not None:
         payload["entry_plan"] = entry_plan
+
+    wal_mode = str(os.getenv("TRADE_INTENT_REJECT_WAL_MODE", "wal")).strip().lower()
+    if wal_mode in ("memory", "off", "disabled"):
+        _MEMORY_REJECT_LOG.append(payload)
+        if len(_MEMORY_REJECT_LOG) > _MEMORY_REJECT_CAP:
+            del _MEMORY_REJECT_LOG[: len(_MEMORY_REJECT_LOG) - _MEMORY_REJECT_CAP]
+        return
 
     msg = Message(
         op="EVT",

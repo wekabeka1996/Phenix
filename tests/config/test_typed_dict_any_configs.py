@@ -164,11 +164,27 @@ class TestManageConfigTyped:
     
     def test_orphan_monitor_config_temporary_allow(self):
         """OrphanMonitorConfig rejects unknown fields (extra='forbid')."""
-        orphan = OrphanMonitorConfig(enabled=True)
+        # All required fields must be provided
+        orphan = OrphanMonitorConfig(
+            enabled=True,
+            run_on_startup=False,
+            periodic_interval_sec=60,
+            min_order_age_sec=30,
+            batch_cancel_limit=10,
+            rate_limit_per_min=20,
+        )
         assert orphan.enabled is True
 
         with pytest.raises(ValidationError) as exc_info:
-            OrphanMonitorConfig(enabled=True, unknown_field="should_fail")
+            OrphanMonitorConfig(
+                enabled=True,
+                run_on_startup=False,
+                periodic_interval_sec=60,
+                min_order_age_sec=30,
+                batch_cancel_limit=10,
+                rate_limit_per_min=20,
+                unknown_field="should_fail",
+            )
         assert "extra" in str(exc_info.value).lower() or \
                "unexpected" in str(exc_info.value).lower()
     
@@ -245,7 +261,19 @@ class TestE2ERegressionTypedConfigs:
         manage = ManageConfig(brackets=None, emergency={"enabled": True, "wait_mode_bars": 1}, auto=True, orphan_monitor=None)
         assert isinstance(manage.emergency, EmergencyConfig)
         
-        manage_orphan = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor={"enabled": False})
+        manage_orphan = ManageConfig(
+            brackets=None,
+            emergency=None,
+            auto=True,
+            orphan_monitor={
+                "enabled": False,
+                "run_on_startup": False,
+                "periodic_interval_sec": 60,
+                "min_order_age_sec": 30,
+                "batch_cancel_limit": 10,
+                "rate_limit_per_min": 20,
+            },
+        )
         assert isinstance(manage_orphan.orphan_monitor, OrphanMonitorConfig)
     
     def test_no_dict_any_in_execution_config(self):

@@ -33,6 +33,7 @@ class TestRegimeBarOnlyFilter:
         return SimpleNamespace(
             basis_tf_sec=300,  # 5-minute bars
             uncertain_cutoff=0.35,
+            hysteresis_bars=3,
             models=SimpleNamespace(
                 sma_trend=SimpleNamespace(
                     sma_short_period=10,
@@ -169,6 +170,7 @@ class TestUncertainCutoff:
         return SimpleNamespace(
             basis_tf_sec=300,
             uncertain_cutoff=0.1,  # Very low
+            hysteresis_bars=3,
             models=SimpleNamespace(
                 sma_trend=SimpleNamespace(
                     sma_short_period=2,
@@ -192,6 +194,7 @@ class TestUncertainCutoff:
         return SimpleNamespace(
             basis_tf_sec=300,
             uncertain_cutoff=0.99,  # Very high - almost all will be demoted
+            hysteresis_bars=3,
             models=SimpleNamespace(
                 sma_trend=SimpleNamespace(
                     sma_short_period=2,
@@ -287,6 +290,7 @@ class TestClockMigration:
         config = SimpleNamespace(
             basis_tf_sec=300,
             uncertain_cutoff=0.35,
+            hysteresis_bars=3,
             models=SimpleNamespace(
                 sma_trend=SimpleNamespace(
                     sma_short_period=10, sma_long_period=50,

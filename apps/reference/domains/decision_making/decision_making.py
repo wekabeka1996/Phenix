@@ -28,6 +28,12 @@ from vfoundation.dr import wal
 
 from .normalized_reject_reasons import NormalizedRejectReasons
 from .deferred_scheduler import DeferredIntentScheduler
+
+# FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
+try:
+    from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
+except ImportError:
+    _trade_lifecycle = None  # Graceful degrade if module not available
 from .dm_log_adapter import (
     DecisionLog,
 )
@@ -248,7 +254,6 @@ class DecisionMaking:
         resolver = DomainConfigResolver(self.config)
         dm_cfg = resolver.get_decision_making()
         qos_cfg = dm_cfg.qos
-        flip_cfg = getattr(dm_cfg, "flip", None)
 
         # P1: Degraded DecisionContext gate configuration (canonical domains.decision_making)
         # Default is disabled to preserve live behavior unless explicitly enabled.
@@ -2303,8 +2308,8 @@ class DecisionMaking:
             if symbol and not full_ready:
                 ticks_seen = warmup["ticks_seen"] if "ticks_seen" in warmup else 0
                 self.logger.info(
-                    f"[{symbol}] RegimeContract: warmup phase (full_ready=false, " 
-                    f"ticks={ticks_seen})"
+                    f"[{symbol}] RegimeContract: warmup phase (full_ready=false, "
+                    f"samples={ticks_seen})"
                 )
         
         # Minimal behavior FSM mapping (if enabled)
@@ -2818,7 +2823,34 @@ class DecisionMaking:
         ds_enabled = bool(ds_cfg.enabled)
         min_abs_delta = float(ds_cfg.min_abs_delta_price)
         min_conf = float(ds_cfg.min_confidence)
+        try:
+            min_regime_conf = float(getattr(ds_cfg, 'min_regime_confidence', 0.0))
+        except (TypeError, ValueError):
+            min_regime_conf = 0.0
         consecutive = int(ds_cfg.consecutive_bars)
+
+        # FIX-CONF-GATE-01: Separate regime confidence gate.
+        # Block entries when regime_confidence is below threshold (mid-confidence = noise).
+        if (
+            ds_enabled
+            and not reduce_only
+            and apply_safety_gates
+            and min_regime_conf > 0.0
+            and (regime_confidence is None or regime_confidence < min_regime_conf)
+        ):
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code=NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION,
+                reason="DECISION",
+                context=f"FIX-CONF-GATE-01: regime_confidence={regime_confidence} < min={min_regime_conf}",
+                why_chain=(why_chain if isinstance(why_chain, list) else []),
+                details={"regime_confidence": regime_confidence, "min_regime_confidence": min_regime_conf, "regime": regime},
+            )
+            self._record_blocked_intent(symbol)
+            return None
 
         # Compute trend from recent delta_price values (features SSOT).
         trend_dir = "UNKNOWN"
@@ -3243,9 +3275,10 @@ class DecisionMaking:
             tif = None
 
         # EP-01.3-INT: Calculate valid_for_ms ONLY for LIMIT (pending entry TTL, fail-closed).
+        # FIX: Reduce-only orders (safety closes) bypass tf_sec requirement.
         valid_for_ms: int | None = None
         if order_type_u == "LIMIT":
-            if tf_sec is None:
+            if tf_sec is None and not reduce_only:
                 self._emit_trade_intent_rejected(
                     symbol=symbol,
                     strategy_id=str(strategy_id),
@@ -3262,14 +3295,14 @@ class DecisionMaking:
 
             try:
                 pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
-                if pe_ttl_cfg.enabled:
+                if pe_ttl_cfg.enabled and tf_sec is not None:
                     ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
                     if tf_sec in ttl_by_tf:
                         valid_for_ms = int(ttl_by_tf[tf_sec]) * 1000
                         self.logger.debug(
                             f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})"
                         )
-                    elif pe_ttl_cfg.reject_unknown_tf:
+                    elif pe_ttl_cfg.reject_unknown_tf and not reduce_only:
                         self._emit_trade_intent_rejected(
                             symbol=symbol,
                             strategy_id=str(strategy_id),
@@ -3279,7 +3312,7 @@ class DecisionMaking:
                             reason="DECISION",
                             context=f"EP-01.3-INT: tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=true)",
                             why_chain=(why_chain if isinstance(why_chain, list) else []),
-                            details={"tf_sec": int(tf_sec), "known_tfs": sorted(ttl_by_tf.keys())},
+                            details={"tf_sec": int(tf_sec) if tf_sec is not None else None, "known_tfs": sorted(ttl_by_tf.keys())},
                         )
                         self._record_blocked_intent(symbol)
                         return None
@@ -3364,6 +3397,9 @@ class DecisionMaking:
             "stop_price": stop_price_payload,
             "target_price": target_price_payload,
             "entry_plan": entry_plan_trace,
+            # REGIME-LOG: Pass regime context to downstream (ExecPosFSM) for order lifecycle forensics
+            "regime": regime,
+            "regime_confidence": regime_confidence,
         }
 
         # TASK47: Commit windowed arbitration only for intents that are about to be emitted.
@@ -3440,6 +3476,22 @@ class DecisionMaking:
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
         )
 
+        # FIX-LIFECYCLE-01: Record intent in trade lifecycle logger (source of truth)
+        if _trade_lifecycle is not None:
+            try:
+                _trade_lifecycle.on_intent(
+                    rid=str(rid),
+                    symbol=symbol,
+                    side=intent_side,
+                    regime=str(regime) if regime else "",
+                    confidence=float(regime_confidence) if regime_confidence is not None else None,
+                    signal_score=float(signal_score) if signal_score is not None else None,
+                    strategy_id=str(strategy_id),
+                    entry_type=order_type_u,
+                )
+            except Exception:
+                pass  # Lifecycle logging must never block trading
+
         # TAP LOG: DM intent emitted
         # Note: tf_sec not available in this context; use trace_ts_ms instead
         # Ensure seq_counter exists (defensive for mocked instances)
@@ -3492,6 +3544,8 @@ class DecisionMaking:
             "quantity": float(qty),
             "price": float(price),
             "source_fsm": "DecisionMaking",
+            "regime": regime,
+            "regime_confidence": regime_confidence,
             "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"]}
         })
 

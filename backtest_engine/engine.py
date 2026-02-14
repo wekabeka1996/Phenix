@@ -8,6 +8,8 @@ The "Time Machine" that simulates market history and orchestrates:
 3. Event Emission (EventBus)
 4. Strategy Synchronization
 """
+import math
+import os
 import time
 import logging
 from typing import List, Optional, Dict, Any, Union
@@ -63,6 +65,16 @@ class BacktestResult:
     start_balance: float
     end_balance: float
     roi_pct: float
+    # Risk-adjusted performance metrics (OPTIMIZATION-PHASE1)
+    sharpe_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    # Profit withdrawal (backtest-only cashflow simulation)
+    withdrawals_total: float = 0.0
+    withdrawals_count: int = 0
+    end_balance_gross: float = 0.0
+    total_pnl_on_account: float = 0.0
+    roi_on_account_pct: float = 0.0
+    max_drawdown_on_account: float = 0.0
 
 class BacktestEngine:
     """
@@ -78,6 +90,8 @@ class BacktestEngine:
         event_bus: Any = None, # Expecting LocalBus or compatible
         data_dir: str = "data/processed",
         initial_balance: float = 10000.0,
+        profit_withdrawal_enabled: bool | None = None,
+        profit_withdrawal_roi_pct: float | None = None,
         clock_advance_fn: Any = None  # Callback to advance global clock: fn(ts_ms: int) -> None
     ):
         self.start_date = start_date
@@ -87,6 +101,23 @@ class BacktestEngine:
         self.data_dir = Path(data_dir)
         self.event_bus = event_bus if event_bus else LocalBus()
         self.clock_advance_fn = clock_advance_fn  # For backtest timebase synchronization
+        self.profit_withdrawal_enabled = (
+            profit_withdrawal_enabled
+            if isinstance(profit_withdrawal_enabled, bool) or profit_withdrawal_enabled is None
+            else None
+        )
+        self.profit_withdrawal_roi_pct = float(profit_withdrawal_roi_pct) if profit_withdrawal_roi_pct is not None else None
+        self.capital_withdrawals: list[dict[str, Any]] = []
+        self.capital_withdrawn_total: float = 0.0
+        self._equity_tracking_initialized: bool = False
+        self._peak_equity_gross: float = 0.0
+        self._peak_equity_on_account: float = 0.0
+        self._max_drawdown_gross: float = 0.0
+        self._max_drawdown_on_account: float = 0.0
+        # OPTIMIZATION-PHASE1: Per-bar equity returns for Sharpe ratio calculation
+        self._equity_snapshots: list[float] = []
+        # Bar-only backtest by default for Aurora. Legacy tick emits are opt-in only.
+        self._emit_market_ticks: bool = str(os.getenv("BACKTEST_EMIT_MARKET_TICKS", "0")).strip() == "1"
         
         # Initialize Mock Broker
         self.broker = MockBroker(initial_balance_usdt=initial_balance)
@@ -161,8 +192,20 @@ class BacktestEngine:
                 # Polars timestamps are usually microseconds or milliseconds.
                 # Our Converter uses 'ms' (datetime[ms]).
                 
-                start_ts = datetime.combine(self.start_date, datetime.min.time()) if isinstance(self.start_date, date) and not isinstance(self.start_date, datetime) else self.start_date
-                end_ts = datetime.combine(self.end_date, datetime.max.time()) if isinstance(self.end_date, date) and not isinstance(self.end_date, datetime) else self.end_date
+                start_ts = (
+                    datetime.combine(self.start_date, datetime.min.time())
+                    if isinstance(self.start_date, date) and not isinstance(self.start_date, datetime)
+                    else self.start_date
+                )
+                end_ts = (
+                    datetime.combine(self.end_date, datetime.max.time())
+                    if isinstance(self.end_date, date) and not isinstance(self.end_date, datetime)
+                    else self.end_date
+                )
+                # Inclusive date semantics: if caller passed a midnight datetime,
+                # treat it as end-of-day rather than a single instant.
+                if isinstance(end_ts, datetime) and end_ts.time() == datetime.min.time():
+                    end_ts = end_ts.replace(hour=23, minute=59, second=59, microsecond=999999)
                 
                 q = q.filter(
                     (pl.col("open_time") >= start_ts) & 
@@ -217,9 +260,13 @@ class BacktestEngine:
         
         # ALPHA-SEARCH: Optionally augment with TA indicators
         try:
+            print("DEBUG: Importing Augmenter...", flush=True)
             from backtest_engine.feature_augmenter import BacktestFeatureAugmenter
+            print("DEBUG: Initializing Augmenter...", flush=True)
             augmenter = BacktestFeatureAugmenter(full_df)
+            print("DEBUG: Running Augmenter...", flush=True)
             full_df = augmenter.augment()
+            print("DEBUG: Augmenter Done.", flush=True)
             LOG.info(f"Feature augmentation complete: {augmenter.get_feature_names()}")
         except Exception as aug_err:
             LOG.warning(f"Feature augmentation skipped: {aug_err}")
@@ -237,6 +284,14 @@ class BacktestEngine:
         LOG.info("Starting Backtest Simulation...")
         start_time = time.time()
         
+        # OPTIMIZATION-PHASE1: Resolve timeframe to seconds for Sharpe/Calmar annualization
+        _tf_map = {
+            "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+            "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200,
+            "1d": 86400,
+        }
+        self._tf_sec_resolved = _tf_map.get(self.timeframe, 300)
+        
         # Iterating strictly over Polars rows is slow in pure Python loop. 
         # But required for row-by-row simulation.
         # Use iter_rows(named=True)
@@ -244,6 +299,8 @@ class BacktestEngine:
         row_iterator = self.feed.iter_rows(named=True)
         count = 0
         initial_portfolio_emitted = False
+        loop_unit = "ticks" if self._emit_market_ticks else "bars"
+        loop_rate_unit = "ticks/s" if self._emit_market_ticks else "bars/s"
         
         for row in row_iterator:
             count += 1
@@ -447,34 +504,30 @@ class BacktestEngine:
                 "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
                 "volume_momentum_5m", "rsi_14"
             ]
+            augmented_values: Dict[str, float] = {}
             for col in augmented_cols:
                 if col in row and row[col] is not None:
-                    payload[col] = float(row[col])
+                    augmented_values[col] = float(row[col])
+            payload.update(augmented_values)
 
 
-            # --- DEBUG SNIFFER START ---
+            # --- BACKTEST HEARTBEAT ---
             if not hasattr(self, "_sniff_count"):
                 self._sniff_count = 0
-
-            if self._sniff_count < 5:
-                LOG.warning(f"🔍 [SNIFFER] TICK {self._sniff_count} RAW ROW: {row}")
-                LOG.warning(f"🔍 [SNIFFER] TICK {self._sniff_count} PAYLOAD OrderBook: {payload.get('order_book')}")
-                LOG.warning(
-                    f"🔍 [SNIFFER] TICK {self._sniff_count} PAYLOAD Vol: {payload.get('buy_volume')} / {payload.get('sell_volume')}"
-                )
-                self._sniff_count += 1
-            # --- DEBUG SNIFFER END ---
             
-            # Emit to Bus
-            # We use a standard topic. "market_data" usually emits EVT:MARKET_TICK_RECEIVED
-            # But the FSM Manage we saw listens to UPD:MARKET_DATA or similar? 
-            # The doc says "EVT:MARKET_TICK_RECEIVED".
-            # Let's emit that.
-            self.event_bus.emit(
-                event_name="EVT:MARKET_TICK_RECEIVED", 
-                payload=payload, 
-                why="backtest_replay"
-            )
+            self._sniff_count += 1
+            
+            if self._sniff_count % 100 == 0:
+                LOG.info(f"❤️ [HEARTBEAT] {loop_unit.upper()} {self._sniff_count} processed. TS={row.get('ts')}")
+            # --------------------------
+            
+            # Legacy tick events are optional and disabled in bar-only mode.
+            if self._emit_market_ticks:
+                self.event_bus.emit(
+                    event_name="EVT:MARKET_TICK_RECEIVED", 
+                    payload=payload, 
+                    why="backtest_replay"
+                )
 
             # Emit anchor updates for macro_sync/macro_resid pipelines.
             # FeatureEngineering will ignore anchors that are not configured.
@@ -487,13 +540,13 @@ class BacktestEngine:
             except Exception:
                 pass
             
-            # Also emit "UPD:MARKET_DATA" if needed by some legacy components?
-            # Safe to emit both if cheap.
-            self.event_bus.emit(
-                event_name="UPD:MARKET_DATA",
-                payload=payload,
-                why="backtest_replay"
-            )
+            # Legacy compatibility update for components that still consume market-data updates.
+            if self._emit_market_ticks:
+                self.event_bus.emit(
+                    event_name="UPD:MARKET_DATA",
+                    payload=payload,
+                    why="backtest_replay"
+                )
 
             # --- STEP 2.5: Emit Bar Event (Crucial for Bar-Driven Strategies) ---
             # Treat the kline row as a closed bar.
@@ -521,6 +574,16 @@ class BacktestEngine:
                     "low": str(row["low"] or 0),
                     "close": close_px,
                     "volume": volume,
+                    "buy_volume": str(buy_v),
+                    "sell_volume": str(sell_v),
+                    "buy_count": int(buy_count),
+                    "sell_count": int(sell_count),
+                    "buy_notional": str(buy_notional),
+                    "sell_notional": str(sell_notional),
+                    "bid_size": str(max(avg_bid_qty, buy_v, 0.0)),
+                    "ask_size": str(max(avg_ask_qty, sell_v, 0.0)),
+                    "bid": close_px,
+                    "ask": close_px,
                 },
                 "bar_meta": {
                     "source": "backtest",
@@ -528,6 +591,7 @@ class BacktestEngine:
                 },
                 "why": "backtest_replay_bar",
             }
+            bar_payload["bar"].update(augmented_values)
             
             self.event_bus.emit(
                 event_name="EVT:BAR_CLOSED",
@@ -558,9 +622,157 @@ class BacktestEngine:
                     LOG.warning(f"BARRIER_DRAIN failed: {e}")
             
         duration = time.time() - start_time
-        LOG.info(f"Simulation ended. Processed {count} ticks in {duration:.2f}s ({count/duration:.0f} ticks/s)")
+        LOG.info(
+            f"Simulation ended. Processed {count} {loop_unit} in {duration:.2f}s "
+            f"({count/duration:.0f} {loop_rate_unit})"
+        )
         
         return self._calculate_results()
+
+    def _profit_withdrawal_enabled_effective(self) -> bool:
+        """Effective enable switch for profit withdrawals (supports backwards-compatible auto-enable)."""
+        if self.profit_withdrawal_enabled is True:
+            return True
+        if self.profit_withdrawal_enabled is False:
+            return False
+        # None -> auto-enable when ROI threshold is configured
+        return self.profit_withdrawal_roi_pct is not None
+
+    def _profit_withdrawal_trigger_balance(self) -> float | None:
+        """Return USDT balance threshold that triggers profit withdrawal, if enabled."""
+        if not self._profit_withdrawal_enabled_effective():
+            return None
+
+        roi_pct = self.profit_withdrawal_roi_pct
+        if roi_pct is None:
+            return None
+        try:
+            roi_pct_f = float(roi_pct)
+        except Exception:
+            return None
+        if roi_pct_f <= 0:
+            return None
+        try:
+            base = float(getattr(self.broker, "initial_balance", 0.0) or 0.0)
+        except Exception:
+            base = 0.0
+        if base <= 0:
+            return None
+        return base * (1.0 + (roi_pct_f / 100.0))
+
+    def _portfolio_is_flat(self) -> bool:
+        """Best-effort: true if all positions have ~0 amount."""
+        try:
+            for pos in (getattr(self.broker, "_positions", {}) or {}).values():
+                try:
+                    amt = float(getattr(pos, "position_amount", 0.0) or 0.0)
+                except Exception:
+                    continue
+                if abs(amt) > 1e-12:
+                    return False
+        except Exception:
+            return True
+        return True
+
+    def _maybe_withdraw_profits(self, *, ts_ms: int) -> None:
+        """
+        Backtest-only: withdraw profits when configured threshold is reached.
+
+        Policy:
+          - Uses equity_free_usdt (broker.balance_usdt) as the withdrawable amount.
+          - Fail-closed: only withdraw when portfolio is flat (no open positions).
+          - When triggered, withdraws ALL profit above the initial balance, so trading
+            continues from the same base capital (initial_balance).
+        """
+        trigger = self._profit_withdrawal_trigger_balance()
+        if trigger is None:
+            return
+
+        try:
+            base = float(getattr(self.broker, "initial_balance", 0.0) or 0.0)
+            bal = float(getattr(self.broker, "balance_usdt", 0.0) or 0.0)
+        except Exception:
+            return
+
+        if base <= 0:
+            return
+        if bal < trigger:
+            return
+        if bal <= base:
+            return
+
+        if not self._portfolio_is_flat():
+            return
+
+        withdraw_usdt = bal - base
+        if withdraw_usdt <= 0:
+            return
+
+        # Apply withdrawal: reset trading capital back to base.
+        balance_before = bal
+        self.broker.balance_usdt = base
+        self.capital_withdrawn_total += float(withdraw_usdt)
+
+        rec = {
+            "ts_ms": int(ts_ms),
+            "withdrawn_usdt": float(withdraw_usdt),
+            "balance_before_usdt": float(balance_before),
+            "balance_after_usdt": float(base),
+            "initial_balance_usdt": float(base),
+            "trigger_balance_usdt": float(trigger),
+            "trigger_roi_pct": float(self.profit_withdrawal_roi_pct or 0.0),
+        }
+        self.capital_withdrawals.append(rec)
+        LOG.info(
+            f"🏦 BACKTEST PROFIT WITHDRAWAL: withdrew={withdraw_usdt:.6f} "
+            f"balance_before={balance_before:.6f} balance_after={base:.6f} "
+            f"trigger={trigger:.6f} roi_pct={self.profit_withdrawal_roi_pct}"
+        )
+
+        # Optional: emit an event for reporting/analysis (no-op if nobody listens).
+        try:
+            self.event_bus.emit(
+                event_name="EVT:CAPITAL_WITHDRAWN",
+                payload=rec,
+                why="backtest_profit_withdrawal",
+            )
+        except Exception:
+            pass
+
+    def _track_equity(self, *, equity_on_account: float) -> None:
+        """Track gross/on-account equity drawdowns (gross ignores withdrawals)."""
+        try:
+            eq_on = float(equity_on_account)
+        except Exception:
+            return
+
+        eq_gross = eq_on + float(self.capital_withdrawn_total or 0.0)
+
+        # OPTIMIZATION-PHASE1: Collect equity snapshots for Sharpe ratio
+        self._equity_snapshots.append(eq_gross)
+
+        if not self._equity_tracking_initialized:
+            self._equity_tracking_initialized = True
+            self._peak_equity_on_account = eq_on
+            self._peak_equity_gross = eq_gross
+            self._max_drawdown_on_account = 0.0
+            self._max_drawdown_gross = 0.0
+            return
+
+        if eq_on > self._peak_equity_on_account:
+            self._peak_equity_on_account = eq_on
+        if eq_gross > self._peak_equity_gross:
+            self._peak_equity_gross = eq_gross
+
+        if self._peak_equity_on_account > 0:
+            dd_on = (self._peak_equity_on_account - eq_on) / self._peak_equity_on_account
+            if dd_on > self._max_drawdown_on_account:
+                self._max_drawdown_on_account = float(dd_on)
+
+        if self._peak_equity_gross > 0:
+            dd_g = (self._peak_equity_gross - eq_gross) / self._peak_equity_gross
+            if dd_g > self._max_drawdown_gross:
+                self._max_drawdown_gross = float(dd_g)
 
     def _calculate_results(self) -> BacktestResult:
         """Compute final metrics from MockBroker state."""
@@ -575,9 +787,16 @@ class BacktestEngine:
         for pos in self.broker._positions.values():
              unrealized += float(pos.unrealized_profit)
              
-        total_balance = current_balance + unrealized
-        pnl = total_balance - self.broker.initial_balance
-        roi = (pnl / self.broker.initial_balance) * 100
+        end_balance_on_account = current_balance + unrealized
+        start_balance = float(self.broker.initial_balance)
+        withdrawals_total = float(self.capital_withdrawn_total or 0.0)
+        end_balance_gross = end_balance_on_account + withdrawals_total
+
+        total_pnl_on_account = end_balance_on_account - start_balance
+        roi_on_account = (total_pnl_on_account / start_balance) * 100 if start_balance > 0 else 0.0
+
+        total_pnl = end_balance_gross - start_balance
+        roi = (total_pnl / start_balance) * 100 if start_balance > 0 else 0.0
         
         # Win Rate: calculated from broker's trade PnL history
         trade_pnl_history = getattr(self.broker, '_trade_pnl_history', [])
@@ -585,42 +804,81 @@ class BacktestEngine:
         total_closed_trades = len(trade_pnl_history)
         win_rate = winning_trades / total_closed_trades if total_closed_trades > 0 else 0.0
         
-        # Max Drawdown: calculated from broker's equity history
-        equity_history = getattr(self.broker, '_equity_history', [self.broker.initial_balance])
-        max_drawdown = 0.0
-        peak = equity_history[0] if equity_history else self.broker.initial_balance
-        for equity in equity_history:
-            if equity > peak:
-                peak = equity
-            drawdown = (peak - equity) / peak if peak > 0 else 0.0
-            if drawdown > max_drawdown:
-                max_drawdown = drawdown
+        # Max Drawdown:
+        # - gross: ignores withdrawals (recommended for strategy performance)
+        # - on-account: includes withdrawals (useful to visualize trading-capital equity curve)
+        if self._equity_tracking_initialized:
+            max_drawdown = float(self._max_drawdown_gross or 0.0)
+            max_drawdown_on_account = float(self._max_drawdown_on_account or 0.0)
+        else:
+            equity_history = getattr(self.broker, '_equity_history', [self.broker.initial_balance])
+            max_drawdown_on_account = 0.0
+            peak = float(equity_history[0] if equity_history else self.broker.initial_balance)
+            for equity in equity_history:
+                eq = float(equity)
+                if eq > peak:
+                    peak = eq
+                drawdown = (peak - eq) / peak if peak > 0 else 0.0
+                if drawdown > max_drawdown_on_account:
+                    max_drawdown_on_account = drawdown
+            max_drawdown = float(max_drawdown_on_account)
         
         # Total trades = all filled orders
         trades = [o for o in self.broker._orders.values() if o.status == "FILLED"]
         
+        # OPTIMIZATION-PHASE1: Sharpe ratio from per-bar equity returns
+        sharpe_ratio = 0.0
+        if len(self._equity_snapshots) >= 2:
+            returns = []
+            for i in range(1, len(self._equity_snapshots)):
+                prev = self._equity_snapshots[i - 1]
+                if prev > 0:
+                    returns.append((self._equity_snapshots[i] - prev) / prev)
+            if len(returns) >= 2:
+                mean_r = sum(returns) / len(returns)
+                var_r = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
+                std_r = math.sqrt(var_r) if var_r > 0 else 0.0
+                if std_r > 1e-12:
+                    # Annualize: bars_per_year depends on timeframe
+                    # Default 5m bars: 365 * 24 * 12 = 105120 bars/year
+                    tf_sec = getattr(self, '_tf_sec_resolved', 300)
+                    bars_per_year = (365.25 * 24 * 3600) / max(tf_sec, 1)
+                    sharpe_ratio = (mean_r / std_r) * math.sqrt(bars_per_year)
+        
+        # OPTIMIZATION-PHASE1: Calmar ratio = annualized ROI / max drawdown
+        calmar_ratio = 0.0
+        if max_drawdown > 1e-9 and start_balance > 0:
+            # Estimate annualized return from total equity snapshots
+            n_bars = max(len(self._equity_snapshots), 1)
+            tf_sec = getattr(self, '_tf_sec_resolved', 300)
+            duration_years = (n_bars * tf_sec) / (365.25 * 24 * 3600)
+            if duration_years > 0:
+                gross_return = (end_balance_gross / start_balance)
+                annualized_return = gross_return ** (1.0 / duration_years) - 1.0
+                calmar_ratio = annualized_return / max_drawdown
+        
         return BacktestResult(
-            total_pnl=pnl,
+            total_pnl=total_pnl,
             max_drawdown=max_drawdown,
             total_trades=len(trades),
             win_rate=win_rate,
-            start_balance=self.broker.initial_balance,
-            end_balance=total_balance,
-            roi_pct=roi
+            start_balance=start_balance,
+            end_balance=end_balance_on_account,
+            roi_pct=roi,
+            sharpe_ratio=sharpe_ratio,
+            calmar_ratio=calmar_ratio,
+            withdrawals_total=withdrawals_total,
+            withdrawals_count=len(self.capital_withdrawals),
+            end_balance_gross=end_balance_gross,
+            total_pnl_on_account=total_pnl_on_account,
+            roi_on_account_pct=roi_on_account,
+            max_drawdown_on_account=max_drawdown_on_account,
         )
 
     def _emit_portfolio_update(self):
         """Emit EVT:PORTFOLIO_STATE_UPDATED based on MockBroker state."""
         # transformation to match PositionTracking payload
-        
-        # Balances
-        balances = [{
-            "asset": "USDT",
-            "balance": str(self.broker.balance_usdt),
-            "crossWalletBalance": str(self.broker.balance_usdt),
-            "availableBalance": str(self.broker.balance_usdt)
-        }]
-        
+
         # Positions
         positions = []
         for pos in self.broker._positions.values():
@@ -638,10 +896,24 @@ class BacktestEngine:
                 "isolatedMargin": str(pos.isolated_margin),
                 "positionSide": pos.position_side
             })
+
         # Calculate equity (balance + unrealized PnL from positions)
         unrealized_pnl = sum(float(pos.unrealized_profit) for pos in self.broker._positions.values())
+        ts_ms = int(get_clock().now_ms())  # Use simulated clock, not wall-clock
+
+        # Backtest-only cashflow simulation: withdraw profits on configured threshold.
+        self._maybe_withdraw_profits(ts_ms=ts_ms)
+
+        # Balances (after any withdrawal)
+        balances = [{
+            "asset": "USDT",
+            "balance": str(self.broker.balance_usdt),
+            "crossWalletBalance": str(self.broker.balance_usdt),
+            "availableBalance": str(self.broker.balance_usdt)
+        }]
+
         total_equity = self.broker.balance_usdt + unrealized_pnl
-        positions_last_ts_ms = get_clock().now_ms()  # Use simulated clock, not wall-clock
+        positions_last_ts_ms = ts_ms  # staleness SSOT
         open_positions_usd = 0.0
         open_positions_margin_usd = 0.0
         for pos in self.broker._positions.values():
@@ -656,11 +928,14 @@ class BacktestEngine:
                 open_positions_margin_usd += notional / max(1.0, lev)
             except Exception:
                 continue
+
+        # Track drawdowns (gross ignores withdrawals).
+        self._track_equity(equity_on_account=float(total_equity))
             
         payload = {
             "balances": balances,
             "positions": positions,
-            "event_time_ms": get_clock().now_ms(),  # Use simulated clock
+            "event_time_ms": ts_ms,  # Use simulated clock
             # ExposureGuard staleness SSOT
             "positions_last_ts_ms": positions_last_ts_ms,
             "open_positions_usd": str(open_positions_usd),
@@ -719,6 +994,7 @@ class BacktestEngine:
             payload=payload,
             why="backtest_initial_portfolio_bootstrap"
         )
+        self._track_equity(equity_on_account=float(initial_balance))
         LOG.info(f"✅ Emitted initial portfolio: equity={initial_balance}, positions=[] (flat)")
 
     def _emit_portfolio_heartbeat(self):

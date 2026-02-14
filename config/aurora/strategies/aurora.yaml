@@ -29,11 +29,11 @@ aurora:
   # Global Aurora policy (DecisionConfig)
   decision:
     testnet:
-      signal_threshold: 0.12
+      signal_threshold: 0.14
     production:
-      signal_threshold: 0.12
-    signal_threshold: 0.12
-    neutral_threshold: 0.05
+      signal_threshold: 0.14
+    signal_threshold: 0.14
+    neutral_threshold: 0.06
     symbols_to_track:
       - BTCUSDT
       - ETHUSDT
@@ -45,18 +45,18 @@ aurora:
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
     regime_threshold_multipliers:
-      HIGH_VOLATILITY: 1.0
-      LOW_VOLATILITY: 0.9
-      MEAN_REVERSION: 0.75
-      TREND_UP: 1.0
-      TREND_DOWN: 1.0
-      UNCERTAIN: 1.15
-      DEFAULT: 1.0
+      HIGH_VOLATILITY: 1.30
+      LOW_VOLATILITY: 1.15
+      MEAN_REVERSION: 1.10
+      TREND_UP: 0.85
+      TREND_DOWN: 0.85
+      UNCERTAIN: 1.50
+      DEFAULT: 1.00
     side_bias_min_score: null
-    side_bias_window_sec: 420
-    side_bias_target_ratio: 0.72
-    side_bias_penalty_factor: 0.25
-    side_bias_min_intents: 18
+    side_bias_window_sec: 21600
+    side_bias_target_ratio: 0.60
+    side_bias_penalty_factor: 0.35
+    side_bias_min_intents: 12
     cooldown_sec: 6
     retry_ttl_ms: 5000
     retry_max_count: 3
@@ -86,7 +86,7 @@ aurora:
     signals:
       normalize_signals_mode: signed_v2
       enable_new_metrics: true
-      delta_price_cap_pct: 0.02
+      delta_price_cap_pct: 0.015
     bar_gating: null
     roi_exit: null
     mean_reversion: null
@@ -109,19 +109,20 @@ aurora:
       strength_features:
         - volume_spike
         - volatility_state
-      strength_alpha: 0.5
+      strength_alpha: 0.80
       strength_cap: 1.0
     
     liquidity_gate:
       enabled: true
-      kappa_min: 0.1
+      kappa_min: 0.15
       kappa_max: 1.0
-      failsafe_qty_check: true
+      failsafe_qty_check: false
 
     essential_features:
-      - obi
       - delta_price
-      - macro_resid  # Phase 4 Fix: Require macro_resid for fail-closed behavior
+      - ema_bias
+      - obi
+      - tfi
 
     # [Phase 3 Fix] Anchor Shock Veto: Block long signals during BTC crash
     anchor_shock_veto:
@@ -135,8 +136,8 @@ aurora:
     # RFC: docs/RFC_min_duration_logic.md
     holding_period:
       enabled: true
-      min_duration_sec: 30          # Minimum seconds to hold position
-      emergency_exit_threshold: 0.7  # |score| threshold for emergency override
+      min_duration_sec: 300         # Minimum seconds to hold position
+      emergency_exit_threshold: 0.75  # |score| threshold for emergency override
       apply_to_flips: true          # Also apply holding period to FLIP signals
 
     # === VOL-ADJ-GATES-01: Sigma-normalized Motion Gates ===
@@ -145,38 +146,38 @@ aurora:
     # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
     gates:
       enabled: true
-      anti_flat_sigma: 0.5   # Block ENTRY if |pm_norm| < 0.5 (dead market)
-      anti_fomo_sigma: 4.0   # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
+      anti_flat_sigma: 0.50  # Block ENTRY if |pm_norm| < 0.5 (dead market)
+      anti_fomo_sigma: 4.00  # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
       # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
       motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.
     # After exiting a position, wait this many seconds before allowing new entry.
-    reentry_cooldown_sec: 300  # Global default: 60 seconds
+    reentry_cooldown_sec: 600  # Global default: 600 seconds
 
     feature_neutrals:
       obi: 0.0
       tfi: 0.0
       delta_price: 0.0
-      ema_bias: 0.5
+      ema_bias: 0.0
       volume_spike: 0.0
       volatility_state: 0.0
-      depth_imbalance: 0.5
+      depth_imbalance: 0.0
       macro_sync: 0.5
       macro_resid: 0.0
     
     signal_weights:
-      obi: 0.15
-      tfi: 0.15
-      delta_price: 0.1
+      obi: 0.25
+      tfi: 0.25
+      delta_price: 0.35
       ema_bias: 0.15
-      volume_spike: 0.1
-      volatility_state: 0.1
+      volume_spike: 0.10
+      volatility_state: 0.10
       # depth_imbalance: phi in [0,1], higher = ASK dominance (sell pressure) -> negative weight
-      depth_imbalance: -0.15
+      depth_imbalance: 0.20
       # R1: macro_resid replaces macro_sync in directional scoring
-      macro_resid: 0.1
+      macro_resid: 0.10
       # macro_sync: 0.0  # DEPRECATED for scoring (kept as telemetry)
 
   # Per-symbol overrides (AuroraInstrumentConfig)
@@ -437,31 +438,33 @@ aurora:
         target: 20
         mode: "ISOLATED"
       side_bias:
-        penalty_factor: 0.5
-        window_sec: 600
-        target_ratio: 0.6
+        penalty_factor: 0.35
+        window_sec: 21600
+        target_ratio: 0.60
       
       # 2. Weights (Standard)
       weights:
-        ema_bias: 0.20
-        volume_spike: 0.15
-        macro_resid: 0.15
-        obi: 0.20
-        tfi: 0.10
+        ema_bias: 0.15
+        volume_spike: 0.10
+        macro_resid: 0.10
+        obi: 0.25
+        tfi: 0.25
         volatility_state: 0.10
-        depth_imbalance: -0.05
-        delta_price: 0.05
+        depth_imbalance: 0.20
+        delta_price: 0.35
 
       # 3. Safety Gates
       holding_period:
-        min_duration_sec: 20
-        emergency_exit_threshold: 0.7
-      reentry_cooldown_sec: 300
+        enabled: true
+        min_duration_sec: 600
+        emergency_exit_threshold: 0.75
+        apply_to_flips: true
+      reentry_cooldown_sec: 900
       liquidity_gate:
         enabled: true
-        kappa_min: 0.1
+        kappa_min: 0.18
         kappa_max: 1.0
-        failsafe_qty_check: true
+        failsafe_qty_check: false
 
       # 4. Regime Filters (The Logic)
       # Block MR/Uncertain via thresholds. Enable others.
@@ -520,23 +523,23 @@ aurora:
         trail_pct: 0.01
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION", "LOW_VOLATILITY"]
       signal_threshold:
-        enabled: false
-        value: null
-      cooldown_sec: null
+        enabled: true
+        value: 0.13
+      cooldown_sec: 60
       
       # 7. Entry Logic (Smart Pullback)
       # High Vol: Deep pullback (0.5). Low Vol: Moderate (0.2).
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
-          HIGH_VOLATILITY: 0.5
-          LOW_VOLATILITY: 0.2
-          TREND_UP: 0.2
-          TREND_DOWN: 0.2
-          MEAN_REVERSION: 0.2
-          UNCERTAIN: 0.2
-          DEFAULT: 0.2
+          HIGH_VOLATILITY: 0.55
+          LOW_VOLATILITY: 0.14
+          TREND_UP: 0.25
+          TREND_DOWN: 0.25
+          MEAN_REVERSION: 0.18
+          UNCERTAIN: 0.30
+          DEFAULT: 0.22
       
       timeframe_sec: null

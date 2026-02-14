@@ -10,7 +10,17 @@ import logging
 import uuid
 import time
 import random
+from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from backtest_engine.sl_fill_policy import (
+    SLFillModel,
+    BarData,
+    StopOrder,
+    SLBandRecord,
+    compute_stop_market_fill,
+    build_sl_band_record,
+)
 
 from vfoundation.core.adapters.base import (
     AbstractExchangeAdapter,
@@ -62,11 +72,19 @@ class MockBroker(AbstractExchangeAdapter):
         slippage_map: Optional[Dict[str, float]] = None,  # Per-symbol slippage override
         fill_probability_at_touch: float = 0.0,  # Probability of fill when price == limit (0.0 = conservative)
         max_volume_participation: float = 0.05,  # Max 5% of bar volume per order
+        sl_fill_model: str = "optimistic",  # "optimistic" (default) | "conservative" | "close_based"
+        sl_min_bps: float = 5.0,  # Min slippage bps for optimistic SL model
+        # Stage2 execution stress overrides
+        fee_mult: float = 1.0,
+        slippage_mult: float = 1.0,
+        latency_ms: int = 0,
+        funding_bps_per_day: float = 0.0,
     ):
         self.initial_balance = initial_balance_usdt
         self.balance_usdt = initial_balance_usdt
-        self.commission_maker = commission_maker
-        self.commission_taker = commission_taker
+        self._fee_mult = max(float(fee_mult), 0.0)
+        self.commission_maker = float(commission_maker) * self._fee_mult
+        self.commission_taker = float(commission_taker) * self._fee_mult
         # Leverage map from config (symbol -> leverage), default 20x for all
         self.leverage_map = leverage_map or {"__default__": 20}
 
@@ -78,10 +96,24 @@ class MockBroker(AbstractExchangeAdapter):
         self.fsm_core: Any | None = None
         
         # Realism parameters (Backtest Hardening)
-        self._slippage_bps = slippage_bps
+        self._slippage_mult = max(float(slippage_mult), 0.0)
+        self._slippage_bps = float(slippage_bps) * self._slippage_mult
         self._slippage_map = slippage_map or {}
         self._fill_probability_at_touch = fill_probability_at_touch
         self._max_volume_participation = max_volume_participation
+        self._sl_fill_model = SLFillModel(sl_fill_model)
+        self._sl_min_bps = sl_min_bps
+        self._latency_ms = max(int(latency_ms), 0)
+        self._funding_bps_per_day = float(funding_bps_per_day)
+        self._last_funding_ts_ms: Dict[str, int] = {}
+        self.funding_ledger: List[Dict[str, Any]] = []
+        self.applied_stress_params: Dict[str, Any] = {
+            "fee_mult": self._fee_mult,
+            "slippage_mult": self._slippage_mult,
+            "slippage_bps": self._slippage_bps,
+            "latency_ms": self._latency_ms,
+            "funding_bps_per_day": self._funding_bps_per_day,
+        }
         
         # State
         self._orders: Dict[str, ExchangeOrderResponse] = {} # order_id -> Order
@@ -103,6 +135,9 @@ class MockBroker(AbstractExchangeAdapter):
         # Cancelled orders tracking (for SL priority logic)
         self._cancelled_this_bar: set[str] = set()
 
+        # SL Band recording (populated per triggered SL for sensitivity analysis)
+        self.sl_band_log: List[SLBandRecord] = []
+
     # --- Realism Helpers ---
     
     def _get_slippage(self, symbol: str) -> float:
@@ -116,6 +151,69 @@ class MockBroker(AbstractExchangeAdapter):
             return qty
         max_qty = bar_volume * self._max_volume_participation
         return min(qty, max_qty)
+
+    @staticmethod
+    def _extract_ts_ms(candle_or_tick: Dict[str, Any]) -> Optional[int]:
+        raw = candle_or_tick.get("ts")
+        if raw is None:
+            return None
+        try:
+            if isinstance(raw, datetime):
+                return int(raw.timestamp() * 1000)
+            return int(raw)
+        except Exception:
+            return None
+
+    def _apply_funding_for_bar(self, *, symbol: str, price: float, current_ts_ms: Optional[int]) -> None:
+        if abs(self._funding_bps_per_day) <= 1e-12:
+            return
+        pos = self._positions.get(symbol)
+        if pos is None:
+            return
+        try:
+            pos_amt = float(pos.position_amount)
+        except Exception:
+            return
+        if abs(pos_amt) <= 1e-12:
+            return
+
+        prev_ts = self._last_funding_ts_ms.get(symbol)
+        if current_ts_ms is None:
+            dt_sec = 300.0
+        elif prev_ts is None:
+            dt_sec = 300.0
+        else:
+            dt_sec = max((int(current_ts_ms) - int(prev_ts)) / 1000.0, 0.0)
+        if dt_sec <= 0:
+            if current_ts_ms is not None:
+                self._last_funding_ts_ms[symbol] = int(current_ts_ms)
+            return
+
+        notional = abs(pos_amt) * max(float(price), 0.0)
+        if notional <= 0:
+            if current_ts_ms is not None:
+                self._last_funding_ts_ms[symbol] = int(current_ts_ms)
+            return
+
+        rate_per_day = self._funding_bps_per_day / 10000.0
+        funding_abs = notional * rate_per_day * (dt_sec / 86400.0)
+        side_sign = 1.0 if pos_amt > 0 else -1.0
+        cash_delta = -side_sign * funding_abs
+        self.balance_usdt += cash_delta
+
+        self.funding_ledger.append(
+            {
+                "symbol": symbol,
+                "ts_ms": int(current_ts_ms) if current_ts_ms is not None else None,
+                "position_amount": pos_amt,
+                "notional": notional,
+                "dt_sec": dt_sec,
+                "funding_bps_per_day": self._funding_bps_per_day,
+                "cash_delta": cash_delta,
+            }
+        )
+        if current_ts_ms is not None:
+            self._last_funding_ts_ms[symbol] = int(current_ts_ms)
 
     # --- Market Simulation Methods ---
 
@@ -145,9 +243,11 @@ class MockBroker(AbstractExchangeAdapter):
 
         # Determine price points for matching
         current_price = float(candle_or_tick.get('close', candle_or_tick.get('price', 0)))
+        open_price = float(candle_or_tick.get('open', current_price))
         high_price = float(candle_or_tick.get('high', current_price))
         low_price = float(candle_or_tick.get('low', current_price))
         bar_volume = float(candle_or_tick.get('volume', 0))
+        current_ts_ms = self._extract_ts_ms(candle_or_tick)
         
         self._last_prices[symbol] = current_price
         
@@ -178,7 +278,7 @@ class MockBroker(AbstractExchangeAdapter):
             if oid in self._cancelled_this_bar:
                 continue
             fill_result = self._try_fill_order(
-                oid, order, meta, current_price, high_price, low_price, bar_volume
+                oid, order, meta, current_price, open_price, high_price, low_price, bar_volume, current_ts_ms
             )
             if fill_result:
                 fills.append(fill_result)
@@ -190,7 +290,7 @@ class MockBroker(AbstractExchangeAdapter):
             if oid in self._cancelled_this_bar:
                 continue
             fill_result = self._try_fill_order(
-                oid, order, meta, current_price, high_price, low_price, bar_volume
+                oid, order, meta, current_price, open_price, high_price, low_price, bar_volume, current_ts_ms
             )
             if fill_result:
                 fills.append(fill_result)
@@ -200,10 +300,13 @@ class MockBroker(AbstractExchangeAdapter):
             if oid in self._cancelled_this_bar:
                 continue
             fill_result = self._try_fill_order(
-                oid, order, meta, current_price, high_price, low_price, bar_volume
+                oid, order, meta, current_price, open_price, high_price, low_price, bar_volume, current_ts_ms
             )
             if fill_result:
                 fills.append(fill_result)
+
+        # Funding is applied once per processed bar on open notional.
+        self._apply_funding_for_bar(symbol=symbol, price=current_price, current_ts_ms=current_ts_ms)
 
         return fills
 
@@ -213,13 +316,18 @@ class MockBroker(AbstractExchangeAdapter):
         order: ExchangeOrderResponse,
         meta: Dict[str, Any],
         current_price: float,
+        open_price: float,
         high_price: float,
         low_price: float,
         bar_volume: float,
+        current_ts_ms: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Attempt to fill a single order with hardened matching logic.
-        
+
+        STOP_MARKET fills use SLFillModel (conservative/optimistic) via
+        ``compute_stop_market_fill``.  No open-based caps.
+
         Returns fill event dict if filled, None otherwise.
         """
         filled = False
@@ -249,6 +357,14 @@ class MockBroker(AbstractExchangeAdapter):
         order_type = str(meta.get("type") or "").upper()
         if not order_type:
             order_type = "LIMIT" if limit_price is not None else "MARKET"
+
+        if self._latency_ms > 0 and current_ts_ms is not None:
+            try:
+                created_ts = int(getattr(order, "timestamp_ms", 0) or 0)
+            except Exception:
+                created_ts = 0
+            if created_ts > 0 and (int(current_ts_ms) - created_ts) < self._latency_ms:
+                return None
         
         # --- LIMIT: Trade-Through Logic ---
         if order_type == "LIMIT" and limit_price is not None:
@@ -285,20 +401,50 @@ class MockBroker(AbstractExchangeAdapter):
                 fill_price = current_price * (1 - slippage)
             role = "TAKER"
             
-        # --- STOP_MARKET (SL) ---
+        # --- STOP_MARKET (SL): policy-driven fill ---
         elif order_type == "STOP_MARKET" and stop_price is not None:
-            if side == "SELL" and low_price <= stop_price:
+            bar = BarData(
+                open=open_price,
+                high=high_price,
+                low=low_price,
+                close=current_price,
+                volume=bar_volume,
+            )
+            sord = StopOrder(
+                side=side,
+                stop_price=stop_price,
+                qty=qty,
+                order_id=order_id,
+                symbol=symbol,
+            )
+
+            result = compute_stop_market_fill(
+                sord, bar, self._sl_fill_model, self._sl_min_bps,
+            )
+            if result.triggered:
                 filled = True
-            elif side == "BUY" and high_price >= stop_price:
-                filled = True
-            if filled:
-                # Apply slippage to stop execution price
-                slippage = self._get_slippage(symbol)
-                if side == "BUY":
-                    fill_price = current_price * (1 + slippage)
-                else:
-                    fill_price = current_price * (1 - slippage)
+                fill_price = result.fill_price
+
+                # CLOSE_BASED: apply general market slippage on top of close
+                # (preserves original MockBroker behaviour)
+                if self._sl_fill_model == SLFillModel.CLOSE_BASED:
+                    slippage = self._get_slippage(symbol)
+                    if side == "BUY":
+                        fill_price = fill_price * (1 + slippage)
+                    else:
+                        fill_price = fill_price * (1 - slippage)
+
                 role = "TAKER"
+
+                # Record SL band (both models) for post-run sensitivity analysis
+                band = build_sl_band_record(sord, bar, self._sl_min_bps)
+                if band is not None:
+                    self.sl_band_log.append(band)
+                    LOG.debug(
+                        f"[MockBroker] SL fill ({self._sl_fill_model.value}): "
+                        f"{side} stop={stop_price:.2f} -> fill={fill_price:.2f}  "
+                        f"[opt={band.fill_optimistic:.2f} / cons={band.fill_conservative:.2f}]"
+                    )
                 
         # --- TAKE_PROFIT_MARKET (TP) ---
         elif order_type == "TAKE_PROFIT_MARKET" and stop_price is not None:

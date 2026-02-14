@@ -71,8 +71,18 @@ class DailyRiskState:
 
     def __init__(self, cfg: Dict[str, Any], logger=None):
         self.log = logger
+        # BACKTEST-SAFETY: In backtest mode we intentionally do NOT persist daily gate state.
+        # Persisted state is keyed by *wall-clock* date and will leak across runs, causing
+        # false drawdown breaches (e.g., reference_equity from a prior run).
+        try:
+            trading_mode = str(getattr(cfg, "trading_mode", "")).strip().lower()
+        except Exception:
+            trading_mode = ""
+        self._persist_state = trading_mode != "backtest"
+
         self._state_path = Path(os.environ.get("AURORA_RISK_GATE_STATE_PATH", "data/risk_gate_state.json"))
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        if self._persist_state:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._last_gate_open: Optional[bool] = None
 
         # Strict Object Config: No dict support (Task 18)
@@ -122,7 +132,11 @@ class DailyRiskState:
         self._equity_open = z
         self._equity_now = z
         self._last_reset_date: Optional[date] = None  # YYYY-MM-DD
-        self._load_state()
+        if self._persist_state:
+            self._load_state()
+        else:
+            # Backtest: always start from a clean slate (in-memory only).
+            self.reset()
 
     @property
     def reference_equity(self):
@@ -160,6 +174,8 @@ class DailyRiskState:
         return (now.date() - timedelta(days=1))
 
     def _save_state(self) -> None:
+        if not getattr(self, "_persist_state", True):
+            return
         payload = {
             "reference_equity": _fmt_usd(self._equity_open),
             "last_reset_date": self._last_reset_date.isoformat() if self._last_reset_date else None,
@@ -176,6 +192,9 @@ class DailyRiskState:
                 self.log.exception("[DailyGate] Failed to save state")
 
     def _load_state(self) -> None:
+        if not getattr(self, "_persist_state", True):
+            self.reset()
+            return
         now = _now_utc()
         active_date = self._active_trading_date(now=now)
         try:

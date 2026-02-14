@@ -126,8 +126,46 @@ class FeatureEngineering:
             for anchor in self.cfg.macro_sync_anchors
         }
         self._anchor_last_ts_ms: Dict[str, int] = {anchor: 0 for anchor in self.cfg.macro_sync_anchors}
+        self._macro_sync_runtime_bin_ms: int = int(self.cfg.macro_sync_bin_ms)
+        self._macro_sync_gap_bins_override: Optional[int] = None
+        try:
+            trading_mode = str(getattr(config, "trading_mode", "") or "").strip().lower()
+        except Exception:
+            trading_mode = ""
+        emit_ticks = str(os.getenv("BACKTEST_EMIT_MARKET_TICKS", "0")).strip() == "1"
+        if trading_mode == "backtest" and not emit_ticks:
+            # Bar-only backtest can legitimately have 1 update per bar (e.g. 5m),
+            # which is sparse relative to macro_sync.bin_ms (often a few seconds).
+            # Also adapt runtime bin_ms to bar cadence; otherwise returns_by_bin has no contiguous bins.
+            tf_candidates = [
+                int(tf)
+                for tf in (self.cfg.enabled_timeframes_sec or [])
+                if int(tf) >= 60
+            ]
+            basis_tf_sec = 300 if 300 in tf_candidates else (min(tf_candidates) if tf_candidates else 300)
+            self._macro_sync_runtime_bin_ms = max(
+                int(self.cfg.macro_sync_bin_ms),
+                int(basis_tf_sec) * 1000,
+            )
+            bins_per_bar = max(
+                1,
+                (int(basis_tf_sec) * 1000 + int(self._macro_sync_runtime_bin_ms) - 1)
+                // int(self._macro_sync_runtime_bin_ms),
+            )
+            self._macro_sync_gap_bins_override = max(
+                int(self.cfg.macro_sync_max_gap_bins),
+                int(bins_per_bar) + 1,
+            )
+            self.logger.info(
+                "Macro-sync bar-only override: bin_ms=%s (base=%s), max_gap_bins=%s (base=%s), basis_tf_sec=%s",
+                int(self._macro_sync_runtime_bin_ms),
+                int(self.cfg.macro_sync_bin_ms),
+                self._macro_sync_gap_bins_override,
+                int(self.cfg.macro_sync_max_gap_bins),
+                int(basis_tf_sec),
+            )
         self._macro_sync_resampler = MacroSyncResampler(
-            bin_ms=self.cfg.macro_sync_bin_ms,
+            bin_ms=self._macro_sync_runtime_bin_ms,
             window_bins=self.cfg.macro_sync_window,
             min_bins=self.cfg.macro_sync_min_buffer,
             ttl_ms=self.cfg.macro_sync_ttl_ms,
@@ -208,9 +246,27 @@ class FeatureEngineering:
         if anchor in self.anchor_prices:
             self.anchor_prices[anchor].append(decimal.Decimal(price))
             self._anchor_last_ts_ms[anchor] = int(ts_ms)
-            self._macro_sync_resampler.update_anchor(anchor, ts_ms=int(ts_ms), price=float(decimal.Decimal(price)))
+            self._macro_sync_resampler.update_anchor(
+                anchor,
+                ts_ms=int(ts_ms),
+                price=float(decimal.Decimal(price)),
+                max_gap_bins=self._macro_sync_effective_max_gap_bins(),
+            )
             self._macro_sync_anchor_ts_missing = False
             self.logger.debug(f"Updated anchor {anchor} price: {price}")
+
+    def _macro_sync_effective_max_gap_bins(self, tf_sec: Optional[int] = None) -> int:
+        """Compute runtime max_gap_bins for macro_sync (live default, bar-only backtest override)."""
+        if self._macro_sync_gap_bins_override is None:
+            return int(self.cfg.macro_sync_max_gap_bins)
+        if tf_sec is not None and int(tf_sec) > 0:
+            bins_per_tf = max(
+                1,
+                (int(tf_sec) * 1000 + int(self._macro_sync_runtime_bin_ms) - 1)
+                // int(self._macro_sync_runtime_bin_ms),
+            )
+            return max(int(self._macro_sync_gap_bins_override), int(bins_per_tf) + 1)
+        return int(self._macro_sync_gap_bins_override)
 
     def _on_anchor_updated_event(self, event: Message) -> None:
         """
@@ -484,7 +540,12 @@ class FeatureEngineering:
                 self.anchor_prices[symbol].append(price)
                 self._anchor_last_ts_ms[symbol] = int(ts_pld)
                 if price > 0:
-                    self._macro_sync_resampler.update_anchor(symbol, ts_ms=int(ts_pld), price=float(price))
+                    self._macro_sync_resampler.update_anchor(
+                        symbol,
+                        ts_ms=int(ts_pld),
+                        price=float(price),
+                        max_gap_bins=self._macro_sync_effective_max_gap_bins(),
+                    )
 
             self.logger.debug(f"No previous tick for {symbol}, skipping feature calculation")
             return
@@ -502,7 +563,12 @@ class FeatureEngineering:
             self.anchor_prices[symbol].append(price)
             self._anchor_last_ts_ms[symbol] = int(ts_pld)
             if price > 0:
-                self._macro_sync_resampler.update_anchor(symbol, ts_ms=int(ts_pld), price=float(price))
+                self._macro_sync_resampler.update_anchor(
+                    symbol,
+                    ts_ms=int(ts_pld),
+                    price=float(price),
+                    max_gap_bins=self._macro_sync_effective_max_gap_bins(),
+                )
 
     def on_bar_closed(self, event: Message) -> None:
         """Handle bar closed event - emit bar-features for MR strategy.
@@ -531,69 +597,66 @@ class FeatureEngineering:
         
         # Store bar for reference
         self.last_bar[(symbol, tf_sec)] = bar_data
-        
-        # Get last tick for this symbol to calculate bar-features
-        last_tick = self.last_tick_data.get(symbol)
-        if not last_tick:
-            self.logger.debug(f"on_bar_closed: no last_tick for {symbol}, can't emit bar-features yet")
-            return
-        
-        # Create synthetic "current tick" from bar close for feature calculation
+
         if isinstance(bar_data, dict):
             close_price = bar_data.get("close")
             bar_ts = bar_data.get("end_ts_ms")
+            bar_open = bar_data.get("open")
+            bar_get = bar_data.get
         else:
             close_price = getattr(bar_data, "close", None)
             bar_ts = getattr(bar_data, "end_ts_ms", None)
-        
+            bar_open = getattr(bar_data, "open", None)
+            bar_get = lambda key, default=None: getattr(bar_data, key, default)
+
         if close_price is None or bar_ts is None:
             self.logger.debug(f"on_bar_closed: missing close={close_price} or ts={bar_ts}")
             return
-        
-        # Emit bar-features with bar's tf_sec
-        # For bar-features, create a synthetic "previous tick" that matches bar timing
-        # to avoid time_diff <= 0 rejection in _calculate_and_emit_features_for_tf
+
+        # Bar-only mode: derive feature seed directly from bar payload.
+        seed_tick = self.last_tick_data.get(symbol, {})
         bar_tick = {
             "symbol": symbol,
-            "ts": bar_ts,
+            "ts": int(bar_ts),
             "price": str(close_price),
-            "bid_size": last_tick.get("bid_size", "0"),
-            "ask_size": last_tick.get("ask_size", "0"),
-            "buy_volume": last_tick.get("buy_volume", "0"),
-            "sell_volume": last_tick.get("sell_volume", "0"),
-            "buy_count": last_tick.get("buy_count"),
-            "sell_count": last_tick.get("sell_count"),
-            "buy_notional": last_tick.get("buy_notional"),
-            "sell_notional": last_tick.get("sell_notional"),
-            "trades_dropped_out_of_order": last_tick.get("trades_dropped_out_of_order"),
-            "bid": last_tick.get("bid"),
-            "ask": last_tick.get("ask"),
+            "bid_size": str(bar_get("bid_size", seed_tick.get("bid_size", "0"))),
+            "ask_size": str(bar_get("ask_size", seed_tick.get("ask_size", "0"))),
+            "buy_volume": str(bar_get("buy_volume", seed_tick.get("buy_volume", "0"))),
+            "sell_volume": str(bar_get("sell_volume", seed_tick.get("sell_volume", "0"))),
+            "buy_count": bar_get("buy_count", seed_tick.get("buy_count", 0)),
+            "sell_count": bar_get("sell_count", seed_tick.get("sell_count", 0)),
+            "buy_notional": str(bar_get("buy_notional", seed_tick.get("buy_notional", "0"))),
+            "sell_notional": str(bar_get("sell_notional", seed_tick.get("sell_notional", "0"))),
+            "trades_dropped_out_of_order": bar_get("trades_dropped_out_of_order", 0),
+            "bid": str(bar_get("bid", seed_tick.get("bid", close_price))),
+            "ask": str(bar_get("ask", seed_tick.get("ask", close_price))),
         }
-        
-        # ALPHA-SEARCH SUPPORT: Pass through augmented keys to bar_tick
+
+        # ALPHA-SEARCH SUPPORT: pass through augmented keys from bar payload (or last seed as fallback)
         aug_keys = [
             "macd_line", "macd_signal", "macd_histogram",
             "stochastic_k", "stochastic_d",
             "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
-            "volume_momentum_5m", "rsi_14"
+            "volume_momentum_5m", "rsi_14",
         ]
         for k in aug_keys:
-            if k in last_tick and last_tick[k] is not None:
-                bar_tick[k] = last_tick[k]
-        
-        # Extract bar's open price for correct delta_price
-        if isinstance(bar_data, dict):
-            bar_open = bar_data.get("open")
-        else:
-            bar_open = getattr(bar_data, "open", None)
-        
+            v = bar_get(k, seed_tick.get(k))
+            if v is not None:
+                bar_tick[k] = v
+
         bar_open_dec = decimal.Decimal(str(bar_open)) if bar_open is not None else None
-        
-        # P2: Use extracted method for synthetic tick creation
-        bar_last_tick = self._create_synthetic_tick_for_bar_close(last_tick, bar_ts, bar_open_dec)
-        
+        bar_last_tick = self._create_synthetic_tick_for_bar_close(bar_tick, int(bar_ts), bar_open_dec)
+
         self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
-        self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
+        accepted = self._calculate_and_emit_features_for_tf(
+            symbol,
+            tf_sec=tf_sec,
+            current_tick=bar_tick,
+            last_tick=bar_last_tick,
+            bar_data=bar_data,
+        )
+        if accepted:
+            self.last_tick_data[symbol] = bar_tick
 
     def _create_synthetic_tick_for_bar_close(
         self, 
@@ -690,7 +753,12 @@ class FeatureEngineering:
             self._last_tick_ts_ms = current_ts_ms
 
             if self._last_tick_ts_ms > 0 and price > 0:
-                self._macro_sync_resampler.update_symbol(symbol, ts_ms=self._last_tick_ts_ms, price=float(price))
+                self._macro_sync_resampler.update_symbol(
+                    symbol,
+                    ts_ms=self._last_tick_ts_ms,
+                    price=float(price),
+                    max_gap_bins=self._macro_sync_effective_max_gap_bins(tf_sec=tf_sec),
+                )
                 # R1 (P1): macro_resid depends on anchor_prices["BTCUSDT"] history.
                 # In live mode, anchors are typically part of the trading symbols list, so they
                 # arrive via normal ticks. When anchor_update_from_ticks is disabled, we still
@@ -1131,6 +1199,21 @@ class FeatureEngineering:
             # 3. warmup must exist and full_ready == True
             # 4. bar_close_ts must be present in bar_data
             # 5. bar must have OHLCV fields
+            def _emit_cmd_blocked(reason_code: str, reason: str) -> None:
+                try:
+                    self.fsm.emit(
+                        "EVT:PROCESS_STRATEGY_BLOCKED",
+                        payload={
+                            "symbol": symbol,
+                            "tf_sec": tf_sec,
+                            "reason_code": reason_code,
+                            "reason": reason,
+                            "ts": current_tick.get("ts"),
+                        },
+                        why="cmd_blocked",
+                    )
+                except Exception:
+                    pass
             
             # Gate 1: bar_data presence
             if not bar_data:
@@ -1140,11 +1223,13 @@ class FeatureEngineering:
                 self.logger.warning(
                     f"[{symbol}] CMD:PROCESS_STRATEGY rejected: tf_sec={tf_sec} < 60"
                 )
+                _emit_cmd_blocked("TF_SEC_LT_60", "tf_sec below 60")
             # Gate 3: warmup fail-closed (REC-01-FIX: no default True)
             elif warmup is None:
                 self.logger.warning(
                     f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup missing"
                 )
+                _emit_cmd_blocked("WARMUP_MISSING", "warmup missing")
             else:
                 warmup_mode = str(self.cfg.warmup_enforcement_mode or "fail_fast")
                 warmup_full_ready = warmup.get("full_ready") is True
@@ -1156,6 +1241,7 @@ class FeatureEngineering:
                     )
                     if warmup_mode == "fail_fast":
                         self.logger.warning(f"{msg} -> rejected")
+                        _emit_cmd_blocked("WARMUP_NOT_FULL_READY", "warmup full_ready=false")
                         return
                     # warn_only / disabled: allow strategy processing to proceed
                     self.logger.warning(f"{msg} -> allowed")
@@ -1167,12 +1253,14 @@ class FeatureEngineering:
                     self.logger.warning(
                         f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar_close_ts missing in bar_data"
                     )
+                    _emit_cmd_blocked("BAR_CLOSE_TS_MISSING", "bar close timestamp missing")
                 # Gate 5: Validate bar has OHLCV fields (REC-01-FIX: bar structure check)
                 elif not all(bar_data.get(f) is not None for f in ("open", "high", "low", "close", "volume")):
                     missing = [f for f in ("open", "high", "low", "close", "volume") if bar_data.get(f) is None]
                     self.logger.warning(
                         f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar fields missing ({missing})"
                     )
+                    _emit_cmd_blocked("BAR_FIELDS_MISSING", f"bar missing fields {missing}")
                 else:
                     # All gates passed — compute EP-01.1 features and emit CMD
                     

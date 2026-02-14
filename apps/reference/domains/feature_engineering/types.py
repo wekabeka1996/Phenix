@@ -255,6 +255,13 @@ class FeatureEngineeringConfig:
     @property
     def enable_new_metrics(self) -> bool:
         return self._cfg.enable_new_metrics
+
+    @property
+    def trace_features(self) -> bool:
+        try:
+         return bool(self._cfg.trace_features)
+        except AttributeError:
+         return False
     
     @property
     def enabled_timeframes_sec(self) -> List[int]:

@@ -39,6 +39,13 @@ from .utils import (
 from .aurora_log_adapter import AuroraLogAdapter
 from .metrics_collector import MetricsCollector
 from apps.reference.telemetry.order_logger import order_logger
+
+# FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
+try:
+    from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
+except ImportError:
+    _trade_lifecycle = None
+
 from vfoundation.obs.correlation import CorrelationStore
 from .utils_event_bus import LocalBus
 
@@ -239,6 +246,14 @@ class ExecPosFSM:
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Pending TP/SL for LIMIT entries (placed on fill)
         # Key = entry_order_id, Value = {"symbol", "side", "sl", "tp", "qty", "rid", "idem_key", "tick_size"}
         self._pending_brackets: Dict[str, Dict[str, Any]] = {}
+
+        # REGIME-LOG: Track open-time regime per symbol for close-time forensics
+        self._open_regime_by_symbol: Dict[str, Dict[str, Any]] = {}
+
+        # FIX-LIFECYCLE-01: Best-effort symbol→rid/last fill price cache
+        # Used to flush trade_lifecycle on robust position-close detection (portfolio snapshot).
+        self._last_lifecycle_rid_by_symbol: Dict[str, str] = {}
+        self._last_lifecycle_fill_price_by_symbol: Dict[str, float] = {}
         
         # PHASE4: Rehydrate pending brackets from WAL on startup
         try:
@@ -416,9 +431,8 @@ class ExecPosFSM:
         self.alert_manager: Optional[AlertManager] = None
         if ALERT_MANAGER_AVAILABLE:
             try:
-                alert_mgr_config = self.config.model_dump()
                 self.alert_manager = AlertManager(
-                    config=alert_mgr_config, logger=aget(self, "logger", LOG).getChild("alerts"))
+                    config=self.config, logger=aget(self, "logger", LOG).getChild("alerts"))
                 LOG.info("AlertManager initialized in ExecPosFSM")
             except Exception as e:
                 LOG.warning(
@@ -1006,6 +1020,12 @@ class ExecPosFSM:
                             "context": context,
                             "timestamp": get_clock().now_ms()
                         })
+                        # FIX-LIFECYCLE-01: Record cancel in trade lifecycle
+                        if _trade_lifecycle is not None:
+                            try:
+                                _trade_lifecycle.on_cancel(rid=dl.rid, cancel_reason=reason)
+                            except Exception:
+                                pass
                     except Exception as e:
                         if self._is_unknown_order_error(e):
                             LOG.info(f"✅ EP-01.3: Pending entry {oid} already absent (-2011)")
@@ -1109,7 +1129,9 @@ class ExecPosFSM:
         # This will go through normal flow since cancel is now confirmed
         loop = self._get_async_loop()
         if loop:
-            self._submit_async(self._async_execute_decision(decision), loop)
+            # `_execute_decision` is the canonical async executor.
+            # `_async_execute_decision` no longer exists and caused runtime AttributeError.
+            self._submit_async(self._execute_decision(decision), loop)
         else:
             LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
 
@@ -1143,11 +1165,20 @@ class ExecPosFSM:
         try:
             pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
             if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_regime_change and symbol:
-                self._cancel_pending_entries_for_symbol(
-                    symbol=symbol,
-                    reason="CANCEL_STALE_REGIME",
-                    context=f"regime_changed_to_{regime_str}"
-                )
+                cancel_mode = getattr(pe_ttl_cfg, 'regime_change_cancel_mode', 'immediate')
+                if cancel_mode == 'let_ttl_expire':
+                    # FIX-SOFT-CANCEL-01: Skip immediate cancel.
+                    # The order will be cancelled by its TTL watchdog naturally.
+                    LOG.info(
+                        f"EP-01.3: Regime changed for {symbol} -> {regime_str}, "
+                        f"but regime_change_cancel_mode=let_ttl_expire, skipping cancel"
+                    )
+                else:
+                    self._cancel_pending_entries_for_symbol(
+                        symbol=symbol,
+                        reason="CANCEL_STALE_REGIME",
+                        context=f"regime_changed_to_{regime_str}"
+                    )
         except AttributeError:
             pass  # Config not loaded
 
@@ -1485,9 +1516,44 @@ class ExecPosFSM:
                     self._last_position_closed_ts[sym] = closed_at
                     self._last_any_position_closed_ts = closed_at
 
+                    # REGIME-LOG: Retrieve open-time regime for close forensics
+                    _pos_close_regime = self._open_regime_by_symbol.pop(sym, {})
                     LOG.info(
                         f"[POSITION_CLOSED] {sym}: position closed (was {prev_amt}, now {now_amt})"
+                        f" | open_regime={_pos_close_regime.get('regime')}"
                     )
+
+                    # FIX-LIFECYCLE-01: Flush lifecycle record on confirmed position close.
+                    # Portfolio snapshot is the most robust close detector; use cached rid/price best-effort.
+                    if _trade_lifecycle is not None:
+                        try:
+                            rid_for_sym = ""
+                            try:
+                                rid_for_sym = str(self._last_lifecycle_rid_by_symbol.get(sym) or "")
+                            except Exception:
+                                rid_for_sym = ""
+                            if not rid_for_sym:
+                                rid_for_sym = f"position_close:{sym}:{int(closed_at * 1000)}"
+
+                            close_price = None
+                            try:
+                                close_price = self._last_lifecycle_fill_price_by_symbol.get(sym)
+                            except Exception:
+                                close_price = None
+
+                            _trade_lifecycle.on_close(
+                                rid=rid_for_sym,
+                                close_price=float(close_price) if close_price is not None else None,
+                                close_reason="POSITION_CLOSED_DETECTED",
+                            )
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                self._last_lifecycle_rid_by_symbol.pop(sym, None)
+                                self._last_lifecycle_fill_price_by_symbol.pop(sym, None)
+                            except Exception:
+                                pass
 
                     # Position closed - trigger immediate orphan cleanup for this symbol
                     if hasattr(self, "order_guardian") and self.order_guardian:
@@ -1611,6 +1677,27 @@ class ExecPosFSM:
 
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
+
+        # FIX-LIFECYCLE-01: Cache rid/last fill price per symbol for later confirmed close detection.
+        try:
+            if symbol:
+                self._last_lifecycle_rid_by_symbol[symbol] = str(rid) if rid else str(order_id)
+                if payload.get("price") is not None:
+                    self._last_lifecycle_fill_price_by_symbol[symbol] = float(payload.get("price"))
+        except Exception:
+            pass
+
+        # FIX-LIFECYCLE-01: Record fill in trade lifecycle
+        if _trade_lifecycle is not None:
+            try:
+                _trade_lifecycle.on_fill(
+                    rid=str(rid) if rid else str(order_id),
+                    fill_price=float(payload.get("price", 0)) if payload.get("price") else None,
+                    fill_qty=float(filled_qty) if filled_qty else None,
+                    fees=float(payload.get("commission", 0)) if payload.get("commission") else None,
+                )
+            except Exception:
+                pass  # Lifecycle logging must never block trading
 
         # FIX: Notify watchdog that order is filled (stop timeout tracking)
         try:
@@ -3067,6 +3154,9 @@ class ExecPosFSM:
 
             # Log to OrderLoggerV1
             # TASK50: Added qty normalization context for forensics
+            # REGIME-LOG: Extract regime from decision payload for open-time forensics
+            _open_regime = (decision.pld or {}).get("regime")
+            _open_regime_confidence = (decision.pld or {}).get("regime_confidence")
             order_logger.write({
                 "rid": decision.rid,
                 "event_type": "ORDER_PLACED",
@@ -3084,8 +3174,27 @@ class ExecPosFSM:
                 "source_fsm": "ExecPosFSM",
                 "reservation_id": decision.corr_id,
                 "adapter_response": entry_resp,
+                "regime": _open_regime,
+                "regime_confidence": _open_regime_confidence,
                 "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}
             })
+
+            # REGIME-LOG: Store open-time regime for close-time correlation
+            self._open_regime_by_symbol[symbol] = {
+                "regime": _open_regime,
+                "regime_confidence": _open_regime_confidence,
+            }
+
+            # FIX-LIFECYCLE-01: Record order placement in trade lifecycle
+            if _trade_lifecycle is not None:
+                try:
+                    _trade_lifecycle.on_order_placed(
+                        rid=decision.rid,
+                        order_id=str(entry_resp["orderId"]),
+                        price=float(price) if price else None,
+                    )
+                except Exception:
+                    pass  # Lifecycle logging must never block trading
             
             # B1: WAL persistence for ORDER_PLACED (INTENT-TO-ORDER-TRACE-SSOT-01)
             # Ensures WAL contains full intent→order chain for replay and forensics
@@ -3969,6 +4078,8 @@ class ExecPosFSM:
                 )
 
             # Log to OrderLoggerV1
+            # REGIME-LOG: Include close-time regime from stored open-time context
+            _close_regime_ctx = self._open_regime_by_symbol.get(fill_symbol, {})
             order_logger.write({
                 "rid": pld["rid"] if "rid" in pld else f"fill_{reserve_key}",
                 "event_type": "ORDER_STATE_CHANGED",
@@ -3980,6 +4091,8 @@ class ExecPosFSM:
                 "order_id": pld["order_id"] if "order_id" in pld else "",
                 "source_fsm": "ExecPosFSM",
                 "reservation_id": reserve_key,
+                "regime_at_open": _close_regime_ctx.get("regime"),
+                "regime_confidence_at_open": _close_regime_ctx.get("regime_confidence"),
                 "metadata": {"fill_status": "FILLED", "notional_usd": float(notional_usd)}
             })
 

@@ -2116,6 +2116,13 @@ class AuroraHandler:
             "liquidity": features.get("liquidity"),
             # EP-01.3-INT: Pass tf_sec for pending entry TTL calculation
             "tf_sec": self.timeframe_sec,
+            # CONFIDENCE-TRAP-ANALYSIS: Regime context for correlation
+            "regime_ctx": {
+                "confidence": state.regime_confidence,
+                "regime_ts_ms": state.regime_ts_ms,
+                "regime_age_sec": round((now_ms - state.regime_ts_ms) / 1000, 1) if state.regime_ts_ms else 0,
+                "regime": state.regime,
+            },
         }
         
         # === INJECT REGIME-BASED TP/SL INTO PAYLOAD ===

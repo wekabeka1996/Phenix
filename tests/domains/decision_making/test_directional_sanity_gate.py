@@ -29,6 +29,7 @@ def dm_minimal():
     dm.config.domains.decision_making.directional_sanity.enabled = True
     dm.config.domains.decision_making.directional_sanity.min_abs_delta_price = 0.5
     dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+    dm.config.domains.decision_making.directional_sanity.min_regime_confidence = 0.0
     dm.config.domains.decision_making.directional_sanity.consecutive_bars = 2
     # Disable price_motion_sanity for these directional-only unit tests.
     dm.config.domains.decision_making.price_motion_sanity.enabled = False

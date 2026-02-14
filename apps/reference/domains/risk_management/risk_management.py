@@ -129,8 +129,6 @@ class RiskManagement:
 
             self.logger.info("Handling EVT:FEATURES_CALCULATED...")
             payload = event.pld  # type: ignore[union-attr]
-            print(f"DEBUG: risk_management payload = {payload}")
-            print(f"DEBUG: risk_management payload type = {type(payload)}")
 
             # Log event receipt to chain
             chain_logger.info(
@@ -206,7 +204,28 @@ class RiskManagement:
         self.portfolio_state = event.pld
         
         # Delegate to SSOT
-        self.daily_risk_state.on_portfolio(self.portfolio_state)
+        now_dt: Optional[datetime] = None
+        try:
+            pld = self.portfolio_state
+            ts_ms = None
+            if isinstance(pld, dict):
+                # Prefer explicit portfolio event time when available.
+                ts_ms = (
+                    pld.get("event_time_ms")
+                    or pld.get("ts_ms")
+                    or pld.get("timestamp_ms")
+                    or pld.get("ts")
+                )
+            if ts_ms not in (None, "", 0, "0"):
+                ts_ms_i = int(ts_ms)
+                # Backward compat: seconds timestamps.
+                if 0 < ts_ms_i < 1_000_000_000_000:
+                    ts_ms_i *= 1000
+                now_dt = datetime.fromtimestamp(ts_ms_i / 1000, tz=timezone.utc)
+        except Exception:
+            now_dt = None
+
+        self.daily_risk_state.on_portfolio(self.portfolio_state, now=now_dt)
 
     def _calculate_risk_parameters(self, features: Dict[str, float]) -> Dict[str, Any]:
         """

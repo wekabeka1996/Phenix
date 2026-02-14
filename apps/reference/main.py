@@ -21,7 +21,6 @@ from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMP
 from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.retry_scheduler import RetryScheduler
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
 # )
@@ -46,23 +45,16 @@ from apps.reference.domains.strategies.registry import StrategyPluginRegistry, S
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
 from backtest_engine.engine import BacktestEngine
-from backtest_engine.mock_broker import MockBroker
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian
-from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
-from vfoundation.dr import wal
 from apps.reference.telemetry.alerts import AlertManager
-from vfoundation.core.fsm_emit_compat import emit_compat
 from vfoundation.core import FSMCore
 from vfoundation.core.protocol import Message
 import json
-import hashlib
-import random
 import logging
 import sys
 import time
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 import asyncio
 
@@ -70,10 +62,7 @@ import asyncio
 from apps.reference.domains.exchange_filters.validator import validate_instruments_on_startup, FilterMismatchError
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from typing import Any, Optional
-from logging.handlers import RotatingFileHandler
-import asyncio
 import threading
-import concurrent.futures
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -310,13 +299,18 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     return fsm
 
 
-def run_backtest_simulation(config: AuroraConfig) -> None:
+def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False) -> None:
     """
     Run the application in BACKTEST mode.
     
     This replaces the standard main loop with a simulation loop driven by BacktestEngine.
     It initializes a subset of domains (FeatureEngineering, DecisionMaking, etc.) 
     and wires them to a MockBroker and LocalBus (FSMCore).
+    
+    Args:
+        config: Aurora configuration
+        return_result: If True, return (BacktestResult, report_data) instead of None.
+                       Used by Optuna integration for optimization.
     """
     LOG.info("="*60)
     LOG.info("🚀 STARTING AURORA CORE IN BACKTEST MODE")
@@ -325,35 +319,40 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     # Stable run id for artifacts (report + order log)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # BACKTEST UNBLOCKER: allow strategy loop to proceed even if FE warmup is not full_ready
-    try:
-        fe = getattr(config.domains, "feature_engineering", None)
-        warm = getattr(fe, "warmup", None) if fe is not None else None
-        if warm is not None:
-            warm.enforcement_mode = "warn_only"
-        else:
-            from apps.reference.config_models import WarmupEnforcementConfig
+    bt_cfg = getattr(getattr(config, "trading", None), "backtest", None)
+    backtest_mode = str(getattr(bt_cfg, "backtest_mode", "strict")).strip().lower()
+    if backtest_mode not in ("strict", "relaxed"):
+        raise ValueError(f"Invalid trading.backtest.backtest_mode={backtest_mode!r} (expected strict|relaxed)")
+    LOG.info(f"Backtest mode: {backtest_mode}")
 
-            if fe is not None:
-                fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
-        LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
-    except Exception as e:
-        LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
+    if backtest_mode == "relaxed":
+        # Explicit, opt-in relaxations.
+        try:
+            fe = getattr(config.domains, "feature_engineering", None)
+            warm = getattr(fe, "warmup", None) if fe is not None else None
+            if warm is not None:
+                warm.enforcement_mode = "warn_only"
+            else:
+                from apps.reference.config_models import WarmupEnforcementConfig
 
-    # BACKTEST OVERRIDE: disable macro_sync (macro trend alignment) to force local-only trading.
-    # Rationale: in historical replay we frequently lack reliable anchor alignment/bins, which keeps
-    # warmup in NOT_READY and causes strategies to see unknown trend.
-    try:
-        fe = getattr(config.domains, "feature_engineering", None)
-        ms_cfg = getattr(fe, "macro_sync", None) if fe is not None else None
-        if ms_cfg is not None and hasattr(ms_cfg, "enabled"):
-            ms_cfg.enabled = False
-            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.macro_sync.enabled=False")
-            print("🔧 [Backtest Config] Macro Sync DISABLED to force local trading.")
-        else:
-            LOG.warning("BACKTEST OVERRIDE: macro_sync config not present on domains.feature_engineering")
-    except Exception as e:
-        LOG.warning(f"BACKTEST OVERRIDE failed (disable macro_sync): {e}")
+                if fe is not None:
+                    fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
+            LOG.warning("BACKTEST RELAXED: warmup.enforcement_mode=warn_only (explicit override)")
+        except Exception as e:
+            LOG.warning(f"BACKTEST RELAXED override failed (warmup): {e}")
+
+        try:
+            fe = getattr(config.domains, "feature_engineering", None)
+            ms_cfg = getattr(fe, "macro_sync", None) if fe is not None else None
+            if ms_cfg is not None and hasattr(ms_cfg, "enabled"):
+                ms_cfg.enabled = False
+                LOG.warning("BACKTEST RELAXED: macro_sync.enabled=False (explicit override)")
+            else:
+                LOG.warning("BACKTEST RELAXED: macro_sync config not present")
+        except Exception as e:
+            LOG.warning(f"BACKTEST RELAXED override failed (macro_sync): {e}")
+    else:
+        LOG.info("BACKTEST STRICT: no implicit relaxations applied")
     
     # 1. Initialize Core Event Bus
     fsm = FSMCore()
@@ -396,11 +395,19 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
     # --- Backtest telemetry: capture regimes & feature readiness ---
     regime_events: list[dict] = []
+    regime_log: list[dict] = []
     last_regime_by_symbol: dict[str, dict] = {}
     regime_counts_by_symbol: dict[str, dict[str, int]] = {}
     features_counts_by_tf: dict[int, int] = {}
     features_full_ready_by_tf: dict[int, int] = {}
     trade_intents: list[dict] = []
+    intent_log: list[dict] = []
+    process_strategy_count = 0
+    process_strategy_enqueued_count = 0
+    bar_count = 0
+    decision_clock_counts: dict[tuple[str, int, int], int] = {}
+    decision_clock_violations = 0
+    blocked_reason_counts: dict[str, int] = {}
 
     def _advance_clock_from_ts(ts_ms: int) -> None:
         try:
@@ -419,7 +426,20 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         regime_events.append(pld)
         last_regime_by_symbol[str(symbol)] = pld
         bucket = regime_counts_by_symbol.setdefault(str(symbol), {})
-        bucket[str(regime)] = int(bucket.get(str(regime), 0)) + 1
+        norm = str(regime).upper().strip()
+        bucket[norm] = int(bucket.get(norm, 0)) + 1
+        ts_ms = pld.get("ts") or pld.get("ts_ms") or pld.get("timestamp_ms")
+        try:
+            ts_i = int(ts_ms)
+        except Exception:
+            ts_i = None
+        regime_log.append(
+            {
+                "symbol": str(symbol),
+                "regime": norm,
+                "ts_ms": ts_i,
+            }
+        )
 
     def _on_features(event: Message) -> None:
         pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
@@ -467,31 +487,117 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         except Exception:
             pass
 
+        stamped["intent_status"] = "PROPOSED"
         trade_intents.append(stamped)
+        intent_log.append(stamped)
+
+    def _on_trade_intent_rejected(event: Message) -> None:
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        stamped = dict(pld)
+        stamped["intent_status"] = "REJECTED"
+        stamped["emitted_ts_ms"] = int(bt_clock.now_ms())
+        intent_log.append(stamped)
+        reason = str(stamped.get("reason_code", "UNKNOWN")).upper().strip() or "UNKNOWN"
+        blocked_reason_counts[reason] = int(blocked_reason_counts.get(reason, 0)) + 1
+
+    def _on_process_strategy_blocked(event: Message) -> None:
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        reason = str(pld.get("reason_code", "UNKNOWN")).upper().strip() or "UNKNOWN"
+        blocked_reason_counts[reason] = int(blocked_reason_counts.get(reason, 0)) + 1
+
+    def _decision_key_from_payload(pld: dict) -> Optional[tuple[str, int, int]]:
+        if not isinstance(pld, dict):
+            return None
+        symbol = pld.get("symbol")
+        if not isinstance(symbol, str) or not symbol:
+            return None
+        tf_raw = pld.get("tf_sec")
+        bar_close_ts_raw = pld.get("bar_close_ts")
+        if bar_close_ts_raw is None:
+            bar = pld.get("bar")
+            if isinstance(bar, dict):
+                bar_close_ts_raw = bar.get("end_ts_ms")
+        try:
+            tf_sec = int(tf_raw)
+            bar_close_ts = int(bar_close_ts_raw)
+        except Exception:
+            return None
+        return (symbol, tf_sec, bar_close_ts)
+
+    def _on_bar_closed(event: Message) -> None:
+        nonlocal bar_count
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        key = _decision_key_from_payload(pld)
+        if key is not None:
+            bar_count += 1
+
+    def _on_process_strategy(event: Message) -> None:
+        nonlocal process_strategy_count, decision_clock_violations
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        key = _decision_key_from_payload(pld)
+        if key is None:
+            return
+        process_strategy_count += 1
+        cnt = int(decision_clock_counts.get(key, 0)) + 1
+        decision_clock_counts[key] = cnt
+        if cnt > 1:
+            decision_clock_violations += 1
+            LOG.error(f"DOUBLE_DECISION_CLOCK: duplicate CMD:PROCESS_STRATEGY for key={key} count={cnt}")
 
     fsm.listen("EVT:REGIME_DETECTED", _on_regime)
     fsm.listen("EVT:FEATURES_CALCULATED", _on_features)
     fsm.listen("EVT:TRADE_INTENT_PROPOSED", _on_trade_intent)
+    fsm.listen("EVT:TRADE_INTENT_REJECTED", _on_trade_intent_rejected)
+    fsm.listen("EVT:PROCESS_STRATEGY_BLOCKED", _on_process_strategy_blocked)
+    fsm.listen("EVT:BAR_CLOSED", _on_bar_closed)
+    fsm.listen("CMD:PROCESS_STRATEGY", _on_process_strategy)
+
+    # Lightweight enqueue telemetry for decision clock debugging.
+    original_emit = fsm.emit
+
+    def emit_with_decision_clock(event_name: str, payload: dict = None, why: str = "", data_ref=None):
+        nonlocal process_strategy_enqueued_count
+        if event_name == "CMD:PROCESS_STRATEGY":
+            key = _decision_key_from_payload(payload if isinstance(payload, dict) else {})
+            if key is not None:
+                process_strategy_enqueued_count += 1
+        return original_emit(event_name, payload, why, data_ref)
+
+    fsm.emit = emit_with_decision_clock
     
     # 2. Initialize Backtest Engine (The Driver)
     
-    start_date = datetime(2024, 1, 1) # Fallback
-    end_date = datetime(2024, 1, 7)   # Fallback
+    start_date = datetime(2024, 1, 1).date() # Fallback (inclusive day semantics)
+    end_date = datetime(2024, 1, 7).date()   # Fallback (inclusive day semantics)
     initial_balance = 10000.0         # Fallback
+    profit_withdrawal_roi_pct = None
+    profit_withdrawal_enabled = None
 
     # Read from config.trading.backtest if available
     if config.trading.backtest:
         try:
-            start_date = datetime.strptime(config.trading.backtest.start_date, "%Y-%m-%d")
-            end_date = datetime.strptime(config.trading.backtest.end_date, "%Y-%m-%d")
+            start_date = datetime.strptime(config.trading.backtest.start_date, "%Y-%m-%d").date()
+            end_date = datetime.strptime(config.trading.backtest.end_date, "%Y-%m-%d").date()
             initial_balance = config.trading.backtest.initial_balance
-            LOG.info(f"Loaded backtest configuration: {start_date.date()} -> {end_date.date()}, Balance: {initial_balance}")
+            profit_withdrawal_enabled = getattr(config.trading.backtest, "profit_withdrawal_enabled", None)
+            profit_withdrawal_roi_pct = getattr(config.trading.backtest, "profit_withdrawal_roi_pct", None)
+            LOG.info(f"Loaded backtest configuration: {start_date} -> {end_date}, Balance: {initial_balance}")
         except ValueError as e:
             LOG.error(f"Invalid date format in config.trading.backtest: {e}")
             sys.exit(1)
 
     # Symbols to test
-    symbols = list(config.instruments.keys()) if config.instruments else ["BTCUSDT", "ETHUSDT"]
+    symbols = list(getattr(config.trading, "symbols_to_track", []) or [])
+    if not symbols:
+        symbols = list(config.instruments.keys()) if config.instruments else ["BTCUSDT", "ETHUSDT"]
     
     # Clock advance callback: updates global MockClock before each bar is processed
     def _advance_global_clock(ts_ms: int) -> None:
@@ -507,6 +613,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         symbol_list=symbols,
         timeframe="5m", # Configurable?
         initial_balance=initial_balance,
+        profit_withdrawal_enabled=profit_withdrawal_enabled,
+        profit_withdrawal_roi_pct=profit_withdrawal_roi_pct,
         event_bus=fsm,
         clock_advance_fn=_advance_global_clock  # Wire clock sync
     )
@@ -586,15 +694,24 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
     # 3d. Initialize AlphaSearch Backtest Plugin (Shadow Advisor)
     # ALPHA-SEARCH: Wire plugin to enable virtual trading and ensemble learning
+    alpha_plugin = None
     try:
         from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
+        from apps.reference.domains.alpha_search.config_models import load_alpha_search_config
+
+        _as_config_path = project_root / "config" / "alpha_search.yaml"
+        _as_config = load_alpha_search_config(str(_as_config_path))
         alpha_plugin = AlphaSearchBacktestPlugin(
             event_bus=fsm,
-            config={"enabled": True, "shadow_mode": True}
+            config=_as_config,
         )
-        LOG.info("✅ AlphaSearch Backtest Plugin (Shadow) registered.")
+        LOG.info(
+            f"✅ AlphaSearch Plugin registered (shadow={_as_config.shadow_mode}, "
+            f"providers={list(alpha_plugin.providers.keys())})"
+        )
     except Exception as e:
-        LOG.error(f"Failed to register AlphaSearch Plugin: {e}")
+        LOG.warning(f"⚠️ AlphaSearch Plugin disabled (init failed): {e}")
+        alpha_plugin = None
     
     # 4. Run Simulation
     try:
@@ -621,6 +738,12 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
         results = engine.run(max_ticks=max_ticks)
 
+        if decision_clock_violations > 0:
+            raise RuntimeError(
+                f"double decision clock detected: violations={decision_clock_violations}, "
+                "expected max 1 CMD:PROCESS_STRATEGY per closed bar key"
+            )
+
         # --- Regime summary (console) ---
         if last_regime_by_symbol:
             print("\n" + "=" * 60)
@@ -640,19 +763,25 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             print("\n[WARN] No EVT:REGIME_DETECTED captured during backtest. Likely no bar-features emitted (check FEATURES_CALCULATED tf_sec=300 counters).")
         
         # --- Reporting ---
-        from dataclasses import asdict
-        import json
         
         # 1. Console Output
         print("\n" + "="*60)
-        print(f"🏁 BACKTEST RESULTS ({start_date.date()} to {end_date.date()})")
+        print(f"🏁 BACKTEST RESULTS ({start_date} to {end_date})")
         print("="*60)
         print(f"💰 PnL:           {results.total_pnl: >10.2f} USDT")
         print(f"📈 ROI:           {results.roi_pct: >10.2f} %")
-        print(f"📉 Max Drawdown:  {results.max_drawdown: >10.2f} %")
+        print(f"📉 Max Drawdown:  {results.max_drawdown*100: >10.2f} %")
         print(f"🎲 Win Rate:      {results.win_rate*100: >10.1f} %")
         print(f"🔢 Total Trades:  {results.total_trades: >10}")
-        print(f"💵 End Balance:   {results.end_balance: >10.2f} USDT")
+        withdrawals_total = float(getattr(results, "withdrawals_total", 0.0) or 0.0)
+        if withdrawals_total > 0:
+            print(f"🏦 Withdrawn:     {withdrawals_total: >10.2f} USDT")
+            print(f"💵 End Balance:   {results.end_balance: >10.2f} USDT (on-account)")
+            print(f"💼 End Gross:     {float(getattr(results, 'end_balance_gross', results.end_balance) or 0.0): >10.2f} USDT")
+            print(f"📊 ROI (cash):    {float(getattr(results, 'roi_on_account_pct', 0.0) or 0.0): >10.2f} %")
+            print(f"📉 DD (cash):     {float(getattr(results, 'max_drawdown_on_account', 0.0) or 0.0)*100: >10.2f} %")
+        else:
+            print(f"💵 End Balance:   {results.end_balance: >10.2f} USDT")
         print("="*60 + "\n")
 
         # 2. JSON Report
@@ -670,6 +799,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             initial_balance=float(initial_balance),
             regimes={
                 "events_total": int(len(regime_events)),
+                "regime_log": regime_log,
                 "last_by_symbol": last_regime_by_symbol,
                 "counts_by_symbol": regime_counts_by_symbol,
             },
@@ -677,13 +807,23 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
                 "counts_by_tf_sec": {str(k): int(v) for k, v in features_counts_by_tf.items()},
                 "full_ready_counts_by_tf_sec": {str(k): int(v) for k, v in features_full_ready_by_tf.items()},
             },
-            trade_intents=trade_intents,
+            trade_intents=intent_log or trade_intents,
             order_log_path=str(order_log_path) if order_log_path is not None else None,
+            pipeline={
+                "bar_count": int(bar_count),
+                "features_emitted_count": int(sum(features_counts_by_tf.values())),
+                "regime_detected_count": int(len(regime_events)),
+                "process_strategy_enqueued_count": int(process_strategy_enqueued_count),
+                "process_strategy_executed_count": int(process_strategy_count),
+                "process_strategy_count": int(process_strategy_count),
+                "decision_clock_violations": int(decision_clock_violations),
+                "blocked_reason_counts": {str(k): int(v) for k, v in blocked_reason_counts.items()},
+            },
         )
         
         # Inject Alpha Search Summary (since it's a standalone plugin)
         try:
-            if 'alpha_plugin' in locals() and alpha_plugin:
+            if alpha_plugin is not None:
                 report_data["alpha_search"] = alpha_plugin.get_summary()
                 LOG.info("✅ Alpha Search summary injected into report")
         except Exception as e:
@@ -744,6 +884,10 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         except Exception:
             pass
 
+    # OPTUNA-HOOK-01: Return results for optimization
+    if return_result:
+        return results, report_data
+
 
 def main() -> None:
     """Main application entry point."""
@@ -785,22 +929,6 @@ def main() -> None:
     regime_ver = getattr(config.system_meta, 'regime_config_version', None) or 'N/A'
     LOG.info(f"📋 Config Versions: system={sys_ver}, regime={regime_ver}")
     LOG.info(f"📋 Trading Mode: {config.trading_mode}")
-
-    # BACKTEST UNBLOCKER: force FeatureEngineering warmup to warn_only in backtest mode
-    if config.trading_mode == "backtest":
-        try:
-            fe = getattr(config.domains, "feature_engineering", None)
-            warm = getattr(fe, "warmup", None) if fe is not None else None
-            if warm is not None:
-                warm.enforcement_mode = "warn_only"
-            else:
-                from apps.reference.config_models import WarmupEnforcementConfig
-
-                if fe is not None:
-                    fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
-            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
-        except Exception as e:
-            LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
 
     # TASK: BACKTEST MODE INTERCEPTION
     if config.trading_mode == "backtest":
@@ -881,8 +1009,6 @@ def main() -> None:
     LOG.info("✅ WAL Garbage Collector initialized")
 
     # Initialize Multi-TF Feature Aggregation Scheduler
-    from threading import Thread
-    import time as time_module
 
     # Initialize Alert Manager
     alert_manager = AlertManager(config=config, logger=LOG)
@@ -1020,7 +1146,7 @@ def main() -> None:
         bar_aggregator = BarAggregator(timeframes_sec=timeframes, emit_fn=fsm.emit)
         fsm.listen("EVT:MARKET_TICK_RECEIVED", bar_aggregator.on_market_tick)
         LOG.info(
-            f"✅ BarAggregator enabled",
+            "✅ BarAggregator enabled",
             extra={"why": "bar_agg_enabled", "timeframes_sec": timeframes}
         )
 
@@ -1043,7 +1169,6 @@ def main() -> None:
 
     # Initialize components needed for DR (execution_position already initialized in initialize_domains)
     from apps.reference.dr_loader import find_latest_snapshot, replay_wal_after
-    import json
 
     snapshot_dir_path = str(project_root / "ops" / "snapshots")
     wal_dir_path = str(project_root / "ops" / "wal")
@@ -1303,6 +1428,26 @@ def main() -> None:
     # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
     regime_detector = RegimeDetector(config=config, fsm=fsm)
     LOG.info("✅ RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
+
+    # ==========================================
+    # ALPHA-SEARCH: Shadow Alpha Plugin (always-on, all trading modes)
+    # ==========================================
+    try:
+        from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
+        from apps.reference.domains.alpha_search.config_models import load_alpha_search_config
+
+        _as_config_path = project_root / "config" / "alpha_search.yaml"
+        _as_config = load_alpha_search_config(str(_as_config_path))
+        alpha_plugin = AlphaSearchBacktestPlugin(
+            event_bus=fsm,
+            config=_as_config,
+        )
+        LOG.info(
+            f"✅ AlphaSearch Plugin registered (shadow={_as_config.shadow_mode}, "
+            f"providers={list(alpha_plugin.providers.keys())})"
+        )
+    except Exception as e:
+        LOG.warning(f"⚠️ AlphaSearch Plugin disabled (init failed): {e}")
 
     # DATA-RECORDER-01: Unified Backtest Recorder
     # Captures [Bar + Features + Regime] into CSVs for offline analysis.

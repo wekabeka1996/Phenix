@@ -89,7 +89,14 @@ class AlphaSearchBacktestPlugin:
         
         # Load config
         if config:
-            self.config = config
+            if isinstance(config, dict):
+                try:
+                    self.config = AlphaSearchConfig(**config)
+                except Exception as e:
+                    LOG.warning(f"Failed to parse dict config for AlphaSearch: {e}. Using defaults.")
+                    self.config = get_default_config()
+            else:
+                self.config = config
         elif config_path:
             try:
                 self.config = load_alpha_search_config(config_path)
@@ -239,7 +246,8 @@ class AlphaSearchBacktestPlugin:
         ts = payload.get("ts", 0)
         
         # Get bar_close_ts from bar or payload
-        bar = payload.get("bar", {})
+        bar_raw = payload.get("bar")
+        bar = bar_raw if isinstance(bar_raw, dict) else {}
         bar_close_ts = bar.get("close_ts") or bar.get("ts") or payload.get("bar_close_ts") or ts
         
         if not symbol or not features:

@@ -598,11 +598,10 @@ class RegimeDetector:
             "hysteresis_confirm_count": self._hysteresis_count[symbol],
         }
 
-        self.fsm.emit(
-            "EVT:REGIME_DETECTED",
-            payload,
-            why=f"Regime '{stable_regime}' detected by {source_model} for {symbol}" + (" (unchanged)" if not changed else ""),
-        )
+        why = f"regime={stable_regime} model={source_model} symbol={symbol}"
+        if not changed:
+            why += " same"
+        self.fsm.emit("EVT:REGIME_DETECTED", payload, why=why[:80])
 
         # Log only on meaningful transitions (avoid hot-path log spam).
         full_ready = bool(warmup.get("full_ready"))

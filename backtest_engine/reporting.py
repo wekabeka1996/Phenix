@@ -6,7 +6,7 @@ import hashlib
 import subprocess
 import shutil
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
@@ -531,8 +531,8 @@ def build_backtest_report(
     config: Any,
     results: Any,
     engine: Any,
-    start_date: datetime,
-    end_date: datetime,
+    start_date: datetime | date,
+    end_date: datetime | date,
     symbols: list[str],
     timeframe: str,
     initial_balance: float,
@@ -540,6 +540,7 @@ def build_backtest_report(
     features: dict[str, Any],
     trade_intents: list[dict[str, Any]] | None = None,
     order_log_path: str | None = None,
+    pipeline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     broker = getattr(engine, "broker", None)
 
@@ -1014,13 +1015,18 @@ def build_backtest_report(
         crc[r] = int(crc.get(r, 0)) + 1
     trade_summary["close_reason_counts"] = crc
 
+    def _date_or_dt_to_iso(v: datetime | date) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return datetime.combine(v, datetime.min.time(), tzinfo=timezone.utc).isoformat()
+
     report_data: dict[str, Any] = {
         "report_version": "2.0.0",
         "run_id": run_id,
         "metadata": {
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "start_date": _date_or_dt_to_iso(start_date),
+            "end_date": _date_or_dt_to_iso(end_date),
             "symbols": symbols,
             "timeframe": timeframe,
             "initial_balance": float(initial_balance),
@@ -1041,7 +1047,9 @@ def build_backtest_report(
         "open_trades": open_trades,
         "positions_end": positions_end,
         "regimes": _to_jsonable(regimes),
+        "regime_log": _to_jsonable((regimes or {}).get("regime_log", [])),
         "features": _to_jsonable(features),
+        "pipeline": _to_jsonable(pipeline or {}),
         "artifacts": {
             "order_log_jsonl": str(order_log_file) if order_log_file is not None else None,
         },
@@ -1051,6 +1059,35 @@ def build_backtest_report(
             "close_reason classification is derived from broker order type/clientOrderId and flip detection",
         ],
     }
+
+    try:
+        stress_params = getattr(broker, "applied_stress_params", None)
+        funding_ledger = getattr(broker, "funding_ledger", None)
+        if isinstance(stress_params, dict):
+            funding_total = 0.0
+            if isinstance(funding_ledger, list):
+                for rec in funding_ledger:
+                    if not isinstance(rec, dict):
+                        continue
+                    try:
+                        funding_total += float(rec.get("cash_delta", 0.0) or 0.0)
+                    except Exception:
+                        continue
+            report_data["execution_stress"] = {
+                "applied_params": _to_jsonable(stress_params),
+                "funding_events": int(len(funding_ledger)) if isinstance(funding_ledger, list) else 0,
+                "funding_cash_delta_total": float(funding_total),
+            }
+    except Exception:
+        pass
+
+    # Backtest-only cashflow simulation (profit withdrawals)
+    try:
+        w = getattr(engine, "capital_withdrawals", None)
+        if isinstance(w, list) and w:
+            report_data["capital_withdrawals"] = _to_jsonable(w)
+    except Exception:
+        pass
     
     # ALPHA-SEARCH: Add shadow mode metrics if plugin was active
     try:

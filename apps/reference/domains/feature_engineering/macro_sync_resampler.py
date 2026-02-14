@@ -193,21 +193,37 @@ class MacroSyncResampler:
 
         self._series: Dict[str, TimeGridSeries] = {}
 
-    def update_symbol(self, symbol: str, *, ts_ms: int, price: float) -> None:
+    def update_symbol(
+        self,
+        symbol: str,
+        *,
+        ts_ms: int,
+        price: float,
+        max_gap_bins: int | None = None,
+    ) -> None:
+        gap_bins = self._max_gap_bins if max_gap_bins is None else max(0, int(max_gap_bins))
         self._get_series(symbol).update(
             key=symbol,
             ts_ms=int(ts_ms),
             price=float(price),
-            max_gap_bins=self._max_gap_bins,
+            max_gap_bins=gap_bins,
             max_late_ms=self._max_late_ms,
         )
 
-    def update_anchor(self, anchor: str, *, ts_ms: int, price: float) -> None:
+    def update_anchor(
+        self,
+        anchor: str,
+        *,
+        ts_ms: int,
+        price: float,
+        max_gap_bins: int | None = None,
+    ) -> None:
+        gap_bins = self._max_gap_bins if max_gap_bins is None else max(0, int(max_gap_bins))
         self._get_series(anchor).update(
             key=anchor,
             ts_ms=int(ts_ms),
             price=float(price),
-            max_gap_bins=self._max_gap_bins,
+            max_gap_bins=gap_bins,
             max_late_ms=self._max_late_ms,
         )
 

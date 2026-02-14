@@ -1,0 +1,35 @@
+bootstrap_pnl_positive_pct: 0.0
+failed_folds: 0
+fold_results:
+- bootstrap_pnl_positive_pct: 0.0
+  fold_id: 0
+  hard_violation: false
+  stress_runs:
+  - mdd_pct: 3.8416239022547414
+    overrides:
+      fee_mult: 1.4222109257625242
+      funding_bps_per_day: 0.48581253816933057
+      latency_ms: 265
+      slippage_bps: 7.821589626462722
+    roi_pct: 11.969892190957466
+    seed: 0
+    sharpe: 5.394927367136386
+    trades: 8
+  - mdd_pct: 3.7040542499216484
+    overrides:
+      fee_mult: 1.0671821220562006
+      funding_bps_per_day: 0.757281862652512
+      latency_ms: 441
+      slippage_bps: 8.626903632435095
+    roi_pct: 12.32965845686083
+    seed: 1
+    sharpe: 5.521781406273366
+    trades: 8
+  stress_sharpe_median: 5.521781406273366
+  test_mdd_pct: 3.6715777717479114
+  test_sharpe: 5.691766859184238
+  test_trades: 8
+median_sharpe: 5.691766859184238
+passed: true
+reasons: []
+sharpe_degradation: -5.032326440797456

@@ -64,6 +64,7 @@ def mock_config():
     # REG-FIX-01: Direct config attributes for BAR-ONLY mode
     cfg.basis_tf_sec = 300
     cfg.uncertain_cutoff = 0.25
+    cfg.hysteresis_bars = 3
     
     # System
     sys = MagicMock()

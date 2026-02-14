@@ -228,6 +228,19 @@
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
+### `domains.decision_making.directional_sanity.min_regime_confidence`
+- **Type:** `float`
+- **Logic Owner:** `decision_making`
+- **Code Reference:** apps/reference/domains/decision_making/decision_making.py:2823 (regime confidence gate) ; apps/reference/domains/decision_making/decision_making.py:2841 (reject emission)
+- **Mathematical/Architectural Role:**
+    > Directional sanity gate: блокує відкриття угод, якщо `regime_confidence` нижче порогу (noise filter).
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Higher ⇒ більше блокувань у low/mid-confidence режимах, менше входів.
+    - 🔽 **Too Low:** Lower ⇒ більше входів у шумних або невизначених режимах.
+- **Invariant/Constraints:** `0.0` вимикає gate; `None`/missing `regime_confidence` трактується як нижче порогу.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
 ### `domains.decision_making.entry_plan.atr_period`
 - **Type:** `int`
 - **Logic Owner:** `decision_making`

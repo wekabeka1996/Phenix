@@ -277,5 +277,48 @@ class TestVolumeCap:
         assert float(fills[0]["quantity"]) == 25.0
 
 
+class TestStressExecutionParams:
+    """Stress overrides should affect execution and PnL."""
+
+    @pytest.mark.asyncio
+    async def test_applied_stress_params_exposed(self):
+        broker = MockBroker(
+            initial_balance_usdt=10000.0,
+            fee_mult=1.3,
+            slippage_bps=6.0,
+            latency_ms=150,
+            funding_bps_per_day=8.0,
+        )
+        params = broker.applied_stress_params
+        assert float(params["fee_mult"]) == pytest.approx(1.3, rel=1e-6)
+        assert int(params["latency_ms"]) == 150
+        assert float(params["funding_bps_per_day"]) == pytest.approx(8.0, rel=1e-6)
+
+    @pytest.mark.asyncio
+    async def test_funding_changes_pnl_with_open_position(self):
+        broker_base = MockBroker(initial_balance_usdt=10000.0, slippage_bps=0.0, funding_bps_per_day=0.0)
+        broker_funding = MockBroker(initial_balance_usdt=10000.0, slippage_bps=0.0, funding_bps_per_day=10.0)
+
+        open_params = ExchangeOrderParams(
+            symbol="BTCUSDT",
+            side="BUY",
+            order_type="MARKET",
+            quantity="1.0",
+        )
+
+        await broker_base.create_order(open_params)
+        await broker_funding.create_order(open_params)
+
+        bar1 = {"symbol": "BTCUSDT", "close": 100.0, "volume": 1000.0, "ts": 1704067200000}
+        bar2 = {"symbol": "BTCUSDT", "close": 100.0, "volume": 1000.0, "ts": 1704067500000}
+        broker_base.process_data(bar1)
+        broker_funding.process_data(bar1)
+        broker_base.process_data(bar2)
+        broker_funding.process_data(bar2)
+
+        assert broker_funding.balance_usdt < broker_base.balance_usdt
+        assert len(broker_funding.funding_ledger) > 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

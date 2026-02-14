@@ -1060,6 +1060,13 @@ class DirectionalSanityConfig(BaseModel):
         le=1.0,
         description='Minimum confidence required (max(regime_confidence, trend_confidence))'
     )
+    min_regime_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description='Minimum regime_confidence required to open position (0.0 = disabled). '
+                    'Separate from min_confidence which blends regime+trend. FIX-CONF-GATE-01.'
+    )
     consecutive_bars: int = Field(
         ge=1,  # FIX-NRR026-BACKTEST: Allow 1 for bar-based backtest (was ge=2)
         le=3,
@@ -1703,6 +1710,9 @@ class FeatureEngineeringDomainConfig(BaseModel):
     
     # Master switch for Phase 1 metrics
     enable_new_metrics: bool = Field(description='Enable Phase 1 metrics (ema_bias, volume_spike, etc.)')
+
+    # Debugging
+    trace_features: bool = Field(default=False, description='Enable per-tick feature logging (WARNING: high I/O cost)')
     
     # P0-5 FIX: Volume input mode for avoiding double-counting
     volume_input_mode: str = Field(pattern='^(integrate|sample_window_total)$', description="Volume input mode: 'integrate' (sum ticks) or 'sample_window_total' (treat tick as pre-windowed sample)")
@@ -1958,6 +1968,15 @@ class PendingEntryTTLConfig(BaseModel):
     )
     cancel_on_regime_change: bool = Field(
         description="Cancel pending entry when EVT:REGIME_DETECTED indicates regime changed"
+    )
+    regime_change_cancel_mode: str = Field(
+        default="immediate",
+        description=(
+            "FIX-SOFT-CANCEL-01: How to handle pending orders on regime change. "
+            "'immediate' = cancel at once (original). "
+            "'let_ttl_expire' = skip cancel, let order live until TTL expires naturally. "
+            "Only applies when cancel_on_regime_change=true."
+        )
     )
     cancel_on_supersede: bool = Field(
         description="Cancel old pending entry when new open request arrives for same symbol"
@@ -2662,6 +2681,67 @@ class BacktestConfig(BaseModel):
     start_date: str = Field(description="Backtest start date (YYYY-MM-DD)")
     end_date: str = Field(description="Backtest end date (YYYY-MM-DD)")
     initial_balance: float = Field(default=10000.0, description="Initial USDT balance")
+    backtest_mode: Literal["strict", "relaxed"] = Field(
+        default="strict",
+        description=(
+            "Backtest runtime mode. "
+            "'strict' keeps SSOT fail-closed gates; "
+            "'relaxed' enables explicit backtest-only relaxations (with logging)."
+        ),
+    )
+    max_ticks: Optional[int] = Field(
+        default=None,
+        description="Optional cap for bars processed in this run (debug/testing).",
+    )
+    profit_withdrawal_enabled: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Optional toggle for backtest profit withdrawal. "
+            "If None, the feature is enabled automatically when profit_withdrawal_roi_pct is set."
+        ),
+    )
+    profit_withdrawal_roi_pct: Optional[float] = Field(
+        default=None,
+        description=(
+            "Optional: if set, simulates withdrawing profits during backtest. "
+            "When equity_free_usdt reaches initial_balance*(1+roi_pct/100), "
+            "all profit above initial_balance is withdrawn and trading continues "
+            "with initial_balance again."
+        ),
+    )
+    stress_overrides: Optional["BacktestStressOverridesConfig"] = Field(
+        default=None,
+        description=(
+            "Execution stress parameters applied in backtest mode "
+            "(fee/slippage/latency/funding). Used by Stage2 robustness reruns."
+        ),
+    )
+
+
+class BacktestStressOverridesConfig(BaseModel):
+    """Execution stress overrides for backtest reruns."""
+    model_config = ConfigDict(extra='forbid')
+
+    fee_mult: float = Field(default=1.0, gt=0.0, description="Commission multiplier")
+    slippage_bps: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        description="Absolute slippage override in bps (if set, takes precedence over slippage_mult).",
+    )
+    slippage_mult: float = Field(
+        default=1.0,
+        gt=0.0,
+        description="Multiplier over base slippage if slippage_bps is not set.",
+    )
+    latency_ms: int = Field(
+        default=0,
+        ge=0,
+        description="Artificial execution latency in milliseconds (affects fill timing).",
+    )
+    funding_bps_per_day: float = Field(
+        default=0.0,
+        description="Funding charge/credit in bps/day applied to open notional per bar.",
+    )
 
 
 # SCORCHED-EARTH-2026-01-27: Typed TCAPrefsConfig (was Dict[str, Any])

@@ -1,5 +1,5 @@
 basis_tf_sec: 300       # Bar-Only updates (5 min)
-uncertain_cutoff: 0.35  # ЗМЕНШИТИ ПОРІГ: 0.35 → 0.20 (частіше розпізнавати ТРЕНД)
+uncertain_cutoff: 0.22  # ЗМЕНШИТИ ПОРІГ: 0.35 → 0.22 (частіше розпізнавати ТРЕНД)
 
 # DM-CRITICAL-PATCHES-02: Liveness guard factor
 # If no heartbeat received within (basis_tf_sec * liveness_factor) ms, block trading.
@@ -8,10 +8,13 @@ liveness_factor: 3
 
 # HYSTERESIS-SLOPE-GATE-01
 # NOTE: These are top-level regime.yaml keys (NOT under `models:`).
+# FIX-HYST-01: Increased from 3→5 bars (25 min confirmation at 5m basis).
+# Prevents rapid regime flipping that causes mass CANCEL_STALE_REGIME.
+# Original: 3 bars (15 min) — too responsive, median regime life = 5 min.
 hysteresis_bars: 3
 vol_slope_gate_enabled: true
 vol_slope_gate_eps: -0.005
-vol_slope_gate_confirm_bars: 2
+vol_slope_gate_confirm_bars: 5
 
 # SCORCHED-EARTH-2026-01-27: hmm and features blocks DELETED
 # Reason: Zero runtime references found via deep grep audit.
@@ -24,24 +27,24 @@ models:
   sma_trend:
     # TESTNET SMOKE: minimize warmup (min allowed: 2)
     # LIVE (was): sma_short_period: 10
-    sma_short_period: 3
+    sma_short_period: 24
     # LIVE (was): sma_long_period: 50 (min allowed: 5)
-    sma_long_period: 8
-    confidence_multiplier: 30.0  # КОНСЕРВАТИВІЗАЦІЯ: 50.0 → 40.0
-    confidence_min: 0.5
-    confidence_max: 0.95
+    sma_long_period: 96
+    confidence_multiplier: 120.0  # КОНСЕРВАТИВІЗАЦІЯ: 50.0 → 120.0
+    confidence_min: 0.15
+    confidence_max: 0.85
   volatility:
     enabled: true
     # TESTNET SMOKE: minimize warmup
     # LIVE (was): atr_period: 14
-    atr_period: 5  # ІНЕРЦІЯ: 3 → 5 (25 хвилин замість 15)
+    atr_period: 14  # ІНЕРЦІЯ: повернення до 14
     # LIVE (was): atr_sma_length: 100 (min allowed: 10)
-    atr_sma_length: 10
+    atr_sma_length: 288
     allow_close_to_close_atr: true
-    threshold_multiplier: 1.5  # ЛЕГШИЙ ВХІД У ВОЛАТИЛЬНІСТЬ: 2.0 → 1.5
-    low_vol_multiplier: 0.6
+    threshold_multiplier: 2.15  # ЛЕГШИЙ ВХІД У ВОЛАТИЛЬНІСТЬ: 2.0 → 2.15
+    low_vol_multiplier: 0.80
     high_vol_confidence_multiplier: 2.0
     low_vol_confidence_multiplier: 3.0
   mean_reversion:
-    threshold: 0.005
-    confidence_multiplier: 100.0
+    threshold: 0.0045
+    confidence_multiplier: 120.0

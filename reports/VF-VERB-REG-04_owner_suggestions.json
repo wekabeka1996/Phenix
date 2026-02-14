@@ -1,8 +1,8 @@
 {
   "date": "2026-01-08",
   "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
-  "unknown_tokens": 18,
-  "generated": 18,
+  "unknown_tokens": 17,
+  "generated": 17,
   "rules": {
     "path_owner_prefix": "apps/reference/domains/<X>/",
     "threshold_pct": 70.0,
@@ -18,39 +18,6 @@
       "suggested_owner": "unknown",
       "candidates": [],
       "top_files": []
-    },
-    {
-      "op": "EVT",
-      "verb": "ALPHA_SCORE_CALCULATED",
-      "token": "EVT:ALPHA_SCORE_CALCULATED",
-      "total_occurrences": 3,
-      "suggested_owner": "unknown",
-      "candidates": [
-        {
-          "owner": "decision_making",
-          "count": 2,
-          "pct": 66.67
-        },
-        {
-          "owner": "alpha_search",
-          "count": 1,
-          "pct": 33.33
-        }
-      ],
-      "top_files": [
-        {
-          "path": "apps/reference/domains/decision_making/__init__.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/decision_making/decision_making.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/alpha_search/alpha_model.py",
-          "count": 1
-        }
-      ]
     },
     {
       "op": "EVT",
