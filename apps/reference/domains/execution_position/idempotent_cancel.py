@@ -47,6 +47,8 @@ class IdempotentCancelResult:
     # Binance error code (e.g., -2011 = Unknown order)
     error_code: Optional[int] = None
     is_idempotent_success: bool = False  # True if -2011 or already terminal state
+    # Raw order data from pre-check (for fill recovery in timeout handler)
+    order_data: Optional[Dict[str, Any]] = None
 
 
 class IdempotentCancelHelper:
@@ -148,7 +150,8 @@ class IdempotentCancelHelper:
                 )
                 return {"status": "NOT_FOUND", "code": code, "msg": msg}
 
-            self.logger.warning(f"IDEMPOTENT_CANCEL: getOrder pre-check failed: {e}")
+            self.logger.warning(
+                f"IDEMPOTENT_CANCEL: getOrder pre-check failed: {e}")
             return None
 
     @staticmethod
@@ -228,7 +231,8 @@ class IdempotentCancelHelper:
                     order_status_before=status,
                     order_status_after=status,
                     already_canceled=(status in {"CANCELED", "NOT_FOUND"}),
-                    is_idempotent_success=True
+                    is_idempotent_success=True,
+                    order_data=pre_check_order,
                 )
 
             if status in ["NEW", "PARTIALLY_FILLED", "ACCEPTED", "PARTIAL_FILL"]:
@@ -263,7 +267,8 @@ class IdempotentCancelHelper:
 
                 # -2011: Unknown order (order missing = already gone or never existed)
                 if error_code in (-2011, -2013) or "Unknown order" in error_msg or "Order does not exist" in error_msg:
-                    absorbed_code = error_code if error_code in (-2011, -2013) else -2011
+                    absorbed_code = error_code if error_code in (
+                        -2011, -2013) else -2011
                     self.logger.warning(
                         f"IDEMPOTENT_CANCEL: Got {absorbed_code} (order missing) for {order_id}, "
                         f"treating as idempotent success"

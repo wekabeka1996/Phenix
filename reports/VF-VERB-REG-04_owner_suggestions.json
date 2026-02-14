@@ -1,6 +1,6 @@
 {
   "date": "2026-01-08",
-  "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
+  "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "unknown_tokens": 18,
   "generated": 18,
   "rules": {
@@ -23,23 +23,31 @@
       "op": "EVT",
       "verb": "ALPHA_SCORE_CALCULATED",
       "token": "EVT:ALPHA_SCORE_CALCULATED",
-      "total_occurrences": 3,
+      "total_occurrences": 6,
       "suggested_owner": "unknown",
       "candidates": [
         {
-          "owner": "decision_making",
-          "count": 2,
+          "owner": "alpha_search",
+          "count": 4,
           "pct": 66.67
         },
         {
-          "owner": "alpha_search",
-          "count": 1,
+          "owner": "decision_making",
+          "count": 2,
           "pct": 33.33
         }
       ],
       "top_files": [
         {
-          "path": "apps/reference/domains/decision_making/__init__.py",
+          "path": "apps/reference/domains/alpha_search/backtest_plugin.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/alpha_search/alpha_model.py",
+          "count": 1
+        },
+        {
+          "path": "apps/reference/domains/alpha_search/config_models.py",
           "count": 1
         },
         {
@@ -47,7 +55,7 @@
           "count": 1
         },
         {
-          "path": "apps/reference/domains/alpha_search/alpha_model.py",
+          "path": "apps/reference/domains/decision_making/__init__.py",
           "count": 1
         }
       ]
@@ -158,11 +166,11 @@
           "count": 1
         },
         {
-          "path": "vfoundation/obs/correlation.py",
+          "path": "vfoundation/core/adapters/execution_adapter.py",
           "count": 1
         },
         {
-          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "path": "vfoundation/obs/correlation.py",
           "count": 1
         }
       ]

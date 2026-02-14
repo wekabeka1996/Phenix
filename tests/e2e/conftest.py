@@ -108,7 +108,9 @@ def pytest_sessionfinish(session, exitstatus):
             timeline_md.append(f"| {evt['ts_ms']} | {evt['event_type']} | {evt['source']} | {payload_str} |")
         timeline_md.append("")
     
-    (reports_dir / "TASK26_proof_timeline.md").write_text("\n".join(timeline_md))
+    (reports_dir / "TASK26_proof_timeline.md").write_text(
+        "\n".join(timeline_md), encoding="utf-8"
+    )
     
     # TASK26_metrics_snapshot.json
     metrics_data = {
@@ -122,7 +124,9 @@ def pytest_sessionfinish(session, exitstatus):
             "total_intents_dropped": sum(m["metrics"]["intents_dropped"] for m in _all_metrics),
         },
     }
-    (reports_dir / "TASK26_metrics_snapshot.json").write_text(json.dumps(metrics_data, indent=2))
+    (reports_dir / "TASK26_metrics_snapshot.json").write_text(
+        json.dumps(metrics_data, indent=2), encoding="utf-8"
+    )
     
     # TASK26_failure_modes.md
     fm_md = [
@@ -137,4 +141,6 @@ def pytest_sessionfinish(session, exitstatus):
         closed = "✅" if fm["fail_closed"] else "❌"
         fm_md.append(f"| {fm['scenario']} | {fm['trigger']} | {fm['expected_behavior']} | {fm['observed_behavior']} | {closed} |")
     
-    (reports_dir / "TASK26_failure_modes.md").write_text("\n".join(fm_md))
+    (reports_dir / "TASK26_failure_modes.md").write_text(
+        "\n".join(fm_md), encoding="utf-8"
+    )

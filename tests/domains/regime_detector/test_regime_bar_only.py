@@ -1,8 +1,8 @@
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
-from apps.reference.config_loader import AuroraConfig
 from apps.reference.core.time.clock import Clock
 from vfoundation.core.protocol import Message
 
@@ -30,7 +30,7 @@ class EventRecorder:
 
 @pytest.fixture
 def mock_config():
-    cfg = MagicMock(spec=AuroraConfig)
+    cfg = SimpleNamespace()
     models = MagicMock()
     
     # SMA Trend
@@ -64,6 +64,10 @@ def mock_config():
     # REG-FIX-01: Direct config attributes for BAR-ONLY mode
     cfg.basis_tf_sec = 300
     cfg.uncertain_cutoff = 0.25
+    cfg.hysteresis_bars = 3
+    cfg.vol_slope_gate_enabled = False
+    cfg.vol_slope_gate_eps = -0.005
+    cfg.vol_slope_gate_confirm_bars = 3
     
     # System
     sys = MagicMock()

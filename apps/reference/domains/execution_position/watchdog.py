@@ -87,7 +87,8 @@ class OrderTimeoutWatchdog:
         self._rest_detected_cancels_total = 0
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
-        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10  # Max 10 requests per second globally
+        # Max 10 requests per second globally
+        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
@@ -181,7 +182,7 @@ class OrderTimeoutWatchdog:
     def disable(self) -> None:
         """
         DET-BT-09: Disable watchdog permanently (for backtest mode).
-        
+
         Once disabled, start() and ensure_started() become no-ops.
         Use this in backtest to prevent race conditions.
         """
@@ -200,7 +201,7 @@ class OrderTimeoutWatchdog:
         fill_ttl_override_ms: Optional[int] = None,
     ):
         """Track a newly placed order for ACK timeout.
-        
+
         Args:
             fill_ttl_override_ms: If provided, overrides global fill_ttl_ms for this order.
                                   Used for pending entry TTL based on timeframe.
@@ -229,10 +230,11 @@ class OrderTimeoutWatchdog:
         if order_id in self.acked_orders:
             LOG.debug(f"Order {order_id} already ACKed, skipping duplicate")
             return
-        
+
         if order_id not in self.pending_orders:
             # WD-001: Demote to DEBUG - SL/TP orders are not tracked, this is expected
-            LOG.debug(f"ACK received for untracked order {order_id} (SL/TP or external)")
+            LOG.debug(
+                f"ACK received for untracked order {order_id} (SL/TP or external)")
             return
 
         deadline = self.pending_orders.pop(order_id)
@@ -382,8 +384,12 @@ class OrderTimeoutWatchdog:
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "quantity": executed_qty,
+                                "qty": executed_qty,  # ManageFlowFSM reads "qty"
                                 "price": float(dget(order_status, "avgPrice", 0)),
+                                # ManageFlowFSM needs side
+                                "side": str(dget(order_status, "side", "")),
                                 "client_order_id": dget(order_status, "clientOrderId", ""),
+                                "clientOrderId": dget(order_status, "clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
                             }
 

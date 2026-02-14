@@ -71,8 +71,8 @@ class TestAuroraConfigLoading:
         assert sol_cfg is not None, "SOLUSDT config missing"
         assert sol_cfg.exit is not None, "SOLUSDT.exit missing"
         
-        assert sol_cfg.exit.sl_pct == pytest.approx(0.01512, rel=1e-3), (
-            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.01512"
+        assert sol_cfg.exit.sl_pct == pytest.approx(0.0135, rel=1e-3), (
+            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.0135"
         )
         assert sol_cfg.exit.max_hold_sec == 3000, (
             f"SOLUSDT max_hold_sec={sol_cfg.exit.max_hold_sec}, expected 3000"
@@ -248,11 +248,30 @@ class TestBracketPriceCalculation:
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
         # Expected SL = entry * (1 - sl_pct)
-        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.01512"))
+        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.0135"))
         
         assert sl_price is not None, "SL price is None"
         assert abs(sl_price - expected_sl) < Decimal("1"), (
             f"SOLUSDT SL={sl_price}, expected ~{expected_sl}"
+        )
+
+    def test_sol_sl_pct_applied(self, production_config: AuroraConfig):
+        """SOLUSDT SL should use sl_pct=0.0135 and be quantized to tick_size."""
+        fsm = ManageFlowFSM(config=production_config)
+        fsm.symbol = "SOLUSDT"
+        fsm.position_side = "SELL"
+        fsm.position_entry_price = Decimal("79.6401785714285714300")
+        fsm.position_qty = Decimal("5")
+
+        sl_price, _, _ = fsm._calculate_bracket_prices()
+
+        tick_size = Decimal(str(production_config.instruments["SOLUSDT"].tick_size))
+        expected_raw = fsm.position_entry_price * (Decimal("1") + Decimal("0.0135"))
+        expected_quantized = (expected_raw / tick_size).quantize(Decimal("1")) * tick_size
+
+        assert sl_price == expected_quantized, (
+            f"SOLUSDT SELL SL={sl_price}, expected {expected_quantized} "
+            f"(raw={expected_raw}, tick={tick_size})"
         )
 
     def test_btcusdt_sl_calculation(self, production_config: AuroraConfig):
@@ -442,9 +461,9 @@ class TestEndToEndBracketCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected: sl_pct = 0.01512 (1.512%)
-        # SL for BUY: 150 * (1 - 0.01512) = 147.732
-        expected_sl = Decimal("150") * (Decimal("1") - Decimal("0.01512"))
+        # Expected: sl_pct = 0.0135 (1.35%)
+        # SL for BUY: 150 * (1 - 0.0135) = 147.975
+        expected_sl = Decimal("150") * (Decimal("1") - Decimal("0.0135"))
         fallback_sl = Decimal("150") * Decimal("0.996")  # 40 bps fallback
         
         assert abs(sl_price - expected_sl) < Decimal("0.1"), (

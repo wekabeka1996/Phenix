@@ -2,6 +2,33 @@
 
 
 
+## 2026-02-13: SOLUSDT last filled order (loss) + FLIP audit
+
+**Scope:** Forensics from `ops/wal/2026-02-13.jsonl`, `logs/*`, YAML SSOT under `config/aurora/`.
+
+**Last filled SOLUSDT order (PnL-impacting):**
+- rid: `aurora_SOLUSDT_1770973502430`
+- side/qty: `SELL 5` (short)
+- entry: `79.64` (LIMIT GTX, filled)
+- SL/TP: `80.85 / 79.20` (strategy-provided, tick-rounded)
+- regime at entry: `UNCERTAIN` (confidence=0.5 per regime detector)
+- close: SOL position disappears at `2026-02-13T14:35:23.029Z`, wallet delta `-8.9628 USDT`
+
+**why (facts / evidence pointers):**
+- why: flip entry buy->sell (WAL `ops/wal/2026-02-13.jsonl:9746`)
+- why: RR=0.36 (TP 0.544% vs SL 1.512%) (WAL `ops/wal/2026-02-13.jsonl:9746`)
+- why: closed as mark>SL stop; TP orphan cleaned (WAL `ops/wal/2026-02-13.jsonl:14649`, `logs/aurora_core.log.1:35126`)
+
+**FLIP operational issues observed:**
+- why: flip CLOSE intents rejected (NRR-046: LIMIT needs tf_sec) (`ops/wal/2026-02-13.jsonl:14489`)
+- why: flip OPEN attempts can be maker-only rejected (GTX post-only) (`ops/wal/2026-02-13.jsonl:14791`)
+
+**Config candidates (YAML-only, not applied):**
+- Block `UNCERTAIN` for `SOLUSDT` (or raise thresholds) to avoid low-quality flips.
+- Raise SOL TP/RR guardrails (`take_profit.tp_low_ratio`, `exit.regime_tpsl.min_tp_rr`) to avoid RR=0.36.
+- Unblock flip CLOSE TTL derivation (review `execution_position.pending_entry_ttl.*` behavior for tf_sec=0/None).
+- Reduce maker-only rejects (tune `volatility_entry_logic` multipliers for SOL or revisit `aurora.execution.entry_tif`).
+
 ## 2026-01-30: DM QoS P2-Lite Purge and Wiring Audit
 
 **Task:** DM_QOS_P2_LITE_PURGE_AND_WIRING_AUDIT
@@ -175,3 +202,30 @@ Copilot/agents now have a single official procedure that forbids guessing verbs/
 **Validation:**
 *   Confirmed 0 functional references in code/config.
 *   Verified `main.py` wiring logic remains intact (integration tests passed).
+
+## 2026-02-13: SOL hardening (UNCERTAIN gate off + tighter SL)
+
+**Tasks:** TASK-SOL-REGIME-BLOCK-01, TASK-SOL-SL-TIGHTEN-01, TASK-SOL-GATE-TESTS-01, TASK-SIZING-FORENSIC-01
+
+**Changes:**
+1. `config/aurora/strategies/aurora.yaml`
+   - `aurora.assets.SOLUSDT.allowed_regimes`: removed `UNCERTAIN`.
+   - `aurora.assets.SOLUSDT.exit.sl_pct`: `0.01512 -> 0.0135`.
+2. Added test `tests/domains/decision_making/test_sol_uncertain_gate.py::test_sol_uncertain_blocked`
+   - Verifies `SOLUSDT` in `UNCERTAIN` emits `EVT:STRATEGY_DECISION_BLOCKED` with `REGIME_NOT_ALLOWLISTED` and no `EVT:STRATEGY_SIGNAL_PRODUCED`.
+3. Updated and extended `tests/domains/test_tpsl_config_production.py`
+   - Updated SOL assertions to `sl_pct=0.0135`.
+   - Added `test_sol_sl_pct_applied` (SELL path, tick-quantized SL check).
+
+**Forensic note (RID):**
+- `rid=aurora_SOLUSDT_1770973502430` found in `ops/wal/2026-02-13.jsonl` with:
+  - `TRADE_INTENT_PROPOSED` payload `order.qty="5"` and `order.price="79.6401785714285714300"`.
+  - Followed by `DEC OPEN` with `qty="5"` and rounded entry `price="79.64"`.
+
+**Sizing verdict:**
+- Regime-aware sizing in DecisionMaking is present (`YES`) via `margin_pct_mult` from `aurora.assets.<symbol>.regime_sizing[regime]` in `_on_strategy_signal_gateway`.
+- For `UNCERTAIN`, SOL has no regime multiplier key/default, so sizing falls back to base `instruments.SOLUSDT.sizing.margin_pct`.
+
+**Validation run:**
+- Targeted: `python -m pytest -q tests/domains/decision_making/test_sol_uncertain_gate.py::test_sol_uncertain_blocked tests/domains/test_tpsl_config_production.py::TestAuroraConfigLoading::test_solusdt_exit_config_loaded tests/domains/test_tpsl_config_production.py::TestBracketPriceCalculation::test_solusdt_sl_calculation tests/domains/test_tpsl_config_production.py::TestBracketPriceCalculation::test_sol_sl_pct_applied tests/domains/test_tpsl_config_production.py::TestEndToEndBracketCalculation::test_solusdt_full_bracket_path_uses_aurora_config tests/contracts/test_regime_allowlist.py -q` -> **102 passed**.
+- Full suite: `python -m pytest -q` currently blocked by environment issues (`polars` missing and pytest marker `timeout` not registered).

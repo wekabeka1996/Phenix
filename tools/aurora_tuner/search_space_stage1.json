@@ -1,0 +1,86 @@
+{
+  "stage": "strategy_bayesian",
+  "method": "tpe_or_gp",
+  "n_calls": 70,
+  "dimensions": [
+    {
+      "name": "strategies.aurora.decision.signal_threshold",
+      "type": "real",
+      "low": 0.05,
+      "high": 2.0,
+      "prior": "log-uniform",
+      "why": ">0; базовий поріг входу/фліпу (score може бути >1)"
+    },
+    {
+      "name": "DERIVED.neutral_ratio",
+      "type": "real",
+      "low": 0.2,
+      "high": 0.9,
+      "prior": "uniform",
+      "why": "neutral_threshold = signal_threshold * neutral_ratio"
+    },
+    {
+      "name": "strategies.aurora.decision.direction_strength_scoring.strength_alpha",
+      "type": "real",
+      "low": 0.0,
+      "high": 3.0,
+      "prior": "uniform",
+      "why": "α у score = dir*(1+α*strength)"
+    },
+    {
+      "name": "strategies.aurora.decision.direction_strength_scoring.strength_cap",
+      "type": "real",
+      "low": 0.5,
+      "high": 2.0,
+      "prior": "uniform",
+      "why": "cap для strength_score, щоб не роздувало амплітуду"
+    },
+    {
+      "name": "strategies.aurora.decision.signal_weights.obi",
+      "type": "real",
+      "low": 0.0,
+      "high": 2.0,
+      "prior": "uniform",
+      "why": "вага OBI у dir_score (краще стартувати з позитивної)"
+    },
+    {
+      "name": "strategies.aurora.decision.signal_weights.tfi",
+      "type": "real",
+      "low": 0.0,
+      "high": 2.0,
+      "prior": "uniform",
+      "why": "вага TFI у dir_score"
+    },
+    {
+      "name": "strategies.aurora.decision.signal_weights.delta_price",
+      "type": "real",
+      "low": 0.0,
+      "high": 2.0,
+      "prior": "uniform",
+      "why": "momentum-компонента; вмикай/вимикай через вагу"
+    },
+    {
+      "name": "strategies.aurora.decision.signals.delta_price_cap_pct",
+      "type": "real",
+      "low": 0.003,
+      "high": 0.05,
+      "prior": "log-uniform",
+      "why": "0.3%..5%; коли delta_price насичується в ±1"
+    },
+    {
+      "name": "instruments.*.flip.hysteresis_mult",
+      "type": "real",
+      "low": 1.0,
+      "high": 3.0,
+      "prior": "uniform",
+      "why": ">=1.0; підсилює вимогу для flip-close"
+    }
+  ],
+  "derived_fields": [
+    {
+      "name": "strategies.aurora.decision.neutral_threshold",
+      "expr": "strategies.aurora.decision.signal_threshold * DERIVED.neutral_ratio",
+      "why": "логічна узгодженість exit/hold hysteresis"
+    }
+  ]
+}

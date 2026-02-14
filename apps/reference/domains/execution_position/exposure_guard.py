@@ -920,7 +920,7 @@ class ExposureGuard:
         expired_postfill = [
             key
             for key, item in self.state.postfill_reservations.items()
-            if now >= item["exp_ts"]
+            if now >= item.get("exp_ts", 0)
         ]
         for key in expired_postfill:
             self.state.postfill_reservations.pop(key, None)

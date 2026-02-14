@@ -1,0 +1,91 @@
+{
+  "stage": "regime_calibration",
+  "method": "random_or_lhs",
+  "n_calls": 160,
+  "dimensions": [
+    {
+      "name": "regime.basis_tf_sec",
+      "type": "categorical",
+      "categories": [60, 180, 300, 900],
+      "why": "має бути >0 і збігатися з bar_aggregator tf"
+    },
+    {
+      "name": "regime.liveness_factor",
+      "type": "integer",
+      "low": 1,
+      "high": 6,
+      "prior": "uniform",
+      "why": ">=1; керує fail-closed liveness-вікном"
+    },
+    {
+      "name": "regime.hysteresis_bars",
+      "type": "integer",
+      "low": 1,
+      "high": 10,
+      "prior": "uniform",
+      "why": "1..10; анти-чьорн stable-regime"
+    },
+    {
+      "name": "regime.uncertain_cutoff",
+      "type": "real",
+      "low": 0.0,
+      "high": 1.0,
+      "prior": "uniform",
+      "why": "0..1; демоут у UNCERTAIN при low confidence"
+    },
+    {
+      "name": "regime.vol_slope_gate_enabled",
+      "type": "categorical",
+      "categories": [true, false],
+      "why": "вмикає/вимикає slope-gate"
+    },
+    {
+      "name": "regime.vol_slope_gate_eps",
+      "type": "real",
+      "low": -0.05,
+      "high": 0.05,
+      "prior": "uniform",
+      "why": "допуск slope; паспорт дозволяє -0.1..0.1"
+    },
+    {
+      "name": "regime.vol_slope_gate_confirm_bars",
+      "type": "integer",
+      "low": 1,
+      "high": 5,
+      "prior": "uniform",
+      "why": "1..5; підтвердження slope-gate"
+    },
+    {
+      "name": "regime.models.volatility.threshold_multiplier",
+      "type": "real",
+      "low": 1.0,
+      "high": 5.0,
+      "prior": "log-uniform",
+      "why": ">=1; поріг HIGH_VOL (чим вище — тим менше HIGH_VOL)"
+    },
+    {
+      "name": "regime.models.volatility.low_vol_multiplier",
+      "type": "real",
+      "low": 0.05,
+      "high": 0.95,
+      "prior": "uniform",
+      "why": "0..1; поріг LOW_VOL (чим нижче — тим менше LOW_VOL)"
+    },
+    {
+      "name": "regime.models.volatility.high_vol_confidence_multiplier",
+      "type": "real",
+      "low": 1.0,
+      "high": 5.0,
+      "prior": "log-uniform",
+      "why": ">=1; як швидко росте confidence у HIGH_VOL"
+    },
+    {
+      "name": "regime.models.volatility.low_vol_confidence_multiplier",
+      "type": "real",
+      "low": 1.0,
+      "high": 5.0,
+      "prior": "log-uniform",
+      "why": ">=1; як швидко росте confidence у LOW_VOL"
+    }
+  ]
+}

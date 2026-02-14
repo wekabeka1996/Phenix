@@ -13,7 +13,7 @@ aurora:
   type: bar_driven
   description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
-  
+
   # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
   # LIMIT entries require explicit tif. No silent fallbacks.
   execution:
@@ -62,13 +62,13 @@ aurora:
     retry_max_count: 3
     retry_backoff_factor: 1.5
     regime_thresholds:
-      HIGH_VOLATILITY: 0.10
-      LOW_VOLATILITY: 0.09
+      HIGH_VOLATILITY: 0.18
+      LOW_VOLATILITY: 99.0
       MEAN_REVERSION: 0.075
-      TREND_UP: 0.1
-      TREND_DOWN: 0.1
-      UNCERTAIN: 0.115
-      DEFAULT: 0.1
+      TREND_UP: 0.12
+      TREND_DOWN: 0.12
+      UNCERTAIN: 99.0
+      DEFAULT: 0.12
     kelly:
       base_probability: 0.5
       kelly_cap: 0.25
@@ -90,7 +90,7 @@ aurora:
     bar_gating: null
     roi_exit: null
     mean_reversion: null
-    
+
     # Phase 4: Signal Score V2 Global Configuration
     scoring_version: v2
 
@@ -111,7 +111,7 @@ aurora:
         - volatility_state
       strength_alpha: 0.5
       strength_cap: 1.0
-    
+
     liquidity_gate:
       enabled: true
       kappa_min: 0.1
@@ -145,8 +145,8 @@ aurora:
     # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
     gates:
       enabled: true
-      anti_flat_sigma: 0.5   # Block ENTRY if |pm_norm| < 0.5 (dead market)
-      anti_fomo_sigma: 4.0   # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
+      anti_flat_sigma: 0.35  # Block ENTRY if |pm_norm| < 0.35 (dead market)
+      anti_fomo_sigma: 7.0   # Block ENTRY if |pm_norm| > 7.0 (extreme impulse)
       # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
       motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
 
@@ -165,7 +165,7 @@ aurora:
       depth_imbalance: 0.5
       macro_sync: 0.5
       macro_resid: 0.0
-    
+
     signal_weights:
       obi: 0.15
       tfi: 0.15
@@ -186,20 +186,20 @@ aurora:
     ETHUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Holding period: ETH trend-following, longer holding
       holding_period:
         min_duration_sec: 45
         emergency_exit_threshold: 0.65
-      
+
       # Re-entry cooldown: conservative for trend-following
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -208,7 +208,7 @@ aurora:
         macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.341 (Moved to Gate)
-        obi: 0.25
+        obi: 0.15
         tfi: 0.093
         volatility_state: 0.036
         depth_imbalance: -0.256
@@ -232,8 +232,8 @@ aurora:
         DEFAULT: 1.0
 
       regime_sizing:
-        HIGH_VOLATILITY: 0.3
-        LOW_VOLATILITY: 1.9
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.0
         MEAN_REVERSION: 0.8
 
       exit:
@@ -251,7 +251,7 @@ aurora:
             MEAN_REVERSION: 0.90
             TREND_UP: 1.05        # Дещо шире для тренду
             TREND_DOWN: 1.05
-            HIGH_VOLATILITY: 1.25 # Wider for high vol
+            HIGH_VOLATILITY: 1.30
             UNCERTAIN: 1.00
           tp_mult:
             DEFAULT: 1.0
@@ -261,12 +261,12 @@ aurora:
             MEAN_REVERSION: 0.80
             TREND_UP: 1.20        # ETH trend-following → higher TP
             TREND_DOWN: 1.20
-            HIGH_VOLATILITY: 1.00
+            HIGH_VOLATILITY: 1.60
             UNCERTAIN: 1.00
           min_sl_pct: 0.002       # 0.2% - ETH дозволяє тісніший SL
           max_sl_pct: 0.015       # 1.5% max (режим дрібних профітів)
           min_tp_rr: 0.3
-          max_tp_rr: 1.0          # Режим дрібних профітів
+          max_tp_rr: 3.5
           min_dist_bps: 12        # 12 bps for ETH (більш ліквідна)
 
       take_profit:
@@ -280,12 +280,12 @@ aurora:
         trail_pct: 0.006
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY", "MEAN_REVERSION"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN"]
       signal_threshold:
         enabled: true
         value: 0.09
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -297,7 +297,7 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.2
           DEFAULT: 0.2
-      
+
       timeframe_sec: null
 
     # SOLUSDT - Phase 3 Optuna optimized parameters
@@ -306,15 +306,15 @@ aurora:
       holding_period:
         min_duration_sec: 35
         emergency_exit_threshold: 0.65
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Re-entry cooldown: conservative for ALT
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -323,7 +323,7 @@ aurora:
         macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.25 (Moved to Gate)
-        obi: 0.25
+        obi: 0.15
         tfi: 0.09
         volatility_state: 0.05
         depth_imbalance: -0.20
@@ -341,20 +341,25 @@ aurora:
         penalty_factor: 0.0
         window_sec: 300
         target_ratio: 0.5
-      
+
       regime_thresholds:
-        HIGH_VOLATILITY: 1.35    # SOL волатильна → вищий поріг
-        LOW_VOLATILITY: 0.80
-        MEAN_REVERSION: 1.10
+        HIGH_VOLATILITY: 1.15    # SOL ?????????? ? ????? ?????
+        LOW_VOLATILITY: 0.75
+        MEAN_REVERSION: 1.00
+        TREND_UP: 0.90
+        TREND_DOWN: 0.90
+        UNCERTAIN: 1.25
         DEFAULT: 1.0
-      
+
       regime_sizing:
-        HIGH_VOLATILITY: 5.0
-        LOW_VOLATILITY: 6.0
-        MEAN_REVERSION: 5.0
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.9
+        TREND_UP: 1.3
+        TREND_DOWN: 1.3
+        MEAN_REVERSION: 3.0
 
       exit:
-        sl_pct: 0.01512
+        sl_pct: 0.0135
         max_hold_sec: 3000
         regime_tpsl:
           enabled: true
@@ -368,7 +373,7 @@ aurora:
             MEAN_REVERSION: 0.85
             TREND_UP: 1.15        # Wide SL для тренду
             TREND_DOWN: 1.15
-            HIGH_VOLATILITY: 1.50 # Найширший SL для SOL (найбільша вол)
+            HIGH_VOLATILITY: 1.30
             UNCERTAIN: 1.00
           tp_mult:
             DEFAULT: 1.0
@@ -378,12 +383,12 @@ aurora:
             MEAN_REVERSION: 0.75
             TREND_UP: 1.30        # Higher TP for trends
             TREND_DOWN: 1.30
-            HIGH_VOLATILITY: 1.10
+            HIGH_VOLATILITY: 1.60
             UNCERTAIN: 1.00
           min_sl_pct: 0.0025      # 0.25% - дозволяємо тіснішу SL
           max_sl_pct: 0.020       # 2.0% max (режим дрібних профітів)
           min_tp_rr: 0.25         # Нижчий мін RR для SOL (менше потенціалу)
-          max_tp_rr: 1.2          # Режим дрібних профітів для SOL
+          max_tp_rr: 3.5
           min_dist_bps: 18        # 18 bps (менш ліквідна ніж BTC/ETH)
 
       take_profit:
@@ -391,7 +396,7 @@ aurora:
         tp_high_ratio: 0.60
         partial_exit_pct: 0.31
 
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
 
       trailing_stop:
         enabled: true
@@ -403,7 +408,7 @@ aurora:
         enabled: true
         value: 0.09
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -415,7 +420,7 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.25
           DEFAULT: 0.2            # REQUIRED fallback
-      
+
       timeframe_sec: null
 
     # =========================================================================
@@ -431,16 +436,16 @@ aurora:
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # 1. Leverage & Sizing
       leverage:
-        target: 20
+        target: 35
         mode: "ISOLATED"
       side_bias:
         penalty_factor: 0.5
         window_sec: 600
         target_ratio: 0.6
-      
+
       # 2. Weights (Standard)
       weights:
         ema_bias: 0.20
@@ -466,41 +471,41 @@ aurora:
       # 4. Regime Filters (The Logic)
       # Block MR/Uncertain via thresholds. Enable others.
       regime_thresholds:
-        HIGH_VOLATILITY: 0.1
-        LOW_VOLATILITY: 0.09
+        HIGH_VOLATILITY: 0.18
+        LOW_VOLATILITY: 0.12
         TREND_UP: 0.1
         TREND_DOWN: 0.1
-        MEAN_REVERSION: 99.0
+        MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
         DEFAULT: 99.0
 
       # 5. Position Sizing per Regime
       regime_sizing:
-        HIGH_VOLATILITY: 3.0
-        LOW_VOLATILITY: 1.0  # Conservative sizing
-        TREND_UP: 2.0
-        TREND_DOWN: 2.0
-        MEAN_REVERSION: 0.0  # Redundant safety
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.7
+        TREND_UP: 1.3
+        TREND_DOWN: 1.3
+        MEAN_REVERSION: 0.7  # Redundant safety
 
       # 6. Exits (The Profit Engine)
       exit:
         sl_pct: 0.005  # Base 0.5%
         max_hold_sec: 3000
-        
+
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
           sl_mult:
             LOW_VOLATILITY: 0.8   # Tight stop
-            HIGH_VOLATILITY: 1.5  # Wide stop
+            HIGH_VOLATILITY: 1.3
             TREND_UP: 1.0
             TREND_DOWN: 1.0
             DEFAULT: 1.0
           tp_mult:
             LOW_VOLATILITY: 1.5   # Target ~0.75%
-            HIGH_VOLATILITY: 4.0  # Target ~2.0% (Big Win)
-            TREND_UP: 2.0
-            TREND_DOWN: 2.0
+            HIGH_VOLATILITY: 1.6
+            TREND_UP: 3.5
+            TREND_DOWN: 3.5
             DEFAULT: 1.5
           # Guardrails
           min_sl_pct: 0.003
@@ -520,12 +525,12 @@ aurora:
         trail_pct: 0.01
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION", "LOW_VOLATILITY"]
       signal_threshold:
         enabled: false
         value: null
       cooldown_sec: null
-      
+
       # 7. Entry Logic (Smart Pullback)
       # High Vol: Deep pullback (0.5). Low Vol: Moderate (0.2).
       volatility_entry_logic:
@@ -538,5 +543,5 @@ aurora:
           MEAN_REVERSION: 0.2
           UNCERTAIN: 0.2
           DEFAULT: 0.2
-      
+
       timeframe_sec: null

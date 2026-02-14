@@ -45,8 +45,6 @@ from apps.reference.domains.market_data.bar_aggregator import BarAggregator  # B
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
-from backtest_engine.engine import BacktestEngine
-from backtest_engine.mock_broker import MockBroker
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
@@ -117,7 +115,7 @@ def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: Au
     if alert_stats["active_alerts"] > 5:
         # Assume CB active if many alerts
         alert_manager.check_circuit_breaker(True, 300)
-    
+
     # Check entropy spike (NEW)
     # Note: entropy_monitor is initialized in initialize_domains()
     # This function is called from guardian_loop which runs after domains are initialized
@@ -162,29 +160,32 @@ logs_dir.mkdir(exist_ok=True)
 # This will be reconfigured by setup_logging(config) after config load.
 _bootstrap_logging_done = False
 
+
 def _setup_bootstrap_logging() -> None:
     """Minimal logging for startup (before config is loaded)."""
     global _bootstrap_logging_done
     if _bootstrap_logging_done:
         return
-    
+
     # Bootstrap log level from env (before config is loaded)
     bootstrap_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    
+
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, bootstrap_level, logging.INFO))
-    
+
     # Check if already configured (by tests or previous import)
     if any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
         _bootstrap_logging_done = True
         return
-    
+
     # Minimal console handler for startup
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(getattr(logging, bootstrap_level, logging.INFO))
-    console.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(message)s"))
+    console.setFormatter(logging.Formatter(
+        "%(asctime)s - %(name)s - %(message)s"))
     root_logger.addHandler(console)
     _bootstrap_logging_done = True
+
 
 _setup_bootstrap_logging()
 
@@ -210,8 +211,10 @@ def _init_order_index(fsm: FSMCore, config: Any) -> None:
     # Fallback to dict-style config (legacy bootstrap paths)
     if ttl_sec is None and isinstance(config, dict):
         domains = config.get("domains")
-        execpos = domains.get("execution_position") if isinstance(domains, dict) else None
-        oi_cfg = execpos.get("order_index") if isinstance(execpos, dict) else None
+        execpos = domains.get("execution_position") if isinstance(
+            domains, dict) else None
+        oi_cfg = execpos.get("order_index") if isinstance(
+            execpos, dict) else None
         if isinstance(oi_cfg, dict) and "ttl_sec" in oi_cfg:
             ttl_sec = int(oi_cfg["ttl_sec"])
 
@@ -313,11 +316,23 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
 def run_backtest_simulation(config: AuroraConfig) -> None:
     """
     Run the application in BACKTEST mode.
-    
+
     This replaces the standard main loop with a simulation loop driven by BacktestEngine.
-    It initializes a subset of domains (FeatureEngineering, DecisionMaking, etc.) 
+    It initializes a subset of domains (FeatureEngineering, DecisionMaking, etc.)
     and wires them to a MockBroker and LocalBus (FSMCore).
     """
+    # Backtest stack (BacktestEngine) depends on optional heavy deps (e.g. `polars`).
+    # Import lazily so live/testnet/hybrid runtime doesn't require backtest deps.
+    try:
+        from backtest_engine.engine import BacktestEngine  # type: ignore
+    except ModuleNotFoundError as e:
+        if getattr(e, "name", None) == "polars":
+            raise RuntimeError(
+                "Backtest mode requires optional dependency 'polars'. "
+                "Install it in your venv: `pip install polars` (or add it to requirements.txt)."
+            ) from e
+        raise
+
     LOG.info("="*60)
     LOG.info("🚀 STARTING AURORA CORE IN BACKTEST MODE")
     LOG.info("="*60)
@@ -335,8 +350,10 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             from apps.reference.config_models import WarmupEnforcementConfig
 
             if fe is not None:
-                fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
-        LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
+                fe.warmup = WarmupEnforcementConfig(
+                    enforcement_mode="warn_only")
+        LOG.warning(
+            "BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
     except Exception as e:
         LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
 
@@ -348,13 +365,15 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         ms_cfg = getattr(fe, "macro_sync", None) if fe is not None else None
         if ms_cfg is not None and hasattr(ms_cfg, "enabled"):
             ms_cfg.enabled = False
-            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.macro_sync.enabled=False")
+            LOG.warning(
+                "BACKTEST OVERRIDE: domains.feature_engineering.macro_sync.enabled=False")
             print("🔧 [Backtest Config] Macro Sync DISABLED to force local trading.")
         else:
-            LOG.warning("BACKTEST OVERRIDE: macro_sync config not present on domains.feature_engineering")
+            LOG.warning(
+                "BACKTEST OVERRIDE: macro_sync config not present on domains.feature_engineering")
     except Exception as e:
         LOG.warning(f"BACKTEST OVERRIDE failed (disable macro_sync): {e}")
-    
+
     # 1. Initialize Core Event Bus
     fsm = FSMCore()
     # FIX-BACKTEST-ORDER-IN-FLIGHT: Skip order_index for backtest.
@@ -367,15 +386,16 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
     # 1b. Start dedicated asyncio loop for async domains (ExecPosFSM order execution, watchdog, etc.)
     loop = asyncio.new_event_loop()
-    loop_thread = threading.Thread(target=_run_async_loop, args=(loop,), daemon=True)
+    loop_thread = threading.Thread(
+        target=_run_async_loop, args=(loop,), daemon=True)
     loop_thread.start()
 
     # Backtest timebase: prevent stale-feature gates by running domains on simulated time.
     # LiveClock (wall time) makes all 2023 events look stale in 2026.
     bt_clock = MockClock(start_ms=0)
-    
+
     # CRITICAL: Wire MockClock globally so all guards (ExposureGuard, cooldowns, staleness checks)
-    # use simulated time instead of wall-clock. Without this, historical data from 2023 
+    # use simulated time instead of wall-clock. Without this, historical data from 2023
     # appears "stale" when checked against 2026 wall-clock.
     set_clock(bt_clock)
     LOG.info("🕐 MockClock wired globally via set_clock() for backtest timebase")
@@ -386,7 +406,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     try:
         from apps.reference.telemetry.order_logger import order_logger as order_logger_proxy
 
-        order_log_path = project_root / "logs" / "backtests" / f"order_log_{run_id}.jsonl"
+        order_log_path = project_root / "logs" / \
+            "backtests" / f"order_log_{run_id}.jsonl"
         order_log_path.parent.mkdir(parents=True, exist_ok=True)
         order_logger_proxy.log_file = order_log_path
         LOG.info(f"🧾 Backtest OrderLogger file: {order_log_path}")
@@ -409,7 +430,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             pass
 
     def _on_regime(event: Message) -> None:
-        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        pld = event.get("pld", {}) if isinstance(
+            event, dict) else getattr(event, "pld", {})
         if not isinstance(pld, dict):
             return
         symbol = pld.get("symbol")
@@ -422,7 +444,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         bucket[str(regime)] = int(bucket.get(str(regime), 0)) + 1
 
     def _on_features(event: Message) -> None:
-        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        pld = event.get("pld", {}) if isinstance(
+            event, dict) else getattr(event, "pld", {})
         if not isinstance(pld, dict):
             return
         ts_ms = pld.get("ts")
@@ -433,14 +456,18 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             tf_i = int(tf_sec)
         except Exception:
             return
-        features_counts_by_tf[tf_i] = int(features_counts_by_tf.get(tf_i, 0)) + 1
-        warmup = pld.get("warmup") if isinstance(pld.get("warmup"), dict) else {}
+        features_counts_by_tf[tf_i] = int(
+            features_counts_by_tf.get(tf_i, 0)) + 1
+        warmup = pld.get("warmup") if isinstance(
+            pld.get("warmup"), dict) else {}
         if bool(warmup.get("full_ready")):
-            features_full_ready_by_tf[tf_i] = int(features_full_ready_by_tf.get(tf_i, 0)) + 1
+            features_full_ready_by_tf[tf_i] = int(
+                features_full_ready_by_tf.get(tf_i, 0)) + 1
 
     def _on_trade_intent(event: Message) -> None:
         # Capture strategy_id + rid in backtest report.
-        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        pld = event.get("pld", {}) if isinstance(
+            event, dict) else getattr(event, "pld", {})
         if not isinstance(pld, dict):
             return
         rid = pld.get("rid")
@@ -450,7 +477,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         stamped = dict(pld)
         stamped["emitted_ts_ms"] = int(bt_clock.now_ms())
         try:
-            stamped["emitted_iso_utc"] = datetime.fromtimestamp(int(bt_clock.now_ms()) / 1000.0, tz=timezone.utc).isoformat()
+            stamped["emitted_iso_utc"] = datetime.fromtimestamp(
+                int(bt_clock.now_ms()) / 1000.0, tz=timezone.utc).isoformat()
         except Exception:
             stamped["emitted_iso_utc"] = None
 
@@ -462,8 +490,10 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
                 last = last_regime_by_symbol.get(sym)
                 if isinstance(last, dict):
                     stamped["market_regime"] = last.get("regime")
-                    stamped["market_regime_confidence"] = last.get("confidence")
-                    stamped["market_regime_ts_ms"] = last.get("ts") or last.get("last_update_ts_ms")
+                    stamped["market_regime_confidence"] = last.get(
+                        "confidence")
+                    stamped["market_regime_ts_ms"] = last.get(
+                        "ts") or last.get("last_update_ts_ms")
         except Exception:
             pass
 
@@ -472,27 +502,31 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     fsm.listen("EVT:REGIME_DETECTED", _on_regime)
     fsm.listen("EVT:FEATURES_CALCULATED", _on_features)
     fsm.listen("EVT:TRADE_INTENT_PROPOSED", _on_trade_intent)
-    
+
     # 2. Initialize Backtest Engine (The Driver)
-    
-    start_date = datetime(2024, 1, 1) # Fallback
+
+    start_date = datetime(2024, 1, 1)  # Fallback
     end_date = datetime(2024, 1, 7)   # Fallback
     initial_balance = 10000.0         # Fallback
 
     # Read from config.trading.backtest if available
     if config.trading.backtest:
         try:
-            start_date = datetime.strptime(config.trading.backtest.start_date, "%Y-%m-%d")
-            end_date = datetime.strptime(config.trading.backtest.end_date, "%Y-%m-%d")
+            start_date = datetime.strptime(
+                config.trading.backtest.start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(
+                config.trading.backtest.end_date, "%Y-%m-%d")
             initial_balance = config.trading.backtest.initial_balance
-            LOG.info(f"Loaded backtest configuration: {start_date.date()} -> {end_date.date()}, Balance: {initial_balance}")
+            LOG.info(
+                f"Loaded backtest configuration: {start_date.date()} -> {end_date.date()}, Balance: {initial_balance}")
         except ValueError as e:
             LOG.error(f"Invalid date format in config.trading.backtest: {e}")
             sys.exit(1)
 
     # Symbols to test
-    symbols = list(config.instruments.keys()) if config.instruments else ["BTCUSDT", "ETHUSDT"]
-    
+    symbols = list(config.instruments.keys()) if config.instruments else [
+        "BTCUSDT", "ETHUSDT"]
+
     # Clock advance callback: updates global MockClock before each bar is processed
     def _advance_global_clock(ts_ms: int) -> None:
         """Advance the global MockClock to the given timestamp."""
@@ -500,49 +534,49 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             bt_clock.set_time_ms(ts_ms)
         except Exception:
             pass
-    
+
     engine = BacktestEngine(
         start_date=start_date,
         end_date=end_date,
         symbol_list=symbols,
-        timeframe="5m", # Configurable?
+        timeframe="5m",  # Configurable?
         initial_balance=initial_balance,
         event_bus=fsm,
         clock_advance_fn=_advance_global_clock  # Wire clock sync
     )
 
     from backtest_engine.wrappers import BacktestExecPosFSM
-    
+
     # 3. Initialize Domains (Subset)
     LOG.info("Initializing Backtest Domains...")
-    
+
     # Feature Engineering (Calculates indicators)
     # Task 18: FeatureEngineering requires AuroraConfig object
     feature_engineering = FeatureEngineering(fsm, config)
     fsm.register_domain("feature_engineering", feature_engineering)
-    
+
     # Regime Detector
     # Task 18: RegimeDetector requires AuroraConfig object
     regime_detector = RegimeDetector(config, fsm, clock=bt_clock)
     fsm.register_domain("regime_detector", regime_detector)
-    
+
     # Risk Management
     # Task 18: RiskManagement requires AuroraConfig object
     risk_management = RiskManagement(fsm, config)
     fsm.register_domain("risk_management", risk_management)
-    
+
     # Position Tracking (Portfolio State SSOT)
     # Backtest uses BacktestEngine as the authoritative portfolio emitter.
     # Reason: PositionTracking is truth-first and expects initial account sync / DR replay.
     # In backtest there is no live account sync, so disabling engine portfolio emission
     # would deadlock DecisionMaking with NRR-PORTFOLIO-UNKNOWN.
     LOG.info("ℹ️ Backtest: BacktestEngine will emit EVT:PORTFOLIO_STATE_UPDATED (no PositionTracking domain)")
-    
+
     # Decision Making (Strategy Logic)
     # Task 18: DecisionMaking requires AuroraConfig object
     decision_making = DecisionMaking(fsm, config, clock=bt_clock)
     fsm.register_domain("decision_making", decision_making)
-    
+
     # Execution Position (The Trader)
     exec_pos = BacktestExecPosFSM(config=config, fsm=fsm, shadow_mode=False)
     exec_pos.set_async_loop(loop)
@@ -552,7 +586,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     # DET-BT-15: Wire ExecPosFSM for tick-barrier synchronization
     engine.execpos_fsm = exec_pos
     fsm.register_domain("execution_position", exec_pos)
-    
+
     # 3b. Initialize Aurora Strategy Handler (processes CMD:PROCESS_STRATEGY)
     # This is CRITICAL - without this, no signals will be generated!
     try:
@@ -568,7 +602,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         LOG.error(f"Failed to register Aurora Strategy Handler: {e}")
         import traceback
         traceback.print_exc()
-    
+
     # 3c. Initialize Mean Reversion Strategy Handler
     # FIX-BACKTEST-MR: Mean Reversion was not registered, so BTC (assigned to MR) couldn't trade!
     try:
@@ -581,7 +615,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         LOG.error(f"Failed to register Mean Reversion Strategy Handler: {e}")
         import traceback
         traceback.print_exc()
-    
+
     LOG.info("✅ Domains initialized and wired for Backtest.")
 
     # 3d. Initialize AlphaSearch Backtest Plugin (Shadow Advisor)
@@ -595,7 +629,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         LOG.info("✅ AlphaSearch Backtest Plugin (Shadow) registered.")
     except Exception as e:
         LOG.error(f"Failed to register AlphaSearch Plugin: {e}")
-    
+
     # 4. Run Simulation
     try:
         max_ticks = None
@@ -607,15 +641,18 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             max_ticks = None
         if max_ticks is None:
             try:
-                bt_cfg = getattr(getattr(config, "trading", None), "backtest", None)
-                mt = getattr(bt_cfg, "max_ticks", None) if bt_cfg is not None else None
+                bt_cfg = getattr(
+                    getattr(config, "trading", None), "backtest", None)
+                mt = getattr(bt_cfg, "max_ticks",
+                             None) if bt_cfg is not None else None
                 if mt is not None:
                     max_ticks = int(mt)
             except Exception:
                 max_ticks = None
 
         if max_ticks is not None and max_ticks > 0:
-            LOG.info(f"⏱️ Backtest max_ticks={max_ticks} (set BACKTEST_MAX_TICKS to override)")
+            LOG.info(
+                f"⏱️ Backtest max_ticks={max_ticks} (set BACKTEST_MAX_TICKS to override)")
         else:
             max_ticks = None
 
@@ -638,11 +675,11 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             print("=" * 60 + "\n")
         else:
             print("\n[WARN] No EVT:REGIME_DETECTED captured during backtest. Likely no bar-features emitted (check FEATURES_CALCULATED tf_sec=300 counters).")
-        
+
         # --- Reporting ---
         from dataclasses import asdict
         import json
-        
+
         # 1. Console Output
         print("\n" + "="*60)
         print(f"🏁 BACKTEST RESULTS ({start_date.date()} to {end_date.date()})")
@@ -678,9 +715,10 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
                 "full_ready_counts_by_tf_sec": {str(k): int(v) for k, v in features_full_ready_by_tf.items()},
             },
             trade_intents=trade_intents,
-            order_log_path=str(order_log_path) if order_log_path is not None else None,
+            order_log_path=str(
+                order_log_path) if order_log_path is not None else None,
         )
-        
+
         # Inject Alpha Search Summary (since it's a standalone plugin)
         try:
             if 'alpha_plugin' in locals() and alpha_plugin:
@@ -688,7 +726,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
                 LOG.info("✅ Alpha Search summary injected into report")
         except Exception as e:
             LOG.warning(f"Failed to inject Alpha summary: {e}")
-        
+
         reports_dir = project_root / "reports" / "backtests"
         reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -700,13 +738,13 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             reports_root=reports_dir,
         )
         LOG.info(f"📦 Backtest run bundle saved to: {bundle_dir}")
-        
+
         # Filename: backtest_{iso_timestamp}.json
         report_path = reports_dir / f"backtest_{run_id}.json"
-        
+
         with open(report_path, "w") as f:
             json.dump(report_data, f, indent=2, ensure_ascii=False)
-            
+
         LOG.info(f"✅ Report saved to: {report_path}")
 
     except Exception as e:
@@ -719,7 +757,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             LOG.info("🕐 Clock reset to LiveClock after backtest")
         except Exception:
             pass
-            
+
         try:
             if hasattr(exec_pos, "watchdog") and exec_pos.watchdog is not None:
                 exec_pos.watchdog.stop()
@@ -728,12 +766,14 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
         try:
             async def _shutdown_asyncio_loop() -> None:
-                tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+                tasks = [t for t in asyncio.all_tasks(
+                ) if t is not asyncio.current_task()]
                 for t in tasks:
                     t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-            asyncio.run_coroutine_threadsafe(_shutdown_asyncio_loop(), loop).result(timeout=2.0)
+            asyncio.run_coroutine_threadsafe(
+                _shutdown_asyncio_loop(), loop).result(timeout=2.0)
         except Exception:
             pass
 
@@ -774,15 +814,18 @@ def main() -> None:
                 "(rotation/core/event_chain/domains)"
             )
         except Exception as e:
-            LOG.warning(f"BACKTEST OVERRIDE failed (logging backup_count=50): {e}")
+            LOG.warning(
+                f"BACKTEST OVERRIDE failed (logging backup_count=50): {e}")
 
     # Step 1.5: Setup full logging from observability.yaml (CFG-OBS-001)
     from apps.reference.logging_setup import setup_logging
     setup_logging(config, logs_dir=logs_dir)
 
     # PHASE 2: METADATA ACTIVATION - Log config versions at startup (PURGE-DIRTY-DOZEN)
-    sys_ver = getattr(config.system_meta, 'system_config_version', None) or 'N/A'
-    regime_ver = getattr(config.system_meta, 'regime_config_version', None) or 'N/A'
+    sys_ver = getattr(config.system_meta,
+                      'system_config_version', None) or 'N/A'
+    regime_ver = getattr(config.system_meta,
+                         'regime_config_version', None) or 'N/A'
     LOG.info(f"📋 Config Versions: system={sys_ver}, regime={regime_ver}")
     LOG.info(f"📋 Trading Mode: {config.trading_mode}")
 
@@ -797,37 +840,39 @@ def main() -> None:
                 from apps.reference.config_models import WarmupEnforcementConfig
 
                 if fe is not None:
-                    fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
-            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
+                    fe.warmup = WarmupEnforcementConfig(
+                        enforcement_mode="warn_only")
+            LOG.warning(
+                "BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
         except Exception as e:
             LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
 
     # TASK: BACKTEST MODE INTERCEPTION
     if config.trading_mode == "backtest":
         run_backtest_simulation(config)
-        return # Exit main after backtest finishes
-
+        return  # Exit main after backtest finishes
 
     # TASK-EXF-WIRE-STARTUP-09: Validate Instruments vs Exchange
     if config.system.validate_instruments_on_startup:
         async def _startup_validation():
             LOG.info("🛡️ STARTUP GUARD: Validating exchange filters...")
-            
+
             # Use testnet if executing in testnet (Hybrid or Pure Testnet)
             is_testnet = (
-                config.trading_mode == "testnet" or 
+                config.trading_mode == "testnet" or
                 config.trading_mode == "hybrid_live_data_testnet_exec"
             )
-            
+
             # Force-disable warn_only in LIVE/PRODUCTION to ensure safety
             # If we are in live/production, we MUST crash on filter mismatch.
             warn_only = config.system.warn_only_filters
             if config.trading_mode in ("live", "production") and warn_only:
-                LOG.warning("⚠️ SECURITY: warn_only_filters=True ignored in LIVE/PROD mode. Enforcing FAIL-CLOSED.")
+                LOG.warning(
+                    "⚠️ SECURITY: warn_only_filters=True ignored in LIVE/PROD mode. Enforcing FAIL-CLOSED.")
                 warn_only = False
 
             api_cfg = config.binance_api.testnet if is_testnet else config.binance_api.live
-            
+
             # Create temporary adapter for validation
             adapter = BinanceAdapter(
                 api_key=api_cfg.api_key or "",
@@ -835,12 +880,12 @@ def main() -> None:
                 testnet=is_testnet,
                 logger=LOG
             )
-            
+
             # Convert Pydantic models back to raw dicts for validator consumption
             instruments_raw = {
                 k: v.model_dump() for k, v in config.instruments.items()
             }
-            
+
             try:
                 await validate_instruments_on_startup(
                     adapter=adapter,
@@ -849,7 +894,8 @@ def main() -> None:
                     warn_only=warn_only
                 )
             except FilterMismatchError as e:
-                LOG.critical(f"🛑 STARTUP BLOCKED: Exchange Filter Mismatch!\n{e}")
+                LOG.critical(
+                    f"🛑 STARTUP BLOCKED: Exchange Filter Mismatch!\n{e}")
                 sys.exit(1)
             except Exception as e:
                 LOG.critical(f"🛑 STARTUP BLOCKED: Validation error: {e}")
@@ -912,9 +958,10 @@ def main() -> None:
     global fsm
     fsm = FSMCore()
     _init_order_index(fsm, config)
-    
+
     # Wrap FSMCore.emit to track events with EntropyMonitor
     original_emit = fsm.emit
+
     def emit_with_monitoring(event_name: str, payload: dict, why: str, data_ref=None):
         """Emit with entropy monitoring"""
         # Track event for anomaly detection
@@ -928,10 +975,10 @@ def main() -> None:
             why=why
         )
         entropy_monitor.track_event(tracking_msg)
-        
+
         # Call original emit
         return original_emit(event_name, payload, why, data_ref)
-    
+
     fsm.emit = emit_with_monitoring
     LOG.info("✅ FSMCore initialized with EntropyMonitor tracking")
 
@@ -940,7 +987,6 @@ def main() -> None:
     # AuroraBridge removed (BRIDGE-SUNSET-01).
     # TRADE_INTENT_PROPOSED is now handled directly by ExecPosFSM.
     # bridge = AuroraBridge(fsm=fsm, config=config, logger=LOG)
-
 
     # P2 FIX: Gate debug listener with environment variable to avoid hot-path prints in production
     # Set AURORA_DEBUG_EVENTS=1 to enable debug event logging
@@ -956,7 +1002,8 @@ def main() -> None:
             fsm.listen(event_name, debug_event_listener)
         LOG.info("🐛 Debug event listener ENABLED (AURORA_DEBUG_EVENTS=1)")
     else:
-        LOG.debug("Debug event listener DISABLED (set AURORA_DEBUG_EVENTS=1 to enable)")
+        LOG.debug(
+            "Debug event listener DISABLED (set AURORA_DEBUG_EVENTS=1 to enable)")
 
     # Step 3: Initialize all domain components
     LOG.info("Initializing domain components...")
@@ -967,7 +1014,7 @@ def main() -> None:
     # Account Observer (observes trades and sends portfolio updates)
     # FSMP-P3-T01: AccountObserver removed (Legacy Spot code).
     # risk_portfolio_source logic preserved if needed for other components but observer init removed.
-    
+
     # account_observer = AccountObserver(
     #     fsm=fsm, config=config, environment=risk_portfolio_source)
 
@@ -978,7 +1025,7 @@ def main() -> None:
             why="Missing required config (market_data).",
         )
     use_multiprocessing = bool(config.trading.market_data.use_multiprocessing)
-    
+
     if use_multiprocessing:
         LOG.info("🚀 Using MarketDataProxy (multiprocessing mode)")
         market_data = MarketDataProxy(fsm=fsm, config=config)
@@ -995,18 +1042,20 @@ def main() -> None:
     # ==========================================
     bar_aggregator = None
     bar_config = getattr(config.trading.market_data, 'bar_aggregator', None)
-    
+
     if bar_config is None:
         # CLOSEOUT-BASELINE-001: Explicit why for missing config
         LOG.info(
             "ℹ️ BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_missing_config", "reason": "config.trading.market_data.bar_aggregator not defined"}
+            extra={"why": "bar_agg_disabled_missing_config",
+                   "reason": "config.trading.market_data.bar_aggregator not defined"}
         )
     elif not bar_config.enabled:
         # CLOSEOUT-BASELINE-001: Explicit why for disabled flag
         LOG.info(
             "ℹ️ BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_config", "reason": "bar_aggregator.enabled=false"}
+            extra={"why": "bar_agg_disabled_config",
+                   "reason": "bar_aggregator.enabled=false"}
         )
     else:
         # Enabled: validate timeframes and wire
@@ -1017,7 +1066,8 @@ def main() -> None:
                 extra={"why": "bar_agg_timeframes_default"}
             )
             timeframes = [60, 300]
-        bar_aggregator = BarAggregator(timeframes_sec=timeframes, emit_fn=fsm.emit)
+        bar_aggregator = BarAggregator(
+            timeframes_sec=timeframes, emit_fn=fsm.emit)
         fsm.listen("EVT:MARKET_TICK_RECEIVED", bar_aggregator.on_market_tick)
         LOG.info(
             f"✅ BarAggregator enabled",
@@ -1143,13 +1193,16 @@ def main() -> None:
             execution_position.run_leverage_bootstrap(),
             guardian_loop
         )
-        blocked_symbols = future.result(timeout=30.0)  # 30s timeout for all symbols
+        # 30s timeout for all symbols
+        blocked_symbols = future.result(timeout=30.0)
         if blocked_symbols:
-            LOG.warning(f"TASK47c-P3: Symbols blocked from trading due to leverage sync failure: {blocked_symbols}")
+            LOG.warning(
+                f"TASK47c-P3: Symbols blocked from trading due to leverage sync failure: {blocked_symbols}")
         else:
             LOG.info("TASK47c-P3: Leverage bootstrap completed successfully")
     except Exception as e:
-        LOG.error(f"TASK47c-P3: Leverage bootstrap failed with exception: {e}. Trading MAY proceed with default settings.")
+        LOG.error(
+            f"TASK47c-P3: Leverage bootstrap failed with exception: {e}. Trading MAY proceed with default settings.")
 
     # ==========================================
     # IN-FLIGHT RECONCILER (TRUTH DOMAIN REPAIR)
@@ -1161,22 +1214,27 @@ def main() -> None:
         domains_dict = {}
         try:
             if getattr(config, "domains", None) is not None and hasattr(config.domains, "model_dump"):
-                domains_dict = config.domains.model_dump()  # type: ignore[assignment]
+                # type: ignore[assignment]
+                domains_dict = config.domains.model_dump()
         except Exception:
             domains_dict = {}
 
         inflight_cfg = InFlightConfig.from_ssot(domains_dict)
-        inflight_reconciler = InFlightReconciler(config=inflight_cfg, adapter=getattr(execution_position, "adapter", None))
+        inflight_reconciler = InFlightReconciler(
+            config=inflight_cfg, adapter=getattr(execution_position, "adapter", None))
 
         # Bind ACK/FILL events so the reconciler can track orders without touching execution code.
         def _inflight_on_order_ack(event: "Message") -> None:
             pld = event.pld or {}
-            rid = str(pld.get("rid") or event.rid or pld.get("clientOrderId") or pld.get("orderId") or "")
+            rid = str(pld.get("rid") or event.rid or pld.get(
+                "clientOrderId") or pld.get("orderId") or "")
             symbol = pld.get("symbol")
             if not rid or not symbol:
                 return
-            client_order_id = pld.get("clientOrderId") or pld.get("client_order_id")
-            exchange_order_id = str(pld.get("orderId")) if pld.get("orderId") is not None else None
+            client_order_id = pld.get(
+                "clientOrderId") or pld.get("client_order_id")
+            exchange_order_id = str(pld.get("orderId")) if pld.get(
+                "orderId") is not None else None
             if not inflight_reconciler.update_order_id(
                 rid=rid,
                 client_order_id=client_order_id,
@@ -1191,7 +1249,8 @@ def main() -> None:
 
         def _inflight_on_order_fill(event: "Message") -> None:
             pld = event.pld or {}
-            rid = str(pld.get("rid") or event.rid or pld.get("clientOrderId") or pld.get("orderId") or "")
+            rid = str(pld.get("rid") or event.rid or pld.get(
+                "clientOrderId") or pld.get("orderId") or "")
             if not rid:
                 return
             inflight_reconciler.mark_terminal(
@@ -1205,10 +1264,12 @@ def main() -> None:
         fsm.listen("EVT:ORDER_FILL", _inflight_on_order_fill)
 
         if guardian_loop.is_running():
-            asyncio.run_coroutine_threadsafe(inflight_reconciler.run_forever(), guardian_loop)
+            asyncio.run_coroutine_threadsafe(
+                inflight_reconciler.run_forever(), guardian_loop)
             LOG.info("✅ InFlightReconciler started")
         else:
-            LOG.warning("⚠️ InFlightReconciler not started: async loop is not running")
+            LOG.warning(
+                "⚠️ InFlightReconciler not started: async loop is not running")
     except Exception as e:
         LOG.warning(f"⚠️ InFlightReconciler disabled (init failed): {e}")
 
@@ -1216,16 +1277,17 @@ def main() -> None:
     retry_scheduler = None
     try:
         from apps.reference.retry_scheduler import RetryScheduler
-        
+
         # Config for retry scheduler (use arming config if available)
         try:
             arming_cfg = config.domains.decision_making.arming
             max_attempts = int(getattr(arming_cfg, 'max_attempts', 5))
-            retry_backoff_ms = int(getattr(arming_cfg, 'retry_backoff_ms', 500))
+            retry_backoff_ms = int(
+                getattr(arming_cfg, 'retry_backoff_ms', 500))
         except AttributeError:
             max_attempts = 5
             retry_backoff_ms = 500
-        
+
         retry_scheduler = RetryScheduler(
             fsm=fsm,
             logger=LOG.getChild("RetryScheduler"),
@@ -1234,22 +1296,25 @@ def main() -> None:
             backoff_factor=2.0,
             jitter_ms=100,
         )
-        
+
         if guardian_loop is not None and guardian_loop.is_running():
             retry_scheduler.bind_loop(guardian_loop)
-            
+
             # Listen to EVT:INTENT_DEFERRED and register with scheduler
             def on_intent_deferred(msg):
                 """Handler for EVT:INTENT_DEFERRED — forwards to RetryScheduler."""
                 try:
                     retry_scheduler.register_deferred(msg.pld)
                 except Exception as e:
-                    LOG.warning(f"RetryScheduler.register_deferred failed: {e}")
-            
+                    LOG.warning(
+                        f"RetryScheduler.register_deferred failed: {e}")
+
             fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
-            LOG.info("✅ RetryScheduler bound (max_attempts=%d, backoff_ms=%d)", max_attempts, retry_backoff_ms)
+            LOG.info("✅ RetryScheduler bound (max_attempts=%d, backoff_ms=%d)",
+                     max_attempts, retry_backoff_ms)
         else:
-            LOG.warning("⚠️ RetryScheduler not bound: async loop is not running")
+            LOG.warning(
+                "⚠️ RetryScheduler not bound: async loop is not running")
     except Exception as e:
         LOG.warning(f"⚠️ RetryScheduler disabled (init failed): {e}")
 
@@ -1298,7 +1363,7 @@ def main() -> None:
     strategy_plugins.register(AuroraBuiltinPlugin())
     strategy_plugins.register(MeanReversionPlugin())
     StrategyRuntime(fsm=fsm, config=config, registry=strategy_plugins).start()
-    
+
     # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
     # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
     regime_detector = RegimeDetector(config=config, fsm=fsm)
@@ -1309,7 +1374,6 @@ def main() -> None:
     csv_recorder = CsvRecorder(fsm=fsm, config=config)
     csv_recorder.start()
     LOG.info("✅ CsvRecorder initialized and started")
-
 
     # P2 CLEANUP: register_domain calls are now done in initialize_domains()
     # These commented lines preserved for historical reference only:
