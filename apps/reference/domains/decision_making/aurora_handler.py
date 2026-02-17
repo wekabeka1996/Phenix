@@ -19,7 +19,7 @@ import logging
 # DET-BT-11: Import for deterministic backtest
 from apps.reference.core.time import get_clock
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable
 
 from apps.reference.domains.decision_making.aurora_scoring_kernel import (
@@ -27,9 +27,31 @@ from apps.reference.domains.decision_making.aurora_scoring_kernel import (
     ScoringResult,
     SideBiasState,
 )
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+    QuadraticScoringKernel,
+)
+from apps.reference.domains.decision_making.shields.null_shield import NullShield
+from apps.reference.domains.decision_making.shields.base import ShieldCascade
+from apps.reference.domains.decision_making.shields.context_shield import ContextShield
+from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
+from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.decision_making.execution_gate import ExecutionGate
+from apps.reference.domains.decision_making.exit_manager import ExitManager
+from apps.reference.domains.decision_making.entry_plan import EntryPlan, EntryPlanParams, EntryPlanResult, ObiMissingPolicy
+from apps.reference.config_models import (
+    ExitManagerConfig,
+    OperationalMode,
+    DashboardConfig,
+)
 from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
+from apps.reference.domains.decision_making.operational_mode import ModeManager
+from apps.reference.domains.decision_making.dashboard import DashboardMetrics, TradeOutcome
+from apps.reference.domains.decision_making.instrument_quantizer import (
+    quantize_exposure,
+    InstrumentSpec as QuantizerSpec,
+)
 
 
 logger = logging.getLogger("aurora_handler")
@@ -67,6 +89,9 @@ class SymbolState:
         # Holding period state (Anti-Churn)
         self.entry_timestamp = None
         self.position_side = ""
+        
+        # S2-TRAILING: MFE (Max Favorable Excursion) tracking
+        self.mfe_price = None  # Decimal: highest price for LONG, lowest for SHORT
         
         # Re-entry cooldown state (Anti-Ping-Pong)
         self.last_exit_timestamp = None
@@ -123,6 +148,8 @@ class AuroraHandler:
         
         # Dependency Injection / Testability
         self.scoring_kernel_cls = AuroraScoringKernel
+        self._shield_fn = None  # Phase 9: set during _load_config if quadratic
+        self._scoring_engine_cfg = None  # Phase 9: ScoringEngineConfig
         
         # Per-symbol state
         self._symbol_states: Dict[str, SymbolState] = defaultdict(SymbolState)
@@ -173,6 +200,10 @@ class AuroraHandler:
         decision = getattr(aurora, "decision", None) if aurora else None
         
         if decision:
+            # Phase 6: Modes (Init first as used by shields)
+            op_mode = getattr(decision, "operational_mode", OperationalMode.PARANOID)
+            self.mode_manager = ModeManager(op_mode)
+
             if self._strict_pydantic_config:
                 from apps.reference.config_contract import ConfigContractError
 
@@ -242,6 +273,16 @@ class AuroraHandler:
             # Signals config
             signals = getattr(decision, "signals", None)
             self.delta_price_cap_pct = decimal.Decimal(str(getattr(signals, "delta_price_cap_pct", "0.005"))) if signals else decimal.Decimal("0.005")
+
+            # ═══════════════ Phase 9: Quadratic Kernel Routing ═══════════════
+            scoring_ver = getattr(decision, "scoring_version", "v1")
+            if scoring_ver == "quadratic":
+                self.scoring_kernel_cls = QuadraticScoringKernel
+                self._scoring_engine_cfg = getattr(decision, "scoring_engine", None)
+                self._shield_fn = self._build_shield_cascade()
+                shield_name = repr(self._shield_fn) if hasattr(self._shield_fn, '__repr__') else "NullShield"
+                self.logger.info(f"Phase 9: QuadraticScoringKernel activated with {shield_name}")
+            # ═════════════════════════════════════════════════════════════════
             
             # Neutral threshold for hysteresis (global default)
             nt_raw = getattr(decision, "neutral_threshold", None)
@@ -320,6 +361,79 @@ class AuroraHandler:
                 self.anti_flat_sigma = 0.5
                 self.anti_fomo_sigma = 4.0
                 self.motion_window_sec = 900
+            # Phase 5: Execution Protocols
+            # Backward-compat: enable Phase5 gates only when explicitly configured.
+            execution_cfg = getattr(decision, "execution", None)
+            self.execution_gate = ExecutionGate(execution_cfg) if execution_cfg is not None else None
+            
+            # BUG-3: Fail-closed if exit config is missing (Risk Critical)
+            exit_cfg = getattr(decision, "exit", None)
+            if exit_cfg is None:
+                if self._strict_pydantic_config:
+                    from apps.reference.config_contract import ConfigContractError
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.exit",
+                        why="ExitManager config is mandatory (Fail-Closed). Check aurora.yaml."
+                    )
+                # Legacy fallback (only for non-strict/testing environments)
+                self.logger.warning("ExitManager config missing! Defaulting to disabled (Dangerous!)")
+            
+            # S2-TRAILING: Extract trailing stop config from instrument config
+            _trailing_cfg = None
+            try:
+                instruments = getattr(self.config, "instruments", None)
+                if instruments:
+                    # Use first instrument's trailing_stop as default
+                    for _inst_cfg in instruments.values():
+                        _trailing_cfg = getattr(_inst_cfg, "trailing_stop", None)
+                        if _trailing_cfg and getattr(_trailing_cfg, "enabled", False):
+                            break
+                        _trailing_cfg = None
+            except Exception:
+                _trailing_cfg = None
+
+            self.exit_manager = ExitManager(
+                exit_cfg or ExitManagerConfig(),
+                trailing_enabled=bool(getattr(_trailing_cfg, "enabled", False)) if _trailing_cfg else False,
+                trailing_activation_pct=float(getattr(_trailing_cfg, "activation_pct", 0.003)) if _trailing_cfg else 0.003,
+                trailing_atr_mult=float(getattr(_trailing_cfg, "trail_atr_mult", 0)) or None if _trailing_cfg else None,
+                trailing_pct=float(getattr(_trailing_cfg, "trail_pct", 0)) or None if _trailing_cfg else None,
+            )
+            
+            # Phase 4: Entry Plan (SSOT: domains.decision_making.entry_plan)
+            domains_cfg = getattr(self.config, "domains", None)
+            dm_domain_cfg = getattr(domains_cfg, "decision_making", None) if domains_cfg else None
+            ep_cfg = getattr(dm_domain_cfg, "entry_plan", None)
+            
+            if ep_cfg:
+                self.entry_plan_params = EntryPlanParams(
+                    atr_period=ep_cfg.atr_period,
+                    entry_k_atr=float(ep_cfg.entry_k_atr),
+                    sl_k_atr=float(ep_cfg.sl_k_atr),
+                    tp_k_atr=float(ep_cfg.tp_k_atr),
+                    obi_weight=float(ep_cfg.obi_weight),
+                    obi_mod_clamp_min=float(ep_cfg.obi_mod_clamp_min),
+                    obi_mod_clamp_max=float(ep_cfg.obi_mod_clamp_max),
+                    require_atr=bool(ep_cfg.require_atr),
+                    obi_missing_policy=ObiMissingPolicy.NEUTRAL,
+                    structural_stop_enabled=bool(ep_cfg.structural_stop_enabled),
+                    base_atr_mult=float(ep_cfg.base_atr_mult),
+                    confidence_scale=float(ep_cfg.confidence_scale),
+                    min_stop_bps=int(ep_cfg.min_stop_bps),
+                )
+                self.entry_plan_calculator = EntryPlan(self.entry_plan_params)
+            else:
+                self.entry_plan_params = None
+                self.entry_plan_calculator = None
+                self.logger.warning("DecisionMakingDomainConfig.entry_plan missing: EntryPlan logic disabled (Structural Gate will block).")
+
+            # Phase 6: Modes & Dashboard - MOVED UP
+            # op_mode = getattr(decision, "operational_mode", OperationalMode.PARANOID)
+            # self.mode_manager = ModeManager(op_mode)
+            
+            dash_cfg = getattr(decision, "dashboard", None) or DashboardConfig(enabled=False)
+            self.dashboard = DashboardMetrics(dash_cfg) if dash_cfg.enabled else None
+
         else:
             # P2: FAIL-CLOSED — decision config is mandatory
             from apps.reference.config_contract import ConfigContractError
@@ -831,7 +945,31 @@ class AuroraHandler:
         
         # Call scoring kernel
         effective_regime_thresholds = self._get_regime_thresholds(symbol=symbol, instr_cfg=instr_cfg)
-        result = self.scoring_kernel_cls.compute(
+
+        # Phase 9: pass shield_fn and pillar_contribs if using quadratic kernel
+        extra_kwargs = {}
+        if self.scoring_kernel_cls is QuadraticScoringKernel:
+            extra_kwargs["shield_fn"] = self._shield_fn
+            # pillar_contribs carried in features by FE
+            extra_kwargs["pillar_contribs"] = features.get("pillar_contribs", {})
+
+        # P0-3.1: Inject shield-relevant context into features so that
+        # shields (ContextShield, MemoryShield) see regime and bar timestamp
+        # without coupling to the top-level CMD payload structure.
+        if "regime" not in features:
+            features["regime"] = state.regime
+        # TTL-STALE-01: Inject regime timestamp so ContextShield can detect stale regimes
+        if "regime_ts_ms" not in features:
+            features["regime_ts_ms"] = state.regime_ts_ms
+        if "bar_close_ts" not in features:
+            bar_close_ts_raw = cmd.get("bar_close_ts")
+            if bar_close_ts_raw is not None:
+                features["bar_close_ts"] = int(bar_close_ts_raw)
+
+        # S2-FALLBACK: Local fallback — if quadratic kernel raises,
+        # fall back to legacy Aurora kernel FOR THIS CALL ONLY.
+        # GPT recommended: do NOT persist the switch via self.scoring_kernel_cls.
+        _compute_kwargs = dict(
             symbol=symbol,
             features=features,
             warmup_readiness=warmup_readiness,
@@ -848,6 +986,24 @@ class AuroraHandler:
             neutral_threshold=effective_neutral,
             current_side=current_side,
         )
+        try:
+            result = self.scoring_kernel_cls.compute(
+                **_compute_kwargs,
+                **extra_kwargs,
+            )
+        except Exception as _kernel_exc:
+            if self.scoring_kernel_cls is QuadraticScoringKernel:
+                self.logger.error(
+                    "[%s] QUADRATIC_FALLBACK: %s — falling back to AuroraScoringKernel (local only)",
+                    symbol, _kernel_exc,
+                )
+                try:
+                    result = AuroraScoringKernel.compute(**_compute_kwargs)
+                except Exception as _fallback_exc:
+                    self.logger.error("[%s] FALLBACK ALSO FAILED: %s", symbol, _fallback_exc)
+                    raise _fallback_exc from _kernel_exc
+            else:
+                raise
         
         # Handle result
         # CRITICAL: Update side state BEFORE any early returns.
@@ -910,6 +1066,66 @@ class AuroraHandler:
             return
         # === END STRICT REGIME ALLOWLIST GATE ===
         
+        # === PHASE 5: EXIT MANAGER ===
+        # Check active positions for DangerZone/Time/Signal exits
+        shield_breakdown = getattr(result, "shield_breakdown", {}) or {}
+        shield_reasons = shield_breakdown.get("reasons", []) if isinstance(shield_breakdown, dict) else []
+        danger_zone_active = any("DANGER_ZONE" in str(r) for r in shield_reasons)
+        should_exit = False
+        stop_loss_override = None
+        
+        if current_position_side != "":
+             # Calculate hold time
+             entry_ts = state.entry_timestamp or float(self.monotonic_fn())
+             hold_time_sec = float(self.monotonic_fn()) - entry_ts
+             
+             # S2-TRAILING: Update MFE (max favorable excursion)
+             if state.mfe_price is None:
+                 state.mfe_price = price_dec
+             elif current_position_side.upper() == "LONG":
+                 # Use bar high if available (GPT recommendation), else current
+                 bar_high = features.get("high")
+                 if bar_high is not None:
+                     state.mfe_price = max(state.mfe_price, decimal.Decimal(str(bar_high)))
+                 else:
+                     state.mfe_price = max(state.mfe_price, price_dec)
+             else:
+                 # Use bar low if available, else current
+                 bar_low = features.get("low")
+                 if bar_low is not None:
+                     state.mfe_price = min(state.mfe_price, decimal.Decimal(str(bar_low)))
+                 else:
+                     state.mfe_price = min(state.mfe_price, price_dec)
+
+             # Get ATR for trailing distance calculation
+             atr_raw = features.get("atr")
+             atr_dec = decimal.Decimal(str(atr_raw)) if atr_raw is not None else None
+
+             should_exit, exit_reason, new_sl = self.exit_manager.check_exit(
+                 symbol=symbol,
+                 current_position_side=current_position_side,
+                 entry_price=decimal.Decimal(str(features.get("entry_price", "0"))),
+                 current_price=price_dec,
+                 hold_time_sec=hold_time_sec,
+                 final_score=float(result.score),
+                 danger_zone_active=danger_zone_active,
+                 current_stop_loss=None,
+                 mfe_price=state.mfe_price,
+                 atr=atr_dec,
+             )
+             
+             if should_exit:
+                 # FORCE EXIT: Override effective_side to opposite of position
+                 target_side = "SELL" if current_position_side.lower() in ("buy", "long") else "BUY"
+                 if effective_side != target_side:
+                     self.logger.info(f"[{symbol}] EXIT MANAGER: Forcing exit ({exit_reason})")
+                     effective_side = target_side
+             
+             elif new_sl is not None:
+                 # TIGHTEN STOPS: Override SL in signal
+                 stop_loss_override = new_sl
+                 self.logger.info(f"[{symbol}] EXIT MANAGER: Tightening stops ({exit_reason}) to {new_sl}")
+
         # === [HOLDING PERIOD CHECK: ANTI-CHURN GATE] ===
         # Ensure we check holding period for BOTH exits (neutral) and flips.
         # If suppressed, we must FORCE HOLD by overriding the signal to current side.
@@ -924,7 +1140,8 @@ class AuroraHandler:
             and effective_side.lower() != current_position_side
         )
         
-        if is_exit_signal or is_flip_signal:
+        # Skip holding period check if Exit Manager forced the exit
+        if (is_exit_signal or is_flip_signal) and not should_exit:
             if self._should_suppress_soft_exit(symbol, result, is_flip=is_flip_signal):
                 # FORCE HOLD: override *effective* signal to maintain current position.
                 self.logger.info(
@@ -1027,8 +1244,103 @@ class AuroraHandler:
             return  # Do NOT emit signal
         # === END ANCHOR SHOCK VETO ===
         
-        # Emit signal
-        self._emit_signal(symbol, result, features, cmd, effective_side=effective_side)
+        # === PHASE 5: EXECUTION GATES & ENTRY PLAN ===
+        if self.execution_gate is not None:
+            # 1. Compute Shield Context
+            shield_mult = float(getattr(result, "shield_multiplier", 1.0) or 1.0)
+
+            # 2. Compute Entry Plan (Prices & Sizing Inputs)
+            entry_plan_res = None
+            entry_plan_calc = getattr(self, "entry_plan_calculator", None)
+            if entry_plan_calc is None or not hasattr(entry_plan_calc, "compute"):
+                self.logger.warning(
+                    f"[{symbol}] EntryPlan not configured in domains.decision_making.entry_plan. Blocking entry (fail-closed)."
+                )
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="ENTRY_PLAN_MISSING",
+                    reason="HARD_VETO:EntryPlanMissing",
+                    context="aurora_handler:entry_plan",
+                    details={
+                        "config_path": "domains.decision_making.entry_plan",
+                        "entry_plan_calculator_is_none": entry_plan_calc is None,
+                    },
+                    why_chain=["ENTRY_PLAN", "MISSING", "FAIL_CLOSED"],
+                )
+                return
+            try:
+                # Heuristic: use normalized score as confidence proxy for structural stops
+                # If factor > 0, confidence ~ |score|/factor, clamped to [0,1]
+                factor = float(getattr(result, "threshold_factor", 1.0) or 1.0)
+                score_for_conf = float(getattr(result, "score", 0.0) or 0.0)
+                confidence = min(1.0, abs(score_for_conf) / factor) if factor > 0 else 0.5
+
+                entry_plan_res = entry_plan_calc.compute(
+                    side=result.side,
+                    ref_price=price_dec,
+                    atr=features.get("atr"),
+                    obi=features.get("obi"),
+                    pillar_confidence=confidence,
+                    tick_size=getattr(instr_cfg, "tick_size", None) if instr_cfg else None,
+                )
+            except Exception as e:
+                self.logger.warning(f"[{symbol}] EntryPlan computation failed: {e}")
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="ENTRY_PLAN_COMPUTE_FAILED",
+                    reason="HARD_VETO:EntryPlanComputeFailed",
+                    context="aurora_handler:entry_plan",
+                    details={
+                        "error": str(e),
+                    },
+                    why_chain=["ENTRY_PLAN", "COMPUTE_FAILED", "FAIL_CLOSED"],
+                )
+                return
+
+            # 3. Check Execution Gates (4-Stage Filter)
+            active_threshold = float(result.thr_buy if result.side.lower() == "buy" else result.thr_sell)
+
+            gate_ok, gate_reason = self.execution_gate.check_entry(
+                symbol=symbol,
+                side=result.side,
+                features=features,
+                final_score=float(result.score),
+                shield_multiplier=shield_mult,
+                entry_plan=entry_plan_res,
+                signal_threshold=active_threshold,
+                oracle_level="NORMAL",  # TODO: Integrate Oracle Feature
+                danger_zone_active=danger_zone_active,
+            )
+
+            if not gate_ok:
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="EXECUTION_GATE_BLOCKED",
+                    reason=str(gate_reason),
+                    context="aurora_handler:execution_gate",
+                    details={
+                        "gate_reason": gate_reason,
+                        "score": float(result.score),
+                        "shield_mult": shield_mult,
+                        "threshold": active_threshold,
+                    },
+                    why_chain=["EXECUTION_GATE", str(gate_reason)],
+                )
+                return
+
+            # Emit signal with EntryPlan
+            self._emit_signal(
+                symbol,
+                result,
+                features,
+                cmd,
+                effective_side=effective_side,
+                entry_plan=entry_plan_res,
+                stop_loss_override=stop_loss_override,
+            )
+        else:
+            # Backward-compat path (legacy execution protocol): emit signal without Phase5 gating.
+            self._emit_signal(symbol, result, features, cmd, effective_side=effective_side)
         
         # P0-3-FIX: Do NOT track entry on signal emission.
         # Entry tracking is now driven by EVT:TRADE_EXECUTED only.
@@ -1235,6 +1547,7 @@ class AuroraHandler:
         state = self._symbol_states[symbol]
         state.entry_timestamp = None
         state.position_side = ""
+        state.mfe_price = None  # S2-TRAILING: Reset MFE
         self.logger.debug(f"[{symbol}] Entry tracking cleared")
 
     def on_trade_executed(self, event: Dict[str, Any]) -> None:
@@ -1277,9 +1590,29 @@ class AuroraHandler:
 
         # Opposite-side trade: treat as exit/flatten (conservative)
         prev_side = state.position_side
+        if self.dashboard:
+            entry_ts = state.entry_timestamp or float(self.monotonic_fn())
+            exit_ts = float(self.monotonic_fn())
+            duration = exit_ts - entry_ts
+
+            # Simple PnL calc (approximate, assuming full exit)
+            # We don't have entry price stored in state easily without more tracking
+            # So for now we skip PnL or use 0.0.
+            # TODO: Add entry price to SymbolState for accurate PnL
+            
+            self.dashboard.record_trade(TradeOutcome(
+                symbol=symbol,
+                entry_ts=entry_ts,
+                exit_ts=exit_ts,
+                pnl_percent=0.0, # Placeholder until state tracks entry price
+                duration_sec=duration,
+                is_win=False # Placeholder
+            ))
+
         state.last_exit_timestamp = float(self.monotonic_fn())
         state.entry_timestamp = None
         state.position_side = ""
+        state.mfe_price = None  # S2-TRAILING: Reset MFE
         self.logger.info(
             f"[{symbol}] TRADE_EXECUTED: exit detected (prev={prev_side}, side={side}, qty={qty})"
         )
@@ -1554,8 +1887,8 @@ class AuroraHandler:
         sl_pct_raw = getattr(exit_cfg, "sl_pct", None)
         if sl_pct_raw is None:
             self.logger.error(
-                f"TPSL_CONFIG_ERROR: exit.sl_pct is required for regime_tpsl pct_mult mode. "
-                f"Add explicit sl_pct to instrument config."
+                "TPSL_CONFIG_ERROR: exit.sl_pct is required for regime_tpsl pct_mult mode. "
+                "Add explicit sl_pct to instrument config."
             )
             return None
         sl_pct_base = float(sl_pct_raw)
@@ -1563,8 +1896,8 @@ class AuroraHandler:
         tp_low_ratio_raw = getattr(tp_cfg, "tp_low_ratio", None) if tp_cfg else None
         if tp_low_ratio_raw is None:
             self.logger.error(
-                f"TPSL_CONFIG_ERROR: take_profit.tp_low_ratio is required for regime_tpsl pct_mult mode. "
-                f"Add explicit tp_low_ratio to instrument config."
+                "TPSL_CONFIG_ERROR: take_profit.tp_low_ratio is required for regime_tpsl pct_mult mode. "
+                "Add explicit tp_low_ratio to instrument config."
             )
             return None
         tp_low_ratio_base = float(tp_low_ratio_raw)
@@ -1845,6 +2178,65 @@ class AuroraHandler:
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return dict(getattr(decision, "signal_weights", {})) if decision else {}
 
+    def _build_shield_cascade(self):
+        """Build shield function from ScoringEngineConfig.
+
+        If shield_enabled=True, returns ShieldCascade with enabled shields.
+        Otherwise returns NullShield (transparent pass-through).
+        """
+        cfg = self._scoring_engine_cfg
+        if not cfg or not getattr(cfg, "shield_enabled", False):
+            return NullShield()
+
+        shields = []
+
+        # DangerZone first — hard safety gate should veto earliest
+        dz_cfg = getattr(cfg, "danger_zone_shield", None)
+        if dz_cfg and getattr(dz_cfg, "enabled", True):
+            shields.append(DangerZoneShield(
+                vol_threshold=getattr(dz_cfg, "vol_threshold", 0.95),
+                spread_threshold=getattr(dz_cfg, "spread_threshold", 50.0),
+                motion_threshold=getattr(dz_cfg, "motion_threshold", 3.0),
+            ))
+
+        # Context next — regime-aware attenuation
+        ctx_cfg = getattr(cfg, "context_shield", None)
+        if ctx_cfg and getattr(ctx_cfg, "enabled", True):
+            shields.append(ContextShield(
+                regime_multipliers=dict(getattr(ctx_cfg, "regime_multipliers", {})),
+                default_multiplier=getattr(ctx_cfg, "default_multiplier", 1.0),
+                no_regime_multiplier=getattr(ctx_cfg, "no_regime_multiplier", 0.5),
+                ttl_ms=getattr(ctx_cfg, "ttl_ms", 14_400_000),
+                stale_mult_normal=getattr(ctx_cfg, "stale_mult_normal", 0.7),
+                stale_mult_danger=getattr(ctx_cfg, "stale_mult_danger", 0.35),
+                danger_regimes=list(getattr(ctx_cfg, "danger_regimes", ["HIGH_VOLATILITY"])),
+            ))
+
+        # Memory last — state-familiarity (Doctrine v2.6)
+        mem_cfg = getattr(cfg, "memory_shield", None)
+        if mem_cfg and getattr(mem_cfg, "enabled", True):
+            if self.mode_manager:
+                mem_cfg = self.mode_manager.apply_memory_shield_overrides(mem_cfg)
+
+            ms = MemoryShield(
+                decay_rate=getattr(mem_cfg, "decay_rate", 0.95),
+                max_states=getattr(mem_cfg, "max_states", 200),
+                unknown_threshold=getattr(mem_cfg, "unknown_threshold", 10),
+                exploring_threshold=getattr(mem_cfg, "exploring_threshold", 50),
+                unknown_multiplier=getattr(mem_cfg, "unknown_multiplier", 0.6),
+                exploring_multiplier=getattr(mem_cfg, "exploring_multiplier", 0.8),
+                known_multiplier=getattr(mem_cfg, "known_multiplier", 1.0),
+                storage_path=getattr(mem_cfg, "storage_path", None),
+                flush_interval_sec=getattr(mem_cfg, "flush_interval_sec", 60.0),
+            )
+            shields.append(ms)
+            self._memory_shield = ms  # BUG-2: Store reference for manual recording
+
+        if not shields:
+            return NullShield()
+
+        return ShieldCascade(shields)
+
     def _get_regime_thresholds(self, *, symbol: str, instr_cfg: Any) -> Dict[str, float]:
         """Get regime threshold multipliers for symbol (per-symbol override → global fallback)."""
         thr = getattr(instr_cfg, "regime_thresholds", None)
@@ -2028,6 +2420,8 @@ class AuroraHandler:
         source_event: Dict[str, Any],
         *,
         effective_side: str | None = None,
+        entry_plan: Optional[EntryPlanResult] = None,
+        stop_loss_override: Optional[decimal.Decimal] = None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with readiness contract."""
         state = self._symbol_states[symbol]
@@ -2038,63 +2432,93 @@ class AuroraHandler:
         anchor_price = decimal.Decimal(str(features.get("price", "0")))
         entry_price = anchor_price
         
-        # === VOLATILITY-BASED ENTRY OFFSET (Maker/GTX Compliance) ===
-        instr_cfg = self._get_instrument_config(symbol)
-        vel_cfg = getattr(instr_cfg, "volatility_entry_logic", None) if instr_cfg else None
+        # === ENTRY PLAN (Phase 4/5) ===
+        # If EntryPlan computed, use its prices
+        tpsl_result = None
         
-        if vel_cfg and getattr(vel_cfg, "enabled", False):
-            # 1. Get ATR (STRICT: no fallbacks)
-            volatility = self._get_volatility_strict(symbol, features)
-            if volatility is None:
-                # ABORT: ATR missing, fail-closed
-                self._emit_strategy_blocked(
-                    symbol=symbol,
-                    reason_code="ATR_MISSING_FAIL_CLOSED",
-                    reason="DATA_NOT_READY",
-                    context="aurora_handler:volatility_entry",
-                    details={"required_feature": "atr"},
-                    why_chain=["VOLATILITY_ENTRY", "ATR_MISSING", "FAIL_CLOSED"],
+        if entry_plan:
+             # Use EntryPlan prices strictly
+             # EntryPlanResult prices are strings -> Convert to Decimal
+             entry_price = decimal.Decimal(entry_plan.entry_price)
+             stop_price = decimal.Decimal(entry_plan.stop_loss_price)
+             target_price = decimal.Decimal(entry_plan.take_profit_price)
+             
+             # Format tpsl_result for payload injection
+             tpsl_result = {
+                 "stop_price": stop_price,
+                 "target_price": target_price,
+                 "tpsl_ctx": {
+                     "mode": "ENTRY_PLAN",
+                     "risk_bps": 0, # TODO: calculate
+                     "reward_bps": 0,
+                 }
+             }
+        else:
+            # Fallback to Legacy Regime TPSL (if no entry plan)
+            # === VOLATILITY-BASED ENTRY OFFSET (Maker/GTX Compliance) ===
+            instr_cfg = self._get_instrument_config(symbol)
+            vel_cfg = getattr(instr_cfg, "volatility_entry_logic", None) if instr_cfg else None
+            
+            if vel_cfg and getattr(vel_cfg, "enabled", False):
+                # ... (keep legacy vol offset logic) ...
+                # 1. Get ATR (STRICT: no fallbacks)
+                volatility = self._get_volatility_strict(symbol, features)
+                if volatility is None:
+                    # ABORT: ATR missing, fail-closed
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="ATR_MISSING_FAIL_CLOSED",
+                        reason="DATA_NOT_READY",
+                        context="aurora_handler:volatility_entry",
+                        details={"required_feature": "atr"},
+                        why_chain=["VOLATILITY_ENTRY", "ATR_MISSING", "FAIL_CLOSED"],
+                    )
+                    return  # Signal aborted - prefer no trade over bad trade
+                
+                # 2. Get regime multiplier (fail-closed: DEFAULT required)
+                regime = state.regime or "DEFAULT"
+                multipliers = getattr(vel_cfg, "regime_multipliers", {})
+                mult_raw = multipliers.get(regime, multipliers.get("DEFAULT"))
+                if mult_raw is None:
+                    self.logger.error(f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
+                    return
+                mult = decimal.Decimal(str(mult_raw))
+                
+                # 3. Calculate offset
+                offset = volatility * mult
+                
+                # 4. Apply offset based on side
+                if side.lower() == "buy":
+                    entry_price = anchor_price - offset  # Bid below anchor
+                elif side.lower() == "sell":
+                    entry_price = anchor_price + offset  # Ask above anchor
+                
+                self.logger.debug(
+                    f"[{symbol}] Limit Offset: {offset:.6f} for Regime: {regime} "
+                    f"(atr={volatility:.6f}, mult={mult}, entry={entry_price:.6f})"
                 )
-                return  # Signal aborted - prefer no trade over bad trade
-            
-            # 2. Get regime multiplier (fail-closed: DEFAULT required)
-            regime = state.regime or "DEFAULT"
-            multipliers = getattr(vel_cfg, "regime_multipliers", {})
-            mult_raw = multipliers.get(regime, multipliers.get("DEFAULT"))
-            if mult_raw is None:
-                self.logger.error(f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
-                return
-            mult = decimal.Decimal(str(mult_raw))
-            
-            # 3. Calculate offset
-            offset = volatility * mult
-            
-            # 4. Apply offset based on side
-            if side.lower() == "buy":
-                entry_price = anchor_price - offset  # Bid below anchor
-            elif side.lower() == "sell":
-                entry_price = anchor_price + offset  # Ask above anchor
-            
-            self.logger.debug(
-                f"[{symbol}] Limit Offset: {offset:.6f} for Regime: {regime} "
-                f"(atr={volatility:.6f}, mult={mult}, entry={entry_price:.6f})"
+            # === END VOLATILITY OFFSET ===
+        
+            # === REGIME-BASED TP/SL (AURORA_REGIME_TP_SL_PLAN) ===
+            tpsl_result = self._compute_regime_tpsl(
+                symbol=symbol,
+                entry_price=entry_price,
+                side=side,
+                regime=state.regime,
+                instr_cfg=instr_cfg,
+                features=features,
             )
-        # === END VOLATILITY OFFSET ===
-        
-        # === REGIME-BASED TP/SL (AURORA_REGIME_TP_SL_PLAN) ===
-        tpsl_result = self._compute_regime_tpsl(
-            symbol=symbol,
-            entry_price=entry_price,
-            side=side,
-            regime=state.regime,
-            instr_cfg=instr_cfg,
-            features=features,
-        )
-        # === END REGIME-BASED TP/SL ===
-        
+            # === END REGIME-BASED TP/SL ===
+
+        # === STOP LOSS OVERRIDE (Exit Manager) ===
+        if stop_loss_override is not None and tpsl_result:
+             tpsl_result["stop_price"] = stop_loss_override
+             tpsl_result["tpsl_ctx"]["mode"] = "EXIT_MANAGER_OVERRIDE"
+
         # Build payload per v7 contract
         payload = {
             "strategy_id": self.strategy_id,
+
             "symbol": symbol,
             "side": side.upper(),
             "ts_ms": now_ms,
@@ -2124,6 +2548,81 @@ class AuroraHandler:
                 "regime": state.regime,
             },
         }
+
+        # BUG-5: Instrument Quantization (Phase 9)
+        # Convert abstract exposure (score) -> exchange-valid qty
+        # Fail-closed if instrument spec missing or quantizer rejects.
+        instruments_cfg = getattr(self.config, "instruments", None)
+        precision = instruments_cfg.get(symbol) if isinstance(instruments_cfg, dict) else None
+        
+        if precision:
+            try:
+                # 1. Convert config to QuantizerSpec
+                spec = QuantizerSpec(
+                    step_size=decimal.Decimal(str(precision.step_size)),
+                    min_qty=decimal.Decimal(str(precision.min_qty)),
+                    min_notional=decimal.Decimal(str(precision.min_notional)),
+                    tick_size=decimal.Decimal(str(precision.tick_size)),
+                )
+
+                # 2. Determine leverage/cap (use instr_cfg or default)
+                instr_cfg = self._get_instrument_config(symbol)
+                leverage_cfg = getattr(instr_cfg, "leverage", None)
+                target_leverage = getattr(leverage_cfg, "target", 20)
+                max_notional_cap = getattr(leverage_cfg, "max_notional_value", None) or decimal.Decimal("1000000")
+
+                # 3. Quantize
+                q_pos = quantize_exposure(
+                    exposure=float(result.score),
+                    price=entry_price,
+                    max_notional=max_notional_cap,
+                    leverage=target_leverage,
+                    spec=spec,
+                )
+
+                if q_pos.reject_reason:
+                    # BLOCK SIGNAL on Quantizer rejection
+                    self.logger.warning(f"[{symbol}] QUANTIZER_REJECT: {q_pos.reject_reason}")
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="QUANTIZER_REJECT",
+                        reason=q_pos.reject_reason,
+                        context="aurora_handler:quantizer",
+                        details={"exposure": result.score, "price": str(entry_price)},
+                        why_chain=result.why_chain + [f"QUANTIZER:{q_pos.reject_reason}"],
+                    )
+                    return
+
+                # 4. Inject into payload
+                payload["quantization"] = {
+                    "qty": str(q_pos.qty),
+                    "notional": str(q_pos.notional),
+                    "margin_required": str(q_pos.margin_required),
+                }
+
+            except Exception as e:
+                self.logger.error(f"[{symbol}] QUANTIZER_ERROR: {e}")
+                # Fail-closed on quantizer error? Or let downstream fail? 
+                # User preference: Fail-closed.
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="QUANTIZER_ERROR", 
+                    reason=str(e),
+                    context="aurora_handler:quantizer_crash",
+                    details={"error": str(e)},
+                    why_chain=result.why_chain + ["QUANTIZER_CRASH"],
+                )
+                return
+
+        # BUG-2: IDEMPOTENT MEMORY RECORDING
+        # Record visit ONLY when signal is produced (proven intent/observation).
+        # We rely on MemoryShield's internal deduplication per bar.
+        ms = getattr(self, "_memory_shield", None)
+        if ms:
+            sh_details = getattr(result, "details", {}) or {}
+            state_hash = sh_details.get("memory_state_hash")
+            if state_hash:
+                 ms.record_visit(symbol, features, bar_close_ts=int(now_ms/1000), state_hash=state_hash)
         
         # === INJECT REGIME-BASED TP/SL INTO PAYLOAD ===
         if tpsl_result is not None:

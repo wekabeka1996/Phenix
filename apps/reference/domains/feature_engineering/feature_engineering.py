@@ -36,6 +36,7 @@ from apps.reference.domains.feature_engineering.types import (
     SymbolFeatureState,
     FeatureEngineeringConfig,
     BarVolatilityState,  # EP-01.1: Bar-based ATR tracking
+    PillarState,
 )
 
 # FTR-04: Import calculation engine
@@ -112,6 +113,8 @@ class FeatureEngineering:
         
         # FTR-04: Initialize calculation engine
         self._engine = FeatureCalculationEngine(self.cfg)
+        # P0-1 wiring compatibility: keep explicit alias expected by some call sites.
+        self.calc_engine = self._engine
 
         # TF-BAR-SSOT-003: per-(symbol, tf_sec) last bar for multi-TF safety
         self.last_bar: Dict[Tuple[str, int], Any] = {}
@@ -119,6 +122,7 @@ class FeatureEngineering:
         # State tracking
         self.last_tick_data: Dict[str, dict] = {}
         self.symbol_states: Dict[str, SymbolFeatureState] = {}
+        self._pillar_states: Dict[str, PillarState] = {}
         
         # Anchor price buffers for macro_sync
         self.anchor_prices: Dict[str, deque] = {
@@ -185,6 +189,21 @@ class FeatureEngineering:
         
         # EP-01.1: Bar Volatility State (per symbol,tf_sec for ATR)
         self._bar_volatility_states: Dict[Tuple[str, int], BarVolatilityState] = {}
+        self._emit_timeframes_sec = {
+            int(tf) for tf in (self.cfg.enabled_timeframes_sec or []) if int(tf) >= 60
+        }
+        pillar_tf_cfg = self.cfg.pillar_timeframes_sec
+        pillar_label_map = {"tactician": "m15", "operator": "h4", "strategist": "d1"}
+        self._pillar_timeframe_to_label: Dict[int, str] = {}
+        for pillar_name, tf in pillar_tf_cfg.items():
+            tf_int = int(tf)
+            if tf_int >= 60:
+                tf_label = pillar_label_map.get(str(pillar_name))
+                if tf_label:
+                    self._pillar_timeframe_to_label[tf_int] = tf_label
+        self._calculation_timeframes_sec = set(self._emit_timeframes_sec) | set(
+            self._pillar_timeframe_to_label.keys()
+        )
         
         # EP-01.1: Last OBI snapshot per symbol (for bar close snapshot)
         self._last_obi: Dict[str, decimal.Decimal] = {}
@@ -594,6 +613,20 @@ class FeatureEngineering:
         if not symbol or not tf_sec:
             self.logger.debug(f"on_bar_closed: missing symbol={symbol} or tf_sec={tf_sec}")
             return
+        try:
+            tf_sec = int(tf_sec)
+        except (TypeError, ValueError):
+            self.logger.debug(f"on_bar_closed: invalid tf_sec={tf_sec!r}")
+            return
+
+        calc_timeframes = getattr(self, "_calculation_timeframes_sec", None)
+        if calc_timeframes and tf_sec not in calc_timeframes:
+            self.logger.debug(
+                f"on_bar_closed: skipping tf_sec={tf_sec} (not in calculation_timeframes={sorted(calc_timeframes)})"
+            )
+            return
+        emit_timeframes = getattr(self, "_emit_timeframes_sec", None)
+        emit_events = True if not emit_timeframes else (tf_sec in emit_timeframes)
         
         # Store bar for reference
         self.last_bar[(symbol, tf_sec)] = bar_data
@@ -647,14 +680,28 @@ class FeatureEngineering:
         bar_open_dec = decimal.Decimal(str(bar_open)) if bar_open is not None else None
         bar_last_tick = self._create_synthetic_tick_for_bar_close(bar_tick, int(bar_ts), bar_open_dec)
 
-        self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
-        accepted = self._calculate_and_emit_features_for_tf(
-            symbol,
-            tf_sec=tf_sec,
-            current_tick=bar_tick,
-            last_tick=bar_last_tick,
-            bar_data=bar_data,
-        )
+        if emit_events:
+            self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
+        else:
+            self.logger.debug(f"[{symbol}] on_bar_closed internal-only tf_sec={tf_sec} (pillars update, no emit)")
+        try:
+            accepted = self._calculate_and_emit_features_for_tf(
+                symbol,
+                tf_sec=tf_sec,
+                current_tick=bar_tick,
+                last_tick=bar_last_tick,
+                bar_data=bar_data,
+                emit_events=emit_events,
+            )
+        except TypeError:
+            # Backward compatibility for tests/mocks monkeypatching old signature.
+            accepted = self._calculate_and_emit_features_for_tf(
+                symbol,
+                tf_sec=tf_sec,
+                current_tick=bar_tick,
+                last_tick=bar_last_tick,
+                bar_data=bar_data,
+            )
         if accepted:
             self.last_tick_data[symbol] = bar_tick
 
@@ -700,7 +747,141 @@ class FeatureEngineering:
         # Tick-features: emit immediately, tf_sec=0 indicates tick-level data
         return self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
 
-    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict, bar_data: Optional[Dict] = None) -> bool:
+    @staticmethod
+    def _pillar_json_scalar(value: Any) -> Optional[float]:
+        """Convert pillar value to JSON-safe float (handles Decimal / numpy scalars)."""
+        if value is None:
+            return None
+        if hasattr(value, "item"):
+            try:
+                value = value.item()
+            except Exception:
+                pass
+        try:
+            as_float = float(value)
+        except Exception:
+            return None
+        if as_float != as_float:  # NaN
+            return None
+        if as_float == float("inf") or as_float == float("-inf"):
+            return None
+        return as_float
+
+    def _compute_pillars_for_emit(
+        self,
+        symbol: str,
+        tf_sec: int,
+        bar_data: Optional[Dict],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute and normalize pillar payload for feature emission.
+
+        Adapter supports both signatures:
+        - compute_pillars(bars, symbol, tf_sec)
+        - compute_pillars(state)
+        """
+        if int(tf_sec or 0) < 60:
+            return None
+
+        calc_engine = getattr(self, "calc_engine", None) or getattr(self, "_engine", None)
+        if calc_engine is None or not hasattr(calc_engine, "compute_pillars"):
+            return None
+
+        bars = bar_data if bar_data is not None else self.last_bar.get((symbol, tf_sec))
+        raw = None
+        try:
+            raw = calc_engine.compute_pillars(bars, symbol, tf_sec)
+        except TypeError as sig_err:
+            self.logger.debug(
+                f"[{symbol}] compute_pillars signature fallback engaged (tf_sec={tf_sec}): {sig_err}"
+            )
+            state = self._pillar_states.get(symbol)
+            if state is None:
+                state = PillarState()
+                self._pillar_states[symbol] = state
+
+            if bars is not None and hasattr(calc_engine, "update_pillar_candle"):
+                if isinstance(bars, dict):
+                    bar_close = bars.get("close")
+                    bar_high = bars.get("high", bar_close)
+                    bar_low = bars.get("low", bar_close)
+                    bar_ts_ms = bars.get("end_ts_ms") or bars.get("close_ts") or bars.get("kline_close_time")
+                else:
+                    bar_close = getattr(bars, "close", None)
+                    bar_high = getattr(bars, "high", bar_close)
+                    bar_low = getattr(bars, "low", bar_close)
+                    bar_ts_ms = (
+                        getattr(bars, "end_ts_ms", None)
+                        or getattr(bars, "close_ts", None)
+                        or getattr(bars, "kline_close_time", None)
+                    )
+
+                tf_map = getattr(self, "_pillar_timeframe_to_label", None)
+                if not isinstance(tf_map, dict) or not tf_map:
+                    tf_map = {900: "m15", 14400: "h4", 86400: "d1"}
+                tf_label = tf_map.get(int(tf_sec))
+                if tf_label and bar_close is not None and bar_ts_ms is not None:
+                    try:
+                        calc_engine.update_pillar_candle(
+                            state,
+                            timeframe=tf_label,
+                            close=float(bar_close),
+                            high=float(bar_high if bar_high is not None else bar_close),
+                            low=float(bar_low if bar_low is not None else bar_close),
+                            bar_ts_ms=int(bar_ts_ms),
+                        )
+                    except Exception as e:
+                        self.logger.debug(f"[{symbol}] Pillar candle update skipped: {e}")
+
+            raw = calc_engine.compute_pillars(state)
+
+        if raw is None:
+            return None
+
+        if isinstance(raw, dict):
+            pillar_sum = raw.get("pillar_sum")
+            pillar_tactician = raw.get("pillar_tactician", raw.get("tactician"))
+            pillar_operator = raw.get("pillar_operator", raw.get("operator"))
+            pillar_strategist = raw.get("pillar_strategist", raw.get("strategist"))
+            pillar_contribs = raw.get("pillar_contribs", {})
+        else:
+            pillar_sum = getattr(raw, "pillar_sum", None)
+            pillar_tactician = getattr(raw, "pillar_tactician", getattr(raw, "tactician", None))
+            pillar_operator = getattr(raw, "pillar_operator", getattr(raw, "operator", None))
+            pillar_strategist = getattr(raw, "pillar_strategist", getattr(raw, "strategist", None))
+            pillar_contribs = getattr(raw, "pillar_contribs", {})
+
+        if pillar_sum is None:
+            return None
+
+        safe_contribs: Dict[str, float] = {}
+        if isinstance(pillar_contribs, dict):
+            for key, value in pillar_contribs.items():
+                safe_val = self._pillar_json_scalar(value)
+                if safe_val is not None:
+                    safe_contribs[str(key)] = safe_val
+
+        safe_sum = self._pillar_json_scalar(pillar_sum)
+        if safe_sum is None:
+            return None
+
+        return {
+            "pillar_sum": safe_sum,
+            "pillar_tactician": self._pillar_json_scalar(pillar_tactician),
+            "pillar_operator": self._pillar_json_scalar(pillar_operator),
+            "pillar_strategist": self._pillar_json_scalar(pillar_strategist),
+            "pillar_contribs": safe_contribs,
+        }
+
+    def _calculate_and_emit_features_for_tf(
+        self,
+        symbol: str,
+        tf_sec: int,
+        current_tick: dict,
+        last_tick: dict,
+        bar_data: Optional[Dict] = None,
+        emit_events: bool = True,
+    ) -> bool:
         """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED (and CMD:PROCESS_STRATEGY if bar)."""
         try:
             # Initialize symbol state if needed
@@ -745,7 +926,8 @@ class FeatureEngineering:
                     "warmup": warmup_bad_dt,
                     "data_quality": {"drops": ["bad_dt"], "notes": []},
                 }
-                self.fsm.emit("EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
+                if emit_events:
+                    self.fsm.emit("EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
                 self.logger.warning(f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
                 return False
 
@@ -1171,6 +1353,34 @@ class FeatureEngineering:
                     existing_reasons.append(f"spread_bps:{book_reason}")
                     warmup["reasons"] = existing_reasons
                     inc_data_quality_drop(domain="feature_engineering", reason="book_unhealthy")
+
+            # P0-1: Wire pillars into the same TF payload consumed by decision flow.
+            pillars = self._compute_pillars_for_emit(symbol=symbol, tf_sec=int(tf_sec), bar_data=bar_data)
+            if pillars is not None:
+                pillar_keys = (
+                    "pillar_sum",
+                    "pillar_tactician",
+                    "pillar_operator",
+                    "pillar_strategist",
+                    "pillar_contribs",
+                )
+                collisions = [k for k in pillar_keys if k in features]
+                if collisions:
+                    self.logger.warning(
+                        f"[{symbol}] Pillar wiring collision detected; keeping existing keys: {collisions}"
+                    )
+                else:
+                    features["pillar_sum"] = pillars["pillar_sum"]
+                    features["pillar_tactician"] = pillars["pillar_tactician"]
+                    features["pillar_operator"] = pillars["pillar_operator"]
+                    features["pillar_strategist"] = pillars["pillar_strategist"]
+                    features["pillar_contribs"] = pillars.get("pillar_contribs", {})
+
+            if not emit_events:
+                self.logger.debug(
+                    f"[{symbol}] Internal TF processed without event emission (tf_sec={tf_sec})"
+                )
+                return True
 
             # Build payload
             features_payload = {

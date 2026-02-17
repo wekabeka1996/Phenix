@@ -6,6 +6,7 @@ All models are designed to fail fast (startup validation) rather than silently a
 """
 
 from decimal import Decimal
+from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
 
@@ -601,7 +602,24 @@ class VolAdjGatesConfig(BaseModel):
         description="Which pm_norm window to use: 10, 60, 300, or 900 (seconds)"
     )
 
+class OperationalMode(str, Enum):
+    PARANOID = "paranoid"
+    CURIOUS = "curious"
 
+
+class DashboardConfig(BaseModel):
+    """
+    Phase 6: Dashboard Metrics Configuration.
+    Tracks strategy performance (Sharpe, WinRate, Coverage).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=True)
+    sharpe_window_days: int = Field(default=30, ge=1)
+    metrics: List[str] = Field(
+        default=["sharpe_ratio", "win_rate", "memory_coverage"],
+        description="List of metrics to track and log"
+    )
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
     
@@ -656,11 +674,17 @@ class DecisionConfig(BaseModel):
     neutral_threshold: Optional[float] = Field(description='Neutral zone threshold')
 
     # Phase 4: Score V2 Global Configuration
-    scoring_version: Literal["v1", "v2"] = Field(default="v1", description="Scoring engine version")
+    scoring_version: Literal["v1", "v2", "quadratic"] = Field(default="v1", description="Scoring engine version: v1, v2, or quadratic (Phase 9)")
     feature_neutrals: Dict[str, float] = Field(default_factory=dict, description="Neutral offsets for V2 scoring")
     essential_features: List[str] = Field(default_factory=list, description="Features that must be present/ready")
     liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Global liquidity gate config")
     anchor_shock_veto: Optional[AnchorShockVetoConfig] = Field(default=None, description="Phase 3: Block BUY during anchor crash")
+
+    # ══════════════ Phase 9: Quadratic Brain Config ══════════════
+    scoring_engine: Optional["ScoringEngineConfig"] = Field(
+        default=None,
+        description="Phase 9: Quadratic scoring engine parameters (used when scoring_version='quadratic')",
+    )
     
     # Anti-Churn Gate: Minimum Holding Period
     holding_period: Optional[HoldingPeriodConfig] = Field(default=None, description="RFC: docs/RFC_min_duration_logic.md - Prevents HFT churn")
@@ -673,6 +697,32 @@ class DecisionConfig(BaseModel):
 
     # EP-01.2-INT: EntryPlan
     entry_plan: Optional["EntryPlanConfig"] = Field(default=None, description="EP-01.2-INT: EntryPlan configuration")
+
+    # Phase 9: Money Management (Risk Sizing)
+    money_management: Optional["MoneyManagementConfig"] = Field(
+        default=None,
+        description="Phase 9: Risk-based sizing configuration (risk_per_trade, etc.)"
+    )
+
+    # Phase 5: Execution Protocols
+    execution: Optional["ExecutionGateConfig"] = Field(
+        default=None,
+        description="Phase 5: 4-stage execution gate configuration (Hard Veto, Direction, Shield, Structural)"
+    )
+    exit: Optional["ExitManagerConfig"] = Field(
+        default=None,
+        description="Phase 5: Exit Manager configuration (Signal, Time, DangerZone)"
+    )
+    
+    # Phase 6: Modes & Dashboard
+    operational_mode: OperationalMode = Field(
+        default=OperationalMode.PARANOID,
+        description="Phase 6: Operational Mode (PARANOID=Strict, CURIOUS=Relaxed)"
+    )
+    dashboard: Optional["DashboardConfig"] = Field(
+        default=None,
+        description="Phase 6: Dashboard metrics configuration"
+    )
 
     @model_validator(mode="after")
     def _validate_direction_strength_contract(self) -> "DecisionConfig":
@@ -1141,6 +1191,114 @@ class GlobalFlipKillswitchConfig(BaseModel):
     )
 
 
+class MoneyManagementConfig(BaseModel):
+    """
+    Phase 9: Money Management Configuration.
+    
+    Controls risk-based sizing and exposure quantization.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False, description="Enable Phase 9 risk-based sizing")
+    risk_per_trade_pct: float = Field(
+        default=0.01, gt=0.0, le=1.0,
+        description="Risk per trade as fraction of equity (e.g. 0.01 = 1%)"
+    )
+    stop_distance_pct: float = Field(
+        default=0.005, gt=0.0,
+        description="Assumed stop distance for sizing calculation (e.g. 0.005 = 0.5%)"
+    )
+    max_notional_cap: Optional[Decimal] = Field(
+        default=None,
+        description="Optional hard cap on notional value (USDT)"
+    )
+
+
+class ExecutionGateName(str, Enum):
+    HARD_VETO = "HARD_VETO"
+    DIRECTION = "DIRECTION"
+    THRESHOLD = "THRESHOLD"
+    SHIELD = "SHIELD"
+    STRUCTURAL = "STRUCTURAL"
+    LIQUIDITY = "LIQUIDITY"
+
+
+class DangerZoneExitType(str, Enum):
+    TIGHTEN_STOPS = "TIGHTEN_STOPS"
+    CLOSE_POSITION = "CLOSE_POSITION"
+
+
+class StructuralGateConfig(BaseModel):
+    """Configuration for Structural Gate (Risk/Reward checks)."""
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=True)
+    min_risk_reward: float = Field(
+        default=1.5, ge=0.0,
+        description="Minimum Risk/Reward ratio (TP_dist / SL_dist)"
+    )
+    max_risk_reward: Optional[float] = Field(
+        default=None, gt=0.0,
+        description="Optional cap on R/R (to filter unrealistic TPs)"
+    )
+
+
+class ExecutionGateConfig(BaseModel):
+    """
+    Phase 5: Execution Gate Configuration.
+    Controls the 4-stage filter pipeline.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    gates_enabled: List[ExecutionGateName] = Field(
+        default=[
+            ExecutionGateName.HARD_VETO,
+            ExecutionGateName.DIRECTION,
+            ExecutionGateName.THRESHOLD,
+            ExecutionGateName.SHIELD,
+            ExecutionGateName.STRUCTURAL,
+            ExecutionGateName.LIQUIDITY,
+        ],
+        description="Active execution gates (order invariant, but typically checked in stage order)"
+    )
+    structural_gate: StructuralGateConfig = Field(default_factory=StructuralGateConfig)
+    
+    # Threshold gate config uses global signal_threshold, but we can add specific overrides here if needed.
+    # Shield gate uses shield configs.
+    # Liquidity gate uses DecisionConfig.liquidity_gate.
+
+
+class ExitManagerConfig(BaseModel):
+    """
+    Phase 5: Exit Manager Configuration.
+    Controls signal reversal, time stops, and danger zone actions.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    time_exit_enabled: bool = Field(default=False)
+    max_hold_time_sec: int = Field(
+        default=3600*24, ge=60,
+        description="Maximum holding time in seconds before forced exit (Time Stop)"
+    )
+    
+    signal_exit_enabled: bool = Field(default=True)
+    signal_reversal_threshold: float = Field(
+        default=-0.1,
+        description="Score threshold to trigger exit if position is opposing (e.g. -0.1 for LONG)"
+    )
+    
+    danger_zone_action: DangerZoneExitType = Field(
+        default=DangerZoneExitType.TIGHTEN_STOPS,
+        description="Action when DangerZone triggers while in position (Default: TIGHTEN_STOPS)"
+    )
+    danger_zone_tighten_factor: float = Field(
+        default=0.5, gt=0.0, le=1.0,
+        description="Factor to tighten stops by if DangerZone triggers (e.g. 0.5 = reduce SL distance by 50%)"
+    )
+
+
+
+
+
 class EntryPlanConfig(BaseModel):
     """
     EntryPlan configuration for ATR-based entry/SL/TP computation.
@@ -1186,6 +1344,24 @@ class EntryPlanConfig(BaseModel):
     )
     obi_missing_policy: Literal["neutral"] = Field(
         description="Policy when OBI is None: 'neutral' applies multiplier=1.0 (EXPLICIT, not silent)"
+    )
+
+    # Phase 9: Structural Stop
+    structural_stop_enabled: bool = Field(
+        default=False,
+        description="Enable dynamic structural stops based on pillar conviction"
+    )
+    base_atr_mult: float = Field(
+        default=1.5, gt=0.0,
+        description="Base ATR multiplier for stop loss (at zero conviction)"
+    )
+    confidence_scale: float = Field(
+        default=0.5, gt=0.0,
+        description="Scaling factor for conviction: mult = base - scale * confidence"
+    )
+    min_stop_bps: int = Field(
+        default=15, ge=1,
+        description="Minimum stop distance in basis points (safety floor)"
     )
     
     @model_validator(mode='after')
@@ -1684,6 +1860,302 @@ class AbsorptionConfig(BaseModel):
         return self
 
 
+# ============================================================================
+# Phase 9: Multi-Timeframe Pillar Indicators (Quadratic Brain)
+# ============================================================================
+
+class TacticianConfig(BaseModel):
+    """Tactician Pillar (M15): Rate of Change — tactical momentum."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description='Enable Tactician pillar (M15 ROC)',
+    )
+    timeframe_sec: int = Field(
+        default=900,
+        ge=60, le=86400,
+        description='Timeframe in seconds for Tactician pillar candles (default M15=900)',
+    )
+    roc_period: int = Field(
+        default=14,
+        ge=2, le=100,
+        description='ROC lookback period in bars',
+    )
+    sensitivity: float = Field(
+        default=3.0,
+        gt=0.0, le=10.0,
+        description='tanh normalization sensitivity (higher = faster saturation)',
+    )
+    min_bars: int = Field(
+        default=20,
+        ge=5, le=200,
+        description='Minimum M15 bars before pillar is ready',
+    )
+
+
+class OperatorConfig(BaseModel):
+    """Operator Pillar (H4): LinReg Slope + ADX — working vector."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description='Enable Operator pillar (H4 LinReg+ADX)',
+    )
+    timeframe_sec: int = Field(
+        default=14400,
+        ge=60, le=86400,
+        description='Timeframe in seconds for Operator pillar candles (default H4=14400)',
+    )
+    linreg_period: int = Field(
+        default=20,
+        ge=5, le=100,
+        description='Linear regression slope window (bars)',
+    )
+    adx_period: int = Field(
+        default=14,
+        ge=5, le=50,
+        description='ADX calculation period (bars)',
+    )
+    sensitivity: float = Field(
+        default=3.0,
+        gt=0.0, le=10.0,
+        description='tanh normalization sensitivity',
+    )
+    min_bars: int = Field(
+        default=50,
+        ge=20, le=300,
+        description='Minimum H4 bars before pillar is ready',
+    )
+
+
+class StrategistConfig(BaseModel):
+    """Strategist Pillar (D1): SMA(200) position — global territory."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description='Enable Strategist pillar (D1 SMA200)',
+    )
+    timeframe_sec: int = Field(
+        default=86400,
+        ge=60, le=86400,
+        description='Timeframe in seconds for Strategist pillar candles (default D1=86400)',
+    )
+    sma_period: int = Field(
+        default=200,
+        ge=20, le=500,
+        description='SMA period for territory detection',
+    )
+    sensitivity: float = Field(
+        default=3.0,
+        gt=0.0, le=10.0,
+        description='tanh normalization sensitivity',
+    )
+    min_bars: int = Field(
+        default=200,
+        ge=50, le=600,
+        description='Minimum D1 bars before pillar is ready',
+    )
+
+
+class PillarWeightsConfig(BaseModel):
+    """Weights for pillar aggregation. Sum does NOT need to equal 1.0."""
+    model_config = ConfigDict(extra='forbid')
+
+    tactician: float = Field(
+        default=0.30,
+        ge=0.0, le=1.0,
+        description='Weight for Tactician (M15 ROC) pillar',
+    )
+    operator: float = Field(
+        default=0.40,
+        ge=0.0, le=1.0,
+        description='Weight for Operator (H4 LinReg+ADX) pillar',
+    )
+    strategist: float = Field(
+        default=0.30,
+        ge=0.0, le=1.0,
+        description='Weight for Strategist (D1 SMA200) pillar',
+    )
+
+
+class PillarBackfillConfig(BaseModel):
+    """D1/H4 historical candle backfill for live startup (КР-1 fix)."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description='Enable backfill at live startup (disable for backtest)',
+    )
+    d1_candles: int = Field(
+        default=200,
+        ge=50, le=500,
+        description='Number of D1 candles to fetch (≥ sma_period)',
+    )
+    h4_candles: int = Field(
+        default=100,
+        ge=30, le=500,
+        description='Number of H4 candles to fetch',
+    )
+    m15_candles: int = Field(
+        default=50,
+        ge=15, le=200,
+        description='Number of M15 candles to fetch',
+    )
+
+
+class PillarsConfig(BaseModel):
+    """Complete multi-timeframe pillars configuration for Phase 9."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description='Master switch for all pillar indicators',
+    )
+    tactician: TacticianConfig = Field(default_factory=TacticianConfig)
+    operator: OperatorConfig = Field(default_factory=OperatorConfig)
+    strategist: StrategistConfig = Field(default_factory=StrategistConfig)
+    weights: PillarWeightsConfig = Field(default_factory=PillarWeightsConfig)
+    backfill: PillarBackfillConfig = Field(default_factory=PillarBackfillConfig)
+
+
+class ContextShieldConfig(BaseModel):
+    """Regime-aware attenuation shield config.
+
+    REGIME-FIX-01: regime_multipliers keys MUST match RegimeDetector output
+    (UPPERCASE: TREND_UP, TREND_DOWN, HIGH_VOLATILITY, LOW_VOLATILITY,
+    MEAN_REVERSION, UNCERTAIN).
+
+    TTL-STALE-01: If regime data is older than ttl_ms, apply stale penalty
+    to prevent trading on stale regime information.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description='Enable ContextShield')
+    regime_multipliers: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "TREND_UP": 1.0,
+            "TREND_DOWN": 1.0,
+            "HIGH_VOLATILITY": 0.3,
+            "LOW_VOLATILITY": 0.7,
+            "MEAN_REVERSION": 0.7,
+            "UNCERTAIN": 0.5,
+        },
+        description='Regime → multiplier mapping (keys MUST match RegimeDetector output)',
+    )
+    default_multiplier: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description='Multiplier for unknown regimes',
+    )
+    no_regime_multiplier: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description='Multiplier when no regime detected',
+    )
+
+    # TTL-STALE-01: Stale regime policy
+    ttl_ms: int = Field(
+        default=14_400_000, gt=0,
+        description='Regime staleness TTL in milliseconds (default: 4h = 14,400,000ms)',
+    )
+    stale_mult_normal: float = Field(
+        default=0.7, ge=0.0, le=1.0,
+        description='Multiplier for stale non-danger regimes',
+    )
+    stale_mult_danger: float = Field(
+        default=0.35, ge=0.0, le=1.0,
+        description='Multiplier for stale danger regimes (more aggressive reduction)',
+    )
+    danger_regimes: List[str] = Field(
+        default_factory=lambda: ["HIGH_VOLATILITY"],
+        description='Regime names considered dangerous for stale penalty',
+    )
+
+
+class MemoryShieldConfig(BaseModel):
+    """
+    Phase 3 / Doctrine v2.6 (P0-3.1): Memory Shield Configuration.
+    Tracks state visits and applies multipliers based on familiarity.
+
+    Note: ``is_backtest`` is NOT a config knob — it is a **runtime truth**.
+    Callers must set ``storage_path: null`` in backtest configs to guarantee
+    no cross-run leakage and no filesystem I/O.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description='Enable MemoryShield')
+    decay_rate: float = Field(
+        default=0.95, gt=0.0, lt=1.0,
+        description='Exponential decay rate for state visits (weight = visits * decay^days)'
+    )
+    max_states: int = Field(
+        default=200, ge=1,
+        description='LRU capacity for state memory'
+    )
+    unknown_threshold: int = Field(default=10, ge=1)
+    exploring_threshold: int = Field(default=50, ge=1)
+    
+    unknown_multiplier: float = Field(default=0.6, ge=0.0, le=1.0)
+    exploring_multiplier: float = Field(default=0.8, ge=0.0, le=1.0)
+    known_multiplier: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    storage_path: Optional[str] = Field(
+        default=None,
+        description='JSON file path for LIVE persistence. None → RAM-only (safe for backtest).',
+    )
+    flush_interval_sec: float = Field(
+        default=60.0, ge=1.0,
+        description='Minimum seconds between disk flushes (LIVE only).',
+    )
+
+
+
+class DangerZoneShieldConfig(BaseModel):
+    """Volatility circuit breaker shield config."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description='Enable DangerZoneShield')
+    vol_threshold: float = Field(
+        default=0.95, gt=0.0, le=1.0,
+        description='volatility_state above this → VETO',
+    )
+    spread_threshold: float = Field(
+        default=50.0, gt=0.0,
+        description='spread_bps above this → VETO',
+    )
+    motion_threshold: float = Field(
+        default=3.0, gt=0.0,
+        description='|price_motion_norm| above this → VETO',
+    )
+
+
+class ScoringEngineConfig(BaseModel):
+    """Phase 9: Quadratic scoring engine parameters.
+
+    Used when DecisionConfig.scoring_version == 'quadratic'.
+    Controls exposure transform and shield cascade behavior.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    exposure_cap: float = Field(
+        default=1.0,
+        gt=0.0, le=1.0,
+        description='Maximum absolute exposure after quadratic transform',
+    )
+    min_pillar_confidence: float = Field(
+        default=0.0,
+        ge=0.0, le=1.0,
+        description='Minimum pillar_sum magnitude to consider actionable (below → neutral)',
+    )
+    shield_enabled: bool = Field(
+        default=False,
+        description='Enable shield cascade (Phase 3). False = NullShield.',
+    )
+
+    # Shield sub-configs
+    context_shield: ContextShieldConfig = Field(default_factory=ContextShieldConfig)
+    memory_shield: MemoryShieldConfig = Field(default_factory=MemoryShieldConfig)
+    danger_zone_shield: DangerZoneShieldConfig = Field(default_factory=DangerZoneShieldConfig)
 
 
 class FeatureEngineeringDomainConfig(BaseModel):
@@ -1780,6 +2252,14 @@ class FeatureEngineeringDomainConfig(BaseModel):
     absorption: Optional[AbsorptionConfig] = Field(
         default=None,
         description='R2: Absorption feature (experimental). Default OFF, no live impact.'
+    )
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # Phase 9: Multi-Timeframe Pillar Indicators (Quadratic Brain)
+    # ════════════════════════════════════════════════════════════════════════════
+    pillars: Optional[PillarsConfig] = Field(
+        default=None,
+        description='Phase 9: Multi-timeframe pillars (Tactician M15, Operator H4, Strategist D1). None = disabled.'
     )
     
     def get_ema_alpha(self, period: str) -> float:
@@ -2353,12 +2833,17 @@ class AuroraTakeProfitConfig(BaseModel):
 
 
 class AuroraTrailingStopConfig(BaseModel):
-    """Aurora trailing stop configuration per instrument."""
+    """Aurora trailing stop configuration per instrument.
+    
+    S2-TRAILING: Used by ExitManager for synthetic trailing stop exits.
+    Trail distance = ATR × trail_atr_mult (or trail_pct if ATR unavailable).
+    """
     model_config = ConfigDict(extra='forbid')
 
     enabled: Optional[bool] = Field(description='Enable trailing stop')
     activation_pct: Optional[float] = Field(description='Activate trailing after this profit % (e.g., 0.003 = 0.3%)')
-    trail_pct: Optional[float] = Field(description='Trail distance as % from high-water mark')
+    trail_pct: Optional[float] = Field(description='Trail distance as % from high-water mark (fallback if ATR unavailable)')
+    trail_atr_mult: Optional[float] = Field(default=None, description='Trail distance = ATR × this multiplier (preferred over trail_pct)')
     min_update_interval_sec: Optional[int] = Field(description='Minimum seconds between SL updates (rate limit)')
 
 

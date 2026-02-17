@@ -53,6 +53,10 @@ class ScoringResult:
     # Deferred state
     deferred: bool = False
     defer_reason: Optional[str] = None
+    
+    # Phase 9: Shield context
+    shield_multiplier: decimal.Decimal = decimal.Decimal("1.0")
+    shield_breakdown: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

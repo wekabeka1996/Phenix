@@ -143,12 +143,22 @@ class ConfigLoader:
         
         # OPTUNA-OVERLAY-01: Optional overlay dict to override SSOT params during optimization
         self.optuna_overlay = optuna_overlay
-        
+
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
             
         self.provenance_map: Dict[str, str] = {}
+
+    @staticmethod
+    def _is_pillars_extra_forbidden(error: dict) -> bool:
+        """Return True when ValidationError item is exactly domains.feature_engineering.pillars extra_forbidden."""
+        try:
+            loc = tuple(error.get("loc") or ())
+            err_type = str(error.get("type") or "")
+            return loc == ("domains", "feature_engineering", "pillars") and err_type == "extra_forbidden"
+        except Exception:
+            return False
 
     @staticmethod
     def _flatten_leaf_paths(data: Any, *, prefix: str = "") -> Dict[str, Any]:
@@ -1045,8 +1055,7 @@ class ConfigLoader:
         # TASK23B: Enforce SSOT precedence for timeframe_sec
         self._apply_timeframe_sec_ssot_precedence(resolved_config)
 
-        try:
-            config = AuroraConfig(**resolved_config)
+        def _finalize_validated_config(config: AuroraConfig) -> AuroraConfig:
             LOG.info(
                 f"✅ Configuration validated for trading_mode: '{config.trading_mode}'"
             )
@@ -1073,7 +1082,33 @@ class ConfigLoader:
 
             # CFG-RUNTIME-BOOTSTRAP-07: runtime-only meta injection (post-validation)
             return self._inject_runtime_meta(config)
+
+        try:
+            config = AuroraConfig(**resolved_config)
+            return _finalize_validated_config(config)
         except ValidationError as e:
+            # Compatibility fallback:
+            # if runtime schema does not include domains.feature_engineering.pillars,
+            # retry once after dropping only this key instead of hard-failing every trial.
+            errors = list(e.errors())
+            only_pillars_extra = bool(errors) and all(self._is_pillars_extra_forbidden(err) for err in errors)
+            if only_pillars_extra:
+                try:
+                    domains_cfg = resolved_config.get("domains")
+                    fe_cfg = domains_cfg.get("feature_engineering") if isinstance(domains_cfg, dict) else None
+                    if isinstance(fe_cfg, dict) and "pillars" in fe_cfg:
+                        fe_cfg.pop("pillars", None)
+                        LOG.warning(
+                            "Config compatibility fallback: dropped domains.feature_engineering.pillars "
+                            "(schema does not accept this key in current runtime)"
+                        )
+                        config = AuroraConfig(**resolved_config)
+                        return _finalize_validated_config(config)
+                except ValidationError as e_retry:
+                    e = e_retry
+                except Exception:
+                    pass
+
             LOG.error("❌ Configuration validation failed:")
             for error in e.errors():
                 loc = ".".join(str(x) for x in error["loc"])

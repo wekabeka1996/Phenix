@@ -25,6 +25,10 @@ decision_making:
     obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
     require_atr: true     # Fail-closed
     obi_missing_policy: neutral  # EXPLICIT: use multiplier=1.0 when OBI missing
+    structural_stop_enabled: false
+    base_atr_mult: 1.5
+    confidence_scale: 0.5
+    min_stop_bps: 15
   
   qos:
     # LIVE SAFETY: stop intent spam and "shadow pass-through".
@@ -309,6 +313,47 @@ feature_engineering:
     # Semantic definition
     neutral: 0.0                # SIGNED feature: neutral is 0.0
     # TASK-ZOMBIE-FIX: Removed bounds (dead, feature_sanity.feature_bounds is SSOT)
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Phase 9: MULTI-TIMEFRAME PILLARS (Quadratic Brain)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Three pillars extract directional conviction from different timeframes:
+  # - Tactician (M15): ROC → tactical momentum
+  # - Operator  (H4):  LinReg+ADX → working vector
+  # - Strategist (D1): SMA(200) → global territory
+  # All normalize to [-1, +1] via tanh.
+  pillars:
+    enabled: true               # Master switch for all pillars
+
+    tactician:
+      enabled: true
+      roc_period: 14            # ROC lookback (M15 bars)
+      sensitivity: 3.0          # tanh sensitivity
+      min_bars: 20              # Min M15 bars before ready
+
+    operator:
+      enabled: true
+      linreg_period: 20         # LinReg slope window (H4 bars)
+      adx_period: 14            # ADX period (H4 bars)
+      sensitivity: 3.0          # tanh sensitivity
+      min_bars: 50              # Min H4 bars before ready
+
+    strategist:
+      enabled: true
+      sma_period: 200           # SMA period for territory (D1 bars)
+      sensitivity: 3.0          # tanh sensitivity
+      min_bars: 200             # Min D1 bars before ready
+
+    weights:
+      tactician: 0.30           # M15 weight in pillar sum
+      operator: 0.40            # H4 weight (strongest signal)
+      strategist: 0.30          # D1 weight in pillar sum
+
+    backfill:
+      enabled: true             # Enable backfill at live startup
+      d1_candles: 200           # D1 candles to fetch (≥ sma_period)
+      h4_candles: 100           # H4 candles to fetch
+      m15_candles: 50           # M15 candles to fetch
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default

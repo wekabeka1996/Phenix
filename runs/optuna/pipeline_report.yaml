@@ -1,14 +1,14 @@
 holdout:
-  passed: true
-  reason: All criteria passed
-  sharpe: -3.408506416928001
-production_ready: true
+  passed: null
+  reason: null
+  sharpe: null
+production_ready: false
 stage0:
   best_basis_tf_sec: 300
-  best_stability_score: 0.4136510672400683
+  best_stability_score: 0.4969365867522654
 stage1:
   best_alpha_score: -9.122305780121236
   best_sharpe: 0.6594404183867824
 stage2:
-  median_sharpe: 5.691766859184238
-  passed: true
+  median_sharpe: 0.0
+  passed: false

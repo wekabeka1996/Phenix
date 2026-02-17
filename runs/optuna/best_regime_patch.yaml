@@ -1,12 +1,12 @@
 best_basis_tf_sec: 300
 best_params:
   hysteresis_bars: 9
-  models.sma_trend.sma_long_period: 91
+  models.sma_trend.sma_long_period: 93
   models.sma_trend.sma_short_period: 5
   models.volatility.atr_period: 20
-  models.volatility.atr_sma_length: 19
+  models.volatility.atr_sma_length: 110
   models.volatility.threshold_multiplier: 2.6
-  uncertain_cutoff: 0.35
-best_stability_score: 0.4136510672400683
+  uncertain_cutoff: 0.30000000000000004
+best_stability_score: 0.4969365867522654
 grid_scores:
-  '300': 0.4136510672400683
+  '300': 0.4969365867522654

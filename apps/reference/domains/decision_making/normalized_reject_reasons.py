@@ -85,6 +85,12 @@ class NormalizedRejectReasons:
     # DM-SAFETY-BYPASSES-P1: Fail-closed exposure cache and safety gates config
     EXPOSURE_CACHE_UNAVAILABLE = "NRR-053"
     CONFIG_SAFETY_GATES_MISSING = "NRR-054"
+    CONFIG_SAFETY_GATES_MISSING = "NRR-054"
+    # Phase 5: Execution Gates
+    HARD_VETO_BLOCKED = "NRR-055"
+    SHIELD_INVARIANT_VIOLATED = "NRR-056"
+    SHIELD_VETO_BLOCKED = "NRR-057"
+    STRUCTURAL_GATE_BLOCKED = "NRR-058"
     UNKNOWN_ERROR = "NRR-999"
 
 

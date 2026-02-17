@@ -33,7 +33,13 @@ class EntryPlanParams:
     obi_mod_clamp_min: float  # Clamp floor for OBI multiplier (e.g., 0.8)
     obi_mod_clamp_max: float  # Clamp ceiling for OBI multiplier (e.g., 1.2)
     require_atr: bool  # If True, reject if ATR not ready
-    obi_missing_policy: ObiMissingPolicy  # Explicit policy when OBI is None
+    obi_missing_policy: ObiMissingPolicy
+
+    # Phase 9: Structural Stop
+    structural_stop_enabled: bool = False
+    base_atr_mult: float = 1.5
+    confidence_scale: float = 0.5
+    min_stop_bps: int = 15
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,7 @@ class EntryPlanResult:
     obi: Optional[str]
     obi_multiplier: float  # Actual multiplier applied (after clamp)
     obi_policy_applied: bool  # True if neutral policy was applied
+    atr_multiplier: float = 0.0  # Phase 9: Actual ATR multiplier used for SL
 
 
 def _clamp(value: float, min_val: float, max_val: float) -> float:
@@ -152,6 +159,7 @@ class EntryPlan:
         ref_price: Union[str, float, Decimal],
         atr: Union[str, float, None],
         obi: Union[str, float, None] = None,
+        pillar_confidence: Optional[float] = None,
         *,
         tick_size: Union[str, float, Decimal, None] = None,
     ) -> EntryPlanResult:
@@ -165,6 +173,7 @@ class EntryPlan:
             ref_price: Reference price (typically bar close)
             atr: Average True Range value (can be None if require_atr=False)
             obi: Order Book Imbalance [-1, 1] or None
+            pillar_confidence: Confidence from pillars [0, 1] (optional)
             tick_size: Minimum price increment for safety floor (optional)
             
         Returns:
@@ -244,11 +253,28 @@ class EntryPlan:
         entry_offset_raw = Decimal(str(self.params.entry_k_atr * atr_float * obi_multiplier))
         entry_offset = max(entry_offset_raw, Decimal("0"))  # Entry can be zero (market order)
         
-        # Stop-loss and take-profit offsets (no OBI modulation - pure ATR)
-        # DM-CRITICAL-PATCHES-02: Safety guard - offset must be >= min_offset to avoid zero SL/TP
-        sl_offset_raw = Decimal(str(self.params.sl_k_atr * atr_float))
+        # Stop-loss offset
+        # Phase 9: Structural Stop vs Legacy Fixed ATR
+        atr_mult_used = self.params.sl_k_atr  # Default legacy
+        
+        if self.params.structural_stop_enabled and pillar_confidence is not None:
+            # Dynamic structural stop: mult = base - scale * confidence
+            conf = min(1.0, max(0.0, float(pillar_confidence)))
+            dynamic_mult = self.params.base_atr_mult - (self.params.confidence_scale * conf)
+            atr_mult_used = max(dynamic_mult, 0.5)  # Safety floor: never below 0.5 ATR
+            
+            sl_offset_raw = Decimal(str(atr_mult_used * atr_float))
+            
+            # Enforce min stop distance (bps)
+            min_dist_bps = ref_dec * Decimal(str(self.params.min_stop_bps)) / Decimal("10000")
+            sl_offset_raw = max(sl_offset_raw, min_dist_bps)
+        else:
+            # Legacy fixed multiplier
+            sl_offset_raw = Decimal(str(self.params.sl_k_atr * atr_float))
+
         sl_offset = max(sl_offset_raw, min_offset)
         
+        # Take-profit offset (fixed ATR multiple)
         tp_offset_raw = Decimal(str(self.params.tp_k_atr * atr_float))
         tp_offset = max(tp_offset_raw, min_offset)
         
@@ -281,4 +307,5 @@ class EntryPlan:
             obi=str(obi_dec) if obi_dec is not None else None,
             obi_multiplier=obi_multiplier,
             obi_policy_applied=obi_policy_applied,
+            atr_multiplier=float(atr_mult_used),
         )

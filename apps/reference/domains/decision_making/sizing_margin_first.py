@@ -85,3 +85,37 @@ def validate_exchange_constraints(
         return "MIN_NOTIONAL", f"notional {notional} < min_notional {min_notional}"
     return None, "ok"
 
+
+def compute_exposure_based_qty(
+    *,
+    equity: Decimal,
+    exposure: float,
+    metrics_max_notional_cap: Optional[Decimal] = None,
+    leverage: int,
+    price: Decimal,
+    step_size: Decimal,
+    fee_buffer: Decimal = Decimal("0.001"),
+) -> tuple[Decimal, Decimal]:
+    """
+    Phase 9: Compute quantity based on exposure conviction.
+
+    qty = (|exposure| * max_notional_cap / price) floored to step_size.
+    If max_notional_cap is None, defaults to full equity * leverage.
+    """
+    exposure_abs = abs(exposure)
+    
+    # Default max notional to full leverage if not capped
+    # (Safety: apply fee buffer to equity)
+    safe_equity = equity * (Decimal("1") - fee_buffer)
+    max_notional = safe_equity * Decimal(leverage)
+    
+    if metrics_max_notional_cap is not None:
+        max_notional = min(max_notional, metrics_max_notional_cap)
+    
+    target_notional = max_notional * _d(exposure_abs)
+    
+    return compute_qty(
+        notional_target=target_notional,
+        price=price,
+        step_size=step_size,
+    )

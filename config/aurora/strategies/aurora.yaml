@@ -91,8 +91,10 @@ aurora:
     roi_exit: null
     mean_reversion: null
     
-    # Phase 4: Signal Score V2 Global Configuration
-    scoring_version: v2
+    # ══════════════ Phase 9: Quadratic Brain Logic ══════════════
+    # Values: "v1" (Legacy), "v2" (Linear), "quadratic" (Phase 9)
+    # Default: "v1" (Fail-safe)
+    scoring_version: "quadratic"
 
     # Direction/Strength split scoring (project-wide hardening)
     direction_strength_scoring:

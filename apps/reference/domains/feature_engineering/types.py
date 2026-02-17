@@ -14,7 +14,7 @@ NO FSM imports, NO business logic, only dataclasses and config wrapper.
 
 import decimal
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Union, Deque, Tuple, List
+from typing import TYPE_CHECKING, Optional, Union, Deque, Tuple, List, Dict
 from collections import deque
 
 if TYPE_CHECKING:
@@ -170,6 +170,57 @@ class BarVolatilityState:
 
 
 @dataclass
+class PillarState:
+    """
+    Multi-timeframe pillar state for Aurora Phase 9 (Quadratic Brain).
+
+    Holds candle buffers for three timeframes:
+      - M15: Tactician (ROC → tactical momentum)
+      - H4:  Operator  (LinReg+ADX → working vector)
+      - D1:  Strategist (SMA200 → global territory)
+
+    Updated on bar close events (not every tick).
+    Backfilled by PillarBackfillService at live startup.
+    """
+    # M15 candle buffers (Tactician)
+    m15_closes: Deque[float] = field(default_factory=deque)
+
+    # H4 candle buffers (Operator)
+    h4_closes: Deque[float] = field(default_factory=deque)
+    h4_highs: Deque[float] = field(default_factory=deque)
+    h4_lows: Deque[float] = field(default_factory=deque)
+
+    # D1 candle buffers (Strategist)
+    d1_closes: Deque[float] = field(default_factory=deque)
+
+    # Last computed pillar values (normalized [-1, +1])
+    tactician: Optional[float] = None
+    operator: Optional[float] = None
+    strategist: Optional[float] = None
+
+    # Aggregated pillar sum (weighted)
+    pillar_sum: Optional[float] = None
+
+    # Readiness flags
+    tactician_ready: bool = False
+    operator_ready: bool = False
+    strategist_ready: bool = False
+
+    # Timestamps for last update
+    tactician_last_bar_ts_ms: Optional[int] = None
+    operator_last_bar_ts_ms: Optional[int] = None
+    strategist_last_bar_ts_ms: Optional[int] = None
+
+    # Backfill status
+    backfill_complete: bool = False
+
+    @property
+    def all_ready(self) -> bool:
+        """All three pillars are ready."""
+        return self.tactician_ready and self.operator_ready and self.strategist_ready
+
+
+@dataclass
 class ColdState:
     """
     Slow-changing state for feature engineering.
@@ -266,6 +317,38 @@ class FeatureEngineeringConfig:
     @property
     def enabled_timeframes_sec(self) -> List[int]:
         return self._cfg.enabled_timeframes_sec
+
+    @property
+    def pillars_enabled(self) -> bool:
+        try:
+            pillars = getattr(self._cfg, "pillars", None)
+            return bool(pillars and getattr(pillars, "enabled", False))
+        except Exception:
+            return False
+
+    @property
+    def pillar_timeframes_sec(self) -> Dict[str, int]:
+        """
+        Internal pillar TF map (independent from enabled_timeframes_sec emit contract).
+
+        Returns enabled pillar timeframes as:
+            {"tactician": 900, "operator": 14400, "strategist": 86400}
+        """
+        out: Dict[str, int] = {}
+        try:
+            pillars = getattr(self._cfg, "pillars", None)
+            if not pillars or not bool(getattr(pillars, "enabled", False)):
+                return out
+
+            if bool(getattr(pillars.tactician, "enabled", False)):
+                out["tactician"] = int(getattr(pillars.tactician, "timeframe_sec", 900))
+            if bool(getattr(pillars.operator, "enabled", False)):
+                out["operator"] = int(getattr(pillars.operator, "timeframe_sec", 14400))
+            if bool(getattr(pillars.strategist, "enabled", False)):
+                out["strategist"] = int(getattr(pillars.strategist, "timeframe_sec", 86400))
+        except Exception:
+            return {}
+        return out
     
     @property
     def ema_period_short(self) -> int:

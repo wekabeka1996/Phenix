@@ -28,8 +28,15 @@ from apps.reference.domains.feature_engineering.large_trade_imbalance import (
 from apps.reference.domains.feature_engineering.types import (
     HotState,
     ColdState,
+    PillarState,
     SymbolFeatureState,
     FeatureEngineeringConfig,
+)
+from apps.reference.domains.feature_engineering.pillar_indicators import (
+    compute_tactician,
+    compute_operator,
+    compute_strategist,
+    aggregate_pillars,
 )
 from apps.reference.domains.feature_engineering.utils import (
     FeatureUtils,
@@ -1144,3 +1151,154 @@ class FeatureCalculationEngine:
         delta_pct = ((curr - prev) / prev) * decimal.Decimal("100")
         
         return delta_pct.quantize(decimal.Decimal("0.01"))
+
+    # =========================================================================
+    # Phase 9: Multi-Timeframe Pillar Compute Methods
+    # =========================================================================
+
+    def update_pillar_candle(
+        self,
+        state: PillarState,
+        timeframe: str,
+        close: float,
+        high: float = 0.0,
+        low: float = 0.0,
+        bar_ts_ms: int = 0,
+    ) -> None:
+        """
+        Append a new candle bar to the appropriate pillar buffer.
+
+        Called on bar close for M15/H4/D1.
+
+        Args:
+            state: PillarState to update.
+            timeframe: 'm15', 'h4', or 'd1'.
+            close: Bar close price.
+            high: Bar high price (needed for H4/ADX).
+            low: Bar low price (needed for H4/ADX).
+            bar_ts_ms: Bar open timestamp (ms).
+        """
+        if timeframe == 'm15':
+            state.m15_closes.append(close)
+            state.tactician_last_bar_ts_ms = bar_ts_ms
+        elif timeframe == 'h4':
+            state.h4_closes.append(close)
+            state.h4_highs.append(high)
+            state.h4_lows.append(low)
+            state.operator_last_bar_ts_ms = bar_ts_ms
+        elif timeframe == 'd1':
+            state.d1_closes.append(close)
+            state.strategist_last_bar_ts_ms = bar_ts_ms
+
+    def compute_pillars(
+        self,
+        state: PillarState,
+    ) -> dict:
+        """
+        Compute all three pillars and the weighted aggregate.
+
+        Uses pillar_indicators pure functions.
+        Returns explainability dict for XAI/logging.
+
+        Args:
+            state: PillarState with candle buffers.
+
+        Returns:
+            Dict with keys:
+              - tactician, operator, strategist: float | None
+              - pillar_sum: float | None
+              - all_ready: bool
+              - pillar_contribs: dict  (per-pillar weighted contribution)
+        """
+        # Get config (with safe defaults if pillars config not present)
+        try:
+            pillars_cfg = self.cfg._cfg.pillars
+        except AttributeError:
+            pillars_cfg = None
+
+        if pillars_cfg is None or not pillars_cfg.enabled:
+            return {
+                'tactician': None,
+                'operator': None,
+                'strategist': None,
+                'pillar_sum': None,
+                'all_ready': False,
+                'pillar_contribs': {},
+                'reason': 'pillars_disabled',
+            }
+
+        t_cfg = pillars_cfg.tactician
+        o_cfg = pillars_cfg.operator
+        s_cfg = pillars_cfg.strategist
+        w_cfg = pillars_cfg.weights
+
+        # Tactician (M15 ROC)
+        tactician_val = None
+        if t_cfg.enabled and len(state.m15_closes) >= t_cfg.min_bars:
+            tactician_val = compute_tactician(
+                list(state.m15_closes),
+                roc_period=t_cfg.roc_period,
+                sensitivity=t_cfg.sensitivity,
+            )
+            if tactician_val is not None:
+                state.tactician = tactician_val
+                state.tactician_ready = True
+
+        # Operator (H4 LinReg + ADX)
+        operator_val = None
+        if o_cfg.enabled and len(state.h4_closes) >= o_cfg.min_bars:
+            operator_val = compute_operator(
+                list(state.h4_closes),
+                list(state.h4_highs),
+                list(state.h4_lows),
+                linreg_period=o_cfg.linreg_period,
+                adx_period=o_cfg.adx_period,
+                sensitivity=o_cfg.sensitivity,
+            )
+            if operator_val is not None:
+                state.operator = operator_val
+                state.operator_ready = True
+
+        # Strategist (D1 SMA200)
+        strategist_val = None
+        if s_cfg.enabled and len(state.d1_closes) >= s_cfg.min_bars:
+            strategist_val = compute_strategist(
+                list(state.d1_closes),
+                sma_period=s_cfg.sma_period,
+                sensitivity=s_cfg.sensitivity,
+            )
+            if strategist_val is not None:
+                state.strategist = strategist_val
+                state.strategist_ready = True
+
+        # Aggregate
+        weights = {
+            'tactician': w_cfg.tactician,
+            'operator': w_cfg.operator,
+            'strategist': w_cfg.strategist,
+        }
+        pillar_sum = aggregate_pillars(
+            state.tactician,
+            state.operator,
+            state.strategist,
+            weights,
+        )
+        state.pillar_sum = pillar_sum
+
+        # Explainability: per-pillar weighted contributions
+        contribs = {}
+        if state.tactician is not None:
+            contribs['tactician'] = state.tactician * w_cfg.tactician
+        if state.operator is not None:
+            contribs['operator'] = state.operator * w_cfg.operator
+        if state.strategist is not None:
+            contribs['strategist'] = state.strategist * w_cfg.strategist
+
+        return {
+            'tactician': state.tactician,
+            'operator': state.operator,
+            'strategist': state.strategist,
+            'pillar_sum': pillar_sum,
+            'all_ready': state.all_ready,
+            'pillar_contribs': contribs,
+        }
