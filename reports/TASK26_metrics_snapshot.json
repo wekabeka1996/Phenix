@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-02-09T14:18:16Z",
+  "generated_at": "2026-02-14T15:21:25Z",
   "scenarios": [
     {
-      "scenario": "test_regime_returns_uncertain_with_insufficient_features",
+      "scenario": "test_macro_sync_insufficient_data_returns_explicit_flag",
       "metrics": {
         "warmup_blocks": 0,
         "data_quality_drops": 0,
@@ -14,7 +14,7 @@
       }
     },
     {
-      "scenario": "test_regime_handles_stale_feature_timestamp",
+      "scenario": "test_macro_sync_stale_anchor_explicit_block",
       "metrics": {
         "warmup_blocks": 0,
         "data_quality_drops": 0,
@@ -26,7 +26,7 @@
       }
     },
     {
-      "scenario": "test_regime_warmup_blocks_detection",
+      "scenario": "test_macro_sync_valid_correlation_not_neutral",
       "metrics": {
         "warmup_blocks": 0,
         "data_quality_drops": 0,

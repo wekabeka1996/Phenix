@@ -2,23 +2,22 @@
 
 ## Scenarios
 
-### test_regime_returns_uncertain_with_insufficient_features
+### test_macro_sync_insufficient_data_returns_explicit_flag
 
 | ts_ms | event_type | source | payload |
 |-------|------------|--------|---------|
-| 1770639495834 | REGIME_SETUP | scenario_runner | {"detector": "RegimeDetector", "test": "... |
-| 1770639495834 | REGIME_RESULT | regime_detector | {"features_sent": ["symbol", "ts"], "emi... |
+| 1771075285246 | MACRO_SYNC_BUFFER | scenario_runner | {"samples": 5, "min_required": 10} |
+| 1771075285246 | MACRO_SYNC_RESULT | feature_engineering | {"phi": "0.5", "macro_sync_ready": false... |
 
-### test_regime_handles_stale_feature_timestamp
-
-| ts_ms | event_type | source | payload |
-|-------|------------|--------|---------|
-| 1770639495837 | REGIME_STALE_FEATURES | scenario_runner | {"ts": 1770635895837, "age_ms": 3600000} |
-| 1770639495837 | REGIME_RESULT | regime_detector | {"emitted_count": 0, "stale_data": true} |
-
-### test_regime_warmup_blocks_detection
+### test_macro_sync_stale_anchor_explicit_block
 
 | ts_ms | event_type | source | payload |
 |-------|------------|--------|---------|
-| 1770639495839 | REGIME_WARMUP_CHECK | scenario_runner | {"full_ready": false, "ticks_seen": 5} |
-| 1770639495839 | REGIME_RESULT | regime_detector | {"emitted_count": 0, "regime_events": 0} |
+| 1771075285247 | MACRO_SYNC_BUFFER | scenario_runner | {"samples": 20, "anchor_ttl_ms": 500} |
+| 1771075285247 | MACRO_SYNC_RESULT | feature_engineering | {"phi": "0.5", "macro_sync_ready": false... |
+
+### test_macro_sync_valid_correlation_not_neutral
+
+| ts_ms | event_type | source | payload |
+|-------|------------|--------|---------|
+| 1771075285253 | MACRO_SYNC_RESULT | feature_engineering | {"phi": "1", "macro_sync_ready": true, "... |

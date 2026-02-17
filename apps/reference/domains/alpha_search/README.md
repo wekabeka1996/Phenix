@@ -1,367 +1,410 @@
-# alpha_search — Актуальна документація (as-is)
+# alpha_search — Domain Manual
 
-Останнє оновлення цього документа: 2026-02-09.
+Останнє оновлення: 2026-02-14.
 
-Це “as-is” опис домену `alpha_search` на основі наявних артефактів у репозиторії (код домену, конфіг, схеми подій, verb registry, тести, звіти покриття). Усі твердження прив’язані до конкретних файлів/сутностей. Якщо інформації бракує — це позначено як `Невідомо з наданого контексту`.
+## TL;DR
 
-## TL;DR (5–10 пунктів)
-
-- `alpha_search` — домен/пакет для розрахунку **alpha score** (сигналу) з **features**, з базовим контрактом `AlphaModel → AlphaScore` та реєстром моделей (`apps/reference/domains/alpha_search/alpha_model.py`).
-- Є два суттєво різні режими використання:
-  - **In-process** у `decision_making`: `DecisionMaking` ініціалізує `AlphaModelRegistry` і емітить `EVT:ALPHA_SCORE_CALCULATED` зі списком `scores` (`apps/reference/domains/decision_making/decision_making.py`).
-  - **Backtest shadow-плагін**: `AlphaSearchBacktestPlugin` робить двофазний міст `EVT:FEATURES_CALCULATED → cache → CMD:PROCESS_STRATEGY` і емітить `EVT:ALPHA_SCORE_CALCULATED` *по одному score на провайдера* (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Це створює **конфлікт контрактів**: одна й та ж подія `EVT:ALPHA_SCORE_CALCULATED` має різні payload-форми залежно від емiтера (`apps/reference/domains/decision_making/decision_making.py` vs `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Є щонайменше один явний **офлайн consumer** форми `DecisionMaking`: `scripts/analyze_alpha_performance.py` парсить WAL/логи та очікує `{timestamp, scores:[...]}`; payload форми backtest-плагіна `{provider_id, score,...}` цим скриптом не обробляється (`scripts/analyze_alpha_performance.py`, `apps/reference/domains/decision_making/decision_making.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Backtest-плагін залежить від коректної синхронізації `bar_close_ts`: у схемі `EVT:FEATURES_CALCULATED` бар має `end_ts_ms`, а плагін шукає `close_ts/ts/bar_close_ts` (ризик системних cache miss) (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `apps/reference/main.py` зараз передає в `AlphaSearchBacktestPlugin` **dict** як `config`, хоча клас очікує `AlphaSearchConfig` (висока ймовірність падіння ініціалізації) (`apps/reference/main.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `AuroraAlphaAdapter` обгортає `AuroraScoringKernel.compute()` як `AlphaModel` і має fail-closed поведінку для відсутніх essential features/ціни (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-- `EnsembleModel` комбінує кілька моделей з вагами, але “performance” за замовчуванням — це **confidence як проксі**, а `on_trade_result()` існує, але не підключений бек-тест плагіном (`apps/reference/domains/alpha_search/ensemble.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Фактичні тести: 30 тестів проходять у `tests/domains/alpha_search/*`, але покриття пакету `apps.reference.domains.alpha_search` ≈ **76%** (найбільші прогалини: `backtest_plugin.py`, `ensemble.py`) (стан репо на 2026-02-09).
-- `verb_registry_v1.yaml` позначає `ALPHA_SCORE_CALCULATED` як `experimental` з `owner: unknown` і без schema, тобто контракт “не зафіксований” на рівні реєстру (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-
----
-## 3. Призначення домену
-
-### Ціль
-
-Надати стандартизований спосіб **обчислення alpha score** (нормалізований сигнал + впевненість + пояснення “why”) на базі features, з можливістю:
-
-- виклику **як бібліотеки** (через `AlphaModelRegistry` у `decision_making`) (`apps/reference/domains/alpha_search/alpha_model.py`, `apps/reference/domains/decision_making/decision_making.py`);
-- підключення **як shadow-плагіна** для бектесту з багатопровайдерною архітектурою та віртуальним трейдером (PnL-оцінка) (`apps/reference/domains/alpha_search/backtest_plugin.py`, `config/alpha_search.yaml`).
-
-### Межі відповідальності (In-Scope / Out-of-Scope)
-
-**In-Scope**
-
-- Контракт `AlphaModel` та DTO `AlphaScore` (`apps/reference/domains/alpha_search/alpha_model.py`).
-- Базові TA-моделі: momentum/mean-reversion/volatility (`apps/reference/domains/alpha_search/models/*.py`).
-- Ensemble-компонент, що комбінує моделі (`apps/reference/domains/alpha_search/ensemble.py`).
-- Aurora-адаптер як провайдер (обгортка Aurora scoring kernel) (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-- Pydantic-моделі конфігурації alpha_search (providers/triggers/cache/virtual_trader) і YAML loader (`apps/reference/domains/alpha_search/config_models.py`, `config/alpha_search.yaml`).
-- Backtest shadow-плагін: підписка на події, кеш features, емісія alpha score events, віртуальний трейдер, summary (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-**Out-of-Scope**
-
-- Генерація/агрегація **features** (це `feature_engineering`) (`apps/reference/domains/feature_engineering/*`, схеми в `apps/reference/domains/feature_engineering/schemas/*`).
-- Прийняття торгових рішень, ризик-гейти, ордери, виконання (домени `decision_making`, `risk_management`, `execution_position`) (`apps/reference/domains/decision_making/*` тощо).
-- Backtest engine як оркестратор симуляції (`backtest_engine/*`), окрім того, що alpha_search може підключатися як плагін (факт інтеграції в `apps/reference/main.py`).
-
-### Основні терміни (глосарій)
-
-- **Alpha score** — числовий сигнал у діапазоні `[-1, 1]` (через `AlphaScore.score`) (`apps/reference/domains/alpha_search/alpha_model.py`).
-- **Confidence** — впевненість сигналу у `[0, 1]` (`AlphaScore.confidence`) (`apps/reference/domains/alpha_search/alpha_model.py`).
-- **AlphaModel** — абстрактний інтерфейс моделі, що повертає `AlphaScore` (`apps/reference/domains/alpha_search/alpha_model.py`).
-- **AlphaModelRegistry** — реєстр моделей + масовий розрахунок для “готових” моделей (`apps/reference/domains/alpha_search/alpha_model.py`).
-- **Provider** — конкретний “джерело сигналу” у backtest-плагіні (aurora adapter або TA ensemble) (`apps/reference/domains/alpha_search/backtest_plugin.py`, `apps/reference/domains/alpha_search/config_models.py`).
-- **Shadow mode** — режим, коли сигнали **логуються/емітяться**, але не мають прямого впливу на трейдинг (концепт явно присутній у конфігу й payload) (`config/alpha_search.yaml`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- **Fail-closed** — при відсутності потрібних даних/помилці повертаємо “нейтральний” score=0 з поясненням (Aurora adapter робить це явно; плагін робить це на cache miss/exception) (`apps/reference/domains/alpha_search/models/aurora_adapter.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- **Two-phase bridge** — двофазна зв’язка подій: кешування features на `EVT:FEATURES_CALCULATED` і скоринг на `CMD:PROCESS_STRATEGY` (`apps/reference/domains/alpha_search/backtest_plugin.py`, `config/alpha_search.yaml`).
-- **`tf_sec`** — таймфрейм у секундах (ключ частини кешу/контрактів подій) (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`, `apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- **`bar_close_ts`** — timestamp закриття бара в ms для decision boundary (`apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- **Virtual trader** — “симулятор” позицій для оцінки PnL на сигнал (у backtest-плагіні) (`apps/reference/domains/alpha_search/backtest_plugin.py`, `config/alpha_search.yaml`).
+- `alpha_search` — домен для розрахунку **alpha score** (сигналу) з features, з контрактом `AlphaModel -> AlphaScore` та реєстром моделей.
+- Працює як **shadow daemon** у всіх режимах: backtest, testnet, hybrid, live.
+- Має **уніфікований контракт** події `EVT:ALPHA_SCORE_CALCULATED` (owner: `alpha_search`, status: `active`, schema: `schemas/alpha_score_calculated_v1.json`).
+- Два шляхи емісії: in-process через `DecisionMaking.alpha_registry` та backtest shadow plugin — обидва використовують однаковий payload-формат (один event на один score).
+- Fail-closed: при відсутності features/ціни повертає `score=0, confidence=0` з поясненням.
+- Три моделі: `MomentumAlphaModel`, `MeanReversionAlphaModel`, `VolatilityAlphaModel` + `AuroraAlphaAdapter`.
+- WAL listener пише всі alpha score events у WAL для офлайн аналізу.
+- Є CLI-інструмент аналізу: `tools/alpha_search_report.py`.
 
 ---
 
-## 4. Архітектура домену (as-is)
+## 1. Призначення
 
-### Компоненти (Компонент → Роль → Вхід/Вихід → Ключові залежності)
+Домен `alpha_search` надає стандартизований спосіб обчислення alpha score (нормалізований сигнал + впевненість + пояснення "why") на базі features. Основні можливості:
 
-| Компонент | Роль | Вхід / Вихід | Ключові залежності |
-|---|---|---|---|
-| `AlphaScore` | DTO результату скорингу | Вихід моделей: `model_name`, `symbol`, `score`, `confidence`, `timestamp`, `features_used`, `why` | Pydantic, `decimal.Decimal` (`apps/reference/domains/alpha_search/alpha_model.py`) |
-| `AlphaModel` | Абстрактний контракт моделі | Вхід: `(symbol, market_data, features, context)` → Вихід: `AlphaScore` | `abc.ABC` (`apps/reference/domains/alpha_search/alpha_model.py`) |
-| `AlphaModelRegistry` | Оркестратор/реєстр | Вхід: features → Вихід: список `AlphaScore` по готових моделях; ізоляція помилок | `inc_alpha_model_error` (`apps/reference/telemetry/metrics.py`), логування (`apps/reference/domains/alpha_search/alpha_model.py`) |
-| `MomentumAlphaModel` | TA momentum модель | Вхід: features (`price_momentum_*`, `rsi_14`, `macd_signal`…) → `AlphaScore` | `Decimal` (`apps/reference/domains/alpha_search/models/momentum.py`) |
-| `VolatilityAlphaModel` | TA volatility модель | Вхід: features (`atr_ratio`, `bb_width`, `realized_volatility_*`…) → `AlphaScore` | `Decimal` (`apps/reference/domains/alpha_search/models/volatility.py`) |
-| `MeanReversionAlphaModel` | TA mean-reversion модель | Вхід: features (`bb_position`, `stoch_k/stoch_d`…) → `AlphaScore` | `Decimal` (`apps/reference/domains/alpha_search/models/mean_reversion.py`) |
-| `EnsembleModel` + `EnsembleConfig` | Комбінатор моделей | Вхід: `market_data` + `features` → комбінований `AlphaScore`; періодичний rebalance ваг | `pandas`, `numpy`, clock abstraction (`apps/reference/core/time.py`) (`apps/reference/domains/alpha_search/ensemble.py`) |
-| `AuroraAlphaAdapter` | Обгортка Aurora scoring як `AlphaModel` | Вхід: ціна + essential features → `AlphaScore` (fail-closed при нестачі) | `AuroraScoringKernel` (`apps/reference/domains/decision_making/aurora_scoring_kernel.py`) (`apps/reference/domains/alpha_search/models/aurora_adapter.py`) |
-| `AlphaSearchConfig` (+ loader) | Strict SSOT конфіг для плагіна | Вхід: YAML → вихід: валідуваний конфіг | `pydantic` strict `extra="forbid"`, `yaml.safe_load` (`apps/reference/domains/alpha_search/config_models.py`, `config/alpha_search.yaml`) |
-| `AlphaSearchBacktestPlugin` | Shadow multi-provider плагін | Вхід: `EVT:FEATURES_CALCULATED`, `CMD:PROCESS_STRATEGY` → Вихід: `EVT:ALPHA_SCORE_CALCULATED`, summary | Event bus (`listen/emit`), провайдери, virtual trader (`apps/reference/domains/alpha_search/backtest_plugin.py`) |
-| `DecisionMaking.alpha_registry` | In-process використання registry | Вхід: `feats` → Вихід: емісія `EVT:ALPHA_SCORE_CALCULATED` зі списком scores | `AlphaModelRegistry`, базові моделі (`apps/reference/domains/decision_making/decision_making.py`) |
+- **Бібліотека**: `AlphaModelRegistry` використовується в `decision_making` для in-process скорингу.
+- **Shadow plugin**: `AlphaSearchBacktestPlugin` працює як незалежний shadow daemon у всіх торгових режимах.
+- **Аналітика**: WAL listener + CLI інструмент для post-hoc аналізу якості сигналів.
 
-### Потоки (Flow narratives)
+### Межі відповідальності
 
-#### Flow 1 — In-process alpha скоринг у `decision_making`
-
-1. `DecisionMaking` під час ініціалізації створює `AlphaModelRegistry` і реєструє моделі (наразі `MomentumAlphaModel`, `VolatilityAlphaModel`) (`apps/reference/domains/decision_making/decision_making.py`).
-2. На надходження features (у фрагменті видно обробку `feats`) викликається `alpha_registry.calculate_all_alpha(...)` (`apps/reference/domains/decision_making/decision_making.py`, `apps/reference/domains/alpha_search/alpha_model.py`).
-3. Якщо є результати, `DecisionMaking` емітить `EVT:ALPHA_SCORE_CALCULATED` з payload формату `{symbol, scores: [...], timestamp}` (`apps/reference/domains/decision_making/decision_making.py`).
-
-#### Flow 2 — Backtest shadow плагін (двохфазний міст)
-
-1. Плагін підписується на `EVT:FEATURES_CALCULATED` (кешування) і `CMD:PROCESS_STRATEGY` (скоринг) згідно з `AlphaSearchConfig.triggers` (`apps/reference/domains/alpha_search/backtest_plugin.py`, `apps/reference/domains/alpha_search/config_models.py`, `config/alpha_search.yaml`).
-2. На `EVT:FEATURES_CALCULATED` плагін кешує `features` за ключем `(symbol, tf_sec, bar_close_ts)` і робить prune до `cache.max_per_symbol` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-3. На `CMD:PROCESS_STRATEGY` плагін дістає cached features за `(symbol, tf_sec, bar_close_ts)` і для кожного enabled provider викликає `model.calculate_alpha(...)` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-4. Плагін емітить `EVT:ALPHA_SCORE_CALCULATED` (назва події береться з `triggers.emit_event`) з payload, що включає `provider_id`, `model_name`, `score`, `confidence`, `threshold`, `shadow`, `signal_id`, `why`, `features_used` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-5. Опційно: virtual trader відкриває/закриває “віртуальні” позиції та акумулює PnL, який потім потрапляє у `get_summary()` (`apps/reference/domains/alpha_search/backtest_plugin.py`, `config/alpha_search.yaml`).
-
-#### Flow 3 — Ініціалізація провайдерів у плагіні (multi-provider)
-
-1. Плагін читає `config.providers` і для кожного enabled провайдера створює модель:
-   - `adapter` → `AuroraAlphaAdapter`
-   - `ensemble` → `EnsembleModel` з підмоделями `*_v1` (`apps/reference/domains/alpha_search/backtest_plugin.py`, `apps/reference/domains/alpha_search/config_models.py`).
-2. Якщо провайдер включений, але модель не створилась, плагін логне попередження й провайдер не потрапить у `self.providers` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-#### Flow 4 — Aurora adapter (fail-closed скоринг)
-
-1. Adapter дістає ціну з `market_data["close"]` або з features (`close/price/last_price`) (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-2. Перевіряє essential features (за замовчуванням `["obi", "delta_price", "macro_resid"]`) і при нестачі повертає score=0 з `why` із префіксом `fail_closed:*` (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-3. Викликає `AuroraScoringKernel.compute(...)` і конвертує результат у `AlphaScore` (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-
-### Контракти/інтерфейси (що домен приймає/віддає)
-
-#### Публічний інтерфейс моделей
-
-- `AlphaModel.calculate_alpha(symbol, market_data, features, context) -> AlphaScore` (`apps/reference/domains/alpha_search/alpha_model.py`).
-- `AlphaModel.get_required_features() -> list[str]` використовується для readiness в registry (`apps/reference/domains/alpha_search/alpha_model.py`).
-
-#### Події (event contracts) — as-is
-
-**Вхідні**
-
-- `EVT:FEATURES_CALCULATED`:
-  - Schema у verb registry: `apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json` (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-  - Важливі поля за схемою: `ts`, `symbol`, `tf_sec` (опційно), `features`, `bar` (з `end_ts_ms`) (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`).
-  - Плагін фактично використовує: `symbol`, `features`, `tf_sec` (default 300), `ts`, `bar` (але читає `close_ts/ts`, не `end_ts_ms`) (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-- `CMD:PROCESS_STRATEGY`:
-  - Schema у verb registry: `apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json` (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-  - Обов’язкові поля за схемою: `symbol`, `tf_sec`, `bar_close_ts`, `bar`, `features`, `warmup`, `regime` (`apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json`).
-  - Плагін фактично використовує: `symbol`, `tf_sec`, `bar_close_ts` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-- `EVT:TRADE_EXECUTED`:
-  - Є у verb registry зі schema `apps/reference/domains/position_tracking/schemas/trade_executed_v1.json` (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-  - Плагін підписується, але handler порожній (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-**Вихідні**
-
-- `EVT:ALPHA_SCORE_CALCULATED`:
-  - У verb registry: `owner: unknown`, `status: experimental`, `schema: null` (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-  - Емітер #1: `DecisionMaking` payload `{symbol, scores: [AlphaScore dict], timestamp}` (`apps/reference/domains/decision_making/decision_making.py`).
-  - Емітер #2: `AlphaSearchBacktestPlugin` payload `{provider_id, model_name, symbol, tf_sec, bar_close_ts, score, confidence, threshold, shadow, signal_id, why, features_used}` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
+| In-Scope | Out-of-Scope |
+|----------|-------------|
+| Контракт `AlphaModel` та DTO `AlphaScore` | Генерація features (це `feature_engineering`) |
+| TA-моделі: momentum/mean-reversion/volatility | Торгові рішення (це `decision_making`) |
+| Aurora adapter як provider | Ордера та виконання (це `execution_position`) |
+| Shadow plugin з virtual trader | Backtest engine оркестрація |
+| WAL persistence alpha scores | |
 
 ---
 
-## 5. Ключова логіка та інваріанти
+## 2. Архітектура
 
-### Інваріанти (що має бути істинним завжди)
+### Компоненти
 
-- `AlphaScore.score ∈ [-1, 1]` та `AlphaScore.confidence ∈ [0, 1]` — enforce через Pydantic Field constraints (`apps/reference/domains/alpha_search/alpha_model.py`).
-- `AlphaModelRegistry` не допускає 2 моделі з однаковим `model.name` (кидає `ValueError`) (`apps/reference/domains/alpha_search/alpha_model.py`).
-- Registry викликає `calculate_alpha` лише для моделей, які `is_ready(features)=True` (тобто всі required features присутні) (`apps/reference/domains/alpha_search/alpha_model.py`).
-- Backtest-плагін:
-  - кеш має обмеження `cache.max_per_symbol` і prune старих записів (`apps/reference/domains/alpha_search/backtest_plugin.py`, `config/alpha_search.yaml`);
-  - score класифікується як long/short при `score > threshold` або `score < -threshold` (`apps/reference/domains/alpha_search/backtest_plugin.py`).
+```
+AlphaModel (ABC)              -- контракт: calculate_alpha() -> AlphaScore
+  |-- MomentumAlphaModel      -- price momentum multi-timeframe
+  |-- MeanReversionAlphaModel -- BB + RSI + SMA deviation
+  |-- VolatilityAlphaModel    -- ATR + BB width + realized vol
+  |-- AuroraAlphaAdapter      -- wrapper навколо AuroraScoringKernel
 
-### Обробка помилок/відмов (fail-closed/fail-open)
+AlphaModelRegistry            -- реєстр + масовий розрахунок is_ready() моделей
+EnsembleModel                 -- комбінатор моделей з dynamic weights
+AlphaSearchBacktestPlugin     -- shadow multi-provider plugin
+AlphaScoreWalListener         -- WAL writer для alpha score events
+AlphaSearchConfig             -- Pydantic strict конфіг (extra="forbid")
+```
 
-- Registry: помилка в одній моделі не ламає інші; exception логиться, а метрика `alpha_model_errors_total{model}` інкрементиться (`apps/reference/domains/alpha_search/alpha_model.py`, `apps/reference/telemetry/metrics.py`).
-- Aurora adapter: при відсутності ціни, essential features або при kernel error/deferral повертає `score=0`, `confidence=0` з `why` (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-- Backtest-плагін: при cache miss або exception провайдера може емітити “fail-closed” score=0, якщо `ProviderConfig.fail_closed=True` (`apps/reference/domains/alpha_search/backtest_plugin.py`, `apps/reference/domains/alpha_search/config_models.py`).
+### Потоки даних
 
-### Крайні випадки (edge cases)
+#### Flow 1: In-process (decision_making)
 
-- `EVT:FEATURES_CALCULATED` за SSOT-схемою має `bar.end_ts_ms`, але плагін читає `bar.close_ts`/`bar.ts` і може не влучати в ключ `bar_close_ts` з `CMD:PROCESS_STRATEGY` → системні cache misses і “fail_closed:missing_features_for_bar” (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`, тести наразі використовують `close_ts` у mock payload: `tests/domains/alpha_search/test_backtest_plugin.py`).
-- `ProviderConfig` дозволяє конфіг без `adapter` і без `ensemble` (validator це не блокує), але плагін не створює модель і провайдер фактично “зникає” (`apps/reference/domains/alpha_search/config_models.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Конвенція знаку `score`:
-  - Momentum/Volatility трактують знак інтуїтивно (positive bullish / rising vol) (`apps/reference/domains/alpha_search/models/momentum.py`, `apps/reference/domains/alpha_search/models/volatility.py`).
-  - MeanReversion має суперечність між docstring та фактичними “why”/тестами (у тесті “buy” очікується як negative) (`apps/reference/domains/alpha_search/models/mean_reversion.py`, `tests/domains/alpha_search/test_models_determinism.py`).
-  - Virtual trader у плагіні відкриває `BUY`, якщо `score > 0`, і `SELL` інакше — потенційний конфлікт для mean-reversion/інших провайдерів (`apps/reference/domains/alpha_search/backtest_plugin.py`).
+```
+EVT:FEATURES_CALCULATED
+  -> DecisionMaking receives features
+  -> alpha_registry.calculate_all_alpha(symbol, market_data, features)
+  -> For each ready model: emit EVT:ALPHA_SCORE_CALCULATED (one per score)
+  -> WAL listener writes to WAL
+```
 
----
+#### Flow 2: Shadow plugin (two-phase bridge)
 
-## 6. Оцінка якості коду (as-is)
+```
+Phase 1: EVT:FEATURES_CALCULATED
+  -> _on_features_cache(): cache features by (symbol, tf_sec, bar_close_ts)
 
-### Сильні сторони
+Phase 2: CMD:PROCESS_STRATEGY
+  -> _on_decision_score(): read cache, run all enabled providers
+  -> emit EVT:ALPHA_SCORE_CALCULATED per provider
+  -> virtual trader tracks positions/PnL
 
-- Чіткий контракт `AlphaModel` + строгий DTO `AlphaScore` (типи, діапазони) (`apps/reference/domains/alpha_search/alpha_model.py`).
-- Ізоляція помилок у registry + базова метрика помилок моделей (`apps/reference/domains/alpha_search/alpha_model.py`, `apps/reference/telemetry/metrics.py`).
-- Aurora adapter реюзає “pure kernel” з `decision_making`, що знижує дрейф логіки між режимами (`apps/reference/domains/alpha_search/models/aurora_adapter.py`).
-- Конфіг backtest-плагіна описаний Pydantic strict (`extra="forbid"`) і винесений у YAML (`apps/reference/domains/alpha_search/config_models.py`, `config/alpha_search.yaml`).
-- Наявні доменні тести на ключові інциденти: plumbing features, fail-closed, cache bridge, детермінізм моделей (`tests/domains/alpha_search/*`).
+Phase 3: EVT:TRADE_EXECUTED
+  -> _on_trade(): feed PnL back to ensemble models via on_trade_result()
+```
 
-### Слабкі місця (з прив’язкою до файлів/сутностей)
+#### Flow 3: WAL persistence
 
-- Документація в домені суттєво “дрейфує” від коду/тестів (приклади: інші `model_name`, інші назви features, заявлені метрики/coverage) (`apps/reference/domains/alpha_search/TESTING.md`, `apps/reference/domains/alpha_search/API_DEPENDENCIES.md`, `apps/reference/domains/alpha_search/EVENTS.md`, `apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md`).
-- Конфлікт контракту `EVT:ALPHA_SCORE_CALCULATED`: різні payload-форми від різних емiтерів (`apps/reference/domains/decision_making/decision_making.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`), а verb registry не має schema/owner (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-- Критичний ризик cache key mismatch через різні поля timestamp у схемі vs у плагіні (`end_ts_ms` vs `close_ts/bar_close_ts`) (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `apps/reference/main.py` створює `AlphaSearchBacktestPlugin(config={...})` як dict (імовірне падіння на доступі `config.enabled`) — wiring gap для бектесту (`apps/reference/main.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `EnsembleModel` містить механізм `on_trade_result()`, але backtest-плагін не викликає його (handler `_on_trade` порожній) — “мертвий”/незавершений feedback loop (`apps/reference/domains/alpha_search/ensemble.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `EnsembleModelConfig.performance_window_days` присутній у конфізі, але в логіці трекінгу/ребалансу фактично не використовується (історія “обрізається” до 100 елементів) (`apps/reference/domains/alpha_search/ensemble.py`, `apps/reference/domains/alpha_search/config_models.py`).
-
-### Техборг/заборгованість (як проявляється, чим ризикує)
-
-- “Невизначений контракт події” → ризик ламання моніторингу/споживачів при появі schema validation (verb registry зараз schema=null) (`apps/reference/dictionaries/verb_registry_v1.yaml`).
-- Магічні числа в моделях/ensemble (ваги, пороги, нормалізації) → складно калібрувати без конфіга/експериментів, ризик непередбачуваних сигналів при зміні фіч (`apps/reference/domains/alpha_search/models/*.py`, `apps/reference/domains/alpha_search/ensemble.py`).
-- Virtual trader не має тестового покриття й має сильні припущення (sign→side, price availability) → ризик “помилкового PnL” і хибних висновків у звітах (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-### Ризик-матриця (Impact × Likelihood)
-
-| Ризик | Impact | Likelihood | Де видно |
-|---|---|---|---|
-| Різні payload’и для `EVT:ALPHA_SCORE_CALCULATED` | High | High | `decision_making.py` vs `backtest_plugin.py`, schema=null у registry |
-| Wiring bug: dict config у `apps/reference/main.py` | High | High | `apps/reference/main.py`, `backtest_plugin.py` |
-| Cache miss через `end_ts_ms` vs `close_ts/bar_close_ts` | High | Medium/High | `features_calculated_v1.json`, `backtest_plugin.py`, тести з `close_ts` |
-| Непідключений feedback loop (`on_trade_result`) | Medium | High | `ensemble.py`, `_on_trade` у `backtest_plugin.py` |
-| Невизначена/суперечлива семантика знаку score (mean reversion vs virtual trader) | Medium | Medium | `mean_reversion.py`, `backtest_plugin.py`, тести |
-| ProviderConfig дозволяє enabled провайдера без типу | Medium | Medium | `config_models.py`, `_create_provider_model` у `backtest_plugin.py` |
+```
+EVT:ALPHA_SCORE_CALCULATED (from any emitter)
+  -> AlphaScoreWalListener._on_alpha_score()
+  -> vfoundation.dr.wal.append({verb, symbol, provider_id, score, ...})
+```
 
 ---
 
-## 7. Тестування і покриття
+## 3. Контракт події EVT:ALPHA_SCORE_CALCULATED
 
-### Що тестується добре
+**Registry**: `verb_registry_v1.yaml` — owner: `alpha_search`, status: `active`
 
-- `AuroraAlphaAdapter`: ініціалізація, fail-closed при відсутніх essential features/ціни, діапазон score, знак при bearish/bullish, інтеграційна перевірка “sign match” з kernel (`tests/domains/alpha_search/test_aurora_adapter.py`).
-- `AlphaModelRegistry`: readiness (warmup), пропуск при відсутності required features, ізоляція exception + інкремент метрики (`tests/domains/alpha_search/test_registry_fail_closed.py`).
-- `EnsembleModel`: критичний баг “features plumbing” (features не мають бути `{}`), коректна передача symbol у підмоделі (`tests/domains/alpha_search/test_ensemble_features_plumbing.py`).
-- Backtest-плагін: кешування, prune, нормалізація timestamp (sec→ms), cache hit/miss статистика, fail-closed на cache miss, allowlist, summary (`tests/domains/alpha_search/test_backtest_plugin.py`).
-- Базові моделі: діапазони, детермінізм, clamping на екстремумах, правильні `get_model_name()` (`tests/domains/alpha_search/test_models_determinism.py`).
+**Schema**: `schemas/alpha_score_calculated_v1.json`
 
-### Прогалини покриття (функціональні/інваріантні/інтеграційні)
+### Required fields
 
-- Virtual trader (відкриття/закриття позицій, exit правила, PnL облік) майже не покритий (`apps/reference/domains/alpha_search/backtest_plugin.py` vs відсутність тестів на ці гілки).
-- Реальна форма `EVT:FEATURES_CALCULATED.bar` за schema (`end_ts_ms`) не тестується: тести використовують `bar.close_ts`, якого немає у SSOT-схемі (`tests/domains/alpha_search/test_backtest_plugin.py`, `apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`).
-- YAML loader `load_alpha_search_config()` і строгі edge cases валідації конфіга майже не покриті (`apps/reference/domains/alpha_search/config_models.py`).
-- `EnsembleModel`: rebalance, min/max constraints, `add_model/remove_model/get_ensemble_stats`, `on_trade_result` — слабке покриття (`apps/reference/domains/alpha_search/ensemble.py`).
+| Field | Type | Description |
+|-------|------|-------------|
+| `symbol` | string | Trading pair (e.g. "BTCUSDT") |
+| `provider_id` | string | Provider identifier ("aurora", "dm_inline", etc.) |
+| `model_name` | string | Model name ("aurora_v2_adapter", "momentum_v1", etc.) |
+| `score` | number | Alpha score in [-1, 1] |
+| `confidence` | number | Confidence in [0, 1] |
 
-### Coverage (стан репо на 2026-02-09) + “coverage-пастки”
+### Optional fields
 
-- Фактичне покриття `apps.reference.domains.alpha_search` ≈ **76%**.
-  - `apps/reference/domains/alpha_search/alpha_model.py`: 89%
-  - `apps/reference/domains/alpha_search/backtest_plugin.py`: 67%
-  - `apps/reference/domains/alpha_search/config_models.py`: 83%
-  - `apps/reference/domains/alpha_search/ensemble.py`: 61%
-  - `apps/reference/domains/alpha_search/models/aurora_adapter.py`: 87%
-  - `apps/reference/domains/alpha_search/models/momentum.py`: 87%
-  - `apps/reference/domains/alpha_search/models/mean_reversion.py`: 79%
-  - `apps/reference/domains/alpha_search/models/volatility.py`: 92%
-- Coverage-пастка №1: тести можуть “заспокоювати”, бо використовують payload-форму, яка не відповідає schema (наприклад, `close_ts`).
-- Coverage-пастка №2: частина тестів перевіряє лише “non-zero/doesn’t crash”, але не валідність семантики (знак score, відповідність threshold, узгодженість контракту подій).
+`tf_sec`, `bar_close_ts`, `threshold`, `shadow`, `signal_id`, `features_used`, `why`
 
-### Рекомендована структура тестів (без коду)
+### Емітери
 
-- Unit: кожна модель (`models/*`) — семантика знаку, граничні значення, детермінізм.
-- Unit: `AlphaModelRegistry` — readiness, дублікати, error isolation + метрики.
-- Unit: `config_models` — loader + strict validation (помилки, legacy bucket, “enabled but no providers”).
-- Integration (event): Backtest-плагін з payload’ами, що відповідають SSOT-схемам (`end_ts_ms`, `bar_close_ts`), і з перевіркою cache-hit.
-- Integration: контракт `EVT:ALPHA_SCORE_CALCULATED` — або уніфікований schema, або явна перевірка на “дві форми” з чітким consumer-очікуванням.
+1. **DecisionMaking** (provider_id=`"dm_inline"`) — in-process, один event на score
+2. **AlphaSearchBacktestPlugin** — shadow plugin, один event на provider
+
+Обидва емітери використовують однаковий формат payload.
 
 ---
 
-## 8. Вузькі місця та точки зламу
+## 4. Конфігурація
 
-### Bottlenecks (продуктивність/складність/зв’язність)
+### Файл: `config/alpha_search.yaml`
 
-- `AlphaSearchBacktestPlugin._prune_cache()` робить scan по всіх ключах кешу для символу при кожному записі → потенційно O(total_cache_entries) на event (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-- `EnsembleModel.calculate_alpha()` конвертує `market_data` у `pandas.DataFrame` навіть для одного запису (overhead) (`apps/reference/domains/alpha_search/ensemble.py`).
-- Скоринг у плагіні — послідовний для всіх провайдерів/моделей (`apps/reference/domains/alpha_search/backtest_plugin.py`, `apps/reference/domains/alpha_search/ensemble.py`).
+```yaml
+enabled: true
+shadow_mode: true
 
-### “Single points of failure”
+providers:
+  aurora:
+    enabled: true
+    adapter:
+      essential_features: [obi, delta_price, macro_resid]
+      scoring_version: v2
+    threshold: 0.1
+    fail_closed: true
+    symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
 
-- Невідповідність timestamp-полів між `EVT:FEATURES_CALCULATED` і `CMD:PROCESS_STRATEGY` може зробити плагін “глухим” (суцільні cache miss) (`apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Конфлікт контрактів `EVT:ALPHA_SCORE_CALCULATED` — ризик для будь-якого майбутнього consumer зі schema validation (`apps/reference/dictionaries/verb_registry_v1.yaml`, `apps/reference/domains/decision_making/decision_making.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Wiring у `apps/reference/main.py`: неправильний тип `config` при ініціалізації плагіна може повністю вимкнути alpha_search у бектесті (`apps/reference/main.py`).
+  ta_ensemble:
+    enabled: false   # Enable when ready
+    ensemble:
+      models:
+        momentum_v1: { enabled: true, weight: 0.4 }
+        mean_reversion_v1: { enabled: true, weight: 0.3 }
+        volatility_v1: { enabled: true, weight: 0.3 }
+      rebalance_frequency_days: 7
+      performance_window_days: 30
+      risk_adjustment: true
+    threshold: 0.15
+    fail_closed: true
 
-### Спостережуваність (що логувати/які метрики потрібні — без коду)
+triggers:
+  feature_event: "EVT:FEATURES_CALCULATED"
+  decision_event: "CMD:PROCESS_STRATEGY"
+  emit_event: "EVT:ALPHA_SCORE_CALCULATED"
 
-**Є зараз**
+cache:
+  max_per_symbol: 10
+  require_same_bar_close_ts: false
 
-- Метрика `alpha_model_errors_total{model}` для exception в registry (`apps/reference/telemetry/metrics.py`, `apps/reference/domains/alpha_search/alpha_model.py`).
-- Summary зі статистикою cache hits/misses, signals, virtual PnL (`apps/reference/domains/alpha_search/backtest_plugin.py`).
-- Debug-логи по кешу/скорингу (`apps/reference/domains/alpha_search/backtest_plugin.py`).
+virtual_trader:
+  enabled: false
+  notional_size: 1000
+  max_positions_per_symbol: 1
+  exit:
+    max_bars: 12
+    max_hold_sec: 3600
+```
 
-**Варто додати/уточнити (рекомендації)**
+### Pydantic моделі: `config_models.py`
 
-- Окремі лічильники: cache_hit/cache_miss, fail_closed emissions, signals_long/short/neutral по провайдеру, virtual_trader pnl distribution.
-- Явний “contract version” у payload `EVT:ALPHA_SCORE_CALCULATED` або розділення подій за різними verb’ами.
-- Логування причин cache miss (які ключі очікувалися/фактично були), особливо для mismatch `end_ts_ms` vs `bar_close_ts`.
-
----
-
-## 9. Рекомендації та план покращень
-
-### P0 (критичне)
-
-1) Уніфікувати контракт `EVT:ALPHA_SCORE_CALCULATED` або розділити події на різні verb’и
-
-- Acceptance / DoD:
-  - `apps/reference/dictionaries/verb_registry_v1.yaml` має `owner` і `schema` для `ALPHA_SCORE_CALCULATED` (або для нових verb’ів).
-  - Є один “SSOT schema” (файл у `schemas/` або `apps/reference/domains/*/schemas/`) і обидва емiтери або відповідають йому, або використовують різні події.
-  - Документи `apps/reference/domains/alpha_search/EVENTS.md` та `apps/reference/domains/decision_making/docs/EVENTS.md` не суперечать коду емісії.
-
-2) Виправити wiring backtest-плагіна в `apps/reference/main.py` (тип `config`)
-
-- Acceptance / DoD:
-  - `AlphaSearchBacktestPlugin` ініціалізується без винятків у backtest-флоу.
-  - Backtest report містить `alpha_search` summary (ін’єкція вже є) (`apps/reference/main.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-3) Вирівняти timestamp/бар-контракт для cache key у плагіні з SSOT-схемами
-
-- Acceptance / DoD:
-  - Плагін коректно використовує `bar.end_ts_ms` з `EVT:FEATURES_CALCULATED` (або upstream додає `bar_close_ts`), і це підтверджено інтеграційним тестом на payload із `features_calculated_v1.json`.
-  - Cache miss rate у summary стає діагностично-обґрунтованою, а не “завжди 100%”.
-
-4) Зафіксувати єдину семантику знаку `AlphaScore.score` і узгодити з virtual trader
-
-- Acceptance / DoD:
-  - У документації домену є чітке правило: `score > 0` означає що саме (BUY/LONG), `score < 0` — що саме.
-  - `MeanReversionAlphaModel` docstring/why/тести та `AlphaSearchBacktestPlugin` entry logic не суперечать цьому правилу.
-
-### P1 (важливе)
-
-5) Зробити `ProviderConfig` строгішим: enabled провайдер має мати або `adapter`, або `ensemble`
-
-- Acceptance / DoD:
-  - Неможливо “включити” провайдера, який не створюється у плагіні (валідація блокує або плагін фейлиться fail-closed з явним повідомленням) (`apps/reference/domains/alpha_search/config_models.py`, `apps/reference/domains/alpha_search/backtest_plugin.py`).
-
-6) Доробити або прибрати незадіяний feedback loop `on_trade_result`
-
-- Acceptance / DoD:
-  - Або плагін реально корелює `EVT:TRADE_EXECUTED` з `signal_id` і викликає `EnsembleModel.on_trade_result()`, або код/документи більше не обіцяють online-learning.
-
-7) Підняти покриття там, де найбільший ризик (plugin/ensemble)
-
-- Acceptance / DoD:
-  - Coverage `backtest_plugin.py` та `ensemble.py` підвищено мінімум до узгодженого порогу (наприклад, 80%+) і включає schema-реалістичні payload’и та virtual trader критичні гілки.
-
-### P2 (планово)
-
-8) Почистити й замінити “шаблонні” документи домену на SSOT (цей документ)
-
-- Acceptance / DoD:
-  - `apps/reference/domains/alpha_search/TESTING.md`, `API_DEPENDENCIES.md`, `EVENTS.md`, `ANALYSIS_SUMMARY.md` або приведені у відповідність, або явно позначені як “deprecated/legacy notes”.
-  - Документи не містять неіснуючих тестів/метрик/конфігів.
-
-9) Оптимізація продуктивності (за потреби масштабу)
-
-- Acceptance / DoD:
-  - Зменшено overhead на DataFrame у `EnsembleModel` (якщо ensemble використовується у проді/масових бектестах).
-  - Cache prune не робить глобальних scan’ів при великих наборах символів.
+- `AlphaSearchConfig` — root config, strict `extra="forbid"`
+- `ProviderConfig` — per-provider (adapter or ensemble)
+- `AuroraAdapterConfig` — aurora-specific settings
+- `TriggersConfig` — event names for two-phase bridge
+- `CacheConfig` — feature cache settings
+- `VirtualTraderConfig` — virtual position tracking
 
 ---
 
-## 10. Питання до уточнення (якщо є)
+## 5. Режими роботи
 
-1) Який з двох шляхів є “канонічним” для `alpha_search` у вашій системі:
+### Backtest mode
 
-- In-process у `decision_making` (`apps/reference/domains/decision_making/decision_making.py`)
-чи
-- Backtest multi-provider плагін (`apps/reference/domains/alpha_search/backtest_plugin.py`)?
+**Wiring**: `apps/reference/main.py:621-642`
 
-`Невідомо з наданого контексту`, чи обидва мають існувати паралельно як стабільний контракт.
+```
+AlphaSearchBacktestPlugin(event_bus=fsm, config_path="config/alpha_search.yaml")
+engine.alpha_search_plugin = alpha_plugin
+AlphaScoreWalListener(event_bus=fsm)
+```
 
-2) Хто є реальним consumer події `EVT:ALPHA_SCORE_CALCULATED`?
+- Plugin підключається до FSM event bus
+- Слухає `EVT:FEATURES_CALCULATED`, `CMD:PROCESS_STRATEGY`, `EVT:TRADE_EXECUTED`
+- Summary інжектується в backtest report (`report_data["alpha_search"]`)
+- При shutdown генерує `alpha_search_report.json` у `<run_dir>/analysis/`
 
-Відомий офлайн consumer: `scripts/analyze_alpha_performance.py` (парсить WAL/логи та очікує форму `{timestamp, scores:[...]}` з `DecisionMaking`) (`scripts/analyze_alpha_performance.py`, `apps/reference/domains/decision_making/decision_making.py`).
+### Testnet / Hybrid / Live modes
 
-`Невідомо з наданого контексту`, чи є **on-line** споживачі (підписки `listen`/`event_handler`) і чи комусь потрібна форма події від backtest-плагіна `{provider_id, score,...}`. Потрібно: файл/модуль, що читає/валідує/агрегує `EVT:ALPHA_SCORE_CALCULATED`, або приклад із логів/WAL “де це читають”.
+**Wiring**: `apps/reference/main.py:~1387` (після CsvRecorder init)
 
-3) Чи є у реальних payload’ах `EVT:FEATURES_CALCULATED` поле, еквівалентне `bar_close_ts`?
+```
+AlphaSearchBacktestPlugin(event_bus=fsm, config_path="config/alpha_search.yaml")
+AlphaScoreWalListener(event_bus=fsm)
+```
 
-`Невідомо з наданого контексту`. Потрібно: 1–3 реальні приклади payload з логів/WAL (або шлях до файлу зі збереженими подіями), щоб зафіксувати, чи `ts == bar.end_ts_ms` і як правильно ключувати кеш.
+- Працює ідентично до backtest, але без engine attachment
+- Shadow mode: сигнали логуються/емітяться, але не впливають на торгівлю
+- WAL listener пише events для post-hoc аналізу
+- Доступний у всіх non-backtest режимах: `testnet`, `hybrid_live_data_testnet_exec`, `live`
 
-4) Чи планується вмикати `ta_ensemble` провайдера в `config/alpha_search.yaml`?
+### In-process (decision_making)
 
-Зараз він `enabled: false` (`config/alpha_search.yaml`). Якщо планується — треба підтвердити відповідність назв features (наприклад `stoch_k/stoch_d` vs можливі `stochastic_k/stochastic_d`) та узгодити sign convention.
+**Wiring**: `apps/reference/domains/decision_making/decision_making.py`
+
+- `AlphaModelRegistry` створюється при ініціалізації DecisionMaking
+- Моделі: `MomentumAlphaModel`, `MeanReversionAlphaModel`, `VolatilityAlphaModel`
+- Емісія при кожному виклику evaluate з features
+
+---
+
+## 6. Моделі
+
+### MomentumAlphaModel (`momentum_v1`)
+
+Аналізує momentum ціни по timeframes:
+- Short-term (5m): 30% weight
+- Medium-term (1h): 40% weight
+- Long-term (1d): 30% weight
+
+Features: `price_momentum_5m`, `price_momentum_1h`, `price_momentum_1d`, `volume_momentum_5m`, `rsi_14`, `macd_signal`
+
+Score > 0 = bullish momentum, < 0 = bearish momentum.
+
+### MeanReversionAlphaModel (`mean_reversion_v1`)
+
+Визначає overbought/oversold умови:
+- Bollinger Band position (%B): 40% weight
+- RSI divergence: 30% weight
+- SMA deviation: 20% weight
+- Stochastic crossover: 10% weight
+
+Features: `bb_position`, `bb_width`, `rsi_14`, `price_sma_20_deviation`, `volume_sma_ratio`, `stoch_k`, `stoch_d`
+
+Score > 0 = sell (overbought), < 0 = buy (oversold).
+
+### VolatilityAlphaModel (`volatility_v1`)
+
+Аналізує volatility state:
+- ATR ratio: normalized average true range
+- BB width: Bollinger Band width
+- Realized volatility ratios across timeframes
+
+Score > 0 = rising volatility, < 0 = falling volatility.
+
+### AuroraAlphaAdapter (`aurora_v2_adapter`)
+
+Wrapper навколо `AuroraScoringKernel.compute()`:
+- Essential features: `obi`, `delta_price`, `macro_resid`
+- Fail-closed: missing features -> score=0 + why
+- Reuses production scoring kernel
+
+---
+
+## 7. AlphaScore DTO
+
+```python
+@dataclass
+class AlphaScore:
+    model_name: str           # "momentum_v1", "aurora_v2_adapter", etc.
+    symbol: str               # "BTCUSDT"
+    score: Decimal            # [-1, 1] — alpha signal
+    confidence: Decimal       # [0, 1] — signal confidence
+    timestamp: int            # ms since epoch
+    features_used: list[str]  # which features were used
+    why: list[str]            # human-readable reasoning chain
+```
+
+**Invariants**:
+- `score` clamped to [-1, 1] via Pydantic Field constraints
+- `confidence` clamped to [0, 1]
+- Registry не допускає 2 моделі з однаковим name
+
+---
+
+## 8. Fail-Closed Design
+
+| Scenario | Behavior |
+|----------|----------|
+| Missing essential features (Aurora) | score=0, confidence=0, why=["fail_closed:missing_essential_features"] |
+| Missing price | score=0, confidence=0, why=["fail_closed:missing_price"] |
+| Cache miss (plugin) | score=0, confidence=0, why=["fail_closed:missing_features_for_bar"] |
+| Provider exception | score=0 emitted if `fail_closed=true` in config |
+| WAL write failure | Error logged, event silently dropped (listener doesn't crash) |
+| Config load failure | Falls back to `get_default_config()` (enabled=false) |
+
+---
+
+## 9. CLI Аналіз: `tools/alpha_search_report.py`
+
+### Usage
+
+```bash
+# From backtest run directory
+python tools/alpha_search_report.py --run-dir reports/backtests/<run_id>
+
+# From WAL directory
+python tools/alpha_search_report.py --wal-dir ops/wal
+
+# Output to file
+python tools/alpha_search_report.py --run-dir <dir> --output-json analysis/alpha.json
+
+# Markdown table
+python tools/alpha_search_report.py --run-dir <dir> --output-md
+
+# Custom horizon (default 300s)
+python tools/alpha_search_report.py --run-dir <dir> --horizon-sec 600
+```
+
+### Output
+
+Per-model:
+- Signal distribution (long/short/neutral)
+- Hit rate vs actual price movement
+- Virtual PnL (basis points)
+- Confidence calibration (is 80% conf really 80% hit rate?)
+
+### Auto-run
+
+Report автоматично генерується при `alpha_plugin.shutdown(run_dir=...)` після backtest.
+Зберігається в `<run_dir>/analysis/alpha_search_report.json`.
+
+---
+
+## 10. Тестування
+
+### Test suites
+
+| Suite | File | Tests | Coverage |
+|-------|------|-------|----------|
+| Aurora adapter | `test_aurora_adapter.py` | fail-closed, score range, sign match | aurora_adapter.py |
+| Registry | `test_registry_fail_closed.py` | readiness, error isolation, metrics | alpha_model.py |
+| Ensemble | `test_ensemble_features_plumbing.py` | features passing, symbol propagation | ensemble.py |
+| Backtest plugin | `test_backtest_plugin.py` | cache, prune, timestamp normalize, fail-closed | backtest_plugin.py |
+| Model determinism | `test_models_determinism.py` | ranges, clamping, determinism | models/*.py |
+| Integration | `test_integration.py` | end-to-end flow, WAL capture, schema compliance | all |
+
+### Running tests
+
+```bash
+# All alpha_search tests
+pytest tests/domains/alpha_search/ -v
+
+# Specific suite
+pytest tests/domains/alpha_search/test_integration.py -v
+```
+
+---
+
+## 11. Файлова структура
+
+```
+apps/reference/domains/alpha_search/
+  __init__.py
+  alpha_model.py          -- AlphaModel ABC, AlphaScore DTO, AlphaModelRegistry
+  backtest_plugin.py      -- AlphaSearchBacktestPlugin (shadow daemon)
+  config_models.py        -- Pydantic config models + YAML loader
+  ensemble.py             -- EnsembleModel + EnsembleConfig
+  wal_listener.py         -- AlphaScoreWalListener (WAL writer)
+  README.md               -- This file
+  models/
+    __init__.py
+    aurora_adapter.py     -- AuroraAlphaAdapter
+    momentum.py           -- MomentumAlphaModel
+    mean_reversion.py     -- MeanReversionAlphaModel
+    volatility.py         -- VolatilityAlphaModel
+
+config/
+  alpha_search.yaml       -- Plugin configuration
+
+schemas/
+  alpha_score_calculated_v1.json  -- Event schema
+
+tools/
+  alpha_search_report.py  -- CLI analysis tool
+
+tests/domains/alpha_search/
+  test_aurora_adapter.py
+  test_backtest_plugin.py
+  test_ensemble_features_plumbing.py
+  test_integration.py
+  test_models_determinism.py
+  test_registry_fail_closed.py
+```
+
+---
+
+## 12. Глосарій
+
+| Термін | Визначення |
+|--------|-----------|
+| **Alpha score** | Числовий сигнал [-1, 1], позитивний = bullish (для momentum/aurora) |
+| **Confidence** | Впевненість сигналу [0, 1] |
+| **Provider** | Джерело сигналу: aurora adapter або TA ensemble |
+| **Shadow mode** | Сигнали логуються, але не впливають на торгівлю |
+| **Fail-closed** | При помилці повертаємо score=0 з поясненням |
+| **Two-phase bridge** | EVT:FEATURES_CALCULATED -> cache -> CMD:PROCESS_STRATEGY -> score |
+| **Virtual trader** | Симулятор позицій для оцінки PnL сигналів |
+| **WAL** | Write-Ahead Log — JSONL persistence для events |

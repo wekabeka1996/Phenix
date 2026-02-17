@@ -2341,6 +2341,20 @@ class BracketHealthCheckConfig(BaseModel):
     )
 
 
+class QuietHoursConfig(BaseModel):
+    """Quiet hours gate: block new OPEN entries during configured UTC time windows."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable quiet hours gate. When True, new entries are blocked during configured windows."
+    )
+    windows: List[str] = Field(
+        default_factory=list,
+        description='UTC time windows in "HH:MM-HH:MM" format. Wraps around midnight.'
+    )
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -2396,6 +2410,11 @@ class ExecutionPositionDomainConfig(BaseModel):
     bracket_health_check: Optional[BracketHealthCheckConfig] = Field(
         default=None,
         description="Safety net: periodic check for missing SL/TP on open positions"
+    )
+    # QUIET-HOURS: Block new entries during configured UTC time windows
+    quiet_hours: QuietHoursConfig = Field(
+        default_factory=QuietHoursConfig,
+        description="Quiet hours: block new entries during configured UTC time windows"
     )
 
 

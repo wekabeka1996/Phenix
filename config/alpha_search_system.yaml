@@ -1,0 +1,135 @@
+# ==============================================================================
+# Alpha Search System Configuration — Model Tuning Parameters
+# ==============================================================================
+# All hardcoded parameters from alpha_search models externalized here.
+# Loaded by AlphaSearchBacktestPlugin alongside alpha_search.yaml.
+#
+# This file controls MODEL BEHAVIOR (weights, thresholds, multipliers).
+# For operational config (providers, triggers, cache) see alpha_search.yaml.
+# ==============================================================================
+
+alpha_search_system:
+
+  # ============================================================================
+  # Momentum Model (momentum_v1)
+  # Source: apps/reference/domains/alpha_search/models/momentum.py
+  # ============================================================================
+  momentum:
+    weights:
+      short: 0.3       # 5m momentum weight
+      medium: 0.4      # 1h momentum weight
+      long: 0.3        # 1d momentum weight
+
+    volume:
+      confirm_multiplier: 1.2      # Volume supports price direction
+      contradict_multiplier: 0.8   # Volume contradicts price direction
+
+    rsi:
+      overbought: 70               # RSI overbought threshold
+      oversold: 30                 # RSI oversold threshold
+      confidence_penalty: 0.7      # Confidence reduction at extremes
+
+    macd:
+      confirm_boost: 1.1           # MACD confirms momentum direction
+      contradict_penalty: 0.9      # MACD contradicts momentum direction
+
+    confidence:
+      base: 0.8                    # Base confidence level
+      consistency_min: 0.7         # Min consistency multiplier (0% agreement)
+      consistency_range: 0.6       # Range added at 100% agreement (min + range = max)
+
+  # ============================================================================
+  # Mean Reversion Model (mean_reversion_v1)
+  # Source: apps/reference/domains/alpha_search/models/mean_reversion.py
+  # ============================================================================
+  mean_reversion:
+    weights:
+      bb: 0.4          # Bollinger Band position weight
+      rsi: 0.3         # RSI divergence weight
+      sma: 0.2         # SMA deviation weight
+      stoch: 0.1       # Stochastic crossover weight
+
+    rsi:
+      oversold: 30                 # RSI oversold threshold (strong buy)
+      overbought: 70               # RSI overbought threshold (strong sell)
+
+    sma:
+      deviation_normalizer: 0.05   # Typical 5% deviation for normalization
+
+    stochastic:
+      oversold_zone: 20            # %K oversold zone boundary
+      overbought_zone: 80          # %K overbought zone boundary
+      signal_strength: 0.3         # Stochastic crossover signal strength
+
+    volume:
+      confirm_multiplier: 1.2      # Volume supports reversion
+      contradict_multiplier: 0.8   # Volume contradicts reversion
+      high_threshold: 1.5          # Volume ratio for 'high volume'
+      low_threshold: 0.7           # Volume ratio for 'low volume'
+
+    bb_width:
+      wide_threshold: 0.05         # BB width above this = high volatility
+      narrow_threshold: 0.02       # BB width below this = low volatility
+      max_multiplier: 1.5          # Max amplification from BB width
+      narrow_penalty: 0.7          # Penalty for narrow bands
+
+    confidence:
+      base: 0.5                    # Base confidence level
+      agreement_factor: 0.4        # Factor for signal agreement
+      strength_base: 0.8           # Base for strength multiplier
+      signal_threshold: 0.1        # Min absolute signal for 'non-zero'
+
+  # ============================================================================
+  # Volatility Model (volatility_v1)
+  # Source: apps/reference/domains/alpha_search/models/volatility.py
+  # ============================================================================
+  volatility:
+    weights:
+      atr: 0.4         # ATR ratio weight
+      bb: 0.25         # BB width change weight
+      rv: 0.2          # Realized volatility trend weight
+      range: 0.1       # Price range ratio weight
+      vol_corr: 0.05   # Volume-volatility correlation weight
+
+    bb:
+      amplifier: 10                # Amplifies small BB width changes
+
+    signal_clamp:
+      atr: 2.0                     # ATR signal clamp [-2, 2]
+      rv: 2.0                      # RV signal clamp [-2, 2]
+
+    volume_vol:
+      high_threshold: 1.2          # Volume-vol ratio for 'high'
+      low_threshold: 0.8           # Volume-vol ratio for 'low'
+      signal_strength: 0.2         # Vol-corr signal strength
+
+    vol_level:
+      low_level: 0.5               # Volatility level below this = very low
+      low_penalty: 0.5             # Signal reduction for low volatility
+      high_level: 2.0              # Volatility level above this = very high
+      high_boost: 1.2              # Signal amplification for high volatility
+
+    confidence:
+      base: 0.6                    # Base confidence level
+      agreement_factor: 0.3        # Factor for signal agreement
+      strength_base: 0.7           # Base for strength multiplier
+      no_signal: 0.4               # Confidence when no strong signals
+
+  # ============================================================================
+  # Ensemble Model
+  # Source: apps/reference/domains/alpha_search/ensemble.py
+  # ============================================================================
+  ensemble:
+    max_history: 100               # Max performance history entries per model
+    confidence_threshold: 0.1      # Min confidence for valid score
+    pnl_normalizer: 100.0          # PnL range for normalization (-100..+100 USD)
+    min_performance_score: 0.1     # Floor for model performance score
+    variance_cap: 0.5              # Max variance penalty in risk adjustment
+
+  # ============================================================================
+  # Backtest Plugin
+  # Source: apps/reference/domains/alpha_search/backtest_plugin.py
+  # ============================================================================
+  plugin:
+    default_tf_sec: 300            # Default timeframe when not in payload
+    why_chain_limit: 5             # Max why entries in emitted events

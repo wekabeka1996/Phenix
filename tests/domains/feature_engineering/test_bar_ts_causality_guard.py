@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 
-def _make_fe_for_macro_sync_tests(*, anchor_ts_ms: int):
+def _make_fe_for_macro_sync_tests(*, anchor_ts_ms: int, max_late_ms: int = 0):
     from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
     from apps.reference.domains.feature_engineering.types import HotState
 
@@ -22,6 +22,7 @@ def _make_fe_for_macro_sync_tests(*, anchor_ts_ms: int):
         fe.cfg = SimpleNamespace(
             neutral_value=decimal.Decimal("0.5"),
             macro_sync_anchors=["BTCUSDT"],
+            macro_sync_max_late_ms=int(max_late_ms),
         )
         fe._macro_sync_anchor_ts_missing = False
         fe._anchor_last_ts_ms = {"BTCUSDT": int(anchor_ts_ms)}
@@ -54,8 +55,26 @@ def test_compute_macro_sync_preserves_tick_level_causality_guard():
     assert hot.macro_sync_not_ready_reason == "anchor_from_future:BTCUSDT"
 
 
+def test_compute_macro_sync_allows_small_future_skew_within_max_late_ms():
+    """Small anchor skew within configured max_late_ms should not force not_ready."""
+    fe, hot = _make_fe_for_macro_sync_tests(anchor_ts_ms=1_105, max_late_ms=10)
+
+    _ = fe._compute_macro_sync("DOGEUSDT", current_ts_ms=1_100)
+
+    assert hot.macro_sync_not_ready_reason != "anchor_from_future:BTCUSDT"
+
+
+def test_compute_macro_sync_blocks_large_future_skew_beyond_max_late_ms():
+    """Anchor skew beyond max_late_ms must still fail-closed."""
+    fe, hot = _make_fe_for_macro_sync_tests(anchor_ts_ms=1_120, max_late_ms=10)
+
+    _ = fe._compute_macro_sync("DOGEUSDT", current_ts_ms=1_100)
+
+    assert hot.macro_sync_not_ready_reason == "anchor_from_future:BTCUSDT"
+
+
 def test_macro_resid_guard_uses_causality_ts_ms_not_current_ts_ms():
-    """BAR-TS-CAUSALITY-FIX: macro_resid guard should compare against causality_ts_ms."""
+    """macro_resid guard should compare anchor ts against causality ts with allowed skew."""
     from apps.reference.domains.feature_engineering import feature_engineering
 
     source = inspect.getsource(
@@ -63,7 +82,6 @@ def test_macro_resid_guard_uses_causality_ts_ms_not_current_ts_ms():
     )
 
     assert re.search(
-        r"btc_anchor_ts\s*>\s*0\s*and\s*btc_anchor_ts\s*>\s*int\(\s*causality_ts_ms\s*\)",
+        r"btc_anchor_ts\s*>\s*0\s*and\s*\(btc_anchor_ts\s*-\s*int\(causality_ts_ms\)\)\s*>\s*allowed_future_ms",
         source,
     ), "Expected macro_resid causality guard to use causality_ts_ms"
-

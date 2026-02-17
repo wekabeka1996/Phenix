@@ -24,8 +24,8 @@ alpha_search:
 
   # Cache for features between events
   cache:
-    max_per_symbol: 4           # Keep last 4 bars per symbol
-    require_same_bar_close_ts: true
+    max_per_symbol: 10          # Keep last 10 bars per symbol
+    require_same_bar_close_ts: false  # Fuzzy match to avoid cache misses
 
   # ============================================================================
   # Providers (A3.2) — aurora and/or ta_ensemble
@@ -48,9 +48,9 @@ alpha_search:
           - macro_resid
 
     ta_ensemble:
-      enabled: false           # Disabled by default (Aurora-first)
-      symbols: null            # All symbols when enabled
-      threshold: 0.20
+      enabled: true            # All 3 TA models active
+      symbols: null            # All symbols
+      threshold: 0.15
       fail_closed: true
 
       ensemble:

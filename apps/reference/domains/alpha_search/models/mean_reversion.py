@@ -58,44 +58,67 @@ class MeanReversionAlphaModel(AlphaModel):
         """
 
         # Extract features
-        bb_pos = Decimal(str(features["bb_position"] if "bb_position" in features else 0.5))
-        bb_width = Decimal(str(features["bb_width"] if "bb_width" in features else 0.1))
+        bb_pos = Decimal(
+            str(features["bb_position"] if "bb_position" in features else 0.5))
+        bb_width = Decimal(
+            str(features["bb_width"] if "bb_width" in features else 0.1))
         rsi = Decimal(str(features["rsi_14"] if "rsi_14" in features else 50))
-        sma_dev = Decimal(str(features["price_sma_20_deviation"] if "price_sma_20_deviation" in features else 0))
-        vol_ratio = Decimal(str(features["volume_sma_ratio"] if "volume_sma_ratio" in features else 1))
-        stoch_k = Decimal(str(features["stoch_k"] if "stoch_k" in features else 50))
-        stoch_d = Decimal(str(features["stoch_d"] if "stoch_d" in features else 50))
+        sma_dev = Decimal(str(
+            features["price_sma_20_deviation"] if "price_sma_20_deviation" in features else 0))
+        vol_ratio = Decimal(
+            str(features["volume_sma_ratio"] if "volume_sma_ratio" in features else 1))
+        stoch_k = Decimal(
+            str(features["stoch_k"] if "stoch_k" in features else 50))
+        stoch_d = Decimal(
+            str(features["stoch_d"] if "stoch_d" in features else 50))
+
+        # Read params from config (falls back to defaults if not provided)
+        weights_cfg = self.config.get("weights", {})
+        rsi_cfg = self.config.get("rsi", {})
+        sma_cfg = self.config.get("sma", {})
+        stoch_cfg = self.config.get("stochastic", {})
+        vol_cfg = self.config.get("volume", {})
+        bbw_cfg = self.config.get("bb_width", {})
 
         # BB position signal: 0 = lower band (strong buy), 1 = upper band (strong sell)
         # Convert to [-1, 1] where -1 = strong buy, +1 = strong sell
         bb_signal = (bb_pos - Decimal('0.5')) * \
             Decimal('2')  # [0,1] -> [-1,1] centered on 0
 
-        # RSI signal: <30 = oversold (buy), >70 = overbought (sell)
+        # RSI signal: oversold (buy), overbought (sell)
+        rsi_oversold = Decimal(str(rsi_cfg.get("oversold", 30)))
+        rsi_overbought = Decimal(str(rsi_cfg.get("overbought", 70)))
+
         rsi_signal = Decimal('0')
-        if rsi < 30:
+        if rsi < rsi_oversold:
             rsi_signal = -Decimal('1.0')  # Strong buy
-        elif rsi > 70:
+        elif rsi > rsi_overbought:
             rsi_signal = Decimal('1.0')  # Strong sell
 
-        # SMA deviation signal: negative deviation = below mean (buy), positive = above (sell)
-        # Normalize by typical 5% deviation
-        sma_signal = sma_dev / Decimal('0.05')
+        # SMA deviation signal
+        sma_normalizer = Decimal(
+            str(sma_cfg.get("deviation_normalizer", 0.05)))
+        sma_signal = sma_dev / sma_normalizer
         sma_signal = max(Decimal('-1.0'), min(Decimal('1.0'), sma_signal))
 
         # Stochastic signal: %K crossing %D
+        stoch_oversold_zone = Decimal(str(stoch_cfg.get("oversold_zone", 20)))
+        stoch_overbought_zone = Decimal(
+            str(stoch_cfg.get("overbought_zone", 80)))
+        stoch_strength = Decimal(str(stoch_cfg.get("signal_strength", 0.3)))
+
         stoch_signal = Decimal('0')
-        if stoch_k > stoch_d and stoch_k < 20:  # %K crosses above %D in oversold
-            stoch_signal = -Decimal('0.3')
-        elif stoch_k < stoch_d and stoch_k > 80:  # %K crosses below %D in overbought
-            stoch_signal = Decimal('0.3')
+        if stoch_k > stoch_d and stoch_k < stoch_oversold_zone:
+            stoch_signal = -stoch_strength
+        elif stoch_k < stoch_d and stoch_k > stoch_overbought_zone:
+            stoch_signal = stoch_strength
 
         # Combine signals with weights
         weights = {
-            'bb': Decimal('0.4'),
-            'rsi': Decimal('0.3'),
-            'sma': Decimal('0.2'),
-            'stoch': Decimal('0.1')
+            'bb': Decimal(str(weights_cfg.get("bb", 0.4))),
+            'rsi': Decimal(str(weights_cfg.get("rsi", 0.3))),
+            'sma': Decimal(str(weights_cfg.get("sma", 0.2))),
+            'stoch': Decimal(str(weights_cfg.get("stoch", 0.1)))
         }
 
         combined_score = (
@@ -105,22 +128,33 @@ class MeanReversionAlphaModel(AlphaModel):
             stoch_signal * weights['stoch']
         )
 
-        # Volume confirmation: higher volume strengthens reversion signals
+        # Volume confirmation
+        vol_confirm = Decimal(str(vol_cfg.get("confirm_multiplier", 1.2)))
+        vol_contradict = Decimal(
+            str(vol_cfg.get("contradict_multiplier", 0.8)))
+        vol_high_thr = Decimal(str(vol_cfg.get("high_threshold", 1.5)))
+        vol_low_thr = Decimal(str(vol_cfg.get("low_threshold", 0.7)))
+
         volume_multiplier = Decimal('1.0')
-        if abs(combined_score) > 0.2 and vol_ratio > 1.5:
-            volume_multiplier = Decimal('1.2')
-        elif abs(combined_score) > 0.2 and vol_ratio < 0.7:
-            volume_multiplier = Decimal('0.8')
+        if abs(combined_score) > 0.2 and vol_ratio > vol_high_thr:
+            volume_multiplier = vol_confirm
+        elif abs(combined_score) > 0.2 and vol_ratio < vol_low_thr:
+            volume_multiplier = vol_contradict
 
         combined_score *= volume_multiplier
 
-        # BB width filter: wider bands = higher volatility = stronger signals
+        # BB width filter
+        bbw_wide = Decimal(str(bbw_cfg.get("wide_threshold", 0.05)))
+        bbw_narrow = Decimal(str(bbw_cfg.get("narrow_threshold", 0.02)))
+        bbw_max_mult = Decimal(str(bbw_cfg.get("max_multiplier", 1.5)))
+        bbw_narrow_pen = Decimal(str(bbw_cfg.get("narrow_penalty", 0.7)))
+
         volatility_multiplier = Decimal('1.0')
-        if bb_width > 0.05:  # Wider than 5%
+        if bb_width > bbw_wide:
             volatility_multiplier = min(
-                Decimal('1.5'), bb_width / Decimal('0.05'))
-        elif bb_width < 0.02:  # Too narrow bands = weak signals
-            volatility_multiplier = Decimal('0.7')
+                bbw_max_mult, bb_width / bbw_wide)
+        elif bb_width < bbw_narrow:
+            volatility_multiplier = bbw_narrow_pen
 
         combined_score *= volatility_multiplier
 
@@ -147,8 +181,14 @@ class MeanReversionAlphaModel(AlphaModel):
     def _calculate_confidence(self, bb_sig: Decimal, rsi_sig: Decimal,
                               sma_sig: Decimal, stoch_sig: Decimal) -> Decimal:
         """Calculate confidence based on signal agreement."""
+        conf_cfg = self.config.get("confidence", {})
+        signal_threshold = Decimal(str(conf_cfg.get("signal_threshold", 0.1)))
+        conf_base = Decimal(str(conf_cfg.get("base", 0.5)))
+        conf_agreement = Decimal(str(conf_cfg.get("agreement_factor", 0.4)))
+        conf_strength_base = Decimal(str(conf_cfg.get("strength_base", 0.8)))
+
         signals = [bb_sig, rsi_sig, sma_sig, stoch_sig]
-        non_zero_signals = [s for s in signals if abs(s) > 0.1]
+        non_zero_signals = [s for s in signals if abs(s) > signal_threshold]
 
         if not non_zero_signals:
             return Decimal('0.3')  # Low confidence if no strong signals
@@ -162,12 +202,13 @@ class MeanReversionAlphaModel(AlphaModel):
 
         # Base confidence from agreement
         base_confidence = Decimal(
-            '0.5') + (Decimal(str(agreement_ratio)) * Decimal('0.4'))
+            str(conf_base)) + (Decimal(str(agreement_ratio)) * Decimal(str(conf_agreement)))
 
         # Strength factor
         avg_strength = sum(abs(s)
                            for s in non_zero_signals) / len(non_zero_signals)
-        strength_factor = min(Decimal('1.2'), Decimal('0.8') + avg_strength)
+        strength_factor = min(Decimal('1.2'), Decimal(
+            str(conf_strength_base)) + avg_strength)
 
         return min(Decimal('1.0'), base_confidence * strength_factor)
 

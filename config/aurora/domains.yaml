@@ -506,3 +506,12 @@ execution_position:
     grace_period_ms: 15000
     # Max bracket placements per cycle (API rate limiting)
     max_placements_per_cycle: 2
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # QUIET HOURS: Block new OPEN entries during configured UTC time windows.
+  # Use for low-liquidity periods or maintenance windows.
+  # Windows wrap around midnight (e.g., "22:00-06:00" covers overnight).
+  quiet_hours:
+    enabled: false
+    windows: []
+    # Example: windows: ["22:00-06:00", "12:00-13:00"]

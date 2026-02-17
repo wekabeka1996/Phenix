@@ -87,11 +87,20 @@ class EnsembleModel(AlphaModel):
 
         # Set name after initialization
         self.name = self.get_model_name()
-        
+
+        # System config for tuning params (set by backtest_plugin or defaults)
+        self._system_config = None
+
         # ALPHA-SEARCH: Track pending signals for PnL attribution
         # Maps signal_id -> (model_name, score, symbol, timestamp)
         self._pending_signals: Dict[str, Tuple[str, float, str, float]] = {}
         self._signal_counter: int = 0
+
+    def _sys(self, key: str, default):
+        """Get system config value or default."""
+        if self._system_config is not None:
+            return getattr(self._system_config, key, default)
+        return default
 
     def get_model_name(self) -> str:
         """Return unique model name for identification."""
@@ -141,7 +150,8 @@ class EnsembleModel(AlphaModel):
         market_data: pd.DataFrame,
         portfolio_state: Optional[Dict[str, Any]] = None,
         symbol: str = "",
-        features: Optional[Dict[str, Any]] = None  # A1-FIX: Accept features from caller
+        # A1-FIX: Accept features from caller
+        features: Optional[Dict[str, Any]] = None
     ) -> AlphaScore:
         """
         Generate ensemble signal by combining model predictions.
@@ -165,6 +175,8 @@ class EnsembleModel(AlphaModel):
         # Get scores from all models
         model_scores = {}
         valid_scores = []
+        confidence_threshold = Decimal(
+            str(self._sys("confidence_threshold", 0.1)))
 
         for model_name, model in self.models.items():
             try:
@@ -184,7 +196,7 @@ class EnsembleModel(AlphaModel):
                 )
                 model_scores[model_name] = score
                 # Only consider confident scores
-                if score.confidence > Decimal("0.1"):
+                if score.confidence > confidence_threshold:
                     valid_scores.append((model_name, score))
             except Exception as e:
                 self.logger.warning(
@@ -208,15 +220,16 @@ class EnsembleModel(AlphaModel):
 
         # Check if rebalancing is needed
         self._check_rebalance()
-        
+
         # ALPHA-SEARCH: Track signal for PnL attribution
         self._signal_counter += 1
         signal_id = f"sig_{self._signal_counter}"
         combined_score.why.append(f"signal_id={signal_id}")
         self._pending_signals[signal_id] = (
-            "ensemble", float(combined_score.score), symbol, get_clock().now_sec()
+            "ensemble", float(
+                combined_score.score), symbol, get_clock().now_sec()
         )
-        
+
         self.logger.debug(
             f"[{symbol}] Ensemble signal: score={combined_score.score:.4f} "
             f"conf={combined_score.confidence:.4f} models={len(valid_scores)} id={signal_id}"
@@ -265,7 +278,7 @@ class EnsembleModel(AlphaModel):
             score=final_score,
             confidence=final_confidence,
             features_used=list(all_features),
-            why=all_why[:10]  # Limit why chain length
+            why=all_why[:10]  # Limit why chain length (ensemble uses 10)
         )
 
     def _update_performance_tracking(
@@ -274,22 +287,16 @@ class EnsembleModel(AlphaModel):
         combined_score: AlphaScore
     ) -> None:
         """Update performance tracking for weight optimization."""
-        # This is a simplified version - in practice, you'd need actual P&L data
-        # For now, we'll use score confidence as a proxy for performance
+        max_history = self._sys("max_history", 100)
 
         for model_name, score in valid_scores:
-            # Track model performance (using confidence as proxy)
             self.model_performance[model_name].append(float(score.confidence))
-
-            # Keep only recent performance data
-            max_history = 100
             if len(self.model_performance[model_name]) > max_history:
                 self.model_performance[model_name] = self.model_performance[model_name][-max_history:]
 
-        # Track ensemble performance
         self.ensemble_performance.append(float(combined_score.confidence))
-        if len(self.ensemble_performance) > 100:
-            self.ensemble_performance = self.ensemble_performance[-100:]
+        if len(self.ensemble_performance) > max_history:
+            self.ensemble_performance = self.ensemble_performance[-max_history:]
 
     def _check_rebalance(self) -> None:
         """Check if weights need rebalancing based on performance."""
@@ -303,6 +310,9 @@ class EnsembleModel(AlphaModel):
         if not self.model_performance:
             return
 
+        variance_cap = self._sys("variance_cap", 0.5)
+        min_score = self._sys("min_performance_score", 0.1)
+
         # Calculate performance scores for each model
         performance_scores = {}
         for model_name, performances in self.model_performance.items():
@@ -314,11 +324,11 @@ class EnsembleModel(AlphaModel):
                     # Penalize models with high variance (risk)
                     if len(performances) > 1:
                         variance = float(np.var(performances))
-                        score = score * (1 - min(variance, 0.5))  # Cap penalty
+                        score = score * (1 - min(variance, variance_cap))
                 performance_scores[model_name] = max(
-                    float(score), 0.1)  # Minimum score
+                    float(score), min_score)
             else:
-                performance_scores[model_name] = 0.1  # Default for new models
+                performance_scores[model_name] = min_score
 
         # Normalize to get weights
         total_score = sum(performance_scores.values())
@@ -357,31 +367,34 @@ class EnsembleModel(AlphaModel):
     ) -> None:
         """
         Callback for trade PnL feedback - enables online learning.
-        
+
         ALPHA-SEARCH: Called by BacktestPlugin after trade closes.
         Updates model performance based on actual PnL, not just confidence.
-        
+
         Args:
             signal_id: ID from signal's why field (e.g. "signal_id=sig_123")
             pnl: Profit/loss in USD
             model_name: Optional specific model to attribute (else uses ensemble)
         """
         # Normalize PnL to -1..1 range for performance tracking
-        # Assume typical trade PnL is -100 to +100 USD
-        normalized_pnl = max(-1.0, min(1.0, pnl / 100.0))
-        
+        pnl_normalizer = self._sys("pnl_normalizer", 100.0)
+        normalized_pnl = max(-1.0, min(1.0, pnl / pnl_normalizer))
+
         if signal_id in self._pending_signals:
-            source_model, score, symbol, ts = self._pending_signals.pop(signal_id)
+            source_model, score, symbol, ts = self._pending_signals.pop(
+                signal_id)
             # Attribute to all models that contributed (if ensemble) or specific model
             if model_name and model_name in self.model_performance:
                 self.model_performance[model_name].append(normalized_pnl)
-                self.logger.debug(f"Trade result: {model_name} pnl={pnl:.2f} -> perf={normalized_pnl:.4f}")
+                self.logger.debug(
+                    f"Trade result: {model_name} pnl={pnl:.2f} -> perf={normalized_pnl:.4f}")
             else:
                 # Distribute to all models by weight
                 for m_name, m_weight in self.weights.model_weights.items():
                     weighted_pnl = normalized_pnl * m_weight
                     self.model_performance[m_name].append(weighted_pnl)
-                self.logger.debug(f"Trade result (ensemble): pnl={pnl:.2f} distributed to {len(self.weights.model_weights)} models")
+                self.logger.debug(
+                    f"Trade result (ensemble): pnl={pnl:.2f} distributed to {len(self.weights.model_weights)} models")
         else:
             self.logger.warning(f"Unknown signal_id: {signal_id}")
 

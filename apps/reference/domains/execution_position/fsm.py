@@ -235,7 +235,17 @@ class ExecPosFSM:
         self._gate_metrics: Dict[str, int] = {
             "gate_entry_blocked_tidy": 0,
             "gate_entry_allowed_tidy": 0,
+            "gate_entry_blocked_quiet_hours": 0,
+            "gate_entry_allowed_quiet_hours": 0,
         }
+
+        # QUIET-HOURS: Load quiet hours gate config
+        _qh_cfg = self._get_config_value(
+            ["domains", "execution_position", "quiet_hours"])
+        self._quiet_hours_enabled: bool = bool(
+            getattr(_qh_cfg, "enabled", False)) if _qh_cfg else False
+        self._quiet_hours_windows: list = list(
+            getattr(_qh_cfg, "windows", [])) if _qh_cfg else []
 
         # TP/SL Intent Data Cache (PHASE A2 fix)
         # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
@@ -1305,6 +1315,24 @@ class ExecPosFSM:
                 result = self.handle(cmd_close)
 
             else:
+                # QUIET-HOURS GATE: Block new entries during quiet hours
+                if not self._quiet_hours_gate_allow():
+                    LOG.warning(
+                        f"[{symbol}] TRADE_INTENT BLOCKED by quiet hours gate"
+                    )
+                    if hasattr(self, "bus"):
+                        self.bus.emit(
+                            "EVT:TRADE_INTENT_REJECTED",
+                            {
+                                "symbol": symbol,
+                                "reason": "QUIET_HOURS_BLOCKED",
+                                "rid": intent_rid,
+                            },
+                            "quiet_hours_gate",
+                            msg.data_ref,
+                        )
+                    return
+
                 # Route to OPEN flow - STRICT FAIL-CLOSED VALIDATION (EXEC-FAILCLOSED-ORDERFIELDS-01)
 
                 # CFG-SMART-EXTRACT-02: Extract and log TCA & Risk Context for forensics
@@ -3680,10 +3708,16 @@ class ExecPosFSM:
             all_metrics["gate"] = {
                 "entry_blocked_tidy": gate_blocked,
                 "entry_allowed_tidy": gate_allowed,
+                "quiet_hours_enabled": self._quiet_hours_enabled,
+                "quiet_hours_windows": self._quiet_hours_windows,
             }
             # Flat fields for quick access in /metrics JSON
             all_metrics["gate_entry_blocked_tidy"] = gate_blocked
             all_metrics["gate_entry_allowed_tidy"] = gate_allowed
+            all_metrics["gate_entry_blocked_quiet_hours"] = int(
+                self._gate_metrics.get("gate_entry_blocked_quiet_hours", 0))
+            all_metrics["gate_entry_allowed_quiet_hours"] = int(
+                self._gate_metrics.get("gate_entry_allowed_quiet_hours", 0))
             # Per-symbol stamps
             all_metrics["symbol_last_tidy_ts"] = dict(
                 self._symbol_last_tidy_ts)
@@ -3694,9 +3728,13 @@ class ExecPosFSM:
             all_metrics["gate"] = {
                 "entry_blocked_tidy": 0,
                 "entry_allowed_tidy": 0,
+                "quiet_hours_enabled": getattr(self, "_quiet_hours_enabled", False),
+                "quiet_hours_windows": getattr(self, "_quiet_hours_windows", []),
             }
             all_metrics["gate_entry_blocked_tidy"] = 0
             all_metrics["gate_entry_allowed_tidy"] = 0
+            all_metrics["gate_entry_blocked_quiet_hours"] = 0
+            all_metrics["gate_entry_allowed_quiet_hours"] = 0
             all_metrics["symbol_last_tidy_ts"] = {}
             all_metrics["last_entry_block_ts"] = {}
 
@@ -3722,6 +3760,25 @@ class ExecPosFSM:
                 LOG.info(f"[GATE] tidy_event: symbol={symbol}")
         except Exception:
             pass
+
+    def _quiet_hours_gate_allow(self) -> bool:
+        """Return True if new ENTRY is allowed (not in quiet hours)."""
+        if not self._quiet_hours_enabled:
+            return True
+
+        if not self._quiet_hours_windows:
+            return True
+
+        if _in_quiet(self._quiet_hours_windows):
+            self._gate_metrics["gate_entry_blocked_quiet_hours"] += 1
+            LOG.info(
+                f"[GATE] entry_blocked: quiet_hours "
+                f"(windows={self._quiet_hours_windows})"
+            )
+            return False
+
+        self._gate_metrics["gate_entry_allowed_quiet_hours"] += 1
+        return True
 
     def _entry_tidy_gate_allow(self, symbol: str) -> bool:
         """Return True if new ENTRY is allowed under SYMBOL_TIDY gate."""
@@ -4214,117 +4271,6 @@ class ExecPosFSM:
                     f"Failed to write ERR:OPEN(EXPOSURE_CHECK_ERROR) to WAL: {wal_e}")
 
             return error_msg
-
-    async def _emit_error_async(self, msg: Message) -> None:
-        """Asynchronously emit an error message."""
-        try:
-            await emit_compat(self.fsm, msg, logger=aget(self, "logger", None))
-        except Exception as e:
-            # Не даємо Task впасти "unretrieved" — лог і поглинання
-            LOG.exception(
-                "Failed to emit error message via emit_compat: %r", e)
-
-    def _handle_fill_event(self, msg: Message) -> None:
-        """
-        EXP-FIX: Handle order fill events for post-fill hold mechanism.
-
-        Moves reservation from pending to post-fill hold to prevent race conditions.
-        """
-        pld = msg.pld or {}
-        reserve_key = pld.get("idempotent_key") or pld.get(
-            "client_order_id") or msg.rid
-
-        if not reserve_key:
-            LOG.warning("FILL_EVENT_SKIP: No reserve_key found in fill event")
-            return
-
-        # Calculate filled notional (approximate)
-        qty = pld["qty"] if "qty" in pld else 0
-        price = pld["price"] if "price" in pld else 0
-        try:
-            notional_usd = Decimal(str(qty)) * Decimal(str(price))
-            fill_symbol = pld.get("symbol")
-            if not fill_symbol:
-                fill_symbol = (
-                    self.exposure_guard.state.pending_exposure.get(
-                        reserve_key, {}).get("symbol")
-                    if hasattr(self.exposure_guard, "state") and hasattr(self.exposure_guard.state, "pending_exposure")
-                    else None
-                )
-            fill_symbol = str(fill_symbol or "UNKNOWN")
-
-            fill_side_raw = pld.get("side")
-            fill_side = str(fill_side_raw).upper(
-            ) if fill_side_raw is not None else "UNKNOWN"
-            if fill_side == "UNKNOWN":
-                fill_side = (
-                    str(self.exposure_guard.state.pending_exposure.get(
-                        reserve_key, {}).get("side") or "UNKNOWN").upper()
-                    if hasattr(self.exposure_guard, "state") and hasattr(self.exposure_guard.state, "pending_exposure")
-                    else "UNKNOWN"
-                )
-
-            self.exposure_guard.on_fill(
-                reserve_key, notional_usd, symbol=fill_symbol, side=fill_side)
-
-            # EXP-FIX: Record post-fill hold metric
-            if hasattr(self, "metrics_collector") and self.metrics_collector:
-                self.metrics_collector.record_postfill_hold(
-                    len(self.exposure_guard.state.postfill_reservations)
-                )
-
-            # Log to OrderLoggerV1
-            order_logger.write({
-                "rid": pld["rid"] if "rid" in pld else f"fill_{reserve_key}",
-                "event_type": "ORDER_STATE_CHANGED",
-                "symbol": fill_symbol,
-                "side": fill_side,
-                "quantity": float(qty),
-                "price": float(price),
-                "client_order_id": pld["client_order_id"] if "client_order_id" in pld else "",
-                "order_id": pld["order_id"] if "order_id" in pld else "",
-                "source_fsm": "ExecPosFSM",
-                "reservation_id": reserve_key,
-                "metadata": {"fill_status": "FILLED", "notional_usd": float(notional_usd)}
-            })
-
-            LOG.debug(
-                f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
-        except Exception as e:
-            LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
-
-        # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
-        try:
-            exposure_summary = self.exposure_guard.get_exposure_summary()
-            exposure_msg = Message(
-                op="EVT",
-                verb="EXPOSURE_SUMMARY_UPDATED",
-                src="execution_position",
-                dst="decision_making",
-                rid=pld.get("rid") or msg.rid or f"fill_{reserve_key}",
-                pld={
-                    "exposure_summary": exposure_summary,
-                    "fill_order_id": pld.get("order_id"),
-                    "fill_symbol": pld.get("symbol"),
-                    "fill_quantity": qty,
-                    "timestamp_ms": get_clock().now_ms()
-                },
-                why="exposure_summary_updated_after_fill",
-            )
-            loop = self._get_async_loop()
-            if loop:
-                self._submit_async(
-                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
-                )
-        except Exception as e:
-            LOG.debug(
-                f"Failed to emit exposure summary update after fill: {e}")
-
-        # Notify watchdog of order fill
-        order_id = pld.get("order_id")
-        if order_id:
-            self.watchdog.ensure_started()  # Safe late-start if needed
-            self.watchdog.on_order_fill(order_id)
 
     def _handle_cancel_event(self, msg: Message) -> None:
         """

@@ -367,10 +367,12 @@ class FeatureEngineering:
 
         # FIX 2 (P0): Causality guard.
         # Never mix anchor updates from the future (relative to this tick) into macro features.
-        check_ts_ms = int(causality_ts_ms) if causality_ts_ms is not None else int(current_ts_ms)
+        check_ts_ms = int(
+            causality_ts_ms) if causality_ts_ms is not None else int(current_ts_ms)
+        allowed_future_ms = max(0, int(self.cfg.macro_sync_max_late_ms))
         for anchor in self.cfg.macro_sync_anchors:
             anchor_ts = int((self._anchor_last_ts_ms.get(anchor, 0) or 0))
-            if anchor_ts > 0 and anchor_ts > int(check_ts_ms):
+            if anchor_ts > 0 and (anchor_ts - int(check_ts_ms)) > allowed_future_ms:
                 state.macro_sync_ready = False
                 state.macro_sync_not_ready_reason = f"anchor_from_future:{anchor}"
                 inc_data_quality_drop(
@@ -608,9 +610,15 @@ class FeatureEngineering:
         # ALPHA-SEARCH SUPPORT: Pass through augmented keys to bar_tick
         aug_keys = [
             "macd_line", "macd_signal", "macd_histogram",
-            "stochastic_k", "stochastic_d",
+            "stoch_k", "stoch_d",
             "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
-            "volume_momentum_5m", "rsi_14"
+            "volume_momentum_5m", "rsi_14",
+            # Bollinger / volatility / SMA features
+            "bb_position", "bb_width", "bb_width_change",
+            "atr_14", "atr_ratio",
+            "realized_volatility_1h", "realized_volatility_1d",
+            "volume_volatility_ratio", "price_range_ratio",
+            "price_sma_20_deviation", "volume_sma_ratio",
         ]
         for k in aug_keys:
             if k in last_tick and last_tick[k] is not None:
@@ -846,7 +854,9 @@ class FeatureEngineering:
                     # Never use anchor data from the future relative to this tick.
                     btc_anchor_ts = int(
                         (self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
-                    if btc_anchor_ts > 0 and btc_anchor_ts > int(causality_ts_ms):
+                    allowed_future_ms = max(
+                        0, int(self.cfg.macro_sync_max_late_ms))
+                    if btc_anchor_ts > 0 and (btc_anchor_ts - int(causality_ts_ms)) > allowed_future_ms:
                         hot.macro_resid_ready = False
                         hot.macro_resid_not_ready_reason = "anchor_from_future:BTCUSDT"
                         inc_data_quality_drop(
@@ -904,9 +914,15 @@ class FeatureEngineering:
             # We explicitly pass them through here to ensure AlphaSearch receives them.
             aug_keys = [
                 "macd_line", "macd_signal", "macd_histogram",
-                "stochastic_k", "stochastic_d",
+                "stoch_k", "stoch_d",
                 "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
                 "volume_momentum_5m", "rsi_14",
+                # Bollinger / volatility / SMA features
+                "bb_position", "bb_width", "bb_width_change",
+                "atr_14", "atr_ratio",
+                "realized_volatility_1h", "realized_volatility_1d",
+                "volume_volatility_ratio", "price_range_ratio",
+                "price_sma_20_deviation", "volume_sma_ratio",
             ]
             for k in aug_keys:
                 if k in current_tick and current_tick[k] is not None:

@@ -54,17 +54,29 @@ class MomentumAlphaModel(AlphaModel):
         """
 
         # Extract momentum features
-        mom_5m = Decimal(str(features["price_momentum_5m"] if "price_momentum_5m" in features else 0))
-        mom_1h = Decimal(str(features["price_momentum_1h"] if "price_momentum_1h" in features else 0))
-        mom_1d = Decimal(str(features["price_momentum_1d"] if "price_momentum_1d" in features else 0))
-        vol_mom_5m = Decimal(str(features["volume_momentum_5m"] if "volume_momentum_5m" in features else 0))
+        mom_5m = Decimal(
+            str(features["price_momentum_5m"] if "price_momentum_5m" in features else 0))
+        mom_1h = Decimal(
+            str(features["price_momentum_1h"] if "price_momentum_1h" in features else 0))
+        mom_1d = Decimal(
+            str(features["price_momentum_1d"] if "price_momentum_1d" in features else 0))
+        vol_mom_5m = Decimal(
+            str(features["volume_momentum_5m"] if "volume_momentum_5m" in features else 0))
         rsi = Decimal(str(features["rsi_14"] if "rsi_14" in features else 50))
-        macd_signal = Decimal(str(features["macd_signal"] if "macd_signal" in features else 0))
+        macd_signal = Decimal(
+            str(features["macd_signal"] if "macd_signal" in features else 0))
+
+        # Read params from config (falls back to defaults if not provided)
+        weights_cfg = self.config.get("weights", {})
+        volume_cfg = self.config.get("volume", {})
+        rsi_cfg = self.config.get("rsi", {})
+        macd_cfg = self.config.get("macd", {})
+        conf_cfg = self.config.get("confidence", {})
 
         # Calculate weighted momentum score
-        short_weight = Decimal('0.3')
-        medium_weight = Decimal('0.4')
-        long_weight = Decimal('0.3')
+        short_weight = Decimal(str(weights_cfg.get("short", 0.3)))
+        medium_weight = Decimal(str(weights_cfg.get("medium", 0.4)))
+        long_weight = Decimal(str(weights_cfg.get("long", 0.3)))
 
         momentum_score = (
             mom_5m * short_weight +
@@ -73,32 +85,43 @@ class MomentumAlphaModel(AlphaModel):
         )
 
         # Volume confirmation (amplifies signal if volume supports direction)
+        vol_confirm = Decimal(str(volume_cfg.get("confirm_multiplier", 1.2)))
+        vol_contradict = Decimal(
+            str(volume_cfg.get("contradict_multiplier", 0.8)))
+
         volume_multiplier = Decimal('1.0')
         if momentum_score > 0 and vol_mom_5m > 0:
-            volume_multiplier = Decimal('1.2')  # Volume supports upward move
+            volume_multiplier = vol_confirm
         elif momentum_score < 0 and vol_mom_5m < 0:
-            volume_multiplier = Decimal('1.2')  # Volume supports downward move
+            volume_multiplier = vol_confirm
         elif momentum_score != 0 and vol_mom_5m * momentum_score < 0:
-            volume_multiplier = Decimal('0.8')  # Volume contradicts price
+            volume_multiplier = vol_contradict
 
         momentum_score *= volume_multiplier
 
         # RSI-based confidence adjustment
+        rsi_overbought = Decimal(str(rsi_cfg.get("overbought", 70)))
+        rsi_oversold = Decimal(str(rsi_cfg.get("oversold", 30)))
+        rsi_penalty = Decimal(str(rsi_cfg.get("confidence_penalty", 0.7)))
+
         rsi_confidence = Decimal('1.0')
-        if rsi > 70:  # Overbought
-            rsi_confidence = Decimal('0.7')
-        elif rsi < 30:  # Oversold
-            rsi_confidence = Decimal('0.7')
+        if rsi > rsi_overbought:
+            rsi_confidence = rsi_penalty
+        elif rsi < rsi_oversold:
+            rsi_confidence = rsi_penalty
 
         # MACD confirmation
+        macd_boost = Decimal(str(macd_cfg.get("confirm_boost", 1.1)))
+        macd_penalty = Decimal(str(macd_cfg.get("contradict_penalty", 0.9)))
+
         macd_confidence = Decimal('1.0')
         if (momentum_score > 0 and macd_signal > 0) or (momentum_score < 0 and macd_signal < 0):
-            macd_confidence = Decimal('1.1')
+            macd_confidence = macd_boost
         elif macd_signal * momentum_score < 0:
-            macd_confidence = Decimal('0.9')
+            macd_confidence = macd_penalty
 
         # Overall confidence based on signal consistency and filters
-        base_confidence = Decimal('0.8')  # Base confidence
+        base_confidence = Decimal(str(conf_cfg.get("base", 0.8)))
         consistency_factor = self._calculate_consistency(
             mom_5m, mom_1h, mom_1d)
 
@@ -141,8 +164,13 @@ class MomentumAlphaModel(AlphaModel):
     def _calculate_consistency(self, mom_5m: Decimal, mom_1h: Decimal, mom_1d: Decimal) -> Decimal:
         """
         Calculate consistency factor based on alignment of momentum signals.
-        Returns multiplier [0.7, 1.3] based on how well signals agree.
+        Returns multiplier based on how well signals agree.
         """
+        conf_cfg = self.config.get("confidence", {})
+        consistency_min = Decimal(str(conf_cfg.get("consistency_min", 0.7)))
+        consistency_range = Decimal(
+            str(conf_cfg.get("consistency_range", 0.6)))
+
         # Count agreements
         agreements = 0
         total_pairs = 3  # 5m-1h, 5m-1d, 1h-1d
@@ -162,5 +190,5 @@ class MomentumAlphaModel(AlphaModel):
         consistency_ratio = Decimal(
             str(agreements)) / Decimal(str(total_pairs))
 
-        # Map to multiplier: 0% agreement = 0.7x, 100% agreement = 1.3x
-        return Decimal('0.7') + (consistency_ratio * Decimal('0.6'))
+        # Map to multiplier: 0% agreement = min, 100% agreement = min + range
+        return consistency_min + (consistency_ratio * consistency_range)

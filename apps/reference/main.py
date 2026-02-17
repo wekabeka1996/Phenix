@@ -620,15 +620,26 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
 
     # 3d. Initialize AlphaSearch Backtest Plugin (Shadow Advisor)
     # ALPHA-SEARCH: Wire plugin to enable virtual trading and ensemble learning
+    alpha_plugin = None
     try:
         from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
         alpha_plugin = AlphaSearchBacktestPlugin(
             event_bus=fsm,
-            config={"enabled": True, "shadow_mode": True}
+            config_path=str(project_root / "config" / "alpha_search.yaml"),
         )
-        LOG.info("✅ AlphaSearch Backtest Plugin (Shadow) registered.")
+        engine.alpha_search_plugin = alpha_plugin
+        LOG.info("AlphaSearch Backtest Plugin registered (shadow mode)")
+    except ImportError as e:
+        LOG.warning(f"AlphaSearch not available: {e}")
     except Exception as e:
-        LOG.error(f"Failed to register AlphaSearch Plugin: {e}")
+        LOG.error(f"AlphaSearch init failed: {e}")
+
+    # 3e. Alpha Score WAL Listener (captures all EVT:ALPHA_SCORE_CALCULATED to WAL)
+    try:
+        from apps.reference.domains.alpha_search.wal_listener import AlphaScoreWalListener
+        _alpha_wal = AlphaScoreWalListener(event_bus=fsm)
+    except Exception as e:
+        LOG.debug(f"Alpha WAL listener not initialized: {e}")
 
     # 4. Run Simulation
     try:
@@ -746,6 +757,14 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
             json.dump(report_data, f, indent=2, ensure_ascii=False)
 
         LOG.info(f"✅ Report saved to: {report_path}")
+
+        # ALPHA-SEARCH: Shutdown plugin to trigger auto-reporting
+        try:
+            if 'alpha_plugin' in locals() and alpha_plugin:
+                alpha_plugin.shutdown(run_dir=str(bundle_dir))
+                LOG.info("AlphaSearch plugin shutdown complete")
+        except Exception as e:
+            LOG.warning(f"AlphaSearch shutdown failed: {e}")
 
     except Exception as e:
         LOG.error(f"❌ Backtest failed: {e}", exc_info=True)
@@ -1374,6 +1393,28 @@ def main() -> None:
     csv_recorder = CsvRecorder(fsm=fsm, config=config)
     csv_recorder.start()
     LOG.info("✅ CsvRecorder initialized and started")
+
+    # ALPHA-SEARCH: Wire shadow observer for testnet/hybrid/live modes
+    # Mirrors backtest wiring (lines 621-642) but without engine attachment.
+    # In shadow_mode the plugin scores alongside real strategies without affecting execution.
+    try:
+        from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
+        alpha_plugin = AlphaSearchBacktestPlugin(
+            event_bus=fsm,
+            config_path=str(project_root / "config" / "alpha_search.yaml"),
+        )
+        LOG.info("AlphaSearch shadow observer registered for live/testnet mode")
+    except ImportError as e:
+        LOG.debug(f"AlphaSearch not available: {e}")
+    except Exception as e:
+        LOG.warning(f"AlphaSearch init failed: {e}")
+
+    # Alpha Score WAL Listener (testnet/hybrid/live)
+    try:
+        from apps.reference.domains.alpha_search.wal_listener import AlphaScoreWalListener
+        _alpha_wal = AlphaScoreWalListener(event_bus=fsm)
+    except Exception as e:
+        LOG.debug(f"Alpha WAL listener not initialized: {e}")
 
     # P2 CLEANUP: register_domain calls are now done in initialize_domains()
     # These commented lines preserved for historical reference only:
