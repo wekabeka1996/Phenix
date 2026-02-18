@@ -29,10 +29,10 @@ aurora:
   # Global Aurora policy (DecisionConfig)
   decision:
     testnet:
-      signal_threshold: 0.12
+      signal_threshold: 0.162
     production:
-      signal_threshold: 0.12
-    signal_threshold: 0.12
+      signal_threshold: 0.162
+    signal_threshold: 0.162
     neutral_threshold: 0.05
     symbols_to_track:
       - BTCUSDT
@@ -145,15 +145,15 @@ aurora:
     # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
     gates:
       enabled: true
-      anti_flat_sigma: 0.35  # Block ENTRY if |pm_norm| < 0.35 (dead market)
-      anti_fomo_sigma: 7.0   # Block ENTRY if |pm_norm| > 7.0 (extreme impulse)
+      anti_flat_sigma: 0.48  # Підвищено 0.35→0.48 (2026-02-18)
+      anti_fomo_sigma: 10.5  # Підвищено 7.0→10.5: менше ANTI_FOMO блоків
       # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
       motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.
     # After exiting a position, wait this many seconds before allowing new entry.
-    reentry_cooldown_sec: 300  # Global default: 60 seconds
+    reentry_cooldown_sec: 840  # Підвищено 300→840: Anti-Churn (2026-02-18)
 
     feature_neutrals:
       obi: 0.0
@@ -194,8 +194,8 @@ aurora:
 
       # Holding period: ETH trend-following, longer holding
       holding_period:
-        min_duration_sec: 45
-        emergency_exit_threshold: 0.65
+        min_duration_sec: 360
+        emergency_exit_threshold: 0.68
 
       # Re-entry cooldown: conservative for trend-following
       reentry_cooldown_sec: 120
@@ -290,13 +290,13 @@ aurora:
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
-          HIGH_VOLATILITY: 0.5    # ETH less volatile than SOL
-          LOW_VOLATILITY: 0.1
+          HIGH_VOLATILITY: 0.32
+          LOW_VOLATILITY: 0.17
           MEAN_REVERSION: 0.25
-          TREND_UP: 0.2
-          TREND_DOWN: 0.2
-          UNCERTAIN: 0.2
-          DEFAULT: 0.2
+          TREND_UP: 0.22
+          TREND_DOWN: 0.22
+          UNCERTAIN: 0.25
+          DEFAULT: 0.22
 
       timeframe_sec: null
 
@@ -304,7 +304,7 @@ aurora:
     SOLUSDT:
       # Holding period: SOL волатильна → довша утримання
       holding_period:
-        min_duration_sec: 35
+        min_duration_sec: 300
         emergency_exit_threshold: 0.65
 
       # P1: Active Leverage Management
@@ -413,13 +413,13 @@ aurora:
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
-          HIGH_VOLATILITY: 0.6    # Deep offset (wider range)
-          LOW_VOLATILITY: 0.1     # Tight offset
-          MEAN_REVERSION: 0.3
-          TREND_UP: 0.2
-          TREND_DOWN: 0.2
-          UNCERTAIN: 0.25
-          DEFAULT: 0.2            # REQUIRED fallback
+          HIGH_VOLATILITY: 0.37
+          LOW_VOLATILITY: 0.16
+          MEAN_REVERSION: 0.28
+          TREND_UP: 0.24
+          TREND_DOWN: 0.24
+          UNCERTAIN: 0.27
+          DEFAULT: 0.24           # REQUIRED fallback
 
       timeframe_sec: null
 

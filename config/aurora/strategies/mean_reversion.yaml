@@ -49,7 +49,7 @@ mean_reversion:
     rsi_window: 14
     
     # Entry thresholds
-    entry_threshold: 0.05      # %B threshold (5% inside band)
+    entry_threshold: 0.115     # Підвищено 0.05→0.115 (2026-02-18)
     rsi_oversold: 30
     rsi_overbought: 70
     
@@ -101,7 +101,7 @@ mean_reversion:
         # Exit parameters
         sl_atr_mult: 1.5     # Base, overridden below
         tp_to_mid: false     # False for outer band target
-        cooldown_sec: 210
+        cooldown_sec: 660
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
@@ -112,17 +112,17 @@ mean_reversion:
       
       # P1: Active Leverage Management
       leverage:
-        target: 15
+        target: 12
         mode: "ISOLATED"
       
       strategy:
         bb_window: 40
-        bb_num_std: 1.5
+        bb_num_std: 1.6
         min_bb_width: 0.004
-        entry_threshold: 0.20
+        entry_threshold: 0.24
         tp_to_mid: true      # Default behavior
         sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
-        cooldown_sec: 0      # No cooldown
+        cooldown_sec: 360
       # Regime Gating - BTC conservative (+$103) - include MEAN_REVERSION for backtest
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
     
