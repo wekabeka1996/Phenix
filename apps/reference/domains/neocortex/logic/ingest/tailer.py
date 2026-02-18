@@ -1,4 +1,4 @@
-"""
+﻿"""
 WAL Tailer
 
 Unified reader for Write-Ahead Log files that handles both:
@@ -30,7 +30,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     aiofiles = None
 
-from config_models import ReplayConfig
+from apps.reference.domains.neocortex.config_models import ReplayConfig
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,17 @@ async def _aio_open(path: Path, mode: str):
     """
     Async file open. Prefers aiofiles; falls back to asyncio.to_thread(open).
     """
+    open_kwargs: Dict[str, Any] = {}
+    if "b" not in mode:
+        # Force robust text decoding for heterogeneous log encodings on Windows.
+        open_kwargs = {"encoding": "utf-8", "errors": "replace"}
+
     if aiofiles is not None:
-        async with aiofiles.open(path, mode) as f:  # type: ignore[attr-defined]
+        async with aiofiles.open(path, mode, **open_kwargs) as f:  # type: ignore[attr-defined]
             yield f
         return
 
-    f = await asyncio.to_thread(open, path, mode)
+    f = await asyncio.to_thread(open, path, mode, **open_kwargs)
 
     class _AsyncFile:
         def __init__(self, file_obj):
@@ -389,3 +394,4 @@ class WalTailer:
     def is_tailing(self) -> bool:
         """True when caught up with history and tailing live."""
         return self._tailing
+

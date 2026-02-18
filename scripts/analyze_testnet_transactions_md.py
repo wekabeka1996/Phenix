@@ -213,10 +213,69 @@ def _hour_bucket(ts: Optional[dt.datetime]) -> Optional[int]:
 
 
 def _md_table(headers: List[str], rows: List[List[str]]) -> str:
-    head = "| " + " | ".join(headers) + " |\n"
-    sep = "| " + " | ".join(["---"] * len(headers)) + " |\n"
-    body = "".join("| " + " | ".join(r) + " |\n" for r in rows)
-    return head + sep + body
+    """Render a fixed-width (monospace) table for stable column alignment.
+
+    Markdown pipe tables often look misaligned depending on viewer/fonts.
+    We intentionally render ASCII tables inside a fenced code block.
+    """
+
+    if not headers:
+        return "(empty table)\n"
+
+    col_count = len(headers)
+
+    normalized_rows: List[List[str]] = []
+    for r in rows:
+        r = list(r)
+        if len(r) < col_count:
+            r = r + [""] * (col_count - len(r))
+        if len(r) > col_count:
+            r = r[:col_count]
+        normalized_rows.append([str(c) for c in r])
+
+    # Widths: max of header/cells, with small minimums to avoid jitter.
+    widths: List[int] = []
+    for i, h in enumerate(headers):
+        max_len = len(str(h))
+        for r in normalized_rows:
+            max_len = max(max_len, len(r[i]))
+        min_w = 10 if i == 0 else 8
+        widths.append(max(min_w, max_len))
+
+    # Align: first column left, the rest right.
+    right_align = [False] + [True] * (col_count - 1)
+
+    def pad(s: str, w: int, align_right: bool) -> str:
+        s = (s or "")
+        if len(s) > w:
+            s = s[:w]
+        return s.rjust(w) if align_right else s.ljust(w)
+
+    hline = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+
+    out: List[str] = []
+    out.append("```")
+    out.append(hline)
+    out.append(
+        "| "
+        + " | ".join(
+            pad(str(h), widths[i], right_align[i]) for i, h in enumerate(headers)
+        )
+        + " |"
+    )
+    out.append(hline)
+    for r in normalized_rows:
+        out.append(
+            "| "
+            + " | ".join(
+                pad(r[i], widths[i], right_align[i]) for i in range(col_count)
+            )
+            + " |"
+        )
+    out.append(hline)
+    out.append("```")
+    out.append("")
+    return "\n".join(out)
 
 
 def main() -> int:
@@ -307,14 +366,25 @@ def main() -> int:
             "gross_loss_abs": float(abs(sum(t.realized_pnl for t in tsym if t.realized_pnl < 0))),
         }
 
-    # Profitability by hour-of-day (UTC)
-    per_hour: Dict[int, Dict[str, float]] = {h: {
-        "count": 0.0, "realized": 0.0, "commission": 0.0, "net": 0.0, "wins": 0.0, "losses": 0.0, "flats": 0.0} for h in range(24)}
+    # Profitability by hour-of-day (UTC) per symbol
+    per_hour_symbol: Dict[Tuple[int, str], Dict[str, float]] = {}
     for t in trades:
         h = _hour_bucket(t.ts)
         if h is None:
             continue
-        bucket = per_hour[h]
+        sym = (t.symbol or "(none)")
+        key = (h, sym)
+        if key not in per_hour_symbol:
+            per_hour_symbol[key] = {
+                "count": 0.0,
+                "realized": 0.0,
+                "commission": 0.0,
+                "net": 0.0,
+                "wins": 0.0,
+                "losses": 0.0,
+                "flats": 0.0,
+            }
+        bucket = per_hour_symbol[key]
         bucket["count"] += 1.0
         bucket["realized"] += float(t.realized_pnl)
         bucket["commission"] += float(t.commission)
@@ -338,12 +408,16 @@ def main() -> int:
         best_sym = ""
         worst_sym = ""
 
-    # Best/worst hour by net (or realized if net unsupported)
+    # Best/worst hour by net (or realized if net unsupported), aggregated across symbols
     hour_metric_key = "net" if net_trade_supported else "realized"
-    best_hour = max(per_hour.items(), key=lambda kv: kv[1].get(
-        hour_metric_key, 0.0))[0] if trades else None
-    worst_hour = min(per_hour.items(), key=lambda kv: kv[1].get(
-        hour_metric_key, 0.0))[0] if trades else None
+    per_hour_total: Dict[int, Dict[str, float]] = {
+        h: {"metric": 0.0} for h in range(24)}
+    for (h, _sym), b in per_hour_symbol.items():
+        per_hour_total[h]["metric"] += float(b.get(hour_metric_key, 0.0))
+    best_hour = max(per_hour_total.items(), key=lambda kv: kv[1].get(
+        "metric", 0.0))[0] if trades else None
+    worst_hour = min(per_hour_total.items(), key=lambda kv: kv[1].get(
+        "metric", 0.0))[0] if trades else None
 
     trades_by_symbol = _count_by_key(trades, lambda t: t.symbol or "(none)")
     trades_by_side = _count_by_key(trades, lambda t: t.side or "(none)")
@@ -470,42 +544,55 @@ def main() -> int:
 
     md.append("\n## Profitability By UTC Hour\n")
     if trades:
-        metric_key = "net" if net_trade_supported else "realized"
-        rows_hr: List[List[str]] = []
+        rows_hr_sym: List[List[str]] = []
         for h in range(24):
-            b = per_hour[h]
-            cnt = int(b.get("count", 0.0))
-            if cnt == 0:
-                continue
-            wins_h = int(b.get("wins", 0.0))
-            losses_h = int(b.get("losses", 0.0))
-            flats_h = int(b.get("flats", 0.0))
-            denom = wins_h + losses_h
-            wr_h = (wins_h / denom) if denom > 0 else 0.0
-            rows_hr.append(
-                [
-                    f"{h:02d}:00",
-                    str(cnt),
-                    _fmt_money(b.get("realized", 0.0)),
-                    _fmt_money(b.get("commission", 0.0)),
-                    _fmt_money(b.get("net", 0.0)
-                               ) if net_trade_supported else "(n/a)",
-                    f"{wins_h}/{losses_h}/{flats_h}",
-                    _pct(wr_h),
-                ]
-            )
+            for sym in symbols:
+                b = per_hour_symbol.get((h, sym))
+                if not b:
+                    continue
+                cnt = int(b.get("count", 0.0))
+                if cnt == 0:
+                    continue
+                wins_h = int(b.get("wins", 0.0))
+                losses_h = int(b.get("losses", 0.0))
+                flats_h = int(b.get("flats", 0.0))
+                denom = wins_h + losses_h
+                wr_h = (wins_h / denom) if denom > 0 else 0.0
+                rows_hr_sym.append(
+                    [
+                        f"{h:02d}:00",
+                        sym,
+                        str(cnt),
+                        _fmt_money(b.get("realized", 0.0)),
+                        _fmt_money(b.get("commission", 0.0)),
+                        _fmt_money(b.get("net", 0.0)
+                                   ) if net_trade_supported else "(n/a)",
+                        f"{wins_h}/{losses_h}/{flats_h}",
+                        _pct(wr_h),
+                    ]
+                )
+
         md.append(
             _md_table(
-                ["hour(UTC)", "trades", "realized_sum", "commission_sum",
-                 "net_sum", "W/L/F", "win_rate(excl F)"],
-                rows_hr,
+                [
+                    "hour(UTC)",
+                    "symbol",
+                    "trades",
+                    "realized_sum",
+                    "commission_sum",
+                    "net_sum",
+                    "W/L/F",
+                    "win_rate(excl F)",
+                ],
+                rows_hr_sym,
             )
         )
+        metric_key = "net" if net_trade_supported else "realized"
         if best_hour is not None and worst_hour is not None:
             md.append(
-                f"\nBest UTC hour ({metric_key}): **{best_hour:02d}:00**\n")
+                f"\nBest UTC hour ({metric_key}, total): **{best_hour:02d}:00**\n")
             md.append(
-                f"Worst UTC hour ({metric_key}): **{worst_hour:02d}:00**\n")
+                f"Worst UTC hour ({metric_key}, total): **{worst_hour:02d}:00**\n")
     else:
         md.append("(no trades rows)\n")
 

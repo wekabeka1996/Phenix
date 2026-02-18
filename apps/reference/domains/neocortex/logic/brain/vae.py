@@ -1,4 +1,4 @@
-"""
+﻿"""
 Variational Autoencoder (VAE)
 
 Compresses market observations into a stochastic latent representation.
@@ -25,7 +25,7 @@ except ImportError:
         Tensor = object
         def randn(*args): return object()
 
-from config_models import VAEConfig
+from apps.reference.domains.neocortex.config_models import VAEConfig
 
 logger = logging.getLogger(__name__)
 
@@ -156,3 +156,4 @@ class VariationalAutoencoder(nn.Module):
             "mse": mse,
             "kld": kld
         }
+

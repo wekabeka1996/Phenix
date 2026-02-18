@@ -1,4 +1,4 @@
-"""
+﻿"""
 Amygdala - Valuation Engine
 
 Responsible for assigning 'Importance' (Value) to experiences.
@@ -9,7 +9,7 @@ from collections import deque
 from typing import Deque, Tuple
 import logging
 
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 logger = logging.getLogger(__name__)
 
@@ -68,3 +68,4 @@ class ValuationEngine:
     def reset(self):
         """Clear trace buffers."""
         self.trace_buffer.clear()
+

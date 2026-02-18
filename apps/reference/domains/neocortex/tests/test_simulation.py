@@ -1,4 +1,4 @@
-"""
+﻿"""
 Simulation / Stress Tests
 
 Long-running simulation to verify:
@@ -17,11 +17,11 @@ from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 import tempfile
 
-from config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
-from logic.ingest.parser import FeatureParser
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from transport.adapter import NeocortexAdapter
+from apps.reference.domains.neocortex.config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 
 # =============================================================================
@@ -129,7 +129,7 @@ def test_buffer_memory_stability(stress_config):
     
     Test: Add 2x capacity items, verify memory usage is stable.
     """
-    from logic.ingest.observation import MarketObservation
+    from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
     
     buffer = EpisodicBuffer(capacity=500)
     
@@ -229,6 +229,7 @@ def test_simulation_1000_ticks(stress_config):
         
         # Final wait for async tasks
         await asyncio.sleep(0.1)
+        await adapter.shutdown_async()
         
         return adapter.stats
     
@@ -241,9 +242,15 @@ def test_simulation_1000_ticks(stress_config):
     assert stats["total_train_steps"] >= 5, \
         f"Expected training to occur, got {stats['total_train_steps']}"
     
-    # Verify shadow intent events
-    shadow_events = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT"]
-    assert len(shadow_events) >= 900, f"Expected ~1000 shadow events, got {len(shadow_events)}"
+    # Verify shadow intent events (dual emit compatibility).
+    shadow_events_legacy = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT"]
+    shadow_events_canonical = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED"]
+    assert len(shadow_events_canonical) >= 900, (
+        f"Expected ~1000 canonical shadow events, got {len(shadow_events_canonical)}"
+    )
+    assert len(shadow_events_legacy) >= 900, (
+        f"Expected ~1000 legacy shadow events during migration, got {len(shadow_events_legacy)}"
+    )
     
     # Verify checkpoints were triggered (at least once)
     assert save_count[0] >= 1, f"Expected at least one save, got {save_count[0]}"
@@ -297,7 +304,8 @@ def test_no_broken_pool_errors(stress_config):
                 "timestamp": float(t),
                 "features": {f"f{i+1}": "1.0" for i in range(5)}
             })
-        
+
+        await adapter.shutdown_async()
         return len(buffer)
     
     # Should not raise, should handle gracefully
@@ -330,3 +338,5 @@ def test_random_walk_data_quality():
     assert "timestamp" in tick
     assert "features" in tick
     assert len(tick["features"]) == 5
+
+

@@ -335,6 +335,26 @@ class ReplayConfig(BaseModel):
         ge=0.01, le=10.0,
         description="Seconds to wait when tailing for new data"
     )
+    max_feature_lines_total_per_cycle: int = Field(
+        default=1000,
+        ge=1, le=100000,
+        description="Hard cap of feature lines processed per run-loop cycle"
+    )
+    max_feature_lines_per_symbol_per_cycle: int = Field(
+        default=200,
+        ge=1, le=100000,
+        description="Hard cap of feature lines processed per symbol per cycle"
+    )
+    max_order_lines_per_cycle: int = Field(
+        default=500,
+        ge=1, le=100000,
+        description="Hard cap of order log lines processed per run-loop cycle"
+    )
+    max_core_lines_per_cycle: int = Field(
+        default=500,
+        ge=1, le=100000,
+        description="Hard cap of core log lines processed per run-loop cycle"
+    )
     
     @field_validator('wal_dir', mode='before')
     @classmethod

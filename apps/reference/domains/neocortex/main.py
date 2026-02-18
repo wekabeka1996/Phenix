@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Neocortex Domain - Main Entry Point
 
@@ -10,15 +10,16 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
-from config_models import load_config, NeocortexConfig
+from apps.reference.domains.neocortex.config_models import load_config, NeocortexConfig
 
 
-from logic.ingest.parser import FeatureParser
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from logic.brain.bridge import BrainBridge
-from transport.adapter import NeocortexAdapter
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 
 # =============================================================================
@@ -34,7 +35,14 @@ def setup_logging(config: NeocortexConfig):
     if config.system.log_to_file:
         config.system.data_dir.mkdir(parents=True, exist_ok=True)
         log_file = config.system.data_dir / "neocortex.log"
-        handlers.append(logging.FileHandler(log_file))
+        handlers.append(
+            RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+        )
     
     logging.basicConfig(
         level=config.system.log_level,
@@ -48,8 +56,8 @@ def setup_logging(config: NeocortexConfig):
     
     return logging.getLogger("neocortex.main")
 
-from logic.ingest.tailer import WalTailer
-from logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
+from apps.reference.domains.neocortex.logic.ingest.tailer import WalTailer
+from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
 
 
 # =============================================================================
@@ -132,7 +140,11 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
                     core_log=config.replay.core_log,
                     symbols=config.replay.symbols or ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"],
                     batch_size=config.replay.batch_size,
-                    poll_interval=config.replay.poll_interval
+                    poll_interval=config.replay.poll_interval,
+                    max_feature_lines_total_per_cycle=config.replay.max_feature_lines_total_per_cycle,
+                    max_feature_lines_per_symbol_per_cycle=config.replay.max_feature_lines_per_symbol_per_cycle,
+                    max_order_lines_per_cycle=config.replay.max_order_lines_per_cycle,
+                    max_core_lines_per_cycle=config.replay.max_core_lines_per_cycle,
                 )
                 
                 tailer = MultiTailer(
@@ -267,3 +279,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+

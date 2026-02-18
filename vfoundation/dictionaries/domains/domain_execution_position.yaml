@@ -40,7 +40,7 @@ exports:
   - op: EVT
     verb: POSITION_CLOSED
     to: [position_tracking, account_observer]
-    description: "Position closed (TP/SL hit or manual close)"
+    description: "Position closed with structured payload (symbol, trade_id, close_ts_ms, realized_pnl_net, fees)"
   
   - op: ERR
     verb: INSUFFICIENT_BALANCE

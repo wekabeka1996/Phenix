@@ -15,14 +15,14 @@ logging:
   # ─────────────────────────────────────────────────────────────────────────
   default_level: INFO      # DEBUG | INFO | WARNING | ERROR
   default_format: text     # text | json
-  
+
   # ─────────────────────────────────────────────────────────────────────────
   # Rotation Settings (applied to all file handlers unless overridden)
   # ─────────────────────────────────────────────────────────────────────────
   rotation:
     max_bytes: 10485760    # 10 MB
-    backup_count: 5
-  
+    backup_count: 100
+
   # ─────────────────────────────────────────────────────────────────────────
   # Console Sink
   # ─────────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ logging:
     level: INFO
     format: text
     colorize: false        # Future: ANSI color support
-  
+
   # ─────────────────────────────────────────────────────────────────────────
   # Core File Sink (aurora_core.log)
   # ─────────────────────────────────────────────────────────────────────────
@@ -41,8 +41,8 @@ logging:
     level: DEBUG           # Log everything to file
     format: text
     max_bytes: 10485760    # 10 MB
-    backup_count: 5
-  
+    backup_count: 100
+
   # ─────────────────────────────────────────────────────────────────────────
   # Domain-Specific Sinks
   # Each domain gets its own log file for easier debugging.
@@ -52,38 +52,38 @@ logging:
       enabled: true
       level: DEBUG
       max_bytes: 5242880   # 5 MB
-      backup_count: 3
-    
+      backup_count: 100
+
     risk_management:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 100
+
     decision_making:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 100
+
     execution_position:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 100
+
     regime_detector:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 100
+
     mean_reversion:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-  
+      backup_count: 100
+
   # ─────────────────────────────────────────────────────────────────────────
   # Structured Event Chain (JSON format for forensics)
   # ─────────────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ logging:
     level: INFO
     format: json
     max_bytes: 10485760
-    backup_count: 5
+    backup_count: 100
 
 # =============================================================================
 # FUTURE: Metrics & Tracing (placeholders)
@@ -101,7 +101,7 @@ logging:
 # metrics:
 #   enabled: false
 #   prometheus_port: 9090
-#   
+#
 # tracing:
 #   enabled: false
 #   otlp_endpoint: http://localhost:4317

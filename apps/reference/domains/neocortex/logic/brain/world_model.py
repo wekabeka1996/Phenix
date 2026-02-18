@@ -1,4 +1,4 @@
-"""
+﻿"""
 World Model (RNN Dynamics)
 
 Predicts the future state of the market in latent space.
@@ -24,7 +24,7 @@ except ImportError:
     class torch:
         Tensor = object
 
-from config_models import WorldModelConfig
+from apps.reference.domains.neocortex.config_models import WorldModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +112,4 @@ class WorldModel(nn.Module):
         if z.dim() == 2:
              return next_z_seq.squeeze(1)
         return next_z_seq
+

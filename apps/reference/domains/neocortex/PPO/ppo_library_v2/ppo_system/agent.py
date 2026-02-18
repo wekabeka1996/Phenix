@@ -105,6 +105,7 @@ class PPOAgent:
         """
         self.model.eval()
         x = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+        x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         is_batched = x.dim() > 1
         if not is_batched:
             x = x.unsqueeze(0)

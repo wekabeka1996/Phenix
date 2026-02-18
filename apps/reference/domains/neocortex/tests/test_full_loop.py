@@ -1,4 +1,4 @@
-"""
+﻿"""
 Full Loop Integration Tests (Phase 4)
 
 Verify end-to-end data flow including Shadow Intent emission:
@@ -12,12 +12,12 @@ from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 import tempfile
 
-from config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
-from logic.ingest.parser import FeatureParser
-from logic.ingest.observation import MarketObservation
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from transport.adapter import NeocortexAdapter
+from apps.reference.domains.neocortex.config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 
 # =============================================================================
@@ -153,6 +153,7 @@ def test_shadow_intent_emission(full_config):
         
         # Allow async tasks to complete
         await asyncio.sleep(0.1)
+        await adapter.shutdown_async()
         
         return len(emitted_events), adapter._shadow_intents_emitted
     
@@ -164,8 +165,11 @@ def test_shadow_intent_emission(full_config):
     
     # Verify event structure
     if emitted_events:
-        event_type, payload = emitted_events[0]
-        assert event_type == "EVT:NEOCORTEX_SHADOW_INTENT"
+        event_types = [evt for evt, _ in emitted_events]
+        assert "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED" in event_types
+        assert "EVT:NEOCORTEX_SHADOW_INTENT" in event_types
+
+        _, payload = emitted_events[0]
         assert "action" in payload
         assert "action_name" in payload
         assert "latent_state" in payload
@@ -257,6 +261,46 @@ def test_adapter_stats(full_config):
     assert stats["shadow_intents_emitted"] == 0  # No bridge, no intents
 
 
+def test_waiting_for_reward_source_state_when_structured_reward_missing(full_config):
+    """If only reward-missing episodes are received, training must wait for source."""
+
+    emitted_events = []
+
+    def mock_emitter(event_type, payload):
+        emitted_events.append((event_type, payload))
+
+    parser = FeatureParser(full_config.ingest)
+    amygdala = ValuationEngine()
+    buffer = EpisodicBuffer(full_config.ingest.buffer_size)
+
+    adapter = NeocortexAdapter(
+        config=full_config,
+        parser=parser,
+        amygdala=amygdala,
+        buffer=buffer,
+        brain_bridge=None,
+        event_emitter=mock_emitter,
+    )
+
+    async def run_test():
+        await adapter.add_completed_episode(
+            {
+                "symbol": "BTCUSDT",
+                "timestamp": 1_700_000_000.0,
+                "features": {"rsi": 50.0},
+                "side": "LONG",
+                "reward": None,
+                "pnl": None,
+            }
+        )
+        return adapter.stats
+
+    stats = run_async(run_test())
+    assert stats["waiting_for_reward_source"] is True
+    alert_payloads = [payload for event, payload in emitted_events if event == "EVT:NEOCORTEX_ALERT"]
+    assert any(payload.get("code") == "NO_STRUCTURED_REWARD_RECEIVED" for payload in alert_payloads)
+
+
 def test_action_result_structure():
     """Test the expected structure of action results."""
     
@@ -282,3 +326,4 @@ def test_action_result_structure():
     
     # Verify action names
     assert action_result["action_name"] in ["LONG", "SHORT", "FLAT"]
+

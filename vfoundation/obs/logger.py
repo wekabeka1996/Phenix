@@ -113,13 +113,13 @@ def setup_logging(config: Any) -> None:
                 log_format = obs_logging.default_format
                 rotation = obs_logging.rotation
                 max_bytes = rotation.max_bytes if rotation else 10 * 1024 * 1024
-                backup_count = rotation.backup_count if rotation else 5
+                backup_count = rotation.backup_count if rotation else 100
                 # Skip old logic, go directly to setup
                 _do_setup_logging(log_level, log_file, max_bytes, backup_count)
                 return
     except (AttributeError, TypeError):
         pass
-    
+
     # Legacy: Try config.system.logging (DEPRECATED structure)
     try:
         # Try Pydantic access first (new pattern)
@@ -132,7 +132,7 @@ def setup_logging(config: Any) -> None:
                 max_bytes = rotation_config_dict.get(
                     "max_bytes", 10 * 1024 * 1024) if isinstance(rotation_config_dict, dict) else 10 * 1024 * 1024
                 backup_count = rotation_config_dict.get(
-                    "backup_count", 5) if isinstance(rotation_config_dict, dict) else 5
+                    "backup_count", 100) if isinstance(rotation_config_dict, dict) else 100
             else:
                 raise AttributeError("config.system.logging not found")
         else:
@@ -159,7 +159,7 @@ def setup_logging(config: Any) -> None:
         max_bytes = rotation_config.get("max_bytes", 10 * 1024 * 1024) if isinstance(
             rotation_config, dict) else 10 * 1024 * 1024  # 10 MB
         backup_count = rotation_config.get(
-            "backup_count", 5) if isinstance(rotation_config, dict) else 5
+            "backup_count", 100) if isinstance(rotation_config, dict) else 100
 
     # Use shared helper
     _do_setup_logging(log_level, log_file, max_bytes, backup_count)

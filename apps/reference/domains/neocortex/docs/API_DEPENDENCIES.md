@@ -14,7 +14,7 @@
 | `EVT:ORDER_ACK` | `execution_position` | подієво | `symbol`, `order_id`, `client_order_id` | episode tracking |
 | `EVT:ORDER_FILL` | `execution_position` | подієво | `symbol`, `qty`, `price`, `reduce_only` | episode outcome |
 | `EVT:POSITION_OPENED` | `execution_position` | подієво | `symbol`, `side`, `qty`, `avg_price` | episode open |
-| `EVT:POSITION_CLOSED` | `execution_position` | подієво | `symbol`, `pnl`, `qty` | episode close + reward proxy |
+| `EVT:POSITION_CLOSED` | `execution_position` | подієво | `symbol`, `trade_id`, `close_ts_ms`, `realized_pnl_net`, `fees` | episode close + structured reward (no proxy fallback) |
 
 Примітка: у Standalone режимі ці події відновлюються із WAL через `verb/op/pld`.
 

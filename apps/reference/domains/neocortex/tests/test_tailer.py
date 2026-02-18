@@ -1,4 +1,4 @@
-"""
+﻿"""
 WAL Tailer Tests
 
 Test unified tailing functionality including:
@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from config_models import ReplayConfig
-from logic.ingest.tailer import WalTailer, TailerState
+from apps.reference.domains.neocortex.config_models import ReplayConfig
+from apps.reference.domains.neocortex.logic.ingest.tailer import WalTailer, TailerState
 
 
 # =============================================================================
@@ -372,3 +372,4 @@ def test_tailer_disabled():
     run_async(tailer.run())
     
     assert len(handled) == 0
+

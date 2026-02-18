@@ -1,4 +1,4 @@
-"""
+﻿"""
 Configuration Contract Tests
 
 Verify strict fail-closed behavior:
@@ -16,9 +16,8 @@ import yaml
 from pydantic import ValidationError
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_models import (
+from apps.reference.domains.neocortex.config_models import (
     load_config,
     NeocortexConfig,
     SystemConfig,
@@ -360,3 +359,5 @@ def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

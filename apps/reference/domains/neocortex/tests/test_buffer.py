@@ -1,11 +1,11 @@
-"""
+﻿"""
 Episodic Buffer Tests
 """
 
 import pytest
 import numpy as np
-from logic.memory.buffer import EpisodicBuffer
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 def create_obs(ts: float):
     return MarketObservation(
@@ -64,3 +64,4 @@ def test_sample_random():
     # we verify timestamps are unique if we put unique ones in
     ts_set = set(item[0].ts for item in sample)
     assert len(ts_set) == 5
+

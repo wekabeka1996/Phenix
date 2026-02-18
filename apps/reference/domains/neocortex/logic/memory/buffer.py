@@ -1,4 +1,4 @@
-"""
+﻿"""
 Episodic Memory Buffer
 
 Stores sequential market observations.
@@ -13,7 +13,7 @@ from typing import List, Tuple, Any
 import logging
 import random
 
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +79,4 @@ class EpisodicBuffer:
         
     def clear(self):
         self._buffer.clear()
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Brain Core
 
 Orchestrator for the Neocortex Neural Architecture.
@@ -12,6 +12,7 @@ from pathlib import Path
 import logging
 import numpy as np
 import sys
+import time
 
 try:
     import torch
@@ -33,9 +34,9 @@ if PPO_PATH.exists():
 else:
     HAS_PPO = False
 
-from config_models import NeuroConfig
-from logic.brain.vae import VariationalAutoencoder
-from logic.brain.world_model import WorldModel
+from apps.reference.domains.neocortex.config_models import NeuroConfig
+from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,11 @@ class BrainCore:
     def __init__(self, config: NeuroConfig, device: str = None, rng_seed: int = 0):
         self.config = config
         self._torch_available = HAS_TORCH
-        self.device = device or ('cuda' if (HAS_TORCH and torch.cuda.is_available()) else 'cpu')
+        self.device = self._resolve_device(device)
         self._train_steps = 0
         self.rng_seed = int(rng_seed)
+        self._nonfinite_action_events = 0
+        self._last_nonfinite_warn_ts = 0.0
         
         logger.info(f"Initializing BrainCore on device: {self.device}")
 
@@ -102,6 +105,58 @@ class BrainCore:
         
         self.vae.train()
         self.world_model.train()
+
+    def _warn_nonfinite_action(self, reason: str) -> None:
+        """
+        Rate-limit repetitive PPO action warnings to avoid log spam under instability.
+        """
+        self._nonfinite_action_events += 1
+        now = time.time()
+        if now - self._last_nonfinite_warn_ts < 10.0:
+            return
+        logger.warning(
+            "Non-finite PPO action output detected (%s); returning FLAT fallback [events=%s]",
+            reason,
+            self._nonfinite_action_events,
+        )
+        self._last_nonfinite_warn_ts = now
+        self._nonfinite_action_events = 0
+
+    def _resolve_device(self, requested_device: Optional[str]) -> str:
+        """
+        Resolve runtime device with fail-safe CPU fallback.
+
+        Behavior:
+        - If torch missing: always CPU (with warning).
+        - If CUDA requested but unavailable: fall back to CPU (with warning).
+        - If no request: auto-select CUDA when available, else CPU (with warning on CPU).
+        """
+        if not self._torch_available:
+            logger.warning("PyTorch unavailable, forcing CPU mode")
+            return "cpu"
+
+        cuda_available = bool(torch.cuda.is_available())
+        requested = (requested_device or "").strip().lower()
+
+        if requested:
+            if requested.startswith("cuda") and not cuda_available:
+                logger.warning(
+                    "GPU requested (%s) but CUDA is unavailable; falling back to CPU",
+                    requested_device,
+                )
+                return "cpu"
+            if requested in ("cpu", "cuda"):
+                if requested == "cpu":
+                    logger.warning("Running Neocortex on CPU (GPU disabled/not requested)")
+                return requested
+            # Unknown explicit device string: use as-is and let torch validate downstream.
+            return requested
+
+        if cuda_available:
+            return "cuda"
+
+        logger.warning("GPU not detected; running Neocortex on CPU")
+        return "cpu"
         
     def _init_ppo(self):
         """Initialize PPO Agent if library is available."""
@@ -272,24 +327,44 @@ class BrainCore:
         
         try:
             # Ensure z is float32
-            z = z.astype(np.float32)
+            z = np.asarray(z, dtype=np.float32)
+            if not np.isfinite(z).all():
+                self._warn_nonfinite_action("latent_non_finite")
+                z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
             
             action, value, logp = self.ppo_agent.act(z, deterministic=False)
-            
+
+            action_arr = np.asarray(action)
+            value_arr = np.asarray(value, dtype=np.float32)
+            logp_arr = np.asarray(logp, dtype=np.float32)
+            if (not np.isfinite(action_arr).all()) or (not np.isfinite(value_arr).all()) or (not np.isfinite(logp_arr).all()):
+                self._warn_nonfinite_action("act_value_logp_non_finite")
+                if hasattr(self.ppo_agent, "reset_hidden"):
+                    try:
+                        self.ppo_agent.reset_hidden(np.array([True], dtype=bool))
+                    except Exception:
+                        pass
+                return {
+                    "action": 2,
+                    "action_name": "FLAT",
+                    "value": 0.0,
+                    "confidence": 0.0,
+                }
+             
             # Map action index to name
             action_names = ["LONG", "SHORT", "FLAT"]
-            action_idx = int(np.asarray(action).reshape(-1)[0])
+            action_idx = int(action_arr.reshape(-1)[0])
             action_name = action_names[action_idx] if action_idx < len(action_names) else "UNKNOWN"
-            
+             
             return {
                 "action": action_idx,
                 "action_name": action_name,
-                "value": float(value),
-                "confidence": float(logp)
+                "value": float(value_arr.reshape(-1)[0]),
+                "confidence": float(logp_arr.reshape(-1)[0]),
             }
-            
+             
         except Exception as e:
-            logger.error(f"PPO action failed: {e}")
+            self._warn_nonfinite_action(f"exception:{type(e).__name__}")
             return {
                 "action": 2,
                 "action_name": "FLAT",
@@ -478,3 +553,4 @@ class BrainCore:
     @property
     def train_steps(self) -> int:
         return self._train_steps
+

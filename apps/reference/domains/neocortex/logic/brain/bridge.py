@@ -1,4 +1,4 @@
-"""
+﻿"""
 Brain Bridge (Service Client)
 
 Orchestrates communication with the persistent Brain Service Worker.
@@ -16,9 +16,9 @@ from concurrent.futures import Future
 
 import numpy as np
 
-from config_models import NeuroConfig
-from logic.ingest.observation import MarketObservation
-from logic.brain.worker import brain_service_worker, BridgeTask, BridgeResult
+from apps.reference.domains.neocortex.config_models import NeuroConfig
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.brain.worker import brain_service_worker, BridgeTask, BridgeResult
 
 logger = logging.getLogger(__name__)
 
@@ -253,3 +253,4 @@ class BrainBridge:
         # In python mp.Queue, strict cleanup is tricky, but letting GC handle it usually works if process dead.
         self._task_queue = None
         self._result_queue = None
+

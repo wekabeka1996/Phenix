@@ -34,6 +34,10 @@ class CoreLogEntry:
     symbol: Optional[str] = None
     equity: Optional[float] = None
     realized_pnl: Optional[float] = None
+    realized_pnl_net: Optional[float] = None
+    trade_id: Optional[str] = None
+    close_ts_ms: Optional[int] = None
+    fees: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     reason: Optional[str] = None
     raw_line: str = ""
@@ -46,6 +50,8 @@ POSITION_CLOSED_PATTERN = re.compile(
     r' - .+? - INFO - '
     r'\[([A-Z0-9]+)\] Position closed \(([^)]+)\)'  # [SYMBOL] Position closed (reason)
 )
+
+TIMESTAMP_PATTERN = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})')
 
 # Pattern: Portfolio debug with equity
 # Format: ON_PORTFOLIO_DEBUG: ... equity_raw=293.27, margin_raw=23.89, ...
@@ -67,6 +73,21 @@ EQUITY_PATTERN = re.compile(
 REALIZED_PNL_PATTERN = re.compile(
     r"'realized_pnl'|realized_pnl=([0-9.E+-]+)"
 )
+
+
+def _extract_field(line: str, key: str) -> Optional[str]:
+    """
+    Extract field value from both key=value and JSON-like snippets in log lines.
+    """
+    json_match = re.search(rf'"{re.escape(key)}"\s*:\s*"?(?P<val>[^",\s}}]+)"?', line)
+    if json_match:
+        return json_match.group("val")
+
+    kv_match = re.search(rf'{re.escape(key)}\s*=\s*(?P<val>[^,\s]+)', line)
+    if kv_match:
+        return kv_match.group("val")
+
+    return None
 
 
 def parse_timestamp(ts_str: str) -> float:
@@ -99,6 +120,42 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     line = line.strip()
     if not line:
         return None
+
+    # Try structured POSITION_CLOSED payload first.
+    if "POSITION_CLOSED" in line:
+        ts_match = TIMESTAMP_PATTERN.match(line)
+        ts_str = ts_match.group(1) if ts_match else ""
+        symbol = _extract_field(line, "symbol")
+        realized_pnl_net_raw = _extract_field(line, "realized_pnl_net")
+        trade_id = _extract_field(line, "trade_id")
+        close_ts_ms_raw = _extract_field(line, "close_ts_ms")
+        fees_raw = _extract_field(line, "fees")
+
+        # Accept as structured only when at least one structured reward field is present.
+        if symbol and (
+            realized_pnl_net_raw is not None
+            or trade_id is not None
+            or close_ts_ms_raw is not None
+            or fees_raw is not None
+        ):
+            try:
+                close_ts_ms = int(close_ts_ms_raw) if close_ts_ms_raw is not None else None
+            except (TypeError, ValueError):
+                close_ts_ms = None
+
+            return CoreLogEntry(
+                timestamp=parse_timestamp(ts_str) if ts_str else 0.0,
+                timestamp_str=ts_str,
+                event_type=CoreEventType.POSITION_CLOSED,
+                symbol=symbol,
+                realized_pnl_net=parse_scientific_notation(realized_pnl_net_raw)
+                if realized_pnl_net_raw is not None
+                else None,
+                trade_id=trade_id,
+                close_ts_ms=close_ts_ms,
+                fees=parse_scientific_notation(fees_raw) if fees_raw is not None else None,
+                raw_line=line,
+            )
     
     # Try Position Closed pattern
     match = POSITION_CLOSED_PATTERN.match(line)

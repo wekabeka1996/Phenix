@@ -30,6 +30,7 @@ Architecture:
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 from glob import glob
 from contextlib import asynccontextmanager
@@ -56,12 +57,17 @@ async def _aio_open(path: Path, mode: str):
     """
     Async file open. Prefers aiofiles; falls back to asyncio.to_thread(open).
     """
+    open_kwargs: Dict[str, Any] = {}
+    if "b" not in mode:
+        # Windows default codepage may fail on mixed-encoding logs.
+        open_kwargs = {"encoding": "utf-8", "errors": "replace"}
+
     if aiofiles is not None:
-        async with aiofiles.open(path, mode) as f:  # type: ignore[attr-defined]
+        async with aiofiles.open(path, mode, **open_kwargs) as f:  # type: ignore[attr-defined]
             yield f
         return
 
-    f = await asyncio.to_thread(open, path, mode)
+    f = await asyncio.to_thread(open, path, mode, **open_kwargs)
 
     class _AsyncFile:
         def __init__(self, file_obj):
@@ -107,7 +113,7 @@ class Episode:
     reject_reason: Optional[str] = None
     
     # Reward: Outcome
-    reward: float = 0.0
+    reward: Optional[float] = 0.0
     pnl: Optional[float] = None
     position_closed: bool = False
 
@@ -125,6 +131,10 @@ class MultiSourceConfig:
     # Processing
     batch_size: int = 100
     poll_interval: float = 0.1
+    max_feature_lines_total_per_cycle: int = 1000
+    max_feature_lines_per_symbol_per_cycle: int = 200
+    max_order_lines_per_cycle: int = 500
+    max_core_lines_per_cycle: int = 500
     
     # Symbol mapping
     symbols: List[str] = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"])
@@ -137,7 +147,7 @@ class MultiTailer:
     Reads features, orders, and core events, correlating them
     into complete episodes for RL training.
     
-    TASK-R1: Added equity-based PnL estimation.
+    Reward policy in R2: Structured only (no equity-delta fallback).
     """
 
     REWARD_SCALE = 10.0
@@ -177,7 +187,7 @@ class MultiTailer:
         # Pending episodes (waiting for reward/close)
         self._pending_episodes: Dict[str, Episode] = {}  # symbol -> latest episode
         
-        # TASK-R1: Equity tracking for PnL estimation
+        # Equity timeline retained for diagnostics (not used for reward fallback in R2).
         self._equity_history: List[tuple] = []  # [(ts, equity), ...]
         self._equity_at_entry: Dict[str, float] = {}  # symbol -> equity at order placement
         self._last_equity: float = 0.0
@@ -264,20 +274,27 @@ class MultiTailer:
         
         try:
             while self._running:
-                # Process all streams
+                # Process all streams with fairness quotas per cycle.
                 await self._process_features()
+                await asyncio.sleep(0)
                 await self._process_orders()
+                await asyncio.sleep(0)
                 await self._process_core()
+                await asyncio.sleep(0)
                 
                 # Periodic progress log (every 5 seconds)
-                import time
                 now = time.time()
                 if now - last_log_time > 5:
+                    feature_backlog_bytes = self._calculate_features_backlog_bytes()
+                    orders_backlog_bytes = self._calculate_file_backlog_bytes(self.config.orders_file)
+                    core_backlog_bytes = self._calculate_file_backlog_bytes(self.config.core_log)
                     logger.info(
                         f"Progress: Features={self._features_processed} "
                         f"Orders={self._orders_processed} "
                         f"Episodes={self._episodes_completed} "
-                        f"MarketState={len(self._market_state)} symbols"
+                        f"PendingEpisodes={len(self._pending_episodes)} "
+                        f"MarketState={len(self._market_state)} symbols "
+                        f"BacklogBytes(F={feature_backlog_bytes},O={orders_backlog_bytes},C={core_backlog_bytes})"
                     )
                     last_log_time = now
                     
@@ -303,33 +320,70 @@ class MultiTailer:
         
         if not features_dir.exists():
             return
-            
+
+        total_quota = max(1, int(self.config.max_feature_lines_total_per_cycle))
+        per_symbol_quota = max(1, int(self.config.max_feature_lines_per_symbol_per_cycle))
+
+        active_symbols: List[str] = []
         for symbol in self.config.symbols:
             log_file = features_dir / f"{symbol}.log"
             if not log_file.exists():
                 continue
-                
             offset = self._offsets.get(str(log_file), 0)
             file_size = log_file.stat().st_size
-            
-            if offset >= file_size:
-                continue
-                
-            await self._tail_feature_file(log_file, symbol)
+            if offset < file_size:
+                active_symbols.append(symbol)
+
+        if not active_symbols:
+            return
+
+        remaining = total_quota
+        made_progress = True
+        while remaining > 0 and made_progress:
+            made_progress = False
+            for symbol in active_symbols:
+                if remaining <= 0:
+                    break
+
+                log_file = features_dir / f"{symbol}.log"
+                if not log_file.exists():
+                    continue
+                offset = self._offsets.get(str(log_file), 0)
+                file_size = log_file.stat().st_size
+                if offset >= file_size:
+                    continue
+
+                lines_budget = min(per_symbol_quota, remaining)
+                lines_read = await self._tail_feature_file(
+                    log_file,
+                    symbol,
+                    max_lines=lines_budget,
+                )
+                if lines_read > 0:
+                    made_progress = True
+                    remaining -= lines_read
+                    await asyncio.sleep(0)
     
-    async def _tail_feature_file(self, file_path: Path, symbol: str):
+    async def _tail_feature_file(
+        self,
+        file_path: Path,
+        symbol: str,
+        max_lines: Optional[int] = None,
+    ) -> int:
         """Tail a single feature log file."""
         offset = self._offsets.get(str(file_path), 0)
         batch_count = 0
+        lines_processed = 0
         
         try:
             async with _aio_open(file_path, "r") as f:
                 await f.seek(offset)
                 
-                while True:
+                while max_lines is None or lines_processed < max_lines:
                     line = await f.readline()
                     if not line:
                         break
+                    lines_processed += 1
                         
                     # Pass symbol for pure JSON format
                     entry = parse_feature_log_line(line, symbol=symbol)
@@ -361,6 +415,7 @@ class MultiTailer:
                     
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
+        return lines_processed
     
     async def _process_orders(self):
         """Process order log file."""
@@ -378,11 +433,14 @@ class MultiTailer:
         try:
             async with _aio_open(orders_file, "r") as f:
                 await f.seek(offset)
+                max_lines = max(1, int(self.config.max_order_lines_per_cycle))
+                lines_processed = 0
                 
-                while True:
+                while lines_processed < max_lines:
                     line = await f.readline()
                     if not line:
                         break
+                    lines_processed += 1
                         
                     entry = parse_order_log_line(line)
                     
@@ -400,7 +458,7 @@ class MultiTailer:
         symbol = order.symbol
         
         if order.event_type == OrderEventType.PLACED:
-            # TASK-R1: Snapshot equity at entry time
+            # Snapshot equity at entry time for diagnostics.
             self._equity_at_entry[symbol] = self._last_equity
             
             # Create new episode with current market state
@@ -472,11 +530,14 @@ class MultiTailer:
         try:
             async with _aio_open(core_log, "r") as f:
                 await f.seek(offset)
+                max_lines = max(1, int(self.config.max_core_lines_per_cycle))
+                lines_processed = 0
                 
-                while True:
+                while lines_processed < max_lines:
                     line = await f.readline()
                     if not line:
                         break
+                    lines_processed += 1
                         
                     entry = parse_core_log_line(line)
                     
@@ -498,46 +559,108 @@ class MultiTailer:
             logger.error(f"Error processing core log: {e}")
     
     async def _handle_position_close(self, core_entry: CoreLogEntry):
-        """Handle position close, completing pending episode with PnL estimation."""
+        """Handle position close, completing pending episode with structured reward only."""
         symbol = core_entry.symbol
         
         if symbol in self._pending_episodes:
             episode = self._pending_episodes.pop(symbol)
             episode.position_closed = True
-            
-            # TASK-R1: Estimate PnL from equity delta
-            entry_equity = self._equity_at_entry.pop(symbol, self._last_equity)
-            current_equity = self._last_equity
-            
-            # Raw PnL estimate (might include other symbols, but best we have)
-            raw_pnl = current_equity - entry_equity
-            
-            # Normalize reward using tanh for PPO stability
-            # Scale factor: $10 delta -> reward ~0.76
-            import numpy as np
-            normalized_reward = float(np.tanh(raw_pnl / self.REWARD_SCALE))
-            
-            episode.pnl = raw_pnl
-            episode.reward = normalized_reward
+            self._equity_at_entry.pop(symbol, None)
 
-            if episode.reward is None:
+            structured_pnl = core_entry.realized_pnl_net
+            if structured_pnl is None:
+                episode.reward = None
+                episode.pnl = None
                 logger.warning(
-                    "Episode reward is None on close; forcing 0.0 (symbol=%s, pnl=%s)",
+                    "WARN:NO_STRUCTURED_REWARD_RECEIVED symbol=%s trade_id=%s close_ts_ms=%s",
                     symbol,
-                    raw_pnl,
+                    core_entry.trade_id,
+                    core_entry.close_ts_ms,
                 )
-                episode.reward = 0.0
+            else:
+                import numpy as np
 
-            logger.debug(f"DEBUG: Closing Episode {id(episode)} with Reward={episode.reward}")
+                normalized_reward = float(np.tanh(float(structured_pnl) / self.REWARD_SCALE))
+                episode.pnl = float(structured_pnl)
+                episode.reward = normalized_reward
+                logger.debug(
+                    "Structured reward applied: symbol=%s pnl=%s reward=%s trade_id=%s",
+                    symbol,
+                    structured_pnl,
+                    normalized_reward,
+                    core_entry.trade_id,
+                )
 
             if self.episode_handler:
                 await self.episode_handler(episode)
             self._episodes_completed += 1
-            
+
             logger.info(
-                f"EPISODE COMPLETE: {symbol} side={episode.side} "
-                f"pnl={raw_pnl:.4f} reward={normalized_reward:.4f}"
+                "EPISODE COMPLETE: %s side=%s trade_id=%s close_ts_ms=%s pnl=%s reward=%s",
+                symbol,
+                episode.side,
+                core_entry.trade_id,
+                core_entry.close_ts_ms,
+                episode.pnl,
+                episode.reward,
             )
+
+    async def handle_position_closed_event(self, payload: Dict[str, Any]) -> None:
+        """
+        Handle EVT:POSITION_CLOSED payload directly (event-bus contract path).
+
+        This is a contract-level ingestion path that bypasses core log parsing but
+        reuses the same close/reward logic as _handle_position_close().
+        """
+        symbol_raw = payload.get("symbol")
+        symbol = str(symbol_raw).strip() if symbol_raw is not None else ""
+        if not symbol:
+            logger.warning("Ignoring EVT:POSITION_CLOSED without symbol: %s", payload)
+            return
+
+        close_ts_ms_raw = payload.get("close_ts_ms")
+        close_ts_ms: Optional[int]
+        try:
+            close_ts_ms = int(close_ts_ms_raw) if close_ts_ms_raw is not None else None
+        except (TypeError, ValueError):
+            close_ts_ms = None
+
+        realized_pnl_net_raw = payload.get("realized_pnl_net")
+        try:
+            realized_pnl_net = (
+                float(realized_pnl_net_raw)
+                if realized_pnl_net_raw is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            realized_pnl_net = None
+
+        fees_raw = payload.get("fees")
+        try:
+            fees = float(fees_raw) if fees_raw is not None else None
+        except (TypeError, ValueError):
+            fees = None
+
+        event_ts = (
+            (float(close_ts_ms) / 1000.0)
+            if close_ts_ms is not None
+            else float(payload.get("timestamp", 0.0) or 0.0)
+        )
+        if event_ts <= 0.0:
+            event_ts = time.time()
+
+        entry = CoreLogEntry(
+            timestamp=event_ts,
+            timestamp_str="",
+            event_type=CoreEventType.POSITION_CLOSED,
+            symbol=symbol,
+            realized_pnl_net=realized_pnl_net,
+            trade_id=str(payload.get("trade_id")) if payload.get("trade_id") is not None else None,
+            close_ts_ms=close_ts_ms,
+            fees=fees,
+            raw_line="EVT:POSITION_CLOSED",
+        )
+        await self._handle_position_close(entry)
     
     def stop(self):
         """Stop tailing."""
@@ -574,3 +697,22 @@ class MultiTailer:
         for symbol in expired:
             del self._pending_episodes[symbol]
             logger.warning(f"Cleaned up stale episode for {symbol} (Age > {ttl}s)")
+
+    def _calculate_file_backlog_bytes(self, file_path: Path) -> int:
+        if not file_path.exists():
+            return 0
+        try:
+            size = file_path.stat().st_size
+            offset = self._offsets.get(str(file_path), 0)
+            return max(0, int(size - offset))
+        except Exception:
+            return 0
+
+    def _calculate_features_backlog_bytes(self) -> int:
+        if not self.config.features_dir.exists():
+            return 0
+        backlog = 0
+        for symbol in self.config.symbols:
+            log_file = self.config.features_dir / f"{symbol}.log"
+            backlog += self._calculate_file_backlog_bytes(log_file)
+        return backlog

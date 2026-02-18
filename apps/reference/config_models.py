@@ -3107,7 +3107,7 @@ class LogRotationConfig(BaseModel):
 
     max_bytes: int = Field(default=10485760, ge=1024,
                            description='Max bytes before rotation (default 10MB)')
-    backup_count: int = Field(default=5, ge=1, le=100,
+    backup_count: int = Field(default=100, ge=1, le=500,
                               description='Number of backup files to keep')
 
 
@@ -3151,7 +3151,7 @@ class DomainLogConfig(BaseModel):
         default="DEBUG", description='Domain log level')
     max_bytes: int = Field(default=5242880, ge=1024,
                            description='Max bytes before rotation (default 5MB)')
-    backup_count: int = Field(default=3, ge=1, le=100,
+    backup_count: int = Field(default=100, ge=1, le=500,
                               description='Number of backup files')
 
 
@@ -3169,7 +3169,8 @@ class EventChainLogConfig(BaseModel):
         default="json", description='Event chain format (should be json)')
     max_bytes: int = Field(
         default=10485760, description='Max bytes before rotation')
-    backup_count: int = Field(default=5, description='Number of backup files')
+    backup_count: int = Field(
+        default=100, description='Number of backup files')
 
 
 class ObservabilityLoggingConfig(BaseModel):

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for Checkpoint Persistence
 
 TASK-R0: Verify checkpoints are saved correctly.
@@ -11,7 +11,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestCheckpointSaving:
@@ -45,8 +44,8 @@ class TestCheckpointSaving:
     def test_brain_core_save_checkpoint(self, temp_checkpoint_dir):
         """Test BrainCore.save_checkpoint creates files."""
         try:
-            from logic.brain.core import BrainCore
-            from config_models import NeuroConfig
+            from apps.reference.domains.neocortex.logic.brain.core import BrainCore
+            from apps.reference.domains.neocortex.config_models import NeuroConfig
             
             # Create minimal config
             config = NeuroConfig(
@@ -99,7 +98,7 @@ class TestCheckpointSaving:
     def test_checkpoint_interval_config(self):
         """Test checkpoint interval configuration is respected."""
         try:
-            from config_models import load_config
+            from apps.reference.domains.neocortex.config_models import load_config
             config_dir = Path(__file__).parent.parent / "config"
             
             if not config_dir.exists():
@@ -168,3 +167,5 @@ class TestWorkerProcessSaving:
 # Run tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

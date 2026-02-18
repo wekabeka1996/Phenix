@@ -23,10 +23,20 @@ domain:
       
     # From execution_position domain
     - event: EVT:POSITION_CLOSED
-      description: Position lifecycle completion (for reward calculation)
-      required: false  # Optional for initial learning phase
+      description: Structured position close event with realized_pnl_net/trade_id/fees
+      required: true
 
   exports:
+    # Canonical shadow decision event (R2)
+    - event: EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED
+      description: Shadow intent proposal with schema_version/idempotent_key/why[]
+      frequency: triggered
+
+    # Legacy compatibility event (temporary dual-emit)
+    - event: EVT:NEOCORTEX_SHADOW_INTENT
+      description: Deprecated shadow intent event for downstream migration window
+      frequency: triggered
+
     # Internal state monitoring
     - event: EVT:NEOCORTEX_STATE_UPDATED
       description: Latent state updates, model checkpoints, learning progress

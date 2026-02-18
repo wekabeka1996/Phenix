@@ -70,7 +70,9 @@ class TelemetryLogger:
         self,
         log_dir: Path = None,
         filename: str = "neocortex_metrics.csv",
-        max_memory_buffer: int = 1000
+        max_memory_buffer: int = 1000,
+        max_file_bytes: int = 10 * 1024 * 1024,
+        backup_count: int = 5,
     ):
         """
         Initialize the telemetry logger.
@@ -84,6 +86,8 @@ class TelemetryLogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         self.filepath = self.log_dir / filename
+        self._max_file_bytes = int(max_file_bytes)
+        self._backup_count = int(backup_count)
         self._lock = threading.Lock()
         self._step = 0
         self._cumulative_reward = 0.0
@@ -104,6 +108,28 @@ class TelemetryLogger:
                     writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
                     writer.writeheader()
                 logger.info(f"Created new metrics CSV: {self.filepath}")
+
+    def _rotate_if_needed(self) -> None:
+        try:
+            if not self.filepath.exists():
+                return
+            if self.filepath.stat().st_size < self._max_file_bytes:
+                return
+
+            for idx in range(self._backup_count - 1, 0, -1):
+                src = Path(f"{self.filepath}.{idx}")
+                dst = Path(f"{self.filepath}.{idx + 1}")
+                if src.exists():
+                    src.replace(dst)
+
+            self.filepath.replace(Path(f"{self.filepath}.1"))
+
+            with open(self.filepath, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
+                writer.writeheader()
+            logger.info("Telemetry CSV rotated: %s", self.filepath)
+        except Exception as e:
+            logger.warning("Failed to rotate telemetry CSV: %s", e, exc_info=True)
     
     def log_step(self, metrics: Dict[str, Any]):
         """
@@ -139,6 +165,7 @@ class TelemetryLogger:
         
         # Write to CSV
         with self._lock:
+            self._rotate_if_needed()
             with open(self.filepath, 'a', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
                 writer.writerow(row)
@@ -234,6 +261,7 @@ class TelemetryLogger:
         self,
         buffer_size: int,
         episodes_collected: int = None,
+        episodes_processed: int = None,
         samples_since_train: int = None
     ):
         """
@@ -242,6 +270,7 @@ class TelemetryLogger:
         self.log_step({
             "buffer_size": buffer_size,
             "episodes_collected": episodes_collected,
+            "episodes_processed": episodes_processed,
             "samples_since_train": samples_since_train
         })
     

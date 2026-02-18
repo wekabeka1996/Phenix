@@ -2,6 +2,43 @@
 
 
 
+## 2026-02-18: Forensic Audit — H1/H2/H3 Config Hypotheses Verification
+
+**Mode:** Read-only. No code/config changes.
+**Scope:** `apps/reference/domains/regime_detector/regime_detector.py`, `apps/reference/config_models.py`, `config/aurora/regime.yaml`
+
+### What was checked
+1. **H1** — Directionality of `uncertain_cutoff` on UNCERTAIN demotions.
+2. **H2** — Directionality of `sma_trend.confidence_multiplier` on computed confidence.
+3. **H3** — Existence of Grok-proposed YAML keys in Pydantic schemas + `extra='forbid'` enforcement.
+
+### What was confirmed
+
+**H1 — VERIFIED (TRUE):**
+- `regime_detector.py:539`: `if regime != "UNCERTAIN" and float(confidence) < self._uncertain_cutoff: → regime = "UNCERTAIN"`
+- Operator is `<`. Raising cutoff from 0.60 → 0.67 **expands** the demote zone → more UNCERTAIN. Confirmed.
+
+**H2 — VERIFIED (TRUE with nuance):**
+- `regime_detector.py:182-195`: formula = `abs(spread_ratio * confidence_multiplier)` clamped to `[conf_min, conf_max]`.
+- Lowering multiplier (e.g. 30 → 16) lowers raw confidence. Floor is `conf_min` (cannot go below it), but if result falls below `uncertain_cutoff` while above `conf_min`, the regime is demoted to UNCERTAIN by H1 gate. Net effect: more UNCERTAIN or flat at floor.
+
+**H3 — MOSTLY SAFE; ONE TRAP:**
+- `volatility_entry_logic` — EXISTS at `AuroraInstrumentConfig:2791`.
+- `regime_multipliers` — EXISTS **only inside** `VolatilityEntryConfig:2657`. As a top-level key under `AuroraInstrumentConfig` it does NOT exist → would crash under `extra='forbid'`.
+  Correct path: `aurora.assets.<SYMBOL>.volatility_entry_logic.regime_multipliers`.
+- `position_mode` — EXISTS at `AuroraInstrumentConfig:2724`.
+- `leverage` — EXISTS at `AuroraInstrumentConfig:2729`.
+- `holding_period.min_duration_sec` — EXISTS at `HoldingPeriodConfig:606`.
+- `aurora.decision.gates.anti_fomo_sigma` — EXISTS via `DecisionConfig.gates` (`VolAdjGatesConfig:633`).
+- `motion_window_sec`, `anti_flat_sigma` — EXISTS in `VolAdjGatesConfig:627,639`.
+
+### Next action items (TODO — no code changes yet)
+- [ ] **TODO-H3-TRAP**: Audit any Grok-generated config snippets that place `regime_multipliers` at the top level of an asset block. Must be nested under `volatility_entry_logic`.
+- [ ] **TODO-H2-IMPACT**: If `sma_trend.confidence_multiplier` is lowered to 16, verify `conf_min` (floor) in `config/aurora/regime.yaml` models.sma_trend. If `conf_min > uncertain_cutoff`, then lowering multiplier has no visible effect (floor dominates). If `conf_min < uncertain_cutoff`, more UNCERTAIN events will appear.
+- [ ] **TODO-H1-VALIDATE**: Run `tools/bars_regime_analysis.py` in dry mode with `uncertain_cutoff=0.62` vs `0.60` to quantify the UNCERTAIN rate delta before applying to live.
+
+---
+
 ## 2026-02-13: SOLUSDT last filled order (loss) + FLIP audit
 
 **Scope:** Forensics from `ops/wal/2026-02-13.jsonl`, `logs/*`, YAML SSOT under `config/aurora/`.

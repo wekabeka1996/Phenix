@@ -1,12 +1,12 @@
-import json
+﻿import json
 from pathlib import Path
 
 import pytest
 import yaml
 
-from config_models import NeocortexConfig
-from logic.ingest.parser import FeatureParser
-from logic.ingest.parsers.feature_parser import parse_feature_log_line
+from apps.reference.domains.neocortex.config_models import NeocortexConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser import parse_feature_log_line
 
 
 def test_bar_feature_log_nested_json_is_flattened_and_parsed(tmp_path: Path) -> None:
@@ -73,3 +73,4 @@ def test_bar_feature_log_nested_json_is_flattened_and_parsed(tmp_path: Path) -> 
     idx_liq = parser.feature_indices["liquidity_obi_close"]
     assert float(obs.features_vector[idx_atr]) == 0.0
     assert float(obs.features_vector[idx_liq]) == pytest.approx(0.77, abs=1e-6)
+

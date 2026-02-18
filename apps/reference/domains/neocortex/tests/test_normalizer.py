@@ -1,8 +1,8 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_welford_normalizer_fit_then_normalize(tmp_path):
-    from logic.ingest.normalizer import WelfordNormalizer
+    from apps.reference.domains.neocortex.logic.ingest.normalizer import WelfordNormalizer
 
     rng = np.random.default_rng(123)
     n = 5000
@@ -33,7 +33,7 @@ def test_welford_normalizer_fit_then_normalize(tmp_path):
 
 
 def test_welford_normalizer_handles_count_one():
-    from logic.ingest.normalizer import WelfordNormalizer
+    from apps.reference.domains.neocortex.logic.ingest.normalizer import WelfordNormalizer
 
     d = 3
     norm = WelfordNormalizer(dim=d, eps=1e-8)
@@ -44,4 +44,5 @@ def test_welford_normalizer_handles_count_one():
     assert z.shape == (d,)
     assert z.dtype == np.float32
     assert np.all(np.isfinite(z))
+
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for Phase R1.5: The Dreamer - Offline Consolidation
 
 Tests cover:
@@ -17,10 +17,9 @@ from dataclasses import dataclass
 from typing import Dict
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from logic.memory.graph import CausalGraph, GraphNode, GraphEdge
-from logic.dreamer import Dreamer, DreamEpisode
+from apps.reference.domains.neocortex.logic.memory.graph import CausalGraph, GraphNode, GraphEdge
+from apps.reference.domains.neocortex.logic.dreamer import Dreamer, DreamEpisode
 
 
 class TestCausalGraph:
@@ -333,3 +332,5 @@ class TestDreamerIntegration:
 # Run tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

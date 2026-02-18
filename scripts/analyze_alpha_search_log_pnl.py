@@ -135,6 +135,37 @@ def render_md_report(
             return "n/a"
         return f"{100.0 * x:.{digits}f}%"
 
+    def fixed_table(headers: list[str], rows: list[list[str]], widths: list[int]) -> list[str]:
+        def pad(s: str, w: int, align_right: bool = False) -> str:
+            s = s[:w]
+            if align_right:
+                return s.rjust(w)
+            return s.ljust(w)
+
+        # Determine which columns should be right-aligned: everything except the first column.
+        right_align = [False] + [True] * (len(headers) - 1)
+
+        hline = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+        out: list[str] = [hline]
+        out.append(
+            "| "
+            + " | ".join(pad(h, w, align_right=right_align[i])
+                         for i, (h, w) in enumerate(zip(headers, widths)))
+            + " |"
+        )
+        out.append(hline)
+        for r in rows:
+            out.append(
+                "| "
+                + " | ".join(
+                    pad(cell, w, align_right=right_align[i])
+                    for i, (cell, w) in enumerate(zip(r, widths))
+                )
+                + " |"
+            )
+        out.append(hline)
+        return out
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
     rows = sorted(per_symbol.items(),
@@ -168,31 +199,89 @@ def render_md_report(
 
     lines.append("## By symbol")
     lines.append("")
-    lines.append(
-        "| symbol | closes | wins | losses | flats | win% (ex flats) | win% (all) | pnl_sum | avg_pnl | gross_profit | gross_loss_abs |"
-    )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("### Overview")
+    lines.append("")
 
+    overview_headers = ["symbol", "closes",
+                        "pnl_sum", "win%_ex_flats", "profit_factor"]
+    overview_rows: list[list[str]] = []
     for symbol, agg in rows:
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    symbol,
-                    str(agg.closes),
-                    str(agg.wins),
-                    str(agg.losses),
-                    str(agg.flats),
-                    fmt_pct(agg.win_rate_ex_flats()),
-                    fmt_pct(agg.win_rate_all()),
-                    fmt_float(agg.pnl_sum),
-                    fmt_float(agg.avg_pnl()),
-                    fmt_float(agg.gross_profit),
-                    fmt_float(agg.gross_loss_abs),
-                ]
-            )
-            + " |"
+        overview_rows.append(
+            [
+                symbol,
+                str(agg.closes),
+                fmt_float(agg.pnl_sum),
+                fmt_pct(agg.win_rate_ex_flats()),
+                fmt_float(agg.profit_factor(), digits=3),
+            ]
         )
+
+    # Fixed widths (consistent across all rows). Compute from content but keep a sensible minimum.
+    overview_widths: list[int] = []
+    for col_idx, header in enumerate(overview_headers):
+        max_len = len(header)
+        for r in overview_rows:
+            max_len = max(max_len, len(r[col_idx]))
+        overview_widths.append(max(12 if col_idx == 0 else 10, max_len))
+
+    lines.append("```")
+    lines.extend(fixed_table(overview_headers, overview_rows, overview_widths))
+    lines.append("```")
+
+    lines.append("")
+    lines.append("### Details")
+
+    detail_fields = [
+        "closes",
+        "wins",
+        "losses",
+        "flats",
+        "win_rate_ex_flats",
+        "win_rate_all",
+        "pnl_sum",
+        "avg_pnl",
+        "gross_profit",
+        "gross_loss_abs",
+        "profit_factor",
+    ]
+
+    # Determine a consistent value width across all symbols.
+    detail_value_strings_by_symbol: dict[str, dict[str, str]] = {}
+    max_value_len = 0
+    for symbol, agg in rows:
+        values = {
+            "closes": str(agg.closes),
+            "wins": str(agg.wins),
+            "losses": str(agg.losses),
+            "flats": str(agg.flats),
+            "win_rate_ex_flats": fmt_pct(agg.win_rate_ex_flats()),
+            "win_rate_all": fmt_pct(agg.win_rate_all()),
+            "pnl_sum": fmt_float(agg.pnl_sum),
+            "avg_pnl": fmt_float(agg.avg_pnl()),
+            "gross_profit": fmt_float(agg.gross_profit),
+            "gross_loss_abs": fmt_float(agg.gross_loss_abs),
+            "profit_factor": fmt_float(agg.profit_factor(), digits=3),
+        }
+        detail_value_strings_by_symbol[symbol] = values
+        for f in detail_fields:
+            max_value_len = max(max_value_len, len(values[f]))
+
+    field_w = max(18, max(len(f) for f in detail_fields))
+    value_w = max(12, max_value_len)
+
+    for symbol, _agg in rows:
+        lines.append("")
+        lines.append(f"#### {symbol}")
+        lines.append("")
+        detail_headers = ["field", "value"]
+        detail_rows: list[list[str]] = []
+        for f in detail_fields:
+            detail_rows.append([f, detail_value_strings_by_symbol[symbol][f]])
+
+        lines.append("```")
+        lines.extend(fixed_table(detail_headers,
+                     detail_rows, [field_w, value_w]))
+        lines.append("```")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

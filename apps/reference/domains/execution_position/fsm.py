@@ -200,6 +200,8 @@ class ExecPosFSM:
         self._prev_position_amts: Dict[str, float] = {}
         self._last_position_closed_ts: Dict[str, float] = {}
         self._last_any_position_closed_ts: float = 0.0
+        self._last_realized_pnl: Optional[float] = None
+        self._position_close_seq: int = 0
         try:
             exec_cfg = self.config.trading.execution
         except Exception as e:
@@ -1609,31 +1611,142 @@ class ExecPosFSM:
                     current_amts[sym] = 0.0
 
             epsilon = 1e-10
-            all_syms = set(self._prev_position_amts.keys()
-                           ) | set(current_amts.keys())
+            all_syms = set(self._prev_position_amts.keys()) | set(current_amts.keys())
+            closed_symbols: List[Tuple[str, float, float]] = []
             for sym in all_syms:
                 prev_amt = float(self._prev_position_amts.get(sym, 0.0))
                 now_amt = float(current_amts.get(sym, 0.0))
                 if abs(prev_amt) >= epsilon and abs(now_amt) < epsilon:
-                    closed_at = get_clock().now_sec()
-                    self._last_position_closed_ts[sym] = closed_at
-                    self._last_any_position_closed_ts = closed_at
+                    closed_symbols.append((sym, prev_amt, now_amt))
 
-                    LOG.info(
-                        f"[POSITION_CLOSED] {sym}: position closed (was {prev_amt}, now {now_amt})"
-                    )
+            current_realized_pnl_raw = self._latest_portfolio_state.get("realized_pnl")
+            try:
+                current_realized_pnl = float(current_realized_pnl_raw)
+            except Exception:
+                current_realized_pnl = self._last_realized_pnl or 0.0
 
-                    # Position closed - trigger immediate orphan cleanup for this symbol
-                    if hasattr(self, "order_guardian") and self.order_guardian:
-                        loop = self._get_async_loop()
-                        if loop:
-                            self._submit_async(
-                                self.order_guardian.reconcile_symbol(
-                                    sym, "portfolio_update"),
-                                loop,
-                            )
+            prev_realized_pnl = (
+                self._last_realized_pnl if self._last_realized_pnl is not None else current_realized_pnl
+            )
+            realized_delta_total = current_realized_pnl - prev_realized_pnl
+            closes_count = len(closed_symbols)
+            realized_per_close = (
+                realized_delta_total / closes_count if closes_count > 0 else 0.0
+            )
+            fees_total_raw = self._latest_portfolio_state.get("fees", 0.0)
+            try:
+                fees_total = float(fees_total_raw)
+            except Exception:
+                fees_total = 0.0
+            fees_per_close = (fees_total / closes_count) if closes_count > 0 else 0.0
+
+            if closes_count > 1 and abs(realized_delta_total) > 0.0:
+                LOG.warning(
+                    "[POSITION_CLOSED] %s symbols closed in one portfolio update; "
+                    "distributing realized_pnl delta equally (%s)",
+                    closes_count,
+                    realized_delta_total,
+                )
+            if closes_count > 1 and abs(fees_total) > 0.0:
+                LOG.warning(
+                    "[POSITION_CLOSED] %s symbols closed in one portfolio update; "
+                    "distributing aggregate fees equally (%s)",
+                    closes_count,
+                    fees_total,
+                )
+
+            close_ts_ms_raw = self._latest_portfolio_state.get("ts")
+            try:
+                close_ts_ms = int(close_ts_ms_raw)
+            except Exception:
+                close_ts_ms = int(get_clock().now_ms())
+
+            for sym, prev_amt, now_amt in closed_symbols:
+                closed_at = get_clock().now_sec()
+                self._last_position_closed_ts[sym] = closed_at
+                self._last_any_position_closed_ts = closed_at
+
+                self._position_close_seq += 1
+                trade_id = f"{sym}:{close_ts_ms}:{self._position_close_seq}"
+
+                close_payload = {
+                    "event_type": "POSITION_CLOSED",
+                    "symbol": sym,
+                    "trade_id": trade_id,
+                    "close_ts_ms": close_ts_ms,
+                    "realized_pnl_net": float(realized_per_close),
+                    "fees": float(fees_per_close),
+                    "side": "LONG" if prev_amt > 0 else "SHORT",
+                    "position_amt_before_close": prev_amt,
+                    "position_amt_after_close": now_amt,
+                }
+                LOG.info(
+                    "[POSITION_CLOSED] %s: position closed (was %s, now %s)",
+                    sym,
+                    prev_amt,
+                    now_amt,
+                )
+                # Structured primary delivery path for Neocortex core log parsing.
+                LOG.info(
+                    "EVT:POSITION_CLOSED symbol=%s trade_id=%s close_ts_ms=%s "
+                    "realized_pnl_net=%s fees=%s side=%s",
+                    close_payload["symbol"],
+                    close_payload["trade_id"],
+                    close_payload["close_ts_ms"],
+                    close_payload["realized_pnl_net"],
+                    close_payload["fees"],
+                    close_payload["side"],
+                )
+
+                close_msg = Message(
+                    op="EVT",
+                    verb="POSITION_CLOSED",
+                    src="execution_position",
+                    dst="any",
+                    rid=str(event.rid or f"position_closed:{trade_id}"),
+                    pld=close_payload,
+                    why="position_closed_detected_from_portfolio_update",
+                    data_ref=event.data_ref,
+                )
+
+                async def _emit_close(msg: Message) -> None:
+                    try:
+                        self.fsm.emit(
+                            "EVT:POSITION_CLOSED",
+                            msg.pld,
+                            msg.why,
+                        )
+                    except TypeError:
+                        await emit_compat(self.fsm, msg, logger=LOG)
+                    except Exception as ex:
+                        LOG.error(f"Failed to emit EVT:POSITION_CLOSED: {ex}")
+
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(_emit_close(close_msg), loop)
+                else:
+                    try:
+                        self.bus.emit(
+                            "EVT:POSITION_CLOSED",
+                            close_payload,
+                            "position_closed_detected_from_portfolio_update",
+                            event.data_ref,
+                        )
+                    except Exception as ex:
+                        LOG.error(f"Failed to emit EVT:POSITION_CLOSED via bus fallback: {ex}")
+
+                # Position closed - trigger immediate orphan cleanup for this symbol
+                if hasattr(self, "order_guardian") and self.order_guardian:
+                    loop = self._get_async_loop()
+                    if loop:
+                        self._submit_async(
+                            self.order_guardian.reconcile_symbol(
+                                sym, "portfolio_update"),
+                            loop,
+                        )
 
             self._prev_position_amts = current_amts
+            self._last_realized_pnl = current_realized_pnl
         except Exception as e:
             LOG.debug(f"Error checking position closures: {e}")
 

@@ -357,7 +357,7 @@ def dream_consolidation(
     Returns:
         Consolidation statistics
     """
-    from logic.memory.graph import CausalGraph
+    from apps.reference.domains.neocortex.logic.memory.graph import CausalGraph
     
     # Create graph
     graph = CausalGraph(

@@ -1,13 +1,13 @@
-"""
+﻿"""
 Ingestion Logic Tests
 """
 
 import pytest
 import numpy as np
 from pydantic import ValidationError
-from config_models import IngestConfig
-from logic.ingest.parser import FeatureParser
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.config_models import IngestConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 # =============================================================================
 # FIXTURES
@@ -129,3 +129,4 @@ def test_market_observation_immutability():
     with pytest.raises(FrozenInstanceError if hasattr(pytest, 'FrozenInstanceError') else AttributeError):
         # Dataclass frozen raises FrozenInstanceError or AttributeError depending on Python version/impl
         obs.ts = 2.0
+

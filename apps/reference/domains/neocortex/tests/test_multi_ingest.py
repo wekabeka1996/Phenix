@@ -1,4 +1,4 @@
-"""
+﻿"""
 Multi-Source Ingestion Tests
 
 Test parsing and correlation of multiple log sources.
@@ -12,12 +12,12 @@ from pathlib import Path
 from datetime import datetime
 from unittest.mock import AsyncMock
 
-from logic.ingest.parsers import (
+from apps.reference.domains.neocortex.logic.ingest.parsers import (
     FeatureLogEntry, parse_feature_log_line,
     OrderLogEntry, OrderEventType, parse_order_log_line,
     CoreLogEntry, CoreEventType, parse_core_log_line,
 )
-from logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig, Episode
+from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig, Episode
 
 
 # =============================================================================
@@ -224,6 +224,119 @@ class TestMultiTailer:
         run_async(run_test())
         
         assert tailer.stats["orders_processed"] >= 1
+
+    def test_fair_ingestion_processes_orders_before_large_feature_backlog(self, tmp_path):
+        """Round-robin quotas should avoid order starvation under heavy feature backlog."""
+
+        features_dir = tmp_path / "features"
+        features_dir.mkdir(parents=True, exist_ok=True)
+        orders_file = tmp_path / "order_log_v1.jsonl"
+        core_log = tmp_path / "aurora_core.log"
+
+        heavy_feature_lines = [
+            '{"obi": "0.1", "rsi": "50.0", "vol": "0.03", "price": "90000"}\n'
+            for _ in range(10000)
+        ]
+        (features_dir / "BTCUSDT.log").write_text("".join(heavy_feature_lines), encoding="utf-8")
+
+        order_lines = []
+        for i in range(100):
+            order_lines.append(
+                json.dumps(
+                    {
+                        "event_type": "ORDER_PLACED",
+                        "symbol": "BTCUSDT",
+                        "side": "BUY",
+                        "quantity": 0.001,
+                        "timestamp": 1_700_000_000 + i,
+                        "metadata": {"order_type": "MARKET_ENTRY"},
+                    }
+                )
+            )
+        orders_file.write_text("\n".join(order_lines) + "\n", encoding="utf-8")
+        core_log.write_text("", encoding="utf-8")
+
+        config = MultiSourceConfig(
+            enabled=True,
+            features_dir=features_dir,
+            orders_file=orders_file,
+            core_log=core_log,
+            symbols=["BTCUSDT"],
+            batch_size=100,
+            poll_interval=0.01,
+            max_feature_lines_total_per_cycle=1000,
+            max_feature_lines_per_symbol_per_cycle=200,
+            max_order_lines_per_cycle=100,
+            max_core_lines_per_cycle=50,
+        )
+
+        first_order_seen_at_feature_count = {"value": None}
+
+        async def feature_handler(_event):
+            return None
+
+        tailer = MultiTailer(
+            config=config,
+            feature_handler=feature_handler,
+            state_path=tmp_path / "state.json",
+        )
+
+        original_order_handler = tailer._handle_order_event
+
+        async def wrapped_order_handler(entry):
+            if first_order_seen_at_feature_count["value"] is None:
+                first_order_seen_at_feature_count["value"] = tailer.stats["features_processed"]
+            await original_order_handler(entry)
+
+        tailer._handle_order_event = wrapped_order_handler
+
+        async def run_test():
+            task = asyncio.create_task(tailer.run())
+            await asyncio.sleep(0.4)
+            tailer.stop()
+            await task
+
+        run_async(run_test(), timeout=5.0)
+
+        assert tailer.stats["orders_processed"] > 0
+        assert first_order_seen_at_feature_count["value"] is not None
+        assert first_order_seen_at_feature_count["value"] < 5000
+
+    def test_tailer_core_log_invalid_bytes_do_not_crash(self, temp_logs, caplog):
+        """Core log with non-UTF8 bytes should be decoded with replacement, not crash loop."""
+
+        # Inject a line with invalid UTF-8 byte sequence.
+        bad_line = b"2026-01-09 12:00:02,500 - core - INFO - bad\x8dbyte\n"
+        valid_line = (
+            b"2026-01-09 12:00:03,000 - aurora_handler.aurora - INFO - "
+            b"[BTCUSDT] Position closed (neutral). Starting re-entry cooldown.\n"
+        )
+        temp_logs["core_log"].write_bytes(bad_line + valid_line)
+
+        config = MultiSourceConfig(
+            enabled=True,
+            features_dir=temp_logs["features_dir"],
+            orders_file=temp_logs["orders_file"],
+            core_log=temp_logs["core_log"],
+            symbols=["BTCUSDT"],
+        )
+
+        tailer = MultiTailer(
+            config=config,
+            feature_handler=AsyncMock(),
+            state_path=temp_logs["root"] / "state.json",
+        )
+
+        async def run_test():
+            task = asyncio.create_task(tailer.run())
+            await asyncio.sleep(0.3)
+            tailer.stop()
+            await task
+
+        run_async(run_test())
+
+        combined_log = "\n".join([rec.message for rec in caplog.records])
+        assert "charmap' codec can't decode" not in combined_log
     
     def test_tailer_state_persistence(self, temp_logs):
         """Test that tailer saves and loads state."""
@@ -313,3 +426,4 @@ class TestEpisodeCorrelation:
         assert episode.features["obi"] == 0.5
         assert episode.side == "BUY"
         assert episode.reward == 0.0  # Default
+

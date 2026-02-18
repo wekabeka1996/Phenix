@@ -1,4 +1,4 @@
-"""
+﻿"""
 Feature Event Parser
 
 Responsible for converting raw event dictionaries (with string decimals)
@@ -11,8 +11,8 @@ from typing import Dict, Any, Union
 import logging
 import numpy as np
 
-from config_models import IngestConfig
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.config_models import IngestConfig
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 logger = logging.getLogger(__name__)
 
@@ -158,3 +158,4 @@ class FeatureParser:
             return float(value)
         except (ValueError, TypeError):
             return default
+

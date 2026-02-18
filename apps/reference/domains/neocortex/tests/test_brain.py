@@ -1,4 +1,4 @@
-"""
+﻿"""
 Brain Core Tests
 """
 
@@ -11,10 +11,10 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-from config_models import NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
-from logic.brain.vae import VariationalAutoencoder
-from logic.brain.world_model import WorldModel
-from logic.brain.core import BrainCore
+from apps.reference.domains.neocortex.config_models import NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
+from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
+from apps.reference.domains.neocortex.logic.brain.core import BrainCore
 
 # =============================================================================
 # FIXTURES
@@ -135,3 +135,40 @@ def test_brain_core_encode(neuro_config):
     z_batch = core.encode(obs_batch)
     
     assert z_batch.shape == (5, neuro_config.vae.latent_dim)
+
+
+def test_get_action_fallback_when_ppo_raises(neuro_config):
+    """BrainCore should fail-safe to FLAT when PPO.act raises."""
+
+    class _BrokenPPO:
+        def act(self, _z, deterministic=False):
+            raise ValueError("invalid logits")
+
+    core = BrainCore(neuro_config, device="cpu")
+    core.ppo_agent = _BrokenPPO()
+
+    result = core.get_action(np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32))
+    assert result["action_name"] == "FLAT"
+    assert result["action"] == 2
+    assert result["value"] == 0.0
+    assert result["confidence"] == 0.0
+
+
+def test_get_action_sanitizes_non_finite_latent_and_outputs(neuro_config):
+    """Non-finite latent/output values should not propagate to runtime actions."""
+
+    captured = {}
+
+    class _NaNOutputPPO:
+        def act(self, z, deterministic=False):
+            captured["z"] = np.asarray(z)
+            return np.array([0.0]), np.array([np.nan]), np.array([np.inf])
+
+    core = BrainCore(neuro_config, device="cpu")
+    core.ppo_agent = _NaNOutputPPO()
+
+    result = core.get_action(np.array([np.nan, np.inf, -np.inf, 1.0], dtype=np.float32))
+    assert np.isfinite(captured["z"]).all()
+    assert result["action_name"] == "FLAT"
+    assert result["action"] == 2
+

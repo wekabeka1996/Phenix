@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for Phase R2: PPO Training and Telemetry
 
 Tests cover:
@@ -11,13 +11,23 @@ import pytest
 import tempfile
 import csv
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 import time
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from logic.telemetry import TelemetryLogger, get_telemetry
+from apps.reference.domains.neocortex.logic.telemetry import TelemetryLogger, get_telemetry
+from apps.reference.domains.neocortex.config_models import (
+    NeocortexConfig,
+    SystemConfig,
+    IngestConfig,
+    NeuroConfig,
+    VAEConfig,
+    WorldModelConfig,
+    PPOConfig,
+    ReplayConfig,
+)
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 
 class TestTelemetryLogger:
@@ -197,7 +207,7 @@ class TestTelemetrySingleton:
     def test_get_telemetry_returns_logger(self, tmp_path):
         """Test get_telemetry returns TelemetryLogger instance."""
         # Reset singleton (not ideal for production but ok for testing)
-        import logic.telemetry as telem_module
+        import apps.reference.domains.neocortex.logic.telemetry as telem_module
         telem_module._telemetry_instance = None
         
         logger = get_telemetry(log_dir=tmp_path / "test_logs")
@@ -210,7 +220,7 @@ class TestPPOTelemetryIntegration:
     
     def test_adapter_has_telemetry(self):
         """Verify adapter initializes telemetry logger."""
-        from transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
         
         # Check class has the attribute referenced in __init__
         assert hasattr(NeocortexAdapter, '__init__')
@@ -247,6 +257,153 @@ class TestPPOTelemetryIntegration:
         assert len(rows) == 1
         assert float(rows[0]["ppo_loss_pi"]) == 0.05
         assert float(rows[0]["ppo_entropy"]) == 0.8
+
+    @staticmethod
+    def _build_adapter_config(tmp_path: Path) -> NeocortexConfig:
+        return NeocortexConfig(
+            system=SystemConfig(
+                data_dir=str(tmp_path / "data"),
+                checkpoint_dir=str(tmp_path / "data" / "checkpoints"),
+                brain_workers=1,
+                queue_maxsize=100,
+                log_level="INFO",
+                log_to_file=False,
+                run_mode="backtest",
+            ),
+            ingest=IngestConfig(
+                feature_list=["price", "obi", "rsi"],
+                normalization_method="zscore",
+                normalization_window=100,
+                buffer_size=1000,
+                min_samples_before_ready=1,
+                nan_strategy="zero",
+            ),
+            neuro=NeuroConfig(
+                vae=VAEConfig(
+                    input_dim=3,
+                    hidden_dims=[16],
+                    latent_dim=4,
+                    learning_rate=0.001,
+                    beta=1.0,
+                    batch_size=8,
+                    use_mean=True,
+                ),
+                world_model=WorldModelConfig(
+                    hidden_dim=16,
+                    num_layers=1,
+                    dropout=0.0,
+                    learning_rate=0.001,
+                    sequence_length=4,
+                ),
+                ppo=PPOConfig(
+                    state_dim=4,
+                    action_dim=3,
+                    hidden_dims=[16],
+                    learning_rate=0.001,
+                    gamma=0.99,
+                    gae_lambda=0.95,
+                    clip_epsilon=0.2,
+                    rollout_length=32,
+                    num_epochs=1,
+                    minibatch_size=8,
+                ),
+                checkpoint_every_n_steps=50,
+                keep_last_n_checkpoints=1,
+                dream_episode_threshold=2,
+            ),
+            replay=ReplayConfig(enabled=False),
+        )
+
+    @pytest.mark.asyncio
+    async def test_adapter_maps_and_logs_ppo_metrics(self, tmp_path):
+        """Adapter should map alternate PPO keys and write CSV telemetry."""
+        config = self._build_adapter_config(tmp_path)
+
+        buffer = MagicMock()
+        buffer.__len__ = lambda _self: 0
+
+        bridge = MagicMock()
+        bridge.train_ppo_async = AsyncMock(
+            return_value={
+                "policy_loss": 0.12,
+                "value_loss": 0.34,
+                "entropy": 0.56,
+                "episodes_processed": 3,
+                "train_step": 7,
+            }
+        )
+
+        adapter = NeocortexAdapter(
+            config=config,
+            parser=MagicMock(),
+            amygdala=MagicMock(),
+            buffer=buffer,
+            brain_bridge=bridge,
+        )
+
+        logged_training = []
+        logged_buffer = []
+        adapter.telemetry.log_training = lambda **kwargs: logged_training.append(kwargs)
+        adapter.telemetry.log_buffer_stats = lambda **kwargs: logged_buffer.append(kwargs)
+
+        await adapter._trigger_ppo_training(
+            [{"symbol": "BTCUSDT", "reward": 0.1}, {"symbol": "ETHUSDT", "reward": -0.1}]
+        )
+
+        assert len(logged_training) == 1
+        assert logged_training[0]["ppo_loss_pi"] == pytest.approx(0.12)
+        assert logged_training[0]["ppo_loss_v"] == pytest.approx(0.34)
+        assert logged_training[0]["ppo_entropy"] == pytest.approx(0.56)
+
+        assert len(logged_buffer) == 1
+        assert logged_buffer[0]["episodes_processed"] == 3
+
+    @pytest.mark.asyncio
+    async def test_adapter_logs_episode_only_when_reward_present(self, tmp_path):
+        """No-fallback policy: reward-missing episode must not write fake reward telemetry."""
+        config = self._build_adapter_config(tmp_path)
+
+        buffer = MagicMock()
+        buffer.__len__ = lambda _self: 0
+
+        adapter = NeocortexAdapter(
+            config=config,
+            parser=MagicMock(),
+            amygdala=MagicMock(),
+            buffer=buffer,
+            brain_bridge=None,
+        )
+
+        logged_episodes = []
+        logged_buffer = []
+        adapter.telemetry.log_episode = lambda **kwargs: logged_episodes.append(kwargs)
+        adapter.telemetry.log_buffer_stats = lambda **kwargs: logged_buffer.append(kwargs)
+
+        await adapter.add_completed_episode(
+            {
+                "symbol": "BTCUSDT",
+                "timestamp": 1_700_000_000.0,
+                "features": {"price": 100.0, "obi": 0.1, "rsi": 50.0},
+                "side": "LONG",
+                "reward": 0.25,
+                "pnl": 2.5,
+            }
+        )
+        await adapter.add_completed_episode(
+            {
+                "symbol": "BTCUSDT",
+                "timestamp": 1_700_000_001.0,
+                "features": {"price": 100.2, "obi": 0.0, "rsi": 49.0},
+                "side": "LONG",
+                "reward": None,
+                "pnl": None,
+            }
+        )
+
+        assert len(logged_episodes) == 1
+        assert logged_episodes[0]["reward"] == pytest.approx(0.25)
+        assert logged_episodes[0]["pnl"] == pytest.approx(2.5)
+        assert len(logged_buffer) >= 2
 
 
 class TestCSVFormat:
@@ -295,3 +452,6 @@ class TestCSVFormat:
 # Run tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+

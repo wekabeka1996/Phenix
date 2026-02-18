@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for Phase R2: PPO Training Loop
 
 Tests cover:
@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from typing import Dict, Any
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestPPOTrainingCore:
@@ -109,13 +108,13 @@ class TestPPOBridgeAsync:
     
     def test_bridge_method_exists(self):
         """Verify train_ppo_async method exists on BrainBridge."""
-        from logic.brain.bridge import BrainBridge
+        from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
         
         assert hasattr(BrainBridge, 'train_ppo_async')
     
     def test_bridge_not_initialized_returns_error(self):
         """Uninitialized bridge should return error dict (sync version)."""
-        from logic.brain.bridge import BrainBridge
+        from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
         
         # Create minimal mock config
         config = MagicMock()
@@ -136,7 +135,7 @@ class TestAdapterPPOIntegration:
         """Adapter should track PPO training stats."""
         # Skip if adapter cannot be instantiated without full config
         try:
-            from transport.adapter import NeocortexAdapter
+            from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
             
             # Check that the class has the attribute
             assert hasattr(NeocortexAdapter, '_trigger_ppo_training')
@@ -146,7 +145,7 @@ class TestAdapterPPOIntegration:
     
     def test_adapter_has_trigger_method(self):
         """Adapter should have PPO training trigger method."""
-        from transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
         
         assert hasattr(NeocortexAdapter, '_trigger_ppo_training')
         assert hasattr(NeocortexAdapter, 'train_ppo_now')
@@ -241,3 +240,5 @@ class TestShadowIntentOutput:
 # Run tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

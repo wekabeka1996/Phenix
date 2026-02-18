@@ -183,6 +183,12 @@ registry:
 - op: EVT
   verb: NEOCORTEX_SHADOW_INTENT
   owner: neocortex
+  status: deprecated
+  schema: null
+  since: '2026-01-12'
+- op: EVT
+  verb: NEOCORTEX_SHADOW_INTENT_PROPOSED
+  owner: neocortex
   status: experimental
   schema: null
   since: '2026-01-12'
@@ -260,7 +266,7 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: POSITION_CLOSED
-  owner: unknown
+  owner: execution_position
   status: experimental
   schema: null
   since: '2026-01-08'
