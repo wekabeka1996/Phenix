@@ -319,6 +319,17 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     # Stable run id for artifacts (report + order log)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # WAL Isolation: Redirect to ops/wal/backtest/<run_id>
+    # This prevents pollution of live WAL and avoids performance hits on fsync for live logs.
+    try:
+        from vfoundation.dr import wal
+        bt_wal_dir = project_root / "ops" / "wal" / "backtest" / run_id
+        bt_wal_dir.mkdir(parents=True, exist_ok=True)
+        wal.set_wal_dir(bt_wal_dir)
+        LOG.info(f"🛡️ WAL Isolated for Backtest: {bt_wal_dir}")
+    except Exception as e:
+        LOG.warning(f"Failed to isolate WAL for backtest: {e}")
+
     bt_cfg = getattr(getattr(config, "trading", None), "backtest", None)
     backtest_mode = str(getattr(bt_cfg, "backtest_mode", "strict")).strip().lower()
     if backtest_mode not in ("strict", "relaxed"):
@@ -628,6 +639,27 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     # Task 18: FeatureEngineering requires AuroraConfig object
     feature_engineering = FeatureEngineering(fsm, config)
     fsm.register_domain("feature_engineering", feature_engineering)
+    
+    # PILLAR-WARMUP: Wire multi-TF resampler for pillar warmup.
+    # FE already has _pillar_timeframe_to_label = {900: 'm15', 14400: 'h4', 86400: 'd1'}
+    # Resampler aggregates 5m bars → HTF bars → emits EVT:BAR_CLOSED → FE updates pillar state.
+    pillar_tf_map = getattr(feature_engineering, "_pillar_timeframe_to_label", {})
+    if pillar_tf_map:
+        try:
+            from backtest_engine.backtest_bar_resampler import BacktestBarResampler
+            pillar_tfs = sorted(pillar_tf_map.keys())
+            engine._bar_resampler = BacktestBarResampler(
+                emit_fn=fsm.emit,
+                pillar_timeframes_sec=pillar_tfs,
+            )
+            LOG.info(
+                f"✅ BacktestBarResampler wired: pillar_tfs={pillar_tfs} "
+                f"(labels={list(pillar_tf_map.values())})"
+            )
+        except Exception as e:
+            LOG.warning(f"⚠️ BacktestBarResampler not available: {e}")
+    else:
+        LOG.info("ℹ️ No pillar timeframes configured — HTF resampler skipped")
     
     # Regime Detector
     # Task 18: RegimeDetector requires AuroraConfig object

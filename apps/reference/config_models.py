@@ -337,6 +337,9 @@ class MRStrategyParamsConfig(BaseModel):
     atr_window: int = Field(description='ATR window for stops')
     rsi_window: int = Field(description='RSI window')
     
+    # Phase 9: Sensitivity Tuning
+    score_multiplier: float = 1.0
+    
     entry_threshold: float = Field(description='%B threshold for entry')
     rsi_oversold: float = Field(description='RSI oversold level')
     rsi_overbought: float = Field(description='RSI overbought level')
@@ -679,6 +682,9 @@ class DecisionConfig(BaseModel):
     essential_features: List[str] = Field(default_factory=list, description="Features that must be present/ready")
     liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Global liquidity gate config")
     anchor_shock_veto: Optional[AnchorShockVetoConfig] = Field(default=None, description="Phase 3: Block BUY during anchor crash")
+
+    # Phase 9: Sensitivity Tuning
+    score_multiplier: float = Field(default=1.0, description="Multiplier for linear score before quadratic transform")
 
     # ══════════════ Phase 9: Quadratic Brain Config ══════════════
     scoring_engine: Optional["ScoringEngineConfig"] = Field(

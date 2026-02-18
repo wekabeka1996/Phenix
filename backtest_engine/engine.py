@@ -125,6 +125,9 @@ class BacktestEngine:
         # DET-BT-15: Direct reference to ExecPosFSM for tick-barrier sync
         self.execpos_fsm = None
         
+        # PILLAR-WARMUP: Multi-TF resampler for pillar warmup (set externally by main.py)
+        self._bar_resampler = None
+        
         # Data storage
         self.feed: Optional[pl.DataFrame] = None
 
@@ -598,6 +601,18 @@ class BacktestEngine:
                 payload=bar_payload,
                 why="backtest_replay_bar"
             )
+
+            # PILLAR-WARMUP: Feed 5m bar into multi-TF resampler for M15/H4/D1 aggregation.
+            # Resampler emits additional EVT:BAR_CLOSED events when HTF boundaries are crossed.
+            if self._bar_resampler is not None:
+                try:
+                    self._bar_resampler.on_5m_bar(
+                        symbol=row["symbol"],
+                        bar_data=bar_payload["bar"],
+                        ts_ms=ts_ms,
+                    )
+                except Exception as e:
+                    LOG.warning(f"HTF resampler error: {e}")
 
             # --- STEP 3: Sync ---
             # Since LocalBus is synchronous (callbacks run immediately in emit),

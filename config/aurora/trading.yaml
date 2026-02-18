@@ -16,8 +16,8 @@ trading:
     start_date: "2023-05-14"
     end_date: "2023-10-30"
     initial_balance: 1000.0
-    profit_withdrawal_enabled: true
-    profit_withdrawal_roi_pct: 25.0
+    profit_withdrawal_enabled: false
+    profit_withdrawal_roi_pct: 10
   tca_prefs:
     max_slippage_pct: 0.5
     max_slippage_bps: 10

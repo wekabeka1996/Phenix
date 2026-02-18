@@ -256,13 +256,18 @@ class ExecPosFSM:
         self._last_lifecycle_fill_price_by_symbol: Dict[str, float] = {}
         
         # PHASE4: Rehydrate pending brackets from WAL on startup
-        try:
-            restored = read_pending_brackets_from_wal()
-            if restored:
-                self._pending_brackets = restored
-                LOG.info(f"📌 [PHASE4] Restored {len(restored)} pending brackets from WAL")
-        except Exception as e:
-            LOG.warning(f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
+        # PHASE4: Rehydrate pending brackets from WAL on startup
+        # SKIP IN BACKTEST: Do not restore live state into backtest
+        if self.config.trading_mode == "backtest":
+            LOG.info("ℹ️ [PHASE4] WAL hydration skipped (backtest mode)")
+        else:
+            try:
+                restored = read_pending_brackets_from_wal()
+                if restored:
+                    self._pending_brackets = restored
+                    LOG.info(f"📌 [PHASE4] Restored {len(restored)} pending brackets from WAL")
+            except Exception as e:
+                LOG.warning(f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
 
         # EP-01.3-SUPERSEDE-ACK: Queued supersede state
         # When supersede cancels old entry, new open is queued until cancel confirmed
@@ -306,6 +311,7 @@ class ExecPosFSM:
         }
         self._orphan_rate_window_start: float = 0.0
         self._orphan_rate_count: int = 0
+
 
         self._guardian_cfg: Dict[str, Any] = self._resolve_guardian_config()
         self._guardian_unified: bool = bool(dget(self._guardian_cfg, "unified", True))

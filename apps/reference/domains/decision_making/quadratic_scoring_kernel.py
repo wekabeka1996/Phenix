@@ -103,15 +103,15 @@ class QuadraticScoringKernel:
         # Phase 9 extensions
         shield_fn: Optional[ShieldFn] = None,
         pillar_contribs: Optional[Dict[str, float]] = None,
+        score_multiplier: float = 1.0,
+        linear_score: Optional[float] = None,
     ) -> ScoringResult:
         """
         Compute quadratic signal score.
-
-        The pillar_sum must be present in features["pillar_sum"].
-        If missing or None, the kernel defers (fail-closed).
-
-        All other parameters match AuroraScoringKernel.compute() for
-        behavioral compatibility — they're used for threshold calculation.
+        
+        Args:
+            linear_score: Explicit linear score input (e.g. from handler computation).
+                          If provided, takes precedence over features["pillar_sum"].
         """
         _shield = shield_fn or _null_shield
 
@@ -124,57 +124,71 @@ class QuadraticScoringKernel:
             regime=regime_name,
         )
 
-        # ─── Step 1: Extract pillar_sum ───────────────────────────
-        pillar_sum_raw = features.get("pillar_sum")
-        if pillar_sum_raw is None:
+        # ─── Step 1: Resolve Linear Input (S_linear) ────────────────
+        if linear_score is not None:
+             s_linear = linear_score
+             source = "arg"
+        else:
+            # Fallback to feature contract
+            pillar_sum_raw = features.get("pillar_sum")
+            if pillar_sum_raw is None:
+                result.deferred = True
+                result.defer_reason = "PILLAR_WARMUP"  # FE pillars not ready yet (normal during warmup)
+                return result
+            try:
+                s_linear = float(pillar_sum_raw)
+                source = "feature:pillar_sum"
+            except (TypeError, ValueError):
+                result.deferred = True
+                result.defer_reason = "LINEAR_SCORE_INVALID"
+                return result
+
+        if not math.isfinite(s_linear):
             result.deferred = True
-            result.defer_reason = "PILLAR_SUM_MISSING"
+            result.defer_reason = "LINEAR_SCORE_NAN_INF"
             return result
 
-        try:
-            pillar_sum = float(pillar_sum_raw)
-        except (TypeError, ValueError):
-            result.deferred = True
-            result.defer_reason = "PILLAR_SUM_INVALID"
-            return result
+        # ─── Step 2: Scale & Clamp (Sensitivity) ──────────────────
+        # Formula: S_scaled = clamp(S_linear * M, -1, 1)
+        s_scaled_raw = s_linear * score_multiplier
+        
+        # SAFETY CAP: Enforce [-1, 1] invariant before squaring
+        s_clamped = max(-1.0, min(1.0, s_scaled_raw))
+        
+        # ─── Step 3: Quadratic Transform ──────────────────────────
+        # Exposure = sign(S_clamped) * (S_clamped)²
+        sign = 1.0 if s_clamped >= 0 else -1.0
+        # Determine magnitude from the clamped value
+        final_exposure = sign * (s_clamped ** 2)
 
-        if not math.isfinite(pillar_sum):
-            result.deferred = True
-            result.defer_reason = "PILLAR_SUM_NAN_INF"
-            return result
+        # ─── Step 4: Shield Cascade ──────────────────────────────
+        shield_mult, shield_reasons = _shield(symbol, features, s_linear, final_exposure)
+        shield_mult = max(0.0, min(1.0, shield_mult))
+        
+        final_score_val = final_exposure * shield_mult
 
-        # ─── Step 2: Quadratic transform ──────────────────────────
-        # Exposure = sign(Σ) × Σ²
-        sign = 1.0 if pillar_sum >= 0 else -1.0
-        raw_exposure = sign * (pillar_sum ** 2)
+        # ─── Step 5: Output & Explainability ─────────────────────
+        result.score = decimal.Decimal(str(round(final_score_val, 8)))
 
-        # ─── Step 3: Shield cascade ──────────────────────────────
-        shield_mult, shield_reasons = _shield(symbol, features, pillar_sum, raw_exposure)
-        shield_mult = max(0.0, min(1.0, shield_mult))  # Clamp to [0, 1]
-
-        final_exposure = raw_exposure * shield_mult
-
-        # ─── Step 4: Convert to Decimal score ────────────────────
-        signal_score = decimal.Decimal(str(round(final_exposure, 8)))
-        result.score = signal_score
-
-        # ─── Step 5: Explainability ──────────────────────────────
         quad_ctx = QuadraticContext(
-            pillar_sum=pillar_sum,
-            raw_exposure=raw_exposure,
+            pillar_sum=s_linear,
+            raw_exposure=final_exposure, 
             shield_multiplier=shield_mult,
-            final_exposure=final_exposure,
+            final_exposure=final_score_val,
             pillar_contribs=dict(pillar_contribs or {}),
             shield_reasons=list(shield_reasons),
         )
 
         result.psi_vector = {
             "scoring_engine": "quadratic_v1",
-            "pillar_sum": pillar_sum,
-            "raw_exposure": raw_exposure,
+            "source": source,
+            "s_linear": s_linear,
+            "multiplier": score_multiplier,
+            "s_scaled_raw": s_scaled_raw,
+            "s_clamped": s_clamped,
+            "clamped": s_scaled_raw != s_clamped,
+            "final_exposure": final_score_val,
             "shield_multiplier": shield_mult,
-            "final_exposure": final_exposure,
-            "pillar_contribs": dict(pillar_contribs or {}),
             "shield_reasons": list(shield_reasons),
         }
 
@@ -182,7 +196,8 @@ class QuadraticScoringKernel:
         result.shield_multiplier = decimal.Decimal(str(shield_mult))
         result.shield_breakdown = {
             "reasons": list(shield_reasons),
-            "raw_exposure": raw_exposure,
+            "raw_exposure": final_exposure,
+            "s_linear": s_linear,
         }
 
         # ─── Step 6: Threshold calculation ───────────────────────

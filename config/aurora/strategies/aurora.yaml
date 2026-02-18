@@ -29,10 +29,12 @@ aurora:
   # Global Aurora policy (DecisionConfig)
   decision:
     testnet:
-      signal_threshold: 0.14
+      signal_threshold: 0.005
     production:
-      signal_threshold: 0.14
-    signal_threshold: 0.14
+      signal_threshold: 0.005
+    signal_threshold: 0.005
+    # Phase 9: Sensitivity debug lever (neutral=1.0, production=1.0)
+    score_multiplier: 1.0
     neutral_threshold: 0.06
     symbols_to_track:
       - BTCUSDT
@@ -90,7 +92,18 @@ aurora:
     bar_gating: null
     roi_exit: null
     mean_reversion: null
-    
+
+    # ══════════════ Phase 5: Exit Manager (Global) ══════════════
+    # BUG-FIX: handler crashes (fail-closed) if exit: is missing.
+    # Per-symbol overrides in assets.<SYM>.exit still apply.
+    exit:
+      time_exit_enabled: false
+      max_hold_time_sec: 86400        # 24h hard stop (safety net)
+      signal_exit_enabled: true
+      signal_reversal_threshold: -0.10
+      danger_zone_action: "TIGHTEN_STOPS"
+      danger_zone_tighten_factor: 0.5
+
     # ══════════════ Phase 9: Quadratic Brain Logic ══════════════
     # Values: "v1" (Legacy), "v2" (Linear), "quadratic" (Phase 9)
     # Default: "v1" (Fail-safe)

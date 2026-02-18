@@ -27,6 +27,8 @@ from apps.reference.domains.decision_making.aurora_scoring_kernel import (
     ScoringResult,
     SideBiasState,
 )
+# NOTE: compute_direction_strength_score import removed (Plan A SSOT cleanup)
+# Linear score is now sourced exclusively from FE pillar_sum.
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     QuadraticScoringKernel,
 )
@@ -287,6 +289,10 @@ class AuroraHandler:
             # Neutral threshold for hysteresis (global default)
             nt_raw = getattr(decision, "neutral_threshold", None)
             self.neutral_threshold = decimal.Decimal(str(nt_raw)) if nt_raw is not None else decimal.Decimal("0.05")
+
+            # Phase 9: Sensitivity Tuning
+            sm_raw = getattr(decision, "score_multiplier", 1.0)
+            self.score_multiplier = float(sm_raw)
 
             # REGIME-KILL-SWITCH-01: Optional config-driven regime blocklist.
             # If current regime is blocked, Aurora strategy emits no signals.
@@ -947,11 +953,14 @@ class AuroraHandler:
         effective_regime_thresholds = self._get_regime_thresholds(symbol=symbol, instr_cfg=instr_cfg)
 
         # Phase 9: pass shield_fn and pillar_contribs if using quadratic kernel
+        # SSOT: pillar_sum comes exclusively from FE (Feature Extractor).
+        # If pillars not warmed up, kernel fails closed with PILLAR_WARMUP.
         extra_kwargs = {}
         if self.scoring_kernel_cls is QuadraticScoringKernel:
             extra_kwargs["shield_fn"] = self._shield_fn
-            # pillar_contribs carried in features by FE
             extra_kwargs["pillar_contribs"] = features.get("pillar_contribs", {})
+            # score_multiplier passed as debug lever (default 1.0, neutral)
+            extra_kwargs["score_multiplier"] = getattr(self, "score_multiplier", 1.0)
 
         # P0-3.1: Inject shield-relevant context into features so that
         # shields (ContextShield, MemoryShield) see regime and bar timestamp
@@ -1009,7 +1018,24 @@ class AuroraHandler:
         # CRITICAL: Update side state BEFORE any early returns.
         # This ensures hysteresis state is correct even for neutral signals.
         state.last_signal_side = result.side
-        
+
+        # ── S2-DIAG: Kernel visibility log (must appear on EVERY bar) ──
+        _psi = result.psi_vector or {}
+        self.logger.info(
+            "[%s] KERNEL_DIAG: engine=%s pillar_sum=%.4f score=%.6f "
+            "shield_mult=%.3f deferred=%s defer_reason=%s side=%s thr_buy=%s thr_sell=%s",
+            symbol,
+            _psi.get("scoring_engine", "?"),
+            float(_psi.get("pillar_sum", 0.0)),
+            float(result.score),
+            float(result.shield_multiplier or 1.0),
+            result.deferred,
+            result.defer_reason or "-",
+            result.side,
+            result.thr_buy,
+            result.thr_sell,
+        )
+
         if result.deferred:
             self.logger.debug(f"[{symbol}] Kernel deferred: {result.defer_reason}")
             defer_reason = str(result.defer_reason or "UNKNOWN")
