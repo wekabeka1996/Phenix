@@ -1,14 +1,24 @@
 {
   "date": "2026-01-08",
-  "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
+  "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 50,
-    "registry_tokens": 56,
-    "runtime_not_in_registry": 0,
+    "runtime_tokens": 60,
+    "registry_tokens": 57,
+    "runtime_not_in_registry": 9,
     "registry_not_in_runtime": 6,
-    "coverage": 1.0
+    "coverage": 0.85
   },
-  "runtime_not_in_registry": [],
+  "runtime_not_in_registry": [
+    "CMD:CANCEL",
+    "CMD:FORCE_RECOVER",
+    "CMD:SWITCH_TO_LOW_RISK_MODE",
+    "ERR:NO_TRANSITION",
+    "EVT:COOLDOWN_ELAPSED",
+    "EVT:ENTROPY_SPIKE",
+    "EVT:RECOVERY_SIGNAL",
+    "EVT:STABILIZED",
+    "EVT:TOPOLOGY_DRIFT_DETECTED"
+  ],
   "registry_not_in_runtime": [
     "DEC:CANCEL",
     "EVT:INTENT_DROPPED",

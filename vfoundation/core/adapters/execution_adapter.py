@@ -467,18 +467,25 @@ class ExecutionAdapter(ABC):
 
 class MockExecutionAdapter(ExecutionAdapter):
     """
-    Mock implementation for dry_run and paper modes.
+    DEPRECATED: Mock implementation moved to tests/vfoundation/fixtures/mock_execution_adapter.py.
+
+    This stub remains for backward compatibility only. Import from test fixtures instead:
+        from tests.vfoundation.fixtures.mock_execution_adapter import MockExecutionAdapter
 
     Simulates order lifecycle without real SDK calls.
     """
 
     def __init__(self, mode: Optional[ExecutionMode] = None) -> None:
-        """Initialize mock adapter."""
+        import warnings
+        warnings.warn(
+            "MockExecutionAdapter in production code is deprecated. "
+            "Import from tests.vfoundation.fixtures.mock_execution_adapter instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(mode)
-
-        # Simulated state
         self._next_exchange_order_id = 1
-        self._orders: Dict[str, Dict[str, Any]] = {}  # order_id → order state
+        self._orders: Dict[str, Dict[str, Any]] = {}
 
     def _submit_impl(self, order: OrderDTO, client_order_id: str) -> Dict[str, Any]:
         """

@@ -117,6 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare Backtest Data (CSV -> Parquet)")
     parser.add_argument("--source", type=str, default="data/raw", help="Source directory containing raw CSVs")
     parser.add_argument("--target", type=str, default="data/processed", help="Target directory for Parquet output")
+    parser.add_argument("--max-date", type=str, default=None, help="Skip files/months after this date, e.g. 2024-03")
     args = parser.parse_args()
     
     source_root = Path(args.source)
@@ -168,7 +169,8 @@ def main():
                     data_type=task.data_type,
                     source_dir=str(task.source_dir),
                     target_dir=str(target_root),
-                    timeframe=task.timeframe
+                    timeframe=task.timeframe,
+                    max_date=args.max_date,
                 )
                 if task.data_type == "klines" and task.timeframe:
                     klines_pairs.add((task.symbol, task.timeframe))
@@ -191,11 +193,19 @@ def main():
         if symbol not in has_aggtrades:
             continue
         try:
+            # Limit enrichment to months <= max_date if specified
+            months_filter = None
+            if args.max_date:
+                all_months = [f"{y}-{str(m).zfill(2)}"
+                              for y in range(2020, 2030) for m in range(1, 13)
+                              if f"{y}-{str(m).zfill(2)}" <= args.max_date]
+                months_filter = all_months
             results = enrich_symbol_timeframe(
                 processed_dir=target_root,
                 raw_dir=raw_dir,
                 symbol=symbol,
                 timeframe=timeframe,
+                months=months_filter,
             )
             enrich_total += len(results)
         except Exception as e:

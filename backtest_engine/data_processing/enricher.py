@@ -225,6 +225,16 @@ def enrich_month(
     )
 
     if bt_agg is not None:
+        # Materialize bt_agg BEFORE the main join to isolate the heavy
+        # group_by_dynamic (up to 1B rows) from the streaming collect.
+        # Result is only ~8928 rows (one per 5m interval), so this is safe.
+        try:
+            bt_agg = bt_agg.collect().lazy()
+        except Exception as e:
+            LOG.warning(f"bookTicker aggregation failed ({e}); skipping bookTicker for this month")
+            bt_agg = None
+
+    if bt_agg is not None:
         out_lf = (
             out_lf.join(bt_agg, on="open_time", how="left")
             .with_columns(

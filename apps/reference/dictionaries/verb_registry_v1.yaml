@@ -259,6 +259,12 @@ registry:
   schema: null
   since: '2026-01-08'
 - op: EVT
+  verb: PROCESS_STRATEGY_BLOCKED
+  owner: feature_engineering
+  status: active
+  schema: null
+  since: '2026-02-19'
+- op: EVT
   verb: POSITION_CLOSED
   owner: unknown
   status: experimental

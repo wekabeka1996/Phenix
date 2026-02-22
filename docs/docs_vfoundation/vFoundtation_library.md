@@ -1,329 +1,292 @@
 
+---
+
+# `vfoundation` — Library Blueprint
+
+**Version:** 1.0
+**Status:** Foundation Blueprint
+**Description:** Foundational library for building production-ready FSM-based LLM agents with contracts, observability, XAI, Disaster Recovery, and governance.
 
 ---
 
-#                      :                                                                     `vfoundation`
+## 0. Overview
 
-**            :** 1.0
-**      :**                                     /                                      
-**            :** Foundation Blueprint
-**        :**                                                                                                                                                                                   FSM-                      ,                                                  ,                     ,                                                     .
+Modern AI-driven systems (including LLM-agents) require **strict contracts**, **deterministic state management**, **explainability**, and **fault tolerance**.
 
----
+`vfoundation` is a **contract-first framework** that provides:
+- **FSM Core** — finite state machine infrastructure
+- **XAI Layer** — explainability storage and audit
+- **Disaster Recovery** — WAL, snapshots, replay
+- **Governance** — dictionaries, CLI, RFC workflow
 
-## 0.                            
-
-                                                 (                 LLM-                    )                             **                        **, **                               **, **                                 **    **                                                **.
-`vfoundation`          **                  -                    **,                                            ,                                                                                       **FSM-          **,                                                   **                              **, **XAI-                          **, **Disaster Recovery**    **governance**.
-
-**                       :**
-
->         -                                                            ,                                                                                        `vfoundation`,                                                                              ,                     ,                                                                                     .
+> Any contradiction between code and this document is resolved in favor of this document.
 
 ---
 
-## 1.                                                      
+## 1. Design Principles
 
-### 1.1.                                  
+### 1.1 Core Constraints
 
-* **                                                      :**                            ,                              .
-* **                                                                  :**                =         .
-* **LLM-              :**                                                                          ;                                                           .
-* **                              :**                        risk.py                         exec.py.
+- **Contracts are the source of truth:** dictionaries define the verb-space, not code.
+- **Runtime ≠ SSOT:** CI controls drift.
+- **LLM-Friendly Modularity:** modules ≤ 500 LOC, isolated context windows.
+- **No cross-domain imports** without a contract record (e.g., `risk.py` must not import `exec.py` directly).
 
-### 1.2.                        
+### 1.2 Message Protocol
 
-                                                                    **                              FSM (Finite State Machine)**,
-                                                                                                                                                      :
+All inter-module communication uses **FSM Messages**:
 
-* `op` (             : ASK, DEC, EVT, CMD, ERR),
-* `verb` (                     : EVAL_RISK, OPEN_POSITION),
-* `pld` (payload           ),
-* `why_chain` (                               ),
-* `trace_id` (                                       ).
-
-                                         **                            ,                       ,                                                       **.
-
-### 1.3.                   
-
-1. **Additive-Only Evolution:**                                     ,                        .
-2. **Contract > Code:**                                                                           .
-3. **Fail-Closed:**         -                                                                          DENY   .
-4. **Explain Everything:**                          `why`.
-5. **Graceful Degradation:**                                                                                                    .
-6. **Freeze Discipline:**                                                                    RFC.
-7. **LLM-Friendly Modularity:**           500 LOC,                       ,                                          .
-
----
-
-## 2.                                               
-
-### 2.1.                                    
-
-```
-                                                                                       
-            Meta-FSM                                                 
-                                                                                       
-                                                                       
-                               
-                                                                              
-    Domain:                 Domain:     
-    Risk&Str                Exec&Pos    
-                                                                              
-                               
-                                                            
-     Mod                     Mod      
-     risk                    trade    
-                                                            
+```json
+{
+  "op": "ASK",
+  "verb": "EVAL_RISK",
+  "src": "sizer",
+  "dst": "risk",
+  "rid": "uuid4",
+  "pld": {},
+  "why_chain": []
+}
 ```
 
-### 2.2.                                    
+Fields: `op` (ASK, DEC, EVT, CMD, ERR), `verb`, `pld` (payload), `why_chain`, `trace_id`.
 
-|                                       |                                                  |                             |
-| ------------------------------- | -------------------------------------------- | ----------------------- |
-| **FSM Core**                    |                                                                           |                                       |
-| **Domain FSMs**                 | FSM                             (risk, exec, data, audit) | Hot-path                       |
-| **Meta-FSM**                    |                                                                    |                                         |
-| **Adapters**                    |                                                                       |                                       |
-| **Schemas / Dictionaries**      | JSON/YAML                                             |                                  |
-| **Entropy / Topology Monitors** |                                                                  |                                         |
-| **WAL / Snapshots**             | Write-Ahead Logging                          |                                              |
-| **CLI / SDK**                   |                                                                      |                                      |
+### 1.3 Invariants
 
----
-
-## 3.                                                         (                               ,                                   )
+1. **Additive-Only Evolution:** no breaking changes, only additions.
+2. **Contract > Code:** contracts always override implementation.
+3. **Fail-Closed:** on timeout/CB-open → `DENY`.
+4. **Explain Everything:** every message must carry `why`.
+5. **Graceful Degradation:** partial failure must not cascade.
+6. **Freeze Discipline:** breaking changes require RFC approval.
+7. **LLM-Friendly Modularity:** ≤ 500 LOC per module, isolated context.
 
 ---
 
-###          1. **Core Foundation     FSM Infrastructure**
+## 2. Architecture
 
-**                          :**
-                                                                                 .
-FSM                                                                  .
+### 2.1 High-Level Topology
 
-**                    :**
+```
+┌─────────────────────────────────────────────────────┐
+│                  Meta-FSM (cold/warm)                │
+└───────────────────────┬─────────────────────────────┘
+                        │
+     ┌──────────────────┴──────────────────┐
+     │                                     │
+┌────┴────────────┐               ┌────────┴────────┐
+│ Domain: Risk &  │               │ Domain: Exec &  │
+│ Strategy        │               │ Position        │
+│  [risk_mgr]     │               │  [exec_gw]      │
+└─────────────────┘               └─────────────────┘
+```
 
-*                  `FSMCore` (in-proc, async, Redis-backed);
-*                                     `FSMMessage`:
+### 2.2 Component Summary
 
-  ```json
-  { "op":"ASK", "verb":"EVAL_RISK", "src":"sizer", "dst":"risk", 
-    "rid":"uuid4", "pld":{}, "why_chain":[] }
-  ```
-* TTL + retry_policies + circuit_breaker;
-* global_dict.yaml (                                    verbs/ops).
-
-**                    :**
-
-* emit / subscribe / route;
-*                             (Pydantic/JSON Schema);
-* tracing (trace_id, rid);
-*                                  WAL.
-
-**                                     :**
-                         FSM-core,                                      10 000           /          latency    10     .
-                                              , TTL      retry                 , XAI-                                 .
-          :                     ,                               , chaos.
-
----
-
-###          2. **Legacy Integration Layer (                                     )**
-
-**                          :**
-                                                                                                      .
-
-**                    :**
-
-*                    `importlib`-hook                                                 ;
-*                    `@fsm_call(op, verb)`                                         ;
-*             : shadow     audit     adapter     hybrid     pure-FSM;
-*                                                    call-graph (`vfound analyze imports`).
-
-**                    :**
-
-*                                                                                    `EVT:LEGACY_CALL`;
-*                                                                  ;
-*                                                                    FSM;
-* audit_mode                  XAI-                    WAL.
-
-**                                     :**
-            -                                                                                          ;
-                                               ,                  Domain Dictionaries;
-    latency overhead <10     ;
-                                                                                           .
+| Component                       | Description                                          | Path          |
+| ------------------------------- | ---------------------------------------------------- | ------------- |
+| **FSM Core**                    | In-proc async FSM engine                             | hot-path      |
+| **Domain FSMs**                 | Per-domain FSMs (risk, exec, data, audit)            | hot-path      |
+| **Meta-FSM**                    | Cross-domain coordination                            | warm/cold     |
+| **Adapters**                    | Legacy integration layer                             | configurable  |
+| **Schemas / Dictionaries**      | JSON/YAML contract definitions                       | SSOT          |
+| **Entropy / Topology Monitors** | Drift and anomaly detection                          | cold-path     |
+| **WAL / Snapshots**             | Write-Ahead Logging for DR                           | persistent    |
+| **CLI / SDK**                   | Developer tooling (`vfound`)                         | dev/CI        |
 
 ---
 
-###          3. **Domain FSMs                                              **
-
-**                          :**
-                   FSM-                                        .
-                                                                                FSM.
-
-**                    :**
-
-*                       (risk, exec, audit, data)                 FSMCore;
-* meta-FSM                                                   ;
-* domain_dict.json                                   :
-
-  ```json
-  {
-    "domain_name":"risk_strategy",
-    "modules":["risk_manager","sizer"],
-    "imports":["EVT:FEATURE_CALC"],
-    "exports":["DEC:EVAL_TRADE","CMD:OPEN_POSITION"]
-  }
-  ```
-
-**                    :**
-
-*                                             (hot_path);
-*                                   (meta-FSM);
-* TTL-               per domain (critical / normal / background);
-*                          audit/logging.
-
-**                                     :**
-                                                                          ;
-                                                 ,                     FSM;
-    meta-FSM                                           (EVT:REGIME_SHIFT         ).
-    latency                   , scalability                      3.
+## 3. Build Phases
 
 ---
 
-###          4. **Observability, Entropy, Topology, XAI**
+### Phase 1 — Core Foundation & FSM Infrastructure
 
-**                          :**
-                                                         .
-FSM                                   .
+**Goal:** Establish the foundational FSM runtime.
 
-**                    :**
+**Deliverables:**
+- `FSMCore` (in-proc, async, Redis-backed)
+- Canonical `FSMMessage` schema (see §1.2)
+- TTL + retry_policies + circuit_breaker
+- `global_dict.yaml` — defines allowed verbs/ops
 
-* `EntropyMonitor`:                                              (                ).
-* `TopologyAuditor`:                                          (                          ,           ).
-* `trace_id`                       `rid`; `/debug/{rid}` API.
-*                `why`        hot_path,                    `why_chain`        audit_path.
+**Capabilities:**
+- `emit / subscribe / route`
+- Schema validation (Pydantic / JSON Schema)
+- Distributed tracing (`trace_id`, `rid`)
+- WAL integration (write-path)
 
-**                    :**
-
-* online-                               ;
-* trigger-alerts                                         ;
-* XAI-                  JSONL        OpenTelemetry;
-* metric summary (/metrics, /statdump).
-
-**                                     :**
-                                                 ;
-                                    ,                                      ;
-                                                                                     ;
-                                                                                                           .
+**Exit Criteria:**
+- 10 000 events/s, p95 latency ≤ 10 ms
+- TTL and retry logic verified
+- Contract tests pass
 
 ---
 
-###          5. **Resilience & Recovery (DR Layer)**
+### Phase 2 — Legacy Integration Layer
 
-**                          :**
-                                          -                                          .
-                                       ,      FSM-                                                                        .
+**Goal:** Safely wrap existing code with FSM contracts.
 
-**                    :**
+**Deliverables:**
+- `importlib`-hook for call interception
+- `@fsm_call(op, verb)` decorator
+- Migration modes: `shadow → audit → adapter → hybrid → pure-FSM`
+- Import call-graph analysis (`vfound analyze imports`)
 
-* Write-Ahead Log (WAL)    immutable-             (Merkle-            );
-* snapshot FSM-            ;
-* `replay_from_wal()`                                  ;
-* circuit_breaker                                                            ;
-* retry_policies      TTL-               per event.
+**Capabilities:**
+- Emit `EVT:LEGACY_CALL` for all legacy calls
+- Full idempotency tracking
+- Route via FSM when adapter is ready
+- `audit_mode` → XAI + WAL
 
-**                    :**
-
-* RPO < 1     , RTO < 5     ;
-*                                                         ;
-*                  fail-closed        partial failure;
-* audit log                       (sig)        CMD/DEC.
-
-**                                     :**
-                                            -               ;
-    state                               WAL;
-    CB                            , DR-                              replay;
-                                                                  .
+**Exit Criteria:**
+- All modes functional
+- Latency overhead < 10 ms
+- Domain Dictionaries auto-generated from import graph
 
 ---
 
-###          6. **Governance, CLI, Schemas**
+### Phase 3 — Domain FSMs & Meta-FSM
 
-**                          :**
-                                                                              ,                         chaos-bloat.
+**Goal:** Deploy per-domain FSMs and cross-domain coordination.
 
-**                    :**
+**Deliverables:**
+- Domain FSMs (risk, exec, audit, data) on `FSMCore`
+- Meta-FSM for cross-domain routing
+- `domain_dict.json` per domain:
 
-* `vfound` CLI: `analyze`, `lint`, `adapter gen`, `simulate`, `migrate`;
-* schema-governance:                                        ,             ;
-* RFC-                               verbs/events;
-* auto-test-generator      contract-validator        LLM.
+```json
+{
+  "domain_name": "risk_strategy",
+  "modules": ["risk_manager", "sizer"],
+  "imports": ["EVT:FEATURE_CALC"],
+  "exports": ["DEC:EVAL_TRADE", "CMD:OPEN_POSITION"]
+}
+```
 
-**                    :**
+**Capabilities:**
+- Hot-path intra-domain transitions
+- Meta-FSM inter-domain routing
+- TTL profiles: `critical / normal / background`
+- Per-domain audit/logging
 
-* CLI                                            ;
-* governance                        (RFCs, changelogs);
-* linting                   ;
-*                                     (v1   v2).
-
-**                                     :**
-                                                                             -                               1         ;
-                                                                                  ;
-    LLM-pipeline                                        freeze.
-
----
-
-###          7. **Security & Compliance**
-
-**                          :**
-FSM                                                         (                  ,                     ).
-                                     .
-
-**                    :**
-
-*                       CMD/DEC (Ed25519 / HMAC);
-* immutable-WAL (WORM storage);
-*                                                    (hashing/redaction);
-* sandbox        legacy-                ;
-* policy-engine:                                                                .
-
-**                    :**
-
-*                                                         ;
-*                                              ;
-*                                                                     ;
-*                                                 verbs.
-
-**                                     :**
-                                                         ;
-    WAL                   ;
-                                                                               ;
-                                                   /                                       .
+**Exit Criteria:**
+- All domain contracts verified
+- Meta-FSM handles `EVT:REGIME_SHIFT` correctly
+- Latency and scalability targets met
 
 ---
 
-###          8. **Validation & Certification**
+### Phase 4 — Observability, Entropy, Topology, XAI
 
-**                          :**
-                                        ,                                             ,                                     .
+**Goal:** Full system visibility and explainability.
 
-**                    :**
+**Deliverables:**
+- `EntropyMonitor` — detects distribution drift, emits `EVT:ENTROPY_SPIKE`
+- `TopologyAuditor` — detects dependency drift, emits `EVT:TOPOLOGY_DRIFT_DETECTED`
+- `trace_id = rid`; `/debug/{rid}` API
+- `why` (hot-path, ≤ 80 chars) + `why_chain` (audit-path)
 
-*                                                       verb;
-*   2  -                                                (EVAL   RISK   EXEC);
-* chaos-          : TIMEOUT, DELAY, NETWORK LOSS;
-* DR-          : replay    WAL;
-* performance-          : p95, throughput.
+**Capabilities:**
+- Online entropy scoring
+- Trigger alerts on anomalies
+- XAI store: JSONL + OpenTelemetry export
+- `/metrics`, `/statdump` endpoints
 
-**                    :**
+**Exit Criteria:**
+- why_chain coverage ≥ 95%
+- End-to-end trace verifiable per `rid`
+- Entropy alerts functional
 
-* suite `tests/foundation/`;
-*           : coverage     95 %, errors     1 %;
-* metrics summary.
+---
 
-**                                     :**
-                             9                         :
+### Phase 5 — Resilience & Recovery (DR Layer)
+
+**Goal:** Production-grade fault tolerance and state recovery.
+
+**Deliverables:**
+- Write-Ahead Log (WAL) with Merkle-chain hash verification
+- FSM state snapshots
+- `replay_from_wal()` with deduplication per `rid`
+- `circuit_breaker` with `half_open → closed` recovery
+- Per-event `retry_policies` and TTL profiles
+
+**Capabilities:**
+- RPO < 1 min, RTO < 5 min
+- Graceful degradation: `reduce_only` on partial failure
+- Fail-closed on any unresolvable state
+- Immutable audit log with `sig` verification for CMD/DEC
+
+**Exit Criteria:**
+- DR replay verified end-to-end
+- CB transitions tested under chaos
+- Compliance with Constitution FSM v2.2 §8
+
+---
+
+### Phase 6 — Governance, CLI, Schemas
+
+**Goal:** Prevent schema bloat and maintain contract discipline.
+
+**Deliverables:**
+- `vfound` CLI: `analyze`, `lint`, `adapter gen`, `simulate`, `migrate`
+- Schema-governance: versioning (`_v1`, `_v2`), deprecation windows ≥ 2 releases
+- RFC workflow for new verbs/events
+- `auto_test_generator` + `contract_validator` for LLM pipeline
+
+**Capabilities:**
+- CLI validates all contracts
+- Governance changelog (RFCs, diffs)
+- Schema linting in CI
+- Additive-only migration (`v1 → v2`)
+
+**Exit Criteria:**
+- 0 breaking changes without RFC approval
+- All verbs additive-only
+- CLI coverage ≥ 95%
+
+---
+
+### Phase 7 — Security & Compliance
+
+**Goal:** Cryptographic safety for all critical FSM operations.
+
+**Deliverables:**
+- Signatures for `CMD/*` / `DEC/*` (Ed25519 / KMS)
+- Immutable WAL (WORM storage)
+- PII redaction/hashing in logs and traces
+- Sandbox for legacy adapters
+- Policy engine for verb-level rate limits
+
+**Capabilities:**
+- All CMD/DEC verified before FSM delivery
+- Immutable audit trail
+- RBAC/ABAC for `/debug`, `/replay`, `/metrics`
+- Secret management via KMS only
+
+**Exit Criteria:**
+- 100% CMD/DEC signed
+- 0 unsigned deliveries to FSM
+- WAL integrity verified via Merkle-root
+
+---
+
+### Phase 8 — Validation & Certification
+
+**Goal:** Prove system readiness for production via comprehensive testing.
+
+**Deliverables:**
+- Contract tests per verb
+- 2-domain end-to-end flows (EVAL → RISK → EXEC)
+- Chaos tests: TIMEOUT, DELAY, NETWORK LOSS
+- DR tests: replay from WAL
+- Performance tests: p95, throughput
+
+**Capabilities:**
+- Test suite: `tests/foundation/`
+- Coverage ≥ 95%, ERR rate ≤ 1%
+- Metrics summary report
+
+**Exit Criteria — 9 Certification Dimensions:**
 
 1. Reliability
 2. Recoverability
@@ -332,227 +295,232 @@ FSM                                                         (                  ,
 5. Modularity
 6. Predictability
 7. Scalability
-8. XAI coverage     95 %
+8. XAI coverage ≥ 95%
 9. LLM integration stable
 
-                      `vfoundation`                                       **ready for production**.
+When all 9 pass → `vfoundation` is **ready for production**.
 
 ---
 
-## 4.                                                           
+## 4. Phase Summary Table
 
-|                        |                            |                                   |                              |
-| ------------------ | ------------------- | ------------------------- | ----------------------- |
-| Core FSM           |                                      | routing, schema-                   |                                     |
-| Legacy Integration | audit                       |                 ,         ,                   |                                            |
-| Domains            |                                  |              FSM, TTL                  |                                             |
-| Observability      |              Entropy/Topo |                     , debug         |                                       |
-| DR & Resilience    | WAL/snapshot        | replay, CB, retry         |                            5           |
-| Governance & CLI   |                                | RFC, lint, migrate        |                     CI           |
-| Security           |               , sandbox    | audit trails              |                                     |
-| Validation         |                               | chaos, contract           |                                               |
-
----
-
-## 5.                              (Definition of Done)
-
-> **                     `vfoundation`                                          **,         :
-
-1. FSM-                              10 000           /          p95     10     .
-2.                                                                                                               .
-3.                                                            (100 % contract coverage).
-4.                                          WAL          5      (RTO).
-5. Why-coverage     95 %, traceable                                   .
-6. Security                         CMD/DEC.
-7. Governance RFC-                             ;          verbs additive-only.
-8. LLM-pipeline                    auto-tests    pass     90 %.
-9.                                                      ,                              ,           .
-10. DR-replay    chaos-                                      fail-closed                         .
+| Phase              | Milestone                   | Key Deliverables                         | Exit Criteria                         |
+| ------------------ | --------------------------- | ---------------------------------------- | ------------------------------------- |
+| Core FSM           | FSM engine live             | routing, schema validation               | 10k ev/s, p95 ≤ 10 ms                |
+| Legacy Integration | audit mode active           | shadow, audit, adapter modes             | overhead < 10 ms                      |
+| Domains            | all domains deployed        | domain FSMs, TTL profiles                | meta-FSM routing verified             |
+| Observability      | monitoring live             | Entropy/Topo monitors, debug API         | why ≥ 95%, trace end-to-end           |
+| DR & Resilience    | WAL/snapshot live           | replay, CB, retry policies               | RTO ≤ 5 min, RPO ≤ 1 min             |
+| Governance & CLI   | CI enforced                 | RFC workflow, lint, migrate              | CI blocks breaking changes            |
+| Security           | signatures + sandbox live   | audit trails, redaction                  | 100% CMD/DEC signed                   |
+| Validation         | certification complete      | chaos, contract, DR tests                | all 9 DoD dimensions pass             |
 
 ---
 
-## 6.                                              
+## 5. Definition of Done
 
-* **Aurora:**                                   FSM-        , DR, XAI                                                   .
-* **LLM-              :**                                             ,                     , freeze-                            .
-* **                     :** fintech, healthcare, robotics, IoT             -    ,                                                                         .
-* **        /LLM-            :**                                                               ,                                                        
+> **`vfoundation` is production-ready when:**
 
-                                                                                    :            **                    Blueprint v1.0**                   **v1.1 (additive-only)** + **            /                  **, **                  **, **RFC-          **,    **                                          **.                                                   v2.2,                                         .
-
----
-
-# Blueprint v1.1     Additive                           `vfoundation`
-
-## A)                             (                          )
-
-* **                                             :** Shadow   Audit   Adapter   Hybrid   Pure-FSM.
-* **Contract-first:**                                                            ;                  = SSOT.
-* **Fail-closed + Safety-veto:** TTL/CB, deny-by-default.
-* **DR/XAI/Observability:** WAL+snapshots, why_chain, trace_id.
-* **Governance/CLI:**                                , RFC, auto-tests        LLM.
+1. FSM processes 10 000 events/s with p95 ≤ 10 ms.
+2. All external interfaces are covered by contract tests.
+3. All contracts verified (100% contract coverage).
+4. State recovery from WAL completes within 5 min (RTO).
+5. Why-coverage ≥ 95%; all traces are end-to-end traceable.
+6. Security signatures active on all CMD/DEC.
+7. Governance RFC workflow enforced; all verbs additive-only.
+8. LLM pipeline auto-tests pass ≥ 90%.
+9. All 9 certification dimensions verified.
+10. DR-replay and chaos tests confirm fail-closed behavior.
 
 ---
 
-## B)                      v1.1 (                     :                                                                                                                       )
+## 6. Extensions & Roadmap
 
-### B1. CLI-                                    
-
-* **                          :**                                                                        .
-* **                    :** `vfound migrate --domain <d> --from <files>`                adapters (@fsm_call), Domain Dictionary,               .
-* **              :**            `vfound analyze imports`.
-* **                    :**                            verbs, mapping func   verb, data_ref                                           .
-* **                  :** p95 overhead                        10     ; 100% contract-tests                                       .
-
-### B2. LLM-pipeline                     
-
-* **                          :**                            /                      .
-* **                    :** `contract_validator` (pre-gen) + `auto_test_generator` (post-gen), auto-draft RFC    call-graph.
-* **              :**                    -                                                     .
-* **                    :**                                                         /verbs;                                  /                           .
-* **                  :** simple-             pass-rate     90%; complex     70%;    10%/   30%                       .
-
-### B3. DR        legacy-           (replayable adapters)
-
-* **                          :**                                                                              .
-* **                    :** WAL            `EVT:LEGACY_CALL`    `rid`; adapters                                            .
-* **              :**    `audit`-mode.
-* **                    :** `vfound replay legacy <rid>`; DENY        non-idempotent                  .
-* **                  :** RTO     5     , RPO     1                                              .
-
-### B4. Observability diff (legacy vs FSM)
-
-* **                          :**                                                                   .
-* **                    :** `/debug/{rid}`                                  (    /          ), entropy-            , centrality-          .
-* **              :**                                 adapter-mode                             .
-* **                    :** semantic-diff             , latency/ERR                     .
-* **                  :**                                          :    X% latency,    Y%                             .
-
-### B5. Security                               
-
-* **                          :** legacy-                                             .
-* **                    :**                      `DEC/*`    adapters (ed25519/KMS), redaction args    WAL.
-* **              :**            hybrid-mode.
-* **                    :**                        sig    FSM; mask                            .
-* **                  :** 100% CMD/DEC                   ; 0                             .
-
-### B6. DoD                     : CLI-coverage
-
-* **                          :**       -                                             .
-* **                    :**                   CLI-coverage    (analyze/lint/migrate/trace/replay).
-* **              :**                                          .
-* **                    :** `vfound report cli-coverage`.
-* **                  :**     95%                                    CLI (                    ).
+- **Aurora:** FSM layer, DR, XAI integrated into the main trading system.
+- **LLM-agents:** contract-first generation, auto-tests, freeze-discipline enforced.
+- **Verticals:** fintech, healthcare, robotics, IoT — any domain requiring deterministic event-driven safety.
 
 ---
 
-## C)                                     (                   )
+# Blueprint v1.1 — Additive Extensions to `vfoundation`
 
-|                            |                        |                                                   |                                                  |
-| --------------------- | ---------------- | ---------------------------------------- | ---------------------------------- |
-| Latency                        | p95 > 10           | in-proc queue, CB,                TTL           | p95     10      (hot)                  |
-| Schema bloat          | >N         /    .      | schema-budget,             ,                      `$ref` | warn        80%, block        100%       |
-| Non-idempotent legacy | ERR        replay   | force rid; DENY+advice                   | 0 non-replayable                                  |
-|                        LLM       |         -                 | pre-gen validator, post-gen tests        | simple    90%, complex    70% pass     |
-| WAL                              | I/O                  |               ,                   , Merkle-root          | I/O < 70%                                   |
-|                              |                                 |                         sig, RBAC debug              | 100%                       CMD/DEC           |
+## A) Core Principles (unchanged)
+
+- **Migration modes:** Shadow → Audit → Adapter → Hybrid → Pure-FSM
+- **Contract-first:** dictionary = SSOT; code always secondary
+- **Fail-closed + Safety-veto:** TTL/CB, deny-by-default
+- **DR/XAI/Observability:** WAL + snapshots, why_chain, trace_id
+- **Governance/CLI:** linting, RFC, auto-tests for LLM
 
 ---
 
-## D)                   /           (ASCII)
+## B) New Features in v1.1
 
-### D1.                       legacy-                    
+### B1. CLI Migration Tooling
+
+- **Goal:** Reduce migration friction to near-zero.
+- **Deliverable:** `vfound migrate --domain <d> --from <files>` → generates adapters (`@fsm_call`), Domain Dictionary, contract stubs.
+- **Input:** `vfound analyze imports` output.
+- **Validation:** verb mapping correctness; `data_ref` for large payloads.
+- **Exit:** p95 overhead ≤ 10 ms; 100% contract-tests green post-migration.
+
+### B2. LLM Pipeline Integration
+
+- **Goal:** Safe LLM-assisted code generation within contract boundaries.
+- **Deliverable:** `contract_validator` (pre-gen) + `auto_test_generator` (post-gen); auto RFC draft from call-graph.
+- **Entry:** LLM cannot generate unknown/deprecated verbs.
+- **Validation:** no hallucinated verbs; tests cover valid/invalid/TTL/idempotency.
+- **Exit:** simple flows pass ≥ 90%; complex ≥ 70%; regression ≤ 10%/30% respectively.
+
+### B3. DR for Legacy Adapters (Replayable)
+
+- **Goal:** Legacy calls are recoverable from WAL.
+- **Deliverable:** WAL records `EVT:LEGACY_CALL` with `rid`; adapters enforce idempotency.
+- **Entry:** `audit` mode required.
+- **Validation:** `vfound replay legacy <rid>`; DENY on non-idempotent unsafe replay.
+- **Exit:** RTO ≤ 5 min, RPO ≤ 1 min for all legacy-wrapped domains.
+
+### B4. Observability Diff (Legacy vs FSM)
+
+- **Goal:** Quantify the gap between legacy and FSM call paths.
+- **Deliverable:** `/debug/{rid}` shows before/after diff (latency, entropy delta, centrality delta).
+- **Entry:** available from `adapter` mode onward.
+- **Validation:** semantic diff in CI; latency/ERR comparison per mode.
+- **Exit:** measurable improvement: X% latency reduction, Y% error reduction vs baseline.
+
+### B5. Security Signatures for Legacy
+
+- **Goal:** Legacy paths are not a signature bypass vector.
+- **Deliverable:** mandatory `sig` on `DEC/*` from adapters (Ed25519/KMS); args redacted in WAL.
+- **Entry:** enforced in hybrid mode.
+- **Validation:** FSM rejects unsigned DEC; PII masked in all logs.
+- **Exit:** 100% CMD/DEC signed; 0 unsigned deliveries.
+
+### B6. DoD Extension — CLI Coverage
+
+- **Goal:** No undocumented or untested CLI paths.
+- **Deliverable:** CLI coverage report for all commands (analyze/lint/migrate/trace/replay).
+- **Entry:** CI gate.
+- **Validation:** `vfound report cli-coverage`.
+- **Exit:** ≥ 95% CLI workflow coverage.
+
+---
+
+## C) Risk Register
+
+| Risk                   | Trigger              | Mitigation                                        | Exit Threshold                           |
+| ---------------------- | -------------------- | ------------------------------------------------- | ---------------------------------------- |
+| Latency regression     | p95 > 10 ms          | in-proc queue, CB, capped TTL                     | p95 ≤ 10 ms (hot)                       |
+| Schema bloat           | > N fields/nesting   | schema-budget, versioning, shared `$ref`          | warn at 80%, block at 100%              |
+| Non-idempotent legacy  | ERR on replay        | force `rid`; DENY + advice                        | 0 non-replayable adapters               |
+| LLM hallucination      | fake verbs generated | pre-gen validator, post-gen tests                 | simple ≥ 90%, complex ≥ 70% pass        |
+| WAL I/O saturation     | write stall          | async batching, compression, Merkle-root          | WAL I/O < 70% capacity                 |
+| Unsigned CMD/DEC       | missing `sig` field  | mandatory sig, RBAC on debug                      | 100% signed CMD/DEC                     |
+
+---
+
+## D) Architecture Diagrams
+
+### D1. Legacy Integration Flow
 
 ```
-                                                    Meta-FSM (cold/warm)                                        
-                  ALERT, RECONCILE, WHY_EXPLAIN, MODE CMD       
-                                                                                                                                                            
-                                                 
-                                                                                                                                                                                    
-          Domain FSM: risk_strategy               Domain FSM: execution    
-          (hot: EVAL, DEC, CMD)                  (hot: OPEN/CLOSE)        
-                                                                                                                                                                                    
-                                                        
-                                                                                                                     
-            Adapter            Module                   Module     
-            legacy             risk_mgr                 exec_gw    
-                                                                                                                     
-                  EVT:LEGACY_CALL
-                 
-          WAL/Snapshot (immutable, Merkle)
+┌─────────────────────────────────────────────────────────────────┐
+│                   Meta-FSM (cold/warm)                          │
+│          ALERT, RECONCILE, WHY_EXPLAIN, MODE CMD                │
+└─────────────────┬──────────────────────────┬────────────────────┘
+                  │                          │
+┌─────────────────┴──────────┐  ┌────────────┴────────────────────┐
+│ Domain FSM: risk_strategy  │  │ Domain FSM: execution           │
+│ (hot: EVAL, DEC, CMD)      │  │ (hot: OPEN/CLOSE)               │
+│                            │  │                                  │
+│  [Adapter]   [risk_mgr]    │  │  [exec_gw]                      │
+│   ↓                        │  │                                  │
+│  EVT:LEGACY_CALL           │  │                                  │
+└────────────────────────────┘  └─────────────────────────────────┘
+         ↓
+WAL / Snapshot (immutable, Merkle)
 ```
 
-### D2.                                           
+### D2. Migration Mode Progression
 
 ```
-Monolith (imports)
-      Shadow (observe)     graph.json, entropy
-      Audit (WAL)          EVT:LEGACY_CALL + why_chain
-      Adapter              @fsm_call     ASK/DEC            FSM
-      Hybrid                                                                    
-      Pure-FSM             legacy off,                        
+Monolith (direct imports)
+  → Shadow    (observe only)       → produces: graph.json, entropy baseline
+  → Audit     (WAL)                → emits: EVT:LEGACY_CALL + why_chain
+  → Adapter   (@fsm_call)          → routes: ASK/DEC via FSM
+  → Hybrid    (partial FSM)        → domain-by-domain cutover
+  → Pure-FSM  (legacy removed)     → full contract enforcement
 ```
 
 ---
 
-## E) RFC-           (                                       )
+## E) RFC Definitions
 
-### RFC-001: Legacy Integration (LEGACY_CALL)
+### RFC-001: Legacy Integration (`LEGACY_CALL`)
 
-* **    :** `EVT | ASK | DEC | ERR`, **            :** `shadow|audit|adapter|hybrid|pure_fsm`.
-* **Schema (          .):**
+| Field          | Value                                                  |
+| -------------- | ------------------------------------------------------ |
+| **ops**        | `EVT \| ASK \| DEC \| ERR`                             |
+| **modes**      | `shadow \| audit \| adapter \| hybrid \| pure_fsm`     |
 
-  * `EVT:LEGACY_CALL`: `{func:str, args:obj, legacy_mode:enum, legacy:true}`
-  * `DEC:LEGACY_OK`: `{ok:bool, result:obj|null, why, why_explain_ref}`
-  * `ERR:LEGACY_NON_IDEMPOTENT`: `{code, detail, advice}`
-* **              :** `EVT:LEGACY_CALL     legacy_adapter`.
-* **            :** overhead     10     ; WAL on; signatures on DEC.
+**Schemas:**
+
+- `EVT:LEGACY_CALL`: `{ func: str, args: obj, legacy_mode: enum, legacy: true }`
+- `DEC:LEGACY_OK`: `{ ok: bool, result: obj|null, why, why_explain_ref }`
+- `ERR:LEGACY_NON_IDEMPOTENT`: `{ code, detail, advice }`
+
+**Routing:** `EVT:LEGACY_CALL → legacy_adapter`
+**Constraints:** overhead ≤ 10 ms; WAL on; signatures required on DEC.
+
+---
 
 ### RFC-002: Observability Diff
 
-* `/debug/{rid}`                  **    /          **:                          , latency, entropy-delta, centrality-delta.
-* `trace tags`: `legacy_span=true`, `mode=shadow|adapter|   `.
+- `/debug/{rid}` returns **before/after diff**: FSM vs legacy path — latency, entropy-delta, centrality-delta.
+- Trace tags: `legacy_span=true`, `mode=shadow|adapter|fsm`.
+
+---
 
 ### RFC-003: DR Replay Semantics
 
-* WAL-                      `rid`, `span_id`, `hash_prev`.
-* `replay policy`: deny non-idempotent                             safe replay   .
-* Snapshot-                : `uri, ts, sha256, merkle_root`.
+- WAL entries contain: `rid`, `span_id`, `hash_prev`.
+- Replay policy: DENY non-idempotent calls; safe replay requires idempotency verification.
+- Snapshot record fields: `uri, ts, sha256, merkle_root`.
+
+---
 
 ### RFC-004: Security Signatures
 
-*                                        `CMD/*`    `DEC/*`: ed25519/KMS.
-*                                :        (`op, verb, rid, ts, src, dst, pld_hash`).
-*                       FSM            delivery.
+- Mandatory signatures for `CMD/*` and `DEC/*`: Ed25519/KMS.
+- Signed payload: `op, verb, rid, ts, src, dst, pld_hash`.
+- FSM rejects unsigned delivery.
 
 ---
 
-## F)                           (                ,                                         )
+## F) Delivery Schedule
 
-|                           |                      |                                                    | Exit (          .                   )                       |
-| --------------------- | ---------- | ----------------------------------------- | --------------------------------------------- |
-| 1. Core FSM           | 1             | `fsm_core`, `message`, `global_dict v1`   | 10k ev/s, p95   10     , contract-tests           |
-| 2. Legacy Layer       | 1   2           | `analyze`, `migrate`, adapters, `RFC-001` | shadow/audit/adapter                 ; overhead   10      |
-| 3. Domains+Meta       | 2             | domain_dicts, meta-fsm                    |                                        ; hybrid                         |
-| 4. Observability      | 1             | entropy/topology, `/debug`, `RFC-002`     | why   95%, trace end-to-end, diff                      |
-| 5. DR/Resilience      | 1             | WAL+snapshots, `RFC-003`                  | RTO   5     , RPO   1     ,                  replay           |
-| 6. Governance/CLI     | 1             |             , schema-budget, RFC-workflow       | 0           -          ; CLI-coverage   95%               |
-| 7. Security           | 0.5   1         |               , redaction, `RFC-004`             | 100% CMD/DEC                   , RBAC debug            |
-| 8. Validation (          ) | 2             |   2  /chaos/DR/perf                              |        DoD-                                                    |
+| Phase                    | Duration     | Key Artifacts                                         | Exit Criteria                                               |
+| ------------------------ | ------------ | ----------------------------------------------------- | ----------------------------------------------------------- |
+| 1. Core FSM              | 1 sprint     | `fsm_core`, `message`, `global_dict v1`               | 10k ev/s, p95 ≤ 10 ms, contract-tests green                |
+| 2. Legacy Layer          | 1–2 sprints  | `analyze`, `migrate`, adapters, RFC-001               | shadow/audit/adapter functional; overhead ≤ 10 ms          |
+| 3. Domains + Meta        | 2 sprints    | domain_dicts, meta-fsm                                | all contracts verified; hybrid cutover successful           |
+| 4. Observability         | 1 sprint     | entropy/topology monitors, `/debug`, RFC-002          | why ≥ 95%, trace end-to-end, diff report working           |
+| 5. DR / Resilience       | 1 sprint     | WAL + snapshots, RFC-003                              | RTO ≤ 5 min, RPO ≤ 1 min, replay verified                  |
+| 6. Governance / CLI      | 1 sprint     | linting, schema-budget, RFC workflow                  | 0 breaking changes without RFC; CLI coverage ≥ 95%         |
+| 7. Security              | 0.5–1 sprint | signatures, redaction, RFC-004                        | 100% CMD/DEC signed; RBAC on debug endpoints               |
+| 8. Validation (final)    | 2 sprints    | 2-domain / chaos / DR / perf tests                    | all 9 DoD dimensions pass                                   |
 
-**               KPI:**
-p95(hot)     50     ;                        100     ; why-coverage     95%; ERR:TIMEOUT     1%; CB-OPEN < 2%; RTO     5     ; RPO     1     ; CLI-coverage     95%.
-
----
-
-## G)                                  (                             -        )
-
-1.                        **RFC-001..004** (fast-track).
-2.                  `analyze imports`                                                  **draft Domain Dictionaries**.
-3.                    **Shadow   Audit**                                                 (EVAL   OPEN).
-4.                    **Adapter-mode**          -                                     ,                      overhead/why.
-5.                      **signatures**        DEC/CMD;                  WAL snapshots.
-6.                        `/debug` diff    DR-replay                         .
+**KPI Summary:**
+`p95(hot) ≤ 50 ms` · `cold-path ≤ 100 ms` · `why-coverage ≥ 95%` · `ERR:TIMEOUT ≤ 1%` · `CB-OPEN < 2%` · `RTO ≤ 5 min` · `RPO ≤ 1 min` · `CLI-coverage ≥ 95%`
 
 ---
+
+## G) Recommended First Steps
+
+1. Fast-track review and approval of **RFC-001..004**.
+2. Run `analyze imports` to auto-generate **draft Domain Dictionaries**.
+3. Deploy **Shadow → Audit** mode on the first critical flow (EVAL → OPEN).
+4. Enable **Adapter mode** incrementally; measure overhead and why-coverage.
+5. Activate **signatures** on DEC/CMD; plug in WAL snapshots.
+6. Validate `/debug` diff and DR-replay end-to-end.
 

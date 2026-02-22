@@ -1,6 +1,15 @@
+"""DEPRECATED: Legacy FSM skeleton. Use FSMCore (event bus) or future FSMv2."""
 from __future__ import annotations
+import warnings as _warnings
 from typing import Dict, Callable, Optional
 from .protocol import Message
+
+_warnings.warn(
+    "vfoundation.core.fsm.FSM is deprecated and will be removed. "
+    "Use FSMCore for event routing.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class FSM:

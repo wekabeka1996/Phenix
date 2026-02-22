@@ -30,7 +30,8 @@ class DataConverter:
         data_type: str,
         source_dir: str,
         target_dir: str,
-        timeframe: Optional[str] = None
+        timeframe: Optional[str] = None,
+        max_date: Optional[str] = None,
     ) -> None:
         """
         Convert raw CSV files to Parquet.
@@ -41,6 +42,7 @@ class DataConverter:
             source_dir: Directory containing raw CSV/ZIP files
             target_dir: Base directory for output
             timeframe: Optional timeframe (required for "klines")
+            max_date: Optional upper bound date string "YYYY-MM"; files with date > max_date are skipped
         """
         source_path = Path(source_dir)
         target_base = Path(target_dir)
@@ -50,7 +52,7 @@ class DataConverter:
             return
 
         # Locate files (flat or nested)
-        files = self._locate_files(source_path, symbol, data_type, timeframe)
+        files = self._locate_files(source_path, symbol, data_type, timeframe, max_date)
         if not files:
             LOG.warning(f"No files found for {symbol} {data_type} in {source_path}")
             return
@@ -63,8 +65,14 @@ class DataConverter:
             except Exception as e:
                 LOG.error(f"Failed to process {file_path.name}: {e}")
 
-    def _locate_files(self, source_path: Path, symbol: str, data_type: str, timeframe: Optional[str]) -> List[Path]:
+    def _locate_files(self, source_path: Path, symbol: str, data_type: str, timeframe: Optional[str], max_date: Optional[str] = None) -> List[Path]:
         """Locate files matching the pattern in the source directory."""
+        import re
+
+        def _extract_date(filename: str) -> Optional[str]:
+            m = re.search(r'(\d{4}-\d{2})(?:\.zip|\.csv)$', filename)
+            return m.group(1) if m else None
+
         # 1. Try finding pattern in the source_path directly (flat)
         valid_patterns = []
         
@@ -90,7 +98,11 @@ class DataConverter:
                     files.extend(sorted(nested_path.glob("*.csv")) + sorted(nested_path.glob("*.zip")))
             
             # Or flattening variants?
-            
+
+        # Filter by max_date if specified
+        if max_date:
+            files = [f for f in files if (_extract_date(f.name) or "") <= max_date]
+
         return sorted(list(set(files)))
 
     def _process_single_file(
@@ -101,59 +113,66 @@ class DataConverter:
         target_base: Path,
         timeframe: Optional[str]
     ) -> None:
-        """Stream CSV, enforce schema, and write to Parquet using Lazy API."""
-        
-        lf = self._read_and_enforce_schema(file_path, symbol, data_type)
-        if lf is None:
-            return
-
-        # LazyFrames don't have .height property without collection. 
-        # We skip empty check or do a quick peek if critical, 
-        # but for streaming, we assume content exists if file size > 0.
+        """Extract zip (if needed) to a temp file, scan lazily, stream to Parquet."""
         if file_path.stat().st_size < 100:
             LOG.warning(f"File too small, skipping: {file_path.name}")
             return
 
-        # Determine Output Path
-        ts_col = self._get_timestamp_col(data_type, lf) # Updated to handle LF
-        if not ts_col:
-            LOG.warning(f"Could not determine timestamp column for {data_type}")
-            return
-            
-        # For filename generation, we need to know the month. 
-        # This requires reading one value. 
-        # We can scan the first row eagerly.
+        temp_path: Optional[Path] = None
         try:
-            sample_df = lf.select(pl.col(ts_col)).head(1).collect()
-            if sample_df.height == 0:
+            result = self._read_and_enforce_schema(file_path, symbol, data_type)
+            if result is None:
                 return
-            ts_sample = sample_df[ts_col][0]
-            month_str = ts_sample.strftime("%Y-%m")
-        except Exception as e:
-            LOG.error(f"Failed to sample timestamp for filename generation: {e}")
-            return
+            lf, temp_path = result
 
-        if data_type == "klines":
-            if not timeframe:
-                LOG.error("Timeframe required for klines output path")
+            ts_col = self._get_timestamp_col(data_type, lf)
+            if not ts_col:
+                LOG.warning(f"Could not determine timestamp column for {data_type}")
                 return
-            output_dir = target_base / symbol / "klines" / timeframe
-        else:
-            output_dir = target_base / symbol / data_type
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{month_str}.parquet"
+            # Sample first row only to derive the month string for output filename
+            try:
+                sample_df = lf.select(pl.col(ts_col)).head(1).collect()
+                if sample_df.height == 0:
+                    return
+                ts_sample = sample_df[ts_col][0]
+                month_str = ts_sample.strftime("%Y-%m")
+            except Exception as e:
+                LOG.error(f"Failed to sample timestamp for filename generation: {e}")
+                return
 
-        LOG.info(f"Streaming {file_path.name} -> {output_file}...")
-        try:
-            # sink_parquet is efficient for large datasets
-            lf.sink_parquet(output_file, compression="snappy")
-            LOG.info(f"✅ Finished writing {output_file}")
-        except Exception as e:
-            LOG.error(f"Streaming write failed: {e}")
+            if data_type == "klines":
+                if not timeframe:
+                    LOG.error("Timeframe required for klines output path")
+                    return
+                output_dir = target_base / symbol / "klines" / timeframe
+            else:
+                output_dir = target_base / symbol / data_type
 
-    def _read_and_enforce_schema(self, file_path: Path, symbol: str, data_type: str) -> Optional[pl.LazyFrame]:
-        """Reads CSV lazily and casts columns strictly."""
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / f"{month_str}.parquet"
+
+            LOG.info(f"Converting {file_path.name} -> {output_file}...")
+            try:
+                # sink_parquet streams lazily — no full collect into memory
+                lf.sink_parquet(str(output_file), compression="snappy")
+                rows = pl.scan_parquet(str(output_file)).select(pl.len()).collect().item()
+                LOG.info(f"Finished writing {output_file} ({rows} rows)")
+            except Exception as e:
+                LOG.error(f"Write failed: {e}")
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+
+    def _read_and_enforce_schema(
+        self, file_path: Path, symbol: str, data_type: str
+    ) -> Optional[tuple]:
+        """
+        Returns (LazyFrame, Optional[temp_Path]).
+        For ZIP sources, extracts inner CSV to a NamedTemporaryFile so scan_csv
+        can stream it without loading the whole file into memory.
+        The caller is responsible for deleting the temp file when done.
+        """
         
         # 1. Define Schemas
         schemas = {
@@ -180,56 +199,59 @@ class DataConverter:
             return None
 
         col_names = schemas[data_type]
-        
-        # 2. Sniff header
-        has_header_row = False
-        try:
-            with open(file_path, "r") as f:
-                first_line = f.readline().strip().lower()
-                if col_names[0] in first_line:
-                    has_header_row = True
-        except Exception:
-            pass
 
-        # 3. Scan (Lazy)
-        try:
-            if has_header_row:
-                lf = pl.scan_csv(file_path, has_header=True, infer_schema_length=0)
-                # Rename columns if needed
-                # For lazy frames, we can rename by position if we assume order
-                # strict renaming is tricky without knowing current names.
-                # But scan_csv with no schema inference reads all as String usually if we don't specify types.
-                # Actually infer_schema_length=0 reads as String.
-                
-                # We rename columns to match our expected schema
-                # This works if column count matches.
-                # We can't easily check column count broadly without fetching schema.
-                # We'll assume structure matches for standard Binance files.
-                
-                # Check column count from schema (metadata-only)
-                curr_cols = lf.collect_schema().names()
-                if len(curr_cols) == len(col_names):
-                    mapping = dict(zip(curr_cols, col_names))
-                    lf = lf.rename(mapping)
-                elif len(curr_cols) > len(col_names):
-                    lf = lf.select(curr_cols[:len(col_names)])
-                    mapping = dict(zip(lf.collect_schema().names(), col_names))
-                    lf = lf.rename(mapping)
-                elif len(curr_cols) < len(col_names):
-                    # Some Binance exports omit trailing columns (e.g. aggTrades without best_match).
-                    # Map the available columns positionally to the expected schema prefix.
-                    mapping = dict(zip(curr_cols, col_names[: len(curr_cols)]))
-                    lf = lf.rename(mapping)
+        # 2. Sniff header — must handle both plain CSV and ZIP archives
+        import zipfile
 
+        def _read_first_line(fp: Path) -> str:
+            try:
+                if fp.suffix.lower() == ".zip":
+                    with zipfile.ZipFile(fp) as zf:
+                        inner = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+                        if not inner:
+                            return ""
+                        with zf.open(inner[0]) as f:
+                            return f.readline().decode("utf-8", errors="replace").strip().lower()
+                else:
+                    with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                        return f.readline().strip().lower()
+            except Exception:
+                return ""
+
+        first_line = _read_first_line(file_path)
+        has_header_row = bool(first_line and col_names[0].lower() in first_line)
+
+        # 3. Scan (Lazy) — extract zip to a temp file so scan_csv can stream it
+        # without loading the entire compressed content into memory.
+        import tempfile
+        import shutil
+        temp_path: Optional[Path] = None
+        try:
+            if file_path.suffix.lower() == ".zip":
+                with zipfile.ZipFile(file_path) as zf:
+                    inner = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+                    if not inner:
+                        raise ValueError(f"No CSV inside zip: {file_path}")
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+                    tmp.close()
+                    temp_path = Path(tmp.name)
+                    # Stream-copy chunk by chunk — avoids loading whole file into RAM
+                    with zf.open(inner[0]) as src, open(temp_path, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                csv_path = temp_path
             else:
-                lf = pl.scan_csv(
-                    file_path,
-                    has_header=False,
-                    new_columns=col_names,
-                    infer_schema_length=0 
-                )
+                csv_path = file_path
+
+            lf = pl.scan_csv(csv_path, has_header=has_header_row, infer_schema_length=0)
+            curr_cols = lf.collect_schema().names()
+            take = min(len(curr_cols), len(col_names))
+            lf = lf.select(curr_cols[:take])
+            mapping = dict(zip(curr_cols[:take], col_names[:take]))
+            lf = lf.rename(mapping)
         except Exception as e:
             LOG.error(f"Scan error {file_path}: {e}")
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
             return None
 
         # 4. Enforce Schema & Cast
@@ -300,10 +322,12 @@ class DataConverter:
                 
             # Add metadata
             lf = lf.with_columns(pl.lit(symbol).cast(pl.Categorical).alias("symbol"))
-            return lf
-            
+            return lf, temp_path
+
         except Exception as e:
             LOG.error(f"Schema enforcement failed for {file_path}: {e}")
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
             return None
 
     def _get_timestamp_col(self, data_type: str, lf: pl.LazyFrame) -> Optional[str]:

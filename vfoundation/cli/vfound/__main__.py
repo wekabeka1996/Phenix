@@ -226,14 +226,20 @@ def replay_rid(
         typer.echo(f"❌ No events found for RID: {rid}", err=True)
         raise typer.Exit(code=1)
 
-    # Build report
+    # Build report — verify chain integrity with real validation
+    try:
+        from vfoundation.dr.wal import verify_chain
+        chain_valid = verify_chain(events)
+    except Exception:
+        chain_valid = False  # fallback: treat as invalid if verify fails
+
     report = {
         "rid": rid,
         "events_count": len(events),
         "computed_at": datetime.utcnow().isoformat() + "Z",
         "shadow_mode": shadow,
         "integrity": {
-            "hash_chain_valid": True,  # TODO: implement hash chain validation
+            "hash_chain_valid": chain_valid,
             "all_events_have_hash": all("_hash" in e for e in events),
         },
         "why_chain": [e.get("why", "") for e in events if e.get("why")],

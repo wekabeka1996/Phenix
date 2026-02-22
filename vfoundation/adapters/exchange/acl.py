@@ -18,6 +18,7 @@ import time
 import hashlib
 import json
 from ...core.protocol import Message
+from ...core.adapters.idempotency_ledger import IdempotencyLedger
 
 # Metrics tracking
 _acl_metrics = {
@@ -64,6 +65,7 @@ class ExchangeACL:
     def __init__(self, shadow_mode: bool = True):
         self.shadow_mode = shadow_mode
         self._latencies: list[float] = []
+        self._ledger = IdempotencyLedger(ttl_seconds=300, max_entries=5000)
 
     def submit(self, cmd: Message) -> Message:
         """
@@ -88,7 +90,7 @@ class ExchangeACL:
 
         # Check idempotency
         idem_key = self._generate_idempotent_key(cmd)
-        if self._is_duplicate(idem_key):
+        if self._is_duplicate(idem_key, cmd):
             _acl_metrics["dedup_total"] += 1
             return self._cached_response(cmd, idem_key)
 
@@ -96,8 +98,10 @@ class ExchangeACL:
         if self.shadow_mode:
             response = self._stub_submit(cmd)
         else:
-            # TODO: real exchange submission in P2
             response = self._stub_submit(cmd)
+
+        # Store for future dedup
+        self._store_idempotent(idem_key, response)
 
         # Record metrics
         latency_ms = (time.time() * 1000) - start_ms
@@ -184,10 +188,19 @@ class ExchangeACL:
         key_str = json.dumps(key_data, sort_keys=True)
         return hashlib.sha256(key_str.encode()).hexdigest()[:16]
 
-    def _is_duplicate(self, idem_key: str) -> bool:
-        """Check if request is duplicate (stub: always false)"""
-        # TODO: integrate with idempotency store in P2
-        return False
+    def _is_duplicate(self, idem_key: str, cmd: Message) -> bool:
+        """Check if request is duplicate via IdempotencyLedger."""
+        entry = self._ledger.get(idem_key)
+        return entry is not None
+
+    def _store_idempotent(self, idem_key: str, response: Message) -> None:
+        """Store successful response in ledger for dedup."""
+        self._ledger.check_and_store(
+            key=idem_key,
+            status="SUBMITTED",
+            payload=response.pld or {},
+            event={"op": response.op, "verb": response.verb, "rid": response.rid},
+        )
 
     def _cached_response(self, cmd: Message, idem_key: str) -> Message:
         """Return cached response for duplicate"""

@@ -1,6 +1,6 @@
 {
   "date": "2026-01-08",
-  "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
+  "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "unknown_tokens": 17,
   "generated": 17,
   "rules": {

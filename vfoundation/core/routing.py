@@ -104,7 +104,7 @@ class Router:
                         msg, "SIGNATURE_REQUIRED", "DEC/CMD ops require signature", status_code=401
                     )
 
-                # Verify signature (stub implementation)
+                # Verify signature
                 # Create canonical payload for verification (exclude sig field)
                 msg_dict = msg.model_dump(exclude={"sig"})
                 payload = json.dumps(msg_dict, sort_keys=True).encode()
