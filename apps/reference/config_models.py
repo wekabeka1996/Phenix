@@ -2077,7 +2077,7 @@ class ExecutionUtilsConfig(BaseModel):
     """Execution utilities configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
 
-    client_order_id_max_length: int = Field()
+    client_order_id_max_length: int = Field(ge=1, le=35)
     basis_points_base: float = Field()
 
 

@@ -196,9 +196,9 @@ class BracketOrderPayload(OrderPayload):
 
     # Idempotency & tracking
     orig_client_order_id: Optional[str] = Field(
-        None, min_length=1, max_length=36)
+        None, min_length=1, max_length=35)
     new_client_order_id: Optional[str] = Field(
-        None, min_length=1, max_length=36)
+        None, min_length=1, max_length=35)
     position_side: Optional[str] = Field(None, pattern="^(LONG|SHORT)$")
 
     @field_validator("stop_price", mode="before")

@@ -94,7 +94,7 @@ class IdempotentCancelHelper:
             counter: Counter value (used if use_timestamp=False)
 
         Returns:
-            Deterministic clientOrderId string (max 36 chars)
+            Deterministic clientOrderId string (max 35 chars)
         """
         # Hash notional to get compact representation (avoid precision issues)
         notional_hash = hashlib.md5(
@@ -109,10 +109,10 @@ class IdempotentCancelHelper:
         # Format: AUR-SYMBOL-SIDE-NOTIONAL_HASH-TIME_COMPONENT
         client_order_id = f"{session_prefix}-{symbol}-{side}-{notional_hash}-{time_component}"
 
-        # Binance limit: max 36 chars
-        if len(client_order_id) > 36:
+        # Binance limit: max 35 chars
+        if len(client_order_id) > 35:
             # Truncate symbol if needed
-            max_symbol_len = 36 - \
+            max_symbol_len = 35 - \
                 len(f"{session_prefix}---{notional_hash}-{time_component}")
             symbol_trunc = symbol[:max_symbol_len]
             client_order_id = f"{session_prefix}-{symbol_trunc}-{side}-{notional_hash}-{time_component}"

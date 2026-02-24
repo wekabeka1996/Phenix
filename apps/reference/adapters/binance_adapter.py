@@ -35,6 +35,22 @@ from vfoundation.core.adapters.base import (
 
 LOG = logging.getLogger(__name__)
 
+_MAX_NEW_CLIENT_ORDER_ID_LEN = 35
+
+
+def _assert_new_client_order_id_length(params: dict) -> None:
+    """EP-4015: Fail-closed if newClientOrderId violates Binance length constraint (<36)."""
+    if "newClientOrderId" not in params:
+        return
+    client_order_id = str(params.get("newClientOrderId") or "")
+    if len(client_order_id) <= _MAX_NEW_CLIENT_ORDER_ID_LEN:
+        return
+    symbol = str(params.get("symbol") or "?")
+    order_type = str(params.get("type") or "?")
+    raise ValueError(
+        f"EP-4015 clientOrderId too long {symbol} {order_type}"[:80]
+    )
+
 
 _INVALID_STOP_PRICE_LITERALS: frozenset[str] = frozenset(
     {"", "none", "nan", "null", "inf", "+inf", "-inf"}
@@ -429,6 +445,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
     ):
         url = f"{self.base_url}{path}"
         params = params or {}
+        _assert_new_client_order_id_length(params)
 
         # Prepare base params (without signature) for potential retry
         base_params = dict(params)

@@ -29,7 +29,7 @@ class TestClientOrderIdGeneration:
 
         # Should have format: AUR-BTCUSDT-BUY-{hash}-{counter}
         assert client_id.startswith("AUR-BTCUSDT-BUY-")
-        assert len(client_id) <= 36  # Binance limit
+        assert len(client_id) <= 35  # Binance limit
 
     def test_generate_client_order_id_deterministic(self):
         """Same inputs should generate same clientOrderId."""
@@ -72,7 +72,7 @@ class TestClientOrderIdGeneration:
         assert id1 != id2
 
     def test_generate_client_order_id_length_respected(self):
-        """ClientOrderId should not exceed Binance's 36 char limit."""
+        """ClientOrderId should not exceed Binance's 35 char limit."""
         # Test with realistic long symbol (e.g., BNBUSDT)
         client_id = IdempotentCancelHelper.generate_deterministic_clientOrderId(
             symbol="BNBUSDT",
@@ -82,7 +82,7 @@ class TestClientOrderIdGeneration:
             counter=99999
         )
 
-        assert len(client_id) <= 36
+        assert len(client_id) <= 35
         # Should produce something like: AUR-BNBUSDT-BUY-{hash}-99999
 
 

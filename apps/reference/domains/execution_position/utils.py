@@ -153,7 +153,13 @@ def validate_anti_2021(
     return float(sp_q), adjusted, "; ".join(reason_parts)
 
 
-# ---- clientOrderId helper (<=36 chars) ----
+# ---- clientOrderId helper (<=35 chars) ----
+
+
+def _build_hashed_client_order_id(role: str, stable_key: str, symbol: str) -> str:
+    raw_str = f"{stable_key}|{role}|{symbol}"
+    hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
+    return f"{role}-{hash_part}"
 
 
 def generate_client_order_id(
@@ -166,7 +172,7 @@ def generate_client_order_id(
     config: Optional[Any] = None,
 ) -> str:
     """
-    Створює короткий детермінований clientOrderId (Binance: <36 симв.).
+    Створює короткий детермінований clientOrderId (Binance: <=35 симв.).
     """
     # Try to get max_len from domains config if provided
     if config:
@@ -177,6 +183,7 @@ def generate_client_order_id(
             pass  # Use provided/default value
     
     role_set = {"ENTRY", "SL", "TP", "CLOSE"}
+    binance_max_len = 35
 
     # Deterministic mode:
     # - If idempotent_key is explicitly provided, derive a stable clientOrderId from it.
@@ -184,24 +191,34 @@ def generate_client_order_id(
     if idempotent_key is not None:
         role = str(prefix)
         symbol = str(decision_id)
-        raw_str = f"{idempotent_key}|{role}|{symbol}"
-        hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
-        cid = f"{role}-{hash_part}"
+        cid = _build_hashed_client_order_id(
+            role=role,
+            stable_key=str(idempotent_key),
+            symbol=symbol,
+        )
     elif extra is not None and str(prefix).upper() in role_set:
         role = str(prefix).upper()
         stable_key = str(decision_id)
         symbol = str(extra)
-        raw_str = f"{stable_key}|{role}|{symbol}"
-        hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
-        cid = f"{role}-{hash_part}"
+        cid = _build_hashed_client_order_id(
+            role=role,
+            stable_key=stable_key,
+            symbol=symbol,
+        )
     else:
         # DET-BT-11: Use get_clock() for deterministic backtest
         base = f"{prefix}:{decision_id}:{extra or ''}:{get_clock().now_ms()}"
         h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
         cid = f"{prefix}-{h}"
 
-    if len(cid) > max_len:
-        cid = cid[:max_len]
+    try:
+        effective_max_len = int(max_len)
+    except (TypeError, ValueError):
+        effective_max_len = binance_max_len
+    effective_max_len = max(1, min(effective_max_len, binance_max_len))
+
+    if len(cid) > effective_max_len:
+        cid = cid[:effective_max_len]
     # тільки дозволені символи
     return re.sub(r"[^A-Za-z0-9_\-]", "", cid)
 

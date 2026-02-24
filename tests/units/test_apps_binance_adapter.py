@@ -288,6 +288,24 @@ async def test_algo_fallback_removes_qty_and_reduce_only_on_close_position(adapt
     assert "quantity" not in algo_payload
     assert "reduceOnly" not in algo_payload
 
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_long_client_order_id_before_http(adapter):
+    with pytest.raises(ValueError, match="EP-4015"):
+        await adapter._post_order_with_algo_fallback(
+            {
+                "symbol": "BTCUSDT",
+                "side": "SELL",
+                "type": "STOP_MARKET",
+                "stopPrice": "100.0",
+                "closePosition": "true",
+                "newClientOrderId": "X" * 36,
+            }
+        )
+
+    adapter.session.request.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_idempotency_ledger(adapter):
     await adapter.register_clientorderid("cid_1", "oid_1", "BTCUSDT")

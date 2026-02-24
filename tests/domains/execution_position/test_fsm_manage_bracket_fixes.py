@@ -1,11 +1,13 @@
 """
 Tests for fsm_manage.py bracket bug fixes:
 - Fix 1: -1102 — stopPrice must be set for TAKE_PROFIT_MARKET
-- Fix 2: -4015 — clientOrderId must be <= 36 chars (Binance limit)
+- Fix 2: -4015 — clientOrderId must be <= 35 chars (Binance limit)
 - Fix 3: -1111 — price quantization must use side-aware rounding
 """
 
 import pytest
+import re
+import uuid
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -66,14 +68,19 @@ class TestStopPricePresence:
 
 
 # ---------------------------------------------------------------------------
-# Fix 2: -4015 — clientOrderId length <= 36 chars
+# Fix 2: -4015 — clientOrderId length <= 35 chars
 # ---------------------------------------------------------------------------
 
 
 class TestClientOrderIdLength:
-    """Verify generated client order IDs never exceed Binance's 36-char limit."""
+    """Verify generated client order IDs never exceed Binance's 35-char limit."""
 
-    BINANCE_MAX_LEN = 36
+    BINANCE_MAX_LEN = 35
+
+    def test_legacy_concat_overflows_documentation(self):
+        """Document the pre-fix overflow mode."""
+        legacy_client_id = "SL-" + ("X" * 60)
+        assert len(legacy_client_id) > self.BINANCE_MAX_LEN
 
     @pytest.mark.parametrize("rid,ts", [
         ("aurora_BTCUSDT_1771850999715", 1771850735),
@@ -82,7 +89,7 @@ class TestClientOrderIdLength:
         ("rid-short", 1),
     ])
     def test_bracket_client_ids_within_limit(self, rid, ts):
-        """SL/TP1/TP2 client IDs must be <= 36 chars regardless of input length."""
+        """SL/TP1/TP2 client IDs must be <= 35 chars regardless of input length."""
         idem_base = f"{rid}_{ts}"
         sl_id = generate_client_order_id(
             "SL", "BTCUSDT", idempotent_key=idem_base)
@@ -104,7 +111,7 @@ class TestClientOrderIdLength:
         ("x" * 60, 9999999999, 9999999999),
     ])
     def test_trailing_stop_client_id_within_limit(self, rid, ts, trail_ts):
-        """Trailing-stop SL client ID must also be <= 36 chars."""
+        """Trailing-stop SL client ID must also be <= 35 chars."""
         idem_trail = f"{rid}_{ts}_trail_{trail_ts}"
         trail_id = generate_client_order_id(
             "SL", "BTCUSDT", idempotent_key=idem_trail)
@@ -112,11 +119,31 @@ class TestClientOrderIdLength:
         assert len(
             trail_id) <= self.BINANCE_MAX_LEN, f"Trail id too long: {len(trail_id)}"
 
+    @pytest.mark.parametrize(
+        "prefix,symbol,idem_key",
+        [
+            ("SL", "1000PEPEUSDT", str(uuid.UUID("a64015ed-406e-4037-abfd-dd921cf3a9b4"))),
+            ("TP", "1000PEPEUSDT", f"{'rid-' + ('x' * 80)}_1771850735"),
+            ("SL", "1000PEPEUSDT", f"{str(uuid.uuid4())}_trail_{'meta' * 20}"),
+            ("ENTRY", "BTCUSDT", f"{str(uuid.uuid4())}_extra_{'z' * 120}"),
+        ],
+    )
+    def test_generate_client_order_id_within_binance_limit_extremes(self, prefix, symbol, idem_key):
+        cid = generate_client_order_id(prefix, symbol, idempotent_key=idem_key)
+        assert len(cid) <= self.BINANCE_MAX_LEN
+        assert re.match(r"^[A-Za-z0-9_-]+$", cid)
+
     def test_deterministic_same_inputs(self):
         """Same inputs must produce same output (idempotency)."""
         a = generate_client_order_id("SL", "BTCUSDT", idempotent_key="key1")
         b = generate_client_order_id("SL", "BTCUSDT", idempotent_key="key1")
         assert a == b
+
+    def test_generate_client_order_id_deterministic_with_idempotent_key(self):
+        idem_key = str(uuid.UUID("a64015ed-406e-4037-abfd-dd921cf3a9b4"))
+        cid_1 = generate_client_order_id("SL", "1000PEPEUSDT", idempotent_key=idem_key)
+        cid_2 = generate_client_order_id("SL", "1000PEPEUSDT", idempotent_key=idem_key)
+        assert cid_1 == cid_2
 
     def test_different_inputs_produce_different_ids(self):
         """Different idempotent_key must produce different IDs."""
