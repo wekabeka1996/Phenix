@@ -44,6 +44,11 @@ from vfoundation.obs.correlation import CorrelationStore
 from .utils_event_bus import LocalBus
 
 from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult
+from .stopprice_validation import (
+    CONDITIONAL_ORDER_TYPES,
+    format_ep1102_reason,
+    is_valid_stop_price,
+)
 
 # Import OrderGuardian for TP/SL cleanup
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
@@ -2618,6 +2623,12 @@ class ExecPosFSM:
 
                 LOG.info(
                     f"Executing PLACE_ORDER: {symbol} {side} {order_type} {qty} @ {price}/{stop_price}")
+
+                # EP-1102 fail-closed preflight: block conditional order before adapter call.
+                if order_type in CONDITIONAL_ORDER_TYPES and not is_valid_stop_price(stop_price):
+                    _why = format_ep1102_reason(symbol, order_type)
+                    LOG.error(f"❌ {_why}")
+                    return
 
                 try:
                     resp = None

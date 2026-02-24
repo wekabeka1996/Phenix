@@ -28,6 +28,11 @@ from apps.reference.domains.execution_position.utils import (
     quantize_stop_price_dec,
     opposite_side,
 )
+from apps.reference.domains.execution_position.stopprice_validation import (
+    CONDITIONAL_ORDER_TYPES,
+    format_ep1102_reason,
+    is_valid_stop_price,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -1005,6 +1010,13 @@ class ManageFlowFSM:
     ) -> Message:
         """Emit DEC:PLACE_ORDER for bracket."""
 
+        msg_pld = msg.pld or {}
+        symbol = msg_pld["symbol"] if "symbol" in msg_pld else self.symbol
+
+        # EP-1102 fail-closed emission guard: conditional orders require a valid stopPrice.
+        if order_type in CONDITIONAL_ORDER_TYPES and not is_valid_stop_price(price):
+            raise ValueError(format_ep1102_reason(symbol, order_type))
+
         # Get workingType and priceProtect from config
         working_type = "MARK_PRICE"  # Default
         price_protect = False  # Default
@@ -1017,7 +1029,6 @@ class ManageFlowFSM:
                 price_protect = brackets.price_protect
 
         # Build payload
-        msg_pld = msg.pld or {}
         payload = {
             "symbol": msg_pld["symbol"] if "symbol" in msg_pld else "",
             "side": side,

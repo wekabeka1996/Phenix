@@ -35,6 +35,43 @@ from vfoundation.core.adapters.base import (
 
 LOG = logging.getLogger(__name__)
 
+
+_INVALID_STOP_PRICE_LITERALS: frozenset[str] = frozenset(
+    {"", "none", "nan", "null", "inf", "+inf", "-inf"}
+)
+_MAX_ABS_STOP_PRICE_EXPONENT = 100
+
+
+def _is_valid_stop_price(value: Any) -> bool:
+    if value is None:
+        return False
+
+    text = str(value).strip()
+    if text.lower() in _INVALID_STOP_PRICE_LITERALS:
+        return False
+
+    try:
+        parsed = Decimal(text)
+    except Exception:
+        return False
+
+    if not parsed.is_finite() or parsed <= 0:
+        return False
+
+    if abs(parsed.adjusted()) > _MAX_ABS_STOP_PRICE_EXPONENT:
+        return False
+
+    return True
+
+
+def _assert_valid_stop_price(stop_price: Any, symbol: str, order_type: str) -> None:
+    """EP-1102 defense-in-depth: fail-closed before any HTTP call."""
+    if not _is_valid_stop_price(stop_price):
+        raise ValueError(
+            f"EP-1102 missing stopPrice {symbol} {order_type}"[:80]
+        )
+
+
 async def _coerce_json(obj):
     """
     Повертає dict із httpx.Response / str / bytes / dict.
@@ -1418,6 +1455,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns:
             Order response.
         """
+        _assert_valid_stop_price(stop_price, symbol, "STOP_MARKET")
+
         params = {
             "symbol": symbol,
             "side": side.upper(),
@@ -1485,6 +1524,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns:
             Order response.
         """
+        _assert_valid_stop_price(stop_price, symbol, "TAKE_PROFIT_MARKET")
+
         params = {
             "symbol": symbol,
             "side": side.upper(),
