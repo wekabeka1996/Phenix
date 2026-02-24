@@ -25,6 +25,7 @@ from apps.reference.utils.accessors import aget, dget
 from apps.reference.domains.execution_position.utils import (
     generate_client_order_id,
     quantize_stop_price,
+    quantize_stop_price_dec,
     opposite_side,
 )
 
@@ -695,6 +696,24 @@ class ManageFlowFSM:
                     tp2_price = tp2_price + tp2_offset
                 else:
                     tp2_price = tp2_price - tp2_offset
+
+            # EP-ORDER-PRECISION-1111: Re-quantize after offset arithmetic.
+            # add_safety_offset() returns a percentage-of-price value that is NOT a
+            # tick_size multiple. Arithmetic with it destroys tick alignment.
+            # Re-quantize here to restore alignment before emitting stopPrice to adapter.
+            if self.position_side not in ("BUY", "SELL"):
+                raise ValueError(
+                    f"position_side must be BUY or SELL for EP-1111 quantization, got {self.position_side}"
+                )
+            sl_quant_side = opposite_side(self.position_side)
+            tp_quant_side = self.position_side
+            sl_price = quantize_stop_price_dec(
+                sl_price, tick_size, side=sl_quant_side)
+            tp1_price = quantize_stop_price_dec(
+                tp1_price, tick_size, side=tp_quant_side)
+            if tp2_price is not None:
+                tp2_price = quantize_stop_price_dec(
+                    tp2_price, tick_size, side=tp_quant_side)
 
             # Update stored prices
             self.sl_price = sl_price

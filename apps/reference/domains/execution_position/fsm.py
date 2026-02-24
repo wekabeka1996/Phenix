@@ -31,6 +31,7 @@ from .exposure_guard import ExposureGuard
 from .watchdog import OrderTimeoutWatchdog, OrderDeadline
 from .utils import (
     quantize_stop_price,
+    quantize_stop_price_dec,
     generate_client_order_id,
     validate_not_immediate,
     opposite_side,
@@ -4688,12 +4689,12 @@ class ExecPosFSM:
         """
         symbol = bracket_data["symbol"]
         side = bracket_data["side"]
-        sl = bracket_data["sl"]
-        tp = bracket_data["tp"]
+        sl = Decimal(str(bracket_data["sl"]))
+        tp = Decimal(str(bracket_data["tp"]))
         _qty = bracket_data["qty"]  # Extracted but unused: closePosition=True
         rid = bracket_data.get("rid")
         idem_key = bracket_data.get("idem_key")
-        tick_size = bracket_data.get("tick_size", Decimal("0.1"))
+        tick_size = Decimal(str(bracket_data.get("tick_size", Decimal("0.1"))))
         corr_id = bracket_data.get("corr_id")
         oco_group_id = bracket_data.get("oco_group_id")
         entry_client_order_id = bracket_data.get("entry_client_order_id")
@@ -4725,6 +4726,15 @@ class ExecPosFSM:
         tp_id = generate_client_order_id(
             "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
         )
+
+        # EP-ORDER-PRECISION-1111: Re-quantize raw/deferred values using open-flow SSOT mapping.
+        # Quantizer side encodes rounding direction, not adapter order side:
+        # LONG(BUY):  SL->SELL(FLOOR), TP->BUY(CEIL)
+        # SHORT(SELL): SL->BUY(CEIL),  TP->SELL(FLOOR)
+        sl_quant_side = "SELL" if side == "BUY" else "BUY"
+        tp_quant_side = "BUY" if side == "BUY" else "SELL"
+        sl = quantize_stop_price_dec(sl, tick_size, side=sl_quant_side)
+        tp = quantize_stop_price_dec(tp, tick_size, side=tp_quant_side)
 
         # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
         bracket_cfg = self.config.domains.execution_position.bracket_placement
@@ -4776,8 +4786,8 @@ class ExecPosFSM:
                 LOG.warning(
                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
                 tp_adj = tp * tp_widen_first
-                tp_adj = quantize_stop_price(
-                    tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+                tp_adj = quantize_stop_price_dec(
+                    tp_adj, tick_size, side=tp_quant_side
                 )
                 try:
                     tp_resp = await self.adapter.place_take_profit_market_close_position(

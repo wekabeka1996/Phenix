@@ -8,6 +8,7 @@ from apps.reference.core.time import get_clock
 
 __all__ = [
     "quantize_stop_price",
+    "quantize_stop_price_dec",
     "validate_anti_2021",
     "generate_client_order_id",
     "calc_tp_sl_from_mark",
@@ -22,10 +23,16 @@ __all__ = [
 def _round_to_tick(
     price: float | Decimal, tick_size: float | Decimal, mode: str = "floor"
 ) -> float:
+    return float(_round_to_tick_dec(price, tick_size, mode=mode))
+
+
+def _round_to_tick_dec(
+    price: float | Decimal, tick_size: float | Decimal, mode: str = "floor"
+) -> Decimal:
     p = Decimal(str(price))
     t = Decimal(str(tick_size))
     if t <= 0:
-        return float(p)
+        return p
     if mode == "floor":
         q = (p / t).to_integral_value(rounding=ROUND_DOWN)
     elif mode == "ceil":
@@ -33,7 +40,7 @@ def _round_to_tick(
     else:
         # Binance зазвичай приймає floor; "nearest" не використовуємо для стопів
         q = (p / t).to_integral_value(rounding=ROUND_DOWN)
-    return float(q * t)
+    return q * t
 
 
 def quantize_stop_price(
@@ -47,15 +54,28 @@ def quantize_stop_price(
     - side="SELL" (SL for Long, Price < Market): Round DOWN (FLOOR) to avoid premature trigger.
     - side=None: Defaults to legacy behavior (FLOOR), but logs warning if debug enabled.
     """
+    return float(
+        quantize_stop_price_dec(
+            Decimal(str(stop_price)),
+            Decimal(str(tick_size)),
+            side=side,
+        )
+    )
+
+
+def quantize_stop_price_dec(
+    stop_price: Decimal, tick_size: Decimal, *, side: Optional[str] = None
+) -> Decimal:
+    """Decimal-safe stopPrice quantization without float round-trips."""
     if side:
         s = side.upper()
         if s == "BUY":
-            return _round_to_tick(stop_price, tick_size, mode="ceil")
-        elif s == "SELL":
-            return _round_to_tick(stop_price, tick_size, mode="floor")
+            return _round_to_tick_dec(stop_price, tick_size, mode="ceil")
+        if s == "SELL":
+            return _round_to_tick_dec(stop_price, tick_size, mode="floor")
 
     # Fallback / Default behavior (now safe-guarded by explicit side logic above)
-    return _round_to_tick(stop_price, tick_size, mode="floor")
+    return _round_to_tick_dec(stop_price, tick_size, mode="floor")
 
 
 # ---- anti-2021 guard ----
