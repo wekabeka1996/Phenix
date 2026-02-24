@@ -1087,21 +1087,31 @@ class ExecPosFSM:
             if loop and self.adapter and not self.shadow_mode:
                 async def _do_cancel(oid: str, sym: str, dl: 'OrderDeadline'):
                     try:
-                        await self._cancel_order(sym, oid)
-                        LOG.info(
-                            f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
-                        # Remove from watchdog tracking
-                        self.watchdog.on_order_cancel(oid)
-                        # Log cancellation
-                        order_logger.write({
-                            "rid": dl.rid,
-                            "event_type": "ORDER_CANCELLED",
-                            "symbol": sym,
-                            "order_id": oid,
-                            "reason": reason,
-                            "context": context,
-                            "timestamp": get_clock().now_ms()
-                        })
+                        res = await self._cancel_order(sym, oid)
+                        ok = bool(
+                            getattr(res, "success", False)
+                            or getattr(res, "is_idempotent_success", False)
+                        )
+                        if ok:
+                            LOG.info(
+                                f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
+                            # Remove from watchdog tracking
+                            self.watchdog.on_order_cancel(oid)
+                            # Log cancellation
+                            order_logger.write({
+                                "rid": dl.rid,
+                                "event_type": "ORDER_CANCELLED",
+                                "symbol": sym,
+                                "order_id": oid,
+                                "reason": reason,
+                                "context": context,
+                                "timestamp": get_clock().now_ms()
+                            })
+                        else:
+                            LOG.warning(
+                                f"EP-01.3: Cancel FAILED pending entry {oid} ({reason}): "
+                                f"{getattr(res, 'reason', 'unknown_cancel_result')}"
+                            )
                     except Exception as e:
                         if self._is_unknown_order_error(e):
                             LOG.info(

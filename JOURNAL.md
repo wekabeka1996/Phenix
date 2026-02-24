@@ -1,5 +1,13 @@
 # Engineering Journal
 
+## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 - implementation
+
+- Implemented P0 exception-path absorption for cancel `-2011/-2013` in `idempotent_cancel.py` without retries.
+- Implemented truth-aligned `_do_cancel` gating in `fsm.py`: watchdog/order_logger update only on success or idempotent-success.
+- Added regression tests for exception-path absorption and cancel logging behavior.
+- P1 in-flight cancel dedup intentionally deferred to a separate package.
+
+
 
 
 ## 2026-02-18: Forensic Audit — H1/H2/H3 Config Hypotheses Verification

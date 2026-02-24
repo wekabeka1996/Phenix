@@ -22,3 +22,9 @@
 - Sizing verdict recorded: `REGIME-AWARE SIZING = YES` in DecisionMaking via `regime_sizing -> margin_pct_mult`.
 - Decide if to add explicit `SOLUSDT.regime_sizing.DEFAULT` and/or `UNCERTAIN: 0.0` (or keep only allowlist gating).
 - Optional next package (separate commit): additive `notional_mult_by_regime` schema/model/tests if we want deterministic per-regime size policy.
+
+## EP-IDEMPOTENT-CANCEL-2011 (2026-02-24)
+
+- [ ] EP-IDEMPOTENT-CANCEL-2011: P0 implemented (exception-path absorb + truthful _do_cancel gating). Close after merge.
+- [ ] EP-IDEMPOTENT-CANCEL-2011-P1: optional in-flight cancel dedup in separate package.
+

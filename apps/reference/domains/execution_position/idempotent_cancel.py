@@ -307,6 +307,21 @@ class IdempotentCancelHelper:
                 )
 
             except Exception as e:
+                code = getattr(e, "code", None)
+                if code in (-2011, -2013):
+                    self.logger.warning(
+                        f"IDEMPOTENT_CANCEL: Exception path {code} for {order_id}, "
+                        f"treating as idempotent success"
+                    )
+                    return IdempotentCancelResult(
+                        success=True,
+                        reason=f"IDEMPOTENT_{code}_ABSORBED_EXC",
+                        order_status_before=pre_check_order.get(
+                            "status") if pre_check_order else None,
+                        order_status_after="UNKNOWN",
+                        error_code=code,
+                        is_idempotent_success=True,
+                    )
                 self.logger.warning(
                     f"IDEMPOTENT_CANCEL: Exception on attempt {attempt + 1}: {e}"
                 )

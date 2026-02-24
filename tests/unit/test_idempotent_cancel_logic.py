@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from apps.reference.domains.execution_position.idempotent_cancel import IdempotentCancelHelper
+from apps.reference.adapters.binance_adapter import BinanceAPIError
 
 @pytest.mark.asyncio
 class TestIdempotentCancelLogic:
@@ -154,3 +155,53 @@ class TestIdempotentCancelLogic:
         assert result.success is False
         assert "EXCEPTION_AFTER_2_RETRIES" in result.reason
         assert cancel_mock.call_count == 2
+
+    async def test_cancel_2011_exception_absorbed_as_success(self):
+        """-2011 BinanceAPIError exception must be absorbed as idempotent success."""
+        helper = IdempotentCancelHelper()
+
+        get_order_mock = AsyncMock(return_value={"status": "NEW", "orderId": "123"})
+        cancel_mock = AsyncMock(
+            side_effect=BinanceAPIError(code=-2011, msg="Unknown order sent.")
+        )
+        helper._backoff_wait = AsyncMock()
+
+        result = await helper.cancel_order_idempotent(
+            symbol="BTCUSDT",
+            order_id="123",
+            cancel_func=cancel_mock,
+            get_order_func=get_order_mock,
+            max_retries=2,
+        )
+
+        assert result.success is True
+        assert result.reason == "IDEMPOTENT_-2011_ABSORBED_EXC"
+        assert result.is_idempotent_success is True
+        assert result.error_code == -2011
+        assert cancel_mock.call_count == 1
+        helper._backoff_wait.assert_not_called()
+
+    async def test_cancel_2013_exception_absorbed_as_success(self):
+        """-2013 BinanceAPIError exception must be absorbed as idempotent success."""
+        helper = IdempotentCancelHelper()
+
+        get_order_mock = AsyncMock(return_value={"status": "NEW", "orderId": "123"})
+        cancel_mock = AsyncMock(
+            side_effect=BinanceAPIError(code=-2013, msg="Order does not exist.")
+        )
+        helper._backoff_wait = AsyncMock()
+
+        result = await helper.cancel_order_idempotent(
+            symbol="BTCUSDT",
+            order_id="123",
+            cancel_func=cancel_mock,
+            get_order_func=get_order_mock,
+            max_retries=2,
+        )
+
+        assert result.success is True
+        assert result.reason == "IDEMPOTENT_-2013_ABSORBED_EXC"
+        assert result.is_idempotent_success is True
+        assert result.error_code == -2013
+        assert cancel_mock.call_count == 1
+        helper._backoff_wait.assert_not_called()
