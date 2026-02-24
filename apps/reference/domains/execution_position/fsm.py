@@ -284,6 +284,8 @@ class ExecPosFSM:
         self._supersede_queue: Dict[str, Dict[str, Any]] = {}
         # Symbols currently waiting for cancel confirmation before executing queued open
         self._supersede_canceling: set = set()
+        # EP-01.3 P1: dedupe scheduled supersede drains per symbol.
+        self._supersede_drain_scheduled: set = set()
 
         # Orphan-monitor configuration (Strict SSOT)
         # CFG-NO-DEFAULTS: All values must come from config.trading.execution.manage.orphan_monitor
@@ -1107,6 +1109,9 @@ class ExecPosFSM:
                                 "context": context,
                                 "timestamp": get_clock().now_ms()
                             })
+                            # EP-01.3 P1: wake queued supersede immediately on successful cancel.
+                            self._schedule_supersede_drain(
+                                sym, source="cancel_success")
                         else:
                             LOG.warning(
                                 f"EP-01.3: Cancel FAILED pending entry {oid} ({reason}): "
@@ -1267,6 +1272,31 @@ class ExecPosFSM:
 
         # Dispatch fix: execute via existing async method.
         await self._execute_decision(decision)
+
+    def _schedule_supersede_drain(self, symbol: str, source: str) -> None:
+        """
+        Schedule queued supersede drain exactly once per symbol.
+        """
+        if symbol not in self._supersede_canceling and symbol not in self._supersede_queue:
+            return
+        if symbol in self._supersede_drain_scheduled:
+            return
+
+        loop = self._get_async_loop()
+        if not loop:
+            LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
+            return
+
+        self._supersede_drain_scheduled.add(symbol)
+
+        async def _drain_once() -> None:
+            try:
+                await self._process_queued_supersede(symbol)
+            finally:
+                self._supersede_drain_scheduled.discard(symbol)
+
+        LOG.info(f"EP-01.3: scheduling supersede drain for {symbol} ({source})")
+        self._submit_async(_drain_once(), loop)
 
     def _on_regime_detected(self, event: Message) -> None:
         """
@@ -2833,7 +2863,8 @@ class ExecPosFSM:
                                     LOG.warning(
                                         f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open"
                                     )
-                                    await self._process_queued_supersede(symbol)
+                                    self._schedule_supersede_drain(
+                                        symbol, source="timeout")
                             self._submit_async(_supersede_timeout(), loop)
                         return  # Early return - wait for cancel confirmation
                 except AttributeError:
@@ -4550,11 +4581,7 @@ class ExecPosFSM:
             if not has_more_pending:
                 LOG.info(
                     f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
-                loop = self._get_async_loop()
-                if loop:
-                    self._submit_async(self._process_queued_supersede(symbol), loop)
-                else:
-                    LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
+                self._schedule_supersede_drain(symbol, source="cancel_event")
 
     async def _emit_exposure_update_async(self, msg: Message) -> None:
         """Asynchronously emit exposure update event."""
