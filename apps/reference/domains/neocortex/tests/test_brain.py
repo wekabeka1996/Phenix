@@ -86,6 +86,41 @@ def test_vae_loss(neuro_config):
     assert "kld" in losses
     assert not torch.isnan(losses["loss"])
 
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_auxiliary_regime_head_loss():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=3,
+        learning_rate=0.001,
+        beta=1.0,
+        batch_size=8,
+        use_mean=True,
+        regime_aux={"enabled": True, "alpha": 0.2, "num_classes": 5},
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    x = torch.randn(8, cfg.input_dim)
+    recon, mu, logvar = vae(x)
+    logits = vae.predict_regime_logits(mu)
+    targets = torch.randint(0, 5, (8,), dtype=torch.long)
+    losses = vae.loss_function(
+        recon,
+        x,
+        mu,
+        logvar,
+        beta=cfg.beta,
+        regime_logits=logits,
+        regime_targets=targets,
+        aux_alpha=cfg.regime_aux.alpha,
+    )
+
+    assert logits is not None
+    assert logits.shape == (8, 5)
+    assert "regime_ce" in losses
+    assert float(losses["regime_ce"]) >= 0.0
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_world_model_step(neuro_config):
     """Test World Model single step prediction."""

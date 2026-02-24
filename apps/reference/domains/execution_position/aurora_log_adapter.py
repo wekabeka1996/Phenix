@@ -7,6 +7,7 @@ Provides enhanced trade logging with all necessary fields for debugging and anal
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -42,8 +43,13 @@ class AuroraLogAdapter:
         already = any(isinstance(h, logging.FileHandler) and aget(h, "baseFilename", "") == str(self.log_file)
                       for h in self.logger.handlers)
         if not already:
-            # File handler with trade-specific format
-            file_handler = logging.FileHandler(self.log_file, encoding="utf-8")
+            # Rotating file handler for trade logs (20 MB per file, 100 backups)
+            file_handler = RotatingFileHandler(
+                self.log_file,
+                maxBytes=20 * 1024 * 1024,
+                backupCount=100,
+                encoding="utf-8",
+            )
             formatter = logging.Formatter(
                 "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
             )

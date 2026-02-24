@@ -405,9 +405,9 @@ execution_position:
     # Map: timeframe_seconds -> entry_ttl_seconds
     # 3m bar = 45s TTL, 5m = 60s, 15m = 180s
     ttl_by_tf_sec:
-      180: 45     # 3m bars: 45 sec TTL
-      300: 60     # 5m bars: 60 sec TTL
-      900: 180    # 15m bars: 180 sec (3 min) TTL
+      180: 600    # 3m bars: 10 min TTL (Hold & Wait 2026-02-24)
+      300: 900    # 5m bars: 15 min TTL
+      900: 1800   # 15m bars: 30 min TTL
     reject_unknown_tf: true   # fail-closed: reject if tf not in map
     cancel_on_regime_change: true
     cancel_on_supersede: true
@@ -434,10 +434,10 @@ execution_position:
   # Handles Binance -2021 error: "The stop price is too close to the mark price"
   # Strategy: Progressive TP widening with exponential backoff
   bracket_placement:
-    # First retry: widen TP by 20 bps (0.2%) - handles most transient cases
-    tp_widen_first_bps: 20
-    # Second retry: widen TP by 50 bps (0.5%) - handles volatile markets
-    tp_widen_second_bps: 50
+    # First retry: widen TP by 25 bps (0.25%) - handles most transient cases
+    tp_widen_first_bps: 25
+    # Second retry: widen TP by 60 bps (0.6%) - handles volatile markets
+    tp_widen_second_bps: 60
     # Backoff delays between retries (ms) - exponential: 200, 400
     retry_backoff_ms: [200, 400]
 

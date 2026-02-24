@@ -70,7 +70,7 @@ def _configure_worker_logging(log_dir: Path) -> logging.Logger:
     from logging.handlers import RotatingFileHandler
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=50 * 1024 * 1024,  # 50MB
+        maxBytes=20 * 1024 * 1024,  # 20MB
         backupCount=100,
         encoding="utf-8"
     )

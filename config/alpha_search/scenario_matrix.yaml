@@ -1,0 +1,180 @@
+# ==============================================================================
+# Alpha Search Scenario Matrix — SSOT
+# ==============================================================================
+# v2.1 matrix with 10 scenarios: 4 Aurora / 3 MeanReversion / 3 Ensemble
+#
+# Each scenario defines a config variant for parallel shadow-mode testing.
+# Scoring results are compared across scenarios to identify alpha.
+#
+# Config modes:
+#   override   — start from base_refs, apply dot-path overrides
+#   full_config — load full YAML files from scenario_config_dir
+# ==============================================================================
+
+matrix_id: alpha_search_shadow_v2
+version: 2
+
+# --- Runtime capacity knobs ---------------------------------------------------
+runtime:
+  max_scenarios: 20
+  max_concurrent_scenarios: 20
+  parallelism: thread_pool          # sequential | thread_pool
+  max_workers: 4
+  queue_maxsize: 4000
+  backpressure_policy: drop_oldest  # drop_oldest | drop_newest | block
+  memory_budget_mb_per_scenario: 50
+  scenario_timeout_sec: 5.0
+  health_heartbeat_sec: 30.0
+
+# --- Hot reload ---------------------------------------------------------------
+hot_reload:
+  enabled: false
+  poll_interval_sec: 5.0
+  debounce_sec: 2.0
+  rollback_on_error: true
+
+# --- Input stream -------------------------------------------------------------
+input:
+  source_mode: replay               # replay | live_tail
+  stream_path: logs/alpha_input/alpha_input_v1.jsonl
+
+# ==============================================================================
+# Scenarios (10 initial — 4 Aurora / 3 MR / 3 Ensemble)
+# ==============================================================================
+scenarios:
+
+  # ============================================================================
+  # AURORA FAMILY (S01–S04)
+  # ============================================================================
+
+  - scenario_id: S01_AURORA_BASELINE
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides: {}
+
+  - scenario_id: S02_AURORA_AGGRESSIVE
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides:
+      aurora.decision.signal_threshold: 0.12
+      aurora.decision.gates.anti_flat_sigma: 0.35
+
+  - scenario_id: S03_AURORA_CONSERVATIVE
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides:
+      aurora.decision.signal_threshold: 0.20
+      aurora.decision.gates.anti_fomo_sigma: 8.0
+
+  - scenario_id: S04_AURORA_OBI_HEAVY
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides:
+      aurora.decision.signal_weights.obi: 0.30
+      aurora.decision.signal_weights.depth_imbalance: -0.20
+      aurora.decision.feature_neutrals.obi: 0.50
+
+  # ============================================================================
+  # MEAN REVERSION FAMILY (S11–S13)
+  # ============================================================================
+
+  - scenario_id: S11_MR_BASELINE
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides: {}
+
+  - scenario_id: S12_MR_RSI_25_75
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search_system.mean_reversion.rsi.oversold: 25
+      alpha_search_system.mean_reversion.rsi.overbought: 75
+
+  - scenario_id: S13_MR_BB_HEAVY
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search_system.mean_reversion.weights.bb: 0.6
+      alpha_search_system.mean_reversion.weights.rsi: 0.2
+      alpha_search_system.mean_reversion.weights.sma: 0.1
+      alpha_search_system.mean_reversion.weights.stoch: 0.1
+
+  # ============================================================================
+  # ENSEMBLE FAMILY (S15–S17)
+  # ============================================================================
+
+  - scenario_id: S15_ENSEMBLE_BALANCED
+    enabled: true
+    strategy_type: ensemble
+    config_mode: override
+    base_refs:
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
+      alpha_search.providers.ta_ensemble.threshold: 0.15
+
+  - scenario_id: S16_ENSEMBLE_MR_DOMINANT
+    enabled: true
+    strategy_type: ensemble
+    config_mode: override
+    base_refs:
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.7
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.1
+      alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
+
+  - scenario_id: S17_ENSEMBLE_MOMENTUM_DOMINANT
+    enabled: true
+    strategy_type: ensemble
+    config_mode: override
+    base_refs:
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.6
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999

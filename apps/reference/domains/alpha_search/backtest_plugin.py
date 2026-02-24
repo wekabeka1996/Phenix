@@ -572,7 +572,8 @@ class AlphaSearchBacktestPlugin:
             event="FAIL_CLOSED",
             provider_id=provider_id,
             symbol=symbol,
-            payload={"reason": "missing_features_for_bar", "tf_sec": tf_sec, "bar_close_ts": bar_close_ts},
+            payload={"reason": "missing_features_for_bar",
+                     "tf_sec": tf_sec, "bar_close_ts": bar_close_ts},
         )
 
     # =========================================================================
@@ -755,9 +756,11 @@ class AlphaSearchBacktestPlugin:
     # =========================================================================
 
     def _extract_payload(self, event: Any) -> Optional[Dict[str, Any]]:
-        """Extract payload from event object."""
+        """Extract payload from event object (Message attr or LocalBus dict)."""
         if hasattr(event, "pld"):
             payload = event.pld
+        elif isinstance(event, dict) and "pld" in event:
+            payload = event["pld"]
         else:
             payload = event
 

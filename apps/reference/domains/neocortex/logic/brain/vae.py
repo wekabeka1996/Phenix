@@ -7,7 +7,7 @@ Architecture:
     Decoder: z -> MLP -> x_hat
 """
 
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 import logging
 import numpy as np
 
@@ -56,6 +56,11 @@ class VariationalAutoencoder(nn.Module):
         last_hidden = config.hidden_dims[-1]
         self.fc_mu = nn.Linear(last_hidden, self.latent_dim)
         self.fc_logvar = nn.Linear(last_hidden, self.latent_dim)
+        self.regime_head = None
+        regime_aux_cfg = getattr(config, "regime_aux", None)
+        if regime_aux_cfg is not None and bool(getattr(regime_aux_cfg, "enabled", False)):
+            num_classes = int(getattr(regime_aux_cfg, "num_classes", 5))
+            self.regime_head = nn.Linear(self.latent_dim, num_classes)
         
         # --- Decoder ---
         # Reverse hidden dims: latent -> hidden[-1] -> ... -> hidden[0] -> output
@@ -110,6 +115,12 @@ class VariationalAutoencoder(nn.Module):
         h = self.decoder_body(z)
         return self.fc_recon(h)
 
+    def predict_regime_logits(self, mu: torch.Tensor) -> Optional[torch.Tensor]:
+        """Return auxiliary regime logits from latent mean if head is enabled."""
+        if self.regime_head is None:
+            return None
+        return self.regime_head(mu)
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass.
@@ -126,7 +137,10 @@ class VariationalAutoencoder(nn.Module):
         x: torch.Tensor, 
         mu: torch.Tensor, 
         logvar: torch.Tensor,
-        beta: float = 1.0
+        beta: float = 1.0,
+        regime_logits: Optional[torch.Tensor] = None,
+        regime_targets: Optional[torch.Tensor] = None,
+        aux_alpha: float = 0.0,
     ) -> dict:
         """
         Compute VAE Loss = MSE + beta * KLD
@@ -137,6 +151,9 @@ class VariationalAutoencoder(nn.Module):
             mu: Latent mean
             logvar: Latent log variance
             beta: KL divergence weight (beta-VAE)
+            regime_logits: Optional logits from auxiliary regime head
+            regime_targets: Optional integer targets for auxiliary head
+            aux_alpha: CE loss weight
             
         Returns:
             dict containing 'loss', 'mse', 'kld'
@@ -149,11 +166,21 @@ class VariationalAutoencoder(nn.Module):
         kld_per_sample = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
         kld = kld_per_sample.mean()
 
-        total_loss = mse + (beta * kld)
+        regime_ce = torch.zeros((), dtype=mse.dtype, device=mse.device)
+        if (
+            regime_logits is not None
+            and regime_targets is not None
+            and aux_alpha > 0.0
+            and regime_logits.shape[0] == regime_targets.shape[0]
+        ):
+            regime_ce = F.cross_entropy(regime_logits, regime_targets.long())
+
+        total_loss = mse + (beta * kld) + (float(aux_alpha) * regime_ce)
         
         return {
             "loss": total_loss,
             "mse": mse,
-            "kld": kld
+            "kld": kld,
+            "regime_ce": regime_ce,
         }
 

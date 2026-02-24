@@ -633,7 +633,7 @@ class VolAdjGatesConfig(BaseModel):
     anti_fomo_sigma: float = Field(
         default=4.0,
         ge=1.0,
-        le=10.0,
+        le=20.0,
         description="Block ENTRY if |pm_norm| > anti_fomo_sigma (extreme impulse, snapback risk)"
     )
     motion_window_sec: int = Field(

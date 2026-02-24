@@ -23,8 +23,7 @@ version: "1.0.0"
 # ==============================================================================
 assignments:
   # ETH: Aurora-only (champion bar-driven asset, Phase 3+)
-  ETHUSDT:
-    - aurora
+  ETHUSDT: []
 
   # SOL: Aurora-only (scalping mode, Phase 3)
   SOLUSDT:

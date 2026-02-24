@@ -501,7 +501,8 @@ def main() -> int:
     # Fetch
     print(f"Base URL: {base_url}")
     print("API key configured: YES")
-    print(f"Range: {_fmt_ts_ms(start_ms)} → {_fmt_ts_ms(end_ms)}")
+    # Use ASCII to avoid Windows console encoding issues (cp1252 can't encode '→').
+    print(f"Range: {_fmt_ts_ms(start_ms)} -> {_fmt_ts_ms(end_ms)}")
 
     income = client.income_history(start_ms=start_ms, end_ms=end_ms)
 
@@ -532,7 +533,7 @@ def main() -> int:
     lines.append(
         f"Generated: {dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
     lines.append(f"Base URL: `{base_url}`\n")
-    lines.append(f"Range: `{_fmt_ts_ms(start_ms)}` → `{_fmt_ts_ms(end_ms)}`\n")
+    lines.append(f"Range: `{_fmt_ts_ms(start_ms)}` -> `{_fmt_ts_ms(end_ms)}`\n")
 
     # Income section
     lines.append("## Income (fapi/v1/income)\n")
@@ -628,6 +629,58 @@ def main() -> int:
                     f"{k}:{v}" for k, v in sorted(statuses.items()))])
             lines.append(
                 _md_table(["symbol", "orders", "filled", "status_counts"], summary_rows))
+
+            # Entry orders (clientOrderId startswith ENTRY-). This is the most useful slice
+            # for fill-rate / time-to-fill or time-to-cancel analysis.
+            entry_rows: List[List[Any]] = []
+            for sym in symbols:
+                for o in orders_by_symbol.get(sym, []):
+                    coid = str(o.get("clientOrderId") or "")
+                    if not coid.startswith("ENTRY-"):
+                        continue
+
+                    placed_ms = o.get("time")
+                    update_ms = o.get("updateTime") or placed_ms
+                    entry_rows.append(
+                        [
+                            _fmt_ts_ms(placed_ms),
+                            _fmt_ts_ms(update_ms),
+                            o.get("symbol"),
+                            o.get("side"),
+                            o.get("type"),
+                            o.get("timeInForce"),
+                            o.get("origQty"),
+                            o.get("executedQty"),
+                            o.get("avgPrice"),
+                            o.get("status"),
+                            coid,
+                            o.get("orderId"),
+                        ]
+                    )
+
+            if entry_rows:
+                # Sort oldest -> newest for stable diffs.
+                entry_rows_sorted = sorted(entry_rows, key=lambda r: r[0])
+                lines.append("\n### Entry orders (all)\n")
+                lines.append(
+                    _md_table(
+                        [
+                            "time",
+                            "update_time",
+                            "symbol",
+                            "side",
+                            "type",
+                            "tif",
+                            "origQty",
+                            "executedQty",
+                            "avgPrice",
+                            "status",
+                            "clientOrderId",
+                            "orderId",
+                        ],
+                        entry_rows_sorted,
+                    )
+                )
 
             # Show only FILLED orders (if any), capped to recent 200 for readability
             filled_rows: List[List[Any]] = []

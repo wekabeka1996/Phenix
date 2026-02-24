@@ -142,6 +142,28 @@ def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neur
     assert len(config.ingest.feature_list) == 3
     assert config.neuro.vae.latent_dim == 8
     assert config.neuro.ppo.state_dim == 10
+    assert config.ingest.normalization_scope in {"global", "per_symbol"}
+    assert config.ingest.price_feature_mode in {"raw", "log", "drop"}
+    assert config.ingest.delta_price_mode in {"raw", "pct"}
+
+
+def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """feature_clip_abs must be positive finite values."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+
+    invalid_ingest = valid_ingest_config.copy()
+    invalid_ingest["feature_clip_abs"] = {"delta_price": -1.0}
+
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(invalid_ingest, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+
+    with pytest.raises(ValidationError):
+        load_config(config_dir)
 
 
 # =============================================================================

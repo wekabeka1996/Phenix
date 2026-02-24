@@ -30,7 +30,7 @@ def _get_logger() -> logging.Logger:
     log_path = _get_log_path()
     _ensure_dir(log_path)
     fh = logging.handlers.RotatingFileHandler(
-        log_path, maxBytes=5_000_000, backupCount=100, encoding="utf-8", delay=False
+        log_path, maxBytes=10_000_000, backupCount=100, encoding="utf-8", delay=False
     )
     fmt = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S")

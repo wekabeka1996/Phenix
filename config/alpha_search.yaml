@@ -37,7 +37,7 @@ alpha_search:
         - BTCUSDT
         - ETHUSDT
         - SOLUSDT
-      threshold: 0.12
+      threshold: 0.155          # було 0.12 → ближче до нашої 0.162
       fail_closed: true
 
       adapter:
@@ -50,7 +50,7 @@ alpha_search:
     ta_ensemble:
       enabled: true            # All 3 TA models active
       symbols: null            # All symbols
-      threshold: 0.15
+      threshold: 0.18           # було 0.15
       fail_closed: true
 
       ensemble:
