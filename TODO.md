@@ -27,4 +27,5 @@
 
 - [ ] EP-IDEMPOTENT-CANCEL-2011: P0 implemented (exception-path absorb + truthful _do_cancel gating). Close after merge.
 - [ ] EP-IDEMPOTENT-CANCEL-2011-P1: optional in-flight cancel dedup in separate package.
-
+## EP-01.3-SUPERSEDE-FILL-RACE-GUARD-P0 (2026-02-24)
+- [ ] EP-01.3-SUPERSEDE-FILL-RACE-GUARD-P0 implemented; close only after merge.

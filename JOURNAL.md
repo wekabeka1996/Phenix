@@ -1,5 +1,28 @@
 # Engineering Journal
 
+## 2026-02-24: EP-01.3 P0 - queued supersede guarded by live position check + dispatch fix
+
+**Mode:** TDD implementation.
+**Scope:** `apps/reference/domains/execution_position/fsm.py`, `tests/domains/execution_position/test_supersede_fill_race_guard.py`
+
+**Changes (additive-only, P0):**
+1. `_process_queued_supersede()` is async and now checks live position state via `adapter.get_open_positions(symbol)` before replay.
+2. If position is already open, queued supersede OPEN is aborted fail-closed.
+3. If position query is unavailable, queued supersede OPEN is aborted fail-closed.
+4. Dispatch defect fixed by executing queued decision through existing `_execute_decision()`.
+
+**Tests added:**
+- `test_supersede_timeout_blocks_open_when_live_position_exists`
+- `test_supersede_timeout_blocks_open_when_position_query_unavailable_fail_closed`
+- `test_supersede_timeout_allows_open_when_no_live_position`
+- `test_process_queued_supersede_does_not_reference_missing_async_method`
+
+**Validation:**
+- `pytest -q tests/domains/execution_position/test_supersede_fill_race_guard.py` -> 4 passed
+- `pytest -q tests/domains/execution_position/test_execpos_fsm_recovery_ordering_v2.py -k cancel` -> 7 passed
+- `pytest -q tests/domains/execution_position/test_fsm_cancel_logging.py` -> 2 passed
+
+---
 ## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 - implementation
 
 - Implemented P0 exception-path absorption for cancel `-2011/-2013` in `idempotent_cancel.py` without retries.

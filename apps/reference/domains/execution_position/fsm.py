@@ -1184,7 +1184,7 @@ class ExecPosFSM:
 
         self._cancel_all_pending_entries("CANCEL_PANIC_KILL")
 
-    def _process_queued_supersede(self, symbol: str) -> None:
+    async def _process_queued_supersede(self, symbol: str) -> None:
         """
         EP-01.3-SUPERSEDE-ACK: Process queued DEC:OPEN after cancel is confirmed.
 
@@ -1217,13 +1217,56 @@ class ExecPosFSM:
             f"EP-01.3: Executing queued supersede DEC:OPEN for {symbol} (waited {age_sec:.2f}s)"
         )
 
-        # Re-submit the decision for processing
-        # This will go through normal flow since cancel is now confirmed
-        loop = self._get_async_loop()
-        if loop:
-            self._submit_async(self._async_execute_decision(decision), loop)
-        else:
-            LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
+        # EP-01.3 P0: fail-closed live position check before replayed OPEN.
+        # If a position already exists (fill-race), drop queued supersede open.
+        if not self.adapter:
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            LOG.warning(why)
+            return
+
+        try:
+            positions = await self.adapter.get_open_positions(symbol)
+        except Exception:
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            LOG.warning(why)
+            return
+
+        has_open_position = False
+        try:
+            for pos in positions or []:
+                if isinstance(pos, dict):
+                    pos_dict = pos
+                elif hasattr(pos, "to_dict"):
+                    pos_dict = pos.to_dict()
+                else:
+                    pos_dict = pos.__dict__ if hasattr(pos, "__dict__") else {}
+
+                pos_symbol = str(pos_dict.get("symbol", "")).strip()
+                if pos_symbol and pos_symbol != symbol:
+                    continue
+
+                raw_amt = pos_dict.get("positionAmt")
+                if raw_amt is None:
+                    raw_amt = pos_dict.get("position_amount")
+                if raw_amt is None:
+                    raw_amt = pos_dict.get("net_position")
+
+                amt = Decimal(str(raw_amt if raw_amt is not None else "0"))
+                if amt != 0:
+                    has_open_position = True
+                    break
+        except Exception:
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            LOG.warning(why)
+            return
+
+        if has_open_position:
+            why = f"EP-01.3 supersede aborted: position already open {symbol}"[:80]
+            LOG.warning(why)
+            return
+
+        # Dispatch fix: execute via existing async method.
+        await self._execute_decision(decision)
 
     def _on_regime_detected(self, event: Message) -> None:
         """
@@ -2790,7 +2833,7 @@ class ExecPosFSM:
                                     LOG.warning(
                                         f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open"
                                     )
-                                    self._process_queued_supersede(symbol)
+                                    await self._process_queued_supersede(symbol)
                             self._submit_async(_supersede_timeout(), loop)
                         return  # Early return - wait for cancel confirmation
                 except AttributeError:
@@ -4507,7 +4550,11 @@ class ExecPosFSM:
             if not has_more_pending:
                 LOG.info(
                     f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
-                self._process_queued_supersede(symbol)
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(self._process_queued_supersede(symbol), loop)
+                else:
+                    LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
 
     async def _emit_exposure_update_async(self, msg: Message) -> None:
         """Asynchronously emit exposure update event."""
