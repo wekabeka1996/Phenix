@@ -262,6 +262,12 @@ class ExecPosFSM:
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Pending TP/SL for LIMIT entries (placed on fill)
         # Key = entry_order_id, Value = {"symbol", "side", "sl", "tp", "qty", "rid", "idem_key", "tick_size"}
         self._pending_brackets: Dict[str, Dict[str, Any]] = {}
+        # Cross-path bracket placement coordinator:
+        # prevents duplicate SL/TP adapter calls when deferred and manage paths race.
+        self._bracket_place_inflight: Set[str] = set()
+        self._bracket_place_completed: Set[str] = set()
+        # Fail-closed registry: filled entries that ended up with <2 brackets.
+        self._filled_entries_missing_brackets: Dict[str, Dict[str, Any]] = {}
 
         # BRACKET-HEALTH: Track last known regime per symbol for TPSL computation
         self._last_regime_by_symbol: Dict[str, str] = {}
@@ -1009,6 +1015,178 @@ class ExecPosFSM:
             return str(result.get("status") or "").upper()
         return ""
 
+    @staticmethod
+    def _is_fill_discovered_cancel_result(result: Any) -> Tuple[bool, str]:
+        """Detect terminal FILLED / partial-fill-cancel recovery cases."""
+        if not isinstance(result, IdempotentCancelResult):
+            return False, ""
+        if result.reason == "PRE_CHECK_TERMINAL_FILLED":
+            return True, "fill_discovered_terminal"
+        was_partial = str(result.order_status_before or "").upper() == "PARTIALLY_FILLED"
+        became_canceled = str(result.order_status_after or "").upper() in ("CANCELED", "CANCELLED")
+        if was_partial and became_canceled:
+            return True, "fill_discovered_partial_cancel"
+        return False, ""
+
+    @staticmethod
+    def _bracket_place_key(symbol: str, parent_order_id: str, kind: str) -> str:
+        return f"{str(symbol).upper()}|{str(parent_order_id)}|{str(kind).upper()}"
+
+    def _claim_bracket_placement(self, symbol: str, parent_order_id: Optional[str], kind: str, source: str) -> bool:
+        """
+        Try to claim SL/TP placement right for a parent entry.
+        Returns False if another path already claimed/completed this exact bracket kind.
+        """
+        if not symbol or not parent_order_id:
+            return True
+        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        if key in self._bracket_place_completed or key in self._bracket_place_inflight:
+            LOG.info(
+                f"[BRACKET-DEDUP] Skip duplicate placement for {key} (source={source})"
+            )
+            return False
+        self._bracket_place_inflight.add(key)
+        return True
+
+    def _mark_bracket_placement_success(self, symbol: str, parent_order_id: Optional[str], kind: str) -> None:
+        if not symbol or not parent_order_id:
+            return
+        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        self._bracket_place_inflight.discard(key)
+        self._bracket_place_completed.add(key)
+
+    def _release_bracket_placement_claim(self, symbol: str, parent_order_id: Optional[str], kind: str) -> None:
+        if not symbol or not parent_order_id:
+            return
+        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        self._bracket_place_inflight.discard(key)
+
+    def _emit_filled_entry_without_brackets(
+        self,
+        *,
+        symbol: str,
+        parent_order_id: str,
+        missing_kinds: List[str],
+        why: str,
+        source: str,
+    ) -> None:
+        missing = [str(k).upper() for k in missing_kinds if k]
+        payload = {
+            "symbol": symbol,
+            "parent_order_id": str(parent_order_id),
+            "missing_count": len(missing),
+            "missing_kinds": missing,
+            "why": str(why)[:80],
+            "source": source,
+        }
+        registry_key = f"{str(symbol).upper()}:{str(parent_order_id)}"
+        self._filled_entries_missing_brackets[registry_key] = {
+            **payload,
+            "ts_ms": get_clock().now_ms(),
+        }
+        self._emit_observability_event("FILLED_ENTRY_WITHOUT_BRACKETS", payload)
+        LOG.error(
+            f"[BRACKET-GUARD] FILLED_ENTRY_WITHOUT_BRACKETS {symbol} parent={parent_order_id} "
+            f"missing={'+'.join(missing) if missing else 'UNKNOWN'} why={payload['why']}"
+        )
+
+    async def _recover_deferred_brackets_for_filled_entry(
+        self,
+        *,
+        order_id: str,
+        symbol: str,
+        clear_reason: str,
+        source: str,
+        schedule_async: bool = True,
+    ) -> bool:
+        """
+        Shared SSOT recovery: consume pending deferred brackets and place TP/SL after discovered fill.
+        """
+        if order_id not in self._pending_brackets:
+            return False
+
+        bracket_data = self._pending_brackets.pop(order_id)
+        try:
+            write_pending_brackets_cleared(
+                entry_order_id=order_id,
+                reason=clear_reason,
+                symbol=bracket_data.get("symbol", symbol),
+            )
+        except Exception as wal_err:
+            LOG.warning(f"Failed to clear pending brackets from WAL: {wal_err}")
+
+        LOG.info(
+            f"[{source}] Placing deferred TP/SL brackets for {symbol} entry {order_id}"
+        )
+
+        if schedule_async:
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    self._place_deferred_brackets(order_id, bracket_data),
+                    loop,
+                )
+                return True
+        await self._place_deferred_brackets(order_id, bracket_data)
+        return True
+
+    async def _emit_trade_executed_for_discovered_fill(
+        self,
+        *,
+        order_id: str,
+        symbol: str,
+        rid: Optional[str],
+        why: str,
+        cancel_result: Any,
+    ) -> None:
+        """Emit TRADE_EXECUTED for a fill discovered through cancel pre-check path."""
+        order_data = (
+            cancel_result.order_data
+            if isinstance(cancel_result, IdempotentCancelResult)
+            else None
+        ) or {}
+
+        if float(dget(order_data, "executedQty", 0) or 0) <= 0:
+            try:
+                if self.adapter and hasattr(self.adapter, "get_order"):
+                    fetched_order = await self.adapter.get_order(symbol, order_id)
+                    if isinstance(fetched_order, dict):
+                        order_data = fetched_order
+            except Exception as fetch_err:
+                LOG.debug(f"[{why}] get_order fallback failed for {order_id}: {fetch_err}")
+
+        exec_qty = float(dget(order_data, "executedQty", 0) or 0)
+        if exec_qty <= 0:
+            LOG.warning(
+                f"[{why}] executedQty unavailable for {order_id}; emitting TRADE_EXECUTED with qty=0"
+            )
+
+        fill_msg = Message(
+            op="EVT",
+            verb="TRADE_EXECUTED",
+            src="execution_position",
+            dst="execution_position",
+            rid=rid or f"{why}_{order_id}",
+            why=why,
+            pld={
+                "orderId": order_id,
+                "symbol": symbol,
+                "quantity": exec_qty,
+                "qty": exec_qty,
+                "price": float(dget(order_data, "avgPrice", 0)),
+                "side": str(dget(order_data, "side", "")),
+                "client_order_id": dget(order_data, "clientOrderId", ""),
+                "clientOrderId": dget(order_data, "clientOrderId", ""),
+                "rid": rid,
+            },
+        )
+        try:
+            self.handle(fill_msg)
+        except Exception as emit_err:
+            LOG.error(
+                f"Failed to deliver TRADE_EXECUTED for discovered fill {order_id}: {emit_err}"
+            )
+
     async def _cancel_order(self, symbol: str, order_id: str) -> Any:
         """Unified cancel path with optional idempotent helper."""
         if not self.adapter:
@@ -1084,7 +1262,6 @@ class ExecPosFSM:
         )
 
         for order_id, deadline in orders_to_cancel:
-            # Schedule async cancel
             loop = self._get_async_loop()
             if loop and self.adapter and not self.shadow_mode:
                 async def _do_cancel(oid: str, sym: str, dl: 'OrderDeadline'):
@@ -1094,40 +1271,75 @@ class ExecPosFSM:
                             getattr(res, "success", False)
                             or getattr(res, "is_idempotent_success", False)
                         )
-                        if ok:
-                            LOG.info(
-                                f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
-                            # Remove from watchdog tracking
-                            self.watchdog.on_order_cancel(oid)
-                            # Log cancellation
-                            order_logger.write({
-                                "rid": dl.rid,
-                                "event_type": "ORDER_CANCELLED",
-                                "symbol": sym,
-                                "order_id": oid,
-                                "reason": reason,
-                                "context": context,
-                                "timestamp": get_clock().now_ms()
-                            })
-                            # EP-01.3 P1: wake queued supersede immediately on successful cancel.
-                            self._schedule_supersede_drain(
-                                sym, source="cancel_success")
-                        else:
+                        if not ok:
                             LOG.warning(
                                 f"EP-01.3: Cancel FAILED pending entry {oid} ({reason}): "
                                 f"{getattr(res, 'reason', 'unknown_cancel_result')}"
                             )
+                            return
+
+                        fill_discovered, fill_mode = self._is_fill_discovered_cancel_result(res)
+                        if fill_discovered:
+                            clear_reason = (
+                                "cancel_partial_fill_discovered"
+                                if fill_mode == "fill_discovered_partial_cancel"
+                                else "cancel_fill_discovered"
+                            )
+                            LOG.info(
+                                f"[CANCEL-FILL] Pending entry {oid} ({sym}) discovered as fill "
+                                f"during cancel path ({clear_reason})"
+                            )
+                            self.watchdog.on_order_fill(oid)
+                            order_logger.write({
+                                "rid": dl.rid,
+                                "event_type": "ORDER_FILL_DISCOVERED",
+                                "symbol": sym,
+                                "order_id": oid,
+                                "reason": clear_reason,
+                                "context": context,
+                                "timestamp": get_clock().now_ms()
+                            })
+                            await self._recover_deferred_brackets_for_filled_entry(
+                                order_id=str(oid),
+                                symbol=sym,
+                                clear_reason=clear_reason,
+                                source="CANCEL-FILL",
+                                schedule_async=True,
+                            )
+                            await self._emit_trade_executed_for_discovered_fill(
+                                order_id=str(oid),
+                                symbol=sym,
+                                rid=dl.rid,
+                                why=clear_reason,
+                                cancel_result=res,
+                            )
+                            # Wake queued supersede; replay path has separate open-position guard.
+                            self._schedule_supersede_drain(
+                                sym, source="cancel_fill_discovered")
+                            return
+
+                        LOG.info(f"EP-01.3: Cancelled pending entry {oid} ({reason})")
+                        self.watchdog.on_order_cancel(oid)
+                        order_logger.write({
+                            "rid": dl.rid,
+                            "event_type": "ORDER_CANCELLED",
+                            "symbol": sym,
+                            "order_id": oid,
+                            "reason": reason,
+                            "context": context,
+                            "timestamp": get_clock().now_ms()
+                        })
+                        self._schedule_supersede_drain(sym, source="cancel_success")
                     except Exception as e:
                         if self._is_unknown_order_error(e):
                             LOG.info(
-                                f"✅ EP-01.3: Pending entry {oid} already absent (-2011)")
+                                f"EP-01.3: Pending entry {oid} already absent (-2011)")
                             self.watchdog.on_order_cancel(oid)
                         else:
                             LOG.warning(
                                 f"EP-01.3: Failed to cancel pending entry {oid}: {e}")
 
-                self._submit_async(_do_cancel(
-                    order_id, symbol, deadline), loop)
+                self._submit_async(_do_cancel(order_id, symbol, deadline), loop)
             else:
                 # Just remove from tracking (shadow mode or no adapter)
                 self.watchdog.on_order_cancel(order_id)
@@ -2703,99 +2915,147 @@ class ExecPosFSM:
                 stop_price = pld.get("stopPrice")
                 client_id = pld.get("newClientOrderId")
                 reduce_only = pld["reduceOnly"] if "reduceOnly" in pld else False
+                parent_order_id = pld.get("parent_order_id")
+                bracket_kind = (
+                    "SL" if str(order_type).upper() == "STOP_MARKET"
+                    else "TP" if str(order_type).upper() == "TAKE_PROFIT_MARKET"
+                    else None
+                )
+                placement_succeeded = False
 
                 LOG.info(
                     f"Executing PLACE_ORDER: {symbol} {side} {order_type} {qty} @ {price}/{stop_price}")
 
-                # EP-1102 fail-closed preflight: block conditional order before adapter call.
-                if order_type in CONDITIONAL_ORDER_TYPES and not is_valid_stop_price(stop_price):
-                    _why = format_ep1102_reason(symbol, order_type)
-                    LOG.error(f"❌ {_why}")
-                    return
+                claimed = False
+                if bracket_kind and parent_order_id:
+                    claimed = self._claim_bracket_placement(
+                        str(symbol or ""),
+                        str(parent_order_id),
+                        bracket_kind,
+                        source="PLACE_ORDER",
+                    )
+                    if not claimed:
+                        return
 
                 try:
-                    resp = None
-                    if order_type == "STOP_MARKET" and hasattr(self.adapter, "place_stop_market_close_position"):
-                        resp = await self.adapter.place_stop_market_close_position(
-                            symbol, side, str(stop_price), new_client_order_id=client_id
-                        )
-                    elif order_type == "TAKE_PROFIT_MARKET" and hasattr(self.adapter, "place_take_profit_market_close_position"):
-                        resp = await self.adapter.place_take_profit_market_close_position(
-                            symbol, side, str(stop_price), new_client_order_id=client_id
-                        )
-                    elif order_type == "LIMIT" and reduce_only and hasattr(self.adapter, "place_limit_reduce_only"):
-                        resp = await self.adapter.place_limit_reduce_only(
-                            symbol, side, str(price), qty, new_client_order_id=client_id
-                        )
-                    else:
-                        # Fallback to generic place_order if available, or log error
-                        if hasattr(self.adapter, "place_order"):
-                            # Construct message for adapter (legacy interface)
-                            resp = await self.adapter.place_order(decision)
-                        else:
-                            LOG.error(
-                                f"Unsupported order type for PLACE_ORDER: {order_type}")
-                            return
+                    # EP-1102 fail-closed preflight: block conditional order before adapter call.
+                    if order_type in CONDITIONAL_ORDER_TYPES and not is_valid_stop_price(stop_price):
+                        _why = format_ep1102_reason(symbol, order_type)
+                        LOG.error(f"❌ {_why}")
+                        return
 
-                    LOG.info(f"✅ PLACE_ORDER success: {resp}")
-
-                    # ORDER_INDEX: correlate bracket/aux orders for WS updates
                     try:
-                        if (
-                            client_id
-                            and resp
-                            and hasattr(self.fsm, "order_index")
-                            # type: ignore[attr-defined]
-                            and self.fsm.order_index
-                        ):
-                            ex_order_id = str(resp.get("orderId"))
-
-                            rid_for_index = str(
-                                getattr(decision, "rid", "") or "") or ex_order_id
-                            idem_key = (
-                                (decision.pld or {}).get("idempotent_key")
-                                or getattr(decision, "idempotent_key", None)
-                                or rid_for_index
-                                or client_id
+                        resp = None
+                        if order_type == "STOP_MARKET" and hasattr(self.adapter, "place_stop_market_close_position"):
+                            resp = await self.adapter.place_stop_market_close_position(
+                                symbol, side, str(stop_price), new_client_order_id=client_id
                             )
-                            self.fsm.order_index.upsert_from_open(  # type: ignore[attr-defined]
-                                rid=rid_for_index,
-                                idempotent_key=str(idem_key),
-                                clientOrderId=client_id,
-                                symbol=symbol,
-                                side=str(side).upper() if side else "",
-                                order_type=str(order_type),
+                        elif order_type == "TAKE_PROFIT_MARKET" and hasattr(self.adapter, "place_take_profit_market_close_position"):
+                            resp = await self.adapter.place_take_profit_market_close_position(
+                                symbol, side, str(stop_price), new_client_order_id=client_id
                             )
-                            self.fsm.order_index.attach_exchange_id(  # type: ignore[attr-defined]
-                                clientOrderId=client_id,
-                                exchangeOrderId=ex_order_id,
+                        elif order_type == "LIMIT" and reduce_only and hasattr(self.adapter, "place_limit_reduce_only"):
+                            resp = await self.adapter.place_limit_reduce_only(
+                                symbol, side, str(price), qty, new_client_order_id=client_id
                             )
-                    except Exception:
-                        pass
+                        else:
+                            # Fallback to generic place_order if available, or log error
+                            if hasattr(self.adapter, "place_order"):
+                                # Construct message for adapter (legacy interface)
+                                resp = await self.adapter.place_order(decision)
+                            else:
+                                LOG.error(
+                                    f"Unsupported order type for PLACE_ORDER: {order_type}")
+                                return
 
-                    # Register brackets if applicable
-                    if client_id and resp:
-                        order_id = str(resp.get("orderId"))
-                        if "_sl" in client_id:
-                            self._symbol_brackets.setdefault(
-                                symbol, {})["sl_order_id"] = order_id
-                        elif "_tp" in client_id:
-                            self._symbol_brackets.setdefault(
-                                symbol, {})["tp_order_id"] = order_id
+                        LOG.info(f"✅ PLACE_ORDER success: {resp}")
+                        placement_succeeded = bool(resp)
+                        if placement_succeeded and bracket_kind and parent_order_id:
+                            self._mark_bracket_placement_success(
+                                str(symbol or ""),
+                                str(parent_order_id),
+                                bracket_kind,
+                            )
 
-                        # 🔥 CRITICAL: Sync with ManageFlowFSM
-                        manage_flow = self.manage_flows.get(symbol)
-                        if manage_flow:
-                            brackets = self._symbol_brackets[symbol] if symbol in self._symbol_brackets else {
-                            }
-                            current_sl = brackets.get("sl_order_id")
-                            current_tp = brackets.get("tp_order_id")
-                            manage_flow.set_bracket_ids(current_sl, current_tp)
+                        # ORDER_INDEX: correlate bracket/aux orders for WS updates
+                        try:
+                            if (
+                                client_id
+                                and resp
+                                and hasattr(self.fsm, "order_index")
+                                # type: ignore[attr-defined]
+                                and self.fsm.order_index
+                            ):
+                                ex_order_id = str(resp.get("orderId"))
 
-                except Exception as e:
-                    LOG.error(f"❌ PLACE_ORDER failed: {e}")
-                    # Emit error event?
+                                rid_for_index = str(
+                                    getattr(decision, "rid", "") or "") or ex_order_id
+                                idem_key = (
+                                    (decision.pld or {}).get("idempotent_key")
+                                    or getattr(decision, "idempotent_key", None)
+                                    or rid_for_index
+                                    or client_id
+                                )
+                                self.fsm.order_index.upsert_from_open(  # type: ignore[attr-defined]
+                                    rid=rid_for_index,
+                                    idempotent_key=str(idem_key),
+                                    clientOrderId=client_id,
+                                    symbol=symbol,
+                                    side=str(side).upper() if side else "",
+                                    order_type=str(order_type),
+                                )
+                                self.fsm.order_index.attach_exchange_id(  # type: ignore[attr-defined]
+                                    clientOrderId=client_id,
+                                    exchangeOrderId=ex_order_id,
+                                )
+                        except Exception:
+                            pass
 
+                        # Register brackets if applicable
+                        if client_id and resp:
+                            order_id = str(resp.get("orderId"))
+                            if "_sl" in client_id:
+                                self._symbol_brackets.setdefault(
+                                    symbol, {})["sl_order_id"] = order_id
+                            elif "_tp" in client_id:
+                                self._symbol_brackets.setdefault(
+                                    symbol, {})["tp_order_id"] = order_id
+
+                            if bracket_kind and parent_order_id:
+                                try:
+                                    self.order_guardian.register_bracket(
+                                        symbol=str(symbol),
+                                        parent_order_id=str(parent_order_id),
+                                        order_id=order_id,
+                                        client_order_id=str(client_id),
+                                        kind=bracket_kind,
+                                        corr_id=getattr(decision, "corr_id", None),
+                                        rid=getattr(decision, "rid", None),
+                                    )
+                                except Exception as reg_err:
+                                    LOG.debug(
+                                        f"PLACE_ORDER register_bracket skipped for parent {parent_order_id}: {reg_err}"
+                                    )
+
+                            # 🔥 CRITICAL: Sync with ManageFlowFSM
+                            manage_flow = self.manage_flows.get(symbol)
+                            if manage_flow:
+                                brackets = self._symbol_brackets[symbol] if symbol in self._symbol_brackets else {
+                                }
+                                current_sl = brackets.get("sl_order_id")
+                                current_tp = brackets.get("tp_order_id")
+                                manage_flow.set_bracket_ids(current_sl, current_tp)
+
+                    except Exception as e:
+                        LOG.error(f"❌ PLACE_ORDER failed: {e}")
+                        # Emit error event?
+                finally:
+                    if claimed and not placement_succeeded:
+                        self._release_bracket_placement_claim(
+                            str(symbol or ""),
+                            str(parent_order_id),
+                            bracket_kind,
+                        )
                 return
 
             symbol = decision.pld["symbol"]
@@ -4060,36 +4320,24 @@ class ExecPosFSM:
 
                 # ✅ NEW: Verify cancel status from exchange response
                 if self._is_cancel_success_response(cancel_result):
-                    # Detect whether the order was FILLED (not actually cancelled)
-                    _is_terminal_filled = (
-                        isinstance(cancel_result, IdempotentCancelResult)
-                        and cancel_result.reason == "PRE_CHECK_TERMINAL_FILLED"
-                    )
-                    # Also treat PARTIALLY_FILLED -> CANCELED as fill-discovered path:
-                    # exchange confirms non-zero execution before cancel.
-                    _is_partial_fill_cancel = (
-                        isinstance(cancel_result, IdempotentCancelResult)
-                        and str(cancel_result.order_status_before or "").upper() == "PARTIALLY_FILLED"
-                        and str(cancel_result.order_status_after or "").upper() in ("CANCELED", "CANCELLED")
-                    )
-                    _is_fill_discovered = _is_terminal_filled or _is_partial_fill_cancel
+                    _is_fill_discovered, _fill_mode = self._is_fill_discovered_cancel_result(cancel_result)
 
                     if _is_fill_discovered:
-                        # --- FILLED path: order filled during timeout window ---
-                        if _is_terminal_filled:
-                            LOG.info(
-                                f"[TIMEOUT-FILL] Timed-out order {deadline.order_id} "
-                                f"({deadline.symbol}) was already FILLED "
-                                f"(discovered via idempotent cancel pre-check)"
-                            )
-                            _fill_reason = "timeout_fill_discovered"
-                        else:
+                        if _fill_mode == "fill_discovered_partial_cancel":
+                            _fill_reason = "timeout_partial_fill_discovered"
                             LOG.info(
                                 f"[TIMEOUT-FILL] Timed-out order {deadline.order_id} "
                                 f"({deadline.symbol}) was PARTIALLY_FILLED before cancel "
                                 f"(treating as fill-discovered for bracket recovery)"
                             )
-                            _fill_reason = "timeout_partial_fill_discovered"
+                        else:
+                            _fill_reason = "timeout_fill_discovered"
+                            LOG.info(
+                                f"[TIMEOUT-FILL] Timed-out order {deadline.order_id} "
+                                f"({deadline.symbol}) was already FILLED "
+                                f"(discovered via idempotent cancel pre-check)"
+                            )
+
                         order_logger.write({
                             "rid": deadline.rid,
                             "event_type": "ORDER_FILL_DISCOVERED",
@@ -4100,86 +4348,20 @@ class ExecPosFSM:
                             "timestamp": get_clock().now_ms()
                         })
 
-                        # Place deferred brackets if pending
-                        # (idempotent: no-op if already popped by _on_order_fill)
-                        if deadline.order_id in self._pending_brackets:
-                            bracket_data = self._pending_brackets.pop(
-                                deadline.order_id)
-                            try:
-                                write_pending_brackets_cleared(
-                                    entry_order_id=deadline.order_id,
-                                    reason="timeout_fill_discovered",
-                                    symbol=bracket_data.get(
-                                        "symbol", deadline.symbol),
-                                )
-                            except Exception as wal_err:
-                                LOG.warning(
-                                    f"Failed to clear pending brackets from WAL: {wal_err}")
-
-                            LOG.info(
-                                f"[TIMEOUT-FILL] Placing deferred TP/SL brackets for "
-                                f"{deadline.symbol} entry {deadline.order_id}"
-                            )
-                            loop = self._get_async_loop()
-                            if loop:
-                                self._submit_async(
-                                    self._place_deferred_brackets(
-                                        deadline.order_id, bracket_data),
-                                    loop
-                                )
-
-                        # Emit TRADE_EXECUTED to update ManageFlowFSM and position tracking
-                        order_data = (
-                            cancel_result.order_data
-                            if isinstance(cancel_result, IdempotentCancelResult)
-                            else None
-                        ) or {}
-                        if float(dget(order_data, "executedQty", 0) or 0) <= 0:
-                            try:
-                                if self.adapter and hasattr(self.adapter, "get_order"):
-                                    fetched_order = await self.adapter.get_order(
-                                        deadline.symbol, deadline.order_id
-                                    )
-                                    if isinstance(fetched_order, dict):
-                                        order_data = fetched_order
-                            except Exception as fetch_err:
-                                LOG.debug(
-                                    f"[TIMEOUT-FILL] get_order fallback failed for {deadline.order_id}: {fetch_err}"
-                                )
-
-                        exec_qty = float(
-                            dget(order_data, "executedQty", 0) or 0)
-                        if exec_qty <= 0:
-                            LOG.warning(
-                                f"[TIMEOUT-FILL] executedQty unavailable for {deadline.order_id}; "
-                                f"emitting TRADE_EXECUTED with qty=0"
-                            )
-
-                        fill_msg = Message(
-                            op="EVT",
-                            verb="TRADE_EXECUTED",
-                            src="execution_position",
-                            dst="execution_position",
-                            rid=deadline.rid or f"timeout_fill_{deadline.order_id}",
-                            why=_fill_reason,
-                            pld={
-                                "orderId": deadline.order_id,
-                                "symbol": deadline.symbol,
-                                "quantity": exec_qty,
-                                "qty": exec_qty,
-                                "price": float(dget(order_data, "avgPrice", 0)),
-                                "side": str(dget(order_data, "side", "")),
-                                "client_order_id": dget(order_data, "clientOrderId", ""),
-                                "clientOrderId": dget(order_data, "clientOrderId", ""),
-                                "rid": deadline.rid,
-                            },
+                        await self._recover_deferred_brackets_for_filled_entry(
+                            order_id=str(deadline.order_id),
+                            symbol=deadline.symbol,
+                            clear_reason=_fill_reason,
+                            source="TIMEOUT-FILL",
+                            schedule_async=True,
                         )
-                        try:
-                            self.handle(fill_msg)
-                        except Exception as emit_err:
-                            LOG.error(
-                                f"Failed to deliver TRADE_EXECUTED for timeout fill: {emit_err}")
-
+                        await self._emit_trade_executed_for_discovered_fill(
+                            order_id=str(deadline.order_id),
+                            symbol=deadline.symbol,
+                            rid=deadline.rid,
+                            why=_fill_reason,
+                            cancel_result=cancel_result,
+                        )
                     else:
                         # --- Genuine cancel path (existing behavior) ---
                         self.watchdog.cancel_success_count += 1
@@ -4795,20 +4977,20 @@ class ExecPosFSM:
         entry_client_order_id = bracket_data.get("entry_client_order_id")
 
         LOG.info(
-            f"📌 [LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}"
+            f"[LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}"
         )
 
         # Pre-flight check: verify position exists (should be there after fill)
         if not await self._preflight_position_check(symbol):
             LOG.warning(
-                f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets"
+                f"[LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets"
             )
             return
 
         # Check with OrderGuardian
         if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
             LOG.warning(
-                f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
+                f"[LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
             )
             return
 
@@ -4836,60 +5018,61 @@ class ExecPosFSM:
         tp_widen_first = Decimal(
             "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
 
-        # Place SL and TP
+        # Place SL and TP (coordinator-aware)
         sl_resp = None
         tp_resp = None
-        try:
-            sl_resp = await self.adapter.place_stop_market_close_position(
-                symbol, sl_side, str(sl), new_client_order_id=sl_id
-            )
-            LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
-            self._orphan_metrics["tp_sl_placed_success"] += 1
+        sl_outcome = "NOT_ATTEMPTED"
+        tp_outcome = "NOT_ATTEMPTED"
 
-            # Correlation store
-            sl_order_id = str(sl_resp["orderId"])
-            self.correlation_store.put_sl_tp_ack(
-                sl_order_id, entry_client_order_id or "", corr_id or "",
-                oco_group_id or "", rid or ""
-            )
-            self._symbol_brackets.setdefault(
-                symbol, {})["sl_order_id"] = sl_order_id
+        claimed_sl = self._claim_bracket_placement(
+            symbol, str(entry_order_id), "SL", source="LIMIT-DEFERRED"
+        )
+        if claimed_sl:
+            sl_succeeded = False
+            try:
+                try:
+                    sl_resp = await self.adapter.place_stop_market_close_position(
+                        symbol, sl_side, str(sl), new_client_order_id=sl_id
+                    )
+                    LOG.info(f"[LIMIT-DEFERRED] SL placed: {sl_resp}")
+                    self._orphan_metrics["tp_sl_placed_success"] += 1
+                    sl_outcome = "OK"
 
-        except Exception as e:
-            LOG.error(
-                f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+                    # Correlation store
+                    sl_order_id = str(sl_resp["orderId"])
+                    self.correlation_store.put_sl_tp_ack(
+                        sl_order_id, entry_client_order_id or "", corr_id or "",
+                        oco_group_id or "", rid or ""
+                    )
+                    self._symbol_brackets.setdefault(
+                        symbol, {})["sl_order_id"] = sl_order_id
+                    self._mark_bracket_placement_success(symbol, str(entry_order_id), "SL")
+                    sl_succeeded = True
+                except Exception as e:
+                    sl_outcome = f"FAILED:{type(e).__name__}"
+                    LOG.error(
+                        f"[LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+            finally:
+                if not sl_succeeded:
+                    self._release_bracket_placement_claim(symbol, str(entry_order_id), "SL")
+        else:
+            sl_outcome = "SKIPPED_DEDUP"
 
-        try:
-            tp_resp = await self.adapter.place_take_profit_market_close_position(
-                symbol, tp_side, str(tp), new_client_order_id=tp_id
-            )
-            LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
-            self._orphan_metrics["tp_sl_placed_success"] += 1
-
-            # Correlation store
-            tp_order_id = str(tp_resp["orderId"])
-            self.correlation_store.put_sl_tp_ack(
-                tp_order_id, entry_client_order_id or "", corr_id or "",
-                oco_group_id or "", rid or ""
-            )
-            self._symbol_brackets.setdefault(
-                symbol, {})["tp_order_id"] = tp_order_id
-
-        except BinanceAPIError as e:
-            if e.code == -2021:
-                # TP too close to mark price - widen and retry (config-based)
-                LOG.warning(
-                    f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
-                tp_adj = tp * tp_widen_first
-                tp_adj = quantize_stop_price_dec(
-                    tp_adj, tick_size, side=tp_quant_side
-                )
+        claimed_tp = self._claim_bracket_placement(
+            symbol, str(entry_order_id), "TP", source="LIMIT-DEFERRED"
+        )
+        if claimed_tp:
+            tp_succeeded = False
+            try:
                 try:
                     tp_resp = await self.adapter.place_take_profit_market_close_position(
-                        symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+                        symbol, tp_side, str(tp), new_client_order_id=tp_id
                     )
-                    LOG.info(
-                        f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+                    LOG.info(f"[LIMIT-DEFERRED] TP placed: {tp_resp}")
+                    self._orphan_metrics["tp_sl_placed_success"] += 1
+                    tp_outcome = "OK"
+
+                    # Correlation store
                     tp_order_id = str(tp_resp["orderId"])
                     self.correlation_store.put_sl_tp_ack(
                         tp_order_id, entry_client_order_id or "", corr_id or "",
@@ -4897,15 +5080,50 @@ class ExecPosFSM:
                     )
                     self._symbol_brackets.setdefault(
                         symbol, {})["tp_order_id"] = tp_order_id
-                except Exception as e2:
+                    self._mark_bracket_placement_success(symbol, str(entry_order_id), "TP")
+                    tp_succeeded = True
+                except BinanceAPIError as e:
+                    if e.code == -2021:
+                        # TP too close to mark price - widen and retry (config-based)
+                        LOG.warning(
+                            f"[LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+                        tp_adj = tp * tp_widen_first
+                        tp_adj = quantize_stop_price_dec(
+                            tp_adj, tick_size, side=tp_quant_side
+                        )
+                        try:
+                            tp_resp = await self.adapter.place_take_profit_market_close_position(
+                                symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+                            )
+                            LOG.info(
+                                f"[LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+                            tp_order_id = str(tp_resp["orderId"])
+                            self.correlation_store.put_sl_tp_ack(
+                                tp_order_id, entry_client_order_id or "", corr_id or "",
+                                oco_group_id or "", rid or ""
+                            )
+                            self._symbol_brackets.setdefault(
+                                symbol, {})["tp_order_id"] = tp_order_id
+                            tp_outcome = "OK"
+                            self._mark_bracket_placement_success(symbol, str(entry_order_id), "TP")
+                            tp_succeeded = True
+                        except Exception as e2:
+                            tp_outcome = f"FAILED:{type(e2).__name__}"
+                            LOG.error(
+                                f"[LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+                    else:
+                        tp_outcome = f"FAILED:{type(e).__name__}"
+                        LOG.error(
+                            f"[LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+                except Exception as e:
+                    tp_outcome = f"FAILED:{type(e).__name__}"
                     LOG.error(
-                        f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
-            else:
-                LOG.error(
-                    f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
-        except Exception as e:
-            LOG.error(
-                f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+                        f"[LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+            finally:
+                if not tp_succeeded:
+                    self._release_bracket_placement_claim(symbol, str(entry_order_id), "TP")
+        else:
+            tp_outcome = "SKIPPED_DEDUP"
 
         # Register brackets with OrderGuardian
         if sl_resp:
@@ -4929,11 +5147,33 @@ class ExecPosFSM:
                 rid=rid
             )
 
-        LOG.info(
-            f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
-            f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
-        )
+        # Fail-closed guardrail: never silently claim protection on partial brackets.
+        try:
+            brackets = self.order_guardian.get_brackets_for_entry(entry_order_id) or {}
+        except Exception:
+            brackets = {}
+        has_sl = bool(sl_resp) or bool(brackets.get("sl"))
+        has_tp = bool(tp_resp) or bool(brackets.get("tp"))
 
+        missing_kinds = []
+        if not has_sl:
+            missing_kinds.append("SL")
+        if not has_tp:
+            missing_kinds.append("TP")
+
+        if missing_kinds and "SKIPPED_DEDUP" not in (sl_outcome, tp_outcome):
+            self._emit_filled_entry_without_brackets(
+                symbol=symbol,
+                parent_order_id=str(entry_order_id),
+                missing_kinds=missing_kinds,
+                why=f"sl={sl_outcome};tp={tp_outcome}",
+                source="LIMIT-DEFERRED",
+            )
+
+        LOG.info(
+            f"[LIMIT-DEFERRED] Brackets placed for {symbol}: "
+            f"SL={'OK' if has_sl else 'FAILED'}, TP={'OK' if has_tp else 'FAILED'}"
+        )
     async def _cleanup_loop(self) -> None:
         """Periodic orphaned-order cleanup loop (interval from config)."""
         while True:
@@ -5385,6 +5625,45 @@ class ExecPosFSM:
                         f"Failed to link existing orders during startup: {e}")
 
             # Then run cleanup to remove orphans
+            # Recovery on restart: FILLED entry with pending deferred brackets must place TP/SL.
+            if self.adapter and self._pending_brackets:
+                restored_count = 0
+                for entry_order_id in list(self._pending_brackets.keys()):
+                    bracket_data = self._pending_brackets.get(entry_order_id) or {}
+                    symbol = str(bracket_data.get("symbol") or "")
+                    if not symbol:
+                        continue
+                    try:
+                        order_snapshot = await self.adapter.get_order(
+                            symbol, str(entry_order_id)
+                        )
+                    except Exception as e:
+                        LOG.debug(
+                            f"[STARTUP-RECONCILE] get_order failed for {symbol} {entry_order_id}: {e}"
+                        )
+                        continue
+
+                    status = str(
+                        dget(order_snapshot if isinstance(order_snapshot, dict) else {}, "status", "")
+                    ).upper()
+                    if status != "FILLED":
+                        continue
+
+                    recovered = await self._recover_deferred_brackets_for_filled_entry(
+                        order_id=str(entry_order_id),
+                        symbol=symbol,
+                        clear_reason="startup_reconcile_filled",
+                        source="STARTUP-RECONCILE",
+                        schedule_async=False,
+                    )
+                    if recovered:
+                        restored_count += 1
+
+                if restored_count > 0:
+                    LOG.info(
+                        f"[STARTUP-RECONCILE] recovered deferred brackets for {restored_count} FILLED entries"
+                    )
+
             await self.order_guardian.cleanup_orphans()
             LOG.info("✅ OrderGuardian startup reconciliation completed")
         except Exception as e:
