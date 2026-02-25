@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -1029,17 +1030,46 @@ class ExecPosFSM:
         return False, ""
 
     @staticmethod
-    def _bracket_place_key(symbol: str, parent_order_id: str, kind: str) -> str:
-        return f"{str(symbol).upper()}|{str(parent_order_id)}|{str(kind).upper()}"
+    def _extract_bracket_slot(kind: Optional[str], new_client_order_id: Optional[str]) -> str:
+        """
+        Derive bracket slot for dedup keys.
+        TP defaults to slot "1"; TP2 is detected by client id suffix "_2" etc.
+        """
+        if str(kind or "").upper() != "TP":
+            return ""
+        client_id = str(new_client_order_id or "")
+        if not client_id:
+            return "1"
+        match = re.search(r"_([0-9]+)$", client_id)
+        if match:
+            return str(match.group(1))
+        return "1"
 
-    def _claim_bracket_placement(self, symbol: str, parent_order_id: Optional[str], kind: str, source: str) -> bool:
+    @staticmethod
+    def _bracket_place_key(symbol: str, parent_order_id: str, kind: str, slot: str = "") -> str:
+        kind_norm = str(kind).upper()
+        slot_norm = str(slot or "")
+        if kind_norm == "TP":
+            slot_norm = slot_norm or "1"
+        else:
+            slot_norm = "-"
+        return f"{str(symbol).upper()}|{str(parent_order_id)}|{kind_norm}|{slot_norm}"
+
+    def _claim_bracket_placement(
+        self,
+        symbol: str,
+        parent_order_id: Optional[str],
+        kind: str,
+        source: str,
+        slot: str = "",
+    ) -> bool:
         """
         Try to claim SL/TP placement right for a parent entry.
         Returns False if another path already claimed/completed this exact bracket kind.
         """
         if not symbol or not parent_order_id:
             return True
-        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        key = self._bracket_place_key(symbol, parent_order_id, kind, slot)
         if key in self._bracket_place_completed or key in self._bracket_place_inflight:
             LOG.info(
                 f"[BRACKET-DEDUP] Skip duplicate placement for {key} (source={source})"
@@ -1048,17 +1078,29 @@ class ExecPosFSM:
         self._bracket_place_inflight.add(key)
         return True
 
-    def _mark_bracket_placement_success(self, symbol: str, parent_order_id: Optional[str], kind: str) -> None:
+    def _mark_bracket_placement_success(
+        self,
+        symbol: str,
+        parent_order_id: Optional[str],
+        kind: str,
+        slot: str = "",
+    ) -> None:
         if not symbol or not parent_order_id:
             return
-        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        key = self._bracket_place_key(symbol, parent_order_id, kind, slot)
         self._bracket_place_inflight.discard(key)
         self._bracket_place_completed.add(key)
 
-    def _release_bracket_placement_claim(self, symbol: str, parent_order_id: Optional[str], kind: str) -> None:
+    def _release_bracket_placement_claim(
+        self,
+        symbol: str,
+        parent_order_id: Optional[str],
+        kind: str,
+        slot: str = "",
+    ) -> None:
         if not symbol or not parent_order_id:
             return
-        key = self._bracket_place_key(symbol, parent_order_id, kind)
+        key = self._bracket_place_key(symbol, parent_order_id, kind, slot)
         self._bracket_place_inflight.discard(key)
 
     def _emit_filled_entry_without_brackets(
@@ -2921,6 +2963,7 @@ class ExecPosFSM:
                     else "TP" if str(order_type).upper() == "TAKE_PROFIT_MARKET"
                     else None
                 )
+                bracket_slot = self._extract_bracket_slot(bracket_kind, client_id)
                 placement_succeeded = False
 
                 LOG.info(
@@ -2933,6 +2976,7 @@ class ExecPosFSM:
                         str(parent_order_id),
                         bracket_kind,
                         source="PLACE_ORDER",
+                        slot=bracket_slot,
                     )
                     if not claimed:
                         return
@@ -2975,6 +3019,7 @@ class ExecPosFSM:
                                 str(symbol or ""),
                                 str(parent_order_id),
                                 bracket_kind,
+                                slot=bracket_slot,
                             )
 
                         # ORDER_INDEX: correlate bracket/aux orders for WS updates
@@ -3055,6 +3100,7 @@ class ExecPosFSM:
                             str(symbol or ""),
                             str(parent_order_id),
                             bracket_kind,
+                            slot=bracket_slot,
                         )
                 return
 
@@ -5040,6 +5086,7 @@ class ExecPosFSM:
         tp_id = generate_client_order_id(
             "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
         )
+        tp_slot = self._extract_bracket_slot("TP", tp_id)
 
         # EP-ORDER-PRECISION-1111: Re-quantize raw/deferred values using open-flow SSOT mapping.
         # Quantizer side encodes rounding direction, not adapter order side:
@@ -5096,7 +5143,7 @@ class ExecPosFSM:
             sl_outcome = "SKIPPED_DEDUP"
 
         claimed_tp = self._claim_bracket_placement(
-            symbol, str(entry_order_id), "TP", source="LIMIT-DEFERRED"
+            symbol, str(entry_order_id), "TP", source="LIMIT-DEFERRED", slot=tp_slot
         )
         if claimed_tp:
             tp_succeeded = False
@@ -5117,7 +5164,9 @@ class ExecPosFSM:
                     )
                     self._symbol_brackets.setdefault(
                         symbol, {})["tp_order_id"] = tp_order_id
-                    self._mark_bracket_placement_success(symbol, str(entry_order_id), "TP")
+                    self._mark_bracket_placement_success(
+                        symbol, str(entry_order_id), "TP", slot=tp_slot
+                    )
                     tp_succeeded = True
                 except BinanceAPIError as e:
                     if e.code == -2021:
@@ -5142,7 +5191,9 @@ class ExecPosFSM:
                             self._symbol_brackets.setdefault(
                                 symbol, {})["tp_order_id"] = tp_order_id
                             tp_outcome = "OK"
-                            self._mark_bracket_placement_success(symbol, str(entry_order_id), "TP")
+                            self._mark_bracket_placement_success(
+                                symbol, str(entry_order_id), "TP", slot=tp_slot
+                            )
                             tp_succeeded = True
                         except Exception as e2:
                             tp_outcome = f"FAILED:{type(e2).__name__}"
@@ -5158,7 +5209,9 @@ class ExecPosFSM:
                         f"[LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
             finally:
                 if not tp_succeeded:
-                    self._release_bracket_placement_claim(symbol, str(entry_order_id), "TP")
+                    self._release_bracket_placement_claim(
+                        symbol, str(entry_order_id), "TP", slot=tp_slot
+                    )
         else:
             tp_outcome = "SKIPPED_DEDUP"
 
