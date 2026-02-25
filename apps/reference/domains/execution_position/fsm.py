@@ -4673,29 +4673,66 @@ class ExecPosFSM:
         pld = msg.pld or {}
         symbol = pld.get("symbol")
         order_id = pld.get("order_id") or pld.get("orderId")
+        order_id_key = str(order_id) if order_id is not None else None
         client_order_id = pld.get("client_order_id")
+        executed_qty_raw = (
+            pld.get("executedQty")
+            if "executedQty" in pld
+            else pld.get("executed_qty")
+        )
+        if executed_qty_raw is None:
+            executed_qty_raw = pld.get("cumQty")
+        try:
+            executed_qty = Decimal(str(executed_qty_raw or "0"))
+        except Exception:
+            executed_qty = Decimal("0")
+        has_fill_qty = executed_qty > 0
 
         LOG.info(
             f"CANCEL_EVENT: Processing cancellation for {symbol} order {order_id}")
 
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Cleanup pending brackets if entry was cancelled
-        if order_id and order_id in self._pending_brackets:
-            bracket_data = self._pending_brackets.pop(order_id, None)
-
-            # PHASE4: Mark as cleared in WAL
-            try:
-                write_pending_brackets_cleared(
-                    entry_order_id=order_id,
-                    reason="cancelled",
-                    symbol=bracket_data.get(
-                        "symbol", "") if bracket_data else "",
+        if order_id_key and order_id_key in self._pending_brackets:
+            if has_fill_qty:
+                clear_reason = "cancel_event_fill_discovered"
+                LOG.info(
+                    f"[CANCEL-EVENT-FILL] order {order_id_key} has executedQty={executed_qty}; "
+                    f"routing deferred brackets to shared recovery"
                 )
-            except Exception as e:
-                LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(
+                        self._recover_deferred_brackets_for_filled_entry(
+                            order_id=order_id_key,
+                            symbol=str(symbol or ""),
+                            clear_reason=clear_reason,
+                            source="CANCEL-EVENT-FILL",
+                            schedule_async=False,
+                        ),
+                        loop,
+                    )
+                else:
+                    LOG.warning(
+                        f"[CANCEL-EVENT-FILL] No event loop available for recovery {order_id_key}; "
+                        "pending brackets preserved"
+                    )
+            else:
+                bracket_data = self._pending_brackets.pop(order_id_key, None)
 
-            LOG.info(
-                f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id}"
-            )
+                # PHASE4: Mark as cleared in WAL
+                try:
+                    write_pending_brackets_cleared(
+                        entry_order_id=order_id_key,
+                        reason="cancelled",
+                        symbol=bracket_data.get(
+                            "symbol", "") if bracket_data else "",
+                    )
+                except Exception as e:
+                    LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+
+                LOG.info(
+                    f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id_key}"
+                )
 
         # TASK40: Mark order terminal in OrderIndex (unblocks one-open-order guard).
         try:
