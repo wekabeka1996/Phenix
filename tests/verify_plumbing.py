@@ -124,8 +124,8 @@ def run_plumbing_test():
     LOG.info("🔧 PLUMBING VERIFICATION TEST")
     LOG.info("="*60)
     
-    # 1. Create Event Bus (LocalBus from orchestrator)
-    from apps.reference.orchestrator.utils_event_bus import LocalBus
+    # 1. Create Event Bus (LocalBus fallback)
+    from apps.reference.domains.execution_position.utils_event_bus import LocalBus
     bus = LocalBus()
     LOG.info("✅ LocalBus created")
     

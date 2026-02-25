@@ -195,7 +195,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def __aenter__(self) -> "BinanceAdapter":
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.aclose()
 
     async def aclose(self) -> None:

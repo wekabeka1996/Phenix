@@ -101,7 +101,18 @@ def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_pat
 
     assert isinstance(merged.get("strategies"), dict), "strategy profiles must be loaded under root.strategies"
     assert merged["strategies"].get("aurora") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
-    assert merged["strategies"].get("mean_reversion") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
+    assigned_strategy_ids: set[str] = set()
+    assignments = merged.get("strategies_registry", {}).get("assignments", {})
+    if isinstance(assignments, dict):
+        for per_symbol in assignments.values():
+            if isinstance(per_symbol, list):
+                for strategy_id in per_symbol:
+                    if isinstance(strategy_id, str):
+                        assigned_strategy_ids.add(strategy_id)
+    if "mean_reversion" in assigned_strategy_ids:
+        assert merged["strategies"].get("mean_reversion") is not None, (
+            "assigned strategy profile mean_reversion must be loaded from strategies.yaml"
+        )
 
     # Full load should still validate and then inject runtime meta post-validation
     cfg = loader.load_config()

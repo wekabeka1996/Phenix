@@ -187,7 +187,7 @@ class TestCMDPayloadSchema:
         """Verify JSON schema file exists."""
         from pathlib import Path
         
-        schema_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json")
+        schema_path = Path(__file__).resolve().parents[2] / "apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json"
         assert schema_path.exists(), "CMD:PROCESS_STRATEGY schema file should exist"
     
     def test_schema_requires_tf_sec_minimum_60(self):
@@ -195,7 +195,7 @@ class TestCMDPayloadSchema:
         import json
         from pathlib import Path
         
-        schema_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json")
+        schema_path = Path(__file__).resolve().parents[2] / "apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json"
         
         with open(schema_path) as f:
             schema = json.load(f)
@@ -209,7 +209,7 @@ class TestCMDPayloadSchema:
         import json
         from pathlib import Path
         
-        schema_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json")
+        schema_path = Path(__file__).resolve().parents[2] / "apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json"
         
         with open(schema_path) as f:
             schema = json.load(f)
@@ -229,7 +229,7 @@ class TestVerbRegistryHasCMD:
         import yaml
         from pathlib import Path
         
-        registry_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/dictionaries/verb_registry_v1.yaml")
+        registry_path = Path(__file__).resolve().parents[2] / "apps/reference/dictionaries/verb_registry_v1.yaml"
         
         with open(registry_path) as f:
             registry = yaml.safe_load(f)
@@ -248,7 +248,7 @@ class TestVerbRegistryHasCMD:
         import yaml
         from pathlib import Path
         
-        registry_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/dictionaries/verb_registry_v1.yaml")
+        registry_path = Path(__file__).resolve().parents[2] / "apps/reference/dictionaries/verb_registry_v1.yaml"
         
         with open(registry_path) as f:
             registry = yaml.safe_load(f)

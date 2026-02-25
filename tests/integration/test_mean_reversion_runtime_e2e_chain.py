@@ -103,9 +103,11 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
     )
 
     # 3m MR to match production requirement.
+    from apps.reference.config_models import SafetyGatesConfig
     mr_cfg = MeanReversion1mStrategyConfig(
         enabled=True,
         timeframe_sec=180,
+        safety_gates=SafetyGatesConfig(enabled=True),
         strategy=MRStrategyParamsConfig(
             bb_window=3,
             bb_num_std=2.0,
@@ -221,11 +223,23 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
         dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
 
     dm.latest_portfolio = {"positions": [], "equity": "1000", "positions_last_ts_ms": now_ms}
-    dm.symbol_states[symbol]["features"] = {"symbol": symbol, "ts": now_ms, "features": {"price": 100}}
+    dm._shared["exposure_cache"] = {"total_notional_usd": 0.0}
+    dm._shared["exposure_cache_timestamp"] = now_ms / 1000.0
+    dm.symbol_states[symbol]["features"] = {
+        "symbol": symbol,
+        "ts": now_ms,
+        "features": {"price": 100},
+        "warmup": {"full_ready": True, "ticks_seen": 100}
+    }
     dm.symbol_states[symbol]["risk"] = {
         "symbol": symbol,
         "ts": now_ms,
         "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0},
+    }
+    dm._per_symbol_regimes[symbol] = {
+        "regime": "FLAT",
+        "ts": now_ms,
+        "warmup": {"full_ready": True, "ticks_seen": 100}
     }
 
     plugins = StrategyPluginRegistry()

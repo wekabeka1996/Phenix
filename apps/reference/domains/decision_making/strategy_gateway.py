@@ -1,0 +1,452 @@
+"""StrategyGateway — Gate chain for EVT:STRATEGY_SIGNAL_PRODUCED.
+Extracted from decision_making.py (Phase 14A, STEP 10). LOC budget: <=500.
+"""
+import decimal
+import uuid
+from typing import Any, TYPE_CHECKING
+
+from apps.reference.config_contract import ConfigContractError
+from apps.reference.utils.accessors import aget
+from apps.reference.telemetry.metrics import inc_config_contract_violation
+from apps.reference.contracts.reject_reasons import normalize_config_error
+from vfoundation.core.protocol import Message
+
+from .normalized_reject_reasons import NormalizedRejectReasons
+from .decision_context import create_decision_context
+from .entry_plan import resolve_strategy_entry_prices
+
+if TYPE_CHECKING:
+    from .decision_making import DecisionMaking
+
+
+class StrategyGateway:
+    """Gate chain for strategy signals -> TRADE_INTENT_PROPOSED."""
+
+    def __init__(self, dm: "DecisionMaking") -> None:
+        self._dm = dm
+        self.logger = dm.logger
+
+    @property
+    def _clock(self):
+        return self._dm._clock
+
+    @property
+    def config(self):
+        return self._dm.config
+
+    def _rk(self, *, prefix: str, symbol: str, rid: str | None,
+            side: str | None = None, ts_ms: Any = None) -> str:
+        if rid:
+            return f"{prefix}:{symbol}:{rid}"
+        if ts_ms is None:
+            ts_ms = self._clock.now_ms()
+        return f"{prefix}:{symbol}:{side}:{ts_ms}" if side else f"{prefix}:{symbol}:{ts_ms}"
+
+    def _rscfg(self, key: str) -> Any:
+        v = getattr(self.config.domains.decision_making.risk_skew, key, None)
+        if v is None:
+            raise ValueError(f"domains.decision_making.risk_skew.{key} required (SSOT)")
+        return v
+
+    def _reject(self, *, symbol, strategy_id, side, rid,
+                reason_code, reason, context, why_chain, details=None):
+        self._dm._emit_trade_intent_rejected(
+            symbol=symbol, strategy_id=str(strategy_id), side=str(side),
+            rid=str(rid), reason_code=reason_code, reason=reason,
+            context=context,
+            why_chain=why_chain if isinstance(why_chain, list) else [],
+            details=details)
+        self._dm._record_blocked_intent(symbol)
+
+    def _defer(self, *, symbol, reason, retry_key, next_ts, pld,
+               why_chain, context, attempt=1, max_attempts=5):
+        self._dm._emit_intent_deferred_v1(
+            symbol=symbol, reason=reason, retry_key=retry_key,
+            next_allowed_ts=next_ts,
+            original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+            original_payload_min=dict(pld),
+            attempt=attempt, max_attempts=max_attempts,
+            why_chain=why_chain, context=context)
+        self._dm._record_blocked_intent(symbol)
+
+    def _block(self, symbol: str) -> None:
+        self._dm._record_blocked_intent(symbol)
+
+    def process_signal(self, event: Message) -> None:  # noqa: C901
+        """Gate chain: EVT:STRATEGY_SIGNAL_PRODUCED -> TRADE_INTENT_PROPOSED."""
+        try:
+            pld = event.pld
+            if not isinstance(pld, dict):
+                self.logger.warning("STRATEGY_SIGNAL_PRODUCED: invalid payload")
+                return
+            strategy_id = pld.get("strategy_id")
+            symbol = pld.get("symbol")
+            side = pld.get("side")
+            rid = pld.get("rid") or f"sig-{uuid.uuid4()}"
+            why_chain = pld.get("why_chain") or []
+            tf_sec = pld.get("tf_sec")
+            if tf_sec is not None:
+                try:
+                    tf_sec = int(tf_sec)
+                except (ValueError, TypeError):
+                    tf_sec = None
+            if not strategy_id or not symbol or not side:
+                self.logger.warning("STRATEGY_SIGNAL_PRODUCED: missing strategy_id/symbol/side")
+                return
+            side = str(side).upper()
+            if side not in ("BUY", "SELL"):
+                self.logger.warning(f"[{symbol}] GATEWAY: invalid side={side!r}")
+                return
+            self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Processing {side} signal rid={rid} strategy_id={strategy_id}")
+            dm = self._dm
+
+            # === READINESS CONTRACT (v7) ===
+            readiness = pld.get("readiness")
+            if not isinstance(readiness, dict):
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code="READINESS_MISSING", reason="READINESS",
+                    context="strategy_signal_gateway:readiness_missing",
+                    why_chain=why_chain, details={"required": "readiness.warmup_ok"})
+                return
+            if readiness.get("warmup_ok") is not True:
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code="READINESS_WARMUP_NOT_OK", reason="READINESS",
+                    context="strategy_signal_gateway:readiness_warmup_not_ok",
+                    why_chain=why_chain, details={"warmup_ok": readiness.get("warmup_ok")})
+                return
+
+            # === GATE 0: STRATEGY ARBITRATION ===
+            arb = dm._check_strategy_arbitration(
+                symbol, str(strategy_id),
+                ts_ms=int(pld["ts_ms"]) if pld.get("ts_ms") is not None else None,
+                commit=False)
+            if not arb["allowed"]:
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code="ARBITRATION_BLOCKED", reason="ARBITRATION",
+                    context="strategy_signal_gateway:arbitration",
+                    why_chain=why_chain,
+                    details={"arbitration_reason": arb.get("reason")})
+                return
+
+            # Risk-skew until_refresh guard
+            guard = dm.symbol_states[symbol].get("risk_skew_guard") or {}
+            if guard.get("until_refresh"):
+                self.logger.error(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH (risk_skew_guard active)")
+                retry_sec = self._rscfg("until_refresh_retry_sec")
+                now_ms = self._clock.now_ms()
+                self._defer(
+                    symbol=symbol, reason="NRR-RISK-SKEW-UNTIL-REFRESH",
+                    retry_key=self._rk(
+                        prefix=str(strategy_id), symbol=symbol,
+                        rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                    next_ts=now_ms + int(retry_sec * 1000), pld=pld,
+                    why_chain=(why_chain or []) + ["NO_TRADE_UNTIL_REFRESH", "risk_skew_guard"],
+                    context="strategy_signal_gateway:risk_skew_until_refresh")
+                return
+
+            # === GATE 1: RISK GATE ===
+            latest_risk = dm.symbol_states[symbol].get("risk")
+            if not latest_risk:
+                self._defer(
+                    symbol=symbol, reason="NRR-DATA-NOT-READY",
+                    retry_key=self._rk(
+                        prefix=str(strategy_id), symbol=symbol,
+                        rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                    next_ts=self._clock.now_ms() + 500, pld=pld,
+                    why_chain=(why_chain or []) + ["missing:risk", "fail_closed"],
+                    context="strategy_signal_gateway:risk_not_ready")
+                return
+            risk_params = latest_risk.get("risk_parameters") or {}
+            is_allowed = risk_params.get("is_trading_allowed", True)
+            risk_score_raw = risk_params.get("risk_score")
+            if risk_score_raw is None:
+                self.logger.warning(f"[{symbol}] RISK_SCORE_MISSING: risk_score is None, deferring signal rid={rid}")
+                self._defer(
+                    symbol=symbol, reason="RISK_SCORE_MISSING",
+                    retry_key=self._rk(
+                        prefix=str(strategy_id), symbol=symbol,
+                        rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                    next_ts=self._clock.now_ms() + 500, pld=pld,
+                    why_chain=(why_chain or []) + ["missing:risk_score", "fail_closed"],
+                    context="strategy_signal_gateway:risk_score_missing")
+                return
+            try:
+                risk_score = float(risk_score_raw)
+            except Exception:
+                self._defer(
+                    symbol=symbol, reason="RISK_SCORE_INVALID",
+                    retry_key=self._rk(
+                        prefix=str(strategy_id), symbol=symbol,
+                        rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                    next_ts=self._clock.now_ms() + 500, pld=pld,
+                    why_chain=(why_chain or []) + ["invalid:risk_score", "fail_closed"],
+                    context="strategy_signal_gateway:risk_score_invalid")
+                return
+            if not is_allowed:
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code="RISK_TRADING_NOT_ALLOWED", reason="RISK",
+                    context="strategy_signal_gateway:risk_gate",
+                    why_chain=why_chain, details={"is_trading_allowed": False})
+                return
+            # Risk score threshold (SSOT)
+            used_override = False
+            try:
+                max_risk = float(self.config.domains.risk_management.trading_allowed_thresholds.max_risk_score)
+                icfg = dm._get_aurora_instrument_cfg(symbol)
+                mrs = icfg.max_risk_score if icfg is not None else None
+                if mrs is not None and mrs.enabled:
+                    max_risk = float(mrs.value)
+                    used_override = True
+            except Exception as e:
+                self.logger.error(f"Config Contract Violation: {e}")
+                self._block(symbol)
+                return
+            if risk_score > max_risk:
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - risk_score {risk_score:.3f} > max {max_risk} used_override={used_override}")
+                self._block(symbol)
+                return
+
+            # === GATE 1.5: RISK SKEW + DEGRADED CONTEXT ===
+            risk_ts = latest_risk.get("ts", 0)
+            features_data = dm.symbol_states[symbol].get("features") or {}
+            features_ts = features_data.get("ts", 0) if isinstance(features_data, dict) else 0
+            if isinstance(features_data, dict):
+                feats_pld = features_data.get("features") or {}
+                if isinstance(feats_pld, dict):
+                    ctx = create_decision_context(symbol, self._clock.now_ms(), feats_pld)
+                    if dm._degraded_context_gate_should_defer(
+                            symbol=symbol, rid=rid, ctx=ctx,
+                            features_evt=features_data, strategy_id=str(strategy_id)):
+                        return
+            if risk_ts > 0 and features_ts > 0:
+                if self._handle_risk_skew(
+                        symbol=symbol, strategy_id=str(strategy_id),
+                        side=side, rid=rid, pld=pld, why_chain=why_chain,
+                        risk_ts=risk_ts, features_ts=features_ts):
+                    return
+
+            # === GATE 2: FLIP GATE ===
+            flip_result = dm._handle_flip_orchestration(
+                symbol=symbol, intent_side=side, original_pld=pld, source=str(strategy_id))
+            if flip_result:
+                if flip_result == "NRR-PORTFOLIO-UNKNOWN":
+                    stale_ttl = self.config.domains.position_tracking.positions_stale_ttl_sec
+                    if stale_ttl is None:
+                        raise ValueError("positions_stale_ttl_sec required (SSOT)")
+                    self._defer(
+                        symbol=symbol, reason="NRR-PORTFOLIO-UNKNOWN",
+                        retry_key=self._rk(
+                            prefix=str(strategy_id), symbol=symbol,
+                            rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                        next_ts=self._clock.now_ms() + int(stale_ttl * 1000), pld=pld,
+                        why_chain=(why_chain or []) + ["portfolio_unknown", "fail_closed"],
+                        context="strategy_gateway_flip_check")
+                self._block(symbol)
+                return
+
+            # === GATE 3: QOS GATE ===
+            qos_enabled = dm._qos_enabled_for_strategy(str(strategy_id))
+            if qos_enabled:
+                qos_ok, qos_reason = dm._qos_allow(symbol, strategy_id=str(strategy_id))
+                if not qos_ok:
+                    mode = dm.qos_mode
+                    if dm.qos_enforce and mode == "defer":
+                        mode = "enforce"
+                    if mode == "shadow":
+                        self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: QoS shadow (reason: {qos_reason})")
+                    elif mode == "defer":
+                        next_ts = int(dm._calculate_next_allowed_time(symbol, strategy_id=str(strategy_id)))
+                        self._defer(
+                            symbol=symbol, reason=str(qos_reason or "qos_defer"),
+                            retry_key=self._rk(
+                                prefix=f"{strategy_id}:qos", symbol=symbol,
+                                rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                            next_ts=next_ts, pld=pld,
+                            why_chain=(why_chain or []) + ["qos", "defer"],
+                            context="strategy_gateway_qos")
+                        return
+                    else:
+                        self._block(symbol)
+                        return
+
+            # === GATE 4: EXPOSURE / SIZING ===
+            price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
+            entry_price = price_ctx.get("entry_price")
+            if entry_price in (None, "", "0", 0):
+                self._block(symbol)
+                return
+            try:
+                entry_price_dec = decimal.Decimal(str(entry_price))
+            except Exception:
+                self._block(symbol)
+                return
+            if not dm.latest_portfolio:
+                self._block(symbol)
+                return
+            sizing_ctx = {
+                "portfolio": dm.latest_portfolio,
+                "features": dm.symbol_states[symbol].get("features") if symbol in dm.symbol_states else {},
+            }
+            regime_name = None
+            scoring = pld.get("scoring") if isinstance(pld.get("scoring"), dict) else None
+            if isinstance(scoring, dict):
+                regime_name = scoring.get("regime")
+            margin_pct_mult = None
+            if str(strategy_id) == "aurora" and regime_name:
+                try:
+                    icfg = dm._get_aurora_instrument_cfg(symbol)
+                    rs = aget(icfg, "regime_sizing", None) if icfg else None
+                    if isinstance(rs, dict) and rs:
+                        mult_raw = rs.get(str(regime_name)) or rs.get("DEFAULT")
+                        if mult_raw is not None:
+                            margin_pct_mult = decimal.Decimal(str(mult_raw))
+                except Exception:
+                    pass
+            try:
+                qty_dec, why_sizing, sizing_rej, _ = dm._calculate_position_size(
+                    symbol, entry_price_dec, side, sizing_ctx, margin_pct_mult=margin_pct_mult)
+            except Exception as e:
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side,
+                    rid=rid, reason_code="SIZING_ERROR", reason="DECISION",
+                    context=f"strategy_signal_gateway:sizing_exception:{type(e).__name__}",
+                    why_chain=(why_chain or []) + ["sizing_exception"],
+                    details={"error": str(e)})
+                return
+            if qty_dec is None:
+                self._block(symbol)
+                return
+            if not dm._precheck_exposure_cache(symbol, side, float(qty_dec * entry_price_dec)):
+                self._block(symbol)
+                return
+
+            # === GATE 5: TTL GATE ===
+            signal_ts_ms = pld.get("ts_ms", 0)
+            if signal_ts_ms in (None, 0, "0", ""):
+                self._block(symbol)
+                return
+            current_ms = self._clock.now_ms()
+            tf_sec_val = int(pld.get("tf_sec") or 0)
+            if tf_sec_val > 0:
+                bar_ttl = tf_sec_val * 1000 * 2
+                sys_md = getattr(self.config.system, "market_data", None)
+                if sys_md:
+                    bar_ttl = float(getattr(sys_md, "bar_ttl_ms", bar_ttl) or bar_ttl)
+                ttl_ms = bar_ttl
+            else:
+                ttl_ms = dm.features_ttl_sec * 1000
+            if current_ms - int(signal_ts_ms) > ttl_ms:
+                self._block(symbol)
+                return
+
+            # === GATE 6: WARMUP ===
+            if dm._warmup_gate_before_trade_intent(
+                    symbol=symbol, rid=rid, reduce_only=False,
+                    context="strategy_signal_gateway:pre_emit"):
+                return
+
+            # === ALL GATES PASSED ===
+            self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: All gates passed, emitting TRADE_INTENT_PROPOSED")
+            timestamp_ms = int(signal_ts_ms)
+            if 0 < timestamp_ms < 1_000_000_000_000:
+                timestamp_ms *= 1000
+            if isinstance(why_chain, list):
+                why_chain.append(str(why_sizing))
+
+            # Entry prices (Strategy Primacy + EntryPlan fallback)
+            stop_price, target_price, ep_trace = resolve_strategy_entry_prices(
+                symbol=symbol, strategy_id=str(strategy_id),
+                side=side, rid=rid, price_ctx=price_ctx, pld=pld,
+                entry_price_dec=entry_price_dec, why_chain=why_chain,
+                config=self.config, logger=self.logger, reject_fn=self._reject)
+            if stop_price == "REJECT":
+                return
+
+            # TCA/Risk from latest_risk
+            tca = latest_risk.get("tca_budget") or {}
+            max_slip = int(tca.get("max_slippage_bps", 0)) or None
+            max_lat = int(tca.get("max_latency_ms", 0)) or None
+            risk_val = float((latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
+
+            # Dispatch through facade (safety gates + intent builder)
+            dm._propose_trade_intent(
+                symbol=symbol, side=side,
+                qty=decimal.Decimal(str(qty_dec)), price=entry_price_dec,
+                why_chain=why_chain if isinstance(why_chain, list) else [str(why_chain)],
+                rid=rid, reduce_only=False, strategy_id=str(strategy_id),
+                decision_ts_ms=timestamp_ms,
+                stop_price=stop_price, target_price=target_price,
+                entry_plan_trace=ep_trace, tf_sec=tf_sec,
+                max_slippage_bps=max_slip, max_latency_ms=max_lat,
+                risk_score=risk_val)
+            if qos_enabled:
+                dm._update_qos_state(symbol, strategy_id)
+
+        except ConfigContractError as e:
+            reason = normalize_config_error(e)
+            nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_MISSING
+            if "CFG_INVALID" in reason:
+                nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_INVALID
+            caught_sym = e.symbol or symbol
+            inc_config_contract_violation(path=e.path or "unknown", symbol=caught_sym or "unknown")
+            self.logger.critical(f"[{caught_sym or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
+            if caught_sym:
+                self._block(caught_sym)
+            self._dm._emit_trade_intent_rejected(
+                symbol=caught_sym or "unknown",
+                strategy_id=str(strategy_id), side=side,
+                rid=str(rid), reason_code=nrr_code, reason=reason,
+                context="strategy_signal_gateway:config_contract_violation",
+                details={"path": e.path, "why": e.why, "stage": "strategy_signal_gateway"},
+                why_chain=why_chain or ["config_contract_violation"])
+        except Exception as e:
+            self.logger.error(f"STRATEGY_SIGNAL_GATEWAY error: {e}", exc_info=True)
+
+    def _handle_risk_skew(
+        self, *, symbol: str, strategy_id: str, side: str,
+        rid: str, pld: dict, why_chain: list,
+        risk_ts: int, features_ts: int,
+    ) -> bool:
+        """Return True if signal should be blocked/deferred."""
+        skew_sec = abs(features_ts - risk_ts) / 1000
+        max_skew = self._rscfg("max_skew_sec")
+        if skew_sec <= max_skew:
+            return False
+        max_defer = self._rscfg("max_defer_count")
+        now_ms = self._clock.now_ms()
+        window_sec = self._rscfg("defer_window_sec")
+        state = self._dm.symbol_states[symbol].setdefault(
+            "risk_skew_guard",
+            {"defer_count": 0, "window_start_ms": now_ms, "until_refresh": False})
+        try:
+            ws = int(state.get("window_start_ms", now_ms))
+        except Exception:
+            ws = now_ms
+            state["window_start_ms"] = now_ms
+        if now_ms - ws > int(window_sec * 1000):
+            state["defer_count"] = 0
+            state["window_start_ms"] = now_ms
+        try:
+            state["defer_count"] = int(state.get("defer_count", 0)) + 1
+        except Exception:
+            state["defer_count"] = 1
+        dc = int(state.get("defer_count", 1))
+        if dc >= max_defer:
+            state["until_refresh"] = True
+            self.logger.error(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH skew={skew_sec:.1f}s > max={max_skew}s ({dc}/{max_defer})")
+        else:
+            cooldown = self._rscfg("defer_cooldown_sec")
+            self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew}s ({dc}/{max_defer})")
+            self._defer(
+                symbol=symbol, reason="NRR-RISK-STALE",
+                retry_key=self._rk(prefix=strategy_id, symbol=symbol, rid=rid, side=side, ts_ms=pld.get("ts_ms")),
+                next_ts=now_ms + int(cooldown * 1000), pld=pld,
+                attempt=dc, max_attempts=max_defer,
+                why_chain=(why_chain or []) + ["risk_skew", f"skew_sec:{skew_sec:.3f}", f"defer_count:{dc}"],
+                context="strategy_signal_gateway:risk_skew")
+        self._block(symbol)
+        return True

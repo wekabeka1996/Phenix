@@ -167,7 +167,7 @@ class TestSchemaValidation:
     @pytest.fixture
     def schema(self):
         """Load the CMD schema."""
-        schema_path = Path("/home/wekabeka/Музыка/Phenix/apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json")
+        schema_path = Path(__file__).resolve().parents[2] / "apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json"
         with open(schema_path) as f:
             return json.load(f)
     

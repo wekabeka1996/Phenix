@@ -72,8 +72,8 @@ class TestFeaturesReadyBarTTL:
         }
         
         # Import and call the actual method
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        result = DecisionMaking._features_ready(dm, "SOLUSDT", features_data)
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is True, (
             f"Bar should NOT be stale: received 1s ago, ttl=10s, age_mode=received. "
@@ -113,8 +113,8 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        result = DecisionMaking._features_ready(dm, "SOLUSDT", features_data)
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (
             f"Ancient bar (20 min old) should be rejected even in received mode. "
@@ -148,8 +148,8 @@ class TestFeaturesReadyBarTTL:
             "tf_sec": 0,  # TICK
         }
         
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        result = DecisionMaking._features_ready(dm, "SOLUSDT", features_data)
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (
             f"Tick 3s old should be stale with 2s TTL. "
@@ -183,8 +183,8 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        result = DecisionMaking._features_ready(dm, "SOLUSDT", features_data)
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is True, (
             f"Bar 5s old in close_ts mode should pass 10s TTL."
@@ -217,8 +217,8 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        result = DecisionMaking._features_ready(dm, "SOLUSDT", features_data)
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (
             f"Bar 15s old in close_ts mode should fail 10s TTL."

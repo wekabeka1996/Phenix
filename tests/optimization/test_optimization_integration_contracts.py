@@ -11,16 +11,15 @@ def _has_btc_data() -> bool:
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_stage0_real_data_has_non_empty_regime_log_and_flips(monkeypatch):
+def test_stage0_real_data_has_non_empty_regime_log_and_flips():
     if not _has_btc_data():
         pytest.skip("BTCUSDT 5m backtest data not found")
 
-    monkeypatch.setenv("BACKTEST_MAX_TICKS", "300")
     adapter = BacktestAdapter(config_dir=Path("config/aurora"))
     metrics, stage_result = adapter.run_stage0(
-        overrides={},
-        start_date="2023-05-14",
-        end_date="2023-05-16",
+        overrides={"trading": {"backtest": {"max_ticks": 600}}},
+        start_date="2023-06-14",
+        end_date="2023-06-16",
     )
     assert stage_result.success is True
     assert isinstance(stage_result.regime_log, list) and len(stage_result.regime_log) > 0
@@ -29,22 +28,22 @@ def test_stage0_real_data_has_non_empty_regime_log_and_flips(monkeypatch):
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_stage1_reject_rate_can_be_non_zero_on_real_data(monkeypatch):
+def test_stage1_reject_rate_can_be_non_zero_on_real_data():
     if not _has_btc_data():
         pytest.skip("BTCUSDT 5m backtest data not found")
 
-    monkeypatch.setenv("BACKTEST_MAX_TICKS", "300")
     adapter = BacktestAdapter(config_dir=Path("config/aurora"))
     metrics, stage_result = adapter.run_stage1(
         overrides={
             "trading": {
                 "backtest": {
+                    "max_ticks": 600,
                     "backtest_mode": "relaxed",
                 }
             }
         },
-        start_date="2023-05-14",
-        end_date="2023-05-16",
+        start_date="2023-06-14",
+        end_date="2023-06-16",
     )
     assert stage_result.success is True
     intent_log = stage_result.intent_log or []
@@ -62,16 +61,16 @@ def test_stage1_reject_rate_can_be_non_zero_on_real_data(monkeypatch):
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_stage1_stress_overrides_reach_broker(monkeypatch):
+def test_stage1_stress_overrides_reach_broker():
     if not _has_btc_data():
         pytest.skip("BTCUSDT 5m backtest data not found")
 
-    monkeypatch.setenv("BACKTEST_MAX_TICKS", "120")
     adapter = BacktestAdapter(config_dir=Path("config/aurora"))
     _, stage_result = adapter.run_stage1(
         overrides={
             "trading": {
                 "backtest": {
+                    "max_ticks": 120,
                     "backtest_mode": "strict",
                     "stress_overrides": {
                         "fee_mult": 1.2,
@@ -82,8 +81,8 @@ def test_stage1_stress_overrides_reach_broker(monkeypatch):
                 }
             }
         },
-        start_date="2023-05-14",
-        end_date="2023-05-15",
+        start_date="2023-06-14",
+        end_date="2023-06-15",
     )
     assert stage_result.success is True
     report = stage_result.raw_report if isinstance(stage_result.raw_report, dict) else {}

@@ -70,9 +70,10 @@ def test_optional_required_null_autofill_enables_loader(tmp_path):
     # Keep strict config on (default), but do not let local STRICT override leak.
     env.pop("STRICT_CONFIG_CONFLICTS", None)
 
+    import sys
     subprocess.check_call(
         [
-            "venv/bin/python",
+            sys.executable,
             "tools/autofill_config_defaults_into_yaml.py",
             "--apply",
             "--autofill-optional-nulls",

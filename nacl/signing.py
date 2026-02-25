@@ -7,6 +7,8 @@ class VerifyKey:
         self._key = key_bytes
 
     def verify(self, payload: bytes, signature: bytes) -> None:
+        if len(signature) != 32:
+            raise ValueError("Signature must be 32 bytes long")
         expected = hmac.new(self._key, payload, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, signature):
             from nacl import BadSignatureError

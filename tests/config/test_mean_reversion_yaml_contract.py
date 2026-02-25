@@ -24,10 +24,26 @@ def _copy_canonical_config_dir(dst_config_dir: Path) -> None:
     shutil.copytree(src, dst_config_dir)
 
 
+def _assign_mean_reversion(config_dir: Path) -> None:
+    strategies_path = config_dir / "strategies.yaml"
+    payload = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
+    if payload is None:
+        payload = {}
+    assert isinstance(payload, dict)
+    assignments = payload.setdefault("assignments", {})
+    assert isinstance(assignments, dict)
+    assigned = assignments.setdefault("BTCUSDT", [])
+    assert isinstance(assigned, list)
+    if "mean_reversion" not in assigned:
+        assigned.append("mean_reversion")
+    strategies_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
     # Arrange: load canonical config via ConfigLoader (SSOT)
     config_dir = tmp_path / "config" / "aurora"
     _copy_canonical_config_dir(config_dir)
+    _assign_mean_reversion(config_dir)
 
     loader = ConfigLoader(config_dir=config_dir)
     cfg = loader.load_config()

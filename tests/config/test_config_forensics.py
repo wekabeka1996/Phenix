@@ -23,7 +23,7 @@ def test_no_duplicate_yaml_keys():
     
     for yf in yaml_files:
         if not yf.exists(): continue
-        with open(yf, "r") as f:
+        with open(yf, "r", encoding="utf-8") as f:
             try:
                 yaml.load(f, Loader=StrictYAMLLoader)
             except ValueError as e:
@@ -38,9 +38,9 @@ def test_no_critical_key_overlaps_between_trading_and_domains():
         pytest.skip("Config files missing")
         
     loader = ConfigLoader()
-    with open(trading_path, "r") as f:
+    with open(trading_path, "r", encoding="utf-8") as f:
         trading_data = yaml.safe_load(f) or {}
-    with open(domains_path, "r") as f:
+    with open(domains_path, "r", encoding="utf-8") as f:
         domains_data = yaml.safe_load(f) or {}
         
     flat_trading = loader._flatten_leaf_paths(trading_data)
@@ -59,7 +59,7 @@ def test_strategy_assignment_requires_strategy_config():
     if not strategies_path.exists():
         pytest.skip("strategies.yaml missing")
         
-    with open(strategies_path, "r") as f:
+    with open(strategies_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
         
     assignments = data.get("assignments", {})

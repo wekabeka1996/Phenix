@@ -98,7 +98,12 @@ def test_ttl_gate_uses_signal_ts_ms() -> None:
         )
         dm._precheck_exposure_cache = MagicMock(return_value=True)
         dm._warmup_gate_before_trade_intent = MagicMock(return_value=False)
+        dm._get_aurora_instrument_cfg = MagicMock(return_value=None)
+        dm._degraded_context_gate_should_defer = MagicMock(return_value=False)
+        dm._handle_flip_orchestration = MagicMock(return_value=None)
+        dm._qos_enabled_for_strategy = MagicMock(return_value=False)
         dm.logger = MagicMock()
+        dm._gateway.logger = dm.logger  # sync: gateway captures logger at init time
 
         dm.symbol_states["BTCUSDT"]["risk"] = {
             "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}

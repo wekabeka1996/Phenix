@@ -3,28 +3,36 @@
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
     "runtime_tokens": 60,
-    "registry_tokens": 57,
-    "runtime_not_in_registry": 9,
-    "registry_not_in_runtime": 6,
-    "coverage": 0.85
+    "registry_tokens": 59,
+    "runtime_not_in_registry": 12,
+    "registry_not_in_runtime": 11,
+    "coverage": 0.8
   },
   "runtime_not_in_registry": [
     "CMD:CANCEL",
     "CMD:FORCE_RECOVER",
     "CMD:SWITCH_TO_LOW_RISK_MODE",
     "ERR:NO_TRANSITION",
+    "ERR:REJECT",
     "EVT:COOLDOWN_ELAPSED",
+    "EVT:DOMAIN_STATUS",
     "EVT:ENTROPY_SPIKE",
     "EVT:RECOVERY_SIGNAL",
     "EVT:STABILIZED",
+    "EVT:STATE_TRANSITION",
     "EVT:TOPOLOGY_DRIFT_DETECTED"
   ],
   "registry_not_in_runtime": [
+    "CMD:REPAIR",
     "DEC:CANCEL",
     "EVT:INTENT_DROPPED",
     "EVT:MARKET_TICK_FORWARDED",
     "EVT:MR_SIGNAL_PRODUCED",
     "EVT:NEOCORTEX_ALERT",
-    "EVT:NEOCORTEX_STATE_UPDATED"
+    "EVT:NEOCORTEX_STATE_UPDATED",
+    "EVT:ORCHESTRATOR_ERROR",
+    "EVT:ORDER_EXECUTED",
+    "EVT:ORDER_TIMEOUT",
+    "EVT:POSITION_CLOSED"
   ]
 }

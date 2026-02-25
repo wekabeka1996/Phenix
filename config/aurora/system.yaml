@@ -99,5 +99,3 @@ hardening:
   wal:
     integrity_check_enabled: true # Enable WAL integrity verification
     hash_algorithm: "sha256"     # Hash algorithm for integrity checks
-account_observer:
-  poll_interval: 5

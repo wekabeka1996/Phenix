@@ -106,11 +106,11 @@ def test_strict_mode_fails_on_missing_strategies_yaml(
 ):
     """Test A1: Strict mode fails when strategies.yaml is missing."""
     # Setup: NO strategies.yaml
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     # Enable strict mode
     os.environ["STRICT_CONFIG_CONFLICTS"] = "1"
@@ -133,11 +133,11 @@ def test_missing_strategies_yaml_fails_even_non_strict(
 ):
     """Test A2: strategies.yaml is mandatory even in non-strict mode."""
     # Setup: NO strategies.yaml
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     # Disable strict mode
     os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
@@ -175,12 +175,12 @@ arbitration:
 unknown_key: "invalid"
 """
 
-    (temp_config_dir / "strategies.yaml").write_text(strategies_with_extra_key)
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "strategies.yaml").write_text(strategies_with_extra_key, encoding="utf-8")
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     
@@ -197,12 +197,12 @@ def test_strategies_yaml_loads_successfully(
     base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test C: Valid strategies.yaml loads successfully with correct structure."""
-    (temp_config_dir / "strategies.yaml").write_text(base_strategies_yaml)
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "strategies.yaml").write_text(base_strategies_yaml, encoding="utf-8")
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     config = loader.load_config()
@@ -249,12 +249,12 @@ arbitration:
     log_level: "INFO"
 """
 
-    (temp_config_dir / "strategies.yaml").write_text(strategies_with_invalid_mode)
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "strategies.yaml").write_text(strategies_with_invalid_mode, encoding="utf-8")
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     
@@ -290,12 +290,12 @@ arbitration:
     log_level: "INFO"
 """
 
-    (temp_config_dir / "strategies.yaml").write_text(strategies_missing_priority)
-    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
-    (temp_config_dir / "system.yaml").write_text(base_system_yaml)
-    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
-    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
-    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
+    (temp_config_dir / "strategies.yaml").write_text(strategies_missing_priority, encoding="utf-8")
+    (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
+    (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
+    (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
+    (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     

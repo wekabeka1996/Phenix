@@ -224,7 +224,7 @@ class QuadraticScoringKernel:
         # ─── Step 7: Side determination with hysteresis ──────────
         thr_neutral = neutral_threshold if neutral_threshold is not None else thr_buy
         result.side, side_why = _determine_side(
-            signal_score, thr_buy, thr_sell, thr_neutral, current_side,
+            final_score_val, thr_buy, thr_sell, thr_neutral, current_side,
         )
         result.why_chain.append(side_why)
 

@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from logic.memory.graph import CausalGraph, GraphNode, GraphEdge
-from logic.dreamer import Dreamer, DreamEpisode
+from logic.dreamer import Dreamer
 
 
 class TestCausalGraph:

@@ -215,7 +215,7 @@ class TestReentryCooldown:
         
         MockKernel = MagicMock()
         MockKernel.compute.return_value = ScoringResult(
-            score=Decimal("-0.5"),
+            score=Decimal("-0.05"),
             side="sell",
             thr_buy=Decimal("0.1"), thr_sell=Decimal("0.1"),
             deferred=False, defer_reason=None

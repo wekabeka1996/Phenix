@@ -1,11 +1,11 @@
-"""
+﻿"""
 S5: RetryScheduler Bounded + No Loop (Fail-Closed) E2E Scenario (TASK26).
 
 Proves: RetryScheduler handles missing loop gracefully without exceptions.
 
 Invariants:
 - P0: RetryScheduler bounded + no zombie intents
-- Missing loop → intent DROPPED/FAILED with metric + why-code
+- Missing loop в†’ intent DROPPED/FAILED with metric + why-code
 - NO RuntimeError raised in production path
 - Pending count = 0 (no zombies)
 """
@@ -36,10 +36,9 @@ class TestS5RetrySchedulerBounded:
         self,
         scenario_runner: ScenarioRunner,
         metric_collector: MetricCollector,
-        monkeypatch,
     ):
         """
-        TASK26.S5: Missing asyncio loop → intent dropped, metric incremented.
+        TASK26.S5: Missing asyncio loop в†’ intent dropped, metric incremented.
         
         Contract:
         - NO exception raised
@@ -47,13 +46,7 @@ class TestS5RetrySchedulerBounded:
         - Metric inc_retry_scheduler_no_loop called
         - Pending count = 0
         """
-        from apps.reference.retry_scheduler import RetryScheduler
-        
-        # Monkeypatch the metric
-        monkeypatch.setattr(
-            "apps.reference.telemetry.metrics.inc_retry_scheduler_no_loop",
-            metric_collector.inc_retry_scheduler_no_loop,
-        )
+        from vfoundation.core.retry_scheduler import RetryScheduler
         
         # Create scheduler WITHOUT binding loop
         sched = RetryScheduler(
@@ -62,6 +55,7 @@ class TestS5RetrySchedulerBounded:
             min_retry_delay_ms=0,
             backoff_factor=1.0,
             jitter_ms=0,
+            on_no_loop=metric_collector.inc_retry_scheduler_no_loop,
         )
         
         scenario_runner.record_event("RETRY_SCHEDULER_SETUP", {
@@ -139,14 +133,14 @@ class TestS5RetrySchedulerBounded:
         
         After max_attempts, intent is DROPPED (not retried forever).
         """
-        from apps.reference.retry_scheduler import RetryScheduler
+        from vfoundation.core.retry_scheduler import RetryScheduler
         
         emitted = []
         
         async def _fake_emit_compat(_fsm, msg, logger=None):
             emitted.append(msg)
         
-        monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+        monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
         loop = asyncio.get_running_loop()
         sched = RetryScheduler(
@@ -210,14 +204,14 @@ class TestS5RetrySchedulerBounded:
         """
         TASK26.S5: Attempt counter increments with each retry.
         """
-        from apps.reference.retry_scheduler import RetryScheduler
+        from vfoundation.core.retry_scheduler import RetryScheduler
         
         emitted = []
         
         async def _fake_emit_compat(_fsm, msg, logger=None):
             emitted.append(msg)
         
-        monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+        monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
         loop = asyncio.get_running_loop()
         sched = RetryScheduler(
@@ -252,3 +246,4 @@ class TestS5RetrySchedulerBounded:
 
         assert getattr(emitted[0], "why", "").startswith("retry_attempt_1_of_5")
         assert getattr(emitted[1], "why", "").startswith("retry_attempt_2_of_5")
+

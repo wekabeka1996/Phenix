@@ -1,0 +1,333 @@
+"""
+Aurora Config Loader Mixin.
+
+Extracted from aurora_handler.py (Phase 14A Decomposition).
+
+Provides:
+  - _load_config: Parse and validate Aurora strategy configuration
+"""
+from __future__ import annotations
+
+import decimal
+import logging
+from typing import Any
+
+from apps.reference.domains.decision_making.execution_gate import ExecutionGate
+from apps.reference.domains.decision_making.exit_manager import ExitManager
+from apps.reference.domains.decision_making.entry_plan import (
+    EntryPlan,
+    EntryPlanParams,
+    ObiMissingPolicy,
+)
+from apps.reference.config_models import (
+    ExitManagerConfig,
+    OperationalMode,
+    DashboardConfig,
+)
+from apps.reference.domains.decision_making.operational_mode import ModeManager
+from apps.reference.domains.decision_making.dashboard import DashboardMetrics
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+    QuadraticScoringKernel,
+)
+
+logger = logging.getLogger("aurora_handler")
+
+
+class AuroraConfigLoaderMixin:
+    """
+    Mixin: configuration loading for AuroraHandler.
+
+    Self-attributes set (consumed by AuroraHandler and other mixins):
+      - self.timeframe_sec, self.signal_threshold, self.neutral_threshold
+      - self.side_bias_*, self.regime_thresholds, self.direction_strength_cfg
+      - self.delta_price_cap_pct, self.scoring_kernel_cls, self._scoring_engine_cfg
+      - self.score_multiplier, self.blocked_regimes
+      - self.vol_gates_enabled, self.anti_flat_sigma, self.anti_fomo_sigma, self.motion_window_sec
+      - self.holding_period_enabled, self.default_min_duration_sec, etc.
+      - self.anti_churn_enabled, self.time_multipliers, regime inertia params
+      - self.execution_gate, self.exit_manager, self.entry_plan_calculator
+      - self.mode_manager, self.dashboard
+    """
+
+    def _load_config(self) -> None:
+        """Extract configuration parameters."""
+        aurora_cfg = getattr(self.config, "strategies", None)
+        aurora = getattr(aurora_cfg, "aurora", None) if aurora_cfg else None
+
+        # FeatureEngineering warmup enforcement mode (used for readiness fail-closed behavior).
+        # Default is fail_fast to preserve live safety if config can't be resolved.
+        self._fe_warmup_enforcement_mode: str = "fail_fast"
+        self._strict_pydantic_config: bool = False
+        try:
+            from apps.reference.config_models import AuroraConfig
+            from apps.reference.domain_config import DomainConfigResolver
+
+            if isinstance(self.config, AuroraConfig):
+                self._strict_pydantic_config = True
+                fe_cfg = DomainConfigResolver(self.config).get_feature_engineering()
+                warmup_cfg = getattr(fe_cfg, "warmup", None)
+                if warmup_cfg is not None:
+                    self._fe_warmup_enforcement_mode = str(getattr(warmup_cfg, "enforcement_mode", "fail_fast"))
+        except Exception:
+            self._fe_warmup_enforcement_mode = "fail_fast"
+
+        # TF-SSOT-PACK-003: Get timeframe_sec from config (MANDATORY)
+        # CLOSEOUT-BASELINE-001: Strict contract - no fallbacks
+        if aurora is None:
+            # Aurora strategy not enabled - use sentinel that will be rejected by guards
+            self.timeframe_sec = 0
+            self.logger.debug("AuroraHandler: aurora strategy not configured, timeframe_sec=0 (sentinel)")
+        elif not hasattr(aurora, "timeframe_sec") or aurora.timeframe_sec is None:
+            from apps.reference.config_contract import ConfigContractError
+            raise ConfigContractError(
+                path="strategies.aurora.timeframe_sec",
+                why="timeframe_sec is mandatory in strategy config. Check config/aurora/strategies/aurora.yaml"
+            )
+        else:
+            self.timeframe_sec = aurora.timeframe_sec
+
+        decision = getattr(aurora, "decision", None) if aurora else None
+
+        if decision:
+            # Phase 6: Modes (Init first as used by shields)
+            op_mode = getattr(decision, "operational_mode", OperationalMode.PARANOID)
+            self.mode_manager = ModeManager(op_mode)
+
+            if self._strict_pydantic_config:
+                from apps.reference.config_contract import ConfigContractError
+
+                thr_raw = getattr(decision, "signal_threshold", None)
+                if thr_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.signal_threshold",
+                        why="signal_threshold is required for AuroraHandler (no silent fallback).",
+                    )
+                self.signal_threshold = decimal.Decimal(str(thr_raw))
+
+                # Side-bias parameters are required for kernel scoring (fail-closed).
+                sb_window_raw = getattr(decision, "side_bias_window_sec", None)
+                sb_target_raw = getattr(decision, "side_bias_target_ratio", None)
+                sb_penalty_raw = getattr(decision, "side_bias_penalty_factor", None)
+                sb_min_intents_raw = getattr(decision, "side_bias_min_intents", None)
+                if sb_window_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_window_sec",
+                        why="side_bias_window_sec is required (no silent fallback).",
+                    )
+                if sb_target_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_target_ratio",
+                        why="side_bias_target_ratio is required (no silent fallback).",
+                    )
+                if sb_penalty_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_penalty_factor",
+                        why="side_bias_penalty_factor is required (no silent fallback).",
+                    )
+                if sb_min_intents_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_min_intents",
+                        why="side_bias_min_intents is required (no silent fallback).",
+                    )
+                self.side_bias_window_sec = float(sb_window_raw)
+                self.side_bias_target_ratio = float(sb_target_raw)
+                self.side_bias_penalty_factor = float(sb_penalty_raw)
+                self.side_bias_min_intents = int(sb_min_intents_raw)
+
+                regime_thr = getattr(decision, "regime_threshold_multipliers", None)
+                if not isinstance(regime_thr, dict) or not regime_thr:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.regime_threshold_multipliers",
+                        why="regime_threshold_multipliers must be a non-empty mapping (include DEFAULT).",
+                    )
+                self.regime_thresholds = dict(regime_thr)
+            else:
+                # Legacy/non-typed config path (tests/mocks): keep backward-compatible defaults.
+                self.signal_threshold = decimal.Decimal(str(getattr(decision, "signal_threshold", "0.1")))
+                self.side_bias_window_sec = float(getattr(decision, "side_bias_window_sec", 420))
+                self.side_bias_target_ratio = float(getattr(decision, "side_bias_target_ratio", 0.72))
+                self.side_bias_penalty_factor = float(getattr(decision, "side_bias_penalty_factor", 0.25))
+                self.side_bias_min_intents = int(getattr(decision, "side_bias_min_intents", 18))
+                self.regime_thresholds = getattr(decision, "regime_threshold_multipliers", {"DEFAULT": 1.0})
+
+            # Direction strength config
+            ds_cfg = getattr(decision, "direction_strength_scoring", None)
+            self.direction_strength_cfg = {
+                "directional_features": list(getattr(ds_cfg, "directional_features", [])) if ds_cfg else [],
+                "strength_features": list(getattr(ds_cfg, "strength_features", [])) if ds_cfg else [],
+                "strength_alpha": float(getattr(ds_cfg, "strength_alpha", 0.5)) if ds_cfg else 0.5,
+                "strength_cap": float(getattr(ds_cfg, "strength_cap", 1.5)) if ds_cfg else 1.5,
+            }
+
+            # Signals config
+            signals = getattr(decision, "signals", None)
+            self.delta_price_cap_pct = decimal.Decimal(str(getattr(signals, "delta_price_cap_pct", "0.005"))) if signals else decimal.Decimal("0.005")
+
+            # ═══════════════ Phase 9: Quadratic Kernel Routing ═══════════════
+            scoring_ver = getattr(decision, "scoring_version", "v1")
+            if scoring_ver == "quadratic":
+                self.scoring_kernel_cls = QuadraticScoringKernel
+                self._scoring_engine_cfg = getattr(decision, "scoring_engine", None)
+                self._shield_fn = self._build_shield_cascade()
+                shield_name = repr(self._shield_fn) if hasattr(self._shield_fn, '__repr__') else "NullShield"
+                self.logger.info(f"Phase 9: QuadraticScoringKernel activated with {shield_name}")
+            # ═════════════════════════════════════════════════════════════════
+
+            # Neutral threshold for hysteresis (global default)
+            nt_raw = getattr(decision, "neutral_threshold", None)
+            self.neutral_threshold = decimal.Decimal(str(nt_raw)) if nt_raw is not None else decimal.Decimal("0.05")
+
+            # Phase 9: Sensitivity Tuning
+            sm_raw = getattr(decision, "score_multiplier", 1.0)
+            self.score_multiplier = float(sm_raw)
+
+            # REGIME-KILL-SWITCH-01: Optional config-driven regime blocklist.
+            blocked = getattr(decision, "blocked_regimes", None)
+            try:
+                self.blocked_regimes = {str(x) for x in (blocked or []) if str(x)}
+            except Exception:
+                self.blocked_regimes = set()
+
+            # Liquidity Gate (Score V2) - optional
+            self._global_liquidity_gate_cfg = (
+                getattr(decision, "liquidity_gate", None) if self._strict_pydantic_config else None
+            )
+
+            # === Holding Period Config (Anti-Churn) ===
+            hp_cfg = getattr(decision, "holding_period", None)
+            if hp_cfg and getattr(hp_cfg, "enabled", False):
+                self.holding_period_enabled = True
+                self.default_min_duration_sec = float(getattr(hp_cfg, "min_duration_sec", 30))
+                self.default_emergency_threshold = float(getattr(hp_cfg, "emergency_exit_threshold", 0.7))
+                self.holding_apply_to_flips = bool(getattr(hp_cfg, "apply_to_flips", True))
+                self.logger.info(
+                    f"Holding period enabled: min_duration={self.default_min_duration_sec}s, "
+                    f"emergency_threshold={self.default_emergency_threshold}, apply_to_flips={self.holding_apply_to_flips}"
+                )
+            else:
+                self.holding_period_enabled = False
+                self.default_min_duration_sec = 30.0
+                self.default_emergency_threshold = 0.7
+                self.holding_apply_to_flips = True
+
+            # === Re-entry Cooldown Config (Anti-Ping-Pong) ===
+            rc_raw = getattr(decision, "reentry_cooldown_sec", None)
+            self.default_reentry_cooldown_sec = float(rc_raw) if rc_raw is not None else 60.0
+            self.logger.info(f"Re-entry cooldown: default={self.default_reentry_cooldown_sec}s")
+
+            # === Anti-Churn: Time Multipliers + Regime Inertia ===
+            ac_cfg = getattr(decision, "anti_churn", None)
+            if ac_cfg and getattr(ac_cfg, "enabled", False):
+                self.anti_churn_enabled = True
+                self.time_multipliers = dict(getattr(ac_cfg, "time_multipliers", {}) or {})
+
+                ri_cfg = getattr(ac_cfg, "regime_inertia", None)
+                self.regime_inertia_confirm_window_sec = float(getattr(ri_cfg, "confirm_window_sec", 0.0)) if ri_cfg else 0.0
+                self.regime_inertia_confirm_window_same_severity_sec = float(
+                    getattr(ri_cfg, "confirm_window_same_severity_sec", 0.0)
+                ) if ri_cfg else 0.0
+                self.regime_inertia_immediate_risk_off = bool(getattr(ri_cfg, "immediate_risk_off", True)) if ri_cfg else True
+                self.regime_severity_map = dict(getattr(ri_cfg, "severity_map", {}) or {})
+            else:
+                self.anti_churn_enabled = False
+                self.time_multipliers = {}
+                self.regime_inertia_confirm_window_sec = 0.0
+                self.regime_inertia_confirm_window_same_severity_sec = 0.0
+                self.regime_inertia_immediate_risk_off = True
+                self.regime_severity_map = {}
+
+            # === Vol-Adj Gates Config (Anti-Flat / Anti-FOMO) ===
+            gates_cfg = getattr(decision, "gates", None)
+            if gates_cfg and getattr(gates_cfg, "enabled", True):
+                self.vol_gates_enabled = True
+                self.anti_flat_sigma = float(getattr(gates_cfg, "anti_flat_sigma", 0.5))
+                self.anti_fomo_sigma = float(getattr(gates_cfg, "anti_fomo_sigma", 4.0))
+                self.motion_window_sec = int(getattr(gates_cfg, "motion_window_sec", 900))
+                self.logger.info(
+                    f"Vol-Adj Gates enabled: anti_flat_sigma={self.anti_flat_sigma}, "
+                    f"anti_fomo_sigma={self.anti_fomo_sigma}, motion_window={self.motion_window_sec}s"
+                )
+            else:
+                self.vol_gates_enabled = False
+                self.anti_flat_sigma = 0.5
+                self.anti_fomo_sigma = 4.0
+                self.motion_window_sec = 900
+
+            # Phase 5: Execution Protocols
+            execution_cfg = getattr(decision, "execution", None)
+            self.execution_gate = ExecutionGate(execution_cfg) if execution_cfg is not None else None
+
+            # BUG-3: Fail-closed if exit config is missing (Risk Critical)
+            exit_cfg = getattr(decision, "exit", None)
+            if exit_cfg is None:
+                if self._strict_pydantic_config:
+                    from apps.reference.config_contract import ConfigContractError
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.exit",
+                        why="ExitManager config is mandatory (Fail-Closed). Check aurora.yaml."
+                    )
+                self.logger.warning("ExitManager config missing! Defaulting to disabled (Dangerous!)")
+                exit_cfg = ExitManagerConfig(
+                    time_exit_enabled=False,
+                    signal_exit_enabled=False,
+                )
+
+            # S2-TRAILING: Extract trailing stop config from instrument config
+            _trailing_cfg = None
+            try:
+                instruments = getattr(self.config, "instruments", None)
+                if instruments:
+                    for _inst_cfg in instruments.values():
+                        _trailing_cfg = getattr(_inst_cfg, "trailing_stop", None)
+                        if _trailing_cfg and getattr(_trailing_cfg, "enabled", False):
+                            break
+                        _trailing_cfg = None
+            except Exception:
+                _trailing_cfg = None
+
+            self.exit_manager = ExitManager(
+                exit_cfg or ExitManagerConfig(),
+                trailing_enabled=bool(getattr(_trailing_cfg, "enabled", False)) if _trailing_cfg else False,
+                trailing_activation_pct=float(getattr(_trailing_cfg, "activation_pct", 0.003)) if _trailing_cfg else 0.003,
+                trailing_atr_mult=float(getattr(_trailing_cfg, "trail_atr_mult", 0)) or None if _trailing_cfg else None,
+                trailing_pct=float(getattr(_trailing_cfg, "trail_pct", 0)) or None if _trailing_cfg else None,
+            )
+
+            # Phase 4: Entry Plan (SSOT: domains.decision_making.entry_plan)
+            domains_cfg = getattr(self.config, "domains", None)
+            dm_domain_cfg = getattr(domains_cfg, "decision_making", None) if domains_cfg else None
+            ep_cfg = getattr(dm_domain_cfg, "entry_plan", None)
+
+            if ep_cfg:
+                self.entry_plan_params = EntryPlanParams(
+                    atr_period=ep_cfg.atr_period,
+                    entry_k_atr=float(ep_cfg.entry_k_atr),
+                    sl_k_atr=float(ep_cfg.sl_k_atr),
+                    tp_k_atr=float(ep_cfg.tp_k_atr),
+                    obi_weight=float(ep_cfg.obi_weight),
+                    obi_mod_clamp_min=float(ep_cfg.obi_mod_clamp_min),
+                    obi_mod_clamp_max=float(ep_cfg.obi_mod_clamp_max),
+                    require_atr=bool(ep_cfg.require_atr),
+                    obi_missing_policy=ObiMissingPolicy.NEUTRAL,
+                    structural_stop_enabled=bool(ep_cfg.structural_stop_enabled),
+                    base_atr_mult=float(ep_cfg.base_atr_mult),
+                    confidence_scale=float(ep_cfg.confidence_scale),
+                    min_stop_bps=int(ep_cfg.min_stop_bps),
+                )
+                self.entry_plan_calculator = EntryPlan(self.entry_plan_params)
+            else:
+                self.entry_plan_params = None
+                self.entry_plan_calculator = None
+                self.logger.warning("DecisionMakingDomainConfig.entry_plan missing: EntryPlan logic disabled (Structural Gate will block).")
+
+            # Phase 6: Dashboard
+            dash_cfg = getattr(decision, "dashboard", None) or DashboardConfig(enabled=False)
+            self.dashboard = DashboardMetrics(dash_cfg) if dash_cfg.enabled else None
+
+        else:
+            # P2: FAIL-CLOSED — decision config is mandatory
+            from apps.reference.config_contract import ConfigContractError
+            raise ConfigContractError(
+                path="strategies.aurora.decision",
+                why="Aurora decision config is mandatory. Check config/aurora/strategies/aurora.yaml"
+            )

@@ -3,7 +3,7 @@ import logging
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from apps.reference.services.order_guardian import OrderGuardian, InMemoryStore
+from apps.reference.domains.execution_position.order_guardian import OrderGuardian, InMemoryStore
 
 
 @pytest.mark.asyncio

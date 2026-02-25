@@ -65,11 +65,16 @@ def _mk_dm(*, max_risk_score=0.96, aurora_override=None):
     dm._handle_flip_orchestration = lambda *_a, **_k: None
     dm._warmup_gate_before_trade_intent = lambda **_k: False
     dm._precheck_exposure_cache = lambda *_a, **_k: True
+    dm._emit_trade_intent_rejected = lambda **_k: None
+    dm._emit_intent_deferred_v1 = lambda **kw: dm.fsm.emit("EVT:INTENT_DEFERRED", kw)
 
     if aurora_override is None:
         dm._get_aurora_instrument_cfg = lambda _symbol: None
     else:
         dm._get_aurora_instrument_cfg = lambda _symbol: SimpleNamespace(max_risk_score=aurora_override)
+
+    from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+    dm._gateway = StrategyGateway(dm)
 
     return dm
 

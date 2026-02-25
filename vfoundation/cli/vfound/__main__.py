@@ -9,9 +9,9 @@ import typer
 import yaml
 
 # Add vfoundation to path for imports
-# → vfoundation/ (absolute)
-_cli_root = pathlib.Path(__file__).parent.parent.parent.resolve()
-_vfoundation_pkg = _cli_root / "vfoundation"  # → vfoundation/vfoundation/
+# → repo root (4 levels up from vfoundation/cli/vfound/__main__.py)
+_cli_root = pathlib.Path(__file__).parent.parent.parent.parent.resolve()
+_vfoundation_pkg = _cli_root / "vfoundation"  # → repo_root/vfoundation/
 if str(_cli_root) not in sys.path:
     sys.path.insert(0, str(_cli_root))  # for apps.reference.*
 if str(_vfoundation_pkg) not in sys.path:
@@ -285,7 +285,7 @@ def drift_batch(
     import types
     from importlib.machinery import ModuleSpec
 
-    drift_monitor_path = (_cli_root / "apps" / "monitoring" / "drift_monitor.py")
+    drift_monitor_path = (_cli_root / "apps" / "reference" / "domains" / "execution_position" / "drift_monitor.py")
     spec: ModuleSpec | None = importlib.util.spec_from_file_location(
         "drift_monitor", drift_monitor_path
     )
@@ -414,6 +414,29 @@ def trace_get(rid: str) -> None:
                 evs.append(obj)
     typer.echo(json.dumps({"rid": rid, "events": evs},
                ensure_ascii=False, indent=2))
+
+
+
+@app.command("init")
+def init_domain(
+    name: str = typer.Argument(..., help="Domain name to scaffold"),
+    owner: str = typer.Option("unknown", help="Owner team for the domain"),
+) -> None:
+    """Scaffold a new domain directory under apps/reference/domains/."""
+    domain_dir = _cli_root / "apps" / "reference" / "domains" / name
+    if domain_dir.exists():
+        typer.echo(f"Domain '{name}' already exists at {domain_dir}", err=True)
+        raise typer.Exit(1)
+    domain_dir.mkdir(parents=True)
+    (domain_dir / "__init__.py").write_text(
+        f'"""Domain: {name} (owner: {owner})\n\nScaffolded by vfound init.\n"""\n',
+        encoding="utf-8",
+    )
+    (domain_dir / f"{name}.py").write_text(
+        f'"""Main module for {name} domain.\n\nOwner: {owner}\n"""\n',
+        encoding="utf-8",
+    )
+    typer.echo(f"Created domain: {domain_dir}")
 
 
 if __name__ == "__main__":

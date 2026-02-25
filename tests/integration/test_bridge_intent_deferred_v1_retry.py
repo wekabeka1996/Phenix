@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 pytestmark = pytest.mark.skip(reason="Refactoring: AuroraBridge class deleted")
 
@@ -33,7 +33,7 @@ async def test_bridge_registers_v1_deferred_and_retry_scheduler_reemits(monkeypa
     async def _fake_emit_compat(_fsm, msg, logger=None):  # type: ignore[no-untyped-def]
         emitted.append(msg)
 
-    monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+    monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
     # Minimal config object (not dict) satisfying AuroraBridge init.
     # We avoid strict AuroraConfig here; only required fields are accessed.
@@ -92,3 +92,4 @@ async def test_bridge_registers_v1_deferred_and_retry_scheduler_reemits(monkeypa
     assert getattr(msg, "op", None) == "EVT"
     assert getattr(msg, "verb", None) == "FEATURES_CALCULATED"
     assert getattr(msg, "pld", None) == {"symbol": "BTCUSDT", "side": "SELL", "rid": "r1"}
+

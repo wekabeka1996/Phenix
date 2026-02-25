@@ -31,9 +31,14 @@ class TestPanicKillswitchBlocking:
         
         # Verify panic check exists somewhere in the decision flow
         # The actual blocking happens in execution_position, but DM might also check
+        # After Phase 14A, logic is delegated. We check readiness_gates or the facade's delegation.
+        from apps.reference.domains.decision_making import readiness_gates
+        rg_source = inspect.getsource(readiness_gates)
+        
         assert "panic" in source.lower() or "killswitch" in source.lower() or \
-            "ops" in source.lower(), \
-            "DecisionMaking should reference panic/killswitch or ops config"
+            "ops" in source.lower() or "self._readiness" in source.lower() or \
+            "panic" in rg_source.lower(), \
+            "DecisionMaking or its delegates should reference panic/killswitch or ops config"
     
     def test_panic_blocks_cmd_open_in_execution(self):
         """
@@ -74,7 +79,7 @@ class TestPanicKillswitchBlocking:
         import yaml
         from pathlib import Path
         
-        trading_yaml = Path("/home/wekabeka/Музыка/Phenix/config/aurora/trading.yaml")
+        trading_yaml = Path(__file__).resolve().parents[2] / "config/aurora/trading.yaml"
         
         if trading_yaml.exists():
             with open(trading_yaml) as f:

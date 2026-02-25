@@ -10,28 +10,12 @@ WHY: Validate complete disaster recovery mechanism works correctly [FSMP-RESILIE
 """
 
 import json
-import sys
 import tempfile
-import importlib.util
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock
 
-# Direct import of dr_loader module
-project_root = Path(__file__).parent.parent.parent
-dr_loader_path = project_root / "apps" / "reference" / "dr_loader.py"
-
-spec = importlib.util.spec_from_file_location("dr_loader", dr_loader_path)
-dr_loader = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(dr_loader)
-
-find_latest_snapshot = dr_loader.find_latest_snapshot
-replay_wal_after = dr_loader.replay_wal_after
-
-# Setup vfoundation path
-vfoundation_root = project_root / "vfoundation" / "vfoundation"
-if str(vfoundation_root) not in sys.path:
-    sys.path.insert(0, str(vfoundation_root))
+from vfoundation.dr.dr_loader import find_latest_snapshot, replay_wal_after
 
 
 class TestDRLoader:

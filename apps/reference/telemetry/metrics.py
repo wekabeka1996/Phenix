@@ -90,6 +90,29 @@ c_bridge_retry_total = Counter(
     "bridge_retry_total", "Bridge defer retries", ["symbol"]
 )
 
+# Decision path latency/quality (monitoring migration from custom PerformanceMonitor)
+h_decision_latency_ms = Histogram(
+    "decision_latency_ms",
+    "Decision path latency in milliseconds",
+    buckets=(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500),
+)
+c_decision_timeout_total = Counter(
+    "decision_timeout_total",
+    "Decision timeout events",
+)
+c_decision_success_total = Counter(
+    "decision_success_total",
+    "Decision success events",
+)
+c_decision_failure_total = Counter(
+    "decision_failure_total",
+    "Decision failure events",
+)
+c_decision_why_covered_total = Counter(
+    "decision_why_covered_total",
+    "Decision events with non-empty WHY chain",
+)
+
 # Warmup/readiness gating (TASK24)
 c_warmup_block_total = Counter(
     "warmup_block_total",
@@ -236,6 +259,26 @@ def inc_bridge_deferred(reason: str, symbol: str) -> None:
 
 def inc_bridge_retry(symbol: str) -> None:
     c_bridge_retry_total.labels(symbol=symbol).inc()
+
+
+def observe_decision_latency_ms(latency_ms: float) -> None:
+    h_decision_latency_ms.observe(float(latency_ms))
+
+
+def inc_decision_timeout() -> None:
+    c_decision_timeout_total.inc()
+
+
+def inc_decision_success() -> None:
+    c_decision_success_total.inc()
+
+
+def inc_decision_failure() -> None:
+    c_decision_failure_total.inc()
+
+
+def inc_decision_why_covered() -> None:
+    c_decision_why_covered_total.inc()
 
 def inc_warmup_block(domain: str, reason: str) -> None:
     c_warmup_block_total.labels(domain=domain, reason=reason).inc()

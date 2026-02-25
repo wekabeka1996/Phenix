@@ -14,5 +14,3 @@ router = APIRouter()
 def metrics_endpoint():
     # DEPRECATED: This endpoint is duplicated in main.py and should not be used
     raise RuntimeError("DEPRECATED: Use /metrics from main.py instead. This router is not included in the app.")
-    data = generate_latest()  # default REGISTRY — бачить все, в т.ч. exposure_equity_usd
-    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

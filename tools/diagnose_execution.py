@@ -28,7 +28,7 @@ def test_guardian_config():
             # Try to discover underlying ledger path (if unified + LedgerStoreAdapter).
             db_path = "UNKNOWN"
             try:
-                from apps.reference.services.ledger_store_adapter import LedgerStoreAdapter
+                from apps.reference.domains.execution_position.infra.ledger_store_adapter import LedgerStoreAdapter
 
                 impl = getattr(og, "_impl", None)
                 store = getattr(impl, "store", None)

@@ -38,8 +38,14 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field, asdict
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+try:
+    from vfoundation.obs.xai_store import append_why
+except Exception:
+    append_why = None
 
 LOG = logging.getLogger(__name__)
 
@@ -87,6 +93,8 @@ class TradeRecord:
 
     # Status
     status: str = "INTENT"       # INTENT → ORDERED → FILLED → CLOSED / CANCELLED
+    created_ts_ms: int = 0
+    updated_ts_ms: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -102,18 +110,74 @@ class TradeLifecycleLogger:
     On close/cancel, the final record is flushed to JSONL and removed from memory.
     """
 
-    def __init__(self, log_file: str = "logs/trade_lifecycle.jsonl"):
+    def __init__(
+        self,
+        log_file: str = "logs/trade_lifecycle.jsonl",
+        orphan_ttl_sec: int = 3600,
+        max_open_trades: int = 5000,
+        auto_sweep_interval_sec: int = 60,
+    ):
         self._log_file = Path(log_file)
         self._log_file.parent.mkdir(parents=True, exist_ok=True)
-        self._trades: Dict[str, TradeRecord] = {}
+        self._orphan_ttl_sec = max(0, int(orphan_ttl_sec))
+        self._max_open_trades = max(1, int(max_open_trades))
+        self._auto_sweep_interval_sec = max(1, int(auto_sweep_interval_sec))
+        self._next_sweep_at = time.time() + self._auto_sweep_interval_sec
+        self._trades: "OrderedDict[str, TradeRecord]" = OrderedDict()
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
 
     def _get_or_create(self, rid: str) -> TradeRecord:
+        self._maybe_sweep()
         if rid not in self._trades:
-            self._trades[rid] = TradeRecord(rid=rid)
-        return self._trades[rid]
+            now_ms = self._now_ms()
+            self._trades[rid] = TradeRecord(
+                rid=rid,
+                created_ts_ms=now_ms,
+                updated_ts_ms=now_ms,
+            )
+        rec = self._trades[rid]
+        rec.updated_ts_ms = self._now_ms()
+        self._trades.move_to_end(rid)
+        self._enforce_capacity()
+        return rec
+
+    def _maybe_sweep(self) -> None:
+        now = time.time()
+        if now >= self._next_sweep_at:
+            self.sweep_expired()
+            self._next_sweep_at = now + self._auto_sweep_interval_sec
+
+    def _enforce_capacity(self) -> None:
+        while len(self._trades) > self._max_open_trades:
+            oldest_rid = next(iter(self._trades.keys()))
+            rec = self._trades.get(oldest_rid)
+            if rec is not None and rec.status not in ("CLOSED", "CANCELLED"):
+                rec.status = "ORPHANED_LRU"
+                rec.close_reason = "LRU_EVICTED"
+                rec.close_ts_ms = self._now_ms()
+            self._flush(oldest_rid)
+
+    def sweep_expired(self) -> int:
+        """Flush stale open records older than orphan_ttl_sec. Returns count."""
+        if self._orphan_ttl_sec <= 0:
+            return 0
+        now_ms = self._now_ms()
+        cutoff_ms = now_ms - (self._orphan_ttl_sec * 1000)
+        expired_rids = [
+            rid
+            for rid, rec in list(self._trades.items())
+            if rec.status not in ("CLOSED", "CANCELLED") and rec.updated_ts_ms > 0 and rec.updated_ts_ms <= cutoff_ms
+        ]
+        for rid in expired_rids:
+            rec = self._trades.get(rid)
+            if rec is not None:
+                rec.status = "ORPHANED_TTL"
+                rec.close_reason = f"TTL_EXPIRED_{self._orphan_ttl_sec}s"
+                rec.close_ts_ms = now_ms
+            self._flush(rid)
+        return len(expired_rids)
 
     def _flush(self, rid: str) -> None:
         """Write final record to JSONL and remove from memory."""
@@ -124,6 +188,19 @@ class TradeLifecycleLogger:
             line = json.dumps(rec.to_dict(), ensure_ascii=False, default=str)
             with open(self._log_file, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+            if append_why is not None:
+                lifecycle_verb = "CANCEL" if rec.status == "CANCELLED" else "CLOSE"
+                append_why(
+                    rid=rec.rid,
+                    verb=lifecycle_verb,
+                    why=rec.close_reason or rec.status,
+                    payload_summary=f"{rec.symbol}:{rec.side}",
+                    meta={
+                        "status": rec.status,
+                        "strategy_id": rec.strategy_id,
+                        "entry_type": rec.entry_type,
+                    },
+                )
         except Exception as e:
             LOG.warning(f"TradeLifecycleLogger: failed to flush rid={rid}: {e}")
 
@@ -150,6 +227,7 @@ class TradeLifecycleLogger:
         rec.strategy_id = strategy_id
         rec.entry_type = entry_type
         rec.intent_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.intent_ts_ms
         rec.status = "INTENT"
 
     def on_order_placed(
@@ -163,6 +241,7 @@ class TradeLifecycleLogger:
         rec.order_id = order_id
         rec.order_price = price
         rec.order_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.order_ts_ms
         rec.status = "ORDERED"
 
     def on_fill(
@@ -178,6 +257,7 @@ class TradeLifecycleLogger:
         rec.fill_qty = fill_qty
         rec.fill_fees = fees
         rec.fill_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.fill_ts_ms
         rec.status = "FILLED"
 
     def on_brackets_set(
@@ -198,6 +278,7 @@ class TradeLifecycleLogger:
             rec.sl_pct = sl_pct
         if tp_pct is not None:
             rec.tp_pct = tp_pct
+        rec.updated_ts_ms = self._now_ms()
 
     def on_close(
         self,
@@ -212,6 +293,7 @@ class TradeLifecycleLogger:
         rec.close_price = close_price
         rec.close_reason = close_reason
         rec.close_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.close_ts_ms
         rec.pnl_pct = pnl_pct
         rec.pnl_usdt = pnl_usdt
         rec.status = "CLOSED"
@@ -226,6 +308,7 @@ class TradeLifecycleLogger:
         rec = self._get_or_create(rid)
         rec.close_reason = cancel_reason
         rec.close_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.close_ts_ms
         rec.status = "CANCELLED"
         self._flush(rid)
 

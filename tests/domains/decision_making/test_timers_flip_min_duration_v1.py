@@ -54,7 +54,13 @@ def mock_config():
     
     decision.gates = MagicMock()
     decision.gates.enabled = False
-    
+
+    # FIX: Without this, MagicMock auto-creates decision.exit as MagicMock,
+    # and ExitManager reads float(MagicMock())=1.0 / bool(MagicMock())=True
+    # giving toxic config (time_exit after 1s, signal_reversal at threshold 1.0)
+    # that forces should_exit=True and bypasses the holding period check.
+    decision.exit = None
+
     cfg.strategies.aurora.decision = decision
     
     # Add instruments to assets (AuroraHandler looks here)

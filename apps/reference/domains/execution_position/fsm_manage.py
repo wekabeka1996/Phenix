@@ -22,6 +22,10 @@ from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
 from apps.reference.config_models import AuroraConfig, AuroraInstrumentConfig
 from apps.reference.utils.accessors import aget, dget
+from apps.reference.domains.execution_position.utils import (
+    generate_client_order_id,
+    quantize_stop_price,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -651,7 +655,7 @@ class ManageFlowFSM:
                     f"instruments.{symbol}.tick_size is required for bracket price quantization/offsets. "
                     "No fallback/default is allowed."
                 )
-            tick_size = Decimal(str(self.config.instruments[symbol].tick_size))
+            tick_size = self.config.instruments[symbol].tick_size
 
             # Apply offset to SL (move it AWAY from entry to be safer)
             sl_offset = TPSLValidationRules.add_safety_offset(
@@ -698,11 +702,11 @@ class ManageFlowFSM:
                 tp1_qty = total_qty
                 tp2_qty = Decimal("0")
 
-            # Generate unique client order IDs
-            position_id = f"{msg.rid}_{int(self.position_open_ts)}"
-            sl_client_id = f"{position_id}_sl"
-            tp1_client_id = f"{position_id}_tp1"
-            tp2_client_id = f"{position_id}_tp2"
+            # Generate unique client order IDs — FIX-4015: use hash-based IDs (≤32 chars)
+            idem_base = f"{msg.rid}_{int(self.position_open_ts)}"
+            sl_client_id = generate_client_order_id("SL", symbol, idempotent_key=idem_base)
+            tp1_client_id = generate_client_order_id("TP1", symbol, idempotent_key=idem_base)
+            tp2_client_id = generate_client_order_id("TP2", symbol, idempotent_key=idem_base)
 
             # === EMISSION PHASE: Place validated bracket orders ===
             orders = []
@@ -910,16 +914,22 @@ class ManageFlowFSM:
         if not getattr(self.config, "instruments", None) or symbol not in self.config.instruments:
             raise ValueError(f"instruments.{symbol}.tick_size is required for price quantization")
 
-        tick_size_dec = Decimal(str(self.config.instruments[symbol].tick_size))
+        tick_size_dec = self.config.instruments[symbol].tick_size
         if tick_size_dec <= 0:
             raise ValueError(f"instruments.{symbol}.tick_size must be > 0, got {tick_size_dec}")
 
+        # FIX-1111: side-aware rounding — bracket orders are always the opposite side
+        # BUY position → SELL brackets → FLOOR (avoid trigger too early)
+        # SELL position → BUY brackets → CEIL (avoid trigger too early)
+        bracket_side = self._get_opposite_side() if self.position_side else "SELL"
+        tick_size_float = float(tick_size_dec)
+
         if sl_price is not None:
-            sl_price = (sl_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
+            sl_price = Decimal(str(quantize_stop_price(float(sl_price), tick_size_float, side=bracket_side)))
         if tp1_price is not None:
-            tp1_price = (tp1_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
+            tp1_price = Decimal(str(quantize_stop_price(float(tp1_price), tick_size_float, side=bracket_side)))
         if tp2_price is not None:
-            tp2_price = (tp2_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
+            tp2_price = Decimal(str(quantize_stop_price(float(tp2_price), tick_size_float, side=bracket_side)))
 
         return sl_price, tp1_price, tp2_price
 
@@ -958,7 +968,7 @@ class ManageFlowFSM:
             "qty": qty,
             "order_type": order_type,
             "price": price if order_type == "LIMIT" else None,
-            "stopPrice": price if "STOP" in order_type else None,
+            "stopPrice": price if order_type not in ("LIMIT", "MARKET") else None,
             "reduceOnly": True,
             "newClientOrderId": client_id,
             "workingType": working_type,
@@ -966,7 +976,7 @@ class ManageFlowFSM:
         }
 
         # For STOP_MARKET/TAKE_PROFIT_MARKET with closePosition=true, don't send qty
-        if "STOP" in order_type and order_type != "STOP_LOSS" and bool(aget(self, "closePosition", False)):
+        if order_type not in ("LIMIT", "MARKET") and order_type != "STOP_LOSS" and bool(aget(self, "closePosition", False)):
             # Remove qty for close-position orders (Binance manages qty automatically)
             payload.pop("qty", None)
 
@@ -1312,9 +1322,10 @@ class ManageFlowFSM:
         cancel_msg = self._emit_cancel_order(
             msg, self.sl_order_id or "", "trailing_adjust")
 
-        # Place new SL (will be handled by next message)
-        position_id = f"{msg.rid}_{int(self.position_open_ts)}"
-        new_client_id = f"{position_id}_sl_trail_{int(get_clock().now_sec())}"
+        # FIX-4015: use hash-based ID for trailing stop (≤32 chars)
+        _trail_sym = (msg.pld or {}).get("symbol") or self.symbol or ""
+        _trail_idem = f"{msg.rid}_{int(self.position_open_ts)}_trail_{int(get_clock().now_sec())}"
+        new_client_id = generate_client_order_id("SL", _trail_sym, idempotent_key=_trail_idem)
 
         # Use opposite side for SL order (to close position)
         new_sl_msg = self._emit_place_order(

@@ -316,12 +316,11 @@ class MarketDataWorker:
             except queue.Empty:
                 # Race condition: queue became empty
                 self._queue.put_nowait(msg)
-                return True
         except Exception as e:
             self._logger.error(f"Failed to put message in queue: {e}")
             return False
     
-    def _handle_message(self, msg: Dict[str, Any]) -> None:
+    def on_tick(self, msg: Dict[str, Any]) -> None:
         """Parse and dispatch WebSocket message - REAL-TIME STREAMING MODE."""
         # Handle combined stream wrapper ({"stream":"...", "data":{...}})
         if "stream" in msg and "data" in msg:

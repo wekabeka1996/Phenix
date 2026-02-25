@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 try:
     import yaml  # type: ignore[import-untyped]
@@ -46,6 +46,26 @@ class DriftReport:
         self.missing = self.expected - self.registered
         self.extra = self.registered - self.expected
         self.healthy = len(self.missing) == 0
+
+
+@dataclass
+class HealthCheck:
+    """A single infrastructure health check."""
+
+    name: str
+    check_fn: Callable[[], bool]
+    critical: bool = True
+
+
+@dataclass
+class HealthReport:
+    """Composite result of infrastructure health audit."""
+
+    healthy: bool
+    checks_passed: int
+    checks_failed: int
+    failures: List[str]
+    critical_failure: bool
 
 
 class TopologyAuditor:
@@ -120,6 +140,41 @@ class TopologyAuditor:
             )
 
         return report
+
+    def audit_health(self, checks: List[HealthCheck]) -> HealthReport:
+        """
+        Execute health checks and return composite report.
+
+        Exceptions in check_fn are caught — never crash the auditor.
+        Constitution §10: health checks must be fail-safe.
+        """
+        passed = 0
+        failed = 0
+        failures: List[str] = []
+        critical_failure = False
+
+        for check in checks:
+            try:
+                ok = check.check_fn()
+            except Exception as exc:
+                ok = False
+                LOG.warning("HealthCheck '%s' raised: %s", check.name, exc)
+
+            if ok:
+                passed += 1
+            else:
+                failed += 1
+                failures.append(f"{check.name}: FAIL")
+                if check.critical:
+                    critical_failure = True
+
+        return HealthReport(
+            healthy=(failed == 0),
+            checks_passed=passed,
+            checks_failed=failed,
+            failures=failures,
+            critical_failure=critical_failure,
+        )
 
     def get_expected_owners(self) -> Set[str]:
         """Return the set of expected domain owners."""

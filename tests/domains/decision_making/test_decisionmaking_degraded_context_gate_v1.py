@@ -1,4 +1,6 @@
 import logging
+from unittest.mock import MagicMock
+
 from apps.reference.core.time.clock import LiveClock
 
 
@@ -9,12 +11,33 @@ class _DummyDM:
         self.blocked: list[str] = []
         self._clock = LiveClock()
 
-        # Enable the gate explicitly.
         self._fail_closed_on_degraded_context = True
+        self._degraded_context_critical_keys = {"ema_bias", "price"}
+        self._degraded_context_critical_keys_by_strategy = {}
 
-    def _stable_retry_key(self, *, prefix: str, symbol: str, rid: str | None, side: str | None = None, ts_ms: int | None = None) -> str:
-        # Keep deterministic for tests.
-        return f"{prefix}:{symbol}:{rid}:{ts_ms}"
+        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+
+        def _emit_deferred(**kw):
+            self.emitted.append(kw)
+
+        def _record_blocked(symbol):
+            self.blocked.append(symbol)
+
+        self._readiness = ReadinessGates(
+            clock=self._clock,
+            config=MagicMock(),
+            features_ttl_sec=60,
+            symbol_states={},
+            per_symbol_regimes={},
+            get_portfolio=lambda: None,
+            get_exposure_cache=lambda: (None, 0.0),
+            emit_intent_deferred_v1=_emit_deferred,
+            record_blocked_intent=_record_blocked,
+            fail_closed_on_degraded_context=self._fail_closed_on_degraded_context,
+            degraded_context_critical_keys=self._degraded_context_critical_keys,
+            degraded_context_critical_keys_by_strategy=self._degraded_context_critical_keys_by_strategy,
+            logger=self.logger,
+        )
 
     def _emit_intent_deferred_v1(self, **payload):
         self.emitted.append(payload)

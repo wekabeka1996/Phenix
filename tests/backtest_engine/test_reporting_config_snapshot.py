@@ -47,6 +47,6 @@ def test_extract_backtest_config_snapshot_includes_repro_anchors():
     assert regime.get("uncertain_cutoff") == pytest.approx(0.35)
 
     # config_files contains hashes for key SSOT files (best-effort)
-    paths = {str(x.get("path")) for x in (snap.get("config_files") or []) if isinstance(x, dict)}
+    paths = {str(x.get("path")).replace("\\", "/") for x in (snap.get("config_files") or []) if isinstance(x, dict)}
     assert any(p.endswith("config/aurora/regime.yaml") for p in paths)
     assert any(p.endswith("config/aurora/strategies/aurora.yaml") for p in paths)

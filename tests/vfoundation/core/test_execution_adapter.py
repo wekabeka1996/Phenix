@@ -14,13 +14,14 @@ from vfoundation.core.adapters.execution_adapter import (
     CircuitBreaker,
     CircuitBreakerState,
     ExecutionMode,
-    MockExecutionAdapter,
     OrderDTO,
 )
 from vfoundation.core.adapters.execution_exceptions import (
     CBOpenError,
     IdempotentDuplicateError,
 )
+# Phase 9.3: MockExecutionAdapter moved to test fixtures
+from tests.vfoundation.fixtures.mock_execution_adapter import MockExecutionAdapter
 
 
 # ── OrderDTO ──────────────────────────────────────────────────────────────
@@ -173,16 +174,18 @@ class TestCircuitBreaker:
 
 
 class TestMockExecutionAdapter:
+    """Tests for MockExecutionAdapter (test fixture implementation)."""
+
     @pytest.fixture()
     def adapter(self) -> MockExecutionAdapter:
+        return MockExecutionAdapter(mode=ExecutionMode.DRY_RUN)
+
+    def test_no_deprecation_warning(self) -> None:
+        """Fixture MockExecutionAdapter must NOT raise DeprecationWarning."""
         import warnings
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return MockExecutionAdapter(mode=ExecutionMode.DRY_RUN)
-
-    def test_deprecation_warning(self) -> None:
-        with pytest.warns(DeprecationWarning, match="deprecated"):
-            MockExecutionAdapter(mode=ExecutionMode.DRY_RUN)
+            warnings.simplefilter("error", DeprecationWarning)
+            MockExecutionAdapter(mode=ExecutionMode.DRY_RUN)  # should not raise
 
     def test_submit_dry_run(self, adapter: MockExecutionAdapter) -> None:
         order = OrderDTO(

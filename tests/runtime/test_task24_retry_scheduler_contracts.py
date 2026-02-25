@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import time
 from types import SimpleNamespace
 
@@ -24,14 +24,14 @@ async def _wait_until(predicate, timeout_sec: float = 2.0) -> bool:
 
 
 async def test_retry_attempt_increments_in_scheduler_and_caps(monkeypatch):
-    from apps.reference.retry_scheduler import RetryScheduler
+    from vfoundation.core.retry_scheduler import RetryScheduler
 
     emitted: list[object] = []
 
     async def _fake_emit_compat(_fsm, msg, logger=None):
         emitted.append(msg)
 
-    monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+    monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
     loop = asyncio.get_running_loop()
     fsm = _DummyFsm()
@@ -68,15 +68,13 @@ async def test_retry_attempt_increments_in_scheduler_and_caps(monkeypatch):
     assert sched.get_pending_count() == 0
 
 
-def test_retry_no_event_loop_fails_fast(monkeypatch):
-    from apps.reference.retry_scheduler import RetryScheduler
+def test_retry_no_event_loop_fails_fast():
+    from vfoundation.core.retry_scheduler import RetryScheduler
 
     calls = {"n": 0}
 
     def _fake_metric() -> None:
         calls["n"] += 1
-
-    monkeypatch.setattr("apps.reference.telemetry.metrics.inc_retry_scheduler_no_loop", _fake_metric)
 
     sched = RetryScheduler(
         fsm=SimpleNamespace(),
@@ -84,6 +82,7 @@ def test_retry_no_event_loop_fails_fast(monkeypatch):
         min_retry_delay_ms=0,
         backoff_factor=1.0,
         jitter_ms=0,
+        on_no_loop=_fake_metric,
     )
 
     ok = sched.register_deferred(
@@ -110,14 +109,14 @@ def test_retry_backoff_exponential(monkeypatch):
     """
     TASK26.SZ.10: Verify backoff_factor is applied exponentially.
     """
-    from apps.reference.retry_scheduler import RetryScheduler
+    from vfoundation.core.retry_scheduler import RetryScheduler
 
     computed_delays: list[int] = []
     
     async def _fake_emit_compat(_fsm, msg, logger=None):
         pass
     
-    monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+    monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
     RetryScheduler(
         fsm=_DummyFsm(),
@@ -143,14 +142,14 @@ async def test_retry_ttl_drops_expired_intent(monkeypatch):
     """
     TASK26.SZ.11: Intent past TTL is dropped, not retried.
     """
-    from apps.reference.retry_scheduler import RetryScheduler
+    from vfoundation.core.retry_scheduler import RetryScheduler
 
     emitted: list[object] = []
     
     async def _fake_emit_compat(_fsm, msg, logger=None):
         emitted.append(msg)
     
-    monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+    monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
     loop = asyncio.get_running_loop()
     sched = RetryScheduler(
@@ -183,14 +182,14 @@ async def test_retry_deterministic_with_zero_jitter(monkeypatch):
     """
     TASK26.SZ.12: With jitter_ms=0, scheduling should be deterministic.
     """
-    from apps.reference.retry_scheduler import RetryScheduler
+    from vfoundation.core.retry_scheduler import RetryScheduler
 
     timestamps: list[int] = []
     
     async def _fake_emit_compat(_fsm, msg, logger=None):
         timestamps.append(int(time.time() * 1000))
     
-    monkeypatch.setattr("apps.reference.retry_scheduler.emit_compat", _fake_emit_compat)
+    monkeypatch.setattr("vfoundation.core.retry_scheduler.emit_compat", _fake_emit_compat)
 
     loop = asyncio.get_running_loop()
     sched = RetryScheduler(
@@ -216,3 +215,4 @@ async def test_retry_deterministic_with_zero_jitter(monkeypatch):
 
     assert sched.register_deferred(payload) is True
     assert await _wait_until(lambda: sched.get_pending_count() == 0 and len(timestamps) >= 1)
+

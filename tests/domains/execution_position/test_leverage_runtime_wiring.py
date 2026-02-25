@@ -140,6 +140,9 @@ def test_exec_pos_fsm_stores_leverage_service(mock_config, mock_fsm):
     
     # Patch both _initialize_adapter and ExposureGuard to avoid complex config setup
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(
             config=mock_config,
@@ -243,6 +246,9 @@ def test_collect_leverage_configs_from_instruments_ssot(mock_config, mock_fsm):
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=True)
     
@@ -263,6 +269,9 @@ def test_collect_leverage_configs_from_instruments_for_mr_symbols(mock_config, m
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=True)
     
@@ -286,6 +295,9 @@ def test_collect_leverage_configs_returns_empty_without_registry(mock_fsm):
     config.trading.execution.cooldown_after_close_ms = 1000
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=config, fsm=mock_fsm, shadow_mode=True)
     
@@ -305,6 +317,9 @@ async def test_run_leverage_bootstrap_skipped_in_shadow_mode(mock_config, mock_f
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=True)
     
@@ -330,6 +345,9 @@ async def test_run_leverage_bootstrap_calls_bootstrapper(mock_config, mock_fsm):
     mock_results.add_success("DOGEUSDT", BootstrapResult(symbol="DOGEUSDT", success=True))
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=False)
         fsm.adapter = mock_adapter  # Set adapter manually
@@ -369,6 +387,9 @@ async def test_run_leverage_bootstrap_returns_failed_symbols(mock_config, mock_f
     ))
     
     with patch.object(ExecPosFSM, '_initialize_adapter'), \
+         patch.object(ExecPosFSM, '_schedule_guardian_start'), \
+         patch.object(ExecPosFSM, '_schedule_fsm_cleanup_loop'), \
+         patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog.start'), \
          patch('apps.reference.domains.execution_position.fsm.ExposureGuard'):
         fsm = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=False)
         fsm.adapter = mock_adapter

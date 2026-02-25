@@ -34,6 +34,10 @@ def dm_minimal():
     # Disable price_motion_sanity for these directional-only unit tests.
     dm.config.domains.decision_making.price_motion_sanity.enabled = False
 
+    from apps.reference.core.time.clock import LiveClock
+    dm._clock = LiveClock()
+    dm._emitter = MagicMock()
+
     return dm
 
 

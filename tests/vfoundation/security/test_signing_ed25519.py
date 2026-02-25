@@ -57,3 +57,55 @@ def test_signature_non_empty() -> None:
 
     sig = sign(b"any")
     assert len(sig) > 0, "Ed25519 signature must not be empty"
+
+
+def test_verify_short_signature_returns_false():
+    """PyNaCl raises ValueError for wrong-length signature — must return False."""
+    from vfoundation.security.signing_ed25519 import sign, verify
+    payload = b"test payload"
+    assert verify(payload, b"short") is False
+
+
+def test_verify_empty_signature_returns_false():
+    """Empty bytes signature must return False, not raise."""
+    from vfoundation.security.signing_ed25519 import verify
+    assert verify(b"payload", b"") is False
+
+
+def test_verify_wrong_payload_returns_false():
+    """Correct signature but wrong payload must return False."""
+    from vfoundation.security.signing_ed25519 import sign, verify
+    payload = b"original"
+    sig = sign(payload)
+    assert verify(b"tampered", sig) is False
+
+
+def test_verify_correct_signature_returns_true():
+    """Sign then verify with correct data must return True."""
+    from vfoundation.security.signing_ed25519 import sign, verify
+    payload = b"authentic message"
+    sig = sign(payload)
+    assert verify(payload, sig) is True
+
+
+def test_canonical_json_bytes_is_deterministic_for_key_order():
+    from vfoundation.security.signing_ed25519 import canonical_json_bytes
+
+    payload_a = {"b": 2, "a": 1, "nested": {"z": 9, "x": 7}}
+    payload_b = {"nested": {"x": 7, "z": 9}, "a": 1, "b": 2}
+
+    assert canonical_json_bytes(payload_a) == canonical_json_bytes(payload_b)
+
+
+def test_sign_canonical_json_is_stable_and_verifiable():
+    from vfoundation.security.signing_ed25519 import sign_canonical_json, verify_canonical_json
+
+    payload_a = {"symbol": "BTCUSDT", "qty": "0.01", "side": "BUY"}
+    payload_b = {"side": "BUY", "qty": "0.01", "symbol": "BTCUSDT"}
+
+    sig_a = sign_canonical_json(payload_a)
+    sig_b = sign_canonical_json(payload_b)
+
+    assert sig_a == sig_b
+    assert verify_canonical_json(payload_a, sig_a) is True
+    assert verify_canonical_json(payload_b, sig_b) is True

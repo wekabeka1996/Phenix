@@ -1,7 +1,7 @@
 # path: ppo_library/ppo_system/models/actor_critic_lstm.py
 from __future__ import annotations
 import math
-from typing import Tuple, Union, Optional
+from typing import Tuple, Dict, AnyOptional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

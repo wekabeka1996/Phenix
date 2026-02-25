@@ -11,6 +11,7 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
         "apps/reference/domain_config.py",
         "apps/reference/main.py",
         "apps/reference/domains/account_observer/account_observer.py",
+        "apps/reference/domains/decision_making/aurora_config_loader.py",  # Phase 14A refactor
         "apps/reference/domains/decision_making/aurora_handler.py",  # FIX-FROZEN-LIST: added during T2B refactor
         "apps/reference/domains/decision_making/decision_making.py",
         "apps/reference/domains/execution_position/exposure_guard.py",

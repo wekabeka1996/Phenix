@@ -118,6 +118,7 @@ def _mk_cfg(*, symbol: str, position_mode: str, stale_ttl_sec: int = 15):
                     side_bias_target_ratio=0.6,
                     kelly=None,
                 ),
+                safety_gates=SimpleNamespace(enabled=True),
                 assets={symbol: SimpleNamespace(position_mode=position_mode)},
             )
         ),

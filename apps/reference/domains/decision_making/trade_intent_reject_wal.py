@@ -32,6 +32,7 @@ def write_trade_intent_rejected(
     entry_plan: Optional[dict[str, Any]] = None,
     ts_ms: Optional[int] = None,
     rid: Optional[str] = None,
+    clock: Optional["Clock"] = None,
 ) -> None:
     """
     OBS-04-INT: Persist a single SSOT reject record to WAL.
@@ -39,7 +40,14 @@ def write_trade_intent_rejected(
     Note: this writes only to WAL (not console logs). Emitting an EVT via FSM is optional
     and should be done by the caller if needed.
     """
-    ts_ms_final = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
+    if ts_ms is not None:
+        ts_ms_final = int(ts_ms)
+    else:
+        if clock:
+            ts_ms_final = int(clock.now_ms())
+        else:
+            from apps.reference.core.time.clock import LiveClock
+            ts_ms_final = int(LiveClock().now_ms())
 
     payload: dict[str, Any] = {
         "ts_ms": ts_ms_final,

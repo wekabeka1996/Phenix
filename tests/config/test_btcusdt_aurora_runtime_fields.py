@@ -210,6 +210,7 @@ class TestBtcusdtAuroraRuntimeFields:
                     regime=kwargs.get("regime_name"),
                     deferred=False,
                     defer_reason=None,
+                    shield_multiplier=Decimal("1.0"),
                 )
 
         handler.scoring_kernel_cls = _SpyKernel
@@ -338,7 +339,7 @@ class TestBtcusdtAuroraRuntimeFields:
         from apps.reference.domains.decision_making.decision_making import DecisionMaking
 
         dm = DecisionMaking(fsm=MagicMock(), config=config)
-        dm.latest_portfolio = {"equity": "1000"}
+        dm._shared["latest_portfolio"] = {"equity": "1000"}
         dm._clock = SimpleNamespace(now_ms=lambda: 1_000_000, now_sec=lambda: 1000.0)
 
         # Bypass unrelated gates for this audit test

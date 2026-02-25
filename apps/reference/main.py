@@ -10,14 +10,12 @@ Demonstrates the complete Aurora Core FSM federation with all 5 domains:
 - decision_making: Generates trade intents based on all inputs
 
 Run with: python apps/reference/main.py
-Set LOG_LEVEL environment variable to control logging:
-- LOG_LEVEL=DEBUG - Show all messages including debug
-- LOG_LEVEL=INFO (default) - Show info, warning, error messages
-- LOG_LEVEL=WARNING - Show only warnings and errors
-- LOG_LEVEL=ERROR - Show only errors
 """
 
 from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
+from apps.reference.bootstrap.async_runtime import AsyncLoopRuntime
+from apps.reference.bootstrap.backtest_runner import resolve_backtest_max_ticks
+from apps.reference.bootstrap.domain_builder import build_live_domains
 from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
@@ -48,12 +46,13 @@ from backtest_engine.engine import BacktestEngine
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager
 from vfoundation.core import FSMCore
+from vfoundation.core.schema_registry import init_global_registry
+from vfoundation.core.protocol import Message
 from vfoundation.core.protocol import Message
 import json
 import logging
 import sys
 import time
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 import asyncio
@@ -157,8 +156,8 @@ def _setup_bootstrap_logging() -> None:
     if _bootstrap_logging_done:
         return
     
-    # Bootstrap log level from env (before config is loaded)
-    bootstrap_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    # SSOT: bootstrap logger defaults to INFO (no ad-hoc env override here).
+    bootstrap_level = "INFO"
     
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, bootstrap_level, logging.INFO))
@@ -256,6 +255,9 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     global fsm, execution_position
 
     LOG.info("Initializing Aurora Core domains...")
+    
+    # Initialize message schema registry for payload validation
+    init_global_registry(str(project_root))
 
     # 1. Create the central FSMCore instance
     fsm = FSMCore()
@@ -365,6 +367,9 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     else:
         LOG.info("BACKTEST STRICT: no implicit relaxations applied")
     
+    # Initialize message schema registry for payload validation
+    init_global_registry(str(project_root))
+
     # 1. Initialize Core Event Bus
     fsm = FSMCore()
     # FIX-BACKTEST-ORDER-IN-FLIGHT: Skip order_index for backtest.
@@ -747,26 +752,9 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     
     # 4. Run Simulation
     try:
-        max_ticks = None
-        try:
-            env_max = os.getenv("BACKTEST_MAX_TICKS")
-            if env_max:
-                max_ticks = int(env_max)
-        except Exception:
-            max_ticks = None
-        if max_ticks is None:
-            try:
-                bt_cfg = getattr(getattr(config, "trading", None), "backtest", None)
-                mt = getattr(bt_cfg, "max_ticks", None) if bt_cfg is not None else None
-                if mt is not None:
-                    max_ticks = int(mt)
-            except Exception:
-                max_ticks = None
-
-        if max_ticks is not None and max_ticks > 0:
-            LOG.info(f"⏱️ Backtest max_ticks={max_ticks} (set BACKTEST_MAX_TICKS to override)")
-        else:
-            max_ticks = None
+        max_ticks = resolve_backtest_max_ticks(config)
+        if max_ticks is not None:
+            LOG.info(f"⏱️ Backtest max_ticks={max_ticks} (from config.trading.backtest.max_ticks)")
 
         results = engine.run(max_ticks=max_ticks)
 
@@ -1100,99 +1088,27 @@ def main() -> None:
     # bridge = AuroraBridge(fsm=fsm, config=config, logger=LOG)
 
 
-    # P2 FIX: Gate debug listener with environment variable to avoid hot-path prints in production
-    # Set AURORA_DEBUG_EVENTS=1 to enable debug event logging
-    if os.environ.get("AURORA_DEBUG_EVENTS", "0") == "1":
-        debug_events = [
-            "EVT:MARKET_TICK_RECEIVED",
-            "EVT:FEATURES_CALCULATED",
-            "EVT:RISK_ASSESSMENT_COMPLETED",
-            "EVT:PORTFOLIO_STATE_UPDATED",
-            "EVT:TRADE_INTENT_PROPOSED",
-        ]
-        for event_name in debug_events:
-            fsm.listen(event_name, debug_event_listener)
-        LOG.info("🐛 Debug event listener ENABLED (AURORA_DEBUG_EVENTS=1)")
-    else:
-        LOG.debug("Debug event listener DISABLED (set AURORA_DEBUG_EVENTS=1 to enable)")
+    # Step 3: Initialize domains via composition root
+    LOG.info("Initializing domain components via DomainBuilder...")
+    domains = build_live_domains(
+        config=config,
+        fsm=fsm,
+        logger=LOG,
+        debug_event_listener=debug_event_listener,
+    )
+    account_balance = domains.account_balance
+    market_data = domains.market_data
+    feature_engineering = domains.feature_engineering
+    risk_management = domains.risk_management
+    position_tracking = domains.position_tracking
+    decision_making = domains.decision_making
+    regime_detector = domains.regime_detector
+    csv_recorder = domains.csv_recorder
+    bar_aggregator = domains.bar_aggregator
 
-    # Step 3: Initialize all domain components
-    LOG.info("Initializing domain components...")
-
-    # Account Connector (source of account balance and positions)
-    account_balance = AccountConnector(fsm=fsm, config=config)
-
-    # Account Observer (observes trades and sends portfolio updates)
-    # FSMP-P3-T01: AccountObserver removed (Legacy Spot code).
-    # risk_portfolio_source logic preserved if needed for other components but observer init removed.
-    
-    # account_observer = AccountObserver(
-    #     fsm=fsm, config=config, environment=risk_portfolio_source)
-
-    # FSMP-ARCH-01: Market Data Connector with Multiprocessing Feature Flag
-    if config.trading.market_data is None:
-        raise ConfigContractError(
-            path="trading.market_data",
-            why="Missing required config (market_data).",
-        )
-    use_multiprocessing = bool(config.trading.market_data.use_multiprocessing)
-    
-    if use_multiprocessing:
-        LOG.info("🚀 Using MarketDataProxy (multiprocessing mode)")
-        market_data = MarketDataProxy(fsm=fsm, config=config)
-    else:
-        LOG.info("📊 Using MarketDataConnector (legacy single-process mode)")
-        market_data = MarketDataConnector(fsm=fsm, config=config)
-
-    # Feature Engineering (calculates trading features)
-    feature_engineering = FeatureEngineering(
-        fsm=fsm, config=config)
-
-    # ==========================================
-    # BAR-SSOT-002: BarAggregator as passive observer
-    # ==========================================
-    bar_aggregator = None
-    bar_config = getattr(config.trading.market_data, 'bar_aggregator', None)
-    
-    if bar_config is None:
-        # CLOSEOUT-BASELINE-001: Explicit why for missing config
-        LOG.info(
-            "ℹ️ BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_missing_config", "reason": "config.trading.market_data.bar_aggregator not defined"}
-        )
-    elif not bar_config.enabled:
-        # CLOSEOUT-BASELINE-001: Explicit why for disabled flag
-        LOG.info(
-            "ℹ️ BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_config", "reason": "bar_aggregator.enabled=false"}
-        )
-    else:
-        # Enabled: validate timeframes and wire
-        timeframes = bar_config.timeframes_sec
-        if not timeframes:
-            LOG.warning(
-                "⚠️ BarAggregator enabled but timeframes_sec empty, using defaults [60, 300]",
-                extra={"why": "bar_agg_timeframes_default"}
-            )
-            timeframes = [60, 300]
-        bar_aggregator = BarAggregator(timeframes_sec=timeframes, emit_fn=fsm.emit)
-        fsm.listen("EVT:MARKET_TICK_RECEIVED", bar_aggregator.on_market_tick)
-        LOG.info(
-            "✅ BarAggregator enabled",
-            extra={"why": "bar_agg_enabled", "timeframes_sec": timeframes}
-        )
-
-    # Risk Management (assesses position risk)
-    # Task 18: Pass AuroraConfig object directly (Resolves domain_configuration internally via DomainConfigResolver)
-    risk_management = RiskManagement(fsm=fsm, config=config)
-
-    # Position Tracking (tracks portfolio state)
-    position_tracking = PositionTracking(fsm=fsm, config=config)
-
-    # Execution Position (handles order execution on testnet)
     global execution_position
-    execution_position = ExecPosFSM(config=config, fsm=fsm)
-    LOG.info("✅ Execution position FSM initialized")
+    execution_position = domains.execution_position
+    LOG.info("✅ DomainBuilder completed")
 
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION
@@ -1200,7 +1116,7 @@ def main() -> None:
     LOG.info("--- Starting Disaster Recovery Check ---")
 
     # Initialize components needed for DR (execution_position already initialized in initialize_domains)
-    from apps.reference.dr_loader import find_latest_snapshot, replay_wal_after
+    from vfoundation.dr.dr_loader import find_latest_snapshot, replay_wal_after
 
     snapshot_dir_path = str(project_root / "ops" / "snapshots")
     wal_dir_path = str(project_root / "ops" / "wal")
@@ -1274,19 +1190,15 @@ def main() -> None:
     # ==========================================
     # SYNC OPEN ORDERS AND POSITIONS WITH BINANCE
     # ==========================================
+    guardian_runtime: Optional[AsyncLoopRuntime] = None
     guardian_loop: Optional[asyncio.AbstractEventLoop] = None
     guardian_loop_thread: Optional[threading.Thread] = None
 
     LOG.info("--- Starting Order/Position Synchronization ---")
-    guardian_loop = asyncio.new_event_loop()
-    guardian_loop_thread = threading.Thread(
-        target=_run_async_loop,
-        args=(guardian_loop,),
-        name="AuroraAsyncLoop",
-        daemon=True,
-    )
+    guardian_runtime = AsyncLoopRuntime(name="AuroraAsyncLoop")
+    guardian_loop = guardian_runtime.start()
+    guardian_loop_thread = guardian_runtime.thread
     execution_position.set_async_loop(guardian_loop)
-    guardian_loop_thread.start()
 
     # ==========================================
     # TASK47c-P3: LEVERAGE BOOTSTRAP (ACTIVE LEVERAGE MANAGEMENT)
@@ -1296,11 +1208,10 @@ def main() -> None:
     blocked_symbols: set = set()
     try:
         LOG.info("--- Starting Leverage Bootstrap ---")
-        future = asyncio.run_coroutine_threadsafe(
+        blocked_symbols = guardian_runtime.run(
             execution_position.run_leverage_bootstrap(),
-            guardian_loop
-        )
-        blocked_symbols = future.result(timeout=30.0)  # 30s timeout for all symbols
+            timeout=30.0,
+        )  # 30s timeout for all symbols
         if blocked_symbols:
             LOG.warning(f"TASK47c-P3: Symbols blocked from trading due to leverage sync failure: {blocked_symbols}")
         else:
@@ -1361,8 +1272,8 @@ def main() -> None:
         fsm.listen("EVT:ORDER_ACK", _inflight_on_order_ack)
         fsm.listen("EVT:ORDER_FILL", _inflight_on_order_fill)
 
-        if guardian_loop.is_running():
-            asyncio.run_coroutine_threadsafe(inflight_reconciler.run_forever(), guardian_loop)
+        if guardian_runtime is not None and guardian_loop is not None and guardian_loop.is_running():
+            guardian_runtime.submit(inflight_reconciler.run_forever())
             LOG.info("✅ InFlightReconciler started")
         else:
             LOG.warning("⚠️ InFlightReconciler not started: async loop is not running")
@@ -1372,7 +1283,7 @@ def main() -> None:
     # RetryScheduler binding restored (PHASE2-DEAD-DEFER-FIX)
     retry_scheduler = None
     try:
-        from apps.reference.retry_scheduler import RetryScheduler
+        from vfoundation.core.retry_scheduler import RetryScheduler
         
         # Config for retry scheduler (use arming config if available)
         try:
@@ -1417,22 +1328,14 @@ def main() -> None:
             None,
         )
         if callable(sync_fn):
-            sync_future = asyncio.run_coroutine_threadsafe(
-                sync_fn(),
-                guardian_loop,
-            )
-            sync_future.result()
+            guardian_runtime.run(sync_fn())
         else:
             LOG.info(
                 "ExecutionPosition has no sync_open_orders_and_positions(); skipping initial sync"
             )
 
         LOG.info("Starting OrderGuardian...")
-        guardian_start_future = asyncio.run_coroutine_threadsafe(
-            execution_position.start_order_guardian(),
-            guardian_loop,
-        )
-        guardian_start_future.result()
+        guardian_runtime.run(execution_position.start_order_guardian())
 
         LOG.info("✅ Order/Position synchronization complete")
         LOG.info("✅ OrderGuardian started")
@@ -1446,19 +1349,11 @@ def main() -> None:
     LOG.info("--- Order/Position Synchronization Finished ---")
     LOG.info("--- Order/Position Synchronization Finished ---")
 
-    # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
-    # CFG-DOMAINS-STEP-02-FIX: Pass AuroraConfig (not dict) to DecisionMaking
-    decision_making = DecisionMaking(fsm=fsm, config=config)
-
     # TASK32: Strategy plugins (allowlist registry) wired in composition root
     strategy_plugins = StrategyPluginRegistry()
     strategy_plugins.register(AuroraBuiltinPlugin())
     strategy_plugins.register(MeanReversionPlugin())
     StrategyRuntime(fsm=fsm, config=config, registry=strategy_plugins).start()
-    
-    # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
-    # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
-    regime_detector = RegimeDetector(config=config, fsm=fsm)
     LOG.info("✅ RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
 
     # ==========================================
@@ -1481,9 +1376,7 @@ def main() -> None:
     except Exception as e:
         LOG.warning(f"⚠️ AlphaSearch Plugin disabled (init failed): {e}")
 
-    # DATA-RECORDER-01: Unified Backtest Recorder
-    # Captures [Bar + Features + Regime] into CSVs for offline analysis.
-    csv_recorder = CsvRecorder(fsm=fsm, config=config)
+    # DATA-RECORDER-01: Unified backtest recorder (initialized by DomainBuilder).
     csv_recorder.start()
     LOG.info("✅ CsvRecorder initialized and started")
 
@@ -1512,13 +1405,9 @@ def main() -> None:
 
     LOG.info("Starting market data connector...")
     # MarketDataConnector requires async loop - use guardian_loop
-    if guardian_loop is not None and guardian_loop.is_running():
+    if guardian_runtime is not None and guardian_loop is not None and guardian_loop.is_running():
         try:
-            market_data_future = asyncio.run_coroutine_threadsafe(
-                market_data.start_async(),
-                guardian_loop,
-            )
-            market_data_future.result(timeout=10)  # Wait up to 10s for startup
+            guardian_runtime.run(market_data.start_async(), timeout=10)  # Wait up to 10s for startup
             LOG.info("✅ MarketDataConnector started via async loop")
         except Exception as e:
             LOG.error(f"Failed to start MarketDataConnector: {e}")
@@ -1577,6 +1466,13 @@ def main() -> None:
                     LOG.error(f"Error during alert checks: {e}")
                 last_alert_check = current_time
 
+            # Periodic house-keeping
+            if decision_making is not None and hasattr(decision_making, "handle_tick"):
+                try:
+                    decision_making.handle_tick()
+                except Exception as e:
+                    LOG.error(f"Error in decision_making.handle_tick: {e}")
+
             time.sleep(1)
     except KeyboardInterrupt:
         LOG.info("Shutting down Aurora Core...")
@@ -1584,19 +1480,11 @@ def main() -> None:
 
         LOG.info("Shutdown signal received. Stopping all components...")
 
-        if guardian_loop is not None:
+        if guardian_runtime is not None:
             try:
-                if guardian_loop.is_running():
-                    guardian_loop.call_soon_threadsafe(guardian_loop.stop)
-                if guardian_loop_thread is not None:
-                    guardian_loop_thread.join(timeout=5)
+                guardian_runtime.stop(timeout=5.0)
             except Exception as loop_exc:
                 LOG.error(f"Error stopping guardian asyncio loop: {loop_exc}")
-            finally:
-                try:
-                    guardian_loop.close()
-                except Exception:
-                    pass
 
         # Helper to stop components safely if they exist
         for name in [

@@ -90,13 +90,13 @@ class TestAuroraConfigLoading:
         assert sol_cfg.trailing_stop.trail_pct == pytest.approx(0.018, rel=1e-3)
 
     def test_btcusdt_exit_config_loaded(self, production_config: AuroraConfig):
-        """BTCUSDT sl_pct should be 0.02 (2.0%)."""
+        """BTCUSDT sl_pct should be 0.005 (0.5%)."""
         btc_cfg = production_config.strategies.aurora.assets.get("BTCUSDT")
         assert btc_cfg is not None, "BTCUSDT config missing"
         assert btc_cfg.exit is not None, "BTCUSDT.exit missing"
         
-        assert btc_cfg.exit.sl_pct == pytest.approx(0.02, rel=1e-3), (
-            f"BTCUSDT sl_pct={btc_cfg.exit.sl_pct}, expected 0.02"
+        assert btc_cfg.exit.sl_pct == pytest.approx(0.005, rel=1e-3), (
+            f"BTCUSDT sl_pct={btc_cfg.exit.sl_pct}, expected 0.005"
         )
         assert btc_cfg.exit.max_hold_sec == 3000, (
             f"BTCUSDT max_hold_sec={btc_cfg.exit.max_hold_sec}, expected 3000"
@@ -256,7 +256,7 @@ class TestBracketPriceCalculation:
         )
 
     def test_btcusdt_sl_calculation(self, production_config: AuroraConfig):
-        """BTCUSDT SL should be 2.0% (0.02)."""
+        """BTCUSDT SL should be 0.5% (0.005)."""
         fsm = ManageFlowFSM(config=production_config)
         fsm.symbol = "BTCUSDT"
         fsm.position_side = "BUY"
@@ -265,12 +265,12 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected SL = 98000 * (1 - 0.02) = 96040
-        expected_sl = Decimal("98000") * (Decimal("1") - Decimal("0.02"))
+        # Expected SL = 98000 * (1 - 0.005) = 97510
+        expected_sl = Decimal("98000") * (Decimal("1") - Decimal("0.005"))
         
         assert sl_price is not None, "SL price is None"
         assert abs(sl_price - expected_sl) < Decimal("100"), (
-            f"BTCUSDT SL={sl_price}, expected ~{expected_sl} (2.0%)"
+            f"BTCUSDT SL={sl_price}, expected ~{expected_sl} (0.5%)"
         )
 
     def test_short_position_sl_above_entry(self, production_config: AuroraConfig):
@@ -463,9 +463,9 @@ class TestEndToEndBracketCalculation:
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
         # For SHORT: SL is ABOVE entry
-        # sl_pct = 0.02 (2.0%)
-        # SL: 100000 * (1 + 0.02) = 102000
-        expected_sl = Decimal("100000") * Decimal("1.02")
+        # sl_pct = 0.005 (0.5%)
+        # SL: 100000 * (1 + 0.005) = 100500
+        expected_sl = Decimal("100000") * Decimal("1.005")
         
         assert abs(sl_price - expected_sl) < Decimal("10"), (
             f"BTCUSDT SHORT SL={sl_price}, expected ~{expected_sl}"

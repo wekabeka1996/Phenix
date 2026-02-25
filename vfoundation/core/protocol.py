@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import time
+from decimal import Decimal
 import uuid
 
 Op = Literal["ASK", "DEC", "CMD", "EVT", "UPD", "ERR"]
@@ -21,6 +22,13 @@ def truncate_why(why_text: Optional[str], max_len: int = 80) -> Optional[str]:
 
 
 class Message(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
+            Decimal: float  # Automatically serialize Decimals in pld/etc to float (JSON compliant)
+        }
+    )
+
     v: int = 1
     op: Op
     verb: str
@@ -65,3 +73,18 @@ class Message(BaseModel):
 
     def is_expired(self) -> bool:
         return (int(time.time() * 1000) - self.ts) > self.ttl_ms
+
+    def typed_payload(self, schema_cls: type) -> Any:
+        """
+        Parse pld as typed Pydantic schema.
+
+        Args:
+            schema_cls: Pydantic BaseModel subclass from vfoundation.core.payloads
+
+        Returns:
+            Validated schema_cls instance.
+
+        Raises:
+            pydantic.ValidationError: if pld doesn't match schema.
+        """
+        return schema_cls(**self.pld)

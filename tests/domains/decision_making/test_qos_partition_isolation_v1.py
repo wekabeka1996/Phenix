@@ -40,6 +40,17 @@ class _DummyDM:
         
         # Strategy cooldown overrides (optional)
         self._strategy_cooldown_overrides: dict = {}
+
+        from apps.reference.domains.decision_making.qos_rate_control import QoSRateControl
+        self._qos = QoSRateControl(
+            clock=self._clock,
+            qos_state=self._qos_state,
+            apply_to_strategies=set(),
+            exposure_block_cooldown_sec=self.qos_exposure_block_cooldown_sec,
+            max_intents_per_minute_per_symbol=self.qos_max_intents_per_minute_per_symbol,
+            get_symbol_cooldown=self._get_symbol_cooldown,
+            logger=self.logger,
+        )
     
     def _get_symbol_cooldown(self, symbol: str, strategy_id: str = "aurora") -> float:
         """Get cooldown for symbol, respecting strategy overrides."""

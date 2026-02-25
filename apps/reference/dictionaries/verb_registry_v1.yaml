@@ -286,7 +286,7 @@ registry:
   verb: RISK_ASSESSMENT_COMPLETED
   owner: risk_management
   status: active
-  schema: null
+  schema: apps/reference/domains/risk_management/schemas/risk_assessment_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: STRATEGY_DECISION_BLOCKED
@@ -342,6 +342,18 @@ registry:
   status: experimental
   schema: null
   since: '2026-01-08'
+- op: EVT
+  verb: RECONCILE
+  owner: inflight_reconcile
+  status: experimental
+  schema: null
+  since: '2026-02-24'
+- op: CMD
+  verb: REPAIR
+  owner: inflight_reconcile
+  status: experimental
+  schema: null
+  since: '2026-02-24'
 policies:
   wildcard:
     UPD: true

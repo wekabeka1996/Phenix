@@ -13,7 +13,6 @@ Supports Slack notifications and structured logging.
 import time
 import logging
 import json
-import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -76,10 +75,13 @@ class AlertManager:
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
 
-        # Alert configuration (no dict traversal; configured via env vars for now)
-        self.slack_webhook_url = os.environ.get("AURORA_ALERTS_SLACK_WEBHOOK_URL")
-        self.deduplication_window_sec = int(os.environ.get("AURORA_ALERTS_DEDUP_WINDOW_SEC", "300"))
-        self.max_alerts_per_hour = int(os.environ.get("AURORA_ALERTS_MAX_PER_HOUR", "10"))
+        alerts_cfg = getattr(getattr(config, "observability", None), "alerts", None)
+
+        # Alert configuration (SSOT: AuroraConfig.observability.alerts)
+        self.slack_webhook_url = getattr(alerts_cfg, "slack_webhook_url", None)
+        self.deduplication_window_sec = int(getattr(alerts_cfg, "deduplication_window_sec", 300))
+        self.max_alerts_per_hour = int(getattr(alerts_cfg, "max_alerts_per_hour", 10))
+        self.recent_alerts_max_keys = int(getattr(alerts_cfg, "recent_alerts_max_keys", 5000))
 
         # State
         self.active_alerts: Dict[str, Alert] = {}
@@ -89,9 +91,9 @@ class AlertManager:
         self.hour_start_time = time.time()
 
         # Thresholds
-        self.risk_gate_threshold = int(os.environ.get("AURORA_ALERTS_RISK_GATE_PCT", "80"))
-        self.wal_size_threshold_mb = int(os.environ.get("AURORA_ALERTS_WAL_SIZE_MB", "500"))
-        self.cb_active_threshold_sec = int(os.environ.get("AURORA_ALERTS_CB_ACTIVE_SEC", "60"))
+        self.risk_gate_threshold = int(getattr(alerts_cfg, "risk_gate_threshold_pct", 80))
+        self.wal_size_threshold_mb = int(getattr(alerts_cfg, "wal_size_threshold_mb", 500))
+        self.cb_active_threshold_sec = int(getattr(alerts_cfg, "cb_active_threshold_sec", 60))
 
         self.logger.info(
             f"AlertManager initialized: slack={bool(self.slack_webhook_url)}, "
@@ -109,6 +111,23 @@ class AlertManager:
         now = time.time()
         last_alert_time = self.recent_alerts.get(alert_key, 0)
         return (now - last_alert_time) < self.deduplication_window_sec
+
+    def _prune_recent_alerts(self) -> int:
+        """Bound dedup cache by TTL and hard-cap size."""
+        now = time.time()
+        ttl_cutoff = now - (self.deduplication_window_sec * 2)
+
+        stale_keys = [k for k, ts in self.recent_alerts.items() if ts < ttl_cutoff]
+        for key in stale_keys:
+            self.recent_alerts.pop(key, None)
+
+        if len(self.recent_alerts) > self.recent_alerts_max_keys:
+            sorted_by_ts = sorted(self.recent_alerts.items(), key=lambda kv: kv[1])
+            excess = len(self.recent_alerts) - self.recent_alerts_max_keys
+            for key, _ in sorted_by_ts[:excess]:
+                self.recent_alerts.pop(key, None)
+
+        return len(stale_keys)
 
     def _should_rate_limit(self) -> bool:
         """Check if we're rate limited."""
@@ -213,6 +232,7 @@ class AlertManager:
 
         Returns alert_id if alert was created, None if deduplicated or rate limited.
         """
+        self._prune_recent_alerts()
         alert_key = self._get_alert_key(alert_type, title)
 
         # Check deduplication
@@ -240,6 +260,7 @@ class AlertManager:
         # Store alert
         self.active_alerts[alert_id] = alert
         self.recent_alerts[alert_key] = alert.timestamp
+        self._prune_recent_alerts()
         self.alert_count_this_hour += 1
 
         # Send notifications
@@ -336,6 +357,7 @@ class AlertManager:
 
     def get_alert_stats(self) -> Dict[str, Any]:
         """Get alert statistics."""
+        self._prune_recent_alerts()
         return {
             "active_alerts": len(self.active_alerts),
             "alerts_this_hour": self.alert_count_this_hour,

@@ -3,9 +3,9 @@
 
 ## Итоги
 - runtime tokens (без tests): **60**
-- registry tokens: **57**
-- runtime_not_in_registry: **9**
-- registry_not_in_runtime: **6**
+- registry tokens: **59**
+- runtime_not_in_registry: **12**
+- registry_not_in_runtime: **11**
 
 ## Артефакты
 - `reports/VF-VERB-REG-02_diff.json`

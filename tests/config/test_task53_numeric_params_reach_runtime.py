@@ -35,6 +35,26 @@ def _write_yaml(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def _assign_strategy_ids(cfg_dir: Path, symbol_to_ids: Dict[str, list[str]]) -> None:
+    """Ensure strategy assignments exist in strategies.yaml for selected symbols."""
+    strategies_path = cfg_dir / "strategies.yaml"
+    strategies = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
+    assert isinstance(strategies, dict)
+    assignments = strategies.setdefault("assignments", {})
+    assert isinstance(assignments, dict)
+
+    for symbol, strategy_ids in symbol_to_ids.items():
+        assigned = assignments.setdefault(symbol, [])
+        if not isinstance(assigned, list):
+            assigned = []
+            assignments[symbol] = assigned
+        for strategy_id in strategy_ids:
+            if strategy_id not in assigned:
+                assigned.append(strategy_id)
+
+    _write_yaml(strategies_path, strategies)
+
+
 class TestWatchdogAckTtlMsReachesRuntime:
     """Prove that trading.execution.watchdog.ack_ttl_ms affects watchdog behavior.
     
@@ -336,6 +356,14 @@ class TestMeanReversionConfigsReachRuntime:
     def test_xrp_doge_mr_configs_loaded_correctly(self, tmp_path: Path) -> None:
         """XRP/DOGE/BTC configs from mean_reversion.yaml are loaded and differ as expected."""
         cfg_dir = _copy_config_to_tmp(tmp_path)
+        _assign_strategy_ids(
+            cfg_dir,
+            {
+                "BTCUSDT": ["mean_reversion"],
+                "DOGEUSDT": ["mean_reversion"],
+                "XRPUSDT": ["mean_reversion"],
+            },
+        )
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         
@@ -371,6 +399,14 @@ class TestMeanReversionConfigsReachRuntime:
         from decimal import Decimal
         
         cfg_dir = _copy_config_to_tmp(tmp_path)
+        _assign_strategy_ids(
+            cfg_dir,
+            {
+                "BTCUSDT": ["mean_reversion"],
+                "DOGEUSDT": ["mean_reversion"],
+                "XRPUSDT": ["mean_reversion"],
+            },
+        )
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         

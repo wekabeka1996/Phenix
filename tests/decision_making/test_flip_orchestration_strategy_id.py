@@ -12,6 +12,7 @@ def test_flip_orchestration_close_uses_originating_strategy_id():
     mean_reversion), leaving a position stuck and backtests with only 1 trade.
     """
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.flip_orchestration import FlipOrchestrator
 
     dm = DecisionMaking.__new__(DecisionMaking)  # avoid full init
     dm.latest_portfolio = {
@@ -27,9 +28,41 @@ def test_flip_orchestration_close_uses_originating_strategy_id():
     def _propose_trade_intent(**kwargs):
         captured.update(kwargs)
 
+    def _get_portfolio_position_qty_signed(symbol: str):
+        portfolio = dm.latest_portfolio or {}
+        positions = portfolio.get("positions", []) if isinstance(portfolio, dict) else []
+        if not isinstance(positions, list):
+            return None, "UNKNOWN"
+        for pos in positions:
+            if not isinstance(pos, dict):
+                continue
+            if str(pos.get("symbol", "")).upper() != symbol.upper():
+                continue
+            raw_qty = pos.get("positionAmt")
+            try:
+                qty = decimal.Decimal(str(raw_qty))
+            except Exception:
+                return None, "UNKNOWN"
+            if qty > 0:
+                return qty, "LONG"
+            if qty < 0:
+                return qty, "SHORT"
+            return decimal.Decimal("0"), "FLAT"
+        return decimal.Decimal("0"), "FLAT"
+
     dm._propose_trade_intent = _propose_trade_intent  # type: ignore[attr-defined]
-    dm._get_portfolio_position_qty_signed = DecisionMaking._get_portfolio_position_qty_signed.__get__(dm)  # type: ignore[misc]
     dm._emit_reduce_only_close = DecisionMaking._emit_reduce_only_close.__get__(dm)  # type: ignore[misc]
+    dm._flip = FlipOrchestrator(
+        clock=MagicMock(now_ms=lambda: 0, now_sec=lambda: 0.0),
+        config=MagicMock(),
+        fsm=MagicMock(),
+        get_position_state=MagicMock(return_value="UNKNOWN"),
+        get_portfolio_position_qty_signed=_get_portfolio_position_qty_signed,
+        get_flip_config=MagicMock(return_value=(True, 1.0)),
+        propose_trade_intent=dm._propose_trade_intent,
+        emit_intent_deferred_v1=MagicMock(),
+        logger=dm.logger,
+    )
 
     ok = dm._emit_reduce_only_close("BTCUSDT", "flip_orchestration", "rid-close-1", strategy_id="mean_reversion")
     assert ok is True

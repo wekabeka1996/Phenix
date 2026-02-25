@@ -7,7 +7,6 @@ from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 
 import decimal
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from apps.reference.config_contract import ConfigContractError
@@ -25,14 +24,14 @@ logger = logging.getLogger(__name__)
 chain_logger = logging.getLogger("event_chain")
 
 
-def _to_dec(x, default=decimal.Decimal("0")):
-    """Safely convert value to Decimal, handling None and invalid inputs."""
+def _to_dec(x: Any) -> decimal.Decimal:
+    """Strictly convert value to Decimal; invalid input is an error (fail-closed)."""
+    if x is None:
+        raise ValueError("Numeric value is required, got None")
     try:
-        if x is None:
-            return default
         return decimal.Decimal(str(x))
-    except (decimal.InvalidOperation, ValueError, TypeError):
-        return default
+    except (decimal.InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"Invalid decimal value: {x!r}") from exc
 
 
 class RiskManagement:
@@ -124,8 +123,8 @@ class RiskManagement:
             event: FSM event with features payload
         """
         try:
-            # Generate RID for this processing chain
-            rid = str(uuid.uuid4())
+            # Preserve upstream RID for end-to-end traceability
+            rid = event.rid
 
             self.logger.info("Handling EVT:FEATURES_CALCULATED...")
             payload = event.pld  # type: ignore[union-attr]
@@ -163,6 +162,7 @@ class RiskManagement:
                 "EVT:RISK_ASSESSMENT_COMPLETED",
                 payload=risk_payload,
                 why="Risk parameters calculated based on new features.",
+                rid=rid,
             )
 
             # Log event emission to chain

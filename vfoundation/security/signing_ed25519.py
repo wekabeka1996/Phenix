@@ -7,6 +7,7 @@ except Exception:  # local shim fallback
     from nacl import BadSignatureError  # type: ignore
 import hashlib
 import os
+import json
 
 
 def kms_seed() -> bytes:
@@ -25,10 +26,22 @@ def sign(payload: bytes) -> bytes:
     return sk.sign(payload).signature
 
 
+def canonical_json_bytes(payload: object) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def sign_canonical_json(payload: object) -> bytes:
+    return sign(canonical_json_bytes(payload))
+
+
+def verify_canonical_json(payload: object, signature: bytes) -> bool:
+    return verify(canonical_json_bytes(payload), signature)
+
+
 def verify(payload: bytes, signature: bytes) -> bool:
     _, vk = load_keys()
     try:
         vk.verify(payload, signature)
         return True
-    except BadSignatureError:
+    except (BadSignatureError, ValueError, TypeError):
         return False

@@ -93,3 +93,39 @@ instruments:
     flip:
       enabled: true
       hysteresis_mult: 1.3
+
+  # BNBUSDT — based on SOLUSDT config
+  BNBUSDT:
+    symbol: "BNBUSDT"
+    step_size: "0.01"
+    tick_size: "0.01"
+    min_qty: "0.01"
+    min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3
+
+  # 1000PEPEUSDT — based on DOGEUSDT config
+  1000PEPEUSDT:
+    symbol: "1000PEPEUSDT"
+    step_size: "1"
+    tick_size: "0.0000001"
+    min_qty: "1"
+    min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.11
+    flip:
+      enabled: true
+      hysteresis_mult: 1.3

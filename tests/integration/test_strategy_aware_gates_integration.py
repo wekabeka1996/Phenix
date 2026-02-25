@@ -159,6 +159,9 @@ class TestIsStrategyAssignedIntegration:
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.strategies_registry = config.strategies_registry
             dm.config = config
+            dm._cfg = MagicMock()
+            dm._cfg.is_strategy_assigned.side_effect = lambda symbol, strategy_id: strategy_id in config.strategies_registry.assignments.get(symbol, [])
+            dm._get_aurora_instrument_cfg = lambda symbol: config.strategies.aurora.assets.get(symbol)
             dm.logger = MagicMock()
             
             # Test the method
@@ -193,6 +196,9 @@ class TestAuroraGatesIntegration:
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.strategies_registry = config.strategies_registry
             dm.config = config
+            dm._cfg = MagicMock()
+            dm._cfg.is_strategy_assigned.side_effect = lambda symbol, strategy_id: strategy_id in config.strategies_registry.assignments.get(symbol, [])
+            dm._get_aurora_instrument_cfg = lambda symbol: config.strategies.aurora.assets.get(symbol)
             dm.logger = MagicMock()
             
             # Simulate the fixed logic
@@ -223,6 +229,9 @@ class TestAuroraGatesIntegration:
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.strategies_registry = config.strategies_registry
             dm.config = config
+            dm._cfg = MagicMock()
+            dm._cfg.is_strategy_assigned.side_effect = lambda symbol, strategy_id: strategy_id in config.strategies_registry.assignments.get(symbol, [])
+            dm._get_aurora_instrument_cfg = lambda symbol: config.strategies.aurora.assets.get(symbol)
             dm.logger = MagicMock()
             
             symbol = "BTCUSDT"

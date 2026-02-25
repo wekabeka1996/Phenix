@@ -37,6 +37,16 @@ class TestQoSPartitioning:
         dm.qos_max_intents_per_minute_per_symbol = 10
         dm._default_symbol_cooldown_sec = 3
         dm.logger = MagicMock()
+        from apps.reference.domains.decision_making.qos_rate_control import QoSRateControl
+        dm._qos = QoSRateControl(
+            clock=dm._clock,
+            qos_state=dm._qos_state,
+            apply_to_strategies=set(),
+            exposure_block_cooldown_sec=dm.qos_exposure_block_cooldown_sec,
+            max_intents_per_minute_per_symbol=dm.qos_max_intents_per_minute_per_symbol,
+            get_symbol_cooldown=lambda s, sid="aurora": int(dm._default_symbol_cooldown_sec),
+            logger=dm.logger,
+        )
         return dm
 
     def test_qos_state_isolated_between_strategies(self, mock_dm):

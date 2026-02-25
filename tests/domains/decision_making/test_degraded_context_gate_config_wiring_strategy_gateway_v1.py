@@ -29,6 +29,7 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
 
     # Avoid test coupling to optional strategies registry arbitration.
     dm.strategies_registry = None
+    dm._cfg.strategies_registry = None
 
     symbol = "ETHUSDT"
 

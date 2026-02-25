@@ -16,9 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, ScoringResult
 from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
 from apps.reference.config_models import (
-    AuroraConfig, DecisionConfig, ExitManagerConfig, InstrumentPrecisionSpec, 
-    InstrumentExecutionConfig, InstrumentSizingConfig, FlipOrchestrationConfig,
-    StrategiesRegistryConfig, StrategiesArbitrationConfig, StrategiesArbitrationLoggingConfig
+    AuroraConfig, DecisionConfig, ExitManagerConfig
 )
 
 class TestPhase9Wiring(unittest.TestCase):

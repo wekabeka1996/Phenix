@@ -1,4 +1,3 @@
-
 import pytest
 import ast
 import decimal
@@ -71,13 +70,13 @@ class ConfigStrictModeVisitor(ast.NodeVisitor):
 
     def _get_val_repr(self, node):
         if isinstance(node, ast.Constant):
-            return node.value # Returns the actual string, int, etc.
-        elif isinstance(node, ast.Str): # Python < 3.8
-             return node.s
-        elif isinstance(node, ast.Num): # Python < 3.8
-             return node.n
-        elif isinstance(node, ast.NameConstant): # Python < 3.8
-             return node.value
+            return node.value # Python 3.8+
+        elif hasattr(ast, "Num") and isinstance(node, ast.Num):
+            return node.n
+        elif hasattr(ast, "Str") and isinstance(node, ast.Str):
+            return node.s
+        elif hasattr(ast, "NameConstant") and isinstance(node, ast.NameConstant):
+            return node.value
         elif isinstance(node, ast.Dict):
              if not node.keys:
                  return "EMPTY_DICT"

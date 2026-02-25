@@ -11,17 +11,47 @@ from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
 
 
+def _coerce_positive_decimal(value: Any) -> Decimal:
+    """Coerce numeric config values to positive Decimal (accepts numeric strings)."""
+    if isinstance(value, Decimal):
+        dec = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            raise ValueError("decimal value must not be empty")
+        try:
+            dec = Decimal(raw)
+        except Exception as exc:
+            raise ValueError(f"invalid decimal value: {value!r}") from exc
+    elif isinstance(value, (int, float)):
+        try:
+            dec = Decimal(str(value))
+        except Exception as exc:
+            raise ValueError(f"invalid decimal value: {value!r}") from exc
+    else:
+        raise ValueError(f"unsupported decimal value type: {type(value).__name__}")
+
+    if dec <= 0:
+        raise ValueError(f"decimal value must be > 0, got {dec}")
+    return dec
+
+
 class InstrumentSpec(BaseModel):
     """Specification for a trading instrument (e.g., BTCUSDT)."""
     model_config = ConfigDict(
         extra='forbid')
 
     symbol: str = Field(...)
-    step_size: str = Field(description='Quantity precision')
-    tick_size: str = Field(description='Price precision')
-    min_qty: str = Field()
-    min_notional: str = Field(description='Minimum notional value in USDT')
+    step_size: Decimal = Field(description='Quantity precision')
+    tick_size: Decimal = Field(description='Price precision')
+    min_qty: Decimal = Field()
+    min_notional: Decimal = Field(description='Minimum notional value in USDT')
     quote: str = Field()
+
+    @field_validator("step_size", "tick_size", "min_qty", "min_notional", mode="before")
+    @classmethod
+    def _parse_precision_decimals(cls, value: Any) -> Decimal:
+        return _coerce_positive_decimal(value)
 
 
 class InstrumentPrecisionSpec(BaseModel):
@@ -39,10 +69,10 @@ class InstrumentPrecisionSpec(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     symbol: str = Field(description="Symbol name (e.g., BTCUSDT)")
-    tick_size: str = Field(description="Price precision")
-    step_size: str = Field(description="Quantity precision (LOT_SIZE stepSize)")
-    min_qty: str = Field(description="Minimum quantity (LOT_SIZE minQty)")
-    min_notional: str = Field(description="Minimum notional value (MIN_NOTIONAL)")
+    tick_size: Decimal = Field(description="Price precision")
+    step_size: Decimal = Field(description="Quantity precision (LOT_SIZE stepSize)")
+    min_qty: Decimal = Field(description="Minimum quantity (LOT_SIZE minQty)")
+    min_notional: Decimal = Field(description="Minimum notional value (MIN_NOTIONAL)")
 
     execution: "InstrumentExecutionConfig" = Field(
         description="Per-symbol execution SSOT (isolated/cross + target leverage policy)"
@@ -56,6 +86,11 @@ class InstrumentPrecisionSpec(BaseModel):
         ...,  # REQUIRED - no default
         description="Per-symbol flip config (enabled + hysteresis_mult). REQUIRED for all active symbols."
     )
+
+    @field_validator("step_size", "tick_size", "min_qty", "min_notional", mode="before")
+    @classmethod
+    def _parse_precision_decimals(cls, value: Any) -> Decimal:
+        return _coerce_positive_decimal(value)
 
 
 # ─────────────────────────────────────────────────────────────────────────────────
@@ -3355,20 +3390,6 @@ class TradingRiskManagementConfig(BaseModel):
     data_sources: RiskManagementDataSourcesConfig = Field(...)
 
 
-class AccountObserverConfig(BaseModel):
-    """Account observer configuration."""
-    model_config = ConfigDict(extra='forbid')
-    poll_interval: int = Field(description='Polling interval in seconds')
-
-
-# ============================================================================
-# OBSERVABILITY CONFIGURATION (CFG-OBS-001)
-# ============================================================================
-# Centralized logging, metrics, and tracing configuration.
-# Replaces hardcoded values in main.py with YAML-driven config.
-# ============================================================================
-
-
 class LogRotationConfig(BaseModel):
     """Log file rotation settings."""
     model_config = ConfigDict(extra='forbid')
@@ -3434,12 +3455,26 @@ class ObservabilityLoggingConfig(BaseModel):
     event_chain: EventChainLogConfig = Field(default_factory=EventChainLogConfig, description='Event chain config')
 
 
+class AlertsConfig(BaseModel):
+    """Typed alerting configuration (SSOT)."""
+    model_config = ConfigDict(extra='forbid')
+
+    slack_webhook_url: Optional[str] = Field(default=None, description='Slack incoming webhook URL')
+    deduplication_window_sec: int = Field(default=300, ge=0, description='Deduplication window for same alert key')
+    max_alerts_per_hour: int = Field(default=10, ge=1, description='Rate limit for raised alerts per hour')
+    risk_gate_threshold_pct: int = Field(default=80, ge=0, le=100, description='Risk gate alert threshold in percent')
+    wal_size_threshold_mb: int = Field(default=500, ge=1, description='WAL size threshold for warning alert')
+    cb_active_threshold_sec: int = Field(default=60, ge=0, description='Circuit breaker active duration threshold')
+    recent_alerts_max_keys: int = Field(default=5000, ge=100, description='Hard cap for dedup cache keys')
+
+
 class ObservabilityConfig(BaseModel):
     """Root observability configuration (logging, metrics, tracing)."""
     model_config = ConfigDict(extra='forbid')
     
     config_version: str = Field(default="1.0.0", description='Observability config version')
     logging: ObservabilityLoggingConfig = Field(default_factory=ObservabilityLoggingConfig, description='Logging configuration')
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig, description='Alert manager configuration')
     # Future: metrics, tracing
 
 
@@ -3481,6 +3516,13 @@ class SystemConfig(BaseModel):
     warn_only_filters: bool = Field(
         default=False,
         description="If True, log warnings instead of crashing on filter mismatch (Dev/Shadow only)"
+    )
+    debug_event_listener_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable debug event listener (EVT:MARKET_TICK_RECEIVED, EVT:FEATURES_CALCULATED, etc.). "
+            "DEV ONLY: do not enable in production (high-frequency logging)."
+        ),
     )
 
 
@@ -3526,7 +3568,6 @@ class AuroraConfig(BaseModel):
 
     # Exchange/account/market configs
     binance_api: BinanceApiConfig = Field()
-    account_observer: AccountObserverConfig = Field()
 
     # System configs
     system: SystemConfig = Field()

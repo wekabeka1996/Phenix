@@ -1,27 +1,21 @@
-# Neocortex — документація домену (SSOT)
+# Домен Neocortex
 
-Це єдина “точка правди” для дизайну Neocortex‑домену: концепт, плани, креслення, контракти, конфіги, тест‑мапа та критерії готовності.
+## 1. Опис
+Neocortex — це інтелектуальна надбудова системи, що забезпечує автономне навчання та глибокий аналіз ринкових ситуацій. Він "живе" паралельно з торговою платформою, будуючи власну модель світу.
 
-## Навігація
+## 2. Навігація по документації
+- [**ATLAS.md**](./ATLAS.md) — Огляд "шару інтелекту", межі та залежності. **Головна точка входу.**
+- [**ARCHITECTURE.md**](./ARCHITECTURE.md) — Процесна ізоляція, Brain Bridge та пайплайн інгесту.
+- [**EVENT_CONTRACTS.md**](./EVENT_CONTRACTS.md) — Специфікація споживання WAL та алертингу.
+- [**ALGORITHMS_AND_MATH.md**](./ALGORITHMS_AND_MATH.md) — Математика вільної енергії (EFE) та навчання PPO.
+- [**QUALITY_AND_DEBT.md**](./QUALITY_AND_DEBT.md) — Аналіз ресурсномісткості та технічного боргу.
+- [**TESTING.md**](./TESTING.md) — Стратегія верифікації моделей та інгесту.
 
-### Базові документи
-- Концепт: `apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_CONCEPT.md`
-- Фінальне узгодження: `apps/reference/domains/neocortex/docs/NEURAL_CORTEX_FINAL_AGREEMENT.md`
-- Повний план реалізації (living_latent × vFoundation × Aurora): `apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_IMPLEMENTATION_PLAN.md`
-- Ізольований варіант (окремий процес без звʼязку з кодом/рантаймом): `apps/reference/domains/neocortex/docs/NEOCORTEX_ISOLATED_DOMAIN_PLAN.md`
+## 3. Запуск
+Домен запускається як автономний процес:
+```bash
+python apps/reference/domains/neocortex/main.py
+```
 
-### Креслення (перекладаємо у код)
-- Архітектура та діаграми: `apps/reference/domains/neocortex/docs/ARCHITECTURE.md`
-- Залежності й інтеграції (events map): `apps/reference/domains/neocortex/docs/API_DEPENDENCIES.md`
-- Контракти подій Neocortex (schemas + приклади): `apps/reference/domains/neocortex/docs/EVENTS.md`
-- Система конфігурації (YAML SSOT + Pydantic V2, без дефолтів): `apps/reference/domains/neocortex/docs/CONFIGURATION.md`
-
-### Покрокові фази
-- Phase R0 (Observer): `apps/reference/domains/neocortex/docs/PHASE_R0_OBSERVER.md`
-- Phase R1 (Learner): `apps/reference/domains/neocortex/docs/PHASE_R1_LEARNER.md`
-- Phase R2 (Shadow Advisor): `apps/reference/domains/neocortex/docs/PHASE_R2_SHADOW_ADVISOR.md`
-
-### Тести / DoD / ризики
-- Тестування й acceptance: `apps/reference/domains/neocortex/docs/TESTING.md`
-- Вузькі місця й ризики: `apps/reference/domains/neocortex/docs/RISKS_AND_BOTTLENECKS.md`
-
+---
+*Документація згенерована автоматично (Domain Cartographer v1.0)*

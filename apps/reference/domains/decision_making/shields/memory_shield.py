@@ -168,6 +168,7 @@ class MemoryShield(BaseShield):
         known_multiplier: float = 1.0,
         storage_path: Optional[str] = None,
         flush_interval_sec: float = 60.0,
+        clock: Optional["Clock"] = None,
     ):
         self._decay_rate = decay_rate
         self._max_states = max(1, max_states)
@@ -179,6 +180,9 @@ class MemoryShield(BaseShield):
         self._storage_path: Optional[str] = storage_path or None
         self._flush_interval = max(1.0, flush_interval_sec)
 
+        from apps.reference.core.time.clock import LiveClock
+        self._clock = clock or LiveClock()
+
         # LRU-ordered state store: hash → _StateEntry
         self._states: OrderedDict[str, _StateEntry] = OrderedDict()
 
@@ -187,7 +191,7 @@ class MemoryShield(BaseShield):
 
         # Persistence throttle
         self._dirty = False
-        self._last_flush_wall: float = time.monotonic()
+        self._last_flush_wall: float = self._clock.monotonic()
 
         # Load persisted state (LIVE only)
         if self._storage_path:
@@ -384,8 +388,7 @@ class MemoryShield(BaseShield):
     # ------------------------------------------------------------------
     # Timestamp extraction
     # ------------------------------------------------------------------
-    @staticmethod
-    def _extract_ts(features: Dict[str, Any]) -> int:
+    def _extract_ts(self, features: Dict[str, Any]) -> int:
         """Best-effort timestamp (seconds) from features, fallback wall clock.
 
         Handler MUST inject ``bar_close_ts`` into features for determinism.
@@ -399,7 +402,7 @@ class MemoryShield(BaseShield):
                     return v // 1000 if v > 1_700_000_000_000 else v
                 except (TypeError, ValueError):
                     continue
-        return int(time.time())
+        return int(self._clock.now_sec())
 
     # ------------------------------------------------------------------
     # Persistence (LIVE only, atomic write, throttled)
@@ -408,7 +411,7 @@ class MemoryShield(BaseShield):
         """Flush to disk only if dirty AND flush interval elapsed."""
         if not self._storage_path or not self._dirty:
             return
-        now = time.monotonic()
+        now = self._clock.monotonic()
         if now - self._last_flush_wall < self._flush_interval:
             return
         self._save()
@@ -436,7 +439,7 @@ class MemoryShield(BaseShield):
                     pass
                 raise
             self._dirty = False
-            self._last_flush_wall = time.monotonic()
+            self._last_flush_wall = self._clock.monotonic()
         except Exception as exc:
             logger.error("MEMORY: save failed: %s", exc)
 
@@ -461,7 +464,7 @@ class MemoryShield(BaseShield):
         entry = self._states.get(state_hash)
         if entry is None:
             return 0.0
-        ts = now_ts if now_ts is not None else int(time.time())
+        ts = now_ts if now_ts is not None else int(self._clock.now_sec())
         return entry.effective(ts, self._decay_rate)
 
     def state_count(self) -> int:

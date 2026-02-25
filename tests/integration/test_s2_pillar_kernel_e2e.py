@@ -119,7 +119,7 @@ class TestPillarToKernelE2E(unittest.TestCase):
             **_kernel_kwargs(features={})  # no pillar_sum
         )
         self.assertTrue(result.deferred, "Should defer on missing pillar_sum")
-        self.assertIn("PILLAR_SUM", result.defer_reason or "")
+        self.assertIn("PILLAR_WARMUP", result.defer_reason or "")
 
     def test_kernel_defers_on_nan_pillar_sum(self):
         """Kernel with NaN pillar_sum → deferred (fail-closed)."""
@@ -129,14 +129,14 @@ class TestPillarToKernelE2E(unittest.TestCase):
         self.assertTrue(result.deferred, "Should defer on NaN pillar_sum")
 
     def test_psi_vector_populated(self):
-        """PSI vector contains scoring engine identifier and pillar_sum."""
+        """PSI vector contains scoring engine identifier and s_linear."""
         ps = 0.5
         result = QuadraticScoringKernel.compute(
             **_kernel_kwargs(features={"pillar_sum": ps})
         )
         psi = result.psi_vector or {}
         self.assertEqual(psi.get("scoring_engine"), "quadratic_v1")
-        self.assertAlmostEqual(float(psi.get("pillar_sum", 0)), ps)
+        self.assertAlmostEqual(float(psi.get("s_linear", 0)), ps)
 
 
 if __name__ == "__main__":

@@ -44,12 +44,14 @@ def _get_logger() -> logging.Logger:
 
 
 class DecisionLog:
-    def __init__(self, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(self, logger: Optional[logging.Logger] = None, *, clock: Optional["Clock"] = None) -> None:
         self._lg = logger or _get_logger()
+        from apps.reference.core.time.clock import LiveClock
+        self._clock = clock or LiveClock()
 
     def write(self, event: str, rid: Optional[str], payload: Dict[str, Any]) -> None:
         rec = {
-            "ts": int(datetime.utcnow().timestamp() * 1000),
+            "ts": int(self._clock.now_ms()),
             "event": event,
             "rid": rid,
             **payload,

@@ -19,19 +19,27 @@ def test_why_chain_preservation():
     why_chain = ["signal_calculation", "risk_approved", "position_sizing"]
 
     # Create message with data_ref
+    # Payload updated to satisfy trade_intent_v1.json schema
+    valid_pld = {
+        "instrument": "BTCUSDT", 
+        "side": "BUY", 
+        "quantity_delta": "0.001",
+        "strategy_id": "test_strat",
+        "rid": "r1"
+    }
+    
     msg = Message(
         op="EVT",
         verb="TRADE_INTENT_PROPOSED",
         src="decision_making",
         dst="execution_position",
-        pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "0.001"},
+        pld=valid_pld,
         why="trade_intent",
         data_ref=why_chain
     )
 
     # Verify data_ref is preserved
     assert msg.data_ref == why_chain, f"Expected {why_chain}, got {msg.data_ref}"
-    print("✅ Message data_ref preservation: PASS")
 
     # Test FSM emit with data_ref
     events_received = []
@@ -44,7 +52,7 @@ def test_why_chain_preservation():
     # Emit event with data_ref
     fsm.emit(
         "EVT:TRADE_INTENT_PROPOSED",
-        payload={"symbol": "BTCUSDT", "side": "BUY", "qty": "0.001"},
+        payload=valid_pld,
         why="trade_intent",
         data_ref=why_chain
     )
@@ -53,10 +61,3 @@ def test_why_chain_preservation():
     assert len(events_received) == 1
     event = events_received[0]
     assert event.data_ref == why_chain, f"Expected {why_chain}, got {event.data_ref}"
-    print("✅ FSM emit data_ref preservation: PASS")
-
-    print("🎉 All WHY chain tests passed!")
-
-
-if __name__ == "__main__":
-    test_why_chain_preservation()

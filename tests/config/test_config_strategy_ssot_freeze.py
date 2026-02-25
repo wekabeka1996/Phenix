@@ -42,10 +42,24 @@ def _yaml_dump(path: Path, payload: dict) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
+def _assign_mean_reversion(config_dir: Path) -> None:
+    strategies_path = config_dir / "strategies.yaml"
+    if strategies_path.exists():
+        payload = _yaml_load(strategies_path)
+        if "assignments" not in payload:
+            payload["assignments"] = {}
+        if "BTCUSDT" not in payload["assignments"]:
+            payload["assignments"]["BTCUSDT"] = []
+        if "mean_reversion" not in payload["assignments"]["BTCUSDT"]:
+            payload["assignments"]["BTCUSDT"].append("mean_reversion")
+        _yaml_dump(strategies_path, payload)
+
+
 class TestStrategySSOTFreezeFailClosed:
     def test_missing_mean_reversion_profile_fails_closed(self, tmp_path: Path) -> None:
         config_dir = tmp_path / "config" / "aurora"
         _copy_canonical_config_dir(config_dir)
+        _assign_mean_reversion(config_dir)
 
         mr_profile = config_dir / "strategies" / "mean_reversion.yaml"
         assert mr_profile.exists()
@@ -70,6 +84,7 @@ class TestStrategySSOTFreezeStrictValidation:
     def test_unknown_key_in_mean_reversion_profile_fails(self, tmp_path: Path) -> None:
         config_dir = tmp_path / "config" / "aurora"
         _copy_canonical_config_dir(config_dir)
+        _assign_mean_reversion(config_dir)
 
         mr_path = config_dir / "strategies" / "mean_reversion.yaml"
         payload = _yaml_load(mr_path)
@@ -83,6 +98,7 @@ class TestStrategySSOTFreezeStrictValidation:
     def test_mr_asset_top_level_duplicate_params_are_invalid(self, tmp_path: Path) -> None:
         config_dir = tmp_path / "config" / "aurora"
         _copy_canonical_config_dir(config_dir)
+        _assign_mean_reversion(config_dir)
 
         mr_path = config_dir / "strategies" / "mean_reversion.yaml"
         payload = _yaml_load(mr_path)
@@ -128,8 +144,11 @@ class TestStrategySSOTFreezeNoPolicyInTradingDomains:
 
 
 class TestStrategySSOTFreezeProvenance:
-    def test_provenance_map_points_to_strategy_files(self) -> None:
-        loader = ConfigLoader(config_dir=Path("config/aurora"))
+    def test_provenance_map_points_to_strategy_files(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config" / "aurora"
+        _copy_canonical_config_dir(config_dir)
+        _assign_mean_reversion(config_dir)
+        loader = ConfigLoader(config_dir=config_dir)
         cfg = loader.load_config()
         assert cfg is not None
 
@@ -152,8 +171,11 @@ class TestStrategySSOTFreezeProvenance:
 
 
 class TestStrategySSOTFreezeReaderCompatibility:
-    def test_mean_reversion_reader_paths_exist(self) -> None:
-        cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
+    def test_mean_reversion_reader_paths_exist(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config" / "aurora"
+        _copy_canonical_config_dir(config_dir)
+        _assign_mean_reversion(config_dir)
+        cfg = ConfigLoader(config_dir=config_dir).load_config()
         assert cfg.strategies.mean_reversion is not None
         assert cfg.strategies.mean_reversion.strategy.bb_window == 20
         assert "BTCUSDT" in cfg.strategies.mean_reversion.assets
@@ -161,10 +183,10 @@ class TestStrategySSOTFreezeReaderCompatibility:
     def test_aurora_reader_paths_exist(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
         assert cfg.strategies.aurora is not None
-        assert cfg.strategies.aurora.decision.signal_threshold == 0.12
+        assert cfg.strategies.aurora.decision.signal_threshold == 0.005
         btc = cfg.strategies.aurora.assets["BTCUSDT"]
         assert btc.weights is not None
-        assert btc.weights["ema_bias"] == 0.20
+        assert btc.weights["ema_bias"] == 0.15
 
     def test_legacy_runtime_paths_are_absent(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()

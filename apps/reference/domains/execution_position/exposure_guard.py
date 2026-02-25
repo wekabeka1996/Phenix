@@ -24,7 +24,6 @@ from apps.reference.domains.execution_position.soft_clip import (
     SoftLimitConfig,
     load_soft_limit_config,
 )
-from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_models import AuroraConfig

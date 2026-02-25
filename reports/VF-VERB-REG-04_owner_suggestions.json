@@ -52,19 +52,19 @@
       "op": "EVT",
       "verb": "CANCELLED",
       "token": "EVT:CANCELLED",
-      "total_occurrences": 4,
+      "total_occurrences": 3,
       "suggested_owner": "unknown",
       "candidates": [
         {
           "owner": "execution_position",
           "count": 1,
-          "pct": 25.0
+          "pct": 33.33
         }
       ],
       "top_files": [
         {
           "path": "vfoundation/core/adapters/execution_adapter.py",
-          "count": 3
+          "count": 2
         },
         {
           "path": "apps/reference/domains/execution_position/drift_monitor.py",
@@ -110,18 +110,22 @@
       "op": "EVT",
       "verb": "FILL",
       "token": "EVT:FILL",
-      "total_occurrences": 3,
+      "total_occurrences": 4,
       "suggested_owner": "unknown",
       "candidates": [
         {
           "owner": "execution_position",
           "count": 1,
-          "pct": 33.33
+          "pct": 25.0
         }
       ],
       "top_files": [
         {
           "path": "apps/reference/domains/execution_position/fsm_close.py",
+          "count": 1
+        },
+        {
+          "path": "vfoundation/core/payloads.py",
           "count": 1
         },
         {
@@ -156,41 +160,31 @@
       "op": "EVT",
       "verb": "ORCHESTRATOR_ERROR",
       "token": "EVT:ORCHESTRATOR_ERROR",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",
       "verb": "ORDER_EXECUTED",
       "token": "EVT:ORDER_EXECUTED",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",
       "verb": "ORDER_REJECTED",
       "token": "EVT:ORDER_REJECTED",
-      "total_occurrences": 5,
+      "total_occurrences": 3,
       "suggested_owner": "unknown",
       "candidates": [
         {
           "owner": "execution_position",
-          "count": 2,
-          "pct": 40.0
+          "count": 1,
+          "pct": 33.33
         }
       ],
       "top_files": [
@@ -200,10 +194,6 @@
         },
         {
           "path": "apps/reference/domains/execution_position/fsm.py",
-          "count": 2
-        },
-        {
-          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
           "count": 1
         }
       ]
@@ -236,15 +226,10 @@
       "op": "EVT",
       "verb": "ORDER_TIMEOUT",
       "token": "EVT:ORDER_TIMEOUT",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",
@@ -274,15 +259,10 @@
       "op": "EVT",
       "verb": "POSITION_CLOSED",
       "token": "EVT:POSITION_CLOSED",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",

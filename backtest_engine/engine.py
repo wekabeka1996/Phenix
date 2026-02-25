@@ -34,7 +34,7 @@ except ImportError:
 
 # Try to import real EventBus or use LocalBus for simulation
 try:
-    from apps.reference.orchestrator.utils_event_bus import LocalBus
+    from apps.reference.domains.execution_position.utils_event_bus import LocalBus
 except ImportError:
     class LocalBus:
         """Minimal fallback if app imports fail completely."""

@@ -263,7 +263,7 @@ class TestProductionConfigAnchorsInstruments(unittest.TestCase):
         from pathlib import Path
         
         # Load domains.yaml for anchors
-        domains_path = Path("/home/wekabeka/Музыка/Phenix/config/aurora/domains.yaml")
+        domains_path = Path(__file__).resolve().parents[2] / "config/aurora/domains.yaml"
         if domains_path.exists():
             with open(domains_path) as f:
                 domains = yaml.safe_load(f)
@@ -274,7 +274,7 @@ class TestProductionConfigAnchorsInstruments(unittest.TestCase):
             anchors = []
         
         # Load instruments.yaml - note it has nested "instruments" key
-        instruments_path = Path("/home/wekabeka/Музыка/Phenix/config/aurora/instruments.yaml")
+        instruments_path = Path(__file__).resolve().parents[2] / "config/aurora/instruments.yaml"
         if instruments_path.exists():
             with open(instruments_path) as f:
                 instruments_cfg = yaml.safe_load(f)

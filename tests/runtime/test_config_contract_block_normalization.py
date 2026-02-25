@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import MagicMock, patch, ANY
 import time
@@ -34,7 +33,7 @@ class TestConfigContractNormalization:
         fsm_mock = MagicMock()
         with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver, \
              patch("apps.reference.domains.decision_making.decision_making.AuroraConfig") as MockAuroraCfg, \
-             patch("apps.reference.domains.decision_making.decision_making.AuroraInstrumentConfig"):
+             patch("apps.reference.config_models.AuroraInstrumentConfig"):
              
             # Setup valid resolver defaults to avoid init crash
             mock_res_inst = MockResolver.return_value
@@ -54,8 +53,8 @@ class TestConfigContractNormalization:
         yield
         wal.set_wal_dir(prev)
 
-    @patch("apps.reference.domains.decision_making.decision_making.inc_config_contract_violation")
-    @patch("apps.reference.domains.decision_making.decision_making.normalize_config_error")
+    @patch("apps.reference.domains.decision_making.event_handlers.inc_config_contract_violation")
+    @patch("apps.reference.domains.decision_making.event_handlers.normalize_config_error")
     def test_central_catcher_normalization(self, mock_normalize, mock_inc, decision_making):
         """
         Verify that a ConfigContractError raised deep in the stack
@@ -64,6 +63,7 @@ class TestConfigContractNormalization:
         
         # Setup: Mock alpha_registry to raise ConfigContractError
         decision_making.alpha_registry = MagicMock()
+        decision_making._evt.alpha_registry = decision_making.alpha_registry
         
         # Simulate a violation deep in alpha calculation
         contract_err = ConfigContractError(path="alpha.model.conf", why="Missing weights")
@@ -100,7 +100,7 @@ class TestConfigContractNormalization:
         assert args[0] == "EVT:DECISION_BLOCKED"
         assert args[1]["reason_code"] == "NRR-CFG-001" # CFG_MISSING mapped code
 
-    @patch("apps.reference.domains.decision_making.decision_making.inc_config_contract_violation")
+    @patch("apps.reference.domains.decision_making.strategy_gateway.inc_config_contract_violation")
     def test_mr_gateway_catcher(self, mock_inc, decision_making):
         """Verify catcher in strategy signal gateway (mean_reversion)."""
         with patch.object(

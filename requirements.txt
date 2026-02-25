@@ -1,3 +1,5 @@
+# ⚠️ SSOT for vfoundation package deps: vfoundation/pyproject.toml
+# This file aggregates ALL project deps (vfoundation + apps + tools)
 httpx
 fastapi>=0.110.0
 pytest-aiohttp
@@ -14,5 +16,11 @@ websockets==11.0.3
 # FSMP-ARCH-01: Fast JSON parsing for market data worker
 orjson>=3.9.0
 typer>=0.21.0
-# Dev dependencies for testing
+# vfoundation core (mirror of pyproject.toml[dependencies])
+redis>=5.0
+structlog>=24.1
+opentelemetry-sdk>=1.26
+# Dev/test dependencies (SSOT: vfoundation/pyproject.toml[test])
 pytest-cov>=4.0.0
+fakeredis[lua]>=2.0.0
+PyNaCl>=1.5.0

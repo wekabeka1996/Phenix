@@ -41,16 +41,66 @@ class ExitManager:
     ):
         self.config = config
         self.logger = logging.getLogger(__name__)
+        self._danger_zone_action = self._safe_danger_zone_action(
+            getattr(config, "danger_zone_action", DangerZoneExitType.TIGHTEN_STOPS)
+        )
+        self._danger_zone_tighten_factor = self._safe_float(
+            getattr(config, "danger_zone_tighten_factor", 0.5),
+            default=0.5,
+        )
+        self._time_exit_enabled = self._safe_bool(
+            getattr(config, "time_exit_enabled", False),
+            default=False,
+        )
+        self._max_hold_time_sec = self._safe_float(
+            getattr(config, "max_hold_time_sec", 3600 * 24),
+            default=float(3600 * 24),
+        )
+        self._signal_exit_enabled = self._safe_bool(
+            getattr(config, "signal_exit_enabled", True),
+            default=True,
+        )
+        self._signal_reversal_threshold = self._safe_float(
+            getattr(config, "signal_reversal_threshold", -0.1),
+            default=-0.1,
+        )
         # S2-TRAILING config (from AuroraTrailingStopConfig via handler)
         self._trailing_enabled = trailing_enabled
         self._trailing_activation_pct = trailing_activation_pct
         self._trailing_atr_mult = trailing_atr_mult  # ATR × mult (preferred)
         self._trailing_pct = trailing_pct              # % fallback
 
+    @staticmethod
+    def _safe_bool(value, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        try:
+            return bool(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_float(value, *, default: float) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_danger_zone_action(value) -> DangerZoneExitType:
+        if isinstance(value, DangerZoneExitType):
+            return value
+        try:
+            return DangerZoneExitType(str(value))
+        except Exception:
+            return DangerZoneExitType.TIGHTEN_STOPS
+
     def check_exit(
         self,
         symbol: str,
-        current_position_side: str,  # "LONG" or "SHORT"
+        current_position_side: str,  # "LONG"/"SHORT" or "BUY"/"SELL"
         entry_price: Decimal,
         current_price: Decimal,
         hold_time_sec: float,
@@ -82,11 +132,12 @@ class ExitManager:
             - reason (str): Human-readable reason for exit/adjustment.
             - new_stop_loss (Decimal): New SL price if adjustment needed, else None.
         """
-        is_long = current_position_side.upper() == "LONG"
+        side_norm = str(current_position_side).upper()
+        is_long = side_norm in ("LONG", "BUY")
         
         # 1. Danger Zone Logic (Priority 1 - highest)
         if danger_zone_active:
-            action = self.config.danger_zone_action
+            action = self._danger_zone_action
             
             if action == DangerZoneExitType.CLOSE_POSITION:
                 return True, "EXIT_DANGER_ZONE:ForceClose", None
@@ -103,7 +154,7 @@ class ExitManager:
                 # Tighten logic: Reduce distance from current price to SL by factor
                 if current_stop_loss:
                     dist = abs(current_price - current_stop_loss)
-                    new_dist = dist * Decimal(str(self.config.danger_zone_tighten_factor))
+                    new_dist = dist * Decimal(str(self._danger_zone_tighten_factor))
                     
                     if is_long:
                         proposed_sl = current_price - new_dist
@@ -132,13 +183,13 @@ class ExitManager:
                 return trailing_result
 
         # 2. Time-Based Exit (Anti-Stagnation)
-        if self.config.time_exit_enabled:
-            if hold_time_sec > self.config.max_hold_time_sec:
+        if self._time_exit_enabled:
+            if hold_time_sec > self._max_hold_time_sec:
                 return True, f"EXIT_TIME_LIMIT:{hold_time_sec:.0f}s", None
 
         # 3. Signal Reversal (Alpha Flip)
-        if self.config.signal_exit_enabled:
-            threshold = self.config.signal_reversal_threshold
+        if self._signal_exit_enabled:
+            threshold = self._signal_reversal_threshold
             
             if is_long:
                 if final_score < threshold:

@@ -32,6 +32,11 @@ class TestStartupFiltersWiring:
         mock_config.system.validate_instruments_on_startup = True
         mock_config.trading_mode = "testnet"
         # Mock nested attributes
+        mock_config.observability.logging.default_level = "INFO"
+        mock_config.observability.logging.console.enabled = False
+        mock_config.observability.logging.core.enabled = False
+        mock_config.observability.logging.event_chain.enabled = False
+        mock_config.observability.logging.domains = {}
         mock_config.binance_api.testnet.api_key = "test_key"
         mock_config.binance_api.testnet.api_secret = "test_secret"
         mock_config.instruments = {} # Empty is fine, we just want to reach validation call
@@ -84,6 +89,11 @@ class TestStartupFiltersWiring:
         mock_config = MagicMock()
         mock_config.system.validate_instruments_on_startup = True
         mock_config.trading_mode = "testnet"
+        mock_config.observability.logging.default_level = "INFO"
+        mock_config.observability.logging.console.enabled = False
+        mock_config.observability.logging.core.enabled = False
+        mock_config.observability.logging.event_chain.enabled = False
+        mock_config.observability.logging.domains = {}
         mock_config.binance_api.testnet.api_key = "test_key"
         mock_config.instruments = {}
         

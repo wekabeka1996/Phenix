@@ -172,7 +172,7 @@ feature_engineering:
   macro_sync:
     enabled: true
     time_diff_threshold_ms: 60000
-    ttl_ms: 60000
+    ttl_ms: 600000  # 10min - supports 5m bar backtest (1000PEPEUSDT sorts before BTCUSDT anchor)
     min_buffer_size: 2 # was 3 (min allowed: 2)
     window: 12
     bin_ms: 5000
@@ -490,10 +490,10 @@ execution_position:
   # Handles Binance -2021 error: "The stop price is too close to the mark price"
   # Strategy: Progressive TP widening with exponential backoff
   bracket_placement:
-    # First retry: widen TP by 20 bps (0.2%) - handles most transient cases
-    tp_widen_first_bps: 20
-    # Second retry: widen TP by 50 bps (0.5%) - handles volatile markets
-    tp_widen_second_bps: 50
+    # First retry: widen TP by 25 bps (0.25%) - FIX-2021: +5 bps safety margin
+    tp_widen_first_bps: 25
+    # Second retry: widen TP by 60 bps (0.6%) - FIX-2021: +10 bps for volatile markets
+    tp_widen_second_bps: 60
     # Backoff delays between retries (ms) - exponential: 200, 400
     retry_backoff_ms: [200, 400]
 

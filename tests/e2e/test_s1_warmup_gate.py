@@ -43,7 +43,7 @@ class TestS1WarmupGate:
         
         # Monkeypatch metrics
         monkeypatch.setattr(
-            "apps.reference.domains.decision_making.decision_making.inc_warmup_block",
+            "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
             metric_collector.inc_warmup_block,
         )
         
@@ -51,9 +51,15 @@ class TestS1WarmupGate:
         dm = DecisionMaking.__new__(DecisionMaking)
         dm.logger = logging.getLogger("test.s1.warmup")
         dm.features_ttl_sec = 60
-        dm.latest_portfolio = {"ok": True}
+        dm._shared = {"latest_portfolio": {"ok": True}}
         dm.symbol_states = {}
         dm._per_symbol_regimes = {}
+
+        from unittest.mock import MagicMock
+        dm._readiness = MagicMock()
+        # Proxy calls from dm to _readiness
+        dm._warmup_gate_before_trade_intent = lambda **kwargs: dm._readiness.warmup_gate_before_trade_intent(**kwargs)
+        
         # Mock config with warmup enforcement_mode
         dm.config = SimpleNamespace(
             domains=SimpleNamespace(
@@ -143,13 +149,19 @@ class TestS1WarmupGate:
         from apps.reference.domains.decision_making.decision_making import DecisionMaking
         
         monkeypatch.setattr(
-            "apps.reference.domains.decision_making.decision_making.inc_warmup_block",
+            "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
             metric_collector.inc_warmup_block,
         )
         
         dm = DecisionMaking.__new__(DecisionMaking)
         dm.logger = logging.getLogger("test.s1.reduce_only")
-        dm.latest_portfolio = None
+        dm._shared = {"latest_portfolio": None}
+        
+        from unittest.mock import MagicMock
+        dm._readiness = MagicMock()
+        dm._warmup_gate_before_trade_intent = lambda **kwargs: dm._readiness.warmup_gate_before_trade_intent(**kwargs)
+        dm._readiness.warmup_gate_before_trade_intent.return_value = False # mocked bypass
+        
         dm.symbol_states = {}
         dm._per_symbol_regimes = {}
         dm._latest_warmup = None  # Not ready at all!

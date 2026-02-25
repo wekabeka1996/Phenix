@@ -29,7 +29,7 @@ class BrainBridge:
     Maintains the Task/Result queues and a background listener thread.
     """
     
-    def __init__(self, config: NeuroConfig, max_workers: int = 1, rng_seed: int = 0):
+    def __init__(self, config: NeuroConfig, rng_seed: int = 0):
         self.config = config
         self.rng_seed = int(rng_seed)
         

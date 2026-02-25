@@ -6,7 +6,7 @@ def test_retry_scheduler_uses_emit_compat_only():
     """
     TASK24.E4: In RetryScheduler, all emissions must go through emit_compat (no direct self.fsm.emit).
     """
-    src = Path("apps/reference/retry_scheduler.py").read_text(encoding="utf-8", errors="replace")
+    src = Path("vfoundation/core/retry_scheduler.py").read_text(encoding="utf-8", errors="replace")
     tree = ast.parse(src)
 
     retry_class = None

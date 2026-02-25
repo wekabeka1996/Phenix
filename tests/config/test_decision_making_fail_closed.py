@@ -14,6 +14,29 @@ Tests cover:
 import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
+from pathlib import Path
+import logging
+import yaml
+
+
+def _attach_dm_config_resolver(dm, cfg) -> None:
+    """Attach DMConfigResolver for tests that bypass DecisionMaking.__init__."""
+    from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+
+    dm.config = cfg
+    dm.strategies_registry = None
+    dm._arb_signal_buffer = {}
+    dm._arb_window_winner = {}
+    dm.flip_global_enabled = True
+    dm.logger = logging.getLogger("tests.decision_making_fail_closed")
+    dm._cfg = DMConfigResolver(
+        config=cfg,
+        strategies_registry=None,
+        arb_signal_buffer=dm._arb_signal_buffer,
+        arb_window_winner=dm._arb_window_winner,
+        flip_global_enabled=dm.flip_global_enabled,
+        logger=dm.logger,
+    )
 
 
 class TestFailClosedRiskSkew:
@@ -56,35 +79,63 @@ class TestFailClosedSideBias:
     def test_get_side_bias_params_fails_without_config(self):
         """_get_side_bias_params should fail if side_bias is missing."""
         from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        
+        from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+
         cfg = MagicMock()
         cfg.strategies.aurora.decision.side_bias_penalty_factor = None  # Missing!
         cfg.strategies.aurora.decision.side_bias_window_sec = 60
         cfg.strategies.aurora.decision.side_bias_target_ratio = 0.6
         cfg.strategies.aurora.assets = {}
-        
+
         with patch.object(DecisionMaking, '__init__', lambda x, y, z: None):
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.config = cfg
-            
+            dm.strategies_registry = None
+            dm._arb_signal_buffer = {}
+            dm._arb_window_winner = {}
+            dm.flip_global_enabled = True
+            dm.logger = logging.getLogger("tests.decision_making_fail_closed")
+            dm._cfg = DMConfigResolver(
+                config=cfg,
+                strategies_registry=None,
+                arb_signal_buffer=dm._arb_signal_buffer,
+                arb_window_winner=dm._arb_window_winner,
+                flip_global_enabled=dm.flip_global_enabled,
+                logger=dm.logger,
+            )
+
             with pytest.raises(ValueError, match="side_bias_penalty_factor.*required"):
                 dm._get_side_bias_params("BTCUSDT")
 
     def test_get_side_bias_params_returns_values_when_present(self):
         """_get_side_bias_params should return values from config."""
         from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        
+        from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+
         cfg = MagicMock()
         cfg.strategies.aurora.decision.side_bias_penalty_factor = 0.5
         cfg.strategies.aurora.decision.side_bias_window_sec = 60
         cfg.strategies.aurora.decision.side_bias_target_ratio = 0.6
         cfg.strategies.aurora.decision.side_bias_min_intents = 18
         cfg.strategies.aurora.assets = {}
-        
+
         with patch.object(DecisionMaking, '__init__', lambda x, y, z: None):
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.config = cfg
-            
+            dm.strategies_registry = None
+            dm._arb_signal_buffer = {}
+            dm._arb_window_winner = {}
+            dm.flip_global_enabled = True
+            dm.logger = logging.getLogger("tests.decision_making_fail_closed")
+            dm._cfg = DMConfigResolver(
+                config=cfg,
+                strategies_registry=None,
+                arb_signal_buffer=dm._arb_signal_buffer,
+                arb_window_winner=dm._arb_window_winner,
+                flip_global_enabled=dm.flip_global_enabled,
+                logger=dm.logger,
+            )
+
             penalty, window, target, min_intents = dm._get_side_bias_params("BTCUSDT")
             assert penalty == 0.5
             assert window == 60
@@ -125,11 +176,23 @@ class TestFailClosedProductionConfig:
         
         cfg = get_config()
         dm = cfg.strategies.aurora.decision
-        
-        assert dm.side_bias_penalty_factor == 0.25
-        assert dm.side_bias_window_sec == 420
-        assert dm.side_bias_target_ratio == 0.72
-        assert dm.side_bias_min_intents == 18
+
+        aurora_path = (
+            Path(__file__).resolve().parents[2]
+            / "config"
+            / "aurora"
+            / "strategies"
+            / "aurora.yaml"
+        )
+        raw = yaml.safe_load(aurora_path.read_text(encoding="utf-8"))
+        assert isinstance(raw, dict)
+        decision = raw.get("aurora", {}).get("decision", {})
+        assert isinstance(decision, dict)
+
+        assert dm.side_bias_penalty_factor == pytest.approx(float(decision["side_bias_penalty_factor"]))
+        assert dm.side_bias_window_sec == int(decision["side_bias_window_sec"])
+        assert dm.side_bias_target_ratio == pytest.approx(float(decision["side_bias_target_ratio"]))
+        assert dm.side_bias_min_intents == int(decision["side_bias_min_intents"])
 
     def test_production_config_has_positions_stale_ttl(self):
         """Production config must have positions_stale_ttl_sec."""

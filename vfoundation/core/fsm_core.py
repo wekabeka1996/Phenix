@@ -10,6 +10,11 @@ import threading
 from .protocol import Message
 
 
+class InvalidMessagePayloadError(ValueError):
+    """Raised when a message payload fails JSON schema validation."""
+    pass
+
+
 class FSMCore:
     """
     Simple FSM core interface for event-driven applications.
@@ -38,7 +43,7 @@ class FSMCore:
                 self.listeners[event_name] = []
             self.listeners[event_name].append(callback)
 
-    def emit(self, event_name: str, payload: Dict[str, Any], why: str, data_ref: Optional[List[str]] = None) -> None:
+    def emit(self, event_name: str, payload: Dict[str, Any], why: str, data_ref: Optional[List[str]] = None, rid: Optional[str] = None) -> None:
         """
         Emit an event to all registered listeners.
 
@@ -47,13 +52,41 @@ class FSMCore:
             payload: Event payload data
             why: Reason for emitting the event
             data_ref: Optional WHY chain data reference
+            rid: Optional request ID to pass through for envelope-level traceability.
+                 If None, Message generates a new UUID (backward-compatible).
         """
+        # Phase 14C: Message Schema Validation (Fail-Fast)
+        try:
+            from .schema_registry import get_global_registry
+            from jsonschema.exceptions import ValidationError
+            
+            registry = get_global_registry()
+            if registry:
+                parts = event_name.split(":", 1)
+                if len(parts) == 2:
+                    op, verb = parts
+                    validator = registry.get_validator(op, verb)
+                    if validator:
+                        validator.validate(payload)
+                    elif registry.is_schema_missing(op, verb):
+                        self.logger.warning(
+                            "DEPRECATION: Emitting %s without JSON Schema validation. "
+                            "Please define a schema in verb_registry_v1.yaml.", event_name
+                        )
+        except Exception as e:
+            from jsonschema.exceptions import ValidationError
+            if isinstance(e, ValidationError):
+                self.logger.error("Payload validation failed for %s: %s", event_name, e.message)
+                raise InvalidMessagePayloadError(f"Payload validation failed for {event_name}: {e.message}") from e
+            else:
+                self.logger.error("Schema validation system error for %s: %s", event_name, e)
+
         with self._lock:
             callbacks = list(self.listeners.get(event_name, []))
 
         if callbacks:
-            # Create Message object
-            message = Message(
+            # Build Message kwargs — pass rid through if provided
+            msg_kwargs: Dict[str, Any] = dict(
                 op="EVT",
                 verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
                 src="fsm_core",
@@ -62,6 +95,9 @@ class FSMCore:
                 why=why,
                 data_ref=data_ref or [],
             )
+            if rid is not None:
+                msg_kwargs["rid"] = rid
+            message = Message(**msg_kwargs)
 
             # Call all listeners
             for callback in callbacks:

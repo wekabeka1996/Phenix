@@ -65,10 +65,31 @@ def _mk_dm(*, fsm):
     # Needed by _emit_intent_deferred_v1
     dm._qos_state = {}
     dm.symbol_states = {}
+    dm._per_symbol_regimes = {}
+    dm._emit_trade_intent_rejected = lambda **kw: None
+    dm._get_side_bias_params = lambda symbol: (0.5, 60, 0.6, 10)
+    dm._side_intent_window = {}
 
     # Minimal required strict config for _propose_trade_intent (when it reaches emission).
     dm._tca_prefs = {"max_slippage_bps": 10, "max_latency_ms": 500, "maker_preference": "neutral"}
     dm._risk_budgets = {"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 200}
+
+    from decimal import Decimal as _D
+    from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+    dm._builder = IntentBuilder(
+        fsm=dm.fsm, clock=dm._clock, config=dm.config,
+        tca_prefs=dm._tca_prefs, risk_budgets=dm._risk_budgets,
+        safe_decimal_fn=lambda v, d=None: _D(str(v)) if v is not None else d,
+        check_strategy_arbitration_fn=dm._check_strategy_arbitration,
+        warmup_gate_fn=dm._warmup_gate_before_trade_intent,
+        emit_rejected_fn=dm._emit_trade_intent_rejected,
+        record_blocked_fn=dm._record_blocked_intent,
+        record_accepted_fn=dm._record_accepted_intent,
+        emit_deferred_fn=dm._emit_intent_deferred_v1,
+        get_side_bias_params_fn=dm._get_side_bias_params,
+        side_intent_window=dm._side_intent_window,
+        logger=dm.logger,
+    )
 
     return dm
 

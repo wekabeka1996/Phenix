@@ -656,7 +656,7 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     # Ensure TP response uses numeric ID
     exec_pos_fsm.adapter.place_take_profit_market_close_position = AsyncMock(side_effect=[err_2021, {"orderId": 11111}])
     
-    exec_pos_fsm._preflight_position_check = AsyncMock(return_value=True)
+    exec_pos_fsm._bracket_mgr.preflight_position_check = AsyncMock(return_value=True)
     exec_pos_fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
     
     # No need to mock DomainConfigResolver - per-symbol config is now mocked above

@@ -49,6 +49,8 @@ def test_synthetic_sol_downtrend_no_cmd_open_long():
 
     dm.logger = MagicMock()
     dm.fsm = fsm
+    dm._clock = MagicMock()
+    dm._clock.now_ms.return_value = 1700000000000
     dm.symbol_states = {"SOLUSDT": {"_delta_price_hist": deque([-1.0, -0.9, -0.8], maxlen=20)}}
     dm._per_symbol_regimes = {"SOLUSDT": {"regime": "BEAR_TREND", "confidence": 1.0}}
 
@@ -56,6 +58,8 @@ def test_synthetic_sol_downtrend_no_cmd_open_long():
     dm.intents_seen_total = 0
     dm.alert_manager = None
     dm.last_alert_check_time = 0.0
+    dm._record_blocked_intent = lambda sym: None
+    dm._emit_trade_intent_rejected = lambda **_k: None
 
     dm.config = MagicMock()
     dm.config.domains.decision_making.directional_sanity.enabled = True

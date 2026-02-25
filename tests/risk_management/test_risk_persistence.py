@@ -12,6 +12,7 @@ def test_daily_gate_persists_reference_equity_across_restarts(tmp_path, monkeypa
     monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(state_path))
 
     cfg = get_config()
+    cfg.trading_mode = "live" # Enable persistence for test
     gate = DailyRiskState(cfg)
 
     now = datetime.now(timezone.utc)

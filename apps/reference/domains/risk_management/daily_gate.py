@@ -8,6 +8,7 @@ Fail-closed: without data — block.
 from __future__ import annotations
 import json
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
@@ -71,6 +72,9 @@ class DailyRiskState:
 
     def __init__(self, cfg: Dict[str, Any], logger=None):
         self.log = logger
+        self._lock = threading.Lock()
+        self._recovery_required = False
+        self._recovery_trading_date: Optional[date] = None
         # BACKTEST-SAFETY: In backtest mode we intentionally do NOT persist daily gate state.
         # Persisted state is keyed by *wall-clock* date and will leak across runs, causing
         # false drawdown breaches (e.g., reference_equity from a prior run).
@@ -144,8 +148,9 @@ class DailyRiskState:
 
     @reference_equity.setter
     def reference_equity(self, value: Any) -> None:
-        self._equity_open = _d(value)
-        self._save_state()
+        with self._lock:
+            self._equity_open = _d(value)
+            self._save_state()
 
     @property
     def is_gate_open(self) -> bool:
@@ -156,11 +161,14 @@ class DailyRiskState:
 
     def reset(self) -> None:
         """Reset state to an uninitialized fail-closed baseline (new day or missing state)."""
-        z = _d("0")
-        self._equity_open = z
-        self._equity_now = z
-        self._last_reset_date = None
-        self._last_gate_open = None
+        with self._lock:
+            z = _d("0")
+            self._equity_open = z
+            self._equity_now = z
+            self._last_reset_date = None
+            self._last_gate_open = None
+            self._recovery_required = False
+            self._recovery_trading_date = None
 
     def _active_trading_date(self, now: Optional[datetime] = None) -> date:
         """Compute the active 'trading day' date based on reset_time_utc."""
@@ -179,7 +187,7 @@ class DailyRiskState:
         payload = {
             "reference_equity": _fmt_usd(self._equity_open),
             "last_reset_date": self._last_reset_date.isoformat() if self._last_reset_date else None,
-            "is_gate_open": bool(self.is_gate_open),
+            "is_gate_open": bool(self._last_gate_open) if self._last_gate_open is not None else False,
         }
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,13 +222,22 @@ class DailyRiskState:
             self._equity_open = _d(data.get("reference_equity"))
             self._last_reset_date = stored_date
             self._last_gate_open = bool(data.get("is_gate_open", True))
+            self._recovery_required = False
+            self._recovery_trading_date = None
         except Exception:
-            # Corrupt state → fail-closed reset (and drop the bad file)
+            # Corrupt state → fail-closed recovery mode (and drop the bad file).
+            # Keep gate blocked for current active trading date to avoid intraday re-anchoring.
             try:
                 self._state_path.unlink(missing_ok=True)
             except Exception:
                 pass
-            self.reset()
+            z = _d("0")
+            self._equity_open = z
+            self._equity_now = z
+            self._last_reset_date = active_date
+            self._last_gate_open = False
+            self._recovery_required = True
+            self._recovery_trading_date = active_date
 
     def _maybe_reset(self, now: Optional[datetime] = None) -> None:
         """Reset daily metrics if it's time for daily reset."""
@@ -233,6 +250,7 @@ class DailyRiskState:
             # Open new trading day
             self._equity_open = self._equity_now  # Fix start equity
             self._last_reset_date = reset_date
+            self._recovery_required = False
             if self.log:
                 self.log.info(
                     f"[DailyGate] Daily reset: equity_open={self._equity_open}, date={reset_date}"
@@ -241,17 +259,38 @@ class DailyRiskState:
 
     def on_portfolio(self, pld: Dict[str, Any], now: Optional[datetime] = None) -> None:
         """Update current equity from portfolio state."""
-        # Prefer total equity (includes unrealized PnL) when available.
-        equity_cross = _d(pld.get("equity_cross_usdt"))
-        equity_free = _d(pld.get("equity_free_usdt"))
-        self._equity_now = equity_cross if equity_cross > 0 else equity_free
-        # Initialize reference equity ONLY on first run (or after explicit reset).
-        # Do NOT blindly re-anchor if state was loaded from disk (amnesia fix).
-        if self._equity_open <= 0 and self._equity_now > 0 and self._last_reset_date is None:
-            self._equity_open = self._equity_now
-            self._save_state()
-        self._maybe_reset(now=now)
-        self._last_gate_open = None  # force recompute on next access
+        with self._lock:
+            # Prefer total equity (includes unrealized PnL) when available.
+            equity_cross = _d(pld.get("equity_cross_usdt"))
+            equity_free = _d(pld.get("equity_free_usdt"))
+            self._equity_now = equity_cross if equity_cross > 0 else equity_free
+
+            # Corruption recovery mode: keep fail-closed for active day;
+            # allow re-anchor only after next day reset transition.
+            if self._recovery_required:
+                current_active = self._active_trading_date(now=now)
+                if self._recovery_trading_date is not None and current_active == self._recovery_trading_date:
+                    self._last_gate_open = None
+                    return
+
+                # New active trading day reached: re-anchor and clear recovery mode.
+                current_now = now or _now_utc()
+                self._equity_open = self._equity_now
+                self._last_reset_date = current_now.date()
+                self._recovery_required = False
+                self._recovery_trading_date = None
+                self._save_state()
+                self._last_gate_open = None
+                return
+
+            # Initialize reference equity ONLY on first run (or after explicit reset).
+            # Do NOT blindly re-anchor if state was loaded from disk (amnesia fix).
+            if self._equity_open <= 0 and self._equity_now > 0 and self._last_reset_date is None:
+                self._equity_open = self._equity_now
+                self._last_reset_date = self._active_trading_date(now=now)
+                self._save_state()
+            self._maybe_reset(now=now)
+            self._last_gate_open = None  # force recompute on next access
 
     def update_portfolio(self, pld: Dict[str, Any], now: Optional[datetime] = None) -> None:
         """Alias for on_portfolio (for legacy naming)."""
@@ -263,44 +302,45 @@ class DailyRiskState:
 
         Fail-closed: without correct equity — block.
         """
-        if not getattr(self, "_enabled", True):
+        with self._lock:
+            if not getattr(self, "_enabled", True):
+                self._last_gate_open = True
+                return True, {"why": "daily_gate_disabled"}
+
+            # Fail-closed: without correct equity — block
+            if self._equity_open <= 0 or self._equity_now <= 0:
+                self._last_gate_open = False
+                return False, {
+                    "reason": "DAILY_RISK_LIMIT",
+                    "detail": "NO_EQUITY",
+                    "equity_open_usd": _fmt_usd(self._equity_open),
+                    "equity_now_usd": _fmt_usd(self._equity_now),
+                    "why": "insufficient_equity_data",
+                }
+
+            # Calculate drawdown percentage
+            dd = _d("0")
+            if self._equity_open > 0:
+                dd = (_d("1") - (self._equity_now / self._equity_open)) * _d("100")
+
+            # Check drawdown limit first
+            if dd >= self.cfg.max_drawdown_pct:
+                self._last_gate_open = False
+                return False, {
+                    "reason": "DAILY_RISK_LIMIT",
+                    "detail": "MAX_DRAWDOWN",
+                    "drawdown_pct": _fmt_pct(dd),
+                    "limit_pct": _fmt_pct(self.cfg.max_drawdown_pct),
+                    "equity_open_usd": _fmt_usd(self._equity_open),
+                    "equity_now_usd": _fmt_usd(self._equity_now),
+                    "why": "daily_drawdown_limit_exceeded",
+                }
+
+            # All checks passed
             self._last_gate_open = True
-            return True, {"why": "daily_gate_disabled"}
-
-        # Fail-closed: without correct equity — block
-        if self._equity_open <= 0 or self._equity_now <= 0:
-            self._last_gate_open = False
-            return False, {
-                "reason": "DAILY_RISK_LIMIT",
-                "detail": "NO_EQUITY",
+            return True, {
                 "equity_open_usd": _fmt_usd(self._equity_open),
                 "equity_now_usd": _fmt_usd(self._equity_now),
-                "why": "insufficient_equity_data",
-            }
-
-        # Calculate drawdown percentage
-        dd = _d("0")
-        if self._equity_open > 0:
-            dd = (_d("1") - (self._equity_now / self._equity_open)) * _d("100")
-
-        # Check drawdown limit first
-        if dd >= self.cfg.max_drawdown_pct:
-            self._last_gate_open = False
-            return False, {
-                "reason": "DAILY_RISK_LIMIT",
-                "detail": "MAX_DRAWDOWN",
                 "drawdown_pct": _fmt_pct(dd),
-                "limit_pct": _fmt_pct(self.cfg.max_drawdown_pct),
-                "equity_open_usd": _fmt_usd(self._equity_open),
-                "equity_now_usd": _fmt_usd(self._equity_now),
-                "why": "daily_drawdown_limit_exceeded",
+                "why": "daily_risk_checks_passed",
             }
-
-        # All checks passed
-        self._last_gate_open = True
-        return True, {
-            "equity_open_usd": _fmt_usd(self._equity_open),
-            "equity_now_usd": _fmt_usd(self._equity_now),
-            "drawdown_pct": _fmt_pct(dd),
-            "why": "daily_risk_checks_passed",
-        }

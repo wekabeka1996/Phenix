@@ -217,3 +217,68 @@ class TestOptionalFields:
         )
         assert msg.link_ack_id == "ack-1"
         assert msg.link_fill_id == "fill-2"
+
+
+class TestTruncateWhyPhase14:
+    def test_none_input_returns_none(self):
+        assert truncate_why(None) is None
+
+    def test_empty_string_returns_empty(self):
+        assert truncate_why("") == ""
+
+    def test_short_string_unchanged(self):
+        assert truncate_why("hello") == "hello"
+
+    def test_exactly_80_chars_unchanged(self):
+        s = "x" * 80
+        assert truncate_why(s) == s
+
+    def test_81_chars_truncated_to_80(self):
+        s = "x" * 81
+        result = truncate_why(s)
+        assert len(result) == 80
+
+    def test_100_chars_truncated_to_80(self):
+        s = "a" * 100
+        assert len(truncate_why(s)) == 80
+
+    def test_custom_max_len(self):
+        assert truncate_why("hello world", max_len=5) == "hello"
+
+    def test_custom_max_len_exact(self):
+        assert truncate_why("hello", max_len=5) == "hello"
+
+
+class TestMessageProtocolPhase14:
+    def test_message_why_max_80_validation(self):
+        with pytest.raises(Exception):
+            Message(op="EVT", verb="TEST", src="a", dst="b", why="x" * 81)
+
+    def test_message_why_exactly_80_accepted(self):
+        msg = Message(op="EVT", verb="TEST", src="a", dst="b", why="x" * 80)
+        assert len(msg.why) == 80
+
+    def test_message_defaults_are_correct(self):
+        msg = Message(op="EVT", verb="TEST", src="a", dst="b", why="ok")
+        assert msg.v == 1
+        assert msg.mode == "live"
+        assert msg.ttl_ms == 2000
+        assert msg.pld == {}
+
+    def test_message_ttl_out_of_range_rejected(self):
+        with pytest.raises(Exception):
+            Message(op="EVT", verb="TEST", src="a", dst="b", why="ok", ttl_ms=99999)
+
+    def test_message_rid_unique_per_instance(self):
+        m1 = Message(op="EVT", verb="TEST", src="a", dst="b", why="ok")
+        m2 = Message(op="EVT", verb="TEST", src="a", dst="b", why="ok")
+        assert m1.rid != m2.rid
+
+    def test_message_is_expired_false_for_fresh_message(self):
+        msg = Message(op="EVT", verb="TEST", src="a", dst="b", why="ok")
+        assert msg.is_expired() is False
+
+    def test_message_all_op_types_valid(self):
+        for op in ("ASK", "DEC", "CMD", "EVT", "UPD", "ERR"):
+            msg = Message(op=op, verb="TEST", src="a", dst="b", why="ok")
+            assert msg.op == op

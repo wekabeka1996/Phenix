@@ -70,13 +70,14 @@ class FSMv2:
         - Audit: all transitions logged
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, wal_writer=None) -> None:
         self.name = name
         self._states: Dict[str, StateInfo] = {}
         self._transitions: List[TransitionRule] = []
         self._initial_state: Optional[str] = None
         self._state_store: Dict[str, str] = {}  # key → current state
         self._lock = threading.RLock()
+        self._wal_writer = wal_writer  # Optional[Callable[[Dict], Any]]
 
         # Metrics
         self.metrics = _FSMv2Metrics()
@@ -254,7 +255,10 @@ class FSMv2:
                 try:
                     exit_cb(key, old_state, msg)
                 except Exception as e:
-                    LOG.exception("FSMv2[%s] on_exit error: %s", self.name, e)
+                    LOG.exception("FSMv2[%s] on_exit error (aborted): %s", self.name, e)
+                    self.metrics.errors += 1
+                    self.metrics.rollbacks += 1
+                    return old_state, self._err_msg(msg, "ON_EXIT_ERROR", str(e))
 
             # Update state
             self._state_store[key] = new_state
@@ -265,13 +269,32 @@ class FSMv2:
                 try:
                     enter_cb(key, new_state, msg)
                 except Exception as e:
-                    LOG.exception("FSMv2[%s] on_enter error: %s", self.name, e)
+                    LOG.exception("FSMv2[%s] on_enter error (rollback): %s", self.name, e)
+                    self._state_store[key] = old_state  # ROLLBACK
+                    self.metrics.errors += 1
+                    self.metrics.rollbacks += 1
+                    return old_state, self._err_msg(msg, "ON_ENTER_ERROR", str(e))
 
             self.metrics.transitions += 1
             LOG.debug(
                 "FSMv2[%s] TRANSITION key=%s %s → %s on %s",
                 self.name, key, old_state, new_state, event,
             )
+
+            # WAL recording (warn-only on failure)
+            if self._wal_writer:
+                try:
+                    self._wal_writer({
+                        "event": "EVT:STATE_TRANSITION",
+                        "fsm": self.name,
+                        "key": key,
+                        "from_state": old_state,
+                        "to_state": new_state,
+                        "trigger": event,
+                        "ts_ms": int(time.time() * 1000),
+                    })
+                except Exception as e:
+                    LOG.warning("FSMv2[%s] WAL write failed (non-blocking): %s", self.name, e)
 
             # Execute action
             response: Optional[Message] = None
@@ -315,6 +338,63 @@ class FSMv2:
         with self._lock:
             self._state_store = dict(state_store)
 
+    def validate_reachability(self) -> Dict[str, Any]:
+        """
+        Validate all states are reachable from initial_state via BFS.
+
+        Returns:
+            {"valid": bool, "reachable": set[str], "unreachable": set[str]}
+        """
+        if self._initial_state is None:
+            return {
+                "valid": False,
+                "reachable": set(),
+                "unreachable": set(self._states.keys()),
+            }
+        visited: set[str] = set()
+        queue: List[str] = [self._initial_state]
+        while queue:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            for rule in self._transitions:
+                if rule.from_state == current and rule.to_state not in visited:
+                    queue.append(rule.to_state)
+        all_states = set(self._states.keys())
+        unreachable = all_states - visited
+        return {
+            "valid": len(unreachable) == 0,
+            "reachable": visited,
+            "unreachable": unreachable,
+        }
+
+    def to_dot(self) -> str:
+        """Export FSM as Graphviz DOT format string."""
+        lines: List[str] = [f"digraph {self.name} {{", "  rankdir=LR;"]
+        for state_name, info in self._states.items():
+            attrs: List[str] = []
+            attrs.append("shape=doublecircle" if info.terminal else "shape=circle")
+            if state_name == self._initial_state:
+                attrs.append("style=bold")
+            lines.append(f'  {state_name} [{", ".join(attrs)}];')
+        for rule in self._transitions:
+            guard_tag = " [G]" if rule.guard is not None else ""
+            lines.append(
+                f'  {rule.from_state} -> {rule.to_state} [label="{rule.event}{guard_tag}"];'
+            )
+        lines.append("}")
+        return "\n".join(lines)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return per-state count of tracked keys."""
+        with self._lock:
+            counts: Dict[str, int] = {name: 0 for name in self._states}
+            for state in self._state_store.values():
+                if state in counts:
+                    counts[state] += 1
+        return counts
+
     # ── Private helpers ──────────────────────────────────────────────
 
     def _err(
@@ -339,3 +419,4 @@ class _FSMv2Metrics:
     rejected: int = 0
     guard_rejected: int = 0
     errors: int = 0
+    rollbacks: int = 0

@@ -36,6 +36,8 @@ class FakeClock:
 def _mk_dm_for_exposure():
     """Create DecisionMaking mock for exposure cache tests."""
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+    from unittest.mock import MagicMock
 
     clock = FakeClock()
 
@@ -44,8 +46,25 @@ def _mk_dm_for_exposure():
 
     dm.logger = MagicMock()
     dm._clock = clock
-    dm._exposure_cache = None
-    dm._exposure_cache_timestamp = 0.0
+    dm._shared = {
+        "exposure_cache": None,
+        "exposure_cache_timestamp": 0.0,
+    }
+
+    dm._readiness = ReadinessGates(
+        clock=clock,
+        config=MagicMock(),
+        features_ttl_sec=60,
+        symbol_states={},
+        per_symbol_regimes={},
+        get_portfolio=lambda: None,
+        get_exposure_cache=lambda: (dm._exposure_cache, dm._exposure_cache_timestamp),
+        emit_intent_deferred_v1=lambda **kw: None,
+        record_blocked_intent=lambda s: None,
+        fail_closed_on_degraded_context=False,
+        degraded_context_critical_keys=set(),
+        degraded_context_critical_keys_by_strategy={},
+        logger=MagicMock())
 
     return dm, clock
 

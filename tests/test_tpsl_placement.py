@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from decimal import Decimal
 
-from apps.reference.services.order_guardian import OrderGuardian
+from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def order_guardian(mock_adapter, simple_store):
         store=simple_store,
         poll_interval_ms=0,
         bus=None,
-        config={}
+        config=None
     )
 
 
@@ -119,7 +119,7 @@ class TestShouldPlaceBrackets:
             store=simple_store,
             poll_interval_ms=0,
             bus=None,
-            config={}
+            config=None
         )
         
         result = await guardian.should_place_brackets("BTCUSDT", "entry123")
