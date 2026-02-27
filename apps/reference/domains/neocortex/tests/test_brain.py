@@ -121,6 +121,64 @@ def test_vae_auxiliary_regime_head_loss():
     assert "regime_ce" in losses
     assert float(losses["regime_ce"]) >= 0.0
 
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_per_dim_free_bits_floor():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=4,
+        learning_rate=0.001,
+        beta=1.0,
+        free_bits_per_dim=0.2,
+        batch_size=8,
+        use_mean=True,
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    x = torch.randn(8, cfg.input_dim)
+    recon, mu, logvar = vae(x)
+
+    # Force near-zero KL so free-bits floor is the dominant KL term.
+    mu_zeros = torch.zeros_like(mu)
+    logvar_zeros = torch.zeros_like(logvar)
+    losses = vae.loss_function(
+        recon,
+        x,
+        mu_zeros,
+        logvar_zeros,
+        beta=cfg.beta,
+        free_bits_per_dim=cfg.free_bits_per_dim,
+    )
+
+    expected_floor = cfg.free_bits_per_dim * cfg.latent_dim
+    assert float(losses["kld"]) == pytest.approx(0.0, abs=1e-6)
+    assert float(losses["kld_loss"]) == pytest.approx(expected_floor, rel=1e-5)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_regime_class_ema_weights_update():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=3,
+        learning_rate=0.001,
+        beta=1.0,
+        batch_size=8,
+        use_mean=True,
+        regime_aux={"enabled": True, "alpha": 0.2, "num_classes": 5, "ema_decay": 0.99},
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    before = vae.regime_class_ema.detach().clone()
+    targets = torch.tensor([2, 2, 2, 2, 2, 2, 2, 2], dtype=torch.long)
+    weights = vae.update_regime_class_ema(targets, ema_decay=0.5)
+    after = vae.regime_class_ema.detach().clone()
+
+    assert not torch.allclose(before, after)
+    assert weights.shape[0] == 5
+    assert float(weights[2]) < float(weights[0])
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_world_model_step(neuro_config):
     """Test World Model single step prediction."""

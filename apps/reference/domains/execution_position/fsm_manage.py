@@ -1027,6 +1027,11 @@ class ManageFlowFSM:
                 working_type = brackets.working_type_default
             if hasattr(brackets, 'price_protect'):
                 price_protect = brackets.price_protect
+        parent_order_id = (
+            msg_pld.get("parent_order_id")
+            or msg_pld.get("orderId")
+            or msg_pld.get("order_id")
+        )
 
         # Build payload
         payload = {
@@ -1040,6 +1045,7 @@ class ManageFlowFSM:
             "newClientOrderId": client_id,
             "workingType": working_type,
             "priceProtect": price_protect,
+            "parent_order_id": str(parent_order_id) if parent_order_id else None,
         }
 
         # For STOP_MARKET/TAKE_PROFIT_MARKET with closePosition=true, don't send qty

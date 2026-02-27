@@ -166,6 +166,40 @@ def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, v
         load_config(config_dir)
 
 
+def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Regime aux schedule/EMA fields should parse and enforce bounds."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+
+    neuro = valid_neuro_config.copy()
+    neuro["vae"] = dict(neuro["vae"])
+    neuro["vae"]["free_bits_per_dim"] = 0.2
+    neuro["vae"]["regime_aux"] = {
+        "enabled": True,
+        "alpha": 2.0,
+        "num_classes": 5,
+        "ema_decay": 0.99,
+        "alpha_schedule": {
+            "start": 0.5,
+            "end": 2.0,
+            "steps": 1000,
+        },
+    }
+
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(neuro, f)
+
+    loaded = load_config(config_dir)
+    assert loaded.neuro.vae.free_bits_per_dim == pytest.approx(0.2)
+    assert loaded.neuro.vae.regime_aux.ema_decay == pytest.approx(0.99)
+    assert loaded.neuro.vae.regime_aux.alpha_schedule is not None
+    assert loaded.neuro.vae.regime_aux.alpha_schedule.start == pytest.approx(0.5)
+
+
 # =============================================================================
 # TEST 2: Missing Required Field -> ValidationError
 # =============================================================================

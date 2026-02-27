@@ -75,7 +75,8 @@ alpha_search:
     notional_size: 1000
     exit:
       max_bars: 12
-      max_hold_sec: 3600
+      max_hold_sec: 1800
+      max_drawdown_exit: 1.2
 
   # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation

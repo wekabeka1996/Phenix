@@ -171,6 +171,27 @@ class VAEConfig(BaseModel):
 
         model_config = ConfigDict(extra='forbid', frozen=True)
 
+        class AlphaScheduleConfig(BaseModel):
+            """Linear warmup schedule for auxiliary alpha weight."""
+
+            model_config = ConfigDict(extra='forbid', frozen=True)
+
+            start: float = Field(
+                default=0.5,
+                ge=0.0, le=50.0,
+                description="Initial alpha value at step 0."
+            )
+            end: float = Field(
+                default=2.0,
+                ge=0.0, le=50.0,
+                description="Final alpha value after `steps` updates."
+            )
+            steps: int = Field(
+                default=10000,
+                ge=1, le=10_000_000,
+                description="Number of update steps for linear interpolation."
+            )
+
         enabled: bool = Field(
             default=False,
             description="Enable auxiliary regime-classification head on latent mean."
@@ -184,6 +205,15 @@ class VAEConfig(BaseModel):
             default=5,
             ge=2, le=64,
             description="Number of classes for auxiliary regime supervision."
+        )
+        ema_decay: float = Field(
+            default=0.99,
+            ge=0.0, lt=1.0,
+            description="EMA decay for dynamic class-frequency tracking."
+        )
+        alpha_schedule: Optional[AlphaScheduleConfig] = Field(
+            default=None,
+            description="Optional linear schedule for auxiliary alpha."
         )
 
     # Architecture (NO DEFAULTS)
@@ -208,6 +238,11 @@ class VAEConfig(BaseModel):
     beta: float = Field(
         gt=0.0, le=10.0,
         description="KL divergence weight in VAE loss"
+    )
+    free_bits_per_dim: float = Field(
+        default=0.0,
+        ge=0.0, le=10.0,
+        description="Per-dimension free-bits floor for KL regularization."
     )
     batch_size: int = Field(
         ge=1, le=1024,

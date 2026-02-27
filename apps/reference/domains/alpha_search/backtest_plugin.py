@@ -82,6 +82,7 @@ class AlphaSearchBacktestPlugin:
         config_path: Optional[str] = None,
         system_config: Optional[AlphaSearchSystemConfig] = None,
         system_config_path: Optional[str] = None,
+        shadow_book: Optional[Any] = None,
     ):
         """
         Initialize multi-provider plugin.
@@ -124,6 +125,9 @@ class AlphaSearchBacktestPlugin:
 
         self.enabled = self.config.enabled
         self.shadow_mode = self.config.shadow_mode
+
+        # ShadowBook reference (optional, injected by ScenarioManager)
+        self._shadow_book = shadow_book
 
         # Initialize providers
         self.providers: Dict[str, AlphaModel] = {}
@@ -373,6 +377,17 @@ class AlphaSearchBacktestPlugin:
             if not self._is_symbol_allowed(symbol, cfg):
                 continue
 
+            # Skip provider if ALL of its required features are absent
+            # (e.g. ta_ensemble needs rsi_14/bb_position/macd — absent on tick data)
+            if hasattr(model, "get_required_features"):
+                _required = model.get_required_features()
+                if _required and all(f not in features for f in _required):
+                    LOG.debug(
+                        f"[{symbol}] Skipping {provider_id}: "
+                        f"required features absent (tf_sec={cache_entry.tf_sec})"
+                    )
+                    continue
+
             # Get current price for virtual trader
             current_price = self._get_price_from_features(features)
 
@@ -599,18 +614,48 @@ class AlphaSearchBacktestPlugin:
             pos.bars_held += 1
             duration_sec = (current_ts - pos.entry_ts) / 1000.0
 
-            # Exit conditions
-            should_exit = (
-                pos.bars_held >= exit_cfg.max_bars or
-                duration_sec >= exit_cfg.max_hold_sec
-            )
+            exit_reason: Optional[str] = None
+            exit_meta: Dict[str, Any] = {}
 
-            if should_exit:
+            # Per-trade adverse-move stop (percentage from entry).
+            dd_stop_pct = getattr(exit_cfg, "max_drawdown_exit", None)
+            if dd_stop_pct is not None and pos.entry_price > 0:
+                if pos.side == "BUY":
+                    adverse_move_pct = (
+                        (pos.entry_price - current_price) / pos.entry_price
+                    ) * 100.0
+                else:
+                    adverse_move_pct = (
+                        (current_price - pos.entry_price) / pos.entry_price
+                    ) * 100.0
+                adverse_move_pct = max(0.0, adverse_move_pct)
+
+                if adverse_move_pct >= float(dd_stop_pct):
+                    exit_reason = "drawdown_exit"
+                    exit_meta = {
+                        "adverse_move_pct": round(adverse_move_pct, 4),
+                        "max_drawdown_exit": float(dd_stop_pct),
+                    }
+
+            if exit_reason is None and pos.bars_held >= exit_cfg.max_bars:
+                exit_reason = "max_bars"
+                exit_meta = {"max_bars": int(exit_cfg.max_bars)}
+
+            if exit_reason is None and duration_sec >= exit_cfg.max_hold_sec:
+                exit_reason = "max_hold_sec"
+                exit_meta = {
+                    "duration_sec": round(duration_sec, 2),
+                    "max_hold_sec": int(exit_cfg.max_hold_sec),
+                }
+
+            if exit_reason is not None:
                 self._close_virtual_position(
                     provider_id=provider_id,
                     pos=pos,
                     exit_price=current_price,
                     exit_ts=current_ts,
+                    exit_reason=exit_reason,
+                    exit_meta=exit_meta,
                 )
                 positions.pop(i)
 
@@ -660,6 +705,8 @@ class AlphaSearchBacktestPlugin:
         pos: VirtualPosition,
         exit_price: float,
         exit_ts: int,
+        exit_reason: str,
+        exit_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Close virtual position and record PnL."""
         # Calculate PnL
@@ -689,22 +736,42 @@ class AlphaSearchBacktestPlugin:
             "bars_held": pos.bars_held,
             "pnl": notional_pnl,
             "signal_id": pos.signal_id,
+            "exit_reason": exit_reason,
+            "exit_meta": exit_meta or {},
         }
         self.closed_positions[provider_id].append(closed_record)
+
+        close_payload = {
+            "side": pos.side,
+            "entry_price": pos.entry_price,
+            "exit_price": exit_price,
+            "bars_held": pos.bars_held,
+            "pnl": round(notional_pnl, 4),
+            "exit_reason": exit_reason,
+        }
+        if exit_meta:
+            close_payload.update(exit_meta)
 
         self.dlog.write(
             event="VIRTUAL_CLOSE",
             provider_id=provider_id,
             symbol=pos.symbol,
-            payload={
-                "side": pos.side,
-                "entry_price": pos.entry_price,
-                "exit_price": exit_price,
-                "bars_held": pos.bars_held,
-                "pnl": round(notional_pnl, 4),
-            },
+            payload=close_payload,
             signal_id=pos.signal_id,
         )
+
+        # Feed completed trade to ShadowBook for Sharpe/DD tracking
+        if self._shadow_book is not None:
+            self._shadow_book.record_trade(
+                symbol=pos.symbol,
+                side=pos.side,
+                entry_price=pos.entry_price,
+                exit_price=exit_price,
+                entry_ts=pos.entry_ts,
+                exit_ts=exit_ts,
+                bars_held=pos.bars_held,
+                provider_id=provider_id,
+            )
 
         LOG.debug(
             f"[{pos.symbol}] {provider_id} CLOSE VIRTUAL {pos.side} "

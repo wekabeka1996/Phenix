@@ -40,8 +40,8 @@ class AlphaInputV1(BaseModel):
     ts_ms: int = Field(
         description="Epoch milliseconds when snapshot was created")
     symbol: str = Field(min_length=1, description="Trading pair, e.g. BTCUSDT")
-    tf_sec: int = Field(default=300, ge=1,
-                        description="Timeframe in seconds (300 = 5m bars)")
+    tf_sec: int = Field(default=300, ge=0,
+                        description="Timeframe in seconds (300 = 5m bars, 0 = live tick)")
     bar_close_ts: int = Field(description="Bar close timestamp (epoch ms)")
     price: float = Field(gt=0, description="Current price at snapshot time")
     features: Dict[str, Any] = Field(

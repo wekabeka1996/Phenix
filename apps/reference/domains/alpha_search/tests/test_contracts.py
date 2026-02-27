@@ -152,10 +152,12 @@ class TestAlphaInputV1:
         with pytest.raises(ValidationError, match="symbol"):
             AlphaInputV1(**_minimal_alpha_input(symbol=""))
 
-    def test_tf_sec_ge_one(self):
-        """tf_sec must be >= 1."""
+    def test_tf_sec_allows_live_tick_zero(self):
+        """tf_sec=0 is valid for live-tick snapshots; negatives are rejected."""
+        obj = AlphaInputV1(**_minimal_alpha_input(tf_sec=0))
+        assert obj.tf_sec == 0
         with pytest.raises(ValidationError, match="tf_sec"):
-            AlphaInputV1(**_minimal_alpha_input(tf_sec=0))
+            AlphaInputV1(**_minimal_alpha_input(tf_sec=-1))
 
     def test_roundtrip_serialization(self):
         """model_dump -> model_validate produces identical object."""

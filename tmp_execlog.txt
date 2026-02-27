@@ -1,0 +1,16 @@
+=== Line 2699 ===
+2696:                 reduce_only = pld["reduceOnly"] if "reduceOnly" in pld else False
+2697: 
+2698:                 LOG.info(
+2699:                     f"Executing PLACE_ORDER: {symbol} {side} {order_type} {qty} @ {price}/{stop_price}")
+2700: 
+2701:                 try:
+2702:                     resp = None
+2703:                     if order_type == "STOP_MARKET" and hasattr(self.adapter, "place_stop_market_close_position"):
+2704:                         resp = await self.adapter.place_stop_market_close_position(
+2705:                             symbol, side, str(stop_price), new_client_order_id=client_id
+2706:                         )
+2707:                     elif order_type == "TAKE_PROFIT_MARKET" and hasattr(self.adapter, "place_take_profit_market_close_position"):
+2708:                         resp = await self.adapter.place_take_profit_market_close_position(
+2709:                             symbol, side, str(stop_price), new_client_order_id=client_id
+

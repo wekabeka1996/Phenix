@@ -132,6 +132,12 @@ class VirtualTraderExitConfig(BaseModel):
 
     max_bars: int = Field(default=12, ge=1)
     max_hold_sec: int = Field(default=3600, ge=60)
+    max_drawdown_exit: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Per-trade adverse move stop in percent (e.g. 1.2 = 1.2%)"
+    )
 
     model_config = {"extra": "forbid"}
 

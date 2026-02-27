@@ -1,0 +1,13 @@
+- **Timestamp:** 2026-02-25T20:23:04+02:00
+- **Task Objective:** Baseline initialization of project_state_update.md
+- **Files Scanned:** `README.md`, `requirements.txt`, `config/aurora/system.yaml`, `apps/reference/domains/*`, `alysha_core/reward_engine_v3plus/*`
+- **Files Generated:** project_state_update.md
+- **Logic Rationale:** Derived system context from `README.md`, determined hardware constraints absence via `grep_search`, evaluated the ML/DL footprint using the `neocortex` and `alysha_core` folders, extracted module flow (market data -> risk -> execution) by observing FSM and adapter topologies, and identified specific Python stack packages directly out of `requirements.txt`.
+- **Unresolved Edge Cases:** Explicit constraints for memory / GPU usage were absent in the YAML configs and required manual input prompts. Full runtime mapping inside `decision_making` (Neocortex) is complex and partially opaque without running metrics. No pre-recorded environment memory limits could be sourced locally.
+
+- **Timestamp:** 2026-02-25T20:26:57+02:00
+- **Task Objective:** Architectural alignment update (prioritizing vFoundation / domains)
+- **Files Scanned:** `apps/reference/dictionaries/verb_registry_v1.yaml`, `vfoundation/README.md`
+- **Files Generated:** project_state_update.md (Updated)
+- **Logic Rationale:** Received explicit instructions to ignore `alysha_core` as legacy/irrelevant and pivot focus completely to `apps/reference/domains`. Discovered that the environment runs atop the `vFoundation` FSM-LLM framework, utilizing it for low-level asynchronous routing, Meta-FSMs, WAL, and DR. Furthermore, recognized `apps/reference/dictionaries` as the centralized ontology/schema mapping for the FSM events (verbs). Updated the `project_state_update.md` content and C4 chart to reflect the true structural hierarchy.
+- **Unresolved Edge Cases:** None currently.

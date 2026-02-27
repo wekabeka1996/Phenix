@@ -406,7 +406,7 @@ execution_position:
     # 3m bar = 45s TTL, 5m = 60s, 15m = 180s
     ttl_by_tf_sec:
       180: 600    # 3m bars: 10 min TTL (Hold & Wait 2026-02-24)
-      300: 900    # 5m bars: 15 min TTL
+      300: 1200   # 5m bars: 20 min TTL (Golden Baseline v2)
       900: 1800   # 15m bars: 30 min TTL
     reject_unknown_tf: true   # fail-closed: reject if tf not in map
     cancel_on_regime_change: true

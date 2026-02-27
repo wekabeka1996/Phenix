@@ -129,6 +129,12 @@ class ScenarioManager:
             output_dir=scenario_log_dir,
         )
 
+        # Create shadow book (BEFORE worker so it can be injected in)
+        shadow_book = ShadowBook(
+            scenario_id=spec.scenario_id,
+            notional_size=alpha_cfg.virtual_trader.notional_size,
+        )
+
         # Create worker
         worker = ScenarioWorker(
             spec=spec,
@@ -136,18 +142,13 @@ class ScenarioManager:
             system_config=system_cfg,
             strategy_config=strategy_cfg,
             log_dir=scenario_log_dir,
+            shadow_book=shadow_book,
         )
 
         # Create per-scenario score writer
         score_writer = ScenarioScoreWriter(
             scenario_id=spec.scenario_id,
             log_dir=self._session_dir,
-        )
-
-        # Create shadow book
-        shadow_book = ShadowBook(
-            scenario_id=spec.scenario_id,
-            notional_size=alpha_cfg.virtual_trader.notional_size,
         )
 
         self._workers[spec.scenario_id] = worker

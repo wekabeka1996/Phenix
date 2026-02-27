@@ -73,6 +73,8 @@ MR_OVERRIDE_PATHS: Set[str] = {
     "alpha_search_system.mean_reversion.confidence.*",
     # Alpha search provider threshold
     "alpha_search.providers.ta_ensemble.threshold",
+    # Aurora provider threshold (for cross-strategy differentiation)
+    "alpha_search.providers.aurora.threshold",
 }
 
 
@@ -85,6 +87,8 @@ ENSEMBLE_OVERRIDE_PATHS: Set[str] = {
     "alpha_search.providers.ta_ensemble.ensemble.models.*.enabled",
     "alpha_search.providers.ta_ensemble.ensemble.models.*.weight",
     "alpha_search.providers.ta_ensemble.threshold",
+    # Aurora provider threshold (for cross-strategy differentiation)
+    "alpha_search.providers.aurora.threshold",
     # Ensemble system config
     "alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days",
     "alpha_search.providers.ta_ensemble.ensemble.risk_adjustment",

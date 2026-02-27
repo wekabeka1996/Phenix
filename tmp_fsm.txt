@@ -1,0 +1,1305 @@
+=== Hit at line 2028 ===
+2025:                 LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+2026: 
+2027:             LOG.info(
+2028:                 f"📌 [LIMIT-DEFERRED] Fill received for {symbol} entry {order_id}, "
+2029:                 f"placing deferred TP/SL brackets"
+2030:             )
+2031:             # Schedule async bracket placement
+2032:             loop = self._get_async_loop()
+2033:             if loop:
+2034:                 self._submit_async(
+2035:                     self._place_deferred_brackets(order_id, bracket_data),
+2036:                     loop
+2037:                 )
+2038: 
+2039:         # Best-effort cleanup of orphaned brackets in case this fill closed the position
+2040:         # Debounce: wait for fill settlement before cleanup (config-based)
+2041:         loop = self._get_async_loop()
+2042:         if loop:
+2043:             lifecycle_cfg = self.config.domains.execution_position.order_lifecycle
+2044: 
+2045:             async def delayed_cleanup():
+2046:                 # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+2047:                 await get_clock().sleep_ms(lifecycle_cfg.fill_settlement_delay_ms)
+2048:                 await self.order_guardian.cleanup_orphans()
+2049:             self._submit_async(delayed_cleanup(), loop)
+2050: 
+2051:         # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
+2052:         try:
+2053:             exposure_summary = self.exposure_guard.get_exposure_summary()
+2054:             exposure_msg = Message(
+2055:                 op="EVT",
+2056:                 verb="EXPOSURE_SUMMARY_UPDATED",
+2057:                 src="execution_position",
+2058:                 dst="decision_making",
+2059:                 rid=rid or f"fill_{order_id}",
+2060:                 pld={
+2061:                     "exposure_summary": exposure_summary,
+2062:                     "fill_order_id": order_id,
+2063:                     "fill_symbol": symbol,
+2064:                     "fill_quantity": filled_qty,
+2065:                     "timestamp_ms": get_clock().now_ms()
+2066:                 },
+2067:                 why="exposure_summary_updated_after_fill",
+2068:             )
+2069:             loop = self._get_async_loop()
+2070:             if loop:
+2071:                 self._submit_async(
+2072:                     emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+2073:                 )
+2074:         except Exception as e:
+2075:             LOG.debug(
+2076:                 f"Failed to emit exposure summary update after fill: {e}")
+2077: 
+2078:     def shutdown(self):
+2079:         """Shutdown the FSM and cleanup resources."""
+2080:         if hasattr(self, 'watchdog') and self.watchdog:
+2081:             self.watchdog.stop()
+2082:         if hasattr(self, 'order_guardian') and self.order_guardian:
+2083:             loop = self._get_async_loop()
+2084:             if loop:
+2085:                 self._submit_async(self.order_guardian.stop(), loop)
+2086:         LOG.info("ExecPosFSM shutdown complete")
+2087: 
+2088:     async def start_order_guardian(self):
+2089:         """Start OrderGuardian polling and reconciliation after FSM initialization."""
+2090:         if not self.order_guardian:
+2091:             return
+2092: 
+2093:         try:
+2094:             self._schedule_guardian_start()
+2095:             self._schedule_fsm_cleanup_loop()
+2096:         except Exception as e:
+2097:             LOG.error(f"Failed to start OrderGuardian: {e}")
+2098: 
+2099:     def _initialize_adapter(self):
+2100:         """Initializes the BinanceAdapter based on the domain-level trading_mode."""
+2101:         # Check if config_loader has get_domain_mode method (new approach)
+2102:         mode = "testnet"  # Default fallback
+2103: 
+2104:         # Try to get domain-specific mode first
+2105:         if hasattr(self.config, "get_domain_mode"):
+2106:             try:
+2107:                 mode = self.config.get_domain_mode("execution_position")
+2108:                 LOG.info(f"✅ ExecPosFSM using domain-specific mode: {mode}")
+
+
+=== Hit at line 3565 ===
+3562:                         f"Failed to persist pending brackets to WAL: {e}")
+3563: 
+3564:                 LOG.info(
+3565:                     f"📌 [LIMIT-DEFERRED] Stored pending brackets for {symbol} entry {entry_order_id}, "
+3566:                     f"SL={sl}, TP={tp} - will place on fill"
+3567:                 )
+3568:                 return None  # TP/SL will be placed when fill arrives
+3569: 
+3570:             # ✅ PHASE A3: Pre-flight check before placing TP/SL (with retry for REST lag)
+3571:             # Only for MARKET entries - LIMIT entries are handled on fill
+3572:             if not await self._preflight_position_check(symbol):
+3573:                 LOG.warning(
+3574:                     f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
+3575:                 return None
+3576: 
+3577:             # ✅ Check with OrderGuardian if brackets should be placed
+3578:             entry_order_id = str(entry_resp["orderId"])
+3579:             if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+3580:                 LOG.warning(
+3581:                     f"🚫 OrderGuardian blocked bracket placement for {symbol}")
+3582:                 return None
+3583: 
+3584:             # Generate bracket IDs
+3585:             sl_side = opposite_side(side)
+3586:             sl_id = generate_client_order_id(
+3587:                 "SL",
+3588:                 symbol,
+3589:                 idempotent_key=str(idem_key) if idem_key else None,
+3590:             )
+3591:             tp_side = opposite_side(side)
+3592:             tp_id = generate_client_order_id(
+3593:                 "TP",
+3594:                 symbol,
+3595:                 idempotent_key=str(idem_key) if idem_key else None,
+3596:             )
+3597: 
+3598:             # ✅ Place SL and TP in parallel (not sequentially)
+3599:             sl_resp = None
+3600:             tp_resp = None
+3601: 
+3602:             # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+3603:             bracket_cfg = self.config.domains.execution_position.bracket_placement
+3604:             tp_widen_first = Decimal(
+3605:                 "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+3606:             tp_widen_second = Decimal(
+3607:                 "1") + Decimal(str(bracket_cfg.tp_widen_second_bps)) / Decimal("10000")
+3608:             retry_backoff_ms = bracket_cfg.retry_backoff_ms
+3609: 
+3610:             try:
+3611:                 async def place_sl_async():
+3612:                     return await self.adapter.place_stop_market_close_position(
+3613:                         symbol, sl_side, str(sl), new_client_order_id=sl_id
+3614:                     )
+3615: 
+3616:                 async def place_tp_async():
+3617:                     try:
+3618:                         return (
+3619:                             await self.adapter.place_take_profit_market_close_position(
+3620:                                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+3621:                             )
+3622:                         )
+3623:                     except BinanceAPIError as e:
+3624:                         if e.code == -2021:
+3625:                             # PHASE A3: Exponential backoff for -2021 (price too close to mark)
+3626:                             LOG.warning(
+3627:                                 f"⚠️ [PHASE A3] TP -2021 error, attempting backoff for {symbol}")
+3628:                             self._orphan_metrics["tp_sl_retry_backoff"] += 1
+3629: 
+3630:                             # Retry with widened TP (from config)
+3631:                             tp_adj = tp * tp_widen_first
+3632:                             tp_adj = quantize_stop_price(
+3633:                                 tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+3634:                             )
+3635:                             self.metrics_collector.record_retry(
+3636:                                 "tp_adjust") if self.metrics_collector else None
+3637: 
+3638:                             # Exponential backoff from config
+3639:                             # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+3640:                             await get_clock().sleep_ms(retry_backoff_ms[0])
+3641: 
+3642:                             try:
+3643:                                 return await self.adapter.place_take_profit_market_close_position(
+3644:                                     symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+3645:                                 )
+
+
+=== Hit at line 4499 ===
+4496:                 LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+4497: 
+4498:             LOG.info(
+4499:                 f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id}"
+4500:             )
+4501: 
+4502:         # TASK40: Mark order terminal in OrderIndex (unblocks one-open-order guard).
+4503:         try:
+4504:             # type: ignore[attr-defined]
+4505:             if hasattr(self.fsm, "order_index") and self.fsm.order_index:
+4506:                 ref = None
+4507:                 if order_id:
+4508:                     ref = self.fsm.order_index.get(exchangeOrderId=str(
+4509:                         order_id))  # type: ignore[attr-defined]
+4510:                 if ref is None and client_order_id:
+4511:                     ref = self.fsm.order_index.get(clientOrderId=str(
+4512:                         client_order_id))  # type: ignore[attr-defined]
+4513:                 if ref is not None:
+4514:                     self.fsm.order_index.mark_terminal(
+4515:                         ref)  # type: ignore[attr-defined]
+4516:         except Exception:
+4517:             pass
+4518: 
+4519:         # Emit exposure summary update after cancellation
+4520:         try:
+4521:             exposure_msg = Message(
+4522:                 op="EVT",
+4523:                 verb="EXPOSURE_SUMMARY_UPDATED",
+4524:                 src="execution_position",
+4525:                 dst="monitoring",
+4526:                 rid=pld.get("rid") or msg.rid or f"cancel_{order_id}",
+4527:                 pld={
+4528:                     "symbol": symbol,
+4529:                     "order_id": order_id,
+4530:                     "client_order_id": client_order_id,
+4531:                     "reason": "order_cancelled",
+4532:                     "timestamp": get_clock().now_ms()
+4533:                 },
+4534:                 why="order_cancelled_exposure_update",
+4535:             )
+4536: 
+4537:             # Emit asynchronously
+4538:             loop = self._get_async_loop()
+4539:             if loop:
+4540:                 self._submit_async(
+4541:                     self._emit_exposure_update_async(exposure_msg), loop)
+4542:             else:
+4543:                 LOG.warning(
+4544:                     "No event loop available for cancel exposure update")
+4545: 
+4546:         except Exception as e:
+4547:             LOG.error(
+4548:                 f"CANCEL_EVENT_ERROR: Failed to emit exposure update for {order_id}: {e}")
+4549: 
+4550:         # EP-01.3-SUPERSEDE-ACK: Check if this cancel allows queued supersede to proceed
+4551:         if symbol and symbol in self._supersede_canceling:
+4552:             # Check if pending entries for this symbol are now clear
+4553:             has_more_pending = False
+4554:             if self.watchdog:
+4555:                 for deadline in self.watchdog.pending_orders.values():
+4556:                     if deadline.symbol == symbol:
+4557:                         has_more_pending = True
+4558:                         break
+4559:                 if not has_more_pending:
+4560:                     for deadline in self.watchdog.acked_orders.values():
+4561:                         if deadline.symbol == symbol:
+4562:                             has_more_pending = True
+4563:                             break
+4564: 
+4565:             if not has_more_pending:
+4566:                 LOG.info(
+4567:                     f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
+4568:                 self._process_queued_supersede(symbol)
+4569: 
+4570:     async def _emit_exposure_update_async(self, msg: Message) -> None:
+4571:         """Asynchronously emit exposure update event."""
+4572:         try:
+4573:             from vfoundation import emit_compat
+4574:             await emit_compat(self.fsm, msg, logger=aget(self, "logger", None))
+4575:         except Exception as e:
+4576:             LOG.exception(f"Failed to emit exposure update event: {e}")
+4577: 
+4578:     async def _check_shadow_notional(self) -> None:
+4579:         """
+
+
+=== Hit at line 4782 ===
+4779:         entry_client_order_id = bracket_data.get("entry_client_order_id")
+4780: 
+4781:         LOG.info(
+4782:             f"📌 [LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}"
+4783:         )
+4784: 
+4785:         # Pre-flight check: verify position exists (should be there after fill)
+4786:         if not await self._preflight_position_check(symbol):
+4787:             LOG.warning(
+4788:                 f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets"
+4789:             )
+4790:             return
+4791: 
+4792:         # Check with OrderGuardian
+4793:         if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+4794:             LOG.warning(
+4795:                 f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
+4796:             )
+4797:             return
+4798: 
+4799:         # Generate bracket IDs
+4800:         sl_side = opposite_side(side)
+4801:         sl_id = generate_client_order_id(
+4802:             "SL", symbol, idempotent_key=str(idem_key) if idem_key else None
+4803:         )
+4804:         tp_side = opposite_side(side)
+4805:         tp_id = generate_client_order_id(
+4806:             "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
+4807:         )
+4808: 
+4809:         # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+4810:         bracket_cfg = self.config.domains.execution_position.bracket_placement
+4811:         tp_widen_first = Decimal(
+4812:             "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+4813: 
+4814:         # Place SL and TP
+4815:         sl_resp = None
+4816:         tp_resp = None
+4817:         try:
+4818:             sl_resp = await self.adapter.place_stop_market_close_position(
+4819:                 symbol, sl_side, str(sl), new_client_order_id=sl_id
+4820:             )
+4821:             LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
+4822:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4823: 
+4824:             # Correlation store
+4825:             sl_order_id = str(sl_resp["orderId"])
+4826:             self.correlation_store.put_sl_tp_ack(
+4827:                 sl_order_id, entry_client_order_id or "", corr_id or "",
+4828:                 oco_group_id or "", rid or ""
+4829:             )
+4830:             self._symbol_brackets.setdefault(
+4831:                 symbol, {})["sl_order_id"] = sl_order_id
+4832: 
+4833:         except Exception as e:
+4834:             LOG.error(
+4835:                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+4836: 
+4837:         try:
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+
+
+=== Hit at line 4788 ===
+4785:         # Pre-flight check: verify position exists (should be there after fill)
+4786:         if not await self._preflight_position_check(symbol):
+4787:             LOG.warning(
+4788:                 f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets"
+4789:             )
+4790:             return
+4791: 
+4792:         # Check with OrderGuardian
+4793:         if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+4794:             LOG.warning(
+4795:                 f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
+4796:             )
+4797:             return
+4798: 
+4799:         # Generate bracket IDs
+4800:         sl_side = opposite_side(side)
+4801:         sl_id = generate_client_order_id(
+4802:             "SL", symbol, idempotent_key=str(idem_key) if idem_key else None
+4803:         )
+4804:         tp_side = opposite_side(side)
+4805:         tp_id = generate_client_order_id(
+4806:             "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
+4807:         )
+4808: 
+4809:         # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+4810:         bracket_cfg = self.config.domains.execution_position.bracket_placement
+4811:         tp_widen_first = Decimal(
+4812:             "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+4813: 
+4814:         # Place SL and TP
+4815:         sl_resp = None
+4816:         tp_resp = None
+4817:         try:
+4818:             sl_resp = await self.adapter.place_stop_market_close_position(
+4819:                 symbol, sl_side, str(sl), new_client_order_id=sl_id
+4820:             )
+4821:             LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
+4822:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4823: 
+4824:             # Correlation store
+4825:             sl_order_id = str(sl_resp["orderId"])
+4826:             self.correlation_store.put_sl_tp_ack(
+4827:                 sl_order_id, entry_client_order_id or "", corr_id or "",
+4828:                 oco_group_id or "", rid or ""
+4829:             )
+4830:             self._symbol_brackets.setdefault(
+4831:                 symbol, {})["sl_order_id"] = sl_order_id
+4832: 
+4833:         except Exception as e:
+4834:             LOG.error(
+4835:                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+4836: 
+4837:         try:
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+
+
+=== Hit at line 4795 ===
+4792:         # Check with OrderGuardian
+4793:         if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+4794:             LOG.warning(
+4795:                 f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
+4796:             )
+4797:             return
+4798: 
+4799:         # Generate bracket IDs
+4800:         sl_side = opposite_side(side)
+4801:         sl_id = generate_client_order_id(
+4802:             "SL", symbol, idempotent_key=str(idem_key) if idem_key else None
+4803:         )
+4804:         tp_side = opposite_side(side)
+4805:         tp_id = generate_client_order_id(
+4806:             "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
+4807:         )
+4808: 
+4809:         # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+4810:         bracket_cfg = self.config.domains.execution_position.bracket_placement
+4811:         tp_widen_first = Decimal(
+4812:             "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+4813: 
+4814:         # Place SL and TP
+4815:         sl_resp = None
+4816:         tp_resp = None
+4817:         try:
+4818:             sl_resp = await self.adapter.place_stop_market_close_position(
+4819:                 symbol, sl_side, str(sl), new_client_order_id=sl_id
+4820:             )
+4821:             LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
+4822:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4823: 
+4824:             # Correlation store
+4825:             sl_order_id = str(sl_resp["orderId"])
+4826:             self.correlation_store.put_sl_tp_ack(
+4827:                 sl_order_id, entry_client_order_id or "", corr_id or "",
+4828:                 oco_group_id or "", rid or ""
+4829:             )
+4830:             self._symbol_brackets.setdefault(
+4831:                 symbol, {})["sl_order_id"] = sl_order_id
+4832: 
+4833:         except Exception as e:
+4834:             LOG.error(
+4835:                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+4836: 
+4837:         try:
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+
+
+=== Hit at line 4821 ===
+4818:             sl_resp = await self.adapter.place_stop_market_close_position(
+4819:                 symbol, sl_side, str(sl), new_client_order_id=sl_id
+4820:             )
+4821:             LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
+4822:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4823: 
+4824:             # Correlation store
+4825:             sl_order_id = str(sl_resp["orderId"])
+4826:             self.correlation_store.put_sl_tp_ack(
+4827:                 sl_order_id, entry_client_order_id or "", corr_id or "",
+4828:                 oco_group_id or "", rid or ""
+4829:             )
+4830:             self._symbol_brackets.setdefault(
+4831:                 symbol, {})["sl_order_id"] = sl_order_id
+4832: 
+4833:         except Exception as e:
+4834:             LOG.error(
+4835:                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+4836: 
+4837:         try:
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+
+
+=== Hit at line 4835 ===
+4832: 
+4833:         except Exception as e:
+4834:             LOG.error(
+4835:                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+4836: 
+4837:         try:
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+
+
+=== Hit at line 4841 ===
+4838:             tp_resp = await self.adapter.place_take_profit_market_close_position(
+4839:                 symbol, tp_side, str(tp), new_client_order_id=tp_id
+4840:             )
+4841:             LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+4842:             self._orphan_metrics["tp_sl_placed_success"] += 1
+4843: 
+4844:             # Correlation store
+4845:             tp_order_id = str(tp_resp["orderId"])
+4846:             self.correlation_store.put_sl_tp_ack(
+4847:                 tp_order_id, entry_client_order_id or "", corr_id or "",
+4848:                 oco_group_id or "", rid or ""
+4849:             )
+4850:             self._symbol_brackets.setdefault(
+4851:                 symbol, {})["tp_order_id"] = tp_order_id
+4852: 
+4853:         except BinanceAPIError as e:
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+
+
+=== Hit at line 4857 ===
+4854:             if e.code == -2021:
+4855:                 # TP too close to mark price - widen and retry (config-based)
+4856:                 LOG.warning(
+4857:                     f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+4858:                 tp_adj = tp * tp_widen_first
+4859:                 tp_adj = quantize_stop_price(
+4860:                     tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+4861:                 )
+4862:                 try:
+4863:                     tp_resp = await self.adapter.place_take_profit_market_close_position(
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+
+
+=== Hit at line 4867 ===
+4864:                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+4865:                     )
+4866:                     LOG.info(
+4867:                         f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+4868:                     tp_order_id = str(tp_resp["orderId"])
+4869:                     self.correlation_store.put_sl_tp_ack(
+4870:                         tp_order_id, entry_client_order_id or "", corr_id or "",
+4871:                         oco_group_id or "", rid or ""
+4872:                     )
+4873:                     self._symbol_brackets.setdefault(
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+4938:             if not cfg or not cfg.enabled:
+4939:                 LOG.info("[BRACKET-HEALTH] disabled by config")
+4940:                 return
+4941:         except (AttributeError, TypeError):
+4942:             LOG.info("[BRACKET-HEALTH] no config found, skipping")
+4943:             return
+4944: 
+4945:         loop = self._get_async_loop()
+4946:         if not loop:
+4947:             LOG.warning(
+
+
+=== Hit at line 4877 ===
+4874:                         symbol, {})["tp_order_id"] = tp_order_id
+4875:                 except Exception as e2:
+4876:                     LOG.error(
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+4938:             if not cfg or not cfg.enabled:
+4939:                 LOG.info("[BRACKET-HEALTH] disabled by config")
+4940:                 return
+4941:         except (AttributeError, TypeError):
+4942:             LOG.info("[BRACKET-HEALTH] no config found, skipping")
+4943:             return
+4944: 
+4945:         loop = self._get_async_loop()
+4946:         if not loop:
+4947:             LOG.warning(
+4948:                 "[BRACKET-HEALTH] FAILED to start: no event loop active at schedule time")
+4949:             return
+4950: 
+4951:         self._submit_async(self._bracket_health_loop(), loop)
+4952:         self._bracket_health_started = True
+4953:         LOG.info(
+4954:             f"[BRACKET-HEALTH] scheduled (interval={cfg.interval_sec}s, grace={cfg.grace_period_ms}ms)")
+4955: 
+4956:     async def _bracket_health_loop(self) -> None:
+4957:         """BRACKET-HEALTH: Periodic safety net loop for missing SL/TP."""
+
+
+=== Hit at line 4880 ===
+4877:                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+4878:             else:
+4879:                 LOG.error(
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+4938:             if not cfg or not cfg.enabled:
+4939:                 LOG.info("[BRACKET-HEALTH] disabled by config")
+4940:                 return
+4941:         except (AttributeError, TypeError):
+4942:             LOG.info("[BRACKET-HEALTH] no config found, skipping")
+4943:             return
+4944: 
+4945:         loop = self._get_async_loop()
+4946:         if not loop:
+4947:             LOG.warning(
+4948:                 "[BRACKET-HEALTH] FAILED to start: no event loop active at schedule time")
+4949:             return
+4950: 
+4951:         self._submit_async(self._bracket_health_loop(), loop)
+4952:         self._bracket_health_started = True
+4953:         LOG.info(
+4954:             f"[BRACKET-HEALTH] scheduled (interval={cfg.interval_sec}s, grace={cfg.grace_period_ms}ms)")
+4955: 
+4956:     async def _bracket_health_loop(self) -> None:
+4957:         """BRACKET-HEALTH: Periodic safety net loop for missing SL/TP."""
+4958:         try:
+4959:             cfg = self.config.domains.execution_position.bracket_health_check
+4960:             if not cfg or not cfg.enabled:
+
+
+=== Hit at line 4883 ===
+4880:                     f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4881:         except Exception as e:
+4882:             LOG.error(
+4883:                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+4884: 
+4885:         # Register brackets with OrderGuardian
+4886:         if sl_resp:
+4887:             self.order_guardian.register_bracket(
+4888:                 symbol=symbol,
+4889:                 parent_order_id=entry_order_id,
+4890:                 order_id=str(sl_resp["orderId"]),
+4891:                 client_order_id=sl_id,
+4892:                 kind="SL",
+4893:                 corr_id=corr_id,
+4894:                 rid=rid
+4895:             )
+4896:         if tp_resp:
+4897:             self.order_guardian.register_bracket(
+4898:                 symbol=symbol,
+4899:                 parent_order_id=entry_order_id,
+4900:                 order_id=str(tp_resp["orderId"]),
+4901:                 client_order_id=tp_id,
+4902:                 kind="TP",
+4903:                 corr_id=corr_id,
+4904:                 rid=rid
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+4938:             if not cfg or not cfg.enabled:
+4939:                 LOG.info("[BRACKET-HEALTH] disabled by config")
+4940:                 return
+4941:         except (AttributeError, TypeError):
+4942:             LOG.info("[BRACKET-HEALTH] no config found, skipping")
+4943:             return
+4944: 
+4945:         loop = self._get_async_loop()
+4946:         if not loop:
+4947:             LOG.warning(
+4948:                 "[BRACKET-HEALTH] FAILED to start: no event loop active at schedule time")
+4949:             return
+4950: 
+4951:         self._submit_async(self._bracket_health_loop(), loop)
+4952:         self._bracket_health_started = True
+4953:         LOG.info(
+4954:             f"[BRACKET-HEALTH] scheduled (interval={cfg.interval_sec}s, grace={cfg.grace_period_ms}ms)")
+4955: 
+4956:     async def _bracket_health_loop(self) -> None:
+4957:         """BRACKET-HEALTH: Periodic safety net loop for missing SL/TP."""
+4958:         try:
+4959:             cfg = self.config.domains.execution_position.bracket_health_check
+4960:             if not cfg or not cfg.enabled:
+4961:                 return
+4962:         except (AttributeError, TypeError):
+4963:             return
+
+
+=== Hit at line 4908 ===
+4905:             )
+4906: 
+4907:         LOG.info(
+4908:             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+4909:             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+4910:         )
+4911: 
+4912:     async def _cleanup_loop(self) -> None:
+4913:         """Periodic orphaned-order cleanup loop (interval from config)."""
+4914:         while True:
+4915:             try:
+4916:                 # STRICT SSOT: interval validated by schema (ge=5)
+4917:                 interval = int(self._orphan_cfg["periodic_interval_sec"])
+4918:                 # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+4919:                 await get_clock().sleep_sec(interval)
+4920:                 await self.order_guardian.cleanup_orphans()
+4921:                 self._orphan_metrics["loops"] += 1
+4922:             except asyncio.CancelledError:
+4923:                 raise
+4924:             except Exception as e:
+4925:                 LOG.debug(f"cleanup loop error: {e}")
+4926:                 self._orphan_metrics["errors"] += 1
+4927: 
+4928:     # ═══════════════════════════════════════════════════════════════════════════════
+4929:     # BRACKET-HEALTH: Periodic Bracket Health Check (Safety Net)
+4930:     # ═══════════════════════════════════════════════════════════════════════════════
+4931: 
+4932:     def _schedule_bracket_health_loop(self) -> None:
+4933:         """Schedule the bracket health check background loop."""
+4934:         if self._bracket_health_started:
+4935:             return
+4936:         try:
+4937:             cfg = self.config.domains.execution_position.bracket_health_check
+4938:             if not cfg or not cfg.enabled:
+4939:                 LOG.info("[BRACKET-HEALTH] disabled by config")
+4940:                 return
+4941:         except (AttributeError, TypeError):
+4942:             LOG.info("[BRACKET-HEALTH] no config found, skipping")
+4943:             return
+4944: 
+4945:         loop = self._get_async_loop()
+4946:         if not loop:
+4947:             LOG.warning(
+4948:                 "[BRACKET-HEALTH] FAILED to start: no event loop active at schedule time")
+4949:             return
+4950: 
+4951:         self._submit_async(self._bracket_health_loop(), loop)
+4952:         self._bracket_health_started = True
+4953:         LOG.info(
+4954:             f"[BRACKET-HEALTH] scheduled (interval={cfg.interval_sec}s, grace={cfg.grace_period_ms}ms)")
+4955: 
+4956:     async def _bracket_health_loop(self) -> None:
+4957:         """BRACKET-HEALTH: Periodic safety net loop for missing SL/TP."""
+4958:         try:
+4959:             cfg = self.config.domains.execution_position.bracket_health_check
+4960:             if not cfg or not cfg.enabled:
+4961:                 return
+4962:         except (AttributeError, TypeError):
+4963:             return
+4964: 
+4965:         while True:
+4966:             try:
+4967:                 await get_clock().sleep_sec(cfg.interval_sec)
+4968:                 await self._run_bracket_health_check(cfg)
+4969:             except asyncio.CancelledError:
+4970:                 raise
+4971:             except Exception as e:
+4972:                 LOG.warning(f"[BRACKET-HEALTH] loop error: {e}")
+4973: 
+4974:     async def _run_bracket_health_check(self, cfg) -> None:
+4975:         """Run one cycle of bracket health checking."""
+4976:         if not self.adapter:
+4977:             return
+4978: 
+4979:         try:
+4980:             positions = await self.adapter.get_open_positions()
+4981:         except Exception as e:
+4982:             LOG.warning(f"[BRACKET-HEALTH] failed to get positions: {e}")
+4983:             return
+4984: 
+4985:         if not positions:
+4986:             return
+4987: 
+4988:         current_time_ms = get_clock().now_ms()
+
+

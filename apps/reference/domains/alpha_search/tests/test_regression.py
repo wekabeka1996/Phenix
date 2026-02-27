@@ -1,4 +1,4 @@
-"""
+﻿"""
 Cross-Cutting: Regression Tests
 =================================
 
@@ -58,7 +58,7 @@ class TestYAMLUnwrap:
         from apps.reference.domains.alpha_search.runtime.config_resolver import resolve_scenario_config
         from apps.reference.domains.alpha_search.runtime.contracts import ScenarioSpec
 
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[5]
         spec = ScenarioSpec(
             scenario_id="S_UNWRAP",
             enabled=True,
@@ -122,7 +122,7 @@ class TestThresholdSync:
         from apps.reference.domains.alpha_search.runtime.config_resolver import resolve_scenario_config
         from apps.reference.domains.alpha_search.runtime.contracts import ScenarioSpec
 
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[5]
         spec = ScenarioSpec(
             scenario_id="S_THR_SYNC",
             enabled=True,
@@ -164,6 +164,68 @@ class TestThresholdSync:
 
         worker.shutdown()
 
+    def test_aurora_threshold_scales_with_regime(self, tmp_path):
+        """ScenarioWorker applies effective threshold = base * regime_factor."""
+        from apps.reference.domains.alpha_search.runtime.scenario_worker import ScenarioWorker
+        from apps.reference.domains.alpha_search.runtime.config_resolver import resolve_scenario_config
+        from apps.reference.domains.alpha_search.runtime.contracts import ScenarioSpec, AlphaInputV1
+
+        project_root = Path(__file__).resolve().parents[5]
+        spec = ScenarioSpec(
+            scenario_id="S_REGIME_SCALE",
+            enabled=True,
+            strategy_type="aurora",
+            config_mode="override",
+            base_refs={
+                "aurora": "config/aurora/strategies/aurora.yaml",
+                "alpha_search": "config/alpha_search.yaml",
+            },
+            overrides={
+                "aurora.decision.signal_threshold": 0.12,
+                "aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY": 1.5,
+                "aurora.decision.regime_threshold_multipliers.TREND_UP": 0.8,
+                "aurora.decision.regime_threshold_multipliers.DEFAULT": 1.0,
+            },
+        )
+
+        try:
+            alpha_cfg, sys_cfg, strategy_cfg = resolve_scenario_config(spec, project_root)
+        except Exception:
+            pytest.skip("Config resolution failed")
+
+        worker = ScenarioWorker(
+            spec=spec,
+            alpha_search_config=alpha_cfg,
+            system_config=sys_cfg,
+            strategy_config=strategy_cfg,
+            log_dir=tmp_path / "S_REGIME_SCALE",
+        )
+
+        if "aurora" not in worker._plugin.provider_configs:
+            pytest.skip("Aurora provider not initialized")
+
+        snap_hv = AlphaInputV1.model_validate(
+            make_snapshot(regime="HIGH_VOLATILITY")
+        )
+        worker.process_snapshot(snap_hv)
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.18, abs=0.001
+        )
+
+        snap_tu = AlphaInputV1.model_validate(
+            make_snapshot(
+                regime="TREND_UP",
+                ts_ms=1740000005000,
+                bar_close_ts=1740000005000,
+            )
+        )
+        worker.process_snapshot(snap_tu)
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.096, abs=0.001
+        )
+
+        worker.shutdown()
+
 
 @pytest.mark.unit
 class TestProjectRoot:
@@ -198,11 +260,11 @@ class TestProjectRoot:
 class TestScenarioMatrix:
     """Regression test for full matrix validation."""
 
-    def test_scenario_matrix_ten_scenarios_all_valid(self):
-        """Full matrix parses and all 10 scenarios resolve."""
+    def test_scenario_matrix_twelve_scenarios_all_valid(self):
+        """Full matrix parses and all 12 scenarios resolve."""
         from apps.reference.domains.alpha_search.runtime.launcher import load_matrix_config
 
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[5]
         matrix_path = project_root / "config" / "alpha_search" / "scenario_matrix.yaml"
 
         if not matrix_path.exists():
@@ -210,14 +272,14 @@ class TestScenarioMatrix:
 
         config = load_matrix_config(matrix_path)
         enabled = [s for s in config.scenarios if s.enabled]
-        assert len(enabled) == 10
+        assert len(enabled) == 12
 
     def test_ensemble_valid_override_paths(self):
         """S16/S17 override paths validate (no extra='forbid' errors)."""
         from apps.reference.domains.alpha_search.runtime.launcher import load_matrix_config
         from apps.reference.domains.alpha_search.runtime.override_allowlist import validate_overrides
 
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[5]
         matrix_path = project_root / "config" / "alpha_search" / "scenario_matrix.yaml"
 
         if not matrix_path.exists():

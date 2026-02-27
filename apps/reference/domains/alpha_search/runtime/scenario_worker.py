@@ -49,11 +49,13 @@ class ScenarioWorker:
         system_config: AlphaSearchSystemConfig,
         strategy_config: Dict[str, Any],
         log_dir: Path,
+        shadow_book: Optional[Any] = None,
     ):
         self._scenario_id = spec.scenario_id
         self._strategy_type = spec.strategy_type
         self._log_dir = log_dir
         self._strategy_config = strategy_config
+        self._aurora_base_threshold: Optional[float] = None
 
         # --- Isolated event bus (no cross-scenario contamination) ---
         self._bus = LocalBus()
@@ -67,11 +69,14 @@ class ScenarioWorker:
             event_bus=self._bus,
             config=alpha_search_config,
             system_config=system_config,
+            shadow_book=shadow_book,
         )
 
         # --- Override adapter parameters for aurora strategy ---
         if self._strategy_type == "aurora" and strategy_config:
             self._inject_aurora_params(strategy_config)
+        if self._strategy_type == "aurora":
+            self._aurora_base_threshold = self._capture_aurora_base_threshold()
 
         # --- Stats ---
         self._snapshots_processed = 0
@@ -128,6 +133,9 @@ class ScenarioWorker:
                 payload=feature_payload,
                 why=f"alpha_search_standalone:{self._scenario_id}",
             )
+
+            if self._strategy_type == "aurora":
+                self._apply_regime_adaptive_threshold(snapshot.regime)
 
             # --- Phase 2: self-trigger scoring ---
             decision_payload = {
@@ -233,7 +241,8 @@ class ScenarioWorker:
             # Sync plugin provider config threshold so score events
             # and side determination use the same overridden value
             if "aurora" in self._plugin.provider_configs:
-                self._plugin.provider_configs["aurora"].threshold = float(thr_val)
+                self._plugin.provider_configs["aurora"].threshold = float(
+                    thr_val)
             LOG.debug(
                 f"[{self._scenario_id}] Injected base_threshold={thr_val}"
             )
@@ -248,6 +257,42 @@ class ScenarioWorker:
             LOG.debug(
                 f"[{self._scenario_id}] Gates config available: {list(gates.keys())}"
             )
+
+    def _capture_aurora_base_threshold(self) -> Optional[float]:
+        """Capture initial aurora threshold once for regime scaling."""
+        provider_cfg = self._plugin.provider_configs.get("aurora")
+        if provider_cfg is None:
+            return None
+        try:
+            base_thr = float(provider_cfg.threshold)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, min(1.0, base_thr))
+
+    def _apply_regime_adaptive_threshold(self, regime: str) -> None:
+        """Apply per-snapshot effective threshold: base * regime_factor."""
+        if self._aurora_base_threshold is None:
+            return
+
+        provider_cfg = self._plugin.provider_configs.get("aurora")
+        aurora_provider = self._plugin.providers.get("aurora")
+        if provider_cfg is None or aurora_provider is None:
+            return
+
+        regime_thresholds = getattr(aurora_provider, "_regime_thresholds", {}) or {}
+        raw_factor = regime_thresholds.get(
+            regime, regime_thresholds.get("DEFAULT", 1.0)
+        )
+
+        try:
+            factor = float(raw_factor)
+        except (TypeError, ValueError):
+            factor = 1.0
+        if factor <= 0.0:
+            factor = 1.0
+
+        effective_thr = self._aurora_base_threshold * factor
+        provider_cfg.threshold = max(0.0, min(1.0, effective_thr))
 
     @staticmethod
     def _determine_side(score: float, threshold: float) -> str:

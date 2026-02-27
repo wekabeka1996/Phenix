@@ -221,3 +221,55 @@ class TestMultiProvider:
                 provider_ids.add(pld["provider_id"])
 
         assert "aurora" in provider_ids
+
+
+@pytest.mark.unit
+class TestVirtualTraderExits:
+    """Test virtual trader risk exits."""
+
+    def test_drawdown_exit_closes_position(self):
+        """Adverse move >= max_drawdown_exit closes open virtual position."""
+        from apps.reference.domains.alpha_search.backtest_plugin import VirtualPosition
+        from apps.reference.domains.alpha_search.config_models import (
+            AuroraAdapterConfig,
+            ProviderConfig,
+        )
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        cfg = get_default_config()
+        cfg.enabled = True
+        cfg.providers["aurora"] = ProviderConfig(
+            enabled=True,
+            threshold=0.12,
+            fail_closed=True,
+            adapter=AuroraAdapterConfig(),
+        )
+        cfg.virtual_trader.enabled = True
+        cfg.virtual_trader.exit.max_drawdown_exit = 1.2
+
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+
+        provider_id = next(iter(plugin.providers.keys()))
+        plugin.open_positions[provider_id].append(
+            VirtualPosition(
+                provider_id=provider_id,
+                symbol="BTCUSDT",
+                side="BUY",
+                entry_price=100.0,
+                entry_ts=1740000000000,
+                signal_id="sig_test_1",
+            )
+        )
+
+        # BUY adverse move: (100 - 98.8) / 100 * 100 = 1.2%
+        plugin._manage_virtual_positions(
+            provider_id=provider_id,
+            symbol="BTCUSDT",
+            current_price=98.8,
+            current_ts=1740000060000,
+        )
+
+        assert plugin.open_positions[provider_id] == []
+        assert len(plugin.closed_positions[provider_id]) == 1
+        assert plugin.closed_positions[provider_id][0]["exit_reason"] == "drawdown_exit"

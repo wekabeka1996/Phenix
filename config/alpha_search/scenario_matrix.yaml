@@ -1,23 +1,25 @@
 # ==============================================================================
-# Alpha Search Scenario Matrix — SSOT
+# Alpha Search Scenario Matrix - SSOT
 # ==============================================================================
-# v2.1 matrix with 10 scenarios: 4 Aurora / 3 MeanReversion / 3 Ensemble
+# v4_full_20260225
 #
-# Each scenario defines a config variant for parallel shadow-mode testing.
-# Scoring results are compared across scenarios to identify alpha.
+# Goals:
+#   - Keep all 12 scenarios enabled (incl. previously losing ones)
+#   - Make losing scenarios more aggressive + regime-adaptive so none "idles"
+#   - Keep top scenarios S18/S20/S21 intact (strength mainly from global risk exits)
 #
-# Config modes:
-#   override   — start from base_refs, apply dot-path overrides
-#   full_config — load full YAML files from scenario_config_dir
+# Changes vs v3 (oleksii_v3_barlive_20260224):
+#   - input.source_mode: live_tail (production)
+#   - Added back S03 + S05 (tuned) and removed S16 + S17 to keep total=12
+#   - Tuned S01/S03/S05 (aurora) + S15 (ensemble) thresholds/weights
 # ==============================================================================
 
-matrix_id: alpha_search_shadow_v2
-version: 2
+matrix_id: v4_full_20260225
+version: 4
 
-# --- Runtime capacity knobs ---------------------------------------------------
 runtime:
-  max_scenarios: 20
-  max_concurrent_scenarios: 20
+  max_scenarios: 12
+  max_concurrent_scenarios: 12
   parallelism: thread_pool          # sequential | thread_pool
   max_workers: 4
   queue_maxsize: 4000
@@ -26,25 +28,20 @@ runtime:
   scenario_timeout_sec: 5.0
   health_heartbeat_sec: 30.0
 
-# --- Hot reload ---------------------------------------------------------------
 hot_reload:
-  enabled: false
+  enabled: true
   poll_interval_sec: 5.0
   debounce_sec: 2.0
   rollback_on_error: true
 
-# --- Input stream -------------------------------------------------------------
 input:
-  source_mode: replay               # replay | live_tail
+  source_mode: live_tail
   stream_path: logs/alpha_input/alpha_input_v1.jsonl
 
-# ==============================================================================
-# Scenarios (10 initial — 4 Aurora / 3 MR / 3 Ensemble)
-# ==============================================================================
 scenarios:
 
   # ============================================================================
-  # AURORA FAMILY (S01–S04)
+  # AURORA FAMILY (S01, S03, S05, S06, S20) - 5 scenarios
   # ============================================================================
 
   - scenario_id: S01_AURORA_BASELINE
@@ -54,18 +51,19 @@ scenarios:
     base_refs:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
-    overrides: {}
-
-  - scenario_id: S02_AURORA_AGGRESSIVE
-    enabled: true
-    strategy_type: aurora
-    config_mode: override
-    base_refs:
-      aurora: config/aurora/strategies/aurora.yaml
-      alpha_search: config/alpha_search.yaml
     overrides:
       aurora.decision.signal_threshold: 0.12
-      aurora.decision.gates.anti_flat_sigma: 0.35
+      aurora.decision.signal_weights.obi: 0.40
+      aurora.decision.feature_neutrals.obi: 0.35
+      aurora.decision.gates.anti_flat_sigma: 0.28
+      # Regime-adaptive threshold multipliers (effective threshold = base * factor)
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.35
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.05
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.80
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S03_AURORA_CONSERVATIVE
     enabled: true
@@ -75,10 +73,20 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.20
-      aurora.decision.gates.anti_fomo_sigma: 8.0
+      aurora.decision.signal_threshold: 0.12
+      aurora.decision.signal_weights.obi: 0.42
+      aurora.decision.signal_weights.delta_price: 0.15
+      aurora.decision.feature_neutrals.obi: 0.38
+      aurora.decision.gates.anti_flat_sigma: 0.24
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.55
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.95
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.80
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.80
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.20
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
-  - scenario_id: S04_AURORA_OBI_HEAVY
+  - scenario_id: S05_AURORA_MY_BEST
     enabled: true
     strategy_type: aurora
     config_mode: override
@@ -86,12 +94,59 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_weights.obi: 0.30
-      aurora.decision.signal_weights.depth_imbalance: -0.20
-      aurora.decision.feature_neutrals.obi: 0.50
+      aurora.decision.signal_threshold: 0.11
+      aurora.decision.signal_weights.obi: 0.50
+      aurora.decision.signal_weights.delta_price: 0.15
+      aurora.decision.feature_neutrals.obi: 0.40
+      aurora.decision.gates.anti_flat_sigma: 0.22
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.60
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.20
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.75
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.75
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.50
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+
+  - scenario_id: S06_AURORA_LOW_THRESHOLD
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides:
+      aurora.decision.signal_threshold: 0.11
+      aurora.decision.gates.anti_flat_sigma: 0.25
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.40
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.05
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+
+  - scenario_id: S20_AURORA_OBI_VERY_HEAVY
+    enabled: true
+    strategy_type: aurora
+    config_mode: override
+    base_refs:
+      aurora: config/aurora/strategies/aurora.yaml
+      alpha_search: config/alpha_search.yaml
+    overrides:
+      aurora.decision.signal_threshold: 0.13
+      aurora.decision.signal_weights.obi: 0.45
+      aurora.decision.gates.anti_flat_sigma: 0.20
+      aurora.decision.feature_neutrals.obi: 0.40
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.45
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.80
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.80
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.20
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   # ============================================================================
-  # MEAN REVERSION FAMILY (S11–S13)
+  # MEAN REVERSION FAMILY (S11, S12, S13) - 3 scenarios (unchanged)
   # ============================================================================
 
   - scenario_id: S11_MR_BASELINE
@@ -115,6 +170,7 @@ scenarios:
     overrides:
       alpha_search_system.mean_reversion.rsi.oversold: 25
       alpha_search_system.mean_reversion.rsi.overbought: 75
+      alpha_search.providers.aurora.threshold: 0.19
 
   - scenario_id: S13_MR_BB_HEAVY
     enabled: true
@@ -129,9 +185,11 @@ scenarios:
       alpha_search_system.mean_reversion.weights.rsi: 0.2
       alpha_search_system.mean_reversion.weights.sma: 0.1
       alpha_search_system.mean_reversion.weights.stoch: 0.1
+      alpha_search.providers.aurora.threshold: 0.14
+      alpha_search.providers.ta_ensemble.threshold: 0.13
 
   # ============================================================================
-  # ENSEMBLE FAMILY (S15–S17)
+  # ENSEMBLE FAMILY (S15, S18, S19, S21) - 4 scenarios
   # ============================================================================
 
   - scenario_id: S15_ENSEMBLE_BALANCED
@@ -143,11 +201,16 @@ scenarios:
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.34
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.33
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
-      alpha_search.providers.ta_ensemble.threshold: 0.15
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.33
+      alpha_search.providers.ta_ensemble.threshold: 0.11
+      alpha_search.providers.aurora.threshold: 0.14
+      alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
 
-  - scenario_id: S16_ENSEMBLE_MR_DOMINANT
+  - scenario_id: S18_ENSEMBLE_MOMENTUM_AGGRESSIVE
     enabled: true
     strategy_type: ensemble
     config_mode: override
@@ -155,15 +218,17 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
-      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
-      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.7
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
-      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.8
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.1
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.1
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
+      alpha_search.providers.aurora.threshold: 0.10
+      alpha_search.providers.ta_ensemble.threshold: 0.10
 
-  - scenario_id: S17_ENSEMBLE_MOMENTUM_DOMINANT
+  - scenario_id: S19_ENSEMBLE_MR_SHORT_BIAS
     enabled: true
     strategy_type: ensemble
     config_mode: override
@@ -172,9 +237,29 @@ scenarios:
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
-      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.5
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
-      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.6
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.3
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.2
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
+      alpha_search.providers.aurora.threshold: 0.15
+      alpha_search.providers.ta_ensemble.threshold: 0.11
+
+  - scenario_id: S21_ENSEMBLE_REGIME_ADAPTIVE
+    enabled: true
+    strategy_type: ensemble
+    config_mode: override
+    base_refs:
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.5
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.3
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
+      alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.2
+      alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
+      alpha_search.providers.aurora.threshold: 0.13
+      alpha_search.providers.ta_ensemble.threshold: 0.14

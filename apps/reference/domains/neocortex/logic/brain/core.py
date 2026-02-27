@@ -267,6 +267,23 @@ class BrainCore:
             logger.warning(f"PPO initialization failed: {e}")
             self.ppo_agent = None
 
+    def _current_regime_aux_alpha(self) -> float:
+        """Resolve auxiliary alpha with optional linear schedule."""
+        aux_cfg = getattr(self.config.vae, "regime_aux", None)
+        if not (aux_cfg and bool(getattr(aux_cfg, "enabled", False))):
+            return 0.0
+
+        base_alpha = float(getattr(aux_cfg, "alpha", 0.0))
+        sched = getattr(aux_cfg, "alpha_schedule", None)
+        if sched is None:
+            return max(0.0, base_alpha)
+
+        start = float(getattr(sched, "start", base_alpha))
+        end = float(getattr(sched, "end", base_alpha))
+        steps = max(1, int(getattr(sched, "steps", 1)))
+        t = min(max(float(self._train_steps), 0.0) / float(steps), 1.0)
+        return max(0.0, start + (end - start) * t)
+
     def train_batch(
         self,
         batch_obs: torch.Tensor,
@@ -291,22 +308,31 @@ class BrainCore:
 
         aux_cfg = getattr(self.config.vae, "regime_aux", None)
         aux_enabled = bool(aux_cfg and getattr(aux_cfg, "enabled", False))
-        aux_alpha = float(getattr(aux_cfg, "alpha", 0.0)
-                          ) if aux_enabled else 0.0
+        aux_alpha = self._current_regime_aux_alpha()
+        ema_decay = float(getattr(aux_cfg, "ema_decay", 0.99)
+                          ) if aux_enabled else 0.99
         regime_logits = None
+        regime_class_weights = None
         if aux_enabled and regime_targets is not None and regime_targets.numel() == mu.shape[0]:
-            regime_logits = self.vae.predict_regime_logits(mu)
             if regime_targets.device != self.device:
                 regime_targets = regime_targets.to(self.device)
             if regime_targets.dtype != torch.long:
                 regime_targets = regime_targets.long()
+            regime_logits = self.vae.predict_regime_logits(mu)
+            if regime_logits is not None:
+                regime_class_weights = self.vae.update_regime_class_ema(
+                    regime_targets=regime_targets,
+                    ema_decay=ema_decay,
+                )
 
         vae_losses = self.vae.loss_function(
             recon_x, batch_obs, mu, logvar,
             beta=self.config.vae.beta,
+            free_bits_per_dim=float(getattr(self.config.vae, "free_bits_per_dim", 0.0)),
             regime_logits=regime_logits,
             regime_targets=regime_targets,
             aux_alpha=aux_alpha,
+            class_weights=regime_class_weights,
         )
 
         vae_loss = vae_losses['loss']
@@ -325,7 +351,9 @@ class BrainCore:
                 "vae_loss": vae_loss.item(),
                 "vae_mse": vae_losses['mse'].item(),
                 "vae_kld": vae_losses['kld'].item(),
+                "vae_kld_loss": vae_losses['kld_loss'].item(),
                 "vae_regime_ce": vae_losses['regime_ce'].item(),
+                "vae_aux_alpha": float(aux_alpha),
                 "wm_loss": 0.0
             }
 
@@ -352,7 +380,9 @@ class BrainCore:
             "vae_loss": vae_loss.item(),
             "vae_mse": vae_losses['mse'].item(),
             "vae_kld": vae_losses['kld'].item(),
+            "vae_kld_loss": vae_losses['kld_loss'].item(),
             "vae_regime_ce": vae_losses['regime_ce'].item(),
+            "vae_aux_alpha": float(aux_alpha),
             "wm_loss": wm_loss.item()
         }
 
@@ -395,15 +425,25 @@ class BrainCore:
         self.vae_opt.zero_grad()
         recon_x, mu, logvar = self.vae(x)
         logits = self.vae.predict_regime_logits(mu)
+        aux_alpha = self._current_regime_aux_alpha()
+        ema_decay = float(getattr(aux_cfg, "ema_decay", 0.99))
+        class_weights = None
+        if logits is not None and y.numel() == logits.shape[0]:
+            class_weights = self.vae.update_regime_class_ema(
+                regime_targets=y,
+                ema_decay=ema_decay,
+            )
         losses = self.vae.loss_function(
             recon_x,
             x,
             mu,
             logvar,
             beta=self.config.vae.beta,
+            free_bits_per_dim=float(getattr(self.config.vae, "free_bits_per_dim", 0.0)),
             regime_logits=logits,
             regime_targets=y,
-            aux_alpha=float(getattr(aux_cfg, "alpha", 0.0)),
+            aux_alpha=aux_alpha,
+            class_weights=class_weights,
         )
         losses["loss"].backward()
         torch.nn.utils.clip_grad_norm_(self.vae.parameters(), max_norm=1.0)
@@ -413,6 +453,7 @@ class BrainCore:
             "samples": float(len(samples_obs)),
             "loss": float(losses["loss"].item()),
             "ce": float(losses["regime_ce"].item()),
+            "alpha": float(aux_alpha),
         }
 
     def encode(self, obs: np.ndarray) -> np.ndarray:
@@ -641,6 +682,7 @@ class BrainCore:
         metrics["vae_aux_samples"] = float(aux_metrics.get("samples", 0.0))
         metrics["vae_aux_loss"] = float(aux_metrics.get("loss", 0.0))
         metrics["vae_aux_ce"] = float(aux_metrics.get("ce", 0.0))
+        metrics["vae_aux_alpha"] = float(aux_metrics.get("alpha", self._current_regime_aux_alpha()))
         if current_coef is not None:
             metrics["entropy_coef"] = float(current_coef)
         return metrics
@@ -675,12 +717,41 @@ class BrainCore:
                     "neuro": {
                         "vae_input_dim": int(self.config.vae.input_dim),
                         "vae_latent_dim": int(self.config.vae.latent_dim),
+                        "vae_free_bits_per_dim": float(
+                            getattr(self.config.vae, "free_bits_per_dim", 0.0)
+                        ),
                         "regime_aux_enabled": bool(
                             getattr(self.config.vae.regime_aux, "enabled", False)
                         ),
                         "regime_aux_alpha": float(
                             getattr(self.config.vae.regime_aux, "alpha", 0.0)
                         ),
+                        "regime_aux_ema_decay": float(
+                            getattr(self.config.vae.regime_aux, "ema_decay", 0.99)
+                        ),
+                        "regime_aux_alpha_schedule": {
+                            "start": float(
+                                getattr(
+                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    "start",
+                                    getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                )
+                            ),
+                            "end": float(
+                                getattr(
+                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    "end",
+                                    getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                )
+                            ),
+                            "steps": int(
+                                getattr(
+                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    "steps",
+                                    1,
+                                )
+                            ),
+                        },
                     },
                 },
             }
@@ -770,8 +841,33 @@ class BrainCore:
                 expected = {
                     "vae_input_dim": int(self.config.vae.input_dim),
                     "vae_latent_dim": int(self.config.vae.latent_dim),
+                    "vae_free_bits_per_dim": float(getattr(self.config.vae, "free_bits_per_dim", 0.0)),
                     "regime_aux_enabled": bool(getattr(self.config.vae.regime_aux, "enabled", False)),
                     "regime_aux_alpha": float(getattr(self.config.vae.regime_aux, "alpha", 0.0)),
+                    "regime_aux_ema_decay": float(getattr(self.config.vae.regime_aux, "ema_decay", 0.99)),
+                    "regime_aux_alpha_schedule": {
+                        "start": float(
+                            getattr(
+                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                "start",
+                                getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                            )
+                        ),
+                        "end": float(
+                            getattr(
+                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                "end",
+                                getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                            )
+                        ),
+                        "steps": int(
+                            getattr(
+                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                "steps",
+                                1,
+                            )
+                        ),
+                    },
                 }
                 mismatch = {
                     k: (neuro_meta.get(k), expected[k])

@@ -44,14 +44,15 @@ aurora:
       enable: false
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
+    # Golden Baseline v2 regime multipliers
     regime_threshold_multipliers:
-      HIGH_VOLATILITY: 1.0
-      LOW_VOLATILITY: 0.9
-      MEAN_REVERSION: 0.75
-      TREND_UP: 1.0
-      TREND_DOWN: 1.0
-      UNCERTAIN: 1.15
-      DEFAULT: 1.0
+      HIGH_VOLATILITY: 0.20
+      LOW_VOLATILITY: 0.12
+      MEAN_REVERSION: 0.16
+      TREND_UP: 0.14
+      TREND_DOWN: 0.14
+      UNCERTAIN: 0.18
+      DEFAULT: 0.16
     side_bias_min_score: null
     side_bias_window_sec: 420
     side_bias_target_ratio: 0.72
@@ -145,10 +146,9 @@ aurora:
     # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
     gates:
       enabled: true
-      anti_flat_sigma: 0.38  # Hold & Wait: 0.40→0.38 2026-02-24
-      anti_fomo_sigma: 14.0  # Hold & Wait: 12.0→14.0 менше блоків руху 2026-02-24
-      # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
-      motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
+      anti_flat_sigma: 0.42
+      anti_fomo_sigma: 13.5
+      motion_window_sec: 300
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.

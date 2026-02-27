@@ -5,7 +5,9 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-LOGGER_NAME = "domain.decision_making"
+LOGGER_NAME = "apps.reference.domains.decision_making.dm_log_adapter"
+_DM_MAX_BYTES = 10_000_000
+_DM_BACKUP_COUNT = 100  # backupCount=100 (policy assertion in tests)
 
 
 def _ensure_dir(p: str) -> None:
@@ -19,20 +21,53 @@ def _get_log_path() -> str:
     return os.path.join(log_dir, "domain_decision_making.log")
 
 
-def _get_logger() -> logging.Logger:
-    lg = logging.getLogger(LOGGER_NAME)
-    lg.setLevel(logging.INFO)
-    # Always recreate handler to respect DM_LOG_DIR changes
-    # Remove existing handlers
+def _same_path(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _handler_targets_path(handler: logging.Handler, log_path: str) -> bool:
+    base = getattr(handler, "baseFilename", None)
+    if not isinstance(base, str):
+        return False
+    return _same_path(base, log_path)
+
+
+def _root_has_handler_for_path(log_path: str) -> bool:
+    root = logging.getLogger()
+    return any(_handler_targets_path(h, log_path) for h in root.handlers)
+
+
+def _drop_local_rotating_handlers(lg: logging.Logger) -> None:
     for h in lg.handlers[:]:
         if isinstance(h, logging.handlers.RotatingFileHandler):
             lg.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
 
-    # Create new handler with current log path
-    log_path = _get_log_path()
+
+def _get_logger() -> logging.Logger:
+    lg = logging.getLogger(LOGGER_NAME)
+    lg.setLevel(logging.INFO)
+    log_path = os.path.abspath(_get_log_path())
     _ensure_dir(log_path)
+
+    # If centralized logging already owns this file, do not open a second handler.
+    # Windows cannot rename an in-use file during RotatingFileHandler rollover.
+    if _root_has_handler_for_path(log_path):
+        _drop_local_rotating_handlers(lg)
+        lg.propagate = True
+        return lg
+
+    # Fallback mode (tests/standalone): keep local rotating file sink.
+    _drop_local_rotating_handlers(lg)
     fh = logging.handlers.RotatingFileHandler(
-        log_path, maxBytes=10_000_000, backupCount=100, encoding="utf-8", delay=False
+        log_path,
+        maxBytes=_DM_MAX_BYTES,
+        backupCount=_DM_BACKUP_COUNT,
+        encoding="utf-8",
+        delay=False,
     )
     fmt = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S")
@@ -48,6 +83,12 @@ class DecisionLog:
         self._lg = logger or _get_logger()
 
     def write(self, event: str, rid: Optional[str], payload: Dict[str, Any]) -> None:
+        # Handle late logging setup: if root starts owning DM log path, drop local file handler.
+        # This avoids duplicate file handles on Windows rollover.
+        if any(isinstance(h, logging.handlers.RotatingFileHandler) for h in self._lg.handlers):
+            if _root_has_handler_for_path(os.path.abspath(_get_log_path())):
+                self._lg = _get_logger()
+
         rec = {
             "ts": int(datetime.utcnow().timestamp() * 1000),
             "event": event,

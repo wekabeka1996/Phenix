@@ -10,8 +10,9 @@ vae:
   latent_dim: 16  # Compressed representation dimensionality
 
   # Training
-  learning_rate: 0.001
-  beta: 1.0  # KL divergence weight
+  learning_rate: 0.0003
+  beta: 0.01  # KL divergence weight
+  free_bits_per_dim: 0.2  # Per-dimension KL floor to prevent posterior collapse
   batch_size: 64
 
   # Inference
@@ -20,8 +21,13 @@ vae:
   # Optional auxiliary supervision on latent mean (mu)
   regime_aux:
     enabled: true
-    alpha: 0.2
+    alpha: 2.0
     num_classes: 5
+    ema_decay: 0.99
+    alpha_schedule:
+      start: 0.5
+      end: 2.0
+      steps: 10000
 
 # ============================================================================
 # World Model (RNN Dynamics)
@@ -56,11 +62,11 @@ ppo:
 
   # Entropy bonus: prevents policy collapse (mode collapse to single action)
   # 0.01 default → 0.05 insufficient (oscillating collapse) → 0.15 drowned reward signal → 0.08 goldilocks
-  entropy_coef: 0.08
+  entropy_coef: 0.05
   entropy_schedule:
-    start: 0.20      # Force exploration initially
+    start: 0.05      # Force exploration initially
     end: 0.01        # Allow convergence later
-    total_steps: 5000 # Number of PPO updates over which to decay
+    total_steps: 10000 # Number of PPO updates over which to decay
   max_grad_norm: 0.5
   numerical_safety:
     gradient_clip_threshold: 1.0
