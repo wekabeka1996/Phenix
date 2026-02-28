@@ -8,6 +8,7 @@ and handles TRADE_INTENT_REJECTED logging.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -123,7 +124,6 @@ class IntentRouter:
                     "tif": tif,
                     "stop_price": stop_price_raw,
                     "target_price": target_price_raw,
-                    "rid": intent_rid,
                     "valid_for_ms": pld.get("valid_for_ms"),
                     "idempotent_key": pld.get("idempotent_key"),
                     "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
@@ -160,7 +160,6 @@ class IntentRouter:
 
                 if hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
-                    out_pld.setdefault("rid", result.rid)
                     self._fsm.bus.emit(
                         f"{result.op}:{result.verb}",
                         out_pld,
@@ -177,10 +176,15 @@ class IntentRouter:
                         dst="*",
                         rid=intent_rid,
                         pld={
+                            "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
-                            "reason": result.why,
-                            "original_verification_key": pld.get("idempotent_key"),
-                            "rid": intent_rid,
+                            "reason_code": "NRR-EXECUTION-REJECTED",
+                            "stage": "EXECUTION",
+                            "why": result.why[:240] if result.why else "execution_rejected",
+                            "details": {
+                                "original_verification_key": pld.get("idempotent_key"),
+                                "rid": intent_rid,
+                            },
                         },
                         why="execution_rejected",
                         data_ref=msg.data_ref,
@@ -197,7 +201,16 @@ class IntentRouter:
                 if hasattr(self._fsm, "bus"):
                     self._fsm.bus.emit(
                         "EVT:TRADE_INTENT_REJECTED",
-                        {"symbol": symbol, "reason": "internal_error_no_result", "rid": intent_rid},
+                        {
+                            "ts_ms": int(time.time() * 1000),
+                            "symbol": symbol,
+                            "reason_code": "NRR-EXECUTION-INTERNAL-ERROR",
+                            "stage": "EXECUTION",
+                            "why": "execution_no_result",
+                            "details": {
+                                "rid": intent_rid
+                            }
+                        },
                         "execution_no_result",
                         msg.data_ref,
                     )
@@ -211,10 +224,15 @@ class IntentRouter:
                     self._fsm.bus.emit(
                         "EVT:TRADE_INTENT_REJECTED",
                         {
+                            "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
-                            "reason": f"EXCEPTION: {str(e)}",
-                            "error_type": type(e).__name__,
-                            "rid": str(pld.get("rid") or msg.rid or "unknown"),
+                            "reason_code": "NRR-EXECUTION-EXCEPTION",
+                            "stage": "EXECUTION",
+                            "why": f"EXCEPTION: {str(e)}"[:240],
+                            "details": {
+                                "error_type": type(e).__name__,
+                                "rid": str(pld.get("rid") or msg.rid or "unknown"),
+                            }
                         },
                         "execution_exception",
                         msg.data_ref,

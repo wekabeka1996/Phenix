@@ -3,6 +3,7 @@ import json
 import sys
 import pathlib
 import uuid
+import warnings
 from datetime import datetime
 from typing import Any, Dict
 import typer
@@ -26,10 +27,19 @@ app = typer.Typer(add_completion=False, help="vfound CLI")
 dict_app = typer.Typer(add_completion=False, help="Dictionary tooling")
 app.add_typer(dict_app, name="dict")
 
+schema_app = typer.Typer(add_completion=False, help="Schema tooling")
+rfc_app = typer.Typer(add_completion=False, help="RFC tooling")
+trace_app = typer.Typer(add_completion=False, help="Trace tooling")
+simulate_app = typer.Typer(add_completion=False, help="Simulation tooling")
+app.add_typer(schema_app, name="schema")
+app.add_typer(rfc_app, name="rfc")
+app.add_typer(trace_app, name="trace")
+app.add_typer(simulate_app, name="simulate")
+
 REPORTS_DIR = pathlib.Path("ops/reports")
 
 
-@app.command("schema")
+@schema_app.command("gen")
 def schema_gen(from_pydantic: bool = True) -> None:
     out = pathlib.Path("schemas")
     out.mkdir(exist_ok=True, parents=True)
@@ -150,7 +160,7 @@ def dict_validate(
     raise typer.Exit(code=0 if result["ok"] else 1)
 
 
-@app.command("rfc")
+@rfc_app.command("new")
 def rfc_new(name: str) -> None:
     path = pathlib.Path(f"docs/RFC-{name}.md")
     if path.exists():
@@ -162,7 +172,7 @@ def rfc_new(name: str) -> None:
     typer.echo(f"Created {path}")
 
 
-@app.command("simulate")
+@simulate_app.command("flow")
 def simulate_flow(file: pathlib.Path) -> None:
     rid = str(uuid.uuid4())
     msg = Message(
@@ -397,7 +407,7 @@ def drift_batch(
     typer.echo(f"  Accuracy: {metrics_data.get('accuracy', 0)}%")
 
 
-@app.command("trace")
+@trace_app.command("get")
 def trace_get(rid: str) -> None:
     # naive scan
     import json
@@ -437,6 +447,101 @@ def init_domain(
         encoding="utf-8",
     )
     typer.echo(f"Created domain: {domain_dir}")
+
+
+@app.command("test-gen")
+def test_gen(
+    module: str = typer.Argument(..., help="Dotted module path (e.g. vfoundation.core.protocol)"),
+    output: pathlib.Path = typer.Option(None, "--output", "-o", help="Output .py file path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print to stdout instead of writing file"),
+) -> None:
+    """Generate test template from module's public API using AST introspection."""
+    import ast
+    import importlib.util
+
+    try:
+        spec = importlib.util.find_spec(module)
+    except (ModuleNotFoundError, ValueError):
+        spec = None
+    if spec is None or spec.origin is None:
+        typer.echo(f"Module not found: {module}", err=True)
+        raise typer.Exit(code=1)
+
+    source = pathlib.Path(spec.origin).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    lines: list[str] = []
+    lines.append(f'"""Auto-generated test template for {module}."""')
+    lines.append("import pytest")
+    lines.append(f"")
+    lines.append(f"from {module} import *  # noqa: F403")
+    lines.append(f"")
+
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+            lines.append(f"")
+            lines.append(f"def test_{node.name}():")
+            lines.append(f'    """Test {node.name}."""')
+            lines.append(f"    raise NotImplementedError")
+            lines.append(f"")
+
+        elif isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+            lines.append(f"")
+            lines.append(f"class Test{node.name}:")
+            lines.append(f'    """Tests for {node.name}."""')
+            lines.append(f"")
+            has_methods = False
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and not item.name.startswith("_"):
+                    lines.append(f"    def test_{item.name}(self):")
+                    lines.append(f'        """Test {node.name}.{item.name}."""')
+                    lines.append(f"        raise NotImplementedError")
+                    lines.append(f"")
+                    has_methods = True
+            if not has_methods:
+                lines.append(f"    def test_creation(self):")
+                lines.append(f'        """Test {node.name} can be instantiated."""')
+                lines.append(f"        raise NotImplementedError")
+                lines.append(f"")
+
+    content = "\n".join(lines) + "\n"
+
+    if dry_run:
+        typer.echo(content)
+    else:
+        out_path = output or pathlib.Path(f"tests/test_{module.split('.')[-1]}.py")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+        typer.echo(f"Generated: {out_path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deprecated flat-command compat wrappers (Phase 15.4)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.command("schema-gen", hidden=True)
+def _compat_schema_gen(from_pydantic: bool = True) -> None:
+    warnings.warn("'vfound schema-gen' is deprecated, use 'vfound schema gen'", DeprecationWarning, stacklevel=2)
+    schema_gen(from_pydantic=from_pydantic)
+
+
+@app.command("rfc-new", hidden=True)
+def _compat_rfc_new(name: str = typer.Argument(...)) -> None:
+    warnings.warn("'vfound rfc-new' is deprecated, use 'vfound rfc new'", DeprecationWarning, stacklevel=2)
+    rfc_new(name)
+
+
+@app.command("trace-get", hidden=True)
+def _compat_trace_get(rid: str = typer.Argument(...)) -> None:
+    warnings.warn("'vfound trace-get' is deprecated, use 'vfound trace get'", DeprecationWarning, stacklevel=2)
+    trace_get(rid)
+
+
+@app.command("simulate-flow", hidden=True)
+def _compat_simulate_flow(file: pathlib.Path = typer.Argument(...)) -> None:
+    warnings.warn("'vfound simulate-flow' is deprecated, use 'vfound simulate flow'", DeprecationWarning, stacklevel=2)
+    simulate_flow(file)
 
 
 if __name__ == "__main__":

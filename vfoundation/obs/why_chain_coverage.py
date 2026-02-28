@@ -45,6 +45,15 @@ class WhyCoverageReport:
         """True if all events have a non-empty WHY."""
         return self.total_events > 0 and self.covered_events == self.total_events
 
+    def passes_threshold(self, threshold_pct: float = 95.0) -> bool:
+        """Blueprint 11.2: True if coverage_pct >= threshold_pct."""
+        return self.coverage_pct >= threshold_pct
+
+    @property
+    def err_missing_why(self) -> List[str]:
+        """Blueprint 11.2: List of verbs with missing WHY fields."""
+        return [e.verb for e in self.missing_why]
+
 
 # WHY_MIN_LENGTH: WHY strings shorter than this are considered "weak"
 WHY_MIN_LENGTH: int = 5
@@ -101,3 +110,11 @@ def analyze_why_chain(
         missing_why=missing,
         weak_why=weak,
     )
+
+
+def measure_why_coverage(
+    events: List[Dict[str, Any]],
+    rid: Optional[str] = None,
+) -> WhyCoverageReport:
+    """Blueprint 11.2: Convenience wrapper — delegates to analyze_why_chain."""
+    return analyze_why_chain(events, rid=rid)

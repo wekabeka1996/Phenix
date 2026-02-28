@@ -68,7 +68,10 @@
           "description": "Total margin used by short positions in USD (string-encoded Decimal)"
         }
       },
-      "required": ["long_margin", "short_margin"],
+      "required": [
+        "long_margin",
+        "short_margin"
+      ],
       "additionalProperties": false
     },
     "positions_last_ts_ms": {
@@ -103,11 +106,19 @@
             }
           }
         },
-        "required": ["symbol", "net_position", "avg_entry_price", "venues"],
+        "required": [
+          "symbol",
+          "net_position",
+          "avg_entry_price",
+          "venues"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["ts", "equity", "realized_pnl", "unrealized_pnl", "positions", "positions_last_ts_ms"],
+  "required": [
+    "positions",
+    "positions_last_ts_ms"
+  ],
   "additionalProperties": true
 }

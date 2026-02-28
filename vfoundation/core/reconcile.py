@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class ReconcileStatus(str, Enum):
@@ -139,3 +139,81 @@ class PositionReconciler:
             matched=matched,
             mismatches=mismatches,
         )
+
+
+class ReconcileEngine:
+    """Blueprint 13.1: WAL-based reconciliation with CMD:REPAIR emission.
+
+    Reads WAL fill events, builds internal PositionSnapshot list,
+    reconciles against external positions, and emits CMD:REPAIR dicts
+    for each mismatch.
+    """
+
+    def __init__(
+        self,
+        reconciler: Optional[PositionReconciler] = None,
+        tolerance: float = 1e-8,
+    ) -> None:
+        self._reconciler = reconciler or PositionReconciler(tolerance=tolerance)
+
+    def reconcile_from_wal(
+        self,
+        wal_events: List[Dict[str, Any]],
+        external: List[PositionSnapshot],
+        since_ts: int = 0,
+    ) -> Tuple[ReconcileReport, List[Dict[str, Any]]]:
+        """Reconcile WAL fills against external positions.
+
+        Args:
+            wal_events: List of WAL event dicts (must have 'ts', 'verb', 'pld').
+            external: Exchange-reported position snapshots.
+            since_ts: Only consider WAL events with ts > since_ts.
+
+        Returns:
+            (report, repair_commands): ReconcileReport and list of CMD:REPAIR dicts.
+        """
+        # Filter WAL events by timestamp
+        fills = [
+            e for e in wal_events
+            if int(e.get("ts", 0)) > since_ts
+            and e.get("verb") in ("FILL", "ORDER_FILL")
+        ]
+
+        # Build internal position snapshots from fills
+        position_map: Dict[str, float] = {}
+        for fill in fills:
+            pld = fill.get("pld", {})
+            symbol = pld.get("symbol", "")
+            qty = float(pld.get("qty", 0))
+            side = pld.get("side", "BUY")
+            if symbol:
+                if side == "SELL":
+                    position_map[symbol] = position_map.get(symbol, 0.0) - qty
+                else:
+                    position_map[symbol] = position_map.get(symbol, 0.0) + qty
+
+        internal = [
+            PositionSnapshot(symbol=sym, qty=qty, source="wal")
+            for sym, qty in position_map.items()
+        ]
+
+        # Delegate to PositionReconciler
+        report = self._reconciler.reconcile(internal, external)
+
+        # Build CMD:REPAIR commands for mismatches
+        repairs: List[Dict[str, Any]] = []
+        for mm in report.mismatches:
+            repairs.append({
+                "op": "CMD",
+                "verb": "REPAIR",
+                "pld": {
+                    "symbol": mm.symbol,
+                    "status": mm.status.value,
+                    "internal_qty": mm.internal_qty,
+                    "external_qty": mm.external_qty,
+                    "delta_qty": mm.delta_qty,
+                    "reason": mm.reason,
+                },
+            })
+
+        return report, repairs

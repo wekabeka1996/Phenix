@@ -13,8 +13,8 @@ trading:
   # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
   mode: backtest
   backtest:
-    start_date: "2023-05-14"
-    end_date: "2023-10-30"
+    start_date: "2023-06-01"
+    end_date: "2023-09-30"
     initial_balance: 1000.0
     profit_withdrawal_enabled: false
     profit_withdrawal_roi_pct: 10
@@ -91,6 +91,8 @@ trading:
       - 180
       - 300
       - 900  # REGIME-BAR-FORENSICS-01: Enable 15m bars
+      - 14400 # 4h bars for operator pillar
+      - 86400 # 1d bars for strategist pillar
   ops:
     panic_killswitch: false
   execution:

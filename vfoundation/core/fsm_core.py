@@ -43,7 +43,14 @@ class FSMCore:
                 self.listeners[event_name] = []
             self.listeners[event_name].append(callback)
 
-    def emit(self, event_name: str, payload: Dict[str, Any], why: str, data_ref: Optional[List[str]] = None, rid: Optional[str] = None) -> None:
+    def emit(
+        self,
+        event_name: Any,
+        payload: Optional[Dict[str, Any]] = None,
+        why: str = "",
+        data_ref: Optional[List[str]] = None,
+        rid: Optional[str] = None,
+    ) -> None:
         """
         Emit an event to all registered listeners.
 
@@ -55,6 +62,24 @@ class FSMCore:
             rid: Optional request ID to pass through for envelope-level traceability.
                  If None, Message generates a new UUID (backward-compatible).
         """
+        # Compatibility: allow emit(Message(...)) from legacy bridges/helpers.
+        if isinstance(event_name, Message):
+            msg = event_name
+            event_name = f"{msg.op}:{msg.verb}"
+            payload = dict(msg.pld or {})
+            if not why:
+                why = msg.why or ""
+            if data_ref is None:
+                data_ref = list(msg.data_ref or [])
+            if rid is None:
+                rid = msg.rid
+
+        if not isinstance(event_name, str):
+            raise TypeError(f"event_name must be str or Message, got {type(event_name).__name__}")
+
+        if payload is None:
+            payload = {}
+
         # Phase 14C: Message Schema Validation (Fail-Fast)
         try:
             from .schema_registry import get_global_registry

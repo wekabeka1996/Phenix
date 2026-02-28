@@ -97,7 +97,12 @@ class IntentEmitter:
         }
         if context:
             payload["context"] = context
-        self._fsm.emit("EVT:INTENT_DEFERRED", payload, why=f"intent_deferred:{reason}")
+        self._fsm.emit(
+            "EVT:INTENT_DEFERRED", 
+            payload, 
+            why=f"intent_deferred:{reason}",
+            data_ref=why_chain or []
+        )
 
     # -- Rejected Emission -------------------------------------------------
 
@@ -152,7 +157,12 @@ class IntentEmitter:
                 ts_ms=ts_ms,
             )
 
-            self._fsm.emit("EVT:TRADE_INTENT_REJECTED", payload, why=f"intent_rejected:{reason_code}")
+            self._fsm.emit(
+                "EVT:TRADE_INTENT_REJECTED", 
+                payload, 
+                why=f"intent_rejected:{reason_code}",
+                data_ref=list(why_chain or [])
+            )
         except Exception:
             return
 
@@ -178,7 +188,12 @@ class IntentEmitter:
         }
 
         self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
-        self._fsm.emit("EVT:INTENT_DEFERRED", payload, why=f"intent_deferred:{reason}")
+        self._fsm.emit(
+            "EVT:INTENT_DEFERRED", 
+            payload, 
+            why=f"intent_deferred:{reason}",
+            data_ref=["flip_orchestration_defer"]
+        )
 
     # -- Intent Counting ---------------------------------------------------
 

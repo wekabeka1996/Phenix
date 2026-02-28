@@ -5,7 +5,13 @@
   "description": "Emitted when a bar period closes. SSOT for bar-based calculations.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["ts_ms", "symbol", "tf_sec", "bar_close_ts", "bar"],
+  "required": [
+    "ts_ms",
+    "symbol",
+    "tf_sec",
+    "bar_close_ts",
+    "bar"
+  ],
   "properties": {
     "symbol": {
       "type": "string",
@@ -27,7 +33,7 @@
     "bar": {
       "type": "object",
       "description": "Completed OHLCV bar",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
         "symbol",
         "timeframe_sec",
@@ -95,11 +101,24 @@
     "bar_meta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "close_reason"],
+      "required": [
+        "source",
+        "close_reason"
+      ],
       "properties": {
-        "source": {"type": "string"},
-        "close_reason": {"type": "string"},
-        "ticks_in_bar": {"type": "integer"}
+        "source": {
+          "type": "string"
+        },
+        "close_reason": {
+          "type": "string"
+        },
+        "ticks_in_bar": {
+          "type": "integer"
+        },
+        "basis_bars": {
+          "type": "integer",
+          "description": "Number of basis bars used for aggregation"
+        }
       }
     },
     "why": {

@@ -44,18 +44,29 @@
       "type": "object",
       "description": "Warmup/readiness state for RegimeDetector (TASK24 additive)",
       "properties": {
-        "full_ready": { "type": "boolean" },
-        "ticks_seen": { "type": "integer" },
+        "full_ready": {
+          "type": "boolean"
+        },
+        "ticks_seen": {
+          "type": "integer"
+        },
         "ready": {
           "type": "object",
-          "additionalProperties": { "type": "boolean" }
+          "additionalProperties": {
+            "type": "boolean"
+          }
         },
         "reasons": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
-      "required": ["full_ready", "ticks_seen"],
+      "required": [
+        "full_ready",
+        "ticks_seen"
+      ],
       "additionalProperties": false
     },
     "data_quality": {
@@ -64,14 +75,20 @@
       "properties": {
         "drops": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "notes": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
-      "required": ["drops"],
+      "required": [
+        "drops"
+      ],
       "additionalProperties": false
     },
     "changed": {
@@ -82,8 +99,65 @@
       "type": "integer",
       "description": "DM-CRITICAL-PATCHES-02: Heartbeat timestamp (monotonic ms) for liveness check",
       "minimum": 0
+    },
+    "calc_lag_ms": {
+      "type": "number",
+      "description": "Calculation lag in milliseconds (debug/diagnostic)"
+    },
+    "hysteresis_confirm_count": {
+      "type": "integer",
+      "description": "Hysteresis confirmation bar count"
+    },
+    "raw_confidence": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ],
+      "description": "Raw unsmoothed confidence before hysteresis"
+    },
+    "raw_regime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Raw regime before hysteresis smoothing"
+    },
+    "stable_confidence": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ],
+      "description": "Confidence with smoothing applied"
+    },
+    "storm_rejected": {
+      "type": "boolean",
+      "description": "True if regime was rejected due to volatility storm gate"
+    },
+    "vol_ratio": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ],
+      "description": "Volatility ratio used for regime detection"
+    },
+    "vol_ratio_slope": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ],
+      "description": "Slope of the volatility ratio"
     }
   },
-  "required": ["ts", "symbol", "regime", "confidence", "source_model"],
-  "additionalProperties": false
+  "required": [
+    "ts",
+    "symbol",
+    "regime",
+    "confidence",
+    "source_model"
+  ],
+  "additionalProperties": true
 }

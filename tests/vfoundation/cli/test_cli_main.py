@@ -103,7 +103,7 @@ class TestSchemaCommand:
         self, runner: CliRunner, working_dir: pathlib.Path
     ) -> None:
         """schema command should create schemas/message_v1.json."""
-        result = runner.invoke(app, ["schema"])
+        result = runner.invoke(app, ["schema", "gen"])
         assert result.exit_code == 0, f"expected exit 0, got {result.exit_code}: {result.output}"
         schema_file = working_dir / "schemas" / "message_v1.json"
         assert schema_file.exists(), "expected schemas/message_v1.json to be created"
@@ -112,7 +112,7 @@ class TestSchemaCommand:
         self, runner: CliRunner, working_dir: pathlib.Path
     ) -> None:
         """Generated schema should be valid JSON with schema structure."""
-        runner.invoke(app, ["schema"])
+        runner.invoke(app, ["schema", "gen"])
         schema_path = working_dir / "schemas" / "message_v1.json"
         content = json.loads(schema_path.read_text(encoding="utf-8"))
         assert isinstance(content, dict), "expected schema to be a JSON object"
@@ -123,7 +123,7 @@ class TestSchemaCommand:
         self, runner: CliRunner, working_dir: pathlib.Path
     ) -> None:
         """schema command should print confirmation message."""
-        result = runner.invoke(app, ["schema"])
+        result = runner.invoke(app, ["schema", "gen"])
         assert "schemas" in result.output.lower() or "generated" in result.output.lower(), (
             f"expected output to mention schema generation, got: {result.output!r}"
         )
@@ -264,7 +264,7 @@ class TestRfcCommand:
         self, runner: CliRunner, adr_template: pathlib.Path, working_dir: pathlib.Path
     ) -> None:
         """rfc new should create docs/RFC-<name>.md."""
-        result = runner.invoke(app, ["rfc", "my-feature"])
+        result = runner.invoke(app, ["rfc", "new", "my-feature"])
         assert result.exit_code == 0, f"expected exit 0, got {result.exit_code}: {result.output}"
         rfc_file = working_dir / "docs" / "RFC-my-feature.md"
         assert rfc_file.exists(), "expected docs/RFC-my-feature.md to be created"
@@ -273,7 +273,7 @@ class TestRfcCommand:
         self, runner: CliRunner, adr_template: pathlib.Path, working_dir: pathlib.Path
     ) -> None:
         """rfc command should replace ADR-XXXX with RFC-<name> in template."""
-        runner.invoke(app, ["rfc", "test-thing"])
+        runner.invoke(app, ["rfc", "new", "test-thing"])
         rfc_file = working_dir / "docs" / "RFC-test-thing.md"
         content = rfc_file.read_text(encoding="utf-8")
         assert "RFC-test-thing" in content, f"expected RFC-test-thing in content: {content!r}"
@@ -283,8 +283,8 @@ class TestRfcCommand:
         self, runner: CliRunner, adr_template: pathlib.Path, working_dir: pathlib.Path
     ) -> None:
         """Calling rfc twice with same name should exit 1 on second call."""
-        runner.invoke(app, ["rfc", "duplicate"])
-        result2 = runner.invoke(app, ["rfc", "duplicate"])
+        runner.invoke(app, ["rfc", "new", "duplicate"])
+        result2 = runner.invoke(app, ["rfc", "new", "duplicate"])
         assert result2.exit_code == 1
         assert "Exists" in result2.output or "exists" in result2.output.lower()
 
@@ -359,7 +359,7 @@ class TestTraceCommand:
     ) -> None:
         """trace with existing RID should exit 0 and return events list."""
         rid = (working_dir / ".test_rid").read_text()
-        result = runner.invoke(app, ["trace", rid])
+        result = runner.invoke(app, ["trace", "get", rid])
         assert result.exit_code == 0, f"expected exit 0, got {result.exit_code}: {result.output}"
         data = json.loads(result.output)
         assert data["rid"] == rid
@@ -369,7 +369,7 @@ class TestTraceCommand:
         self, runner: CliRunner, wal_dir: pathlib.Path
     ) -> None:
         """trace with unknown RID should exit 0 with empty events."""
-        result = runner.invoke(app, ["trace", "nonexistent-rid"])
+        result = runner.invoke(app, ["trace", "get", "nonexistent-rid"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["events"] == []
@@ -391,7 +391,7 @@ class TestSimulateCommand:
         wal_dir.mkdir(parents=True)
         sim_file = working_dir / "scenario.json"
         sim_file.write_text("{}", encoding="utf-8")
-        result = runner.invoke(app, ["simulate", str(sim_file)])
+        result = runner.invoke(app, ["simulate", "flow", str(sim_file)])
         assert result.exit_code == 0, f"expected exit 0: {result.output}"
         assert "Simulated rid=" in result.output, (
             f"expected 'Simulated rid=' in output, got: {result.output!r}"
@@ -410,7 +410,7 @@ class TestSimulateCommand:
         import vfoundation.dr.wal as wal_mod
         wal_mod.set_wal_dir(wal_dir)
 
-        runner.invoke(app, ["simulate", str(sim_file)])
+        runner.invoke(app, ["simulate", "flow", str(sim_file)])
         wal_files = list(wal_dir.glob("*.jsonl"))
         assert len(wal_files) >= 1, "expected at least one WAL file after simulate"
         lines = wal_files[0].read_text(encoding="utf-8").strip().splitlines()
@@ -479,3 +479,80 @@ class TestInitCommand:
         assert "Created domain" in result.output, (
             f"expected 'Created domain' in output, got: {result.output!r}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestSubCommandAlignment — Phase 15.4
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSubCommandAlignment:
+    """Tests for nested sub-commands and deprecated compat wrappers."""
+
+    def test_schema_gen_subcommand(
+        self, runner: CliRunner, working_dir: pathlib.Path
+    ) -> None:
+        """'vfound schema gen' should work."""
+        result = runner.invoke(app, ["schema", "gen"])
+        assert result.exit_code == 0
+
+    def test_rfc_new_subcommand(
+        self, runner: CliRunner, adr_template: pathlib.Path, working_dir: pathlib.Path
+    ) -> None:
+        """'vfound rfc new <name>' should work."""
+        result = runner.invoke(app, ["rfc", "new", "sub-cmd-test"])
+        assert result.exit_code == 0
+        assert (working_dir / "docs" / "RFC-sub-cmd-test.md").exists()
+
+    def test_trace_get_subcommand(
+        self, runner: CliRunner, wal_dir: pathlib.Path, working_dir: pathlib.Path
+    ) -> None:
+        """'vfound trace get <rid>' should work."""
+        rid = (working_dir / ".test_rid").read_text()
+        result = runner.invoke(app, ["trace", "get", rid])
+        assert result.exit_code == 0
+
+    def test_simulate_flow_subcommand(
+        self, runner: CliRunner, working_dir: pathlib.Path
+    ) -> None:
+        """'vfound simulate flow <file>' should work."""
+        wal_d = working_dir / "ops" / "wal"
+        wal_d.mkdir(parents=True)
+        sim_file = working_dir / "scenario.json"
+        sim_file.write_text("{}", encoding="utf-8")
+        result = runner.invoke(app, ["simulate", "flow", str(sim_file)])
+        assert result.exit_code == 0
+
+    def test_schema_gen_compat(
+        self, runner: CliRunner, working_dir: pathlib.Path
+    ) -> None:
+        """Deprecated 'vfound schema-gen' should still work."""
+        result = runner.invoke(app, ["schema-gen"])
+        assert result.exit_code == 0
+
+    def test_rfc_new_compat(
+        self, runner: CliRunner, adr_template: pathlib.Path, working_dir: pathlib.Path
+    ) -> None:
+        """Deprecated 'vfound rfc-new <name>' should still work."""
+        result = runner.invoke(app, ["rfc-new", "compat-test"])
+        assert result.exit_code == 0
+        assert (working_dir / "docs" / "RFC-compat-test.md").exists()
+
+    def test_trace_get_compat(
+        self, runner: CliRunner, wal_dir: pathlib.Path, working_dir: pathlib.Path
+    ) -> None:
+        """Deprecated 'vfound trace-get <rid>' should still work."""
+        rid = (working_dir / ".test_rid").read_text()
+        result = runner.invoke(app, ["trace-get", rid])
+        assert result.exit_code == 0
+
+    def test_simulate_flow_compat(
+        self, runner: CliRunner, working_dir: pathlib.Path
+    ) -> None:
+        """Deprecated 'vfound simulate-flow <file>' should still work."""
+        wal_d = working_dir / "ops" / "wal"
+        wal_d.mkdir(parents=True)
+        sim_file = working_dir / "scenario.json"
+        sim_file.write_text("{}", encoding="utf-8")
+        result = runner.invoke(app, ["simulate-flow", str(sim_file)])
+        assert result.exit_code == 0

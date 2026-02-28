@@ -12,7 +12,7 @@ runner = CliRunner()
 class TestSchemaCommand:
     def test_schema_gen(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        result = runner.invoke(app, ["schema"])
+        result = runner.invoke(app, ["schema", "gen"])
         assert result.exit_code == 0
         assert "Schemas generated" in result.stdout
         assert (tmp_path / "schemas" / "message_v1.json").exists()
@@ -56,7 +56,7 @@ class TestSimulateCommand:
         monkeypatch.chdir(pathlib.Path(__file__).parent.parent.parent.parent)
         import vfoundation.dr.wal as wal_mod
         wal_mod.set_wal_dir(tmp_path)
-        result = runner.invoke(app, ["simulate", str(tmp_path / "flow.json")])
+        result = runner.invoke(app, ["simulate", "flow", str(tmp_path / "flow.json")])
         assert result.exit_code == 0
         assert "Simulated rid=" in result.stdout
 
@@ -112,7 +112,7 @@ class TestTraceCommand:
     def test_trace_no_events(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "ops" / "wal").mkdir(parents=True)
-        result = runner.invoke(app, ["trace", "nonexistent"])
+        result = runner.invoke(app, ["trace", "get", "nonexistent"])
         assert result.exit_code == 0
         output = json.loads(result.stdout)
         assert output["events"] == []
@@ -124,7 +124,7 @@ class TestTraceCommand:
         (wal_dir / "test.jsonl").write_text(
             json.dumps({"rid": "t1", "op": "EVT"}) + "\n"
         )
-        result = runner.invoke(app, ["trace", "t1"])
+        result = runner.invoke(app, ["trace", "get", "t1"])
         assert result.exit_code == 0
         output = json.loads(result.stdout)
         assert len(output["events"]) == 1

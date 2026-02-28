@@ -163,3 +163,100 @@ class TestPerfBenchmark:
         assert len(result.latencies_ms) == 10, (
             f"expected 10 measured iterations, got {len(result.latencies_ms)}"
         )
+
+
+# ── DR recovery simulation ───────────────────────────────────────────────────
+import json
+from pathlib import Path
+from vfoundation.testing.dr_timing import DRRecoveryResult, simulate_dr_recovery
+
+
+class TestDRRecoverySimulation:
+    def test_simulate_empty_dirs(self, tmp_path: Path) -> None:
+        """Empty WAL + snapshot dirs → valid result with rto_ok=True."""
+        wal_dir = tmp_path / "wal"
+        snap_dir = tmp_path / "snap"
+        wal_dir.mkdir()
+        snap_dir.mkdir()
+        result = simulate_dr_recovery(wal_dir, snap_dir, failure_ts=5000)
+        assert isinstance(result, DRRecoveryResult)
+        assert result.rto_ok is True
+        assert result.data_loss_events == 0
+
+    def test_simulate_with_snapshot_and_wal(self, tmp_path: Path) -> None:
+        """Snapshot + WAL events → replay events counted correctly."""
+        wal_dir = tmp_path / "wal"
+        snap_dir = tmp_path / "snap"
+        wal_dir.mkdir()
+        snap_dir.mkdir()
+        # Write a snapshot at ts=1000
+        (snap_dir / "snap_001.json").write_text(json.dumps({"ts": 1000}))
+        # Write WAL events
+        lines = "\n".join([
+            json.dumps({"ts": 1500, "op": "DEC", "verb": "OPEN"}),
+            json.dumps({"ts": 2000, "op": "EVT", "verb": "FILL"}),
+            json.dumps({"ts": 3000, "op": "EVT", "verb": "FILL"}),
+        ])
+        (wal_dir / "wal_001.jsonl").write_text(lines)
+        result = simulate_dr_recovery(wal_dir, snap_dir, failure_ts=3000)
+        assert result.rto_ok is True
+        assert result.data_loss_window_ms == 0.0  # last event ts == failure_ts
+
+    def test_rto_breach_detected(self, tmp_path: Path) -> None:
+        """Tight RTO target → rto_ok=False (recovery always takes some time)."""
+        wal_dir = tmp_path / "wal"
+        snap_dir = tmp_path / "snap"
+        wal_dir.mkdir()
+        snap_dir.mkdir()
+        # target 0ms → any real I/O will exceed it
+        result = simulate_dr_recovery(
+            wal_dir, snap_dir, failure_ts=5000, rto_target_ms=0.0
+        )
+        assert result.rto_ok is False
+
+    def test_rpo_breach_detected(self, tmp_path: Path) -> None:
+        """Large gap between last event and failure → rpo_ok=False."""
+        wal_dir = tmp_path / "wal"
+        snap_dir = tmp_path / "snap"
+        wal_dir.mkdir()
+        snap_dir.mkdir()
+        (snap_dir / "snap_001.json").write_text(json.dumps({"ts": 1000}))
+        (wal_dir / "wal_001.jsonl").write_text(
+            json.dumps({"ts": 1500, "op": "DEC", "verb": "OPEN"})
+        )
+        # failure at 100_000 → gap = 98500ms, rpo_target = 1000ms
+        result = simulate_dr_recovery(
+            wal_dir, snap_dir, failure_ts=100_000, rpo_target_ms=1000.0
+        )
+        assert result.rpo_ok is False
+        assert result.data_loss_window_ms > 1000.0
+
+
+# ── domain-specific benchmarks ───────────────────────────────────────────────
+from vfoundation.testing.perf_benchmark import benchmark_fsm_hot_path, benchmark_cb_health
+
+
+class TestDomainBenchmarks:
+    def test_benchmark_fsm_hot_path_returns_result(self) -> None:
+        """benchmark_fsm_hot_path with a mock FSM returns BenchmarkResult."""
+
+        class _MockFSM:
+            def handle(self, msg: dict) -> None:
+                pass
+
+        fsm = _MockFSM()
+        msgs = [{"op": "DEC", "verb": "OPEN"} for _ in range(5)]
+        result = benchmark_fsm_hot_path(fsm, msgs, p95_threshold_ms=100.0)
+        assert result.iterations == len(msgs)
+        assert result.meets_slo(100.0)
+
+    def test_benchmark_cb_health_returns_result(self) -> None:
+        """benchmark_cb_health with a mock adapter returns BenchmarkResult."""
+
+        class _MockAdapter:
+            def health_check(self) -> bool:
+                return True
+
+        result = benchmark_cb_health(_MockAdapter(), iterations=20)
+        assert result.iterations == 20
+        assert result.throughput_rps > 0

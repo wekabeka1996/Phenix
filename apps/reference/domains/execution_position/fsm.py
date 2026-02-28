@@ -79,6 +79,12 @@ from apps.reference.domains.execution_position.close_executor import CloseExecut
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
 
+# Phase 14.2: Additional Strangler Fig micro-extractions
+from apps.reference.domains.execution_position.config_resolver import ConfigResolverMixin
+from apps.reference.domains.execution_position.async_scheduling import AsyncSchedulingMixin
+from apps.reference.domains.execution_position.adapter_init import AdapterInitMixin
+from apps.reference.domains.execution_position.health_metrics import HealthMetricsMixin
+
 # Import AlertManager for circuit breaker alerts
 try:
     from apps.reference.telemetry.alerts import AlertManager
@@ -137,10 +143,21 @@ def _in_quiet(quiet: list[str]) -> bool:
     return False
 
 
-class ExecPosFSM:
+class ExecPosFSM(
+    ConfigResolverMixin,
+    AsyncSchedulingMixin,
+    AdapterInitMixin,
+    HealthMetricsMixin,
+):
     """
     Wrapper FSM for the execution_position domain. It manages FSM instances
     per symbol and handles trade execution via the BinanceAdapter.
+
+    Phase 14.2: Methods extracted to mixins:
+    - ConfigResolverMixin: _get_config_value, _resolve_guardian_config, _collect_guardian_symbols
+    - AsyncSchedulingMixin: set_async_loop, _get/submit_async, _schedule_guardian/cleanup
+    - AdapterInitMixin: _initialize_adapter
+    - HealthMetricsMixin: get_metrics, handle_tick, is_healthy
     """
 
     def __init__(
@@ -627,130 +644,12 @@ class ExecPosFSM:
         self._processed_events.add(event_key, now_ms)
         return True
 
-    def _get_config_value(self, path: list[str], default: Any = None) -> Any:
-        """Safely traverse mixed dict/object configurations."""
-        node: Any = self.config
-        for key in path:
-            if node is None:
-                return default
-            try:
-                if isinstance(node, dict):
-                    node = node.get(key)
-                else:
-                    node = getattr(node, key)
-            except (AttributeError, KeyError, TypeError):
-                return default
-        return node if node is not None else default
+    # Phase 14.2: _get_config_value, _resolve_guardian_config, _collect_guardian_symbols
+    # → extracted to ConfigResolverMixin (config_resolver.py)
 
-    def _resolve_guardian_config(self) -> Dict[str, Any]:
-        """Aggregate guardian config from SSOT: domains.execution_position.guardian.
-        
-        MAGIC-NUM-EXTRACTION: All guardian config now from domains.yaml, no hardcoded defaults.
-        """
-        # SSOT: domains.execution_position.guardian (fail-closed if missing)
-        try:
-            guardian_cfg = self.config.domains.execution_position.guardian
-            if guardian_cfg is None:
-                raise ValueError("guardian config is required in domains.execution_position")
-            
-            return {
-                "unified": bool(guardian_cfg.unified),
-                "emit_tidy_event": bool(guardian_cfg.emit_tidy_event),
-                "poll_interval_ms": int(guardian_cfg.poll_interval_ms),
-                "cleanup_ttl_ms": int(guardian_cfg.cleanup_ttl_ms),
-                "symbol_cooldown_ms": int(guardian_cfg.symbol_cooldown_ms),
-            }
-        except (AttributeError, TypeError) as e:
-            raise ValueError(
-                f"Failed to load guardian config from domains.execution_position: {e}. "
-                "Check domains.yaml has execution_position.guardian section."
-            ) from e
-
-    def _collect_guardian_symbols(self) -> Set[str]:
-        """Gather configured trading symbols for guardian ownership tracking."""
-        symbols: Set[str] = set()
-        instruments = self._get_config_value(
-            ["trading", "instruments"], default={})
-        if isinstance(instruments, dict):
-            for sym in instruments.keys():
-                if sym:
-                    symbols.add(str(sym).upper())
-        return symbols
-
-    def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Register the shared asyncio loop for guardian/adapter tasks."""
-        self._async_loop = loop
-
-    def _get_async_loop(self) -> Optional[asyncio.AbstractEventLoop]:
-        """Resolve the active asyncio loop for scheduling background work."""
-        loop = self._async_loop
-        if loop and not loop.is_closed():
-            return loop
-        try:
-            return asyncio.get_running_loop()
-        except RuntimeError:
-            return None
-
-    def _submit_async(
-        self,
-        coro: Coroutine[Any, Any, Any],
-        loop: Optional[asyncio.AbstractEventLoop] = None,
-    ) -> None:
-        """Schedule coroutine on a target loop, thread-safe."""
-        target_loop = loop or self._get_async_loop()
-        if not target_loop:
-            LOG.debug("No asyncio loop available to schedule %r", coro)
-            return
-
-        try:
-            running_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            running_loop = None
-
-        if running_loop is target_loop:
-            target_loop.create_task(coro)
-        else:
-            asyncio.run_coroutine_threadsafe(coro, target_loop)
-
-    def _schedule_guardian_start(self) -> None:
-        """Ensure guardian poller and startup reconcile are scheduled once."""
-        if self._guardian_start_scheduled:
-            return
-        guardian = aget(self, "order_guardian", None)
-        if not guardian:
-            return
-
-        loop = self._get_async_loop()
-        if not loop:
-            LOG.debug("OrderGuardian start deferred: no event loop active")
-            return
-
-        self._submit_async(guardian.start(), loop)
-        self._submit_async(self._startup_order_guardian_reconcile(), loop)
-        LOG.info("✅ OrderGuardian background tasks scheduled")
-        self._guardian_start_scheduled = True
-
-    def _schedule_fsm_cleanup_loop(self) -> None:
-        """Start FSM-side cleanup loop respecting unified guardian config."""
-        if self._bg_started:
-            return
-        if not self._orphan_cfg.get("enabled"):
-            return
-        if not aget(self, "order_guardian", None):
-            return
-        if self._guardian_unified and not self._fsm_cleanup_enabled:
-            if not self._fsm_cleanup_logged:
-                LOG.info("[FSM-CLEANUP] disabled_by_config (unified=true)")
-                self._fsm_cleanup_logged = True
-            return
-
-        loop = self._get_async_loop()
-        if not loop:
-            LOG.debug("FSM cleanup start deferred: no event loop active")
-            return
-
-        self._submit_async(self._cleanup_loop(), loop)
-        self._bg_started = True
+    # Phase 14.2: set_async_loop, _get_async_loop, _submit_async,
+    # _schedule_guardian_start, _schedule_fsm_cleanup_loop
+    # → extracted to AsyncSchedulingMixin (async_scheduling.py)
 
     @staticmethod
     def _is_cancel_success_response(result: Any) -> bool:
@@ -880,82 +779,8 @@ class ExecPosFSM:
         except Exception as e:
             LOG.error(f"Failed to start OrderGuardian: {e}")
 
-    def _initialize_adapter(self):
-        """Initializes the BinanceAdapter based on the domain-level trading_mode."""
-        # Check if config_loader has get_domain_mode method (new approach)
-        mode = "testnet"  # Default fallback
-
-        # Try to get domain-specific mode first
-        if hasattr(self.config, "get_domain_mode"):
-            try:
-                mode = self.config.get_domain_mode("execution_position")
-                LOG.info(f"✅ ExecPosFSM using domain-specific mode: {mode}")
-            except Exception as e:
-                LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                try:
-                    if self.config.trading:
-                        mode = self.config.trading.mode
-                except AttributeError:
-                    mode = "testnet"
-        else:
-            # Fallback to global mode
-            try:
-                if self.config.trading:
-                    mode = self.config.trading.mode
-            except AttributeError:
-                mode = "testnet"
-            LOG.info(f"ExecPosFSM using global trading_mode: {mode}")
-
-        LOG.info(f"🎯 EXECUTION POSITION FSM MODE: {mode.upper()}")
-
-        api_config = self.config.binance_api
-
-        # Safe extraction of env config
-        if mode == "live":
-            env_config = api_config.live
-            LOG.info("❌ ExecPosFSM adapter is configured for LIVE execution.")
-        else:  # 'testnet' or 'hybrid_live_data_testnet_exec'
-            env_config = api_config.testnet
-            LOG.info(
-                f"✅ ExecPosFSM adapter is configured for TESTNET execution (mode: {mode})."
-            )
-
-        # Extract API credentials (fail-closed: no default fallbacks on critical fields)
-        try:
-            api_key = env_config.api_key
-            api_secret = env_config.api_secret
-            rest_url = env_config.rest_url
-        except Exception:  # pragma: no cover - defensive
-            api_key = None
-            api_secret = None
-            rest_url = None
-
-        if not all([api_key, api_secret, rest_url]):
-            LOG.error(
-                f"API configuration for execution in '{mode}' mode is incomplete. Execution will be simulated."
-            )
-            LOG.debug(f"  - API Key present: {bool(api_key)}")
-            LOG.debug(f"  - API Secret present: {bool(api_secret)}")
-            LOG.debug(f"  - REST URL: {rest_url}")
-            self.shadow_mode = True  # Fallback to shadow mode if config is missing
-            return
-
-        self.adapter = BinanceAdapter(
-            api_key=api_key,
-            api_secret=api_secret,
-            rest_url=rest_url,
-        )
-        # PHASE B1: Pass metrics reference to adapter for -4116 tracking
-        self.adapter._orphan_metrics_ref = self._orphan_metrics
-        LOG.info(
-            f"✅ BinanceAdapter initialized for ExecPosFSM with base URL: {self.adapter.base_url}"
-        )
-
-        # 🔧 POLLING FIX: Connect adapter to THIS ExecPosFSM instance (not FSMCore event bus)
-        # Adapter needs direct access to ExecPosFSM.handle() to deliver TRADE_EXECUTED events
-        self.adapter.exec_fsm = self  # Direct reference to ExecPosFSM for handle() calls
-        # Keep for backwards compatibility (event bus)
-        self.adapter.fsm_core = self.fsm
+    # Phase 14.2: _initialize_adapter
+    # → extracted to AdapterInitMixin (adapter_init.py)
 
     def _get_or_create_flows(
         self, symbol: str
@@ -1260,71 +1085,8 @@ class ExecPosFSM:
                 why="Execution failed due to adapter error")
             await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
 
-    def get_metrics(self) -> Dict[str, Any]:
-        """Aggregate metrics from all managed FSMs."""
-        all_metrics = {}
-        with self._flows_lock:
-            for symbol, open_fsm in self.open_flows.items():
-                all_metrics[f"{symbol}_open"] = open_fsm.get_metrics()
-            for symbol, manage_fsm in self.manage_flows.items():
-                all_metrics[f"{symbol}_manage"] = manage_fsm.get_metrics()
-            for symbol, close_fsm in self.close_flows.items():
-                all_metrics[f"{symbol}_close"] = close_fsm.get_metrics()
-
-        # Include watchdog metrics
-        if hasattr(self, 'watchdog'):
-            all_metrics["order_timeout_watchdog"] = self.watchdog.get_metrics()
-
-        # Include orphan-monitor metrics
-        all_metrics["orphan_monitor"] = {
-            **self._orphan_metrics,
-            "cfg": {
-                "enabled": self._orphan_cfg["enabled"],
-                "periodic_interval_sec": self._orphan_cfg["periodic_interval_sec"],
-                "min_order_age_sec": self._orphan_cfg["min_order_age_sec"],
-                "batch_cancel_limit": self._orphan_cfg["batch_cancel_limit"],
-                "rate_limit_per_min": self._orphan_cfg["rate_limit_per_min"],
-            },
-        }
-
-        # Include gate metrics (SYMBOL_TIDY entry gate)
-        try:
-            gate_blocked = int(self._gate_metrics["gate_entry_blocked_tidy"])
-            gate_allowed = int(self._gate_metrics["gate_entry_allowed_tidy"])
-            all_metrics["gate"] = {
-                "entry_blocked_tidy": gate_blocked,
-                "entry_allowed_tidy": gate_allowed,
-            }
-            # Flat fields for quick access in /metrics JSON
-            all_metrics["gate_entry_blocked_tidy"] = gate_blocked
-            all_metrics["gate_entry_allowed_tidy"] = gate_allowed
-            # Per-symbol stamps
-            all_metrics["symbol_last_tidy_ts"] = dict(
-                self._symbol_last_tidy_ts)
-            all_metrics["last_entry_block_ts"] = dict(
-                self._last_entry_block_ts)
-        except Exception:
-            # Be robust if attributes missing
-            all_metrics["gate"] = {
-                "entry_blocked_tidy": 0,
-                "entry_allowed_tidy": 0,
-            }
-            all_metrics["gate_entry_blocked_tidy"] = 0
-            all_metrics["gate_entry_allowed_tidy"] = 0
-            all_metrics["symbol_last_tidy_ts"] = {}
-            all_metrics["last_entry_block_ts"] = {}
-
-        try:
-            guardian = aget(self, "order_guardian", None)
-            if guardian:
-                guardian_metrics = guardian.get_metrics()
-                all_metrics["order_guardian"] = guardian_metrics
-                all_metrics["guardian_unified"] = self._guardian_unified
-                all_metrics["guardian_emit_tidy_event"] = self._guardian_emit_tidy_event
-        except Exception:
-            pass
-
-        return all_metrics
+    # Phase 14.2: get_metrics
+    # → extracted to HealthMetricsMixin (health_metrics.py)
 
     # ---- GATE: SYMBOL_TIDY entry gating ----
     def _on_symbol_tidy_event(self, payload: Dict[str, Any]) -> None:
@@ -1487,39 +1249,5 @@ class ExecPosFSM:
             LOG.info("✅ OrderGuardian startup reconciliation completed")
         except Exception as e:
             LOG.error(f"❌ OrderGuardian startup reconciliation failed: {e}")
-    async def handle_tick_async(self) -> None:
-        """
-        Async periodic tick for housekeeping.
-        Calls non-async handle_tick for consistency.
-        """
-        self.handle_tick()
-
-    def handle_tick(self) -> None:
-        """
-        Periodic tick for house-keeping.
-        Phase 14D: Emits EVT:DOMAIN_STATUS every 60s.
-        """
-        try:
-            now = get_clock().now_sec()
-        except Exception:
-            now = datetime.now(timezone.utc).timestamp()
-
-        if now - self._last_status_ts >= 60:
-            self._domain_bridge.emit_status()
-            self._last_status_ts = now
-
-    def is_healthy(self) -> bool:
-        """
-        Evaluate domain health.
-        Healthy if adapter is connected and watchdog is running.
-        """
-        if self.adapter is not None and hasattr(self.adapter, "is_healthy"):
-            if not self.adapter.is_healthy():
-                return False
-        
-        # Check watchdog
-        if self.watchdog and hasattr(self.watchdog, "is_running"):
-            if not self.watchdog.is_running():
-                return False
-
-        return True
+    # Phase 14.2: handle_tick_async, handle_tick, is_healthy
+    # → extracted to HealthMetricsMixin (health_metrics.py)

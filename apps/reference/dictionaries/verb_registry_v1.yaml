@@ -1,5 +1,11 @@
 version: 1
 registry:
+- op: EVT
+  verb: HTF_BARS_IMPORTED
+  owner: feature_engineering
+  status: active
+  schema: schemas/htf_bars_imported_v1.json
+  since: '2024-03-01'
 - op: CMD
   verb: CLOSE
   owner: execution_position
@@ -70,13 +76,13 @@ registry:
   verb: ALPHA_SCORE_CALCULATED
   owner: alpha_search
   status: active
-  schema: null
+  schema: apps/reference/domains/alpha_search/schemas/alpha_score_calculated_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ANCHOR_UPDATED
   owner: decision_making
   status: active
-  schema: null
+  schema: schemas/anchor_updated_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: BALANCE_UPDATE_RECEIVED
@@ -124,7 +130,7 @@ registry:
   verb: EXPOSURE_SUMMARY_UPDATED
   owner: risk_management
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/exposure_summary_updated_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: FEATURES_CALCULATED
@@ -220,7 +226,7 @@ registry:
   verb: ORDER_FILL
   owner: execution_position
   status: experimental
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/order_fill_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_PLACED
@@ -256,8 +262,14 @@ registry:
   verb: PORTFOLIO_STATE_UPDATED
   owner: position_tracking
   status: active
-  schema: null
+  schema: apps/reference/domains/position_tracking/schemas/portfolio_state_v1.json
   since: '2026-01-08'
+- op: EVT
+  verb: PROCESS_STRATEGY_BLOCKED
+  owner: feature_engineering
+  status: active
+  schema: apps/reference/domains/feature_engineering/schemas/process_strategy_blocked_v1.json
+  since: '2026-02-26'
 - op: EVT
   verb: PROCESS_STRATEGY_BLOCKED
   owner: feature_engineering
@@ -292,7 +304,7 @@ registry:
   verb: STRATEGY_DECISION_BLOCKED
   owner: decision_making
   status: experimental
-  schema: null
+  schema: apps/reference/domains/decision_making/schemas/str_decision_blocked_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: STRATEGY_SIGNAL_PRODUCED

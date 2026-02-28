@@ -1,0 +1,99 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_score_calculated_v1.json",
+    "title": "EVT:ALPHA_SCORE_CALCULATED payload schema",
+    "description": "Emitted by Alpha Search or DecisionMaking. Two payload variants exist: single-score (from backtest_plugin) and multi-score (from decision_making alpha registry).",
+    "type": "object",
+    "required": [
+        "symbol"
+    ],
+    "additionalProperties": true,
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol (e.g., BTCUSDT)"
+        },
+        "model_name": {
+            "type": "string",
+            "description": "Name of the scoring model (single-score variant)"
+        },
+        "score": {
+            "type": [
+                "number",
+                "string",
+                "null"
+            ],
+            "description": "Alpha score direction [-1.0, 1.0] — single-score variant from backtest_plugin"
+        },
+        "confidence": {
+            "type": [
+                "number",
+                "string",
+                "null"
+            ],
+            "description": "Confidence in the signal [0.0, 1.0] — single-score variant"
+        },
+        "scores": {
+            "type": "array",
+            "description": "Array of alpha scores — multi-score variant from decision_making",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "timestamp": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "Event timestamp in milliseconds — multi-score variant"
+        },
+        "features_used": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "List of feature names used in calculation"
+        },
+        "why": {
+            "type": [
+                "array",
+                "string"
+            ],
+            "description": "Reasoning chain or why-string"
+        },
+        "contributions": {
+            "type": "object",
+            "description": "Per-model contribution weights and scores (Ensemble only)",
+            "additionalProperties": true
+        },
+        "provider_id": {
+            "type": "string",
+            "description": "Alpha Search provider identifier"
+        },
+        "ts_ms": {
+            "type": "integer",
+            "description": "Event timestamp in milliseconds"
+        },
+        "tf_sec": {
+            "type": "integer",
+            "description": "Timeframe in seconds"
+        },
+        "bar_close_ts": {
+            "type": "integer",
+            "description": "Bar close timestamp in milliseconds"
+        },
+        "threshold": {
+            "type": "number",
+            "description": "Signal threshold used"
+        },
+        "shadow": {
+            "type": "boolean",
+            "description": "True if emitted in shadow mode"
+        },
+        "signal_id": {
+            "type": "string",
+            "description": "Unique signal identifier"
+        }
+    }
+}

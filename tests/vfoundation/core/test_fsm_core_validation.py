@@ -4,6 +4,7 @@ from jsonschema.exceptions import ValidationError
 
 from vfoundation.core.fsm_core import FSMCore, InvalidMessagePayloadError
 from vfoundation.core.schema_registry import VerbSchemaRegistry, _global_registry
+from vfoundation.core.protocol import Message
 import vfoundation.core.schema_registry as sr
 
 @pytest.fixture
@@ -66,3 +67,23 @@ def test_emit_no_registry_bypasses_validation(mock_registry, monkeypatch):
     fsm = FSMCore()
     # Should succeed without calling validators
     fsm.emit("EVT:NO_REGISTRY", {"key": "val"}, "why")
+
+
+def test_emit_accepts_message_envelope(mock_registry):
+    fsm = FSMCore()
+    mock_validator = MagicMock()
+    mock_registry.get_validator.return_value = mock_validator
+
+    msg = Message(
+        op="EVT",
+        verb="EXPOSURE_SUMMARY_UPDATED",
+        src="execution_position",
+        dst="decision_making",
+        pld={"exposure_summary": {"reservations_count": 1}},
+        why="exposure_summary_updated_after_fill",
+    )
+
+    fsm.emit(msg)
+
+    mock_registry.get_validator.assert_called_with("EVT", "EXPOSURE_SUMMARY_UPDATED")
+    mock_validator.validate.assert_called_with({"exposure_summary": {"reservations_count": 1}})

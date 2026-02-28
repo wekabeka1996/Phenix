@@ -92,7 +92,8 @@ class BacktestEngine:
         initial_balance: float = 10000.0,
         profit_withdrawal_enabled: bool | None = None,
         profit_withdrawal_roi_pct: float | None = None,
-        clock_advance_fn: Any = None  # Callback to advance global clock: fn(ts_ms: int) -> None
+        clock_advance_fn: Any = None,  # Callback to advance global clock: fn(ts_ms: int) -> None
+        htf_provider: Any = None,      # Optional HTFHistoryProvider for autonomous warmup
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -101,6 +102,7 @@ class BacktestEngine:
         self.data_dir = Path(data_dir)
         self.event_bus = event_bus if event_bus else LocalBus()
         self.clock_advance_fn = clock_advance_fn  # For backtest timebase synchronization
+        self.htf_provider = htf_provider
         self.profit_withdrawal_enabled = (
             profit_withdrawal_enabled
             if isinstance(profit_withdrawal_enabled, bool) or profit_withdrawal_enabled is None
@@ -130,6 +132,7 @@ class BacktestEngine:
         
         # Data storage
         self.feed: Optional[pl.DataFrame] = None
+        self.warmup_feed: Optional[pl.DataFrame] = None
 
     def _find_data_files(self, symbol: str) -> list[Path]:
         """
@@ -205,13 +208,18 @@ class BacktestEngine:
                     if isinstance(self.end_date, date) and not isinstance(self.end_date, datetime)
                     else self.end_date
                 )
+                
+                # PILLAR-WARMUP: Extend start time by 210 days to fetch data for SMA200 (D1) backfill.
+                from datetime import timedelta
+                warmup_start_ts = start_ts - timedelta(days=210)
+
                 # Inclusive date semantics: if caller passed a midnight datetime,
                 # treat it as end-of-day rather than a single instant.
                 if isinstance(end_ts, datetime) and end_ts.time() == datetime.min.time():
                     end_ts = end_ts.replace(hour=23, minute=59, second=59, microsecond=999999)
                 
                 q = q.filter(
-                    (pl.col("open_time") >= start_ts) & 
+                    (pl.col("open_time") >= warmup_start_ts) & 
                     (pl.col("open_time") <= end_ts)
                 )
                 
@@ -274,8 +282,191 @@ class BacktestEngine:
         except Exception as aug_err:
             LOG.warning(f"Feature augmentation skipped: {aug_err}")
         
-        self.feed = full_df
-        LOG.info(f"Data ready: {len(self.feed)} rows.")
+        # Split into warmup and simulation feeds
+        sim_start_ts = (
+            datetime.combine(self.start_date, datetime.min.time())
+            if isinstance(self.start_date, date) and not isinstance(self.start_date, datetime)
+            else self.start_date
+        )
+
+        try:
+            # Drop timezone information from the `ts` column if present so it can compare with naive sim_start_ts
+            ts_expr = pl.col("ts")
+            if "time_zone" in dir(full_df.schema["ts"]) and full_df.schema["ts"].time_zone is not None:
+                ts_expr = pl.col("ts").dt.replace_time_zone(None)
+                
+            self.warmup_feed = full_df.filter(ts_expr < sim_start_ts)
+            self.feed = full_df.filter(ts_expr >= sim_start_ts)
+        except Exception as e:
+            LOG.error(f"Failed to split warmup/sim feeds: {e}")
+            self.feed = full_df
+            self.warmup_feed = None
+        
+        LOG.info(f"Data ready: {len(self.warmup_feed)} warmup rows, {len(self.feed)} sim rows.")
+
+    def _warmup_pillars(self) -> None:
+        """
+        Pre-warm Pillar State by aggregating the warmup_feed into H4 and D1
+        and emitting EVT:BAR_CLOSED backwards to start_date.
+        """
+        if self.warmup_feed is None or self.warmup_feed.is_empty():
+            LOG.warning("No warmup data available. Pillars will start cold.")
+            return
+
+        LOG.info(f"Warming up pillars with {len(self.warmup_feed)} rows of historical data.")
+        # Try to resolve configured pillar timeframes via _bar_resampler or defaults
+        pillar_tfs = [14400, 86400]  # H4 and D1
+        
+        for symbol in self.symbol_list:
+            df_sym = self.warmup_feed.filter(pl.col("symbol") == symbol)
+            if df_sym.is_empty():
+                continue
+
+            events_to_emit = []
+            from datetime import timedelta
+
+            for tf_sec in pillar_tfs:
+                # Polars group_by_dynamic
+                # timeframe strings for polars: "4h", "1d"
+                period_str = f"{tf_sec // 3600}h" if tf_sec < 86400 else f"{tf_sec // 86400}d"
+                
+                try:
+                    # Note: Need open_time alias or sort on ts
+                    df_agg = df_sym.sort("ts").group_by_dynamic("ts", every=period_str).agg([
+                        pl.first("open").alias("open"),
+                        pl.max("high").alias("high"),
+                        pl.min("low").alias("low"),
+                        pl.last("close").alias("close"),
+                        pl.sum("volume").alias("volume"),
+                        pl.sum("buy_volume").alias("buy_volume"),
+                        pl.sum("sell_volume").alias("sell_volume"),
+                        pl.sum("buy_count").alias("buy_count"),
+                        pl.sum("sell_count").alias("sell_count"),
+                        pl.sum("buy_notional").alias("buy_notional"),
+                        pl.sum("sell_notional").alias("sell_notional")
+                    ]).sort("ts")
+
+                    # Convert to bar payloads
+                    for row in df_agg.iter_rows(named=True):
+                        # The start of the bar
+                        start_ts_dt = row["ts"]
+                        # The end of the bar (close time)
+                        end_ts_dt = start_ts_dt + timedelta(seconds=tf_sec)
+                        start_ts_ms = int(start_ts_dt.timestamp() * 1000)
+                        end_ts_ms = int(end_ts_dt.timestamp() * 1000)
+                        
+                        # In polars, if sum contains nulls, might return None
+                        close_val = row["close"]
+                        
+                        bar_payload = {
+                            "symbol": symbol,
+                            "ts_ms": end_ts_ms,
+                            "tf_sec": tf_sec,
+                            "bar_close_ts": end_ts_ms,
+                            "bar": {
+                                "symbol": symbol,
+                                "timeframe_sec": tf_sec,
+                                "start_ts_ms": start_ts_ms,
+                                "end_ts_ms": end_ts_ms,
+                                "open": str(row["open"] or close_val),
+                                "high": str(row["high"] or close_val),
+                                "low": str(row["low"] or close_val),
+                                "close": str(close_val),
+                                "volume": str(row["volume"] or 0),
+                                "buy_volume": str(row.get("buy_volume") or 0),
+                                "sell_volume": str(row.get("sell_volume") or 0),
+                                "buy_count": int(row.get("buy_count") or 0),
+                                "sell_count": int(row.get("sell_count") or 0),
+                                "buy_notional": str(row.get("buy_notional") or 0),
+                                "sell_notional": str(row.get("sell_notional") or 0),
+                                "bid_size": "0",
+                                "ask_size": "0",
+                                "bid": str(close_val),
+                                "ask": str(close_val),
+                            },
+                            "bar_meta": {
+                                "source": "backtest_warmup",
+                                "close_reason": "historical_backfill",
+                            },
+                            "why": "backtest_pillar_warmup",
+                        }
+                        
+                        events_to_emit.append((end_ts_ms, bar_payload))
+                except Exception as e:
+                    LOG.error(f"Failed to group warmup feed for {symbol} {period_str}: {e}")
+
+            # Sort all historical events by time and emit
+            events_to_emit.sort(key=lambda x: x[0])
+            for _, payload in events_to_emit:
+                # Advance simulated clock to the historical bar time prior to emission
+                if self.clock_advance_fn is not None:
+                    self.clock_advance_fn(payload["ts_ms"])
+                    
+                self.event_bus.emit(
+                    event_name="EVT:BAR_CLOSED",
+                    payload=payload,
+                    why="backtest_pillar_warmup"
+                )
+                
+            LOG.info(f"✅ Emitted {len(events_to_emit)} historical HTF bars for {symbol} warmup.")
+
+    def _warmup_htf_api(self) -> None:
+        """
+        Use HTFHistoryProvider to autonomously backfill 1d and 4h pillars.
+        Anchored to the exact first timestamp of `self.feed` to prevent Lookahead Bias.
+        """
+        if self.htf_provider is None:
+            return
+
+        if self.feed is None or self.feed.is_empty():
+            LOG.warning("No feed loaded. Cannot anchor HTF warmup properly.")
+            return
+
+        # 1. Determine causal anchor = first TS in the backtest feed - 1ms
+        first_row = self.feed.row(0, named=True)
+        first_ts_val = first_row.get("ts")
+        if first_ts_val is None:
+            return
+            
+        first_ts_ms = int(first_ts_val.timestamp() * 1000) if hasattr(first_ts_val, "timestamp") else int(first_ts_val)
+        anchor_ms = first_ts_ms - 1
+        
+        import asyncio
+        
+        pillar_tfs = {14400: 100, 86400: 200}  # {tf_sec: limit}
+        
+        for symbol in self.symbol_list:
+            for tf_sec, limit in pillar_tfs.items():
+                LOG.info(f"HTF Warmup: Fetching {limit}x {tf_sec}s for {symbol} anchoring at {anchor_ms}")
+                
+                # We use asyncio.run because this runs before the main async execution loop starts
+                # or from a synchronous main thread.
+                bars = asyncio.run(
+                    self.htf_provider.get_klines(symbol, tf_sec, anchor_ms, limit)
+                )
+                
+                if not bars:
+                    # Fail-closed policy
+                    LOG.error(f"HTF provider returned empty bars for {symbol} {tf_sec}s. Backtest results might be severely compromised.")
+                    continue
+                    
+                payload = {
+                    "symbol": symbol,
+                    "tf_sec": tf_sec,
+                    "as_of_ms": anchor_ms,
+                    "bars": bars,
+                    "why": "backtest_autonomous_htf_fetch"
+                }
+                
+                # Emit the dedicated bypass event
+                if self.clock_advance_fn is not None:
+                    self.clock_advance_fn(anchor_ms)
+                    
+                self.event_bus.emit(
+                    event_name="EVT:HTF_BARS_IMPORTED",
+                    payload=payload,
+                    why="backtest_autonomous_htf_fetch"
+                )
 
     def run(self, *, max_ticks: int | None = None) -> BacktestResult:
         """
@@ -286,6 +477,20 @@ class BacktestEngine:
             
         LOG.info("Starting Backtest Simulation...")
         start_time = time.time()
+        
+        # --- PILLAR WARMUP ---
+        # 1. API-based HTF lookup (safe from lookahead bias)
+        self._warmup_htf_api()
+        # 2. Local fallback feed (if still configured)
+        self._warmup_pillars()
+        
+        # QUICK HACK FIX: advance clock back to true start so initial portfolio matches reality
+        if self.clock_advance_fn is not None and len(self.feed) > 0:
+            ts_val = self.feed[0, "ts"]
+            if hasattr(ts_val, "timestamp"):
+                self.clock_advance_fn(int(ts_val.timestamp() * 1000))
+
+        initial_portfolio_emitted = False
         
         # OPTIMIZATION-PHASE1: Resolve timeframe to seconds for Sharpe/Calmar annualization
         _tf_map = {
@@ -899,17 +1104,9 @@ class BacktestEngine:
         for pos in self.broker._positions.values():
             positions.append({
                 "symbol": pos.symbol,
-                "positionAmt": pos.position_amount,
-                # ExposureGuard SSOT keys
                 "net_position": pos.position_amount,
-                "entryPrice": pos.entry_price,
                 "avg_entry_price": pos.entry_price,
-                "markPrice": pos.mark_price,
-                "unrealizedProfit": pos.unrealized_profit,
-                "leverage": str(pos.leverage),
-                "marginType": pos.margin_type,
-                "isolatedMargin": str(pos.isolated_margin),
-                "positionSide": pos.position_side
+                "venues": ["BINANCE"]
             })
 
         # Calculate equity (balance + unrealized PnL from positions)

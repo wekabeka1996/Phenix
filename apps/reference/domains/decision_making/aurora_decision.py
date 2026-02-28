@@ -279,11 +279,11 @@ class AuroraDecisionMixin:
         # Kernel visibility log
         _psi = result.psi_vector or {}
         self.logger.info(
-            "[%s] KERNEL_DIAG: engine=%s pillar_sum=%.4f score=%.6f "
+            "[%s] KERNEL_DIAG: engine=%s s_linear=%.4f score=%.6f "
             "shield_mult=%.3f deferred=%s defer_reason=%s side=%s thr_buy=%s thr_sell=%s",
             symbol,
             _psi.get("scoring_engine", "?"),
-            float(_psi.get("pillar_sum", 0.0)),
+            float(_psi.get("s_linear", 0.0)),
             float(result.score),
             float(result.shield_multiplier or 1.0),
             result.deferred,

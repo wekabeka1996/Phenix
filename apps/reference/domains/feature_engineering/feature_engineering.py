@@ -218,6 +218,9 @@ class FeatureEngineering:
         # BAR-FEATURES-001: Listen for bar events to emit bar-based features
         self.fsm.listen("EVT:BAR_CLOSED", self.on_bar_closed)
         
+        # HTF-WARMUP: Listen for API-backfilled HTF candles to prime pillars instantly
+        self.fsm.listen("EVT:HTF_BARS_IMPORTED", self._on_htf_bars_imported)
+        
         # FTR-05: Register Futures event listeners (config-gated)
         if self.cfg.futures_enabled:
             self.fsm.listen("EVT:FUNDING_UPDATE", self._on_funding_update)
@@ -705,6 +708,74 @@ class FeatureEngineering:
         if accepted:
             self.last_tick_data[symbol] = bar_tick
 
+    def _on_htf_bars_imported(self, event: "Message") -> None:
+        """
+        Handle EVT:HTF_BARS_IMPORTED.
+        
+        Directly hydrates the PillarState without triggering TTL age checks
+        or standard delta computation logic. Used strictly for startup warmup.
+        """
+        pld = getattr(event, "pld", {}) if not isinstance(event, dict) else event.get("pld", {})
+        if not pld:
+            return
+
+        symbol = pld.get("symbol")
+        tf_sec = pld.get("tf_sec")
+        bars = pld.get("bars", [])
+        
+        if not symbol or not tf_sec or not bars:
+            self.logger.warning("HTF_BARS_IMPORTED missing required fields.")
+            return
+
+        try:
+            tf_sec = int(tf_sec)
+        except ValueError:
+            return
+
+        tf_map = getattr(self, "_pillar_timeframe_to_label", None) or {900: "m15", 14400: "h4", 86400: "d1"}
+        tf_label = tf_map.get(tf_sec)
+        
+        if not tf_label:
+            self.logger.debug(f"[{symbol}] Ignoring imported bars for tf_sec={tf_sec} (not a configured pillar tf)")
+            return
+
+        state = self._pillar_states.get(symbol)
+        if state is None:
+            # Type imported from .calculation_engine or inferred.
+            # Using dynamic creation similar to _compute_pillars_for_emit
+            from apps.reference.domains.feature_engineering.calculation_engine import PillarState
+            state = PillarState()
+            self._pillar_states[symbol] = state
+
+        calc_engine = getattr(self, "calc_engine", None) or getattr(self, "_engine", None)
+        if not calc_engine or not hasattr(calc_engine, "update_pillar_candle"):
+            self.logger.error("FeatureCalculationEngine does not support update_pillar_candle.")
+            return
+
+        processed = 0
+        for bar in bars:
+            try:
+                # Binance endpoints give "open_ts". We calculate close_ts which most indicators use.
+                open_ts = int(bar["open_ts"])
+                close_ts = open_ts + (tf_sec * 1000) - 1
+                
+                calc_engine.update_pillar_candle(
+                    state,
+                    timeframe=tf_label,
+                    close=float(bar["c"]),
+                    high=float(bar["h"]),
+                    low=float(bar["l"]),
+                    bar_ts_ms=close_ts,
+                )
+                processed += 1
+            except Exception as e:
+                self.logger.debug(f"[{symbol}] Malformed imported bar skipped: {e}")
+
+        self.logger.info(
+            f"✅ [{symbol}] Successfully hydrated PillarState with {processed} historical {tf_label} candles "
+            f"(Anchor: {pld.get('as_of_ms', 0)})"
+        )
+
     def _create_synthetic_tick_for_bar_close(
         self, 
         last_tick: Dict[str, Any], 
@@ -852,6 +923,9 @@ class FeatureEngineering:
             pillar_contribs = getattr(raw, "pillar_contribs", {})
 
         if pillar_sum is None:
+            self.logger.debug(
+                f"[{symbol}] pillar_sum is missing from calc_engine output (pillars not ready). tactician={pillar_tactician}, operator={pillar_operator}, strategist={pillar_strategist}"
+            )
             return None
 
         safe_contribs: Dict[str, float] = {}

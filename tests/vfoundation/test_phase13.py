@@ -227,3 +227,59 @@ class TestInMemoryEmbeddingStore:
         store.upsert(EmbeddingRecord(rid="r1", model="stub", vector=[0.1]))
         store.clear()
         assert len(store) == 0
+
+
+# ── ReconcileEngine (Blueprint 13.1) ────────────────────────────────────────
+from vfoundation.core.reconcile import ReconcileEngine
+
+
+class TestReconcileEngine:
+    def test_engine_no_mismatches_no_repairs(self) -> None:
+        """Matching fills and external → no CMD:REPAIR emitted."""
+        engine = ReconcileEngine()
+        wal_events = [
+            {"ts": 100, "verb": "FILL", "pld": {"symbol": "BTCUSDT", "qty": 1.0, "side": "BUY"}},
+        ]
+        external = [PositionSnapshot(symbol="BTCUSDT", qty=1.0, source="exchange")]
+        report, repairs = engine.reconcile_from_wal(wal_events, external)
+        assert report.all_match is True
+        assert len(repairs) == 0
+
+    def test_engine_diverged_emits_cmd_repair(self) -> None:
+        """Diverged position emits CMD:REPAIR dict."""
+        engine = ReconcileEngine()
+        wal_events = [
+            {"ts": 100, "verb": "FILL", "pld": {"symbol": "BTCUSDT", "qty": 1.0, "side": "BUY"}},
+        ]
+        external = [PositionSnapshot(symbol="BTCUSDT", qty=2.0, source="exchange")]
+        report, repairs = engine.reconcile_from_wal(wal_events, external)
+        assert report.all_match is False
+        assert len(repairs) == 1
+        assert repairs[0]["op"] == "CMD"
+        assert repairs[0]["verb"] == "REPAIR"
+        assert repairs[0]["pld"]["symbol"] == "BTCUSDT"
+        assert repairs[0]["pld"]["status"] == "DIVERGED"
+
+    def test_engine_since_ts_filters_old_events(self) -> None:
+        """Events with ts <= since_ts are excluded from reconciliation."""
+        engine = ReconcileEngine()
+        wal_events = [
+            {"ts": 50, "verb": "FILL", "pld": {"symbol": "BTCUSDT", "qty": 1.0, "side": "BUY"}},
+            {"ts": 200, "verb": "FILL", "pld": {"symbol": "ETHUSDT", "qty": 5.0, "side": "BUY"}},
+        ]
+        external = [PositionSnapshot(symbol="ETHUSDT", qty=5.0, source="exchange")]
+        report, repairs = engine.reconcile_from_wal(wal_events, external, since_ts=100)
+        # Only ETHUSDT event (ts=200) is considered; BTCUSDT (ts=50) is filtered
+        assert report.all_match is True
+        assert len(repairs) == 0
+
+    def test_engine_uses_custom_tolerance(self) -> None:
+        """ReconcileEngine with large tolerance accepts small divergences."""
+        engine = ReconcileEngine(tolerance=0.5)
+        wal_events = [
+            {"ts": 100, "verb": "FILL", "pld": {"symbol": "BTCUSDT", "qty": 1.0, "side": "BUY"}},
+        ]
+        external = [PositionSnapshot(symbol="BTCUSDT", qty=1.3, source="exchange")]
+        report, repairs = engine.reconcile_from_wal(wal_events, external)
+        assert report.all_match is True
+        assert len(repairs) == 0

@@ -1,0 +1,75 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "HTFBarsImported",
+    "description": "Payload schema for EVT:HTF_BARS_IMPORTED, containing historical HTF candles fetched to warm up pillars.",
+    "type": "object",
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "Trading instrument symbol (e.g., BTCUSDT)"
+        },
+        "tf_sec": {
+            "type": "integer",
+            "description": "Timeframe in seconds (e.g., 14400 for 4H, 86400 for 1D)"
+        },
+        "as_of_ms": {
+            "type": "integer",
+            "description": "The anchor timestamp (ms) marking the exact end boundary of the imported history."
+        },
+        "bars": {
+            "type": "array",
+            "description": "List of historical candle bars ordered chronologically.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "open_ts": {
+                        "type": "integer",
+                        "description": "Opening timestamp of the bar in milliseconds"
+                    },
+                    "o": {
+                        "type": "number",
+                        "description": "Open price"
+                    },
+                    "h": {
+                        "type": "number",
+                        "description": "High price"
+                    },
+                    "l": {
+                        "type": "number",
+                        "description": "Low price"
+                    },
+                    "c": {
+                        "type": "number",
+                        "description": "Close price"
+                    },
+                    "v": {
+                        "type": "number",
+                        "description": "Volume"
+                    }
+                },
+                "required": [
+                    "open_ts",
+                    "o",
+                    "h",
+                    "l",
+                    "c",
+                    "v"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "why": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Reason for the import, typical for event tracing."
+        }
+    },
+    "required": [
+        "symbol",
+        "tf_sec",
+        "as_of_ms",
+        "bars",
+        "why"
+    ],
+    "additionalProperties": false
+}

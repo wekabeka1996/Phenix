@@ -301,7 +301,7 @@ aurora:
       allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY", "MEAN_REVERSION"]
       signal_threshold:
         enabled: true
-        value: 0.09
+        value: 0.008
       cooldown_sec: null
       
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
@@ -419,7 +419,7 @@ aurora:
 
       signal_threshold:
         enabled: true
-        value: 0.09
+        value: 0.008
       cooldown_sec: null
       
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
@@ -543,7 +543,7 @@ aurora:
       allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION", "LOW_VOLATILITY"]
       signal_threshold:
         enabled: true
-        value: 0.13
+        value: 0.017
       cooldown_sec: 60
       
       # 7. Entry Logic (Smart Pullback)
@@ -657,7 +657,7 @@ aurora:
 
       signal_threshold:
         enabled: true
-        value: 0.09
+        value: 0.008
       cooldown_sec: null
 
       volatility_entry_logic:
@@ -769,7 +769,7 @@ aurora:
 
       signal_threshold:
         enabled: true
-        value: 0.09
+        value: 0.008
       cooldown_sec: null
 
       volatility_entry_logic:

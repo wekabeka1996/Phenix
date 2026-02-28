@@ -30,7 +30,7 @@ def test_why_chain_preservation():
     
     msg = Message(
         op="EVT",
-        verb="TRADE_INTENT_PROPOSED",
+        verb="MOCK_TEST_EVENT",
         src="decision_making",
         dst="execution_position",
         pld=valid_pld,
@@ -47,11 +47,11 @@ def test_why_chain_preservation():
     def event_handler(event):
         events_received.append(event)
 
-    fsm.listen("EVT:TRADE_INTENT_PROPOSED", event_handler)
+    fsm.listen("EVT:MOCK_TEST_EVENT", event_handler)
 
     # Emit event with data_ref
     fsm.emit(
-        "EVT:TRADE_INTENT_PROPOSED",
+        "EVT:MOCK_TEST_EVENT",
         payload=valid_pld,
         why="trade_intent",
         data_ref=why_chain

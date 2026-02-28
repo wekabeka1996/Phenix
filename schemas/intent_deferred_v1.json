@@ -133,7 +133,11 @@
                                 "price_ctx": {
                                     "oneOf": [
                                         {"type": "string"},
-                                        {"type": "number"}
+                                        {"type": "number"},
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
                                     ],
                                     "description": "Price context at signal time (optional)"
                                 },

@@ -144,7 +144,13 @@ class OrderTimeoutWatchdog:
             return
 
         # Тільки тут створюємо корутину і таск
-        self._watchdog_task = loop.create_task(self._watchdog_loop())
+        task = loop.create_task(self._watchdog_loop(), name="watchdog_loop")
+        task.add_done_callback(
+            lambda t: LOG.error(
+                "[Watchdog] Task died unexpectedly: %s", t.exception()
+            ) if not t.cancelled() and t.exception() else None
+        )
+        self._watchdog_task = task
         self._started = True
         LOG.info("OrderTimeoutWatchdog started on running event loop.")
 
@@ -163,7 +169,13 @@ class OrderTimeoutWatchdog:
         except RuntimeError:
             # все ще нема лупа – тихо ідемо далі
             return
-        self._watchdog_task = loop.create_task(self._watchdog_loop())
+        task = loop.create_task(self._watchdog_loop(), name="watchdog_loop")
+        task.add_done_callback(
+            lambda t: LOG.error(
+                "[Watchdog] Task died unexpectedly: %s", t.exception()
+            ) if not t.cancelled() and t.exception() else None
+        )
+        self._watchdog_task = task
         self._started = True
         LOG.info("OrderTimeoutWatchdog late-started on running event loop.")
 

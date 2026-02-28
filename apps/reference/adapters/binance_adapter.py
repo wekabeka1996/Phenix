@@ -191,6 +191,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
             str, Dict[str, Any]
         ] = {}  # symbol -> {'price': float, 'timestamp': float}
 
+        # Fix 2: TTL cache for scan-all open orders (used by _find_symbol_by_order_id)
+        # Prevents repeated REST calls during bulk cancellations
+        self._open_orders_scan_cache: Tuple[int, list] = (0, [])  # (timestamp_ms, orders)
+        self._open_orders_scan_ttl_ms: int = 2000  # 2 second TTL
+
     # опційно: контекст-менеджер для акуратного закриття
     async def __aenter__(self) -> "BinanceAdapter":
         return self
@@ -201,8 +206,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def aclose(self) -> None:
         try:
             await self.session.aclose()
-        except Exception:
-            pass
+        except Exception as e:
+            LOG.warning("[BinanceAdapter] aclose() failed (ignoring): %s", e)
 
     async def start(self) -> None:
         """
@@ -281,6 +286,22 @@ class BinanceAdapter(AbstractExchangeAdapter):
         async with self._ledger_lock:
             return await self._check_clientorderid_reuse_unsafe(symbol, client_order_id)
 
+    async def _get_open_orders_cached(self) -> list:
+        """Return all open orders, using a 2-second TTL cache to prevent
+        N repeated REST calls during bulk cancel/retry storms."""
+        now_ms = int(time.time() * 1000)
+        cached_ts, cached_data = self._open_orders_scan_cache
+        if now_ms - cached_ts < self._open_orders_scan_ttl_ms:
+            return cached_data
+        try:
+            raw = await self._request("GET", "/fapi/v1/openOrders", {}, signed=True)
+            result = raw if isinstance(raw, list) else []
+        except Exception as e:
+            LOG.warning("[_get_open_orders_cached] Failed to fetch openOrders: %s", e)
+            result = cached_data  # return stale on error
+        self._open_orders_scan_cache = (now_ms, result)
+        return result
+
     async def _find_symbol_by_order_id(
         self,
         order_id: Optional[str],
@@ -290,7 +311,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         Binance cancel/get endpoints typically require `symbol`. In some retry/repair
         paths we only have `orderId`/`clientOrderId`. We first consult the local
-        ClientOrderId ledger, then fall back to scanning open orders.
+        ClientOrderId ledger, then fall back to scanning open orders (with TTL cache).
 
         Returns empty string when symbol can't be resolved.
         """
@@ -308,7 +329,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     return str(ledger_symbol or "").strip()
 
         try:
-            raw = await self._request("GET", "/fapi/v1/openOrders", {}, signed=True)
+            raw = await self._get_open_orders_cached()
             if isinstance(raw, list):
                 for o in raw:
                     if not isinstance(o, dict):

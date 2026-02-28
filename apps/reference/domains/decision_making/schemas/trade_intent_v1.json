@@ -262,6 +262,28 @@
     "idempotent_key": {
       "type": "string",
       "description": "Idempotency key to prevent duplicate processing"
+    },
+    "regime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Detected regime at decision time"
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Confidence of the detected regime"
+    },
+    "risk_context": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true,
+      "description": "Context around risk gating"
     }
   },
   "allOf": [
@@ -269,21 +291,48 @@
       "if": {
         "properties": {
           "order": {
-            "properties": { "order_type": { "const": "LIMIT" } },
-            "required": ["order_type"]
+            "properties": {
+              "order_type": {
+                "const": "LIMIT"
+              }
+            },
+            "required": [
+              "order_type"
+            ]
           }
         },
-        "required": ["order"]
+        "required": [
+          "order"
+        ]
       },
       "then": {
-        "required": ["valid_for_ms"],
+        "required": [
+          "valid_for_ms"
+        ],
         "properties": {
-          "valid_for_ms": { "type": "integer", "minimum": 1000 },
+          "valid_for_ms": {
+            "type": "integer",
+            "minimum": 1000
+          },
           "order": {
-            "required": ["price", "tif"],
+            "required": [
+              "price",
+              "tif"
+            ],
             "properties": {
-              "price": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
-              "tif": { "type": "string", "enum": ["GTC", "GTX", "IOC", "FOK"] }
+              "price": {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]+)?$"
+              },
+              "tif": {
+                "type": "string",
+                "enum": [
+                  "GTC",
+                  "GTX",
+                  "IOC",
+                  "FOK"
+                ]
+              }
             }
           }
         }
@@ -293,16 +342,28 @@
       "if": {
         "properties": {
           "order": {
-            "properties": { "order_type": { "const": "MARKET" } },
-            "required": ["order_type"]
+            "properties": {
+              "order_type": {
+                "const": "MARKET"
+              }
+            },
+            "required": [
+              "order_type"
+            ]
           }
         },
-        "required": ["order"]
+        "required": [
+          "order"
+        ]
       },
       "then": {
         "properties": {
           "order": {
-            "properties": { "tif": { "type": "null" } }
+            "properties": {
+              "tif": {
+                "type": "null"
+              }
+            }
           }
         }
       }

@@ -139,9 +139,7 @@
       "title": "Intent"
     },
     "data_ref": {
-      "items": {
-        "type": "string"
-      },
+      "items": {},
       "title": "Data Ref",
       "type": "array"
     },

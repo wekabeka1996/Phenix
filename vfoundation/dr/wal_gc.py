@@ -2,7 +2,10 @@ from pathlib import Path
 import time
 from threading import Thread, Event
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vfoundation.dataref.wal_archiver import WalArchiver
 
 
 class WALGarbageCollector:
@@ -16,13 +19,15 @@ class WALGarbageCollector:
         wal_dir: Path,
         retention_days: int = 7,
         max_file_size_mb: int = 100,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        archiver: Optional["WalArchiver"] = None,
     ):
         self.wal_dir = Path(wal_dir)
         self.retention_days = retention_days
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
         self.logger = logger or logging.getLogger(__name__)
         self._stop_event = Event()
+        self.archiver = archiver
 
     def start_background_gc(self, interval_sec: int = 3600) -> Thread:
         """Start GC thread (runs every 1 hour by default)."""
@@ -60,8 +65,10 @@ class WALGarbageCollector:
             file_mtime = wal_file.stat().st_mtime
             if file_mtime < cutoff_ts:
                 try:
-                    # Archive to S3/cloud (optional - TODO)
-                    # self._archive_to_s3(wal_file)
+                    if self.archiver:
+                        self.archiver.archive(
+                            pattern=wal_file.name, remove_original=False,
+                        )
                     wal_file.unlink()
                     removed += 1
                     self.logger.info(f"GC: Removed WAL {wal_file.name}")

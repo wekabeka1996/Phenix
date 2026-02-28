@@ -26,6 +26,10 @@ def _get_logger() -> logging.Logger:
     # Remove existing handlers
     for h in lg.handlers[:]:
         if isinstance(h, logging.handlers.RotatingFileHandler):
+            try:
+                h.close()
+            except Exception:
+                pass
             lg.removeHandler(h)
 
     # Create new handler with current log path

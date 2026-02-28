@@ -1,9 +1,12 @@
 from __future__ import annotations
-from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+import warnings
+from typing import List, Optional, Literal, Dict, Any, Union
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 import time
 from decimal import Decimal
 import uuid
+
+from vfoundation.core.data_ref import DataRef, coerce_data_ref
 
 Op = Literal["ASK", "DEC", "CMD", "EVT", "UPD", "ERR"]
 IntentType = Literal["INQUIRY", "COMMAND", "PROPOSAL", "OBSERVATION", "DECLARATION"]
@@ -45,7 +48,7 @@ class Message(BaseModel):
     why: Optional[str] = None
     why_explain_ref: Optional[str] = None
     intent: Optional[IntentType] = None  # Message intent classification (v2.2)
-    data_ref: List[str] = Field(default_factory=list)
+    data_ref: List[Any] = Field(default_factory=list)  # Union[str, DataRef] per §5.2
     sig: Optional[str] = None
     mode: str = "live"  # Domain-level trading mode: live, backtest, paper
     # Mode-specific validation rule identifier
@@ -71,6 +74,32 @@ class Message(BaseModel):
             raise ValueError("why must be <=80 chars")
         return v
 
+    @field_validator("data_ref", mode="before")
+    @classmethod
+    def _coerce_data_ref(cls, v: Any) -> Any:
+        """Coerce data_ref elements: str passthrough, dict → DataRef."""
+        if not isinstance(v, list):
+            return v
+        return [coerce_data_ref(item) for item in v]
+
+    # Phase 14.3: Deprecation warnings for trading-specific envelope fields
+    _DEPRECATED_ENVELOPE_FIELDS = ("oco_group_id", "parent_client_order_id", "link_ack_id", "link_fill_id")
+
+    @model_validator(mode="after")
+    def _warn_deprecated_envelope_fields(self) -> "Message":
+        """Emit DeprecationWarning when trading-specific top-level fields are set."""
+        for field_name in self._DEPRECATED_ENVELOPE_FIELDS:
+            val = getattr(self, field_name, None)
+            if val is not None:
+                warnings.warn(
+                    f"Message.{field_name} is deprecated at top-level. "
+                    f"Migrate to pld['{field_name}']. Removal target: v2.0.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                break  # Warn once per Message, not per field
+        return self
+
     def is_expired(self) -> bool:
         return (int(time.time() * 1000) - self.ts) > self.ttl_ms
 
@@ -88,3 +117,19 @@ class Message(BaseModel):
             pydantic.ValidationError: if pld doesn't match schema.
         """
         return schema_cls(**self.pld)
+
+    def validate_pld(self) -> Any:
+        """Validate pld against VERB_PAYLOAD_MAP. Returns Payload or None.
+
+        Looks up the Payload class for (self.op, self.verb) in the
+        discriminated union map.  Returns a validated Payload instance,
+        or ``None`` when the (op, verb) pair has no registered schema.
+
+        Raises:
+            pydantic.ValidationError: if pld doesn't match the resolved schema.
+        """
+        from vfoundation.core.payloads import resolve_payload_cls
+        cls = resolve_payload_cls(self.op, self.verb)
+        if cls is None:
+            return None
+        return cls(**self.pld)

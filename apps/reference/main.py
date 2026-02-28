@@ -410,18 +410,19 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         order_log_path = None
 
     # --- Backtest telemetry: capture regimes & feature readiness ---
-    regime_events: list[dict] = []
-    regime_log: list[dict] = []
+    from collections import deque
+    regime_events_count = 0
+    regime_log = deque(maxlen=5000)
     last_regime_by_symbol: dict[str, dict] = {}
     regime_counts_by_symbol: dict[str, dict[str, int]] = {}
     features_counts_by_tf: dict[int, int] = {}
     features_full_ready_by_tf: dict[int, int] = {}
-    trade_intents: list[dict] = []
-    intent_log: list[dict] = []
+    trade_intents = deque(maxlen=50000)
+    intent_log = deque(maxlen=50000)
     process_strategy_count = 0
     process_strategy_enqueued_count = 0
     bar_count = 0
-    decision_clock_counts: dict[tuple[str, int, int], int] = {}
+    decision_clock_counts: dict[tuple[str, int], int] = {}
     decision_clock_violations = 0
     blocked_reason_counts: dict[str, int] = {}
 
@@ -432,6 +433,7 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
             pass
 
     def _on_regime(event: Message) -> None:
+        nonlocal regime_events_count
         pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
         if not isinstance(pld, dict):
             return
@@ -439,7 +441,7 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         regime = pld.get("regime")
         if not symbol or not regime:
             return
-        regime_events.append(pld)
+        regime_events_count += 1
         last_regime_by_symbol[str(symbol)] = pld
         bucket = regime_counts_by_symbol.setdefault(str(symbol), {})
         norm = str(regime).upper().strip()
@@ -562,11 +564,15 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         if key is None:
             return
         process_strategy_count += 1
-        cnt = int(decision_clock_counts.get(key, 0)) + 1
-        decision_clock_counts[key] = cnt
-        if cnt > 1:
+        
+        sym_tf = (key[0], key[1])
+        bar_ts = key[2]
+        
+        if decision_clock_counts.get(sym_tf) == bar_ts:
             decision_clock_violations += 1
-            LOG.error(f"DOUBLE_DECISION_CLOCK: duplicate CMD:PROCESS_STRATEGY for key={key} count={cnt}")
+            LOG.error(f"DOUBLE_DECISION_CLOCK: duplicate CMD:PROCESS_STRATEGY for key={key}")
+        else:
+            decision_clock_counts[sym_tf] = bar_ts
 
     fsm.listen("EVT:REGIME_DETECTED", _on_regime)
     fsm.listen("EVT:FEATURES_CALCULATED", _on_features)
@@ -579,13 +585,13 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     # Lightweight enqueue telemetry for decision clock debugging.
     original_emit = fsm.emit
 
-    def emit_with_decision_clock(event_name: str, payload: dict = None, why: str = "", data_ref=None):
+    def emit_with_decision_clock(event_name: str, payload: dict = None, why: str = "", data_ref=None, **kwargs):
         nonlocal process_strategy_enqueued_count
         if event_name == "CMD:PROCESS_STRATEGY":
             key = _decision_key_from_payload(payload if isinstance(payload, dict) else {})
             if key is not None:
                 process_strategy_enqueued_count += 1
-        return original_emit(event_name, payload, why, data_ref)
+        return original_emit(event_name, payload, why, data_ref, **kwargs)
 
     fsm.emit = emit_with_decision_clock
     
@@ -622,6 +628,14 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
             bt_clock.set_time_ms(ts_ms)
         except Exception:
             pass
+            
+    try:
+        from backtest_engine.data_processing.htf_provider import HTFHistoryProvider
+        htf_provider = HTFHistoryProvider()
+        LOG.info("HTFHistoryProvider effectively injected into main Backtest Engine pipeline.")
+    except Exception as _e:
+        htf_provider = None
+        LOG.warning(f"Could not load HTFHistoryProvider. Backtest HTF pillars may not warm up correctly: {_e}")
     
     engine = BacktestEngine(
         start_date=start_date,
@@ -632,10 +646,12 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         profit_withdrawal_enabled=profit_withdrawal_enabled,
         profit_withdrawal_roi_pct=profit_withdrawal_roi_pct,
         event_bus=fsm,
-        clock_advance_fn=_advance_global_clock  # Wire clock sync
+        clock_advance_fn=_advance_global_clock, # Wire clock sync
+        htf_provider=htf_provider
     )
 
     from backtest_engine.wrappers import BacktestExecPosFSM
+
     
     # 3. Initialize Domains (Subset)
     LOG.info("Initializing Backtest Domains...")
@@ -818,8 +834,8 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
             timeframe="5m",
             initial_balance=float(initial_balance),
             regimes={
-                "events_total": int(len(regime_events)),
-                "regime_log": regime_log,
+                "events_total": int(regime_events_count),
+                "regime_log": list(regime_log),
                 "last_by_symbol": last_regime_by_symbol,
                 "counts_by_symbol": regime_counts_by_symbol,
             },
@@ -827,12 +843,12 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
                 "counts_by_tf_sec": {str(k): int(v) for k, v in features_counts_by_tf.items()},
                 "full_ready_counts_by_tf_sec": {str(k): int(v) for k, v in features_full_ready_by_tf.items()},
             },
-            trade_intents=intent_log or trade_intents,
+            trade_intents=list(intent_log) or list(trade_intents),
             order_log_path=str(order_log_path) if order_log_path is not None else None,
             pipeline={
                 "bar_count": int(bar_count),
                 "features_emitted_count": int(sum(features_counts_by_tf.values())),
-                "regime_detected_count": int(len(regime_events)),
+                "regime_detected_count": int(regime_events_count),
                 "process_strategy_enqueued_count": int(process_strategy_enqueued_count),
                 "process_strategy_executed_count": int(process_strategy_count),
                 "process_strategy_count": int(process_strategy_count),
@@ -1475,46 +1491,75 @@ def main() -> None:
 
             time.sleep(1)
     except KeyboardInterrupt:
-        LOG.info("Shutting down Aurora Core...")
+        LOG.info("Shutdown signal received.")
         print("\nShutting down Aurora Core...")
 
-        LOG.info("Shutdown signal received. Stopping all components...")
+        from apps.reference.shutdown_coordinator import GracefulShutdownCoordinator, ShutdownStage
 
-        if guardian_runtime is not None:
-            try:
-                guardian_runtime.stop(timeout=5.0)
-            except Exception as loop_exc:
-                LOG.error(f"Error stopping guardian asyncio loop: {loop_exc}")
+        def _safe_stop(component, method: str = "stop"):
+            """Return a no-arg lambda that calls component.method() if it exists."""
+            fn = getattr(component, method, None) if component is not None else None
+            return fn if callable(fn) else lambda: None
 
-        # Helper to stop components safely if they exist
-        for name in [
-            "account_balance",
-            # "account_observer", (Deleted)
-            "market_data",
-            "feature_engineering",
-            "risk_management",
-            "position_tracking",
-            "decision_making",
-            "snapshot_scheduler",
-            "execution_position",
-        ]:
-            try:
-                comp = locals().get(name)
-                if comp is not None and hasattr(comp, "stop"):
-                    comp.stop()
-                    LOG.info(f"{name} stopped.")
-            except Exception as e:
-                LOG.error(f"Error stopping {name}: {e}")
+        coordinator = GracefulShutdownCoordinator(loop=guardian_loop)
 
-        # Stop WAL GC
-        try:
-            wal_gc.stop()
-            wal_gc_thread.join(timeout=5)
-            LOG.info("WAL GC stopped.")
-        except Exception as e:
-            LOG.error(f"Error stopping WAL GC: {e}")
+        coordinator.add_stage(
+            # Stage 1: Block new signals — no new decisions enter the pipeline
+            ShutdownStage("decision_making",    _safe_stop(decision_making),    timeout_sec=3.0),
+            ShutdownStage("regime_detector",    _safe_stop(regime_detector),    timeout_sec=2.0),
+            ShutdownStage("feature_engineering",_safe_stop(feature_engineering),timeout_sec=2.0),
+        ).add_stage(
+            # Stage 2: Drain in-flight orders — wait for ACK/FILL (max 30s)
+            ShutdownStage(
+                "execution_position.drain",
+                lambda: guardian_runtime.run(
+                    execution_position.drain_pending_orders(), timeout=30
+                ) if (
+                    guardian_runtime is not None
+                    and hasattr(execution_position, "drain_pending_orders")
+                ) else None,
+                timeout_sec=32.0,
+            ),
+        ).add_stage(
+            # Stage 3: Guardian, reconciler, retry — after execution is quiet
+            ShutdownStage("execution_position", _safe_stop(execution_position), timeout_sec=5.0),
+            ShutdownStage("inflight_reconciler",_safe_stop(
+                locals().get("inflight_reconciler")),                           timeout_sec=3.0),
+            ShutdownStage("retry_scheduler",    _safe_stop(
+                locals().get("retry_scheduler")),                               timeout_sec=2.0),
+        ).add_stage(
+            # Stage 4: Market data — after execution, Guardian may still query prices
+            ShutdownStage("market_data",        _safe_stop(market_data),        timeout_sec=5.0),
+            ShutdownStage("account_balance",    _safe_stop(account_balance),    timeout_sec=2.0),
+        ).add_stage(
+            # Stage 5: Stateful infrastructure
+            ShutdownStage("risk_management",    _safe_stop(risk_management),    timeout_sec=2.0),
+            ShutdownStage("position_tracking",  _safe_stop(position_tracking),  timeout_sec=2.0),
+            ShutdownStage("csv_recorder",       _safe_stop(csv_recorder),       timeout_sec=2.0),
+        ).add_stage(
+            # Stage 6: Async loop — only after ALL components released it
+            ShutdownStage(
+                "guardian_runtime",
+                lambda: guardian_runtime.stop(timeout=5.0) if guardian_runtime else None,
+                timeout_sec=6.0,
+            ),
+        ).add_stage(
+            # Stage 7: HTTP session + background threads
+            ShutdownStage(
+                "adapter.aclose",
+                lambda: asyncio.run(execution_position.adapter.aclose())
+                if (
+                    hasattr(execution_position, "adapter")
+                    and execution_position.adapter is not None
+                ) else None,
+                timeout_sec=3.0,
+            ),
+            ShutdownStage("wal_gc", lambda: (wal_gc.stop(), wal_gc_thread.join(timeout=5)),
+                          timeout_sec=6.0),
+        )
 
-        LOG.info("All components stopped or shutdown attempted. Exiting.")
+        coordinator.run()
+        LOG.info("All components stopped. Exiting.")
         print("Aurora Core shutdown complete.")
 
 

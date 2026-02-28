@@ -21,6 +21,12 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Blueprint 11.4: Pre-defined alert type constants.
+ALERT_ENTROPY_SPIKE = "ENTROPY_SPIKE"
+ALERT_TOPOLOGY_DRIFT = "TOPOLOGY_DRIFT"
+ALERT_ERR_RATE_HIGH = "ERR_RATE_HIGH"
+ALERT_CB_OPEN = "CB_OPEN"
+
 
 class AlertLevel(str, Enum):
     """Alert severity levels (ascending)."""
@@ -104,27 +110,34 @@ class AlertManager:
         with self._lock:
             self._hooks.append(hook)
 
-    def fire(self, alert: Alert) -> None:
+    def fire(self, alert: Alert) -> int:
         """
         Dispatch alert to all registered hooks if level >= min_level.
 
         Thread-safe. Hook errors do NOT propagate — they are logged.
+
+        Returns:
+            Number of hooks notified (0 if alert below min_level).
         """
         levels = list(AlertLevel)
         if levels.index(alert.level) < levels.index(self.min_level):
-            return  # below minimum level threshold
+            return 0  # below minimum level threshold
 
         with self._lock:
             hooks = list(self._hooks)
             self._fired_total += 1
 
+        notified = 0
         for hook in hooks:
             try:
                 hook.on_alert(alert)
+                notified += 1
             except Exception as exc:
                 with self._lock:
                     self._error_total += 1
                 logger.error("AlertHook %s raised: %s", type(hook).__name__, exc)
+
+        return notified
 
     @property
     def fired_total(self) -> int:
@@ -140,3 +153,8 @@ class AlertManager:
         """Number of registered hooks."""
         with self._lock:
             return len(self._hooks)
+
+    def unregister_all(self) -> None:
+        """Remove all registered hooks. Thread-safe."""
+        with self._lock:
+            self._hooks.clear()

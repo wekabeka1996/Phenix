@@ -93,3 +93,47 @@ class TestStopEvent:
         gc = WALGarbageCollector(wal_dir)
         gc.stop()
         assert gc._stop_event.is_set()
+
+
+class TestArchiverWiring:
+    """Tests for WAL GC -> WalArchiver integration (Phase 13.3)."""
+
+    def test_gc_with_archiver_archives_before_delete(self, wal_dir: Path) -> None:
+        """Old files should be archived via WalArchiver before deletion."""
+        import os
+        from vfoundation.dataref.wal_archiver import WalArchiver
+
+        archive_dir = wal_dir / "archive"
+        archiver = WalArchiver(
+            wal_dir=str(wal_dir),
+            archive_dir=str(archive_dir),
+        )
+        gc = WALGarbageCollector(
+            wal_dir, retention_days=1, archiver=archiver,
+        )
+
+        old_file = wal_dir / "2020-01-01.jsonl"
+        old_file.write_text('{"old": true}\n')
+        old_ts = time.time() - 86400 * 10
+        os.utime(old_file, (old_ts, old_ts))
+
+        removed = gc.cleanup_old_wals()
+
+        assert removed == 1
+        assert not old_file.exists(), "original should be deleted by GC"
+        archived = list(archive_dir.glob("2020-01-01.jsonl.gz"))
+        assert len(archived) == 1, "archived .gz file should exist"
+
+    def test_gc_without_archiver_still_deletes(self, wal_dir: Path) -> None:
+        """Without archiver, files should still be deleted (backward compat)."""
+        import os
+
+        gc = WALGarbageCollector(wal_dir, retention_days=1)
+        old_file = wal_dir / "2020-01-01.jsonl"
+        old_file.write_text('{"old": true}\n')
+        old_ts = time.time() - 86400 * 10
+        os.utime(old_file, (old_ts, old_ts))
+
+        removed = gc.cleanup_old_wals()
+        assert removed == 1
+        assert not old_file.exists()

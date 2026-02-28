@@ -2,11 +2,11 @@
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 60,
-    "registry_tokens": 59,
+    "runtime_tokens": 62,
+    "registry_tokens": 60,
     "runtime_not_in_registry": 12,
-    "registry_not_in_runtime": 11,
-    "coverage": 0.8
+    "registry_not_in_runtime": 10,
+    "coverage": 0.806452
   },
   "runtime_not_in_registry": [
     "CMD:CANCEL",
@@ -23,7 +23,6 @@
     "EVT:TOPOLOGY_DRIFT_DETECTED"
   ],
   "registry_not_in_runtime": [
-    "CMD:REPAIR",
     "DEC:CANCEL",
     "EVT:INTENT_DROPPED",
     "EVT:MARKET_TICK_FORWARDED",

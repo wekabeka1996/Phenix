@@ -16,83 +16,124 @@
     },
     "intent_side": {
       "type": "string",
-      "enum": ["LONG", "SHORT"],
+      "enum": [
+        "LONG",
+        "SHORT"
+      ],
       "description": "Intent direction as position side"
     },
     "signal_score": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Signal score if available"
     },
     "regime": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Detected regime if available"
     },
     "regime_confidence": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1,
       "description": "Regime confidence if available"
     },
     "trend_dir": {
       "type": "string",
-      "enum": ["UP", "DOWN", "UNKNOWN"],
+      "enum": [
+        "UP",
+        "DOWN",
+        "UNKNOWN"
+      ],
       "description": "Directional trend inferred by DM"
     },
     "delta_price": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Latest delta_price if available"
     },
     "pm_norm_10s": {
-      "type": ["number", "null"],
-      "minimum": -1,
-      "maximum": 1,
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized price motion (10s) if available"
     },
     "pm_norm_60s": {
-      "type": ["number", "null"],
-      "minimum": -1,
-      "maximum": 1,
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized price motion (60s) if available"
     },
     "pm_norm_300s": {
-      "type": ["number", "null"],
-      "minimum": -1,
-      "maximum": 1,
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized price motion (300s) if available"
     },
     "pm_norm_900s": {
-      "type": ["number", "null"],
-      "minimum": -1,
-      "maximum": 1,
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized price motion (900s/15m) if available"
     },
     "vol_pct_10s": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Robust vol proxy (10s, fractional) if available"
     },
     "vol_pct_60s": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Robust vol proxy (60s, fractional) if available"
     },
     "vol_pct_300s": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Robust vol proxy (300s, fractional) if available"
     },
     "vol_pct_900s": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Robust vol proxy (900s/15m, fractional) if available"
     },
     "gate_outcome": {
       "type": "string",
-      "enum": ["ALLOW", "DENY"],
+      "enum": [
+        "ALLOW",
+        "DENY"
+      ],
       "description": "Directional sanity gate outcome"
     },
     "deny_reason": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Normalized deny reason (NRR-xxx) when DENY"
     },
     "why": {

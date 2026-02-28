@@ -100,3 +100,36 @@ class PerfBenchmark:
             latencies_ms=latencies,
             warmup_rounds=self.warmup_rounds,
         )
+
+
+def benchmark_fsm_hot_path(
+    fsm: Any,
+    messages: List[Any],
+    p95_threshold_ms: float = 50.0,
+) -> BenchmarkResult:
+    """Blueprint 12.3: Domain-specific FSM hot-path benchmark.
+
+    Calls fsm.handle(msg) for each message and records latencies.
+    """
+    latencies: List[float] = []
+    for msg in messages:
+        start = time.perf_counter()
+        fsm.handle(msg)
+        latencies.append((time.perf_counter() - start) * 1000.0)
+    return BenchmarkResult(
+        name="fsm_hot_path",
+        iterations=len(messages),
+        latencies_ms=latencies,
+    )
+
+
+def benchmark_cb_health(
+    adapter: Any,
+    iterations: int = 100,
+) -> BenchmarkResult:
+    """Blueprint 12.3: Domain-specific circuit-breaker health benchmark.
+
+    Calls adapter.health_check() repeatedly and records latencies.
+    """
+    bench = PerfBenchmark(name="cb_health", iterations=iterations)
+    return bench.run(adapter.health_check)

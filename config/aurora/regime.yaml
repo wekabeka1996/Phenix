@@ -30,7 +30,7 @@ models:
     sma_short_period: 24
     # LIVE (was): sma_long_period: 50 (min allowed: 5)
     sma_long_period: 96
-    confidence_multiplier: 120.0  # КОНСЕРВАТИВІЗАЦІЯ: 50.0 → 120.0
+    confidence_multiplier: 80.0     # TUNED: Lowered from 120 to avoid saturation
     confidence_min: 0.15
     confidence_max: 0.85
   volatility:
@@ -41,10 +41,10 @@ models:
     # LIVE (was): atr_sma_length: 100 (min allowed: 10)
     atr_sma_length: 288
     allow_close_to_close_atr: true
-    threshold_multiplier: 2.15  # ЛЕГШИЙ ВХІД У ВОЛАТИЛЬНІСТЬ: 2.0 → 2.15
-    low_vol_multiplier: 0.80
-    high_vol_confidence_multiplier: 2.0
+    threshold_multiplier: 2.00      # TUNED: Reverted slightly to align with Volatility clustering
+    low_vol_multiplier: 0.70        # TUNED: Stricter low vol
+    high_vol_confidence_multiplier: 2.5 # TUNED: Increase confidence when vol spikes
     low_vol_confidence_multiplier: 3.0
   mean_reversion:
-    threshold: 0.0045
+    threshold: 0.0050               # TUNED: Adjusted for 0.5% natural spread
     confidence_multiplier: 120.0

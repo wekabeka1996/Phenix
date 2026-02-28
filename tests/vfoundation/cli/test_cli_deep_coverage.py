@@ -53,7 +53,7 @@ def test_cli_drift_success(tmp_path, monkeypatch):
 
 def test_cli_schema_gen():
     """Test 'schema' command."""
-    result = runner.invoke(app, ["schema"])
+    result = runner.invoke(app, ["schema", "gen"])
     assert result.exit_code in (0, 1)
 
 def test_cli_init_command(tmp_path, monkeypatch):

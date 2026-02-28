@@ -340,12 +340,10 @@ feature_engineering:
 
     strategist:
       enabled: true
-      # PILLAR-WARMUP-DEBUG: Reduced from 200 to 50 for backtest validation.
-      # Dataset (2023-05-14 to 2023-10-30 = ~170 days) has only ~170 D1 bars.
-      # SMA200 would never warm up. Restore to 200 for production/extended datasets.
-      sma_period: 50            # SMA period for territory (D1 bars)
+      # Real historical values now supported via Pillar Backfill
+      sma_period: 200           # SMA period for territory (D1 bars)
       sensitivity: 3.0          # tanh sensitivity
-      min_bars: 50              # Min D1 bars before ready
+      min_bars: 200             # Min D1 bars before ready
 
     weights:
       tactician: 0.30           # M15 weight in pillar sum

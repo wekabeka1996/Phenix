@@ -23,19 +23,30 @@
       "type": "object",
       "description": "Warmup/readiness state for feature engineering (TASK24, fail-closed upstream)",
       "properties": {
-        "full_ready": { "type": "boolean" },
-        "ticks_seen": { "type": "integer" },
+        "full_ready": {
+          "type": "boolean"
+        },
+        "ticks_seen": {
+          "type": "integer"
+        },
         "ready": {
           "type": "object",
-          "additionalProperties": { "type": "boolean" }
+          "additionalProperties": {
+            "type": "boolean"
+          }
         },
         "reasons": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
-      "required": ["full_ready", "ticks_seen"],
-      "additionalProperties": false
+      "required": [
+        "full_ready",
+        "ticks_seen"
+      ],
+      "additionalProperties": true
     },
     "features": {
       "type": "object",
@@ -43,22 +54,22 @@
       "properties": {
         "obi": {
           "type": "string",
-          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Order Book Imbalance [-1, 1] (string-encoded Decimal)"
         },
         "tfi": {
           "type": "string",
-          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Trade Flow Imbalance [-1, 1] (string-encoded Decimal)"
         },
         "delta_price": {
           "type": "string",
-          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Price change delta, filtered if time gap > 5s (string-encoded Decimal)"
         },
         "absorption": {
           "type": "string",
-          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Market absorption indicator - placeholder, always '0.0'"
         },
         "price": {
@@ -97,34 +108,81 @@
           "description": "Correlation with anchor symbols (BTC/ETH) [0, 1] (Phase 1)"
         }
       },
-      "required": ["obi", "tfi", "delta_price", "absorption"],
+      "required": [
+        "obi",
+        "tfi",
+        "delta_price",
+        "absorption"
+      ],
       "additionalProperties": true
     },
     "price_motion": {
       "type": "object",
       "description": "Additive-only block: multi-window returns/volatility proxy and normalized price motion (fractional returns).",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
-        "ret_10s": { "type": ["number", "null"] },
-        "ret_60s": { "type": ["number", "null"] },
-        "ret_300s": { "type": ["number", "null"] },
-        "vol_pct_10s": { "type": ["number", "null"], "minimum": 0 },
-        "vol_pct_60s": { "type": ["number", "null"], "minimum": 0 },
-        "vol_pct_300s": { "type": ["number", "null"], "minimum": 0 },
-        "pm_norm_10s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
-        "pm_norm_60s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
-        "pm_norm_300s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 }
+        "ret_10s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ret_60s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ret_300s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vol_pct_10s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "vol_pct_60s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "vol_pct_300s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "pm_norm_10s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pm_norm_60s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pm_norm_300s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       },
       "required": [
         "ret_10s",
         "ret_60s",
-        "ret_300s",
-        "vol_pct_10s",
-        "vol_pct_60s",
-        "vol_pct_300s",
-        "pm_norm_10s",
-        "pm_norm_60s",
-        "pm_norm_300s"
+        "ret_300s"
       ]
     },
     "bar": {
@@ -132,23 +190,58 @@
       "anyOf": [
         {
           "type": "object",
-          "required": ["symbol", "timeframe_sec", "start_ts_ms", "end_ts_ms", "open", "high", "low", "close", "volume"],
+          "required": [
+            "symbol",
+            "timeframe_sec",
+            "start_ts_ms",
+            "end_ts_ms",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+          ],
           "properties": {
-            "symbol": {"type": "string"},
-            "timeframe_sec": {"type": "integer", "minimum": 1},
-            "start_ts_ms": {"type": "integer"},
-            "end_ts_ms": {"type": "integer"},
-            "open": {"type": "string"},
-            "high": {"type": "string"},
-            "low": {"type": "string"},
-            "close": {"type": "string"},
-            "volume": {"type": "string"}
+            "symbol": {
+              "type": "string"
+            },
+            "timeframe_sec": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "start_ts_ms": {
+              "type": "integer"
+            },
+            "end_ts_ms": {
+              "type": "integer"
+            },
+            "open": {
+              "type": "string"
+            },
+            "high": {
+              "type": "string"
+            },
+            "low": {
+              "type": "string"
+            },
+            "close": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "string"
+            }
           }
         },
-        {"type": "null"}
+        {
+          "type": "null"
+        }
       ]
     }
   },
-  "required": ["ts", "symbol", "features"],
+  "required": [
+    "ts",
+    "symbol",
+    "features"
+  ],
   "additionalProperties": false
 }

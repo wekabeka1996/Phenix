@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import random
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Any, Callable, Generator, List, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -68,3 +69,81 @@ class ChaosHarness:
     @property
     def injected_latency_total_ms(self) -> float:
         return self._injected_latency_total_ms
+
+
+class ChaosInjector:
+    """Blueprint 12.1: Component-aware fault injection via context managers.
+
+    Each context manager monkey-patches a target object's method(s) to inject
+    a specific fault type, then restores originals on exit.
+
+    Uses duck-typing (Any) to avoid cross-layer imports.
+    """
+
+    def __init__(self, seed: Optional[int] = None) -> None:
+        self._rng = random.Random(seed)
+
+    @contextmanager
+    def inject_timeout(
+        self, target: Any, method: str = "handle", probability: float = 0.3
+    ) -> Generator[None, None, None]:
+        """Monkey-patch target.<method> to raise TimeoutError with given probability."""
+        original = getattr(target, method)
+
+        def _patched(*args: Any, **kwargs: Any) -> Any:
+            if self._rng.random() < probability:
+                raise TimeoutError(f"ChaosInjector: injected timeout on {method}")
+            return original(*args, **kwargs)
+
+        setattr(target, method, _patched)
+        try:
+            yield
+        finally:
+            setattr(target, method, original)
+
+    @contextmanager
+    def inject_cb_open(
+        self, adapter: Any, method: str = "place_order"
+    ) -> Generator[None, None, None]:
+        """Monkey-patch adapter.<method> to raise RuntimeError("CB_OPEN")."""
+        original = getattr(adapter, method)
+        setattr(adapter, method, lambda *a, **kw: (_ for _ in ()).throw(
+            RuntimeError("CB_OPEN")
+        ))
+        try:
+            yield
+        finally:
+            setattr(adapter, method, original)
+
+    @contextmanager
+    def inject_network_partition(
+        self, store: Any, methods: Optional[List[str]] = None
+    ) -> Generator[None, None, None]:
+        """Monkey-patch store methods to raise ConnectionError."""
+        methods = methods or ["reserve", "confirm", "get"]
+        originals = {}
+        for m in methods:
+            if hasattr(store, m):
+                originals[m] = getattr(store, m)
+                setattr(store, m, lambda *a, _name=m, **kw: (_ for _ in ()).throw(
+                    ConnectionError(f"ChaosInjector: network partition on {_name}")
+                ))
+        try:
+            yield
+        finally:
+            for m, orig in originals.items():
+                setattr(store, m, orig)
+
+    @contextmanager
+    def inject_random_failures(
+        self, rate: float = 0.1
+    ) -> Generator["ChaosInjector", None, None]:
+        """Context providing access to the injector's RNG for custom failure logic.
+
+        Yields the injector itself. Use injector.should_fail(rate) inside.
+        """
+        yield self
+
+    def should_fail(self, rate: float = 0.1) -> bool:
+        """Return True with the given probability. Uses internal seeded RNG."""
+        return self._rng.random() < rate
