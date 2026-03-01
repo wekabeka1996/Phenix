@@ -1,5 +1,18 @@
 # Engineering Journal
 
+## 2026-03-01: EP-INT-FLIP-VERTICAL-QTY-FIXTURE complete
+
+**Mode:** TDD integration fixture alignment.  
+**Scope:** DM↔Bridge↔ExecPos vertical flip close integration test.
+
+**Changes:**
+1. Updated integration monkeypatch in `test_flip_vertical_dm_bridge_execpos.py` to return intent payload (not `None`) after event emission.
+2. Restored expected vertical flip result (`FLIP_CLOSE_PENDING`) under truthful close-success contract.
+
+**Validation:**
+- `pytest -q tests/integration/test_flip_vertical_dm_bridge_execpos.py -k vertical_flip_close -vv`
+- `pytest -q tests/integration -k "flip_vertical_dm_bridge_execpos" --maxfail=1`
+
 ## 2026-03-01: EP-H1-ALPHA_SEARCH-MANIFEST complete
 
 **Mode:** TDD implementation.  

@@ -1,5 +1,8 @@
 # TODO
 
+## EP-INT-FLIP-VERTICAL-QTY-FIXTURE follow-up (2026-03-01)
+- [ ] Audit other DM integration monkeypatches of `_propose_trade_intent` to ensure they return non-`None` when simulating successful proposal.
+
 ## EP-H2-SAFE-EXIT-DEGRADE follow-up (2026-03-01)
 - [ ] Update strategy YAML profiles to explicitly define `execution.exit_order_type`, `execution.exit_tif`, `execution.exit_limit_ttl_ms` where needed.
 

@@ -215,6 +215,12 @@ def test_vertical_flip_close_dm_to_bridge_to_execpos(monkeypatch, fsm_harness):
             why="trade_intent",
             data_ref=list(why_chain or []),
         )
+        return {
+            "rid": rid,
+            "instrument": symbol,
+            "side": side,
+            "order": {"qty": str(qty), "price": str(price), "reduce_only": bool(reduce_only)},
+        }
 
     dm._propose_trade_intent = _emit_intent  # type: ignore[method-assign]
 
