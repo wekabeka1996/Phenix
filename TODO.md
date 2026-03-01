@@ -6,6 +6,9 @@
 ## EP-H4-WATCHDOG-CONFIG-HARDENING follow-up (2026-03-01)
 - [ ] Audit non-test callsites to ensure any future `OrderTimeoutWatchdog(config=...)` usage passes a mapping contract explicitly.
 
+## EP-H1-ALPHA_SEARCH-MANIFEST follow-up (2026-03-01)
+- [ ] Optional: evaluate adding `EVT:FEATURE_LINEAGE_BROKEN` for alpha_search feature wiring forensics.
+
 ## VF-VERB-REG follow-ups
 - VF-VERB-REG-02: periodically review `reports/VF-VERB-REG-02_diff.json` in CI logs and keep registry in sync with runtime.
 - VF-VERB-REG-02: switch from warn-only to fail when coverage is ~100% (planned: warn-only Ã¢â€ â€™ shadow-deny Ã¢â€ â€™ hard-deny).

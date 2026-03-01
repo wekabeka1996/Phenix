@@ -199,11 +199,18 @@ class AlphaSearchBacktestPlugin:
     def _create_provider_model(self, name: str, cfg: ProviderConfig) -> Optional[AlphaModel]:
         """Create alpha model for a provider."""
         if cfg.adapter:
-            # Aurora adapter
+            # Aurora adapter — all scoring params from alpha_search.yaml
             from .models.aurora_adapter import AuroraAlphaAdapter
+            adapter_cfg = cfg.adapter
             return AuroraAlphaAdapter(
-                essential_features=cfg.adapter.essential_features,
-                scoring_version=cfg.adapter.scoring_version,
+                essential_features=adapter_cfg.essential_features,
+                scoring_version=adapter_cfg.scoring_version,
+                signal_weights=adapter_cfg.signal_weights,
+                feature_neutrals=adapter_cfg.feature_neutrals,
+                direction_strength_cfg=adapter_cfg.direction_strength.model_dump(),
+                regime_thresholds=adapter_cfg.regime_thresholds,
+                base_threshold=adapter_cfg.base_threshold,
+                delta_price_cap_pct=adapter_cfg.delta_price_cap_pct,
             )
         elif cfg.ensemble:
             # TA ensemble
@@ -381,10 +388,22 @@ class AlphaSearchBacktestPlugin:
             # (e.g. ta_ensemble needs rsi_14/bb_position/macd — absent on tick data)
             if hasattr(model, "get_required_features"):
                 _required = model.get_required_features()
-                if _required and all(f not in features for f in _required):
-                    LOG.debug(
+                missing_required = [f for f in _required if f not in features]
+                if _required and missing_required:
+                    LOG.warning(
                         f"[{symbol}] Skipping {provider_id}: "
-                        f"required features absent (tf_sec={cache_entry.tf_sec})"
+                        f"missing required features={missing_required[:6]} (tf_sec={cache_entry.tf_sec})"
+                    )
+                    self.dlog.write(
+                        event="PROVIDER_SKIPPED_MISSING_FEATURES",
+                        provider_id=provider_id,
+                        symbol=symbol,
+                        payload={
+                            "missing_features": missing_required[:10],
+                            "required_count": len(_required),
+                            "present_count": len(features),
+                            "tf_sec": cache_entry.tf_sec,
+                        },
                     )
                     continue
 

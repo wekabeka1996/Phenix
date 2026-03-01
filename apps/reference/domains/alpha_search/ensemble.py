@@ -106,6 +106,24 @@ class EnsembleModel(AlphaModel):
         """Return unique model name for identification."""
         return f"ensemble_{len(self.models)}_models"
 
+    def get_required_features(self) -> List[str]:
+        """Return union of required features across all child models."""
+        required: List[str] = []
+        seen: set[str] = set()
+        for model in self.models.values():
+            if not hasattr(model, "get_required_features"):
+                continue
+            try:
+                model_required = model.get_required_features() or []
+            except Exception:
+                model_required = []
+            for feature in model_required:
+                feature_name = str(feature)
+                if feature_name and feature_name not in seen:
+                    seen.add(feature_name)
+                    required.append(feature_name)
+        return required
+
     def calculate_alpha(
         self,
         symbol: str,
@@ -170,6 +188,24 @@ class EnsembleModel(AlphaModel):
                 score=Decimal("0.0"),
                 confidence=Decimal("0.0"),
                 why=["no_models_available"]
+            )
+
+        required_features = self.get_required_features()
+        available_features = features or {}
+        missing_features = [
+            feature for feature in required_features
+            if feature not in available_features
+        ]
+        if required_features and missing_features:
+            return AlphaScore(
+                model_name=self.name,
+                symbol=symbol,
+                score=Decimal("0.0"),
+                confidence=Decimal("0.0"),
+                why=[
+                    "missing_features",
+                    f"missing_count={len(missing_features)}",
+                ],
             )
 
         # Get scores from all models

@@ -408,5 +408,71 @@ class TestPluginSummary:
         assert "aurora" in summary["provider_stats"]
 
 
+class TestRequiredManifestGating:
+    """Test provider skip + monitoring when required features are missing."""
+
+    def test_provider_skipped_when_required_features_missing(self):
+        from apps.reference.domains.alpha_search.alpha_model import AlphaModel, AlphaScore
+        from decimal import Decimal
+
+        class _DummyModel(AlphaModel):
+            def get_model_name(self) -> str:
+                return "dummy_manifest_model"
+
+            def get_required_features(self):
+                return ["f1", "f2"]
+
+            def calculate_alpha(self, symbol, market_data, features, context=None):
+                return AlphaScore(
+                    model_name=self.get_model_name(),
+                    symbol=symbol,
+                    score=Decimal("0.5"),
+                    confidence=Decimal("0.9"),
+                    why=["should_not_run"],
+                )
+
+        bus = MockEventBus()
+        config = AlphaSearchConfig(
+            enabled=True,
+            providers={
+                "aurora": ProviderConfig(
+                    enabled=True,
+                    adapter=AuroraAdapterConfig()
+                )
+            }
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
+        plugin.dlog = MagicMock()
+
+        dummy = _DummyModel({})
+        plugin.providers = {"ta_ensemble": dummy}
+        plugin.provider_configs = {
+            "ta_ensemble": ProviderConfig(enabled=True, symbols=["BTCUSDT"], fail_closed=False)
+        }
+        plugin.provider_stats = {"ta_ensemble": plugin.provider_stats.get("aurora")}
+        plugin.open_positions = {"ta_ensemble": []}
+        plugin.closed_positions = {"ta_ensemble": []}
+
+        bar_close_ts = 1700000000000
+        bus.trigger("EVT:FEATURES_CALCULATED", {
+            "symbol": "BTCUSDT",
+            "features": {"f1": 1.0, "close": 50000.0},  # missing f2
+            "tf_sec": 300,
+            "ts": bar_close_ts,
+            "bar": {"close_ts": bar_close_ts},
+        })
+        bus.emitted.clear()
+
+        bus.trigger("CMD:PROCESS_STRATEGY", {
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "bar_close_ts": bar_close_ts,
+        })
+
+        score_events = [e for e in bus.emitted if e["event"] == "EVT:ALPHA_SCORE_CALCULATED"]
+        assert not score_events, "Provider must be skipped when required features are missing"
+        plugin.dlog.write.assert_called()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

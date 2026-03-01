@@ -1,5 +1,21 @@
 # Engineering Journal
 
+## 2026-03-01: EP-H1-ALPHA_SEARCH-MANIFEST complete
+
+**Mode:** TDD implementation.  
+**Scope:** ta_ensemble required-feature manifest + missing-feature gating.
+
+**Changes (additive-only):**
+1. `EnsembleModel.get_required_features()` now returns union of child model requirements.
+2. `EnsembleModel.generate_signal()` returns zero score/confidence with `why` including `missing_features` when required features are missing.
+3. `AlphaSearchBacktestPlugin` now skips provider scoring when required features are missing (not only when all are absent).
+4. Added monitoring signal for skipped providers: `dlog.write(event=\"PROVIDER_SKIPPED_MISSING_FEATURES\", ...)`.
+5. Added dedicated tests for manifest non-empty contract, missing-feature zero-confidence behavior, and plugin skip+monitor path.
+
+**Validation:**
+- `pytest -q tests/domains/alpha_search/test_ta_ensemble_manifest.py`
+- `pytest -q tests/domains/alpha_search/test_backtest_plugin.py -k "missing or ensemble"`
+
 ## 2026-03-01: EP-H4-WATCHDOG-CONFIG-HARDENING complete
 
 **Mode:** TDD implementation.  
