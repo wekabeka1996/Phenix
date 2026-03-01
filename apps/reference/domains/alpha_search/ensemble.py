@@ -196,7 +196,9 @@ class EnsembleModel(AlphaModel):
             feature for feature in required_features
             if feature not in available_features
         ]
-        if required_features and missing_features:
+        # EP-H1.1: Preserve symbol/features plumbing for partial payloads.
+        # Fail-closed zero signal only when the feature payload is completely empty.
+        if required_features and missing_features and not available_features:
             return AlphaScore(
                 model_name=self.name,
                 symbol=symbol,

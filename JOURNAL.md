@@ -1,5 +1,21 @@
 # Engineering Journal
 
+## 2026-03-01: EP-H1.1-ALPHA_SEARCH-SYMBOL-PLUMBING complete
+
+**Mode:** TDD regression repair.  
+**Scope:** alpha_search symbol pass-through + provider gating behavior.
+
+**Changes:**
+1. Ensemble zero-signal missing-feature guard now triggers only on completely empty features payload, preserving partial-feature symbol plumbing.
+2. Backtest plugin gating refined:
+   - ensemble providers (`ta_ensemble`) -> skip + monitor on missing required features
+   - non-ensemble providers -> emit fail-closed score when `fail_closed=true`
+3. Restored full `tests/domains/alpha_search` green state.
+
+**Validation:**
+- `pytest -q tests/domains/alpha_search/test_ensemble_features_plumbing.py -k symbol_passed -vv`
+- `pytest -q tests/domains/alpha_search --maxfail=1`
+
 ## 2026-03-01: EP-INT-FLIP-VERTICAL-QTY-FIXTURE complete
 
 **Mode:** TDD integration fixture alignment.  

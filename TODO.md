@@ -1,5 +1,8 @@
 # TODO
 
+## EP-H1.1-ALPHA_SEARCH-SYMBOL-PLUMBING follow-up (2026-03-01)
+- [ ] Add explicit contract test that distinguishes ensemble skip behavior from non-ensemble fail-closed emission on missing required features.
+
 ## EP-INT-FLIP-VERTICAL-QTY-FIXTURE follow-up (2026-03-01)
 - [ ] Audit other DM integration monkeypatches of `_propose_trade_intent` to ensure they return non-`None` when simulating successful proposal.
 

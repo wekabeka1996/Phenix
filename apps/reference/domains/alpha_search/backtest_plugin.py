@@ -390,6 +390,12 @@ class AlphaSearchBacktestPlugin:
                 _required = model.get_required_features()
                 missing_required = [f for f in _required if f not in features]
                 if _required and missing_required:
+                    model_name = ""
+                    try:
+                        model_name = str(model.get_model_name())
+                    except Exception:
+                        model_name = ""
+                    is_ensemble_provider = provider_id == "ta_ensemble" or "ensemble" in model_name
                     LOG.warning(
                         f"[{symbol}] Skipping {provider_id}: "
                         f"missing required features={missing_required[:6]} (tf_sec={cache_entry.tf_sec})"
@@ -405,6 +411,10 @@ class AlphaSearchBacktestPlugin:
                             "tf_sec": cache_entry.tf_sec,
                         },
                     )
+                    if is_ensemble_provider:
+                        continue
+                    if cfg.fail_closed:
+                        self._emit_fail_closed_score(provider_id, symbol, tf_sec, bar_close_ts)
                     continue
 
             # Get current price for virtual trader
