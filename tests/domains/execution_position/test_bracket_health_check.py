@@ -46,7 +46,7 @@ class TestWatchdogFillPayload:
         """ManageFlowFSM reads pld['qty'], not 'quantity'. Both must exist."""
         from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
 
-        wd = OrderTimeoutWatchdog(config=fsm_config)
+        wd = OrderTimeoutWatchdog(config={})
         # Verify the payload structure matches watchdog.py:383-394
         expected_keys = {"orderId", "symbol", "quantity", "qty", "price", "side",
                          "client_order_id", "clientOrderId", "rid"}

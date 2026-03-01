@@ -1,5 +1,24 @@
 # Engineering Journal
 
+## 2026-03-01: EP-H4-WATCHDOG-CONFIG-HARDENING complete
+
+**Mode:** TDD implementation.  
+**Scope:** watchdog config contract hardening (test-integrity + fail-fast).
+
+**Changes (additive-only):**
+1. `OrderTimeoutWatchdog` now validates `config` contract at init:
+   - `config=None` -> `{}` default
+   - non-mapping -> `RuntimeError("CRITICAL: watchdog config must be mapping")`
+2. `rps_limit` is strictly validated as `int`:
+   - non-int -> `RuntimeError("CRITICAL: rps_limit must be int")`
+3. Added watchdog contract tests for MagicMock rejection, strict `rps_limit`, and `None` defaults.
+4. Updated one legacy test callsite to pass mapping config explicitly.
+
+**Validation:**
+- `pytest -q tests/domains/execution_position/test_watchdog_config_hardening.py`
+- `pytest -q tests/domains/execution_position/test_bracket_health_check.py -k watchdog`
+- `pytest -q tests/domains/execution_position -k "watchdog"` (timed out in unrelated async loop test suite)
+
 ## 2026-03-01: EP-H2-SAFE-EXIT-DEGRADE complete
 
 **Mode:** TDD implementation.  

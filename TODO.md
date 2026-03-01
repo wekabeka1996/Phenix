@@ -3,6 +3,9 @@
 ## EP-H2-SAFE-EXIT-DEGRADE follow-up (2026-03-01)
 - [ ] Update strategy YAML profiles to explicitly define `execution.exit_order_type`, `execution.exit_tif`, `execution.exit_limit_ttl_ms` where needed.
 
+## EP-H4-WATCHDOG-CONFIG-HARDENING follow-up (2026-03-01)
+- [ ] Audit non-test callsites to ensure any future `OrderTimeoutWatchdog(config=...)` usage passes a mapping contract explicitly.
+
 ## VF-VERB-REG follow-ups
 - VF-VERB-REG-02: periodically review `reports/VF-VERB-REG-02_diff.json` in CI logs and keep registry in sync with runtime.
 - VF-VERB-REG-02: switch from warn-only to fail when coverage is ~100% (planned: warn-only Ã¢â€ â€™ shadow-deny Ã¢â€ â€™ hard-deny).

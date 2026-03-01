@@ -8,7 +8,7 @@ Provides idempotent cancellation for timed-out orders.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional, Set, Any, Callable
+from typing import Dict, Optional, Set, Any, Callable, Mapping
 from enum import Enum
 
 # T2B-04: Time abstraction for deterministic testing
@@ -49,13 +49,18 @@ class OrderTimeoutWatchdog:
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[Mapping[str, Any]] = None,
         ack_ttl_ms: int = 8000,  # 8 seconds for order acknowledgment
         fill_ttl_ms: int = 30000,  # 30 seconds for order fill
         check_interval_ms: int = 1000,  # Check every 1 second
         on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None
     ):
-        self.config = config or {}
+        if config is None:
+            self.config: Dict[str, Any] = {}
+        elif not isinstance(config, Mapping):
+            raise RuntimeError("CRITICAL: watchdog config must be mapping")
+        else:
+            self.config = dict(config)
         # Load from config if available, else use defaults
         self.ack_ttl_ms = self.config["ack_ttl_ms"] if "ack_ttl_ms" in self.config else ack_ttl_ms
         self.fill_ttl_ms = self.config["fill_ttl_ms"] if "fill_ttl_ms" in self.config else fill_ttl_ms
@@ -88,7 +93,10 @@ class OrderTimeoutWatchdog:
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
         # Max 10 requests per second globally
-        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10
+        rps_limit = self.config.get("rps_limit", 10)
+        if not isinstance(rps_limit, int):
+            raise RuntimeError("CRITICAL: rps_limit must be int")
+        self._rps_limit = rps_limit
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
