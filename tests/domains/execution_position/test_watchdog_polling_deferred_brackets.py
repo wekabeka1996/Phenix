@@ -12,6 +12,11 @@ async def test_watchdog_polling_fill_triggers_deferred_brackets(fsm_config):
     """
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
+    # EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION:
+    # disable background bracket health loop in async test to avoid runaway task noise.
+    if hasattr(fsm_config, "domains") and hasattr(fsm_config.domains, "execution_position"):
+        fsm_config.domains.execution_position.bracket_health_check = None
+
     # Force non-shadow mode so ExecPosFSM wires watchdog hooks to adapter.get_order.
     fsm_config.binance_api.testnet.api_key = "k"
     fsm_config.binance_api.testnet.api_secret = "s"
@@ -73,4 +78,3 @@ async def test_watchdog_polling_fill_triggers_deferred_brackets(fsm_config):
     assert order_id not in execpos.watchdog.acked_orders
 
     execpos.watchdog.stop()
-

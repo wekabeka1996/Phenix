@@ -1,5 +1,19 @@
 # Engineering Journal
 
+## 2026-03-01: EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION complete
+
+**Mode:** TDD test isolation hardening.  
+**Scope:** watchdog polling deferred-brackets timeout path.
+
+**Changes:**
+1. Disabled background bracket health loop in `test_watchdog_polling_deferred_brackets.py` before `ExecPosFSM` init.
+2. Eliminated runaway async background behavior in watchdog-focused test slice.
+
+**Validation:**
+- `pytest -q tests/domains/execution_position/test_watchdog_polling_deferred_brackets.py -k fill_triggers --maxfail=1 -vv`
+- `pytest -vv tests/domains/execution_position -k "watchdog" --maxfail=1 -x`
+- `pytest tests/domains/execution_position -k "watchdog" --durations=25 --maxfail=1`
+
 ## 2026-03-01: EP-H1.1-ALPHA_SEARCH-SYMBOL-PLUMBING complete
 
 **Mode:** TDD regression repair.  

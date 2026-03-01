@@ -1,5 +1,8 @@
 # TODO
 
+## EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION follow-up (2026-03-01)
+- [ ] Add shared helper fixture for execution_position async tests to disable background loops consistently (`bracket_health_check`, optional orphan monitor).
+
 ## EP-H1.1-ALPHA_SEARCH-SYMBOL-PLUMBING follow-up (2026-03-01)
 - [ ] Add explicit contract test that distinguishes ensemble skip behavior from non-ensemble fail-closed emission on missing required features.
 
