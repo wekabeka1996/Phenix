@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "trade_intent_degraded_v1.json",
+  "title": "Trade Intent Degraded Event",
+  "description": "Schema for EVT:TRADE_INTENT_DEGRADED payload when reduce-only exit policy is degraded to fail-safe mode.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "symbol": {
+      "type": "string"
+    },
+    "rid": {
+      "type": "string"
+    },
+    "strategy_id": {
+      "type": "string"
+    },
+    "reduce_only": {
+      "type": "boolean"
+    },
+    "from_order_type": {
+      "type": "string",
+      "enum": [
+        "LIMIT",
+        "MARKET"
+      ]
+    },
+    "to_order_type": {
+      "type": "string",
+      "enum": [
+        "LIMIT",
+        "MARKET"
+      ]
+    },
+    "why_chain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "symbol",
+    "rid",
+    "strategy_id",
+    "reduce_only",
+    "from_order_type",
+    "to_order_type"
+  ]
+}

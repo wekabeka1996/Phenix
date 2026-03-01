@@ -325,6 +325,12 @@ registry:
   schema: apps/reference/domains/decision_making/schemas/trade_intent_v1.json
   since: '2026-01-08'
 - op: EVT
+  verb: TRADE_INTENT_DEGRADED
+  owner: decision_making
+  status: experimental
+  schema: apps/reference/domains/decision_making/schemas/trade_intent_degraded_v1.json
+  since: '2026-03-01'
+- op: EVT
   verb: TRADE_INTENT_REJECTED
   owner: decision_making
   status: experimental

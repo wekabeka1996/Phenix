@@ -1,5 +1,23 @@
 # Engineering Journal
 
+## 2026-03-01: EP-H2-SAFE-EXIT-DEGRADE complete
+
+**Mode:** TDD implementation.  
+**Scope:** reduce-only close fail-safe on missing tf/TTL, exit policy split from entry policy.
+
+**Changes (additive-only):**
+1. Added strategy execution fields for exit policy: `exit_order_type`, `exit_tif`, `exit_limit_ttl_ms`.
+2. In `DecisionMaking._propose_trade_intent`, reduce-only closes now use `execution.exit_*` with fail-safe default `MARKET`.
+3. LIMIT reduce-only exit without `exit_limit_ttl_ms` now degrades to MARKET (no NRR-046 reject path).
+4. Added `EVT:TRADE_INTENT_DEGRADED` with schema + registry entry.
+5. `_emit_reduce_only_close` now returns success only when intent creation succeeds.
+6. Added coverage for both flip paths: `_handle_flip_orchestration` and `_handle_regime_flip`.
+
+**Validation:**
+- `pytest -q tests/domains/decision_making/test_flip_orchestration_v1.py`
+- `pytest -q tests/domains/decision_making/test_regime_flip_close.py`
+- `pytest -q tests/ops/test_verb_registry_contracts.py -k "trade_intent"`
+
 ## 2026-02-24: EP-01.3 P0 - queued supersede guarded by live position check + dispatch fix
 
 **Mode:** TDD implementation.

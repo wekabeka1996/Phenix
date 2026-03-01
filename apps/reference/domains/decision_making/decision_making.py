@@ -1609,6 +1609,7 @@ class DecisionMaking:
             delta_price_cap_pct = decimal.Decimal(
                 str(signals_cfg.delta_price_cap_pct)
             ) if signals_cfg and signals_cfg.delta_price_cap_pct else decimal.Decimal("0.005")
+            normalize_mode = str(getattr(signals_cfg, "normalize_signals_mode", "signed_v2"))
 
             # Call kernel
             kernel_result = AuroraScoringKernel.compute(
@@ -1625,6 +1626,7 @@ class DecisionMaking:
                 side_bias_state=side_bias_state,
                 direction_strength_cfg=direction_strength_cfg,
                 delta_price_cap_pct=delta_price_cap_pct,
+                normalize_mode=normalize_mode,
             )
 
             # Compare results
@@ -2515,6 +2517,7 @@ class DecisionMaking:
                 # Emit intent
                 why_chain = ["regime_flip_enforcement", regime]
                 rid = f"rf-{int(self._clock.now_sec())}"
+                strategy_id = regime_data.get("strategy_id", "aurora") if isinstance(regime_data, dict) else "aurora"
 
                 self._propose_trade_intent(
                     symbol=symbol,
@@ -2523,7 +2526,8 @@ class DecisionMaking:
                     price=price,
                     why_chain=why_chain,
                     rid=rid,
-                    reduce_only=True
+                    reduce_only=True,
+                    strategy_id=str(strategy_id),
                 )
         except Exception as e:
             self.logger.warning(
@@ -2856,7 +2860,7 @@ class DecisionMaking:
         max_slippage_bps: int | None = None,
         max_latency_ms: int | None = None,
         risk_score: float | None = None,
-    ) -> None:
+    ) -> Optional[Dict[str, Any]]:
         # DM-SAFETY-BYPASSES-P1: Config-based safety gates (no hardcoded strategy_id checks).
         # Directional/price-motion sanity are designed for trend-following entry safety.
         # Mean reversion intentionally trades against trend; set safety_gates.enabled=false.
@@ -3327,14 +3331,20 @@ class DecisionMaking:
         # ORDER-POLICY-01: Resolve per-strategy execution policy (fail-closed).
         order_type: str | None = None
         tif: str | None = None
+        exec_cfg = None
         try:
             strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
-            exec_cfg = getattr(strat_cfg, "execution",
-                               None) if strat_cfg is not None else None
-            order_type = getattr(exec_cfg, "entry_order_type",
-                                 None) if exec_cfg is not None else None
-            tif = getattr(exec_cfg, "entry_tif",
-                          None) if exec_cfg is not None else None
+            exec_cfg = getattr(strat_cfg, "execution", None) if strat_cfg is not None else None
+            if reduce_only:
+                # EP-H2-SAFE-EXIT-DEGRADE:
+                # Reduce-only close uses dedicated exit policy with fail-safe MARKET default.
+                order_type = getattr(exec_cfg, "exit_order_type", None) if exec_cfg is not None else None
+                tif = getattr(exec_cfg, "exit_tif", None) if exec_cfg is not None else None
+                if not order_type:
+                    order_type = "MARKET"
+            else:
+                order_type = getattr(exec_cfg, "entry_order_type", None) if exec_cfg is not None else None
+                tif = getattr(exec_cfg, "entry_tif", None) if exec_cfg is not None else None
         except Exception:
             order_type = None
             tif = None
@@ -3367,60 +3377,82 @@ class DecisionMaking:
             supported_types = set()
             supported_tifs = set()
 
+        degraded_from_order_type: str | None = None
+        degraded_why: str | None = None
+
         if supported_types and order_type_u not in supported_types:
-            self._emit_trade_intent_rejected(
-                symbol=symbol,
-                strategy_id=str(strategy_id),
-                side=str(side),
-                rid=str(rid),
-                reason_code=NormalizedRejectReasons.UNSUPPORTED_ORDER_TYPE,
-                reason="DECISION",
-                context=f"ORDER-POLICY-01: unsupported order_type={order_type_u}",
-                why_chain=(why_chain if isinstance(why_chain, list) else []),
-                details={"order_type": order_type_u,
-                         "supported": sorted(supported_types)},
-            )
-            self._record_blocked_intent(symbol)
-            return None
+            if reduce_only:
+                degraded_from_order_type = order_type_u
+                order_type_u = "MARKET"
+                tif = None
+                degraded_why = "UNSUPPORTED_EXIT_ORDER_TYPE"
+            else:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.UNSUPPORTED_ORDER_TYPE,
+                    reason="DECISION",
+                    context=f"ORDER-POLICY-01: unsupported order_type={order_type_u}",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"order_type": order_type_u,
+                             "supported": sorted(supported_types)},
+                )
+                self._record_blocked_intent(symbol)
+                return None
 
         if order_type_u == "LIMIT":
             if tif is None:
-                self._emit_trade_intent_rejected(
-                    symbol=symbol,
-                    strategy_id=str(strategy_id),
-                    side=str(side),
-                    rid=str(rid),
-                    reason_code=NormalizedRejectReasons.TIF_REQUIRED_FOR_LIMIT,
-                    reason="DECISION",
-                    context="ORDER-POLICY-01: LIMIT requires explicit tif (no defaults)",
-                    why_chain=(why_chain if isinstance(
-                        why_chain, list) else []),
-                    details={"order_type": "LIMIT"},
-                )
-                self._record_blocked_intent(symbol)
-                return None
-
-            tif_u = str(tif).upper()
-            if supported_tifs and tif_u not in supported_tifs:
-                self._emit_trade_intent_rejected(
-                    symbol=symbol,
-                    strategy_id=str(strategy_id),
-                    side=str(side),
-                    rid=str(rid),
-                    reason_code=NormalizedRejectReasons.UNSUPPORTED_TIF,
-                    reason="DECISION",
-                    context=f"ORDER-POLICY-01: unsupported tif={tif_u}",
-                    why_chain=(why_chain if isinstance(
-                        why_chain, list) else []),
-                    details={"tif": tif_u,
-                             "supported": sorted(supported_tifs)},
-                )
-                self._record_blocked_intent(symbol)
-                return None
-            tif = tif_u
+                if reduce_only:
+                    degraded_from_order_type = degraded_from_order_type or "LIMIT"
+                    order_type_u = "MARKET"
+                    tif = None
+                    degraded_why = degraded_why or "MISSING_TIF_FOR_LIMIT_EXIT"
+                else:
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=str(side),
+                        rid=str(rid),
+                        reason_code=NormalizedRejectReasons.TIF_REQUIRED_FOR_LIMIT,
+                        reason="DECISION",
+                        context="ORDER-POLICY-01: LIMIT requires explicit tif (no defaults)",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []),
+                        details={"order_type": "LIMIT"},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return None
+            if order_type_u == "LIMIT":
+                tif_u = str(tif).upper()
+                if supported_tifs and tif_u not in supported_tifs:
+                    if reduce_only:
+                        degraded_from_order_type = degraded_from_order_type or "LIMIT"
+                        order_type_u = "MARKET"
+                        tif = None
+                        degraded_why = degraded_why or "UNSUPPORTED_TIF_FOR_LIMIT_EXIT"
+                    else:
+                        self._emit_trade_intent_rejected(
+                            symbol=symbol,
+                            strategy_id=str(strategy_id),
+                            side=str(side),
+                            rid=str(rid),
+                            reason_code=NormalizedRejectReasons.UNSUPPORTED_TIF,
+                            reason="DECISION",
+                            context=f"ORDER-POLICY-01: unsupported tif={tif_u}",
+                            why_chain=(why_chain if isinstance(
+                                why_chain, list) else []),
+                            details={"tif": tif_u,
+                                     "supported": sorted(supported_tifs)},
+                        )
+                        self._record_blocked_intent(symbol)
+                        return None
+                if order_type_u == "LIMIT":
+                    tif = tif_u
         else:
             # MARKET: tif must be null (fail-closed; no silent ignore).
-            if tif is not None:
+            if tif is not None and not reduce_only:
                 self._emit_trade_intent_rejected(
                     symbol=symbol,
                     strategy_id=str(strategy_id),
@@ -3440,7 +3472,18 @@ class DecisionMaking:
         # EP-01.3-INT: Calculate valid_for_ms ONLY for LIMIT (pending entry TTL, fail-closed).
         valid_for_ms: int | None = None
         if order_type_u == "LIMIT":
-            if tf_sec is None:
+            if reduce_only:
+                exit_limit_ttl_ms = getattr(exec_cfg, "exit_limit_ttl_ms", None) if exec_cfg is not None else None
+                if exit_limit_ttl_ms is not None:
+                    valid_for_ms = int(exit_limit_ttl_ms)
+                else:
+                    # Fail-safe for reduce_only close: never reject on missing tf_sec/TTL.
+                    degraded_from_order_type = degraded_from_order_type or "LIMIT"
+                    order_type_u = "MARKET"
+                    tif = None
+                    valid_for_ms = None
+                    degraded_why = "MISSING_TTL_FOR_LIMIT_EXIT"
+            elif tf_sec is None:
                 self._emit_trade_intent_rejected(
                     symbol=symbol,
                     strategy_id=str(strategy_id),
@@ -3456,61 +3499,74 @@ class DecisionMaking:
                 self._record_blocked_intent(symbol)
                 return None
 
-            try:
-                pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
-                if pe_ttl_cfg.enabled:
-                    ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
-                    if tf_sec in ttl_by_tf:
-                        valid_for_ms = int(ttl_by_tf[tf_sec]) * 1000
-                        self.logger.debug(
-                            f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})"
-                        )
-                    elif pe_ttl_cfg.reject_unknown_tf:
-                        self._emit_trade_intent_rejected(
-                            symbol=symbol,
-                            strategy_id=str(strategy_id),
-                            side=str(side),
-                            rid=str(rid),
-                            reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
-                            reason="DECISION",
-                            context=f"EP-01.3-INT: tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=true)",
-                            why_chain=(why_chain if isinstance(
-                                why_chain, list) else []),
-                            details={"tf_sec": int(
-                                tf_sec), "known_tfs": sorted(ttl_by_tf.keys())},
-                        )
-                        self._record_blocked_intent(symbol)
-                        return None
-            except Exception as e:
-                self._emit_trade_intent_rejected(
-                    symbol=symbol,
-                    strategy_id=str(strategy_id),
-                    side=str(side),
-                    rid=str(rid),
-                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
-                    reason="DECISION",
-                    context=f"EP-01.3-INT: failed to derive valid_for_ms: {e}",
-                    why_chain=(why_chain if isinstance(
-                        why_chain, list) else []),
-                )
-                self._record_blocked_intent(symbol)
-                return None
+            if order_type_u == "LIMIT":
+                try:
+                    pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+                    if pe_ttl_cfg.enabled:
+                        ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
+                        if tf_sec in ttl_by_tf:
+                            valid_for_ms = int(ttl_by_tf[tf_sec]) * 1000
+                            self.logger.debug(
+                                f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})"
+                            )
+                        elif pe_ttl_cfg.reject_unknown_tf:
+                            self._emit_trade_intent_rejected(
+                                symbol=symbol,
+                                strategy_id=str(strategy_id),
+                                side=str(side),
+                                rid=str(rid),
+                                reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
+                                reason="DECISION",
+                                context=f"EP-01.3-INT: tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=true)",
+                                why_chain=(why_chain if isinstance(
+                                    why_chain, list) else []),
+                                details={"tf_sec": int(
+                                    tf_sec), "known_tfs": sorted(ttl_by_tf.keys())},
+                            )
+                            self._record_blocked_intent(symbol)
+                            return None
+                except Exception as e:
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=str(side),
+                        rid=str(rid),
+                        reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                        reason="DECISION",
+                        context=f"EP-01.3-INT: failed to derive valid_for_ms: {e}",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []),
+                    )
+                    self._record_blocked_intent(symbol)
+                    return None
 
-            if valid_for_ms is None:
-                self._emit_trade_intent_rejected(
-                    symbol=symbol,
-                    strategy_id=str(strategy_id),
-                    side=str(side),
-                    rid=str(rid),
-                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
-                    reason="DECISION",
-                    context="EP-01.3-INT: LIMIT requires valid_for_ms (no fallback to global fill_ttl_ms)",
-                    why_chain=(why_chain if isinstance(
-                        why_chain, list) else []),
-                    details={"order_type": "LIMIT"},
-                )
-                self._record_blocked_intent(symbol)
-                return None
+                if valid_for_ms is None:
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=str(side),
+                        rid=str(rid),
+                        reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                        reason="DECISION",
+                        context="EP-01.3-INT: LIMIT requires valid_for_ms (no fallback to global fill_ttl_ms)",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []),
+                        details={"order_type": "LIMIT"},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return None
+
+        if reduce_only and degraded_from_order_type and degraded_why:
+            self._emit_trade_intent_degraded(
+                symbol=symbol,
+                rid=str(rid),
+                strategy_id=str(strategy_id),
+                reduce_only=True,
+                from_order_type=str(degraded_from_order_type),
+                to_order_type=str(order_type_u),
+                why=str(degraded_why)[:80],
+                why_chain=(why_chain if isinstance(why_chain, list) else []),
+            )
 
         # Sanitize strategy/EntryPlan SL/TP to avoid payload pollution ("nan", "inf", "None").
         stop_price_payload: str | None = None
@@ -3565,6 +3621,8 @@ class DecisionMaking:
             "target_price": target_price_payload,
             "entry_plan": entry_plan_trace,
         }
+        if str(strategy_id) == "aurora":
+            trade_intent["normalize_mode_effective"] = "signed_v2"
 
         # TASK47: Commit windowed arbitration only for intents that are about to be emitted.
         commit_result = self._check_strategy_arbitration(
@@ -3707,6 +3765,7 @@ class DecisionMaking:
         # The caller handles it. This method is just the emission mechanism.
 
         # CLEAR STATE IS DONE BY CALLER usually.
+        return trade_intent
 
     def _get_position_state(self, symbol: str) -> str:
         """
@@ -3817,7 +3876,7 @@ class DecisionMaking:
             f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty_abs} (reduce_only)"
         )
 
-        self._propose_trade_intent(
+        intent = self._propose_trade_intent(
             symbol=symbol,
             side=close_side,
             qty=decimal.Decimal(str(qty_abs)),
@@ -3827,7 +3886,7 @@ class DecisionMaking:
             reduce_only=True,
             strategy_id=str(strategy_id),
         )
-        return True
+        return intent is not None
 
     def _stable_retry_key(
         self,
@@ -4033,6 +4092,7 @@ class DecisionMaking:
                 context=str(context),
                 why_chain=list(why_chain or []),
                 details=details,
+                normalize_mode_effective="signed_v2" if str(strategy_id) == "aurora" else None,
                 src="decision_making",
                 ts_ms=ts_ms,
             )
@@ -4040,6 +4100,38 @@ class DecisionMaking:
             # In-process event (optional)
             self.fsm.emit("EVT:TRADE_INTENT_REJECTED", payload,
                           why=f"intent_rejected:{reason_code}")
+        except Exception:
+            return
+
+    def _emit_trade_intent_degraded(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        strategy_id: str,
+        reduce_only: bool,
+        from_order_type: str,
+        to_order_type: str,
+        why: str,
+        why_chain: list[str] | None = None,
+    ) -> None:
+        """Emit monitoring event for fail-safe order policy degradation."""
+        try:
+            payload: Dict[str, Any] = {
+                "symbol": str(symbol),
+                "rid": str(rid),
+                "strategy_id": str(strategy_id),
+                "reduce_only": bool(reduce_only),
+                "from_order_type": str(from_order_type),
+                "to_order_type": str(to_order_type),
+                "why_chain": list(why_chain or []),
+            }
+            self.fsm.emit(
+                "EVT:TRADE_INTENT_DEGRADED",
+                payload=payload,
+                why=str(why)[:80],
+                data_ref=(list(why_chain or []) or None),
+            )
         except Exception:
             return
 

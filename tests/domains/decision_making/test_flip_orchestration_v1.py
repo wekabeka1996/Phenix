@@ -108,6 +108,14 @@ def _mk_cfg(*, symbol: str, position_mode: str, stale_ttl_sec: int = 15):
         },
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
+                execution=SimpleNamespace(
+                    entry_order_type="LIMIT",
+                    entry_tif="GTX",
+                    exit_order_type="MARKET",
+                    exit_tif=None,
+                    exit_limit_ttl_ms=None,
+                ),
+                safety_gates=SimpleNamespace(enabled=False),
                 decision=SimpleNamespace(
                     signal_threshold=0.0,
                     retry_ttl_ms=1000,
@@ -159,6 +167,7 @@ def test_flip_long_to_short_emits_reduce_only_close_and_defer():
 
     def _fake_propose_trade_intent(**kwargs):
         proposed.append(dict(kwargs))
+        return {"ok": True}
 
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
 
@@ -261,6 +270,7 @@ def test_emit_reduce_only_close_uses_legacy_positionAmt_when_net_position_missin
 
     def _fake_propose_trade_intent(**kwargs):
         proposed.append(dict(kwargs))
+        return {"ok": True}
 
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
 
@@ -287,6 +297,7 @@ def test_emit_reduce_only_close_fail_closed_on_invalid_qty_skips_emit():
 
     def _fake_propose_trade_intent(**kwargs):
         proposed.append(dict(kwargs))
+        return {"ok": True}
 
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
     dm._get_position_state = lambda _symbol: "LONG"  # type: ignore[method-assign]
@@ -309,6 +320,7 @@ def test_emit_reduce_only_close_noop_when_position_not_long_or_short():
 
     def _fake_propose_trade_intent(**kwargs):
         proposed.append(dict(kwargs))
+        return {"ok": True}
 
     dm._propose_trade_intent = _fake_propose_trade_intent  # type: ignore[method-assign]
     dm._get_position_state = lambda _symbol: "FLAT"  # type: ignore[method-assign]
@@ -335,6 +347,82 @@ def test_flip_missing_positions_stale_ttl_is_fail_closed_error():
             original_pld={"rid": "r1"},
             source="aurora",
         )
+
+
+def test_flip_close_with_market_exit_succeeds():
+    symbol = "BTCUSDT"
+    dm, bus = _mk_dm(symbol=symbol, position_mode="STRICT")
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "0.9"}],
+        "equity": "1000",
+        "positions_last_ts_ms": int(time.time() * 1000),
+    }
+    dm.config.strategies.aurora.execution.entry_order_type = "LIMIT"  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.entry_tif = "GTX"  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.exit_order_type = "MARKET"  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.exit_tif = None  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.exit_limit_ttl_ms = None  # type: ignore[attr-defined]
+
+    ok = dm._emit_reduce_only_close(symbol, reason="flip", rid="rid-market", strategy_id="aurora")
+    assert ok is True
+
+    proposed = [e for e in bus.emits if e[0] == "EVT:TRADE_INTENT_PROPOSED"]
+    assert proposed, "Expected reduce-only close intent to be proposed"
+
+    rejected = [
+        e for e in bus.emits
+        if e[0] == "EVT:TRADE_INTENT_REJECTED" and isinstance(e[1], dict) and e[1].get("reason_code") == "NRR-046"
+    ]
+    assert not rejected, "reduce_only close must not be rejected with NRR-046"
+
+
+def test_flip_close_with_limit_exit_and_missing_ttl_degrades_to_market():
+    symbol = "BTCUSDT"
+    dm, bus = _mk_dm(symbol=symbol, position_mode="STRICT")
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "1.1"}],
+        "equity": "1000",
+        "positions_last_ts_ms": int(time.time() * 1000),
+    }
+    dm.config.strategies.aurora.execution.exit_order_type = "LIMIT"  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.exit_tif = "GTX"  # type: ignore[attr-defined]
+    dm.config.strategies.aurora.execution.exit_limit_ttl_ms = None  # type: ignore[attr-defined]
+
+    ok = dm._emit_reduce_only_close(symbol, reason="flip", rid="rid-limit", strategy_id="aurora")
+    assert ok is True
+
+    proposed = [e for e in bus.emits if e[0] == "EVT:TRADE_INTENT_PROPOSED"]
+    assert proposed, "Expected degraded intent to still be proposed"
+    payload = proposed[-1][1] or {}
+    order = payload.get("order", {})
+    assert order.get("order_type") == "MARKET"
+
+    degraded = [e for e in bus.emits if e[0] == "EVT:TRADE_INTENT_DEGRADED"]
+    assert degraded, "Expected TRADE_INTENT_DEGRADED event"
+    assert degraded[-1][2] == "MISSING_TTL_FOR_LIMIT_EXIT"
+
+    rejected = [
+        e for e in bus.emits
+        if e[0] == "EVT:TRADE_INTENT_REJECTED" and isinstance(e[1], dict) and e[1].get("reason_code") == "NRR-046"
+    ]
+    assert not rejected, "reduce_only close must not be rejected with NRR-046 when degraded"
+
+
+def test_emit_reduce_only_close_returns_false_when_intent_rejected():
+    symbol = "BTCUSDT"
+    dm, _bus = _mk_dm(symbol=symbol, position_mode="STRICT")
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "0.4"}],
+        "equity": "1000",
+        "positions_last_ts_ms": int(time.time() * 1000),
+    }
+
+    def _rejecting_propose(**_kwargs):
+        return None
+
+    dm._propose_trade_intent = _rejecting_propose  # type: ignore[method-assign]
+    ok = dm._emit_reduce_only_close(symbol, reason="flip", rid="rid-reject", strategy_id="aurora")
+    assert ok is False
 
 
 @pytest.mark.parametrize("position_mode", ["STRICT", "DYNAMIC"])

@@ -74,6 +74,21 @@ def _dm_cfg():
         features=features,
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
+        directional_sanity=SimpleNamespace(
+            enabled=False,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            consecutive_bars=2,
+        ),
+        price_motion_sanity=SimpleNamespace(
+            enabled=False,
+            k_vol=2.0,
+            flash_window_sec=10,
+            bleed_window_sec=300,
+            flash_threshold_norm=1.0,
+            bleed_threshold_norm=0.7,
+            require_bleed_ready=True,
+        ),
         risk_skew=risk_skew,
         risk_gate=risk_gate,
         flip=flip,
@@ -102,6 +117,14 @@ def _mk_cfg(*, symbol: str, stale_ttl_sec: int = 15):
         ),
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
+                execution=SimpleNamespace(
+                    entry_order_type="LIMIT",
+                    entry_tif="GTX",
+                    exit_order_type="MARKET",
+                    exit_tif=None,
+                    exit_limit_ttl_ms=None,
+                ),
+                safety_gates=SimpleNamespace(enabled=False),
                 decision=SimpleNamespace(
                     retry_ttl_ms=60_000,
                     signal_threshold=0.0,
@@ -359,3 +382,48 @@ def test_regime_flip_long_in_bull_trend_does_nothing():
     dm._handle_regime_flip(symbol, regime_data)
 
     assert len(captured) == 0, "Long in BULL_TREND should NOT trigger close"
+
+
+def test_regime_flip_close_degrades_exit_to_market_when_tf_missing():
+    """
+    EP-H2-SAFE-EXIT-DEGRADE:
+    Regime-flip reduce_only close must not die on missing tf_sec for LIMIT exit.
+    It should degrade to MARKET and emit TRADE_INTENT_DEGRADED.
+    """
+    bus = _Bus()
+    symbol = "BTCUSDT"
+    cfg = _mk_cfg(symbol=symbol)
+    # Force LIMIT exit with no explicit exit TTL.
+    cfg.strategies.aurora.execution.exit_order_type = "LIMIT"
+    cfg.strategies.aurora.execution.exit_tif = "GTX"
+    cfg.strategies.aurora.execution.exit_limit_ttl_ms = None
+
+    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+        MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
+        dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
+
+    now_ms = int(time.time() * 1000)
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "positionAmt": "1.0", "avg_entry_price": "42000"}],
+        "equity": "1000",
+        "positions_last_ts_ms": now_ms,
+    }
+
+    dm._handle_regime_flip(symbol, {"regime": "BEAR_TREND"})
+
+    proposed = [e for e in bus.emits if e[0] == "EVT:TRADE_INTENT_PROPOSED"]
+    assert proposed, "Expected close intent proposal from regime flip"
+    payload = proposed[-1][1] or {}
+    assert (payload.get("order") or {}).get("order_type") == "MARKET"
+
+    degraded = [e for e in bus.emits if e[0] == "EVT:TRADE_INTENT_DEGRADED"]
+    assert degraded, "Expected TRADE_INTENT_DEGRADED on LIMIT-exit without TTL"
+    assert degraded[-1][2] == "MISSING_TTL_FOR_LIMIT_EXIT"
+
+    rejects_nrr046 = [
+        e for e in bus.emits
+        if e[0] == "EVT:TRADE_INTENT_REJECTED"
+        and isinstance(e[1], dict)
+        and e[1].get("reason_code") == "NRR-046"
+    ]
+    assert not rejects_nrr046

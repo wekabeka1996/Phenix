@@ -185,8 +185,8 @@ class SignalsConfig(BaseModel):
     """Signals configuration (strategy-level, SSOT)."""
     model_config = ConfigDict(extra="forbid")
 
-    normalize_signals_mode: Literal["off", "legacy_v1", "signed_v2"] = Field(
-        description="Signal normalization mode. 'legacy_v1' is forbidden in live/production."
+    normalize_signals_mode: Literal["signed_v2"] = Field(
+        description="Signal normalization mode (strict). Only 'signed_v2' is allowed; any other value is forbidden."
     )
     enable_new_metrics: bool = Field()
     delta_price_cap_pct: float = Field(
@@ -2818,6 +2818,21 @@ class StrategyExecutionConfig(BaseModel):
         default=None,
         description="Time-in-force for LIMIT orders. Required for LIMIT, None for MARKET."
     )
+    # EP-H2-SAFE-EXIT-DEGRADE: Separate reduce-only exit policy (additive-only).
+    # Defaults remain backward-compatible for configs that do not yet define exit_*.
+    exit_order_type: Optional[Literal["LIMIT", "MARKET"]] = Field(
+        default=None,
+        description="Optional reduce-only exit order type. Runtime default for reduce_only is MARKET if omitted."
+    )
+    exit_tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
+        default=None,
+        description="Optional time-in-force for reduce-only LIMIT exits."
+    )
+    exit_limit_ttl_ms: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Optional explicit TTL (ms) for reduce-only LIMIT exits when tf_sec is absent."
+    )
 
 
 class AuroraStrategyConfig(BaseModel):
@@ -3481,7 +3496,8 @@ class AuroraConfig(BaseModel):
             aurora_symbols = [str(s) for s in self.instruments.keys()]
 
         aurora = getattr(self.strategies, "aurora", None)
-        if aurora is None:
+        # Only require aurora config if aurora symbols actually exist
+        if aurora_symbols and aurora is None:
             raise ValueError(
                 "strategies.aurora is required: TP/SL SSOT lives in config/aurora/strategies/aurora.yaml"
             )
