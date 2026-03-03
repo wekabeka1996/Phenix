@@ -1,0 +1,13 @@
+# Signal weights for BTCUSDT — calibrated 2026-03-03
+# Period: 2026-02-08 to 2026-03-03 | tf=300s | 70/30 split | ridge regression
+# Paste into config/aurora/strategies/aurora.yaml: aurora.assets.BTCUSDT.weights
+weights:
+  absorption: 0.0551244
+  delta_price: 0.181047
+  depth_imbalance: -0.0894987
+  ema_bias: -0.119873
+  macro_resid: -0.0689669
+  obi: 0.101274
+  tfi: 0.134215
+  volatility_state: 0.00633937
+  volume_spike: 0.243661

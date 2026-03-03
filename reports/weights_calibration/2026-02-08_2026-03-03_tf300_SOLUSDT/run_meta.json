@@ -1,0 +1,14 @@
+{
+  "symbol": "SOLUSDT",
+  "start": "2026-02-08",
+  "end": "2026-03-03",
+  "tf_sec": 300,
+  "train_frac": 0.7,
+  "horizon_bars": 1,
+  "ridge_alpha": "default (1.0)",
+  "cost_bps_rt": 4,
+  "git_rev": "e9b47ca",
+  "run_date": "2026-03-03",
+  "tool": "tools/calibrate_aurora_signal_weights.py",
+  "split_method": "chronological 70/30 by day"
+}

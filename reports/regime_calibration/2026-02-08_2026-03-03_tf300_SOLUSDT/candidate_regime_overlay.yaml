@@ -1,0 +1,9 @@
+hysteresis_bars: 3
+models.mean_reversion.confidence_multiplier: 35.1
+models.mean_reversion.threshold: 0.0102
+models.sma_trend.confidence_multiplier: 27.6
+models.sma_trend.sma_long_period: 37
+models.sma_trend.sma_short_period: 18
+models.volatility.low_vol_multiplier: 0.79
+models.volatility.threshold_multiplier: 1.28
+uncertain_cutoff: 0.42

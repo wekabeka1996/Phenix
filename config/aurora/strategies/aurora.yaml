@@ -29,10 +29,10 @@ aurora:
   # Global Aurora policy (DecisionConfig)
   decision:
     testnet:
-      signal_threshold: 0.17    # Hold & Wait: менше маргінальних сигналів 2026-02-24
+      signal_threshold: 0.162    # S03_AURORA_CONSERVATIVE shadow winner 2026-02-28
     production:
-      signal_threshold: 0.17
-    signal_threshold: 0.17
+      signal_threshold: 0.162
+    signal_threshold: 0.162
     neutral_threshold: 0.05
     symbols_to_track:
       - BTCUSDT
@@ -103,6 +103,7 @@ aurora:
         - delta_price
         - ema_bias
         - depth_imbalance
+        - absorption
         # R1: macro_resid replaces macro_sync in directional scoring
         - macro_resid
         # Legacy: kept for telemetry; not weighted in v2 by default
@@ -136,8 +137,8 @@ aurora:
     # RFC: docs/RFC_min_duration_logic.md
     holding_period:
       enabled: true
-      min_duration_sec: 30          # Minimum seconds to hold position
-      emergency_exit_threshold: 0.7  # |score| threshold for emergency override
+      min_duration_sec: 900          # Minimum seconds to hold position
+      emergency_exit_threshold: 0.90  # |score| threshold for emergency override
       apply_to_flips: true          # Also apply holding period to FLIP signals
 
     # === VOL-ADJ-GATES-01: Sigma-normalized Motion Gates ===
@@ -146,14 +147,14 @@ aurora:
     # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
     gates:
       enabled: true
-      anti_flat_sigma: 0.42
-      anti_fomo_sigma: 13.5
+      anti_flat_sigma: 0.48  # S03_AURORA_CONSERVATIVE shadow winner 2026-02-28 (was 0.48)
+      anti_fomo_sigma: 10.5  # Підвищено 7.0→10.5: менше ANTI_FOMO блоків
       motion_window_sec: 300
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.
     # After exiting a position, wait this many seconds before allowing new entry.
-    reentry_cooldown_sec: 840  # Підвищено 300→840: Anti-Churn (2026-02-18)
+    reentry_cooldown_sec: 900  # Підвищено 300→900: Anti-Churn (2026-02-18)
 
     feature_neutrals:
       obi: 0.0
@@ -163,13 +164,15 @@ aurora:
       volume_spike: 0.0
       volatility_state: 0.0
       depth_imbalance: 0.5
+      absorption: 0.0
       macro_sync: 0.5
       macro_resid: 0.0
 
     signal_weights:
-      obi: 0.15
+      obi: 0.42           # S03_AURORA_CONSERVATIVE shadow winner 2026-02-28 (was 0.15)
       tfi: 0.15
-      delta_price: 0.1
+      delta_price: 0.15   # S03_AURORA_CONSERVATIVE shadow winner 2026-02-28 (was 0.10)
+      absorption: 0.0     # R2: absorption (SIGNED [-1,1]); start at 0.0 until calibrated
       ema_bias: 0.15
       volume_spike: 0.1
       volatility_state: 0.1
@@ -210,6 +213,7 @@ aurora:
         # liquidity_kappa: 0.341 (Moved to Gate)
         obi: 0.15
         tfi: 0.093
+        absorption: 0.0
         volatility_state: 0.036
         depth_imbalance: -0.256
         delta_price: 0.10
@@ -304,8 +308,8 @@ aurora:
     SOLUSDT:
       # Holding period: SOL волатильна → довша утримання
       holding_period:
-        min_duration_sec: 300
-        emergency_exit_threshold: 0.65
+        min_duration_sec: 900
+        emergency_exit_threshold: 0.90
 
       # P1: Active Leverage Management
       leverage:
@@ -313,21 +317,20 @@ aurora:
         mode: "ISOLATED"
 
       # Re-entry cooldown: conservative for ALT
-      reentry_cooldown_sec: 120
+      reentry_cooldown_sec: 900
 
-      # Adjusted weights: Liquidity moved to Gate
+      # Weights (Calibrated 2026-03-03 | ridge 70/30 | tools/calibrate_aurora_signal_weights.py)
+      # period: 2026-02-08 to 2026-03-03 | test sharpe: -9.63->-8.35 | avg_pnl: -0.82->-0.62 bps
       weights:
-        ema_bias: 0.20
-        volume_spike: 0.20
-        # R1: macro_resid replaces macro_sync
-        macro_resid: 0.25
-        # macro_sync: 0.0  # DEPRECATED (telemetry only)
-        # liquidity_kappa: 0.25 (Moved to Gate)
-        obi: 0.15
-        tfi: 0.09
-        volatility_state: 0.05
-        depth_imbalance: -0.20
-        delta_price: 0.10
+        absorption: 0.0562502
+        delta_price: 0.294059
+        depth_imbalance: 0.0148722
+        ema_bias: -0.176429
+        macro_resid: -0.0492056
+        obi: 0.135947
+        tfi: 0.263238
+        volatility_state: 0.0119935
+        volume_spike: 0.238007
       enabled: true
       position_mode: "STRICT"
 
@@ -413,13 +416,13 @@ aurora:
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
-          HIGH_VOLATILITY: 0.15   # фінальне підтягування ордерів 2026-02-24
-          LOW_VOLATILITY: 0.08
-          MEAN_REVERSION: 0.12
-          TREND_UP: 0.10
-          TREND_DOWN: 0.10
-          UNCERTAIN: 0.13
-          DEFAULT: 0.12           # REQUIRED fallback
+          HIGH_VOLATILITY: 0.37
+          LOW_VOLATILITY: 0.16
+          MEAN_REVERSION: 0.28
+          TREND_UP: 0.24
+          TREND_DOWN: 0.24
+          UNCERTAIN: 0.27
+          DEFAULT: 0.24
 
       timeframe_sec: null
 
@@ -446,16 +449,18 @@ aurora:
         window_sec: 600
         target_ratio: 0.6
 
-      # 2. Weights (Standard)
+      # 2. Weights (Calibrated 2026-03-03 | ridge 70/30 | tools/calibrate_aurora_signal_weights.py)
+      # period: 2026-02-08 to 2026-03-03 | test sharpe: -20.96->-9.17 | avg_pnl: -1.16->-0.51 bps
       weights:
-        ema_bias: 0.20
-        volume_spike: 0.15
-        macro_resid: 0.15
-        obi: 0.20
-        tfi: 0.10
-        volatility_state: 0.10
-        depth_imbalance: -0.05
-        delta_price: 0.05
+        absorption: 0.0551244
+        delta_price: 0.181047
+        depth_imbalance: -0.0894987
+        ema_bias: -0.119873
+        macro_resid: -0.0689669
+        obi: 0.101274
+        tfi: 0.134215
+        volatility_state: 0.00633937
+        volume_spike: 0.243661
 
       # 3. Safety Gates
       holding_period:

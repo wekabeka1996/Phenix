@@ -1,0 +1,160 @@
+{
+  "overlay": {
+    "uncertain_cutoff": 0.42,
+    "hysteresis_bars": 3,
+    "models.sma_trend.sma_short_period": 18,
+    "models.sma_trend.sma_long_period": 37,
+    "models.sma_trend.confidence_multiplier": 27.6,
+    "models.volatility.threshold_multiplier": 1.28,
+    "models.volatility.low_vol_multiplier": 0.79,
+    "models.mean_reversion.threshold": 0.0102,
+    "models.mean_reversion.confidence_multiplier": 35.1
+  },
+  "metrics_train": {
+    "uncertain_ratio": 0.037456875308033516,
+    "churn_per_1000": 39.67471660916708,
+    "macro_f1": 0.08613720524721744,
+    "f1_trend": 0.014020152466152035,
+    "f1_scores": {
+      "HIGH_VOLATILITY": 0.17956656346749228,
+      "LOW_VOLATILITY": 0.12089810017271156,
+      "MEAN_REVERSION": 0.10218105766357932,
+      "TREND_DOWN": 0.016064257028112452,
+      "TREND_UP": 0.011976047904191617,
+      "UNCERTAIN": 0.14273127753303966
+    },
+    "coverages": {
+      "HIGH_VOLATILITY": 0.05766387382947265,
+      "LOW_VOLATILITY": 0.05791030064070971,
+      "MEAN_REVERSION": 0.7582552981764416,
+      "TREND_DOWN": 0.05495317890586496,
+      "TREND_UP": 0.033760473139477575,
+      "UNCERTAIN": 0.037456875308033516
+    },
+    "avg_regime_duration_bars": 25.04320987654321,
+    "confusion_matrix": {
+      "HIGH_VOLATILITY": {
+        "HIGH_VOLATILITY": 29,
+        "LOW_VOLATILITY": 0,
+        "MEAN_REVERSION": 40,
+        "TREND_DOWN": 6,
+        "TREND_UP": 6,
+        "UNCERTAIN": 8
+      },
+      "LOW_VOLATILITY": {
+        "HIGH_VOLATILITY": 81,
+        "LOW_VOLATILITY": 175,
+        "MEAN_REVERSION": 2201,
+        "TREND_DOWN": 96,
+        "TREND_UP": 66,
+        "UNCERTAIN": 41
+      },
+      "MEAN_REVERSION": {
+        "HIGH_VOLATILITY": 30,
+        "LOW_VOLATILITY": 9,
+        "MEAN_REVERSION": 171,
+        "TREND_DOWN": 24,
+        "TREND_UP": 17,
+        "UNCERTAIN": 19
+      },
+      "TREND_DOWN": {
+        "HIGH_VOLATILITY": 1,
+        "LOW_VOLATILITY": 0,
+        "MEAN_REVERSION": 22,
+        "TREND_DOWN": 2,
+        "TREND_UP": 0,
+        "UNCERTAIN": 1
+      },
+      "TREND_UP": {
+        "HIGH_VOLATILITY": 3,
+        "LOW_VOLATILITY": 3,
+        "MEAN_REVERSION": 21,
+        "TREND_DOWN": 0,
+        "TREND_UP": 1,
+        "UNCERTAIN": 2
+      },
+      "UNCERTAIN": {
+        "HIGH_VOLATILITY": 90,
+        "LOW_VOLATILITY": 48,
+        "MEAN_REVERSION": 622,
+        "TREND_DOWN": 95,
+        "TREND_UP": 47,
+        "UNCERTAIN": 81
+      }
+    }
+  },
+  "metrics_test": {
+    "uncertain_ratio": 0.07298850574712644,
+    "churn_per_1000": 58.04597701149426,
+    "macro_f1": 0.0769433428820402,
+    "f1_trend": 0.017241379310344827,
+    "f1_scores": {
+      "HIGH_VOLATILITY": 0.13991769547325103,
+      "LOW_VOLATILITY": 0.10384615384615385,
+      "MEAN_REVERSION": 0.10647010647010646,
+      "TREND_DOWN": 0.034482758620689655,
+      "TREND_UP": 0.0,
+      "UNCERTAIN": 0.1162079510703364
+    },
+    "coverages": {
+      "HIGH_VOLATILITY": 0.07873563218390804,
+      "LOW_VOLATILITY": 0.06954022988505747,
+      "MEAN_REVERSION": 0.6160919540229886,
+      "TREND_DOWN": 0.0925287356321839,
+      "TREND_UP": 0.07011494252873564,
+      "UNCERTAIN": 0.07298850574712644
+    },
+    "avg_regime_duration_bars": 17.04901960784314,
+    "confusion_matrix": {
+      "HIGH_VOLATILITY": {
+        "HIGH_VOLATILITY": 17,
+        "LOW_VOLATILITY": 8,
+        "MEAN_REVERSION": 62,
+        "TREND_DOWN": 0,
+        "TREND_UP": 0,
+        "UNCERTAIN": 19
+      },
+      "LOW_VOLATILITY": {
+        "HIGH_VOLATILITY": 22,
+        "LOW_VOLATILITY": 54,
+        "MEAN_REVERSION": 642,
+        "TREND_DOWN": 80,
+        "TREND_UP": 56,
+        "UNCERTAIN": 65
+      },
+      "MEAN_REVERSION": {
+        "HIGH_VOLATILITY": 28,
+        "LOW_VOLATILITY": 5,
+        "MEAN_REVERSION": 65,
+        "TREND_DOWN": 28,
+        "TREND_UP": 18,
+        "UNCERTAIN": 5
+      },
+      "TREND_DOWN": {
+        "HIGH_VOLATILITY": 0,
+        "LOW_VOLATILITY": 2,
+        "MEAN_REVERSION": 8,
+        "TREND_DOWN": 3,
+        "TREND_UP": 0,
+        "UNCERTAIN": 0
+      },
+      "TREND_UP": {
+        "HIGH_VOLATILITY": 6,
+        "LOW_VOLATILITY": 0,
+        "MEAN_REVERSION": 20,
+        "TREND_DOWN": 0,
+        "TREND_UP": 0,
+        "UNCERTAIN": 0
+      },
+      "UNCERTAIN": {
+        "HIGH_VOLATILITY": 64,
+        "LOW_VOLATILITY": 52,
+        "MEAN_REVERSION": 275,
+        "TREND_DOWN": 50,
+        "TREND_UP": 48,
+        "UNCERTAIN": 38
+      }
+    }
+  },
+  "seed": 42
+}
