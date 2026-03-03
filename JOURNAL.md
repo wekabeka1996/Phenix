@@ -1,5 +1,79 @@
 # Engineering Journal
 
+## 2026-03-03: PKG-CALIB-APPLY: weights+regime calibration overlays + enable BTC (testnet)
+
+**Mode:** Additive-only. Config via YAML. Pydantic validated.
+**Scope:** config/aurora/strategies/aurora.yaml, config/aurora/strategies.yaml, reports/
+
+### Phase 0 - Context Probe
+- BTC disabled at: config/aurora/strategies.yaml:34 -> BTCUSDT: []
+- No overlay mechanism in repo (flat single-config). System mode: hybrid_live_data_testnet_exec.
+- Per-symbol weights supported: aurora.assets.<SYM>.weights in aurora.yaml.
+
+### Phase 1 - Signal Weights Calibration (tools/calibrate_aurora_signal_weights.py)
+- Period: 2026-02-08 to 2026-03-03 | tf=300s | 70/30 chronological by day | ridge regression
+- BTCUSDT: test sharpe: -20.96 -> -9.17 | avg_pnl_bps: -1.1606 -> -0.5108 (+56%)
+- SOLUSDT: test sharpe:  -9.63 -> -8.35 | avg_pnl_bps: -0.8234 -> -0.6230 (+24%)
+- Note: ema_bias and macro_resid sign-reversed by ridge (bearish/choppy period). Applied as-is (no silent adjustments).
+- Applied to: config/aurora/strategies/aurora.yaml (aurora.assets.BTCUSDT.weights + aurora.assets.SOLUSDT.weights)
+
+### Phase 2 - Regime Params Calibration (tools/calibrate_aurora_regime_params.py)
+- BTCUSDT (strict, 300 trials): 0/300 passed (churn gate 50.0 < baseline 51.26)
+- BTCUSDT (relaxed max-churn=80, min-cov=0.01, 300 trials): 0/300 (coverage=0 for TREND classes)
+- BTCUSDT (nogate min-cov=0.0, max-churn=150, 300 trials): 45/300 passed, best macro_f1 train 0.1614 (+0.062), test 0.1561 (+0.044)
+   -> Overlay NON-EMPTY: hysteresis_bars=8, sma_long=29, sma_short=9, threshold_mult=1.84, uncertain_cutoff=0.41
+   -> NOT APPLIED: regime.yaml is global (all symbols), BTC-only calibration cannot be safely merged
+- SOLUSDT (strict, 300 trials): 1/300 passed
+   -> Best: macro_f1 train 0.0861 (DEGRADED -0.040), test 0.0769 (DEGRADED -0.047)
+   -> NOT APPLIED: macro_f1 degrades on test; single valid trial (insufficient power)
+
+### Phase 3 - Applications
+- Weights: APPLIED to aurora.yaml (per-symbol, safe)
+- Regime overlay (BTC): NOT APPLIED (global config, BTC-only calibration)
+- Regime overlay (SOL): NOT APPLIED (macro_f1 degradation on test)
+
+### Phase 4 - BTC Re-enable
+- config/aurora/strategies.yaml: BTCUSDT: [] -> BTCUSDT: [aurora]
+- Config loads OK (Pydantic validated): BTCUSDT assignments: ['aurora']
+
+### Phase 5 - Validation
+- Config load: PASS (Pydantic strict, ConfigLoader.load_config())
+- PKG-RG-CALIBRATE tests: 10/10 PASSED
+- Relevant suite (tools+config+domains+decision_making): 340 passed, 3 pre-existing failures (orphan_monitor Pydantic + flip_orchestration), 19 skipped
+- Verified: our changes introduce ZERO new test failures
+
+## 2026-03-03: PKG-RG-CALIBRATE-BUGFIX - Regime calibrator bug closure
+
+**Mode:** TDD fix - audit-driven. All 3 confirmed bugs fixed + 1 additional test-leakage bug.
+**Scope:** tools/regime_calibration/search.py, tools/regime_calibration/metrics.py, tests/tools/test_regime_calibrator_smoke.py
+
+**Bugs fixed:**
+1. BUG-1 (metrics.py SyntaxError): format_confusion_matrix had literal newline in double-quoted string; Python 3.12+ rejects this. Fixed by linter. Audit confirmed clean.
+2. BUG-2 (Message missing src/dst): evaluate_overlay constructed Message(...) without required src/dst fields -> Pydantic ValidationError. Fixed inline. Test added (test_message_accepts_src_dst).
+3. BUG-3 (passes_gates dead code): coverage loop body was 'pass' instead of 'return False', allowing 0% coverage trials through silently. Fixed. Three gate tests added.
+4. TEST-LEAKAGE (search.py main): New main() selected best trial by score_test inside the loop - test data leaked into optimizer. Fixed: loop selects by score_train; test evaluated once post-loop.
+
+**Validation:**
+- pytest tests/tools/test_regime_calibrator_smoke.py tests/tools/test_regime_metrics.py tests/tools/test_regime_oracle_labels.py -q -> 10/10 passed
+- CLI calibrate_aurora_regime_params.py --symbols BTCUSDT --n-trials 30 --seed 42 --tf-sec 300 -> completes; 3 artifacts in reports/regime_calibration/_rg_audit_test/
+- Baseline: macro_f1=0.0992(train)/0.1113(test), uncertain=0.234/0.378, churn/1000=51.26/62.07. 0/30 trials cleared hard gates (churn gate 50.0 < baseline churn 51.26 - follow-up: tune default thresholds).
+
+## 2026-03-03: PKG-RG-CALIBRATE - Regime parameter calibrator tool
+
+**Mode:** TDD implementation.  
+**Scope:** `tools/calibrate_aurora_regime_params.py`, `tools/regime_calibration/`  
+
+**Changes (additive-only):**
+1. Created `tools/calibrate_aurora_regime_params.py` CLI script to optimize `RegimeDetector` parameters.
+2. Implemented `tools/regime_calibration/oracle.py` to compute forward-looking regime labels.
+3. Implemented `tools/regime_calibration/metrics.py` to calculate anti-overfit metrics (uncertain_ratio, churn, macro_f1).
+4. Implemented `tools/regime_calibration/search.py` to perform random search evaluating overlays on historical data.
+5. Added unit tests for oracle, metrics, and calibrator smoke.
+
+**Validation:**
+- Oracle labels generate expected outputs.
+- Metrics correctly penalize high churn / uncertain regimes.
+
 ## 2026-03-01: EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION complete
 
 **Mode:** TDD test isolation hardening.  

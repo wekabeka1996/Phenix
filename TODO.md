@@ -1,5 +1,23 @@
 # TODO
 
+## PKG-CALIB-APPLY (2026-03-03)
+- [x] BTCUSDT re-enabled in Aurora (strategies.yaml: aurora assignment).
+- [x] Signal weights calibrated (ridge 70/30) and applied for BTCUSDT + SOLUSDT.
+- [x] Regime calibration run for BTC (nogate run: 45/300 valid) and SOL (1/300 valid).
+- [x] Regime overlays NOT applied: BTC global config cannot be safely applied per-symbol; SOL test macro_f1 degraded.
+- [ ] PKG-CALIB-APPLY follow-up: Expand calibration window to 60+ days to improve regime oracle coverage (current 23 days is too short for stable trend detection).
+- [ ] PKG-CALIB-APPLY follow-up: Implement per-symbol regime config section to allow applying SOL/BTC-specific overlays without clobbering global params.
+- [ ] PKG-CALIB-APPLY follow-up: Re-evaluate macro_resid/ema_bias sign reversals after calibrating over a trend-rich period.
+
+
+## PKG-RG-CALIBRATE (2026-03-03)
+- [x] Implement regime parameter calibrator tool with walk-forward split and hard-gates.
+- [x] BUG-1: Fix metrics.py SyntaxError (literal newline in string) + invalid escape.
+- [x] BUG-2: Fix Message(src=,dst=) missing required fields in evaluate_overlay.
+- [x] BUG-3: Fix passes_gates coverage loop (pass -> return False). Tests added.
+- [x] TEST-LEAKAGE: Fix search.py main() - best selected by score_train, not score_test.
+- [ ] PKG-RG-CALIBRATE follow-up: tune default --max-churn-per-1000 threshold (50.0 is tighter than baseline churn ~51; consider 150-200 as a realistic default gate).
+
 ## EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION follow-up (2026-03-01)
 - [ ] Add shared helper fixture for execution_position async tests to disable background loops consistently (`bracket_health_check`, optional orphan monitor).
 
