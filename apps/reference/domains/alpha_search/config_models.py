@@ -11,8 +11,37 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, model_validator
 
 
+class DirectionStrengthConfig(BaseModel):
+    """Direction/strength scoring split configuration for Aurora adapter."""
+
+    directional_features: List[str] = Field(
+        default=["obi", "tfi", "delta_price", "ema_bias",
+                 "depth_imbalance", "macro_resid", "macro_sync"],
+        description="Features that contribute to directional score"
+    )
+    strength_features: List[str] = Field(
+        default=["volume_spike", "volatility_state"],
+        description="Features that contribute to signal strength"
+    )
+    strength_alpha: float = Field(
+        default=0.5,
+        description="Weight of strength signal in final score"
+    )
+    strength_cap: float = Field(
+        default=1.0,
+        description="Max strength multiplier"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class AuroraAdapterConfig(BaseModel):
-    """Configuration for Aurora scoring adapter."""
+    """
+    Configuration for Aurora scoring adapter.
+
+    All scoring parameters are defined here — no hardcoded defaults in code.
+    alpha_search.yaml is the SSOT for this adapter's behaviour.
+    """
 
     scoring_version: str = Field(
         default="v2",
@@ -21,6 +50,30 @@ class AuroraAdapterConfig(BaseModel):
     essential_features: List[str] = Field(
         default=["obi", "delta_price", "macro_resid"],
         description="Features required for Aurora scoring (fail-closed if missing)"
+    )
+    base_threshold: float = Field(
+        default=0.12,
+        ge=0.0,
+        le=1.0,
+        description="Base signal threshold before regime multiplier"
+    )
+    delta_price_cap_pct: float = Field(
+        default=0.02,
+        ge=0.0,
+        description="Delta price normalization cap (as fraction, e.g. 0.02 = 2%)"
+    )
+    signal_weights: Dict[str, float] = Field(
+        description="Feature weights for directional scoring."
+    )
+    feature_neutrals: Dict[str, float] = Field(
+        description="Neutral/center values per feature."
+    )
+    regime_thresholds: Dict[str, float] = Field(
+        description="Regime-based threshold multipliers."
+    )
+    direction_strength: DirectionStrengthConfig = Field(
+        default_factory=DirectionStrengthConfig,
+        description="Direction/strength scoring split config"
     )
 
     model_config = {"extra": "forbid"}

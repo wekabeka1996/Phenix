@@ -181,6 +181,16 @@ feature_engineering:
     correlation_default: 0.0
     ms_per_sec: 1000
 
+  # ALPHA-SEARCH: Native TA indicator computation params for bar events
+  # These drive _update_bar_ta_state() in feature_engineering.py.
+  # Values are standard defaults; override per-environment if needed.
+  bar_ta:
+    rsi_period: 14        # RSI look-back (bars)
+    bb_window: 20         # Bollinger Bands SMA window (bars)
+    bb_num_std: 2.0       # Bollinger Bands std multiplier
+    stoch_k_period: 14    # Stochastic %K period (bars)
+    stoch_d_period: 3     # Stochastic %D smoothing period (bars)
+
   # ═══════════════════════════════════════════════════════════════════════════════
   # P0-0: READINESS CONTRACT REGISTRY (SSOT)
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -289,7 +299,8 @@ feature_engineering:
   # When enabled, uses aggressive_trade_imbalance as proxy.
   # Has dedup guard: mutes if correlated with TFI (would be redundant signal).
   absorption:
-    mode: disabled              # disabled | proxy | full
+    mode: proxy                 # disabled | proxy | full
+    dp_cap_pct: 0.02            # P0: SSOT delta price cap for conflict-weighted divergence
     # Proxy source: must NOT be 'tfi' (would be absurd)
     proxy:
       source: aggressive_trade_imbalance
@@ -308,7 +319,8 @@ feature_engineering:
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
-  use_absorption_penalty: false
+  use_absorption_penalty: true
+  absorption_dp_cap_pct: 0.02  # SSOT cap for toxicity normalization (used only when use_absorption_penalty=true)
   risk_score_weights:
     delta_price_pct: 0.1
     obi: 0.3

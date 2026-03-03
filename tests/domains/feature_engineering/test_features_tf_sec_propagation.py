@@ -40,15 +40,16 @@ def test_on_bar_closed_stores_per_symbol_tf(tf_sec, monkeypatch):
     )
 
     fe.on_bar_closed(SimpleNamespace(pld={"bar": bar}))
-    
+
     # Verify bar stored with (symbol, tf_sec) key
-    assert (symbol, tf_sec) in fe.last_bar, f"Bar not stored for ({symbol}, {tf_sec})"
+    assert (
+        symbol, tf_sec) in fe.last_bar, f"Bar not stored for ({symbol}, {tf_sec})"
     assert fe.last_bar[(symbol, tf_sec)].timeframe_sec == tf_sec
 
 
 def test_calculate_calls_with_tf_sec_zero_for_tick_features(monkeypatch):
     """FIX-TICK-FE-GATE-001: Tick-features use tf_sec=0, not bar-based TFs.
-    
+
     _calculate_and_emit_features should call _calculate_and_emit_features_for_tf
     with tf_sec=0 (tick-level), not iterate over bar timeframes.
     """
@@ -60,7 +61,7 @@ def test_calculate_calls_with_tf_sec_zero_for_tick_features(monkeypatch):
         fe = FeatureEngineering()
         fe.last_bar = {}  # Empty - no bars!
         fe.logger = MagicMock()
-        
+
         # Mock the inner method to track calls
         def mock_emit_for_tf(symbol, tf_sec, current_tick, last_tick):
             called_tf_secs.append(tf_sec)
@@ -68,7 +69,7 @@ def test_calculate_calls_with_tf_sec_zero_for_tick_features(monkeypatch):
 
     symbol = "BTCUSDT"
     t0 = int(time.time() * 1000)
-    
+
     tick1 = {"symbol": symbol, "ts": t0, "price": "1"}
     tick2 = {"symbol": symbol, "ts": t0 + 1000, "price": "1.01"}
 
@@ -76,7 +77,8 @@ def test_calculate_calls_with_tf_sec_zero_for_tick_features(monkeypatch):
 
     # Should have called with tf_sec=0 (tick-level)
     assert 0 in called_tf_secs, "Expected call for tf_sec=0 (tick-features)"
-    assert len(called_tf_secs) == 1, f"Expected 1 call with tf_sec=0, got {len(called_tf_secs)}"
+    assert len(
+        called_tf_secs) == 1, f"Expected 1 call with tf_sec=0, got {len(called_tf_secs)}"
 
 
 def test_multi_tf_no_overwrite(monkeypatch):
@@ -92,7 +94,7 @@ def test_multi_tf_no_overwrite(monkeypatch):
 
     symbol = "BTCUSDT"
     t0 = int(time.time() * 1000)
-    
+
     bar_180 = Bar(
         symbol=symbol,
         timeframe_sec=180,
@@ -121,17 +123,19 @@ def test_multi_tf_no_overwrite(monkeypatch):
         gap_bars_skipped=0,
         is_gap_bar=False
     )
-    
+
     fe.on_bar_closed(SimpleNamespace(pld={"bar": bar_180}))
     fe.on_bar_closed(SimpleNamespace(pld={"bar": bar_300}))
-    
+
     # Both bars should be stored separately
     assert (symbol, 180) in fe.last_bar, "Bar 180 not stored"
     assert (symbol, 300) in fe.last_bar, "Bar 300 not stored"
-    
+
     # Verify they are different bars (not overwritten)
-    assert fe.last_bar[(symbol, 180)].open == Decimal("1"), "Bar 180 was overwritten"
-    assert fe.last_bar[(symbol, 300)].open == Decimal("2"), "Bar 300 has wrong value"
+    assert fe.last_bar[(symbol, 180)].open == Decimal(
+        "1"), "Bar 180 was overwritten"
+    assert fe.last_bar[(symbol, 300)].open == Decimal(
+        "2"), "Bar 300 has wrong value"
 
 
 def test_on_bar_closed_preserves_trade_counts_for_large_trade_imbalance(monkeypatch):
@@ -160,6 +164,10 @@ def test_on_bar_closed_preserves_trade_counts_for_large_trade_imbalance(monkeypa
             }
         }
         fe.logger = MagicMock()
+        fe._bar_ta_states = {}           # needed by _update_bar_ta_state
+        fe._bar_volatility_states = {}   # needed by atr_ratio in _update_bar_ta_state
+        fe._update_bar_ta_state = MagicMock(
+            return_value={})  # cfg not available in mock init
 
         def _capture(symbol, tf_sec, current_tick, last_tick, bar_data=None):
             captured["symbol"] = symbol
@@ -222,6 +230,10 @@ def test_on_bar_closed_injects_wall_ts_ms_for_causality(monkeypatch):
             }
         }
         fe.logger = MagicMock()
+        fe._bar_ta_states = {}           # needed by _update_bar_ta_state
+        fe._bar_volatility_states = {}   # needed by atr_ratio in _update_bar_ta_state
+        fe._update_bar_ta_state = MagicMock(
+            return_value={})  # cfg not available in mock init
 
         def _capture(symbol, tf_sec, current_tick, last_tick, bar_data=None):
             captured["symbol"] = symbol

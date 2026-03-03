@@ -44,7 +44,11 @@ def _make_handler(clock: SplitClock, *, confirm_window_sec: float = 90.0) -> Aur
                     side_bias_window_sec=420,
                     regime_threshold_multipliers={"DEFAULT": 1.0},
                     direction_strength_scoring=None,
-                    signals=None,
+                    signals=SimpleNamespace(
+                        normalize_signals_mode="signed_v2",
+                        enable_new_metrics=True,
+                        delta_price_cap_pct=0.02,
+                    ),
                     anti_churn=SimpleNamespace(
                         enabled=True,
                         regime_inertia=SimpleNamespace(

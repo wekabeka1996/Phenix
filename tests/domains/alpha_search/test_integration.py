@@ -25,6 +25,11 @@ from apps.reference.domains.alpha_search.config_models import (
     VirtualTraderConfig,
 )
 from apps.reference.domains.alpha_search.wal_listener import AlphaScoreWalListener
+from apps.reference.domains.alpha_search.models.aurora_adapter import (
+    _FALLBACK_SIGNAL_WEIGHTS,
+    _FALLBACK_FEATURE_NEUTRALS,
+    _FALLBACK_REGIME_THRESHOLDS,
+)
 
 
 class MockEventBus:
@@ -64,7 +69,11 @@ def _make_aurora_config() -> AlphaSearchConfig:
         providers={
             "aurora": ProviderConfig(
                 enabled=True,
-                adapter=AuroraAdapterConfig(),
+                adapter=AuroraAdapterConfig(
+                    signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                    feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                    regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                ),
                 threshold=0.1,
                 fail_closed=True,
             ),

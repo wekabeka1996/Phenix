@@ -210,3 +210,4 @@ gha-creds-*.json
 best_aurora*.json
 regime_filters*.json
 best_metrics*.json
+node_modules

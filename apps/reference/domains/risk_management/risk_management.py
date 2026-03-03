@@ -270,10 +270,9 @@ class RiskManagement:
         obi = _to_dec(features.get("obi"))
         tfi = _to_dec(features.get("tfi"))
         delta_price = _to_dec(features.get("delta_price"))
-            # Absorption (Placeholder: default 0.0)
-            # NOTE: D5 deprecation - absorption is now controlled by use_absorption_penalty flag.
-            # When disabled, absorption term is excluded but other weights are NOT rescaled.
-        absorption = _to_dec(features.get("absorption"))
+        # Absorption (SIGNED, emitted by FE). Parsed for telemetry/backward-compat only.
+        # Risk penalty uses a directionless toxicity proxy (see below).
+        _absorption = _to_dec(features.get("absorption"))
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
@@ -298,15 +297,31 @@ class RiskManagement:
             raise ValueError(f"SSOT ERROR: Invalid price in features: {price}")
         delta_price_pct = abs(delta_price) / price
 
+        # D5/P1: Absorption penalty (toxicity proxy, directionless)
+        # - impact_norm = clip(delta_price_pct / absorption_dp_cap_pct, 0..1)
+        # - toxicity = abs(tfi) * impact_norm
+        toxicity_term = decimal.Decimal("0")
+        if self._use_absorption_penalty and absorption_inverse_weight != 0:
+            dp_cap = _to_dec(getattr(self.domain_config, "absorption_dp_cap_pct", None))
+            if dp_cap <= 0:
+                raise ConfigContractError(
+                    "SSOT ERROR: risk_management.absorption_dp_cap_pct must be set and > 0 when use_absorption_penalty=true"
+                )
+            impact_norm = delta_price_pct / dp_cap
+            if impact_norm > 1:
+                impact_norm = decimal.Decimal("1")
+            toxicity = abs(tfi) * impact_norm
+            toxicity_term = toxicity * absorption_inverse_weight
+
         # Risk score uses normalized features (all in [0, 1] range approximately)
         # - delta_price_pct: percentage change (0.01 = 1% change)
-        # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]
-        # D5: absorption term is skipped when use_absorption_penalty=False
+        # - obi, tfi: normalized to [-1, 1]
+        # - toxicity_term: in [0, absorption_inverse_weight]
         risk_score = (
             delta_price_pct * delta_price_weight
             + abs(obi) * obi_weight
             + abs(tfi) * tfi_weight
-            + (decimal.Decimal("1") - absorption) * absorption_inverse_weight
+            + toxicity_term
         )
 
         # Clamp risk_score to [0, 1] range

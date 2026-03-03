@@ -19,6 +19,7 @@ def write_trade_intent_rejected(
     stage: RejectStage,
     why: str,
     src: str,
+    normalize_mode_effective: Optional[str] = None,
     strategy_id: Optional[str] = None,
     side: Optional[str] = None,
     context: Optional[str] = None,
@@ -65,6 +66,8 @@ def write_trade_intent_rejected(
         payload["bar_close_ts"] = int(bar_close_ts)
     if entry_plan is not None:
         payload["entry_plan"] = entry_plan
+    if normalize_mode_effective is not None:
+        payload["normalize_mode_effective"] = str(normalize_mode_effective)
 
     msg = Message(
         op="EVT",

@@ -259,6 +259,11 @@
       "type": "string",
       "description": "Strategy ID that produced this intent"
     },
+    "normalize_mode_effective": {
+      "type": "string",
+      "enum": ["signed_v2"],
+      "description": "Effective feature normalization mode used by the scoring pipeline (for WAL forensics)."
+    },
     "idempotent_key": {
       "type": "string",
       "description": "Idempotency key to prevent duplicate processing"

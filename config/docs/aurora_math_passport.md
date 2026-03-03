@@ -391,11 +391,11 @@
 
 ### `strategies.aurora.decision.signals.normalize_signals_mode`
 - **Type:** `string`
-- **Logic Owner:** `DirectionStrengthScore` *(але wiring відсутній)*
+- **Logic Owner:** `AuroraScoringKernel` + `compute_direction_strength_score`
 - **Code Reference:** `apps/reference/domains/decision_making/scoring_direction_strength_v1.py:144`; `apps/reference/domains/decision_making/aurora_scoring_kernel.py:179`
 - **Mathematical Role:**
     > У `compute_direction_strength_score()` є спец-режим `signed_v2`, який масштабує `[0,1]` фічі з `neutral=0.5` так, щоб centered компонент був у `[-1,1]`.  
-    > **Wiring note:** Aurora kernel зараз викликає `normalize_mode="net_zero"` (тобто transforms не застосовуються), тому це поле у YAML не впливає на runtime.
+    > **Wiring note:** Mode прокидається у kernel і строго валідований: дозволено лише `signed_v2`. Будь-яке інше значення → fail-closed.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** `signed_v2` (якщо буде увімкнено) посилить вклад `[0,1]` directional фіч (relative amplitude ↑).
-    - 🔽 **Too Low:** `off/net_zero` (поточний стан) залишає amplitude як у upstream контракту.
+    - 🔼 **Too High:** N/A (mode fixed; tune weights/features instead).
+    - 🔽 **Too Low:** N/A (`off/net_zero` forbidden).

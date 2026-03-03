@@ -22,23 +22,29 @@ from apps.reference.domains.alpha_search.config_models import (
     CacheConfig,
     VirtualTraderConfig,
 )
+from apps.reference.domains.alpha_search.models.aurora_adapter import (
+    _FALLBACK_SIGNAL_WEIGHTS,
+    _FALLBACK_FEATURE_NEUTRALS,
+    _FALLBACK_REGIME_THRESHOLDS,
+)
 
 
 class MockEventBus:
     """Mock event bus for testing."""
-    
+
     def __init__(self):
         self.listeners = {}
         self.emitted = []
-    
+
     def listen(self, event_name: str, handler):
         if event_name not in self.listeners:
             self.listeners[event_name] = []
         self.listeners[event_name].append(handler)
-    
+
     def emit(self, event_name: str, payload: dict, why: str = ""):
-        self.emitted.append({"event": event_name, "payload": payload, "why": why})
-    
+        self.emitted.append(
+            {"event": event_name, "payload": payload, "why": why})
+
     def trigger(self, event_name: str, payload: dict):
         """Simulate event trigger."""
         event = Mock()
@@ -49,7 +55,7 @@ class MockEventBus:
 
 class TestEventBridgeCache:
     """Test A3.1: Feature cache behavior."""
-    
+
     def test_features_cached_on_features_calculated(self):
         """EVT:FEATURES_CALCULATED should cache features."""
         bus = MockEventBus()
@@ -59,13 +65,17 @@ class TestEventBridgeCache:
                 "aurora": ProviderConfig(
                     enabled=True,
                     symbols=["BTCUSDT"],
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Trigger feature event
         bus.trigger("EVT:FEATURES_CALCULATED", {
             "symbol": "BTCUSDT",
@@ -74,13 +84,13 @@ class TestEventBridgeCache:
             "ts": 1700000000000,
             "bar": {"close_ts": 1700000000000},
         })
-        
+
         # Verify cache
         cache_key = ("BTCUSDT", 300, 1700000000000)
         assert cache_key in plugin._feature_cache
         entry = plugin._feature_cache[cache_key]
         assert entry.features["obi"] == 0.3
-    
+
     def test_cache_pruning(self):
         """Old cache entries should be pruned."""
         bus = MockEventBus()
@@ -90,13 +100,17 @@ class TestEventBridgeCache:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Add 3 entries for same symbol
         for i in range(3):
             ts = 1700000000000 + i * 300000
@@ -107,15 +121,16 @@ class TestEventBridgeCache:
                 "ts": ts,
                 "bar": {"close_ts": ts},
             })
-        
+
         # Only 2 should remain (max_per_symbol=2)
-        btc_entries = [k for k in plugin._feature_cache.keys() if k[0] == "BTCUSDT"]
+        btc_entries = [k for k in plugin._feature_cache.keys()
+                       if k[0] == "BTCUSDT"]
         assert len(btc_entries) == 2
 
 
 class TestTimestampNormalization:
     """Test timestamp normalization (ms vs seconds)."""
-    
+
     def test_seconds_to_milliseconds(self):
         """Seconds should be converted to milliseconds."""
         bus = MockEventBus()
@@ -124,13 +139,17 @@ class TestTimestampNormalization:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # EVT with bar_close_ts in SECONDS
         ts_seconds = 1700000000  # < 10^12 → seconds
         bus.trigger("EVT:FEATURES_CALCULATED", {
@@ -140,9 +159,9 @@ class TestTimestampNormalization:
             "ts": ts_seconds * 1000,
             "bar": {"close_ts": ts_seconds},  # seconds!
         })
-        
+
         bus.emitted.clear()
-        
+
         # CMD with bar_close_ts in MILLISECONDS
         ts_ms = ts_seconds * 1000  # Convert to ms
         bus.trigger("CMD:PROCESS_STRATEGY", {
@@ -150,16 +169,17 @@ class TestTimestampNormalization:
             "tf_sec": 300,
             "bar_close_ts": ts_ms,  # milliseconds
         })
-        
+
         # Should NOT be a cache miss — both normalized to ms
         # So an event should be emitted
-        score_events = [e for e in bus.emitted if e["event"] == "EVT:ALPHA_SCORE_CALCULATED"]
+        score_events = [e for e in bus.emitted if e["event"]
+                        == "EVT:ALPHA_SCORE_CALCULATED"]
         # If cache hit, we get actual score; if miss, we get fail_closed
         # Check it's not a miss by verifying score != 0 or no fail_closed
         assert len(score_events) > 0
         # Either actual score or fail_closed due to missing features in adapter
         # The point is cache lookup should work
-    
+
     def test_cache_stats_tracked(self):
         """Cache hits and misses should be tracked."""
         bus = MockEventBus()
@@ -168,23 +188,27 @@ class TestTimestampNormalization:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Trigger decision without caching first → miss
         bus.trigger("CMD:PROCESS_STRATEGY", {
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "bar_close_ts": 1700000000000,
         })
-        
+
         assert plugin._cache_misses == 1
         assert plugin._cache_hits == 0
-        
+
         # Cache features then trigger → hit
         bus.trigger("EVT:FEATURES_CALCULATED", {
             "symbol": "ETHUSDT",
@@ -198,9 +222,9 @@ class TestTimestampNormalization:
             "tf_sec": 300,
             "bar_close_ts": 1700000000000,
         })
-        
+
         assert plugin._cache_hits == 1
-        
+
         # Check summary
         summary = plugin.get_summary()
         assert summary["cache"]["hits"] == 1
@@ -210,7 +234,7 @@ class TestTimestampNormalization:
 
 class TestDecisionScoring:
     """Test A3.1: Scoring on CMD:PROCESS_STRATEGY."""
-    
+
     def test_scoring_uses_cached_features(self):
         """CMD:PROCESS_STRATEGY should use cached features for scoring."""
         bus = MockEventBus()
@@ -221,20 +245,24 @@ class TestDecisionScoring:
                     enabled=True,
                     symbols=["BTCUSDT"],
                     threshold=0.1,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Phase 1: Cache features
         bar_close_ts = 1700000000000
         bus.trigger("EVT:FEATURES_CALCULATED", {
             "symbol": "BTCUSDT",
             "features": {
-                "obi": 0.3, 
-                "delta_price": 100, 
+                "obi": 0.3,
+                "delta_price": 100,
                 "macro_resid": 0.2,
                 "close": 50000.0,  # Add price
             },
@@ -242,17 +270,17 @@ class TestDecisionScoring:
             "ts": bar_close_ts,
             "bar": {"close_ts": bar_close_ts},
         })
-        
+
         # Clear emitted events
         bus.emitted.clear()
-        
+
         # Phase 2: Trigger decision
         bus.trigger("CMD:PROCESS_STRATEGY", {
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "bar_close_ts": bar_close_ts,
         })
-        
+
         # Should emit EVT:ALPHA_SCORE_CALCULATED
         assert len(bus.emitted) > 0
         score_event = bus.emitted[0]
@@ -260,7 +288,7 @@ class TestDecisionScoring:
         assert score_event["payload"]["provider_id"] == "aurora"
         assert score_event["payload"]["symbol"] == "BTCUSDT"
         assert "score" in score_event["payload"]
-    
+
     def test_fail_closed_on_cache_miss(self):
         """Cache miss should emit fail-closed score when fail_closed=True."""
         bus = MockEventBus()
@@ -272,20 +300,24 @@ class TestDecisionScoring:
                     enabled=True,
                     symbols=["BTCUSDT"],
                     fail_closed=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Trigger decision WITHOUT caching features first
         bus.trigger("CMD:PROCESS_STRATEGY", {
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "bar_close_ts": 1700000000000,
         })
-        
+
         # Should emit fail-closed event
         assert len(bus.emitted) > 0
         score_event = bus.emitted[0]
@@ -295,11 +327,11 @@ class TestDecisionScoring:
 
 class TestMultiProvider:
     """Test A3.2: Multiple providers."""
-    
+
     def test_multiple_providers_score_independently(self):
         """Each provider should score independently."""
         bus = MockEventBus()
-        
+
         # This test would require TA ensemble models to be available
         # For now, just test with aurora only
         config = AlphaSearchConfig(
@@ -309,17 +341,21 @@ class TestMultiProvider:
                     enabled=True,
                     symbols=["BTCUSDT"],
                     threshold=0.1,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Verify provider initialized
         assert "aurora" in plugin.providers
         assert "aurora" in plugin.provider_stats
-    
+
     def test_per_provider_stats(self):
         """Each provider should track its own stats."""
         bus = MockEventBus()
@@ -328,13 +364,17 @@ class TestMultiProvider:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Stats should be per-provider
         assert "aurora" in plugin.provider_stats
         stats = plugin.provider_stats["aurora"]
@@ -344,7 +384,7 @@ class TestMultiProvider:
 
 class TestSymbolAllowlist:
     """Test symbol filtering."""
-    
+
     def test_symbol_allowlist_filters_scoring(self):
         """Provider should only score allowed symbols."""
         bus = MockEventBus()
@@ -354,13 +394,17 @@ class TestSymbolAllowlist:
                 "aurora": ProviderConfig(
                     enabled=True,
                     symbols=["BTCUSDT"],  # Only BTC
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
-        
+
         # Cache features for ETH
         bar_close_ts = 1700000000000
         bus.trigger("EVT:FEATURES_CALCULATED", {
@@ -371,22 +415,23 @@ class TestSymbolAllowlist:
             "bar": {"close_ts": bar_close_ts},
         })
         bus.emitted.clear()
-        
+
         # Trigger decision for ETH
         bus.trigger("CMD:PROCESS_STRATEGY", {
             "symbol": "ETHUSDT",
             "tf_sec": 300,
             "bar_close_ts": bar_close_ts,
         })
-        
+
         # Should NOT emit score for ETH (not in allowlist)
-        score_events = [e for e in bus.emitted if e["event"] == "EVT:ALPHA_SCORE_CALCULATED"]
+        score_events = [e for e in bus.emitted if e["event"]
+                        == "EVT:ALPHA_SCORE_CALCULATED"]
         assert len(score_events) == 0
 
 
 class TestPluginSummary:
     """Test summary generation."""
-    
+
     def test_get_summary(self):
         """Summary should include all provider stats."""
         bus = MockEventBus()
@@ -395,14 +440,18 @@ class TestPluginSummary:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
-        
+
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
         summary = plugin.get_summary()
-        
+
         assert summary["enabled"] == True
         assert "aurora" in summary["providers"]
         assert "aurora" in summary["provider_stats"]
@@ -437,7 +486,11 @@ class TestRequiredManifestGating:
             providers={
                 "aurora": ProviderConfig(
                     enabled=True,
-                    adapter=AuroraAdapterConfig()
+                    adapter=AuroraAdapterConfig(
+                        signal_weights=_FALLBACK_SIGNAL_WEIGHTS,
+                        feature_neutrals=_FALLBACK_FEATURE_NEUTRALS,
+                        regime_thresholds=_FALLBACK_REGIME_THRESHOLDS,
+                    )
                 )
             }
         )
@@ -449,7 +502,8 @@ class TestRequiredManifestGating:
         plugin.provider_configs = {
             "ta_ensemble": ProviderConfig(enabled=True, symbols=["BTCUSDT"], fail_closed=False)
         }
-        plugin.provider_stats = {"ta_ensemble": plugin.provider_stats.get("aurora")}
+        plugin.provider_stats = {
+            "ta_ensemble": plugin.provider_stats.get("aurora")}
         plugin.open_positions = {"ta_ensemble": []}
         plugin.closed_positions = {"ta_ensemble": []}
 
@@ -469,7 +523,8 @@ class TestRequiredManifestGating:
             "bar_close_ts": bar_close_ts,
         })
 
-        score_events = [e for e in bus.emitted if e["event"] == "EVT:ALPHA_SCORE_CALCULATED"]
+        score_events = [e for e in bus.emitted if e["event"]
+                        == "EVT:ALPHA_SCORE_CALCULATED"]
         assert not score_events, "Provider must be skipped when required features are missing"
         plugin.dlog.write.assert_called()
 

@@ -52,18 +52,16 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.12
-      aurora.decision.signal_weights.obi: 0.40
-      aurora.decision.feature_neutrals.obi: 0.35
-      aurora.decision.gates.anti_flat_sigma: 0.28
-      # Regime-adaptive threshold multipliers (effective threshold = base * factor)
-      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.35
-      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
-      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.05
-      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
-      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.80
-      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      alpha_search.providers.aurora.adapter.base_threshold: 0.12
+      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.40
+      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.35
+      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.35
+      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
+      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.05
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.85
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.85
+      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 1.80
+      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
 
   - scenario_id: S03_AURORA_CONSERVATIVE
     enabled: true
@@ -73,18 +71,17 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.12
-      aurora.decision.signal_weights.obi: 0.42
-      aurora.decision.signal_weights.delta_price: 0.15
-      aurora.decision.feature_neutrals.obi: 0.38
-      aurora.decision.gates.anti_flat_sigma: 0.24
-      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.55
-      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.95
-      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
-      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.80
-      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.80
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.20
-      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      alpha_search.providers.aurora.adapter.base_threshold: 0.12
+      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.42
+      alpha_search.providers.aurora.adapter.signal_weights.delta_price: 0.15
+      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.38
+      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.55
+      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.95
+      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.10
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.80
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.80
+      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.20
+      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
 
   - scenario_id: S05_AURORA_MY_BEST
     enabled: true
@@ -94,18 +91,17 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.11
-      aurora.decision.signal_weights.obi: 0.50
-      aurora.decision.signal_weights.delta_price: 0.15
-      aurora.decision.feature_neutrals.obi: 0.40
-      aurora.decision.gates.anti_flat_sigma: 0.22
-      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.60
-      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
-      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.20
-      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.75
-      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.75
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.50
-      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      alpha_search.providers.aurora.adapter.base_threshold: 0.11
+      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.50
+      alpha_search.providers.aurora.adapter.signal_weights.delta_price: 0.15
+      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.40
+      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.60
+      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
+      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.20
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.75
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.75
+      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.50
+      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
 
   - scenario_id: S06_AURORA_LOW_THRESHOLD
     enabled: true
@@ -115,15 +111,14 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.11
-      aurora.decision.gates.anti_flat_sigma: 0.25
-      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.40
-      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
-      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.05
-      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
-      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
-      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      alpha_search.providers.aurora.adapter.base_threshold: 0.11
+      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.40
+      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
+      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.05
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.85
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.85
+      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.00
+      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
 
   - scenario_id: S20_AURORA_OBI_VERY_HEAVY
     enabled: true
@@ -133,17 +128,16 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.13
-      aurora.decision.signal_weights.obi: 0.45
-      aurora.decision.gates.anti_flat_sigma: 0.20
-      aurora.decision.feature_neutrals.obi: 0.40
-      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.45
-      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
-      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
-      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.80
-      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.80
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.20
-      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      alpha_search.providers.aurora.adapter.base_threshold: 0.13
+      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.45
+      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.40
+      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.45
+      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
+      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.10
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.80
+      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.80
+      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.20
+      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
 
   # ============================================================================
   # MEAN REVERSION FAMILY (S11, S12, S13) - 3 scenarios (unchanged)

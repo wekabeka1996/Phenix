@@ -291,8 +291,11 @@ class TestE2EDecisionPipeline:
         strategy.sl_atr_mult = 1.5
         strategy.tp_to_mid = True
         strategy.cooldown_sec = 60
+        strategy.confidence_base = 0.5
+        strategy.confidence_distance_mult = 2.0
+        strategy.rsi_confidence_boost = 0.2
         cfg.strategies.mean_reversion.strategy = strategy
-        
+
         regime_thresholds = MagicMock()
         regime_thresholds.high_vol_pct = 0.03
         regime_thresholds.low_vol_pct = 0.01

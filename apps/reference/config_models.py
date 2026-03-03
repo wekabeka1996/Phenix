@@ -156,6 +156,10 @@ class SignalWeights(BaseModel):
     volume_spike: float = Field()
     volatility_state: float = Field()
     depth_imbalance: float = Field()
+    absorption: float = Field(
+        default=0.0,
+        description="R2: Absorption (SIGNED [-1,1], neutral=0). Default 0.0 for backward compat.",
+    )
     # R1: macro_resid replaces macro_sync for directional scoring
     macro_resid: float = Field(
         description='R1: Beta-adjusted residual weight (SIGNED, neutral=0)')
@@ -354,6 +358,13 @@ class MRStrategyParamsConfig(BaseModel):
     sl_atr_mult: float = Field(description='SL as ATR multiplier')
     tp_to_mid: bool = Field(description='Target mid BB')
     cooldown_sec: int = Field(description='Cooldown between signals')
+
+    confidence_base: float = Field(
+        default=0.5, description='Base confidence for any valid signal')
+    confidence_distance_mult: float = Field(
+        default=2.0, description='Multiplier applied to BB distance for confidence')
+    rsi_confidence_boost: float = Field(
+        default=0.2, description='Extra confidence added when RSI confirms signal')
 
 
 class MRRegimeThresholdsConfig(BaseModel):
@@ -1817,6 +1828,10 @@ class AbsorptionConfig(BaseModel):
     mode: Literal["disabled", "proxy", "full"] = Field(
         description='Absorption mode: disabled (default), proxy, or full'
     )
+    dp_cap_pct: Optional[float] = Field(
+        default=None, gt=0.0, le=1.0,
+        description='Delta price cap percentage for absorption formula (required if mode != disabled)'
+    )
     proxy: Optional[AbsorptionProxyConfig] = Field(
         default=None,
         description='Proxy config (required if mode=proxy)'
@@ -1836,11 +1851,40 @@ class AbsorptionConfig(BaseModel):
     # TASK-ZOMBIE-FIX: Removed bounds field (dead, feature_sanity.feature_bounds is SSOT)
 
     @model_validator(mode='after')
-    def validate_proxy_required(self) -> 'AbsorptionConfig':
-        """Validate proxy config required when mode=proxy."""
+    def validate_requirements(self) -> 'AbsorptionConfig':
+        """Validate dependencies based on mode."""
+        if self.mode != 'disabled' and self.dp_cap_pct is None:
+            raise ValueError(
+                "absorption.dp_cap_pct required when mode != 'disabled'")
         if self.mode == 'proxy' and self.proxy is None:
             raise ValueError("proxy config required when mode='proxy'")
         return self
+
+
+class BarTAConfig(BaseModel):
+    """
+    Parameters for native TA indicator computation in feature_engineering bar events.
+
+    These values drive _update_bar_ta_state() so that rsi_14 / bb_position /
+    stoch_k / etc. are computed consistently in both live and backtest modes.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    rsi_period: int = Field(
+        default=14, ge=2, le=50,
+        description='RSI look-back period (bars)')
+    bb_window: int = Field(
+        default=20, ge=5, le=100,
+        description='Bollinger Bands SMA window (bars)')
+    bb_num_std: float = Field(
+        default=2.0, ge=0.5, le=5.0,
+        description='Bollinger Bands standard-deviation multiplier')
+    stoch_k_period: int = Field(
+        default=14, ge=2, le=50,
+        description='Stochastic %%K look-back period (bars)')
+    stoch_d_period: int = Field(
+        default=3, ge=1, le=10,
+        description='Stochastic %%D smoothing period (bars)')
 
 
 class FeatureEngineeringDomainConfig(BaseModel):
@@ -1895,6 +1939,12 @@ class FeatureEngineeringDomainConfig(BaseModel):
 
     # Default/neutral values for edge cases
     defaults: FeatureDefaultsConfig = Field()
+
+    # ALPHA-SEARCH: Native TA indicator computation params (rsi/bb/stoch periods)
+    bar_ta: Optional[BarTAConfig] = Field(
+        default=None,
+        description='TA indicator computation params for bar events (alpha_search ta_ensemble)'
+    )
 
     # ════════════════════════════════════════════════════════════════════════════
     # P0-0: Readiness Contract Registry + Warmup Enforcement
@@ -1993,6 +2043,20 @@ class RiskManagementDomainConfig(BaseModel):
     # NOTE: Other weights are NOT rescaled when absorption is disabled (per Plan v1)
     use_absorption_penalty: bool = Field(
         description='Whether to include absorption penalty in risk score. Set to False to disable deprecated absorption feature.')
+    absorption_dp_cap_pct: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        le=1.0,
+        description="Cap for delta_price_pct normalization in absorption toxicity penalty (required when use_absorption_penalty=true).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_absorption_penalty_contract(self) -> "RiskManagementDomainConfig":
+        if self.use_absorption_penalty and self.absorption_dp_cap_pct is None:
+            raise ValueError(
+                "risk_management.absorption_dp_cap_pct is required when use_absorption_penalty=true (fail-closed)."
+            )
+        return self
 
 
 # Position Tracking Domain
@@ -2673,7 +2737,7 @@ class VolatilityEntryConfig(BaseModel):
 # R1: macro_resid added, macro_sync deprecated but kept for backward compat
 CANONICAL_WEIGHT_KEYS = frozenset({
     "obi", "tfi", "delta_price", "ema_bias", "volume_spike",
-    "volatility_state", "depth_imbalance",
+    "volatility_state", "depth_imbalance", "absorption",
     "macro_sync",   # DEPRECATED: kept for backward compat, use macro_resid
     "macro_resid",  # R1: Beta-adjusted residual (SIGNED, neutral=0)
     # liquidity_kappa REMOVED: Moved to LiquidityGateConfig

@@ -45,6 +45,7 @@ def test_depth_imbalance_signal_contract_buy_and_sell_deterministic() -> None:
         side_bias_state=None,
         direction_strength_cfg=direction_strength_cfg,
         delta_price_cap_pct=decimal.Decimal("0.005"),
+        normalize_mode="signed_v2",
     )
     assert not buy.deferred
     assert buy.side == "buy"
@@ -64,6 +65,7 @@ def test_depth_imbalance_signal_contract_buy_and_sell_deterministic() -> None:
         side_bias_state=None,
         direction_strength_cfg=direction_strength_cfg,
         delta_price_cap_pct=decimal.Decimal("0.005"),
+        normalize_mode="signed_v2",
     )
     assert not sell.deferred
     assert sell.side == "sell"

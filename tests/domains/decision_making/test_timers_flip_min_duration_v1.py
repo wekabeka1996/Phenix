@@ -36,7 +36,11 @@ def mock_config():
     decision.holding_period.apply_to_flips = True
     
     # Optional configs
-    decision.signals = None
+    decision.signals = MagicMock(
+        normalize_signals_mode="signed_v2",
+        enable_new_metrics=True,
+        delta_price_cap_pct=0.02,
+    )
     decision.direction_strength_scoring = None
     decision.anchor_shock_veto = None
     decision.anti_churn = None # Default off

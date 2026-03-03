@@ -34,7 +34,11 @@ def mock_config():
     decision.side_bias_min_intents = 18
     decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
     decision.direction_strength_scoring = None
-    decision.signals = None
+    decision.signals = SimpleNamespace(
+        normalize_signals_mode="signed_v2",
+        enable_new_metrics=True,
+        delta_price_cap_pct=0.02,
+    )
     decision.holding_period = None
     decision.reentry_cooldown_sec = None
     decision.gates = None

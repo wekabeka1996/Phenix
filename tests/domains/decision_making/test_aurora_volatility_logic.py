@@ -52,7 +52,11 @@ class TestVolatilityEntryLogic:
                         side_bias_min_intents=18,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
                         direction_strength_scoring=None,
-                        signals=None,
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.02,
+                        ),
                         holding_period=None,
                         reentry_cooldown_sec=60,
                         anti_churn=None,

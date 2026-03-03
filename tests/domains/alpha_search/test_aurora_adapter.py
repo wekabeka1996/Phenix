@@ -203,6 +203,7 @@ class TestAuroraAdapterIntegration:
             side_bias_state=None,
             direction_strength_cfg=adapter._direction_strength_cfg,
             delta_price_cap_pct=adapter._delta_price_cap_pct,
+            normalize_mode="signed_v2",
             scoring_version="v2",
         )
         

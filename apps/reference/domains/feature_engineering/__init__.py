@@ -25,6 +25,7 @@ from .indicators import (
     compute_bollinger_bands,
     compute_atr,
     compute_rsi,
+    compute_stochastic,
     IndicatorState,
 )
 from .regime_mapping import (
@@ -42,6 +43,7 @@ from .mean_reversion_strategy import (
     MRSymbolState,
     MeanReversion1mStrategy,
 )
+from .types import BarTAState
 
 __all__ = [
     # Core
@@ -57,7 +59,10 @@ __all__ = [
     "compute_bollinger_bands",
     "compute_atr",
     "compute_rsi",
+    "compute_stochastic",
     "IndicatorState",
+    # TA state
+    "BarTAState",
     # Regime mapping
     "FlatRegime",
     "FlatRegimeThresholds",

@@ -108,7 +108,11 @@ class TestComputeRegimeTpsl:
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
         mock_decision.direction_strength_scoring = None
-        mock_decision.signals = None
+        mock_decision.signals = MagicMock(
+            normalize_signals_mode="signed_v2",
+            enable_new_metrics=True,
+            delta_price_cap_pct=0.02,
+        )
         mock_decision.neutral_threshold = None
         mock_decision.holding_period = None
         mock_decision.reentry_cooldown_sec = None
@@ -336,7 +340,11 @@ class TestTpslGuardrails:
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
         mock_decision.direction_strength_scoring = None
-        mock_decision.signals = None
+        mock_decision.signals = MagicMock(
+            normalize_signals_mode="signed_v2",
+            enable_new_metrics=True,
+            delta_price_cap_pct=0.02,
+        )
         mock_decision.neutral_threshold = None
         mock_decision.holding_period = None
         mock_decision.reentry_cooldown_sec = None
@@ -494,7 +502,11 @@ class TestAtrMode:
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
         mock_decision.direction_strength_scoring = None
-        mock_decision.signals = None
+        mock_decision.signals = MagicMock(
+            normalize_signals_mode="signed_v2",
+            enable_new_metrics=True,
+            delta_price_cap_pct=0.02,
+        )
         mock_decision.neutral_threshold = None
         mock_decision.holding_period = None
         mock_decision.reentry_cooldown_sec = None
@@ -616,7 +628,11 @@ class TestFailClosedLogic:
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
         mock_decision.direction_strength_scoring = None
-        mock_decision.signals = None
+        mock_decision.signals = MagicMock(
+            normalize_signals_mode="signed_v2",
+            enable_new_metrics=True,
+            delta_price_cap_pct=0.02,
+        )
         mock_decision.neutral_threshold = None
         mock_decision.holding_period = None
         mock_decision.reentry_cooldown_sec = None

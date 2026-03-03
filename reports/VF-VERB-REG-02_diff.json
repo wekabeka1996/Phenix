@@ -2,19 +2,22 @@
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 50,
-    "registry_tokens": 56,
-    "runtime_not_in_registry": 0,
-    "registry_not_in_runtime": 6,
-    "coverage": 1.0
+    "runtime_tokens": 54,
+    "registry_tokens": 60,
+    "runtime_not_in_registry": 1,
+    "registry_not_in_runtime": 7,
+    "coverage": 0.981481
   },
-  "runtime_not_in_registry": [],
+  "runtime_not_in_registry": [
+    "EVT:NEOCORTEX_REGIME_PREDICTION"
+  ],
   "registry_not_in_runtime": [
     "DEC:CANCEL",
     "EVT:INTENT_DROPPED",
     "EVT:MARKET_TICK_FORWARDED",
     "EVT:MR_SIGNAL_PRODUCED",
-    "EVT:NEOCORTEX_ALERT",
-    "EVT:NEOCORTEX_STATE_UPDATED"
+    "EVT:NEOCORTEX_STATE_UPDATED",
+    "EVT:PENDING_BRACKETS_CLEARED",
+    "EVT:PENDING_BRACKETS_STORED"
   ]
 }

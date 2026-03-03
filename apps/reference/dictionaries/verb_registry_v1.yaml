@@ -235,6 +235,18 @@ registry:
   schema: null
   since: '2026-01-08'
 - op: EVT
+  verb: PENDING_BRACKETS_STORED
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-02'
+- op: EVT
+  verb: PENDING_BRACKETS_CLEARED
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-02'
+- op: EVT
   verb: ORDER_REJECTED
   owner: unknown
   status: experimental

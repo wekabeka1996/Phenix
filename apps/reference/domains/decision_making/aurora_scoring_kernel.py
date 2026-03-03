@@ -98,6 +98,7 @@ class AuroraScoringKernel:
         side_bias_state: Optional[SideBiasState],
         direction_strength_cfg: Dict[str, Any],
         delta_price_cap_pct: decimal.Decimal,
+        normalize_mode: str,
         scoring_version: str = "v2",
         # Hysteresis support
         neutral_threshold: Optional[decimal.Decimal] = None,
@@ -120,6 +121,7 @@ class AuroraScoringKernel:
             side_bias_state: Current side bias state (or None)
             direction_strength_cfg: DirectionStrengthScoring config
             delta_price_cap_pct: Cap for delta_price normalization
+            normalize_mode: Feature normalization mode (strict). Only "signed_v2" is allowed.
             scoring_version: "v1" or "v2"
             
         Returns:
@@ -170,13 +172,19 @@ class AuroraScoringKernel:
             return result
         
         # 4. Compute direction strength score
+        normalize_mode_str = str(normalize_mode)
+        if normalize_mode_str != "signed_v2":
+            raise ValueError(
+                f"NRR-NORMALIZE-MODE-INVALID:{normalize_mode_str} (only 'signed_v2' is allowed)"
+            )
+
         ds_score = compute_direction_strength_score(
             features=v2_features,
             weights=signal_weights,
             neutrals=feature_neutrals,
             readiness=warmup_readiness,
             essential_features=essential_set,
-            normalize_mode="net_zero",
+            normalize_mode=normalize_mode_str,
             directional_features=list(direction_strength_cfg["directional_features"]),
             strength_features=list(direction_strength_cfg["strength_features"]),
             strength_alpha=float(direction_strength_cfg["strength_alpha"]),

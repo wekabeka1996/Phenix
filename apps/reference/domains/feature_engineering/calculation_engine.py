@@ -428,35 +428,29 @@ class FeatureCalculationEngine:
     def update_absorption(
         self,
         state: HotState,
-        buy_vol: float,
-        sell_vol: float,
         tfi: float,
+        delta_price_pct: float,
     ) -> None:
         """
-        R2: Update absorption buffers.
-        
+        R2 (P0-REWRITE): Update absorption state with latest bar inputs.
+
+        Stores tfi and delta_price_pct for use in compute_absorption.
+        Also maintains rolling buffers for dedup TELEMETRY only — these
+        buffers do NOT block readiness (muted → ready=True + neutral).
+
         Args:
             state: HotState for the symbol
-            buy_vol: Aggressive buy volume
-            sell_vol: Aggressive sell volume
-            tfi: Trade Flow Imbalance for dedup correlation
+            tfi: Trade Flow Imbalance [-1, 1], signed (buy pressure = positive)
+            delta_price_pct: Price change as fraction of price (signed, e.g. +0.005 = +0.5%)
         """
         if self.cfg.absorption_mode == "disabled":
             return
-        
-        window = self.cfg.absorption_proxy_window
-        
-        # Update volume buffers
-        state.absorption_buy_vol_buffer.append(buy_vol)
-        state.absorption_sell_vol_buffer.append(sell_vol)
-        
-        # Trim
-        while len(state.absorption_buy_vol_buffer) > window:
-            state.absorption_buy_vol_buffer.popleft()
-        while len(state.absorption_sell_vol_buffer) > window:
-            state.absorption_sell_vol_buffer.popleft()
-        
-        # Dedup: track TFI and proxy for correlation
+
+        # Store latest inputs for per-bar stateless formula
+        state.absorption_last_tfi = tfi
+        state.absorption_last_dp_pct = delta_price_pct
+
+        # Telemetry buffers: track TFI for dedup correlation monitoring
         if self.cfg.absorption_dedup_enabled:
             dedup_window = self.cfg.absorption_dedup_window
             state.absorption_tfi_buffer.append(tfi)
@@ -465,79 +459,88 @@ class FeatureCalculationEngine:
     
     def compute_absorption(self, state: HotState) -> tuple[decimal.Decimal, bool, Optional[str]]:
         """
-        R2: Compute absorption proxy.
-        
-        Formula (proxy mode):
-            absorption = (sum_buy_vol - sum_sell_vol) / (sum_buy_vol + sum_sell_vol + eps)
-        
-        Dedup guard: mute if |corr(absorption_buffer, TFI_buffer)| > threshold
-        
+        R2 (P0-REWRITE): Compute absorption via conflict-weighted divergence.
+
+        Formula: True absorption = strong trade flow WITHOUT corresponding price impact.
+
+        Sign invariants (verified by tests):
+          - tfi < 0  AND  dp_norm >= 0  → absorption > 0  (sell flow absorbed → bullish)
+          - tfi > 0  AND  dp_norm <= 0  → absorption < 0  (buy flow absorbed → bearish)
+          - sign(tfi) == sign(dp_norm) and |dp_norm| not small → absorption = 0  (aligned, momentum)
+
+        Dedup: logs correlation as TELEMETRY ONLY. Does NOT return not_ready.
+        A muted result returns (neutral, ready=True, "dedup_muted_telemetry:...").
+        This prevents warmup deadlock when mode != disabled.
+
         Returns:
-            (value, is_ready, not_ready_reason)
+            (value, is_ready, not_ready_reason_or_telemetry)
         """
         neutral = decimal.Decimal(str(self.cfg.absorption_neutral))
-        
+
         if self.cfg.absorption_mode == "disabled":
-            # Feature disabled = not_ready (telemetry only, excluded from scoring)
+            # Feature disabled → excluded from required_ready_keys by types.py gate
             state.absorption_ready = False
             state.absorption_not_ready_reason = "mode_disabled"
             return (neutral, False, "mode_disabled")
-        
-        buy_vols = list(state.absorption_buy_vol_buffer)
-        sell_vols = list(state.absorption_sell_vol_buffer)
-        window = self.cfg.absorption_proxy_window
-        eps = self.cfg.absorption_proxy_eps
-        
-        # Check buffer size
-        if len(buy_vols) < window or len(sell_vols) < window:
-            state.absorption_ready = False
-            state.absorption_not_ready_reason = f"insufficient_samples:{len(buy_vols)}<{window}"
-            return (neutral, False, state.absorption_not_ready_reason)
-        
-        # Calculate proxy: (buy - sell) / (buy + sell + eps)
-        sum_buy = sum(buy_vols)
-        sum_sell = sum(sell_vols)
-        denominator = sum_buy + sum_sell + eps
-        
-        if denominator <= eps:
-            state.absorption_ready = False
-            state.absorption_not_ready_reason = "zero_volume"
-            return (neutral, False, "zero_volume")
-        
-        proxy_value = (sum_buy - sum_sell) / denominator
-        
-        # Update proxy buffer for dedup correlation
-        state.absorption_proxy_buffer.append(proxy_value)
+
+        tfi = state.absorption_last_tfi
+        dp_pct = state.absorption_last_dp_pct
+
+        # Normalize delta_price_pct to [-1, 1] using SSOT cap
+        dp_cap = self.cfg.absorption_dp_cap_pct
+        dp_norm = max(-1.0, min(1.0, dp_pct / dp_cap if dp_cap > 0 else 0.0))
+
+        # Conflict-weighted divergence:
+        # signs_conflict = True when flow and price move in OPPOSITE directions
+        # (this is the definition of absorption in microstructure)
+        signs_conflict = (tfi * dp_norm) < 0
+
+        if signs_conflict:
+            # Magnitude: strong flow × weak impact → high absorption
+            # Sign: -sign(tfi) — sell flow absorbed (tfi<0, dp≥0) → bullish (+)
+            #                   — buy flow absorbed (tfi>0, dp≤0) → bearish (-)
+            raw = -math.copysign(1.0, tfi) * abs(tfi) * (1.0 - abs(dp_norm))
+        else:
+            # Flow and price aligned (momentum) or one is zero → no absorption signal
+            raw = 0.0
+
+        # Clip to configured bound
+        clip_bound = self.cfg.absorption_clip
+        clipped = max(-clip_bound, min(clip_bound, raw))
+
+        # Dedup TELEMETRY: track correlation between absorption and TFI.
+        # High corr = signal may be redundant. Logged only, NEVER blocks readiness.
+        state.absorption_proxy_buffer.append(clipped)
         while len(state.absorption_proxy_buffer) > self.cfg.absorption_dedup_window:
             state.absorption_proxy_buffer.popleft()
-        
-        # Dedup check
+
+        telemetry_reason: Optional[str] = None
         if self.cfg.absorption_dedup_enabled:
             tfi_vals = list(state.absorption_tfi_buffer)
             proxy_vals = list(state.absorption_proxy_buffer)
             
-            if len(tfi_vals) >= 10 and len(proxy_vals) >= 10:
-                # Calculate correlation
-                corr = self._pearson_corr(proxy_vals[-10:], tfi_vals[-10:])
+            # Use window size from config instead of hardcoded 10
+            window = self.cfg.absorption_dedup_window
+
+            if len(tfi_vals) >= window and len(proxy_vals) >= window:
+                corr = self._pearson_corr(proxy_vals[-window:], tfi_vals[-window:])
                 state.absorption_dedup_corr = corr
-                
                 threshold = self.cfg.absorption_dedup_threshold
+
                 if abs(corr) > threshold:
-                    # MUTED: absorption too correlated with TFI
+                    # P0: TELEMETRY ONLY — does NOT set ready=False
+                    # Returning neutral value to avoid polluting scoring with
+                    # a potentially redundant signal, but warmup is NOT blocked.
                     state.absorption_dedup_muted = True
-                    state.absorption_ready = False
-                    state.absorption_not_ready_reason = f"dedup_muted:corr={corr:.3f}>{threshold}"
-                    return (neutral, False, state.absorption_not_ready_reason)
+                    telemetry_reason = f"dedup_muted_telemetry:corr={corr:.3f}>{threshold}"
+                    state.absorption_ready = True
+                    state.absorption_not_ready_reason = None
+                    return (neutral, True, telemetry_reason)
                 else:
                     state.absorption_dedup_muted = False
-        
-        # Clip output
-        clip_bound = self.cfg.absorption_clip
-        clipped = max(-clip_bound, min(clip_bound, proxy_value))
-        
+
         state.absorption_ready = True
         state.absorption_not_ready_reason = None
-        
         return (decimal.Decimal(str(clipped)), True, None)
     
     def _pearson_corr(self, x: List[float], y: List[float]) -> float:

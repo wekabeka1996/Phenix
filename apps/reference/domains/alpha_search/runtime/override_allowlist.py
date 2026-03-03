@@ -21,29 +21,40 @@ LOG = logging.getLogger(__name__)
 # =============================================================================
 
 AURORA_OVERRIDE_PATHS: Set[str] = {
-    # Global decision params
+    # Global decision params (aurora.yaml — for reference, adapter uses adapter.* paths)
     "aurora.decision.signal_threshold",
     "aurora.decision.neutral_threshold",
     "aurora.decision.gates.anti_flat_sigma",
     "aurora.decision.gates.anti_fomo_sigma",
     "aurora.decision.reentry_cooldown_sec",
-    # Signal weights (per-signal)
+    # Signal weights (per-signal) in aurora.yaml
     "aurora.decision.signal_weights.*",
-    # Feature neutrals (per-signal)
+    # Feature neutrals (per-signal) in aurora.yaml
     "aurora.decision.feature_neutrals.*",
-    # Regime threshold multipliers
+    # Regime threshold multipliers in aurora.yaml
     "aurora.decision.regime_threshold_multipliers.*",
-    # Direction strength scoring
+    # Direction strength scoring in aurora.yaml
     "aurora.decision.direction_strength_scoring.strength_alpha",
     "aurora.decision.direction_strength_scoring.strength_cap",
     "aurora.decision.direction_strength_scoring.strength_exp",
-    # Per-asset overrides
+    # Per-asset overrides in aurora.yaml
     "aurora.assets.*.weights.*",
     "aurora.assets.*.regime_thresholds.*",
     "aurora.assets.*.signal_threshold",
-    # Alpha search provider threshold
+    # ------------------------------------------------------------------
+    # alpha_search adapter params (SSOT for alpha_search scoring).
+    # These override the adapter directly — no need to touch aurora.yaml.
+    # ------------------------------------------------------------------
     "alpha_search.providers.aurora.threshold",
     "alpha_search.providers.aurora.symbols",
+    "alpha_search.providers.aurora.adapter.base_threshold",
+    "alpha_search.providers.aurora.adapter.delta_price_cap_pct",
+    "alpha_search.providers.aurora.adapter.essential_features",
+    "alpha_search.providers.aurora.adapter.signal_weights.*",
+    "alpha_search.providers.aurora.adapter.feature_neutrals.*",
+    "alpha_search.providers.aurora.adapter.regime_thresholds.*",
+    "alpha_search.providers.aurora.adapter.direction_strength.strength_alpha",
+    "alpha_search.providers.aurora.adapter.direction_strength.strength_cap",
 }
 
 

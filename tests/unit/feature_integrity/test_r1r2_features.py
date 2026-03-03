@@ -203,76 +203,124 @@ class TestReachabilityBuySell(unittest.TestCase):
 
 
 class TestAbsorptionDedup(unittest.TestCase):
-    """T4: Absorption dedup test - mutes if correlated with TFI."""
-    
-    def test_high_correlation_mutes_absorption(self):
-        """If absorption proxy ≈ TFI, dedup mutes it."""
-        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
-        from apps.reference.domains.feature_engineering.types import HotState
-        
+    """
+    T4 (P0-REWRITE): Absorption contract tests for conflict-weighted divergence formula.
+
+    Key contract changes vs old proxy:
+    - dedup_muted → ready=True + neutral (telemetry only, NOT not_ready)
+    - Formula: signs_conflict(tfi, dp_norm) → absorption signal; aligned → 0.0
+    """
+
+    def _make_cfg(self, dedup_threshold=0.8):
         cfg = MagicMock()
         cfg.absorption_mode = "proxy"
-        cfg.absorption_proxy_window = 10
-        cfg.absorption_proxy_eps = 0.0001
         cfg.absorption_dedup_enabled = True
         cfg.absorption_dedup_window = 15
-        cfg.absorption_dedup_threshold = 0.7  # Lower threshold to catch correlation
+        cfg.absorption_dedup_threshold = dedup_threshold
         cfg.absorption_clip = 1.0
         cfg.absorption_neutral = 0.0
-        
-        engine = FeatureCalculationEngine(cfg)
-        state = HotState()
-        
-        # Simulate: absorption proxy is almost identical to TFI
-        # Both are (buy - sell) / (buy + sell)
-        for i in range(25):  # More samples for correlation
-            buy_vol = 1000 + i * 50
-            sell_vol = 800 - i * 30
-            # Compute same formula for TFI as absorption proxy
-            tfi = (buy_vol - sell_vol) / (buy_vol + sell_vol + 0.0001)
-            engine.update_absorption(state, buy_vol, sell_vol, tfi)
-            # Call compute to populate proxy buffer
-            engine.compute_absorption(state)
-        
-        value, is_ready, reason = engine.compute_absorption(state)
-        
-        # Should be muted due to high correlation with TFI
-        # Note: with identical formula, corr should be ~1.0
-        self.assertFalse(is_ready, f"Should be muted due to TFI dedup, got ready with reason: {reason}")
-        self.assertIn("dedup_muted", reason or "")
-    
-    def test_low_correlation_allows_absorption(self):
-        """If absorption proxy != TFI, dedup allows it."""
+        # P0: SSOT delta price cap for dp_pct normalization in absorption formula.
+        cfg.absorption_dp_cap_pct = 0.02
+        return cfg
+
+    def test_dedup_muted_returns_ready_true(self):
+        """P0-CONTRACT: dedup_muted must NOT block warmup (ready=True, value=neutral)."""
         from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
         from apps.reference.domains.feature_engineering.types import HotState
-        
-        cfg = MagicMock()
-        cfg.absorption_mode = "proxy"
-        cfg.absorption_proxy_window = 10
-        cfg.absorption_proxy_eps = 0.0001
-        cfg.absorption_dedup_enabled = True
-        cfg.absorption_dedup_window = 15
-        cfg.absorption_dedup_threshold = 0.8
-        cfg.absorption_clip = 1.0
-        cfg.absorption_neutral = 0.0
-        
+
+        cfg = self._make_cfg(dedup_threshold=0.1)  # Very low threshold → always mutes
         engine = FeatureCalculationEngine(cfg)
         state = HotState()
-        
-        # Simulate: absorption proxy is uncorrelated with TFI
+
+        # Feed bars where absorption signal and tfi will be correlated
         import random
-        random.seed(42)
-        for i in range(20):
-            buy_vol = 1000 + random.randint(-100, 100)
-            sell_vol = 900 + random.randint(-100, 100)
-            # TFI is independent random
-            tfi = random.uniform(-1, 1)
-            engine.update_absorption(state, buy_vol, sell_vol, tfi)
-        
+        random.seed(0)
+        last_result = None
+        for _ in range(20):
+            tfi = random.uniform(0.3, 0.9)
+            # dp_pct opposite sign → conflict → absorption = f(tfi), correlated with tfi
+            dp_pct = -tfi * 0.01  # opposite sign, small magnitude → dp_norm ≈ 0, absorption ≈ tfi
+            engine.update_absorption(state, tfi=tfi, delta_price_pct=dp_pct)
+            last_result = engine.compute_absorption(state)
+
+        assert last_result is not None
+        value, is_ready, reason = last_result
+
+        # CRITICAL: even when muted, ready must be True (no warmup deadlock)
+        self.assertTrue(is_ready, f"dedup_muted must NOT set ready=False, got: {reason}")
+        self.assertIn("dedup_muted_telemetry", reason or "",
+                      f"Muted reason should be telemetry-tagged, got: {reason}")
+        self.assertEqual(float(value), 0.0, "Muted value must be neutral (0.0)")
+
+    def test_bullish_absorption_sign_invariant(self):
+        """tfi < 0 (sell pressure) + dp_norm >= 0 (price flat/up) → absorption > 0 (bullish)."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+
+        cfg = self._make_cfg()
+        cfg.absorption_dedup_enabled = False  # Disable dedup for pure formula test
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+
+        # Strong sell flow, price barely moves up: classic BUY absorption
+        engine.update_absorption(state, tfi=-0.7, delta_price_pct=+0.001)
         value, is_ready, reason = engine.compute_absorption(state)
-        
-        # Should NOT be muted (low correlation)
-        self.assertTrue(is_ready, f"Should be allowed, got reason: {reason}")
+
+        self.assertTrue(is_ready)
+        self.assertGreater(float(value), 0.0,
+                           f"Sell flow + flat price must give positive (bullish) absorption, got {value}")
+
+    def test_bearish_absorption_sign_invariant(self):
+        """tfi > 0 (buy pressure) + dp_norm <= 0 (price flat/down) → absorption < 0 (bearish)."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+
+        cfg = self._make_cfg()
+        cfg.absorption_dedup_enabled = False
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+
+        # Strong buy flow, price doesn't rise: SELL absorption (distribution)
+        engine.update_absorption(state, tfi=+0.7, delta_price_pct=-0.001)
+        value, is_ready, reason = engine.compute_absorption(state)
+
+        self.assertTrue(is_ready)
+        self.assertLess(float(value), 0.0,
+                        f"Buy flow + flat price must give negative (bearish) absorption, got {value}")
+
+    def test_aligned_flow_gives_zero_absorption(self):
+        """sign(tfi) == sign(dp_norm) → absorption == 0.0 (momentum, not absorption)."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+
+        cfg = self._make_cfg()
+        cfg.absorption_dedup_enabled = False
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+
+        # Buy flow + price rises: pure momentum, no absorption
+        engine.update_absorption(state, tfi=+0.6, delta_price_pct=+0.005)
+        value, is_ready, reason = engine.compute_absorption(state)
+
+        self.assertTrue(is_ready)
+        self.assertEqual(float(value), 0.0,
+                         f"Aligned flow+price must give zero absorption, got {value}")
+
+    def test_disabled_mode_not_ready(self):
+        """mode=disabled → ready=False (excluded from required_ready_keys by types.py gate)."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+
+        cfg = self._make_cfg()
+        cfg.absorption_mode = "disabled"
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+
+        engine.update_absorption(state, tfi=0.5, delta_price_pct=-0.005)
+        value, is_ready, reason = engine.compute_absorption(state)
+
+        self.assertFalse(is_ready, "Disabled mode must return not_ready")
+        self.assertEqual(reason, "mode_disabled")
 
 
 class TestNoSilentFallbacksAudit(unittest.TestCase):

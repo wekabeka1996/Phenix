@@ -36,6 +36,8 @@ from apps.reference.domains.feature_engineering.types import (
     SymbolFeatureState,
     FeatureEngineeringConfig,
     BarVolatilityState,  # EP-01.1: Bar-based ATR tracking
+    # ALPHA-SEARCH: Native TA indicator buffers per (symbol, tf_sec)
+    BarTAState,
 )
 
 # FTR-04: Import calculation engine
@@ -151,6 +153,9 @@ class FeatureEngineering:
         # EP-01.1: Bar Volatility State (per symbol,tf_sec for ATR)
         self._bar_volatility_states: Dict[Tuple[str,
                                                 int], BarVolatilityState] = {}
+
+        # ALPHA-SEARCH: TA indicator rolling buffers per (symbol, tf_sec)
+        self._bar_ta_states: Dict[Tuple[str, int], BarTAState] = {}
 
         # EP-01.1: Last OBI snapshot per symbol (for bar close snapshot)
         self._last_obi: Dict[str, decimal.Decimal] = {}
@@ -624,6 +629,12 @@ class FeatureEngineering:
             if k in last_tick and last_tick[k] is not None:
                 bar_tick[k] = last_tick[k]
 
+        # ALPHA-SEARCH: Compute native TA features from bar history and inject
+        # into bar_tick so the aug_keys passthrough in _calculate_and_emit_features_for_tf
+        # will include them in EVT:FEATURES_CALCULATED (tf_sec > 0).
+        ta_features = self._update_bar_ta_state(symbol, tf_sec, bar_data)
+        bar_tick.update(ta_features)
+
         # Extract bar's open price for correct delta_price
         if isinstance(bar_data, dict):
             bar_open = bar_data.get("open")
@@ -641,6 +652,101 @@ class FeatureEngineering:
             f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
         self._calculate_and_emit_features_for_tf(
             symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
+
+    def _update_bar_ta_state(
+        self,
+        symbol: str,
+        tf_sec: int,
+        bar_data: Any,
+    ) -> Dict[str, str]:
+        """
+        Update rolling TA buffers for (symbol, tf_sec) and compute indicators.
+
+        Called on every bar-close event. Returns a dict of ready TA features
+        (string values, matching aug_keys format) to inject into bar_tick.
+
+        Features produced (when buffers are full):
+          rsi_14, bb_position, bb_width, stoch_k, stoch_d,
+          price_sma_20_deviation, volume_sma_ratio, atr_14, atr_ratio
+        """
+        from apps.reference.domains.feature_engineering.indicators import (
+            compute_bollinger_bands,
+            compute_rsi,
+            compute_stochastic,
+        )
+
+        # Extract OHLCV from bar (dict or Bar dataclass)
+        if isinstance(bar_data, dict):
+            close = bar_data.get("close")
+            high = bar_data.get("high")
+            low = bar_data.get("low")
+            volume = bar_data.get("volume", 0)
+        else:
+            close = getattr(bar_data, "close",  None)
+            high = getattr(bar_data, "high",   None)
+            low = getattr(bar_data, "low",    None)
+            volume = getattr(bar_data, "volume", 0)
+
+        if close is None or high is None or low is None:
+            return {}
+
+        key = (symbol, tf_sec)
+        state = self._bar_ta_states.setdefault(key, BarTAState())
+        state.push(close, high, low, volume)
+
+        closes = [decimal.Decimal(str(v)) for v in state.close_buf]
+        highs = [decimal.Decimal(str(v)) for v in state.high_buf]
+        lows = [decimal.Decimal(str(v)) for v in state.low_buf]
+        vols = list(state.volume_buf)
+
+        rsi_period = self.cfg.bar_ta_rsi_period
+        bb_window   = self.cfg.bar_ta_bb_window
+        bb_num_std  = self.cfg.bar_ta_bb_num_std
+        stoch_k     = self.cfg.bar_ta_stoch_k_period
+        stoch_d     = self.cfg.bar_ta_stoch_d_period
+
+        # RSI — needs rsi_period + 1 closes
+        if len(closes) >= rsi_period + 1:
+            rsi = compute_rsi(closes, rsi_period)
+            state.rsi_14 = float(rsi) if rsi is not None else None
+
+        # Bollinger Bands + price_sma_20_deviation — needs bb_window closes
+        if len(closes) >= bb_window:
+            bb = compute_bollinger_bands(closes, window=bb_window, num_std=bb_num_std)
+            if bb is not None:
+                state.bb_position = bb.pct_b
+                state.bb_width = bb.width
+                mid_f = float(bb.mid)
+                if mid_f > 0:
+                    state.price_sma_20_deviation = (
+                        float(closes[-1]) - mid_f
+                    ) / mid_f
+
+        # Stochastic — needs stoch_k + stoch_d - 1 closes
+        if len(closes) >= stoch_k + stoch_d - 1:
+            result = compute_stochastic(
+                highs, lows, closes, k_period=stoch_k, d_period=stoch_d)
+            if result is not None:
+                state.stoch_k, state.stoch_d = result
+
+        # volume_sma_ratio — needs at least 2 volume samples
+        if len(vols) >= 2:
+            hist_vols = vols[:-1]
+            mean_vol = sum(hist_vols) / len(hist_vols)
+            if mean_vol > 0:
+                state.volume_sma_ratio = vols[-1] / mean_vol
+
+        # atr_14 + atr_ratio — reuse BarVolatilityState (already computed upstream)
+        vol_state = self._bar_volatility_states.get(key)
+        if vol_state is not None and vol_state.atr_ready and vol_state.last_atr is not None:
+            atr_val = float(vol_state.last_atr)
+            state.atr_14 = atr_val
+            state.atr_buf.append(atr_val)
+            if len(state.atr_buf) >= 5:
+                mean_atr = sum(state.atr_buf) / len(state.atr_buf)
+                state.atr_ratio = atr_val / mean_atr if mean_atr > 0 else None
+
+        return state.as_feature_dict()
 
     def _create_synthetic_tick_for_bar_close(
         self,
@@ -939,12 +1045,13 @@ class FeatureEngineering:
                 # R2 (P2): ABSORPTION — Experimental (Default OFF)
                 absorption_mode = self.cfg.absorption_mode
                 if absorption_mode != "disabled":
-                    tfi_val = float(features.get("tfi", 0))
+                    tfi_val = float(tfi)
+                    # Use delta_price_pct (delta_price / price) for absorption formula
+                    dp_pct = float(delta_price / price) if price else 0.0
                     self._engine.update_absorption(
                         hot,
-                        buy_vol=float(buy_volume),
-                        sell_vol=float(sell_volume),
                         tfi=tfi_val,
+                        delta_price_pct=dp_pct,
                     )
                     absorption_val, _, _ = self._engine.compute_absorption(hot)
                     features["absorption"] = str(absorption_val)
@@ -1145,7 +1252,16 @@ class FeatureEngineering:
                     clip_abs=float(
                         getattr(self._price_motion_sanity_cfg, "pm_norm_clip_abs", 10.0)),
                 )
-            except Exception:
+            except Exception as e:
+                self.logger.warning(f"[{symbol}] Failed to compute price_motion: {e}")
+                ready_map = warmup.get("ready", {})
+                ready_map["price_motion"] = False
+                warmup["ready"] = ready_map
+                warmup["full_ready"] = False
+                reasons_list = warmup.get("reasons", [])
+                reasons_list.append(f"price_motion:compute_exception")
+                warmup["reasons"] = reasons_list
+                inc_data_quality_drop(domain="feature_engineering", reason="price_motion_exception")
                 pm_block = {
                     "ret_10s": None,
                     "ret_60s": None,

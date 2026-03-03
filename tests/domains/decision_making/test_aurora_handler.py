@@ -41,7 +41,11 @@ class TestAuroraHandlerInit:
                             strength_alpha=0.6,
                             strength_cap=2.0,
                         ),
-                        signals=SimpleNamespace(delta_price_cap_pct=0.01),
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.01,
+                        ),
                     ),
                     assets={},
                 )
@@ -72,7 +76,11 @@ class TestRegimeCaching:
                         side_bias_window_sec=420,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
                         direction_strength_scoring=None,
-                        signals=None,
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.02,
+                        ),
                     ),
                     assets={},
                 )
@@ -122,7 +130,11 @@ class TestSideBiasHistory:
                         side_bias_min_intents=5,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
                         direction_strength_scoring=None,
-                        signals=None,
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.02,
+                        ),
                     ),
                     assets={},
                 )
@@ -189,11 +201,15 @@ class TestSignalEmission:
                         regime_threshold_multipliers={"DEFAULT": 1.0},
                         direction_strength_scoring=SimpleNamespace(
                             directional_features=["obi", "tfi"],
-                            strength_features=[],
-                            strength_alpha=0.5,
-                            strength_cap=1.5,
+                        strength_features=[],
+                        strength_alpha=0.5,
+                        strength_cap=1.5,
+                    ),
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.005,
                         ),
-                        signals=SimpleNamespace(delta_price_cap_pct=0.005),
                         signal_weights={"obi": 0.5, "tfi": 0.5},
                         feature_neutrals={"obi": 0.0, "tfi": 0.0},
                         essential_features=["obi", "tfi"],

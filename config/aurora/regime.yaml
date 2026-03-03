@@ -1,5 +1,5 @@
 basis_tf_sec: 300       # Bar-Only updates (5 min)
-uncertain_cutoff: 0.50  # Hold & Wait: TREND тільки при сильному сигналі 2026-02-24
+uncertain_cutoff: 0.52  # Hold & Wait: TREND тільки при сильному сигналі 2026-02-24
 
 # DM-CRITICAL-PATCHES-02: Liveness guard factor
 # If no heartbeat received within (basis_tf_sec * liveness_factor) ms, block trading.
@@ -24,10 +24,10 @@ vol_slope_gate_confirm_bars: 3
 models:
   sma_trend:
     # TESTNET SMOKE: minimize warmup (min allowed: 2)
-    sma_short_period: 5          # Hold & Wait: стабільніший детектор 2026-02-24
-    sma_long_period: 15
-    confidence_multiplier: 32.0
-    confidence_min: 0.40
+    sma_short_period: 8          # Hold & Wait: стабільніший детектор 2026-02-24
+    sma_long_period: 24
+    confidence_multiplier: 28.0  # Підвищено для балансу (uncertain_cutoff знижено 0.60→0.52)
+    confidence_min: 0.42
     confidence_max: 0.95
   volatility:
     enabled: true

@@ -1,0 +1,141 @@
+# Live Trading Deep Dive (WAL + recorder)
+
+- Generated (UTC): 2026-03-02 14:40:01Z
+- WAL: ops/wal/2026-03-01.jsonl, ops/wal/2026-03-02.jsonl
+- Recorder TF: 300s
+- Post-exit bars: 3
+
+## Account Summary (ACCOUNT_UPDATE_RECEIVED)
+
+- Start: 2026-03-01 17:49:36 | wallet=93.6339 | pos=0
+- End:   2026-03-02 14:39:59 | wallet=87.7735 | pos=1
+- Net wallet delta: -5.8604
+
+## Open Positions (end of range)
+
+- DOGEUSDT: qty=-2090.000000 entry=0.092240 mark=0.092310 uPnL=-0.145673
+
+## Trades (position episodes)
+
+- Closed episodes: 19
+- By symbol: DOGEUSDT=5, SOLUSDT=14
+- Entry OBI alignment: 7/19 (36.8%)
+- Entry TFI alignment: 11/19 (57.9%)
+- Favorable move within next 3 bars after close: 19/19
+- TP hit within next 3 bars after close (heuristic): 6/19
+
+## Intent Filtering (TRADE_INTENT_*)
+
+- Proposed: 67
+- Rejected: 1888
+- Proposed by instrument: SOLUSDT=45, BTCUSDT=16, DOGEUSDT=6
+- Rejected by symbol: BTCUSDT=497, ETHUSDT=474, SOLUSDT=419, DOGEUSDT=249, XRPUSDT=249
+- Top reject reason_code:
+  - NRR-046 x 1245
+  - REGIME_NOT_ALLOWLISTED x 283
+  - ARBITRATION_BLOCKED x 269
+  - ATR_MISSING_FAIL_CLOSED x 24
+  - ANCHOR_SHOCK_VETO x 22
+  - NRR-REGIME-DETECTOR-DEAD x 20
+  - GATE_ANTI_FLAT_SIGMA x 14
+  - HOLDING_PERIOD_ACTIVE x 8
+  - REENTRY_COOLDOWN x 2
+  - NRR-054 x 1
+- Top reject stage:
+  - DECISION x 1515
+  - STRATEGY x 373
+
+## Close Attribution
+
+- By kind: DEC:CLOSE=13, BRACKET:TP=3, BRACKET:SL=3
+- DEC:CLOSE why: MANUAL_CLOSE=13
+- DEC:CLOSE reason: intent_reduce_only=13
+- DEC:CLOSE data_ref top: flip_orchestration_close=13, flip_orchestration=13
+
+## Post-Exit Check (next 3 bars)
+
+- Manual closes with TP reachable within next 3 bars: 3/13
+- Top 'premature' candidates (by post-exit best PnL):
+  - SOLUSDT short 2026-03-02 06:12:00 -> 2026-03-02 06:15:05 | uPnL@Exit~-0.069958 | PostBestPnL~3.2050 | PostTP=Y | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT short 2026-03-02 05:40:02 -> 2026-03-02 05:45:08 | uPnL@Exit~-0.551318 | PostBestPnL~0.941318 | PostTP=Y | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT short 2026-03-02 04:14:21 -> 2026-03-02 04:15:08 | uPnL@Exit~0.026905 | PostBestPnL~0.623095 | PostTP=Y | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT long 2026-03-02 06:36:22 -> 2026-03-02 06:40:04 | uPnL@Exit~-0.64813 | PostBestPnL~0.51313 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT short 2026-03-02 05:10:08 -> 2026-03-02 05:20:08 | uPnL@Exit~-0.548054 | PostBestPnL~0.418054 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT long 2026-03-02 04:55:09 -> 2026-03-02 05:05:08 | uPnL@Exit~-0.18 | PostBestPnL~0.41 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT short 2026-03-02 11:46:28 -> 2026-03-02 12:05:10 | uPnL@Exit~0.095286 | PostBestPnL~0.334714 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT short 2026-03-02 10:22:14 -> 2026-03-02 10:30:07 | uPnL@Exit~-0.76 | PostBestPnL~0.33 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT long 2026-03-02 10:50:59 -> 2026-03-02 10:55:09 | uPnL@Exit~-0.172433 | PostBestPnL~0.262433 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+  - SOLUSDT long 2026-03-02 12:35:11 -> 2026-03-02 12:40:07 | uPnL@Exit~-0.065583 | PostBestPnL~0.235583 | PostTP=N | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_on
+
+## Registry Coverage (verb_registry_v1.yaml)
+
+- Unique (op,verb) seen in WAL: 11
+- Unknown (op,verb) not in registry: 0
+
+```
++----+----------+-------+---------+---------------------+---------------------+--------+-----------+-----------+-----------+-----------+-----------+------------------------------------------------------+-------------------------+-------------------------+-----------+----------+----------+---------+
+| #  | Symbol   | Dir   | QtyMax  | Entry(UTC)          | Exit(UTC)           | DurMin | EntryPx   | ExitMark  | uPnL@Exit | SL        | TP        | CloseReason                                          | EntryBar(local)         | ExitBar(local)          | PostBest  | PostMove | PostPnL  | PostTP? |
++----+----------+-------+---------+---------------------+---------------------+--------+-----------+-----------+-----------+-----------+-----------+------------------------------------------------------+-------------------------+-------------------------+-----------+----------+----------+---------+
+| 1  | SOLUSDT  | short | 2.00    | 2026-03-02 04:14:21 | 2026-03-02 04:15:08 | 0.8    | 84.550000 | 84.536547 | 0.026905  | 85.300000 | 84.370000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T06:09:59.... | 2026-03-02T06:14:59.... | 84.225000 | 0.311547 | 0.623095 | Y       |
+| 2  | SOLUSDT  | short | 0.25    | 2026-03-02 04:35:32 | 2026-03-02 04:43:00 | 7.5    | 84.500000 | 84.312354 | 0.046912  | 85.250000 | 84.310000 | BRACKET:TP (heuristic)                               | 2026-03-02T06:34:59.... | 2026-03-02T06:39:59.... | 84.045000 | 0.267354 | 0.066838 | Y       |
+| 3  | SOLUSDT  | long  | 2.00    | 2026-03-02 04:55:09 | 2026-03-02 05:05:08 | 10.0   | 84.110000 | 84.020000 | -0.18     | 83.370000 | 84.300000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T06:54:59.... | 2026-03-02T07:04:59.... | 84.225000 | 0.205000 | 0.41     | N       |
+| 4  | SOLUSDT  | short | 2.00    | 2026-03-02 05:10:08 | 2026-03-02 05:20:08 | 10.0   | 83.920000 | 84.194027 | -0.548054 | 84.670000 | 83.740000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T07:09:59.... | 2026-03-02T07:19:59.... | 83.985000 | 0.209027 | 0.418054 | N       |
+| 5  | DOGEUSDT | long  | 2215.00 | 2026-03-02 05:10:08 | 2026-03-02 05:44:39 | 34.5   | 0.092720  | 0.093394  | 1.4922    | 0.092405  | 0.093313  | BRACKET:TP (exit_mark)                               | 2026-03-02T07:09:59.... | 2026-03-02T07:39:59.... | 0.093455  | 0.000061 | 0.135868 | Y       |
+| 6  | SOLUSDT  | short | 2.00    | 2026-03-02 05:40:02 | 2026-03-02 05:45:08 | 5.1    | 84.300000 | 84.575659 | -0.551318 | 85.050000 | 84.120000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T07:39:59.... | 2026-03-02T07:44:59.... | 84.105000 | 0.470659 | 0.941318 | Y       |
+| 7  | SOLUSDT  | short | 3.00    | 2026-03-02 06:12:00 | 2026-03-02 06:15:05 | 3.1    | 83.870000 | 83.893319 | -0.069958 | 84.850000 | 83.610000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T08:09:59.... | 2026-03-02T08:14:59.... | 82.825000 | 1.068319 | 3.2050   | Y       |
+| 8  | DOGEUSDT | long  | 2231.00 | 2026-03-02 06:20:08 | 2026-03-02 06:23:50 | 3.7    | 0.092030  | 0.091682  | -0.776879 | 0.091620  | 0.093548  | BRACKET:SL (near_exit_mark)                          | 2026-03-02T08:19:59.... | 2026-03-02T08:19:59.... | 0.092305  | 0.000623 | 1.3904   | N       |
+| 9  | SOLUSDT  | long  | 3.00    | 2026-03-02 06:36:22 | 2026-03-02 06:40:04 | 3.7    | 83.370000 | 83.153957 | -0.64813  | 82.410000 | 83.640000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T08:34:59.... | 2026-03-02T08:39:59.... | 83.325000 | 0.171043 | 0.51313  | N       |
+| 10 | DOGEUSDT | short | 2183.00 | 2026-03-02 08:55:06 | 2026-03-02 09:23:17 | 28.2   | 0.092190  | 0.092840  | -1.4189   | 0.092838  | 0.091035  | BRACKET:SL (exit_mark)                               | 2026-03-02T10:54:59.... | 2026-03-02T11:19:59.... | 0.092425  | 0.000415 | 0.905945 | N       |
+| 11 | SOLUSDT  | long  | 2.00    | 2026-03-02 10:05:08 | 2026-03-02 10:10:09 | 5.0    | 83.730000 | 83.780000 | 0.1       | 83.000000 | 83.930000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T12:04:59.... | 2026-03-02T12:09:59.... | 83.785000 | 0.005000 | 0.01     | N       |
+| 12 | SOLUSDT  | short | 2.00    | 2026-03-02 10:22:14 | 2026-03-02 10:30:07 | 7.9    | 83.390000 | 83.770000 | -0.76     | 84.130000 | 83.200000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T12:19:59.... | 2026-03-02T12:29:59.... | 83.605000 | 0.165000 | 0.33     | N       |
+| 13 | SOLUSDT  | long  | 2.00    | 2026-03-02 10:50:59 | 2026-03-02 10:55:09 | 4.2    | 83.820000 | 83.733783 | -0.172433 | 83.080000 | 84.020000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T12:49:59.... | 2026-03-02T12:54:59.... | 83.865000 | 0.131217 | 0.262433 | N       |
+| 14 | SOLUSDT  | short | 2.00    | 2026-03-02 11:46:28 | 2026-03-02 12:05:10 | 18.7   | 84.010000 | 83.962357 | 0.095286  | 84.990000 | 83.750000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T13:44:59.... | 2026-03-02T14:04:59.... | 83.795000 | 0.167357 | 0.334714 | N       |
+| 15 | SOLUSDT  | long  | 2.00    | 2026-03-02 12:10:24 | 2026-03-02 12:20:06 | 9.7    | 83.930000 | 83.914391 | -0.031217 | 82.960000 | 84.200000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T14:09:59.... | 2026-03-02T14:19:59.... | 83.985000 | 0.070609 | 0.141217 | N       |
+| 16 | DOGEUSDT | long  | 2131.00 | 2026-03-02 12:25:08 | 2026-03-02 13:08:58 | 43.8   | 0.091430  | 0.091140  | -0.61799  | 0.091092  | 0.091904  | BRACKET:SL (near_exit_mark)                          | 2026-03-02T14:24:59.... | 2026-03-02T15:04:59.... | 0.091455  | 0.000315 | 0.671265 | N       |
+| 17 | SOLUSDT  | long  | 2.00    | 2026-03-02 12:35:11 | 2026-03-02 12:40:07 | 4.9    | 83.710000 | 83.677209 | -0.065583 | 82.750000 | 83.980000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T14:34:59.... | 2026-03-02T14:39:59.... | 83.795000 | 0.117791 | 0.235583 | N       |
+| 18 | SOLUSDT  | long  | 2.00    | 2026-03-02 13:35:08 | 2026-03-02 13:45:07 | 10.0   | 83.380000 | 83.221265 | -0.31747  | 82.650000 | 83.580000 | DEC:CLOSE MANUAL_CLOSE | reason=intent_reduce_onl... | 2026-03-02T15:34:59.... | 2026-03-02T15:44:59.... | 83.295000 | 0.073735 | 0.147469 | N       |
+| 19 | DOGEUSDT | long  | 2100.00 | 2026-03-02 13:55:09 | 2026-03-02 14:32:25 | 37.3   | 0.090880  | 0.091831  | 1.9970    | 0.090523  | 0.091808  | BRACKET:TP (exit_mark)                               | 2026-03-02T15:54:59.... | 2026-03-02T16:29:59.... | 0.092635  | 0.000804 | 1.6885   | Y       |
++----+----------+-------+---------+---------------------+---------------------+--------+-----------+-----------+-----------+-----------+-----------+------------------------------------------------------+-------------------------+-------------------------+-----------+----------+----------+---------+
+```
+
+## Entry Microstructure (from recorder)
+
+```
++----+----------+-------+-------------------------+---------+---------+-----------+-----------+----------+---------------+----------+----------+--------+------------------------------------------------+----------------+
+| #  | Symbol   | Dir   | EntryBar(local)         | OBI     | TFI     | SpreadBps | DeltaPx   | DepthImb | LargeTradeImb | VolState | VolSpike | VolZ   | Signal                                         | Regime         |
++----+----------+-------+-------------------------+---------+---------+-----------+-----------+----------+---------------+----------+----------+--------+------------------------------------------------+----------------+
+| 1  | SOLUSDT  | short | 2026-03-02T06:09:59.... | 0.5572  | -0.7332 | 1.18      | -0.010000 | 0.2252   | 0.1334        | 1.0000   | 1.0000   | 0.8044 | hold:sell:score=-0.1837<=-thr_neutral=-0.0500  | LOW_VOLATILITY |
+| 2  | SOLUSDT  | short | 2026-03-02T06:34:59.... | 0.4204  | -0.4982 | 1.18      | -0.180000 | 0.2926   | 0.2509        | 0.0833   | 1.0000   | 0.8044 | flip:buy->sell:score=-0.2272<=-thr_sell=0.0675 | LOW_VOLATILITY |
+| 3  | SOLUSDT  | long  | 2026-03-02T06:54:59.... | -0.4858 | 0.2736  | 1.19      | 0.050000  | 0.7403   | 0.6368        | 1.0000   | 1.0000   | 0.8044 | hold:buy:score=0.1659>=thr_neutral=0.0500      | LOW_VOLATILITY |
+| 4  | SOLUSDT  | short | 2026-03-02T07:09:59.... | 0.5871  | -0.3357 | 1.19      | -0.120000 | 0.2096   | 0.3321        | 0.2500   | 1.0000   | 0.8044 | hold:sell:score=-0.1202<=-thr_neutral=-0.0500  | LOW_VOLATILITY |
+| 5  | DOGEUSDT | long  | 2026-03-02T07:09:59.... | 0.1743  | -0.1095 | 1.08      | -0.000210 | 0.4169   | 0.4453        | 0.0167   | 1.0000   | 0.8044 | price_below_lower_bb:pct_b=-0.188;regime:FL... | n/a            |
+| 6  | SOLUSDT  | short | 2026-03-02T07:39:59.... | 0.3768  | 0.0918  | 1.19      | -0.080000 | 0.3131   | 0.5459        | 1.0000   | 1.0000   | 0.8044 | flip:buy->sell:score=-0.1755<=-thr_sell=0.0675 | LOW_VOLATILITY |
+| 7  | SOLUSDT  | short | 2026-03-02T08:09:59.... | 0.6018  | -0.3512 | 1.19      | -0.190000 | 0.2023   | 0.3244        | 1.0000   | 1.0000   | 0.8044 | hold:sell:score=-0.1280<=-thr_neutral=-0.0500  | MEAN_REVERSION |
+| 8  | DOGEUSDT | long  | 2026-03-02T08:19:59.... | 0.8367  | -0.2945 | 1.09      | -0.000760 | 0.0991   | 0.3527        | 0.0833   | 1.0000   | 0.8044 | price_below_lower_bb:pct_b=-0.283;regime:FL... | n/a            |
+| 9  | SOLUSDT  | long  | 2026-03-02T08:34:59.... | 0.1341  | 0.0391  | 1.20      | 0.120000  | 0.4340   | 0.5195        | 1.0000   | 1.0000   | 0.8044 | hold:buy:score=0.4656>=thr_neutral=0.0500      | MEAN_REVERSION |
+| 10 | DOGEUSDT | short | 2026-03-02T10:54:59.... | -0.2708 | 0.6148  | 1.08      | 0.000330  | 0.6286   | 0.8074        | 0.0833   | 1.0000   | 0.8044 | price_above_upper_bb:pct_b=1.081;regime:FLA... | n/a            |
+| 11 | SOLUSDT  | long  | 2026-03-02T12:04:59.... | 0.0026  | 0.0056  | 1.19      | 0.200000  | 0.4987   | 0.5028        | 1.0000   | 1.0000   | 0.8044 | flip:sell->buy:score=0.3991>=thr_buy=0.0675    | LOW_VOLATILITY |
+| 12 | SOLUSDT  | short | 2026-03-02T12:19:59.... | -0.7673 | -0.4055 | 1.20      | -0.090000 | 0.8796   | 0.2973        | 0.0556   | 1.0000   | 0.8044 | hold:sell:score=-0.7938<=-thr_neutral=-0.0500  | LOW_VOLATILITY |
+| 13 | SOLUSDT  | long  | 2026-03-02T12:49:59.... | -0.4037 | -0.2923 | 1.19      | 0.060000  | 0.6995   | 0.3538        | 1.0000   | 1.0000   | 0.8044 | hold:buy:score=0.1317>=thr_neutral=0.0500      | LOW_VOLATILITY |
+| 14 | SOLUSDT  | short | 2026-03-02T13:44:59.... | 0.6341  | -0.6244 | 1.19      | -0.040000 | 0.1863   | 0.1878        | 0.8333   | 0.8331   | 0.5000 | flip:buy->sell:score=-0.1256<=-thr_sell=0.0900 | MEAN_REVERSION |
+| 15 | SOLUSDT  | long  | 2026-03-02T14:09:59.... | -0.5177 | -0.0372 | 1.19      | 0.060000  | 0.7505   | 0.4814        | 0.2222   | 1.0000   | 0.8044 | hold:buy:score=0.1038>=thr_neutral=0.0500      | MEAN_REVERSION |
+| 16 | DOGEUSDT | long  | 2026-03-02T14:24:59.... | -0.6000 | -0.0806 | 1.09      | -0.000230 | 0.7851   | 0.4597        | 0.0167   | 1.0000   | 0.8044 | price_below_lower_bb:pct_b=-0.127;regime:FL... | n/a            |
+| 17 | SOLUSDT  | long  | 2026-03-02T14:34:59.... | 0.5004  | -0.1626 | 1.19      | 0.100000  | 0.2533   | 0.4187        | 0.1667   | 1.0000   | 0.8044 | hold:buy:score=0.5936>=thr_neutral=0.0500      | MEAN_REVERSION |
+| 18 | SOLUSDT  | long  | 2026-03-02T15:34:59.... | -0.3301 | 0.0621  | 1.20      | 0.120000  | 0.6618   | 0.5311        | 1.0000   | 1.0000   | 0.8044 | flip:sell->buy:score=0.2255>=thr_buy=0.0675    | LOW_VOLATILITY |
+| 19 | DOGEUSDT | long  | 2026-03-02T15:54:59.... | -0.2385 | 0.4220  | 1.10      | -0.000160 | 0.6148   | 0.7110        | 0.0667   | 1.0000   | 0.8044 | price_below_lower_bb:pct_b=0.003;regime:FLA... | n/a            |
++----+----------+-------+-------------------------+---------+---------+-----------+-----------+----------+---------------+----------+----------+--------+------------------------------------------------+----------------+
+```
+
+## Loss Leaderboard (by uPnL@Exit estimate)
+
+- DOGEUSDT short 2026-03-02 08:55:06 -> 2026-03-02 09:23:17 | uPnL@Exit~-1.4189 | entry=0.092190 exitMark=0.092840
+- DOGEUSDT long 2026-03-02 06:20:08 -> 2026-03-02 06:23:50 | uPnL@Exit~-0.776879 | entry=0.092030 exitMark=0.091682
+- SOLUSDT short 2026-03-02 10:22:14 -> 2026-03-02 10:30:07 | uPnL@Exit~-0.76 | entry=83.390000 exitMark=83.770000
+- SOLUSDT long 2026-03-02 06:36:22 -> 2026-03-02 06:40:04 | uPnL@Exit~-0.64813 | entry=83.370000 exitMark=83.153957
+- DOGEUSDT long 2026-03-02 12:25:08 -> 2026-03-02 13:08:58 | uPnL@Exit~-0.61799 | entry=0.091430 exitMark=0.091140
+- SOLUSDT short 2026-03-02 05:40:02 -> 2026-03-02 05:45:08 | uPnL@Exit~-0.551318 | entry=84.300000 exitMark=84.575659
+- SOLUSDT short 2026-03-02 05:10:08 -> 2026-03-02 05:20:08 | uPnL@Exit~-0.548054 | entry=83.920000 exitMark=84.194027
+- SOLUSDT long 2026-03-02 13:35:08 -> 2026-03-02 13:45:07 | uPnL@Exit~-0.31747 | entry=83.380000 exitMark=83.221265
+- SOLUSDT long 2026-03-02 04:55:09 -> 2026-03-02 05:05:08 | uPnL@Exit~-0.18 | entry=84.110000 exitMark=84.020000
+- SOLUSDT long 2026-03-02 10:50:59 -> 2026-03-02 10:55:09 | uPnL@Exit~-0.172433 | entry=83.820000 exitMark=83.733783
+

@@ -12,6 +12,7 @@ Flow:
 
 import asyncio
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -252,6 +253,9 @@ async def run(
     # Session directory
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_dir = project_root / "logs" / "alpha_search_runtime" / session_id
+    # Avoid cross-process contention on Windows: keep alpha_search adapter logs per session by default.
+    if "ALPHA_SEARCH_LOG_DIR" not in os.environ:
+        os.environ["ALPHA_SEARCH_LOG_DIR"] = str(session_dir / "aggregate")
 
     # Load config (fail-closed)
     config = load_matrix_config(matrix_path_resolved)

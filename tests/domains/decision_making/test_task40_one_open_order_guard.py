@@ -50,6 +50,7 @@ def _mk_dm(*, fsm):
         strategies=SimpleNamespace(
             mean_reversion=SimpleNamespace(
                 execution=SimpleNamespace(entry_order_type="MARKET"),
+                safety_gates=SimpleNamespace(enabled=False),
             ),
         ),
     )

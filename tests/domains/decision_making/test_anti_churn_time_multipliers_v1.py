@@ -50,7 +50,11 @@ def mock_config():
     decision.holding_period.enabled = True
     decision.holding_period.min_duration_sec = 10.0
     
-    decision.signals = None
+    decision.signals = MagicMock(
+        normalize_signals_mode="signed_v2",
+        enable_new_metrics=True,
+        delta_price_cap_pct=0.02,
+    )
     decision.direction_strength_scoring = None
     decision.anchor_shock_veto = None
     

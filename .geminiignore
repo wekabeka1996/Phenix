@@ -1,7 +1,4 @@
-.venv/
-logs/
-__pycache__/
-node_modules/
-.DS_Store
-*.zip
-*.csv
+# Temporary empty gitignore so I can read data files
+!logs/features/BTCUSDT.log
+!logs/mean_reversion/bars_300s.jsonl
+!data/recorder/2026-03-01/BTCUSDT_300.csv

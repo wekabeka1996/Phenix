@@ -40,6 +40,13 @@ class GatesCfg:
 
 
 @dataclass
+class SignalsCfg:
+    normalize_signals_mode: str = "signed_v2"
+    enable_new_metrics: bool = True
+    delta_price_cap_pct: float = 0.02
+
+
+@dataclass
 class RegimeInertiaCfg:
     confirm_window_sec: float = 90.0
     confirm_window_same_severity_sec: float = 5.0
@@ -73,7 +80,7 @@ class AuroraDecisionCfg:
     feature_neutrals: dict = field(default_factory=dict)
     essential_features: list = field(default_factory=list)
 
-    signals: Any = None
+    signals: SignalsCfg = field(default_factory=SignalsCfg)
     direction_strength_scoring: Any = None
     anchor_shock_veto: Any = None
     gates: GatesCfg = field(default_factory=GatesCfg)

@@ -242,6 +242,28 @@ class AuroraHandler:
             # Signals config
             signals = getattr(decision, "signals", None)
             self.delta_price_cap_pct = decimal.Decimal(str(getattr(signals, "delta_price_cap_pct", "0.005"))) if signals else decimal.Decimal("0.005")
+
+            # Normalization mode for direction/strength scoring.
+            # Strict contract: signed_v2 is the ONLY allowed mode (fail-closed).
+            from apps.reference.config_contract import ConfigContractError
+
+            if signals is None:
+                raise ConfigContractError(
+                    path="strategies.aurora.decision.signals",
+                    why="signals block is required for AuroraHandler (no silent fallback).",
+                )
+            nm_raw = getattr(signals, "normalize_signals_mode", None)
+            if nm_raw is None:
+                raise ConfigContractError(
+                    path="strategies.aurora.decision.signals.normalize_signals_mode",
+                    why="normalize_signals_mode is required for AuroraHandler (no silent fallback).",
+                )
+            self.normalize_mode = str(nm_raw)
+            if self.normalize_mode != "signed_v2":
+                raise ConfigContractError(
+                    path="strategies.aurora.decision.signals.normalize_signals_mode",
+                    why=f"Only 'signed_v2' is allowed (got: {self.normalize_mode!r}).",
+                )
             
             # Neutral threshold for hysteresis (global default)
             nt_raw = getattr(decision, "neutral_threshold", None)
@@ -487,6 +509,7 @@ class AuroraHandler:
                 stage="STRATEGY",
                 why=f"{context}: {reason}",
                 src="aurora_handler:_emit_strategy_blocked",
+                normalize_mode_effective=self.normalize_mode,
                 ts_ms=ts_ms,
             )
         except Exception:
@@ -568,6 +591,7 @@ class AuroraHandler:
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY missing tf_sec (fail-closed)",
                 src="aurora_handler",
+                normalize_mode_effective=self.normalize_mode,
                 ts_ms=cmd.get("bar_close_ts"),
                 rid=cmd.get("rid"),
             )
@@ -584,6 +608,7 @@ class AuroraHandler:
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY tf_sec=0 forbidden (fail-closed)",
                 src="aurora_handler",
+                normalize_mode_effective=self.normalize_mode,
                 ts_ms=cmd.get("bar_close_ts"),
                 rid=cmd.get("rid"),
             )
@@ -609,6 +634,7 @@ class AuroraHandler:
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY missing bar_close_ts (fail-closed)",
                 src="aurora_handler",
+                normalize_mode_effective=self.normalize_mode,
                 rid=cmd.get("rid"),
             )
             return
@@ -688,6 +714,7 @@ class AuroraHandler:
                     stage="STRATEGY",
                     why="Warmup not full_ready (fail-closed; enforcement_mode=fail_fast)",
                     src="aurora_handler",
+                    normalize_mode_effective=self.normalize_mode,
                     ts_ms=cmd.get("bar_close_ts"),
                     rid=cmd.get("rid"),
                 )
@@ -718,6 +745,7 @@ class AuroraHandler:
                 stage="STRATEGY",
                 why=liveness_block["why"],
                 src="aurora_handler",
+                normalize_mode_effective=self.normalize_mode,
                 ts_ms=cmd.get("bar_close_ts"),
                 rid=cmd.get("rid"),
             )
@@ -845,6 +873,7 @@ class AuroraHandler:
             side_bias_state=side_bias,
             direction_strength_cfg=self.direction_strength_cfg,
             delta_price_cap_pct=self.delta_price_cap_pct,
+            normalize_mode=self.normalize_mode,
             neutral_threshold=effective_neutral,
             current_side=current_side,
         )

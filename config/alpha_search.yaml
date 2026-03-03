@@ -47,6 +47,59 @@ alpha_search:
           - delta_price
           - macro_resid
 
+        # -------------------------------------------------------
+        # All scoring params are defined here — alpha_search SSOT.
+        # No hardcoded values in code. Override in scenario_matrix.
+        # -------------------------------------------------------
+        base_threshold: 0.12
+        delta_price_cap_pct: 0.02
+
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          volume_spike: 0.10
+          volatility_state: 0.10
+
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+
+        regime_thresholds:
+          HIGH_VOLATILITY: 1.0
+          LOW_VOLATILITY: 0.9
+          MEAN_REVERSION: 0.75
+          TREND_UP: 1.0
+          TREND_DOWN: 1.0
+          UNCERTAIN: 1.15
+          DEFAULT: 1.0
+
+        direction_strength:
+          directional_features:
+            - obi
+            - tfi
+            - delta_price
+            - ema_bias
+            - depth_imbalance
+            - macro_resid
+            - macro_sync
+          strength_features:
+            - volume_spike
+            - volatility_state
+          strength_alpha: 0.5
+          strength_cap: 1.0
+
     ta_ensemble:
       enabled: true            # All 3 TA models active
       symbols: null            # All symbols

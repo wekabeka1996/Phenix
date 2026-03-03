@@ -102,6 +102,16 @@ class FeatureMirrorWriter:
             return
 
         tf_sec = payload.get("tf_sec", 300)
+        # Only write bar-close events (tf_sec >= 60).
+        # Tick-level events (tf_sec=0) lack bar-aggregated TA indicators
+        # (bb_position, rsi_14, bb_width, stoch_k, etc.) which ta_ensemble
+        # requires. Replaying tick records causes CMD:PROCESS_STRATEGY with
+        # tf_sec=0 and a spurious "missing required features" warning.
+        # Mirrors the identical gate in feature_engineering.py:1370 and
+        # aurora_handler.py:600.
+        if not tf_sec or tf_sec < 60:
+            self._snapshots_skipped += 1
+            return
         ts = payload.get("ts", 0) or int(time.time() * 1000)
 
         # bar_close_ts from bar or payload

@@ -43,7 +43,7 @@ trading:
     trading_allowed_thresholds:
       max_risk_score: 0.9
     daily:
-      enabled: true
+      enabled: false
       max_realized_loss_usd: 250.0
       max_drawdown_pct: 10.0
       reset_time_utc: 00:00

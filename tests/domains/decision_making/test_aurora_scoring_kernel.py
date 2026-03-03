@@ -75,6 +75,7 @@ class TestAuroraScoringKernelBasic:
                 "strength_cap": 1.5,
             },
             "delta_price_cap_pct": Decimal("0.005"),
+            "normalize_mode": "signed_v2",
         }
 
     def test_kernel_returns_scoring_result(self, base_config):
@@ -142,6 +143,7 @@ class TestSideBiasPenalty:
                 "strength_cap": 1.5,
             },
             "delta_price_cap_pct": Decimal("0.005"),
+            "normalize_mode": "signed_v2",
         }
 
     def test_sell_overload_penalizes_sell_threshold(self, neutral_config):
@@ -217,6 +219,7 @@ class TestRegimeThresholds:
                 "strength_cap": 1.5,
             },
             "delta_price_cap_pct": Decimal("0.005"),
+            "normalize_mode": "signed_v2",
         }
 
     def test_high_volatility_increases_threshold(self, base_config):
