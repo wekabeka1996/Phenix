@@ -32,6 +32,8 @@ def _make_rm(*, use_penalty: bool, cap_pct: float | None) -> RiskManagement:
         update={
             "use_absorption_penalty": use_penalty,
             "absorption_dp_cap_pct": cap_pct,
+            # Pin to "proxy" so these tests are config-independent
+            "absorption_penalty_source": "proxy",
             "risk_score_weights": rm_cfg.risk_score_weights.model_copy(
                 update={
                     "delta_price_pct": 0.1,
@@ -86,7 +88,8 @@ def test_toxicity_penalty_enabled_behavior() -> None:
     assert out_pos["risk_score"] == pytest.approx(out_neg["risk_score"])
 
     # delta_price=0 => impact_norm=0 => no toxicity penalty
-    out_dp0 = rm._calculate_risk_parameters({**base, "delta_price": 0.0, "tfi": 0.8})
+    out_dp0 = rm._calculate_risk_parameters(
+        {**base, "delta_price": 0.0, "tfi": 0.8})
     assert out_dp0["risk_score"] == pytest.approx(0.27)
 
     # tfi=0 => toxicity=0 even if impact_norm=1
@@ -94,7 +97,8 @@ def test_toxicity_penalty_enabled_behavior() -> None:
     assert out_tfi0["risk_score"] == pytest.approx(0.032)
 
     # delta_price_pct > cap => impact_norm saturates to 1
-    out_cap = rm._calculate_risk_parameters({**base, "delta_price": 5.0, "tfi": 0.8})
+    out_cap = rm._calculate_risk_parameters(
+        {**base, "delta_price": 5.0, "tfi": 0.8})
     assert out_cap["risk_score"] == pytest.approx(0.515)
 
 
@@ -109,7 +113,8 @@ def test_config_validation_requires_cap_when_penalty_enabled() -> None:
                 tfi=0.3,
                 absorption_inverse=0.3,
             ),
-            trading_allowed_thresholds=TradingAllowedThresholdsConfig(max_risk_score=0.96),
-            validation=RiskValidationConfig(total_weight_min=0.5, total_weight_max=2.0),
+            trading_allowed_thresholds=TradingAllowedThresholdsConfig(
+                max_risk_score=0.96),
+            validation=RiskValidationConfig(
+                total_weight_min=0.5, total_weight_max=2.0),
         )
-

@@ -45,26 +45,28 @@ class RiskManagement:
     def __init__(self, fsm: "FSMCore", config: Any) -> None:
         """
         Initialize RiskManagement.
-        
+
         Args:
             fsm: FSM core
             config: AuroraConfig object (Task 18: removed dict support)
         """
         self.fsm = fsm
-        
+
         # Strict Object Config Check
         if isinstance(config, dict):
             raise TypeError("RiskManagement requires AuroraConfig, got dict")
-            
+
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
         try:
-            self.alert_manager: Optional[AlertManager] = AlertManager(config, logger=self.logger)
+            self.alert_manager: Optional[AlertManager] = AlertManager(
+                config, logger=self.logger)
         except Exception as e:
             self.alert_manager = None
-            self.logger.warning(f"AlertManager unavailable in RiskManagement: {e}")
-        
+            self.logger.warning(
+                f"AlertManager unavailable in RiskManagement: {e}")
+
         # Initialize Domain Config Resolver
         from apps.reference.domain_config import DomainConfigResolver
         self.resolver = DomainConfigResolver(config)
@@ -72,7 +74,8 @@ class RiskManagement:
 
         # TASK47: DEV/SHADOW ONLY — disable daily loss/drawdown gate (never enable in live/prod).
         self._debug_disable_daily_loss_limit = bool(
-            getattr(getattr(config.domains, "debug", None), "disable_daily_loss_limit", False)
+            getattr(getattr(config.domains, "debug", None),
+                    "disable_daily_loss_limit", False)
         )
         if self._debug_disable_daily_loss_limit:
             self.logger.warning(
@@ -81,17 +84,18 @@ class RiskManagement:
             try:
                 self.fsm.emit(
                     "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
-                    payload={"flag": "disable_daily_loss_limit", "why": "daily_loss_gate_disabled"},
+                    payload={"flag": "disable_daily_loss_limit",
+                             "why": "daily_loss_gate_disabled"},
                     why="debug_override_active",
                 )
             except Exception:
                 pass
-        
+
         # ETAP4: Unified Daily Risk State
         from apps.reference.domains.risk_management.daily_gate import DailyRiskState
         # Pass AuroraConfig directly (verified by DailyRiskState)
         self.daily_risk_state = DailyRiskState(config, logger=self.logger)
-        
+
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
 
@@ -99,7 +103,7 @@ class RiskManagement:
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features_calculated)
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         self.on_portfolio_state_updated)
-        
+
         # D5: Cache absorption penalty flag (from strict object config)
         self._use_absorption_penalty = self.domain_config.use_absorption_penalty
         if not self._use_absorption_penalty:
@@ -183,7 +187,8 @@ class RiskManagement:
                 },
             )
         except Exception as e:
-            self.logger.exception("RiskManagement crash in on_features_calculated (fail-closed)")
+            self.logger.exception(
+                "RiskManagement crash in on_features_calculated (fail-closed)")
             try:
                 if self.alert_manager:
                     self.alert_manager.raise_alert(
@@ -196,15 +201,17 @@ class RiskManagement:
             except Exception:
                 # Never allow alerting failures to crash the pipeline.
                 pass
-            return {"is_trading_allowed": False, "reason": "RISK_INTERNAL_ERROR"}  # type: ignore[return-value]
+            # type: ignore[return-value]
+            return {"is_trading_allowed": False, "reason": "RISK_INTERNAL_ERROR"}
 
     def on_portfolio_state_updated(self, event: Message) -> None:
         """
         Handle portfolio state updates to update DailyRiskState.
         """
-        self.logger.info("Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
+        self.logger.info(
+            "Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
         self.portfolio_state = event.pld
-        
+
         # Delegate to SSOT
         self.daily_risk_state.on_portfolio(self.portfolio_state)
 
@@ -218,7 +225,7 @@ class RiskManagement:
         # 1. Portfolio-level risk check (Circuit Breaker)
         # 1. Portfolio-level risk check via DailyRiskState (SSOT)
         daily_allowed, daily_reason = self.daily_risk_state.can_open()
-        
+
         if not daily_allowed:
             if getattr(self, "_debug_disable_daily_loss_limit", False):
                 # DEV/SHADOW override: allow opens but surface the would-block reason.
@@ -239,7 +246,8 @@ class RiskManagement:
                     pass
                 daily_reason = dict(daily_reason or {})
                 daily_reason["would_block"] = True
-                daily_reason["would_block_reason"] = daily_reason.get("why") or "daily_gate_blocked"
+                daily_reason["would_block_reason"] = daily_reason.get(
+                    "why") or "daily_gate_blocked"
             else:
                 # Blocked by Daily Gate (Enforced or Legacy)
                 self.logger.critical(
@@ -249,46 +257,59 @@ class RiskManagement:
                 detail = daily_reason["detail"] if "detail" in daily_reason else "UNKNOWN"
                 val = daily_reason["drawdown_pct"] if "drawdown_pct" in daily_reason else "0"
                 limit = daily_reason["limit_pct"] if "limit_pct" in daily_reason else "0"
-                
+
                 logger.warning(
                     format_why_with_details(
-                        WhyCode.RISK_DRAWDOWN_LIMIT if "DRAWDOWN" in str(detail) else WhyCode.RISK_NOT_ALLOWED,
+                        WhyCode.RISK_DRAWDOWN_LIMIT if "DRAWDOWN" in str(
+                            detail) else WhyCode.RISK_NOT_ALLOWED,
                         f"gate={detail} value={val} limit={limit}"
                     )
                 )
                 return {"is_trading_allowed": False}
-            
+
         # Check shadow mode warning
         if bool(daily_reason["would_block"]) if "would_block" in daily_reason else False:
-             # Shadow mode detected a breach
-             self.logger.warning(
+            # Shadow mode detected a breach
+            self.logger.warning(
                 f"SHADOW RISK WARNING: {daily_reason.get('would_block_reason')} would block in enforced mode."
-             )
+            )
 
         # 2. Instrument-level risk check (if portfolio risk is OK)
         # Extract features with safe parsing
         obi = _to_dec(features.get("obi"))
         tfi = _to_dec(features.get("tfi"))
         delta_price = _to_dec(features.get("delta_price"))
-        # Absorption (SIGNED, emitted by FE). Parsed for telemetry/backward-compat only.
-        # Risk penalty uses a directionless toxicity proxy (see below).
-        _absorption = _to_dec(features.get("absorption"))
+        # PKG-ABSORPTION-RISK-FULL: track presence so fail-closed can detect missing
+        _absorption_raw = features.get("absorption")
+        _absorption_missing = _absorption_raw is None
+        _absorption = _to_dec(_absorption_raw)
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
-        
+
         # SSOT: Get weights from config - REQUIRED, no fallbacks
         weights = self._get_risk_score_weights()
         delta_price_weight = decimal.Decimal(str(weights.delta_price_pct))
         obi_weight = decimal.Decimal(str(weights.obi))
         tfi_weight = decimal.Decimal(str(weights.tfi))
-        
+
         # D5: Check absorption penalty flag
         if self._use_absorption_penalty:
-            absorption_inverse_weight = decimal.Decimal(str(weights.absorption_inverse))
+            absorption_inverse_weight = decimal.Decimal(
+                str(weights.absorption_inverse))
         else:
             # D5: Disable absorption term (weight=0) without rescaling other weights
             absorption_inverse_weight = decimal.Decimal("0")
+
+        # PKG-ABSORPTION-RISK-FULL: read new absorption feature knobs (defaults preserve old behavior)
+        absorption_penalty_source = getattr(
+            self.domain_config, "absorption_penalty_source", "proxy")
+        absorption_feature_weight = decimal.Decimal(
+            str(getattr(weights, "absorption_feature", 0.0)))
+        absorption_clip_min = decimal.Decimal(
+            str(getattr(self.domain_config, "absorption_feature_clip_min", 0.0)))
+        absorption_clip_max = decimal.Decimal(
+            str(getattr(self.domain_config, "absorption_feature_clip_max", 1.0)))
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
@@ -302,7 +323,8 @@ class RiskManagement:
         # - toxicity = abs(tfi) * impact_norm
         toxicity_term = decimal.Decimal("0")
         if self._use_absorption_penalty and absorption_inverse_weight != 0:
-            dp_cap = _to_dec(getattr(self.domain_config, "absorption_dp_cap_pct", None))
+            dp_cap = _to_dec(getattr(self.domain_config,
+                             "absorption_dp_cap_pct", None))
             if dp_cap <= 0:
                 raise ConfigContractError(
                     "SSOT ERROR: risk_management.absorption_dp_cap_pct must be set and > 0 when use_absorption_penalty=true"
@@ -313,15 +335,46 @@ class RiskManagement:
             toxicity = abs(tfi) * impact_norm
             toxicity_term = toxicity * absorption_inverse_weight
 
+        # PKG-ABSORPTION-RISK-FULL: emitted absorption feature term
+        # - clamp(|absorption|, clip_min, clip_max) * absorption_feature_weight
+        # - Fail-closed: missing or unparsable absorption → feature_term=0, flag abs_missing
+        feature_term = decimal.Decimal("0")
+        if self._use_absorption_penalty and absorption_feature_weight != 0 and not _absorption_missing:
+            abs_val = abs(_absorption)
+            if abs_val < absorption_clip_min:
+                abs_val = absorption_clip_min
+            if abs_val > absorption_clip_max:
+                abs_val = absorption_clip_max
+            feature_term = abs_val * absorption_feature_weight
+
+        # PKG-ABSORPTION-RISK-FULL: source routing
+        # "proxy"   → toxicity_term only (backward-compatible, default)
+        # "feature" → feature_term only  (proxy ignored)
+        # "both"    → toxicity_term + feature_term
+        if not self._use_absorption_penalty:
+            applied_toxicity = decimal.Decimal("0")
+            applied_feature = decimal.Decimal("0")
+        elif absorption_penalty_source == "feature":
+            applied_toxicity = decimal.Decimal("0")
+            applied_feature = feature_term
+        elif absorption_penalty_source == "both":
+            applied_toxicity = toxicity_term
+            applied_feature = feature_term
+        else:  # "proxy" (default, backward-compatible)
+            applied_toxicity = toxicity_term
+            applied_feature = decimal.Decimal("0")
+
         # Risk score uses normalized features (all in [0, 1] range approximately)
         # - delta_price_pct: percentage change (0.01 = 1% change)
         # - obi, tfi: normalized to [-1, 1]
-        # - toxicity_term: in [0, absorption_inverse_weight]
+        # - applied_toxicity: in [0, absorption_inverse_weight]  (proxy term)
+        # - applied_feature:  in [0, absorption_feature_weight]  (emitted feature term)
         risk_score = (
             delta_price_pct * delta_price_weight
             + abs(obi) * obi_weight
             + abs(tfi) * tfi_weight
-            + toxicity_term
+            + applied_toxicity
+            + applied_feature
         )
 
         # Clamp risk_score to [0, 1] range
@@ -329,6 +382,16 @@ class RiskManagement:
             risk_score = decimal.Decimal("0")
         if risk_score > 1:
             risk_score = decimal.Decimal("1")
+
+        # PKG-ABSORPTION-RISK-FULL: explainability payload
+        _abs_src_tag = absorption_penalty_source if self._use_absorption_penalty else "disabled"
+        if _absorption_missing:
+            _abs_src_tag = _abs_src_tag + "+abs_missing"
+        risk_terms = {
+            "toxicity_term": float(applied_toxicity),
+            "absorption_feature_term": float(applied_feature),
+            "abs_source": _abs_src_tag,
+        }
 
         # SSOT: Get max risk score threshold from config - REQUIRED
         max_risk_score = self._get_max_risk_score()
@@ -346,12 +409,14 @@ class RiskManagement:
 
         self.logger.info(
             f"Risk assessment: risk_score={float(risk_score):.4f}, "
-            f"max_allowed={float(max_risk_score):.4f}, trading_allowed={is_trading_allowed}"
+            f"max_allowed={float(max_risk_score):.4f}, trading_allowed={is_trading_allowed} "
+            f"risk_terms={risk_terms}"
         )
 
         return {
             "is_trading_allowed": is_trading_allowed,
             "risk_score": float(risk_score),  # Always numeric, never null
+            "risk_terms": risk_terms,  # PKG-ABSORPTION-RISK-FULL: explainability
             # Note: kelly_fraction and cvar_limit_usd are calculated in DecisionMaking from SSOT
         }
 
@@ -367,7 +432,8 @@ class RiskManagement:
 
         for threshold_name in required_thresholds:
             try:
-                threshold_val = getattr(self.domain_config.trading_allowed_thresholds, threshold_name)
+                threshold_val = getattr(
+                    self.domain_config.trading_allowed_thresholds, threshold_name)
             except AttributeError:
                 threshold_val = None
             if threshold_val is None:
@@ -391,7 +457,8 @@ class RiskManagement:
         total_weight = decimal.Decimal("0")
         for weight_name in required_weights:
             try:
-                weight_val = getattr(self.domain_config.risk_score_weights, weight_name)
+                weight_val = getattr(
+                    self.domain_config.risk_score_weights, weight_name)
             except AttributeError:
                 weight_val = None
             if weight_val is None:
@@ -409,8 +476,10 @@ class RiskManagement:
                         f"Invalid risk weight value for {weight_name}: {value}")
 
         # Check total weight is reasonable (configured range)
-        weight_min = decimal.Decimal(str(self.domain_config.validation.total_weight_min))
-        weight_max = decimal.Decimal(str(self.domain_config.validation.total_weight_max))
+        weight_min = decimal.Decimal(
+            str(self.domain_config.validation.total_weight_min))
+        weight_max = decimal.Decimal(
+            str(self.domain_config.validation.total_weight_max))
         if total_weight < weight_min or total_weight > weight_max:
             warnings.append(
                 f"Total risk weights sum to {float(total_weight):.3f}, expected ~1.0")
@@ -528,10 +597,10 @@ class RiskManagement:
     def _get_risk_score_weights(self):
         """
         Get risk score weights from config. SSOT - no fallbacks.
-        
+
         Returns:
             Config object with delta_price_pct, obi, tfi, absorption_inverse
-            
+
         Raises:
             ConfigContractError: If weights are empty/missing (fail-closed)
         """
@@ -546,10 +615,10 @@ class RiskManagement:
     def _get_max_risk_score(self) -> decimal.Decimal:
         """
         Get max risk score threshold from config. SSOT - no fallbacks.
-        
+
         Returns:
             Decimal threshold value
-            
+
         Raises:
             ConfigContractError: If config is missing required value (fail-closed)
         """
@@ -565,8 +634,8 @@ class RiskManagement:
                 path="domains.risk_management.trading_allowed_thresholds.max_risk_score",
                 why=f"Missing SSOT config: {e}"
             )
-        
-        # FINAL FALLBACK: Fail closed should not be reachable if try/except covers it, 
+
+        # FINAL FALLBACK: Fail closed should not be reachable if try/except covers it,
         # but if structure is wildly different:
         raise ConfigContractError(
             path="domains.risk_management.trading_allowed_thresholds.max_risk_score",

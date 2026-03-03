@@ -2011,6 +2011,11 @@ class RiskScoreWeightsConfig(BaseModel):
     obi: float = Field()
     tfi: float = Field()
     absorption_inverse: float = Field()
+    # PKG-ABSORPTION-RISK-FULL: weight for emitted absorption feature term (default 0.0 = no effect)
+    absorption_feature: float = Field(
+        default=0.0, ge=0.0,
+        description="Weight for emitted absorption feature in risk score. Default 0.0 (no effect).",
+    )
 
 
 class TradingAllowedThresholdsConfig(BaseModel):
@@ -2048,6 +2053,25 @@ class RiskManagementDomainConfig(BaseModel):
         gt=0.0,
         le=1.0,
         description="Cap for delta_price_pct normalization in absorption toxicity penalty (required when use_absorption_penalty=true).",
+    )
+
+    # PKG-ABSORPTION-RISK-FULL: source selector for absorption penalty
+    # "proxy"  → existing toxicity proxy only  (DEFAULT, backward-compatible)
+    # "feature"→ emitted absorption feature only (ignores proxy)
+    # "both"   → proxy toxicity_term + feature_term
+    absorption_penalty_source: Literal["proxy", "feature", "both"] = Field(
+        default="proxy",
+        description='Source for absorption penalty term: proxy (default), feature, or both.',
+    )
+
+    # PKG-ABSORPTION-RISK-FULL: clip range for emitted absorption before weighting
+    absorption_feature_clip_min: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Clip min for emitted |absorption| before applying absorption_feature weight.",
+    )
+    absorption_feature_clip_max: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Clip max for emitted |absorption| before applying absorption_feature weight.",
     )
 
     @model_validator(mode="after")

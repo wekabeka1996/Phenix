@@ -42,7 +42,7 @@ decision_making:
 
   # Flip-orchestration smoothing (reduce churn on marginal reversals)
   flip:
-    enabled: true  # GLOBAL KILLSWITCH: must be true for ANY flip to work. Per-symbol config controls specifics.
+    enabled: false  # GLOBAL KILLSWITCH: set false to disable ALL flip closes (reduce_only DEC:CLOSE). Use TP/SL only.
 
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
@@ -299,7 +299,7 @@ feature_engineering:
   # When enabled, uses aggressive_trade_imbalance as proxy.
   # Has dedup guard: mutes if correlated with TFI (would be redundant signal).
   absorption:
-    mode: proxy                 # disabled | proxy | full
+    mode: full                  # PKG-ABSORPTION-RISK-FULL: enabled (was proxy); disabled | proxy | full
     dp_cap_pct: 0.02            # P0: SSOT delta price cap for conflict-weighted divergence
     # Proxy source: must NOT be 'tfi' (would be absurd)
     proxy:
@@ -321,11 +321,21 @@ risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
   use_absorption_penalty: true
   absorption_dp_cap_pct: 0.02  # SSOT cap for toxicity normalization (used only when use_absorption_penalty=true)
+
+  # PKG-ABSORPTION-RISK-FULL: source selector (proxy=legacy, feature=emitted FE value, both=proxy+feature)
+  # NOTE: no overlay mechanism; this is the single config file. Document: this enables for all runs.
+  absorption_penalty_source: feature  # PKG-ABSORPTION-RISK-FULL: was "proxy" (default)
+
+  # PKG-ABSORPTION-RISK-FULL: clip range applied to |absorption| before weighting
+  absorption_feature_clip_min: 0.0
+  absorption_feature_clip_max: 1.0
+
   risk_score_weights:
     delta_price_pct: 0.1
     obi: 0.3
     tfi: 0.3
     absorption_inverse: 0.3
+    absorption_feature: 0.2  # PKG-ABSORPTION-RISK-FULL: conservative start; 0.0 = default no-op
 
   trading_allowed_thresholds:
     max_risk_score: 0.96  # Increased by 20% to allow more trading

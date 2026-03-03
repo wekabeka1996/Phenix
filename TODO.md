@@ -1,5 +1,14 @@
 # TODO
 
+## PKG-ABSORPTION-RISK-FULL (2026-03-04) ✓ CLOSED
+- [x] Pydantic schema extended: `absorption_penalty_source`, `absorption_feature_clip_min/max`, `absorption_feature` weight.
+- [x] `risk_management.py`: source-routed feature_term + explainability `risk_terms` dict.
+- [x] `domains.yaml`: `absorption.mode=full`, `absorption_penalty_source=feature`, `absorption_feature=0.2`.
+- [x] Tests: 7 new tests + existing proxy fixture pinned for config independence.
+- [x] ConfigLoader validates new keys without extra-field violation.
+- [ ] **Follow-up:** Calibrate `max_risk_score` per symbol via live risk_score distribution at `absorption_feature=0.2`.
+  Run N≥500 events → percentile analysis → adjust per-symbol `max_risk_score` override if tails exceed current 0.96 ceiling.
+
 ## PKG-CALIB-APPLY (2026-03-03)
 - [x] BTCUSDT re-enabled in Aurora (strategies.yaml: aurora assignment).
 - [x] Signal weights calibrated (ridge 70/30) and applied for BTCUSDT + SOLUSDT.

@@ -1,5 +1,25 @@
 # Engineering Journal
 
+## 2026-03-04: PKG-ABSORPTION-RISK-FULL: enable full absorption + optional risk_score wiring
+
+**Mode:** Additive-only. Pydantic strict. TDD. Fail-closed.
+**Scope:** `config_models.py`, `risk_management.py`, `config/aurora/domains.yaml`, new tests.
+
+### What changed
+- `RiskScoreWeightsConfig`: added `absorption_feature: float = 0.0`
+- `RiskManagementDomainConfig`: added `absorption_penalty_source`, `absorption_feature_clip_min/max`
+- `risk_management._calculate_risk_parameters`: source-routed feature_term; `risk_terms` explainability dict
+- `domains.yaml`: `feature_engineering.absorption.mode: full`, `absorption_penalty_source: feature`, `absorption_feature: 0.2`
+- 7 new tests (`test_absorption_feature_risk.py`); existing proxy fixture pinned to `source="proxy"`
+
+### Default path unchanged
+`absorption_penalty_source` defaults to `"proxy"` — zero effect if config not touched.
+
+### Report
+`reports/forensics/2026-03-03_absorption_risk_enable/report.md`
+
+---
+
 ## 2026-03-03: PKG-CALIB-APPLY: weights+regime calibration overlays + enable BTC (testnet)
 
 **Mode:** Additive-only. Config via YAML. Pydantic validated.
