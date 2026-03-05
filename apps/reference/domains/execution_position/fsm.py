@@ -12,6 +12,7 @@ import asyncio
 import logging
 import re
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -78,6 +79,25 @@ except ImportError:
         pass
 
 LOG = logging.getLogger(__name__)
+
+
+@dataclass
+class PendingEntryMeta:
+    """
+    ADVANCED-STALE-CANCEL-01: Metadata for a pending LIMIT entry order.
+    Stored in ExecPosFSM._pending_entry_meta keyed by exchange order_id.
+    Used by the 3-gate advanced stale cancel policy (regime + age + drift).
+    """
+    symbol: str
+    side: str          # "BUY" | "SELL"
+    limit_price: str   # Decimal-string as placed
+    placed_at_ms: int  # epoch milliseconds
+    tf_sec: int        # strategy timeframe that generated this entry
+    # Per-order cancelable regimes derived at placement time:
+    #   (strategy.allowed_regimes ∩ may_cancel_regimes[side]) − never_cancel_regimes
+    # None = allowed_regimes not available at placement → fallback Gate 1 path used.
+    cancelable_regimes: Optional[List[str]] = None
+
 
 if TYPE_CHECKING:
     from apps.reference.config_models import LeverageConfig
@@ -274,6 +294,10 @@ class ExecPosFSM:
         self._last_regime_by_symbol: Dict[str, str] = {}
         self._bracket_health_started: bool = False
 
+        # ADVANCED-STALE-CANCEL-01: features cache and order metadata
+        self._last_features_cache: Dict[str, Dict] = {}       # symbol → latest FEATURES_CALCULATED at basis_tf
+        self._pending_entry_meta: Dict[str, PendingEntryMeta] = {}  # order_id → entry metadata
+
         # PHASE4: Rehydrate pending brackets from WAL on startup
         try:
             restored = read_pending_brackets_from_wal()
@@ -365,6 +389,8 @@ class ExecPosFSM:
                         self._on_trade_intent_proposed)
         self.bus.listen("EVT:TRADE_INTENT_REJECTED",
                         self._on_trade_intent_rejected)
+        # ADVANCED-STALE-CANCEL-01: Cache features for drift-gate calculation
+        self.bus.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
 
         # Async loop used for guardian and adapter operations (set later)
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -1023,8 +1049,10 @@ class ExecPosFSM:
             return False, ""
         if result.reason == "PRE_CHECK_TERMINAL_FILLED":
             return True, "fill_discovered_terminal"
-        was_partial = str(result.order_status_before or "").upper() == "PARTIALLY_FILLED"
-        became_canceled = str(result.order_status_after or "").upper() in ("CANCELED", "CANCELLED")
+        was_partial = str(
+            result.order_status_before or "").upper() == "PARTIALLY_FILLED"
+        became_canceled = str(result.order_status_after or "").upper() in (
+            "CANCELED", "CANCELLED")
         if was_partial and became_canceled:
             return True, "fill_discovered_partial_cancel"
         return False, ""
@@ -1126,7 +1154,8 @@ class ExecPosFSM:
             **payload,
             "ts_ms": get_clock().now_ms(),
         }
-        self._emit_observability_event("FILLED_ENTRY_WITHOUT_BRACKETS", payload)
+        self._emit_observability_event(
+            "FILLED_ENTRY_WITHOUT_BRACKETS", payload)
         LOG.error(
             f"[BRACKET-GUARD] FILLED_ENTRY_WITHOUT_BRACKETS {symbol} parent={parent_order_id} "
             f"missing={'+'.join(missing) if missing else 'UNKNOWN'} why={payload['why']}"
@@ -1155,7 +1184,8 @@ class ExecPosFSM:
                 symbol=bracket_data.get("symbol", symbol),
             )
         except Exception as wal_err:
-            LOG.warning(f"Failed to clear pending brackets from WAL: {wal_err}")
+            LOG.warning(
+                f"Failed to clear pending brackets from WAL: {wal_err}")
 
         LOG.info(
             f"[{source}] Placing deferred TP/SL brackets for {symbol} entry {order_id}"
@@ -1195,7 +1225,8 @@ class ExecPosFSM:
                     if isinstance(fetched_order, dict):
                         order_data = fetched_order
             except Exception as fetch_err:
-                LOG.debug(f"[{why}] get_order fallback failed for {order_id}: {fetch_err}")
+                LOG.debug(
+                    f"[{why}] get_order fallback failed for {order_id}: {fetch_err}")
 
         exec_qty = float(dget(order_data, "executedQty", 0) or 0)
         if exec_qty <= 0:
@@ -1266,6 +1297,7 @@ class ExecPosFSM:
         symbol: str,
         reason: str,
         context: str = "",
+        filter_order_ids: Optional[Set[str]] = None,
     ) -> None:
         """
         EP-01.3-INT: Cancel pending entry orders for a symbol.
@@ -1277,6 +1309,8 @@ class ExecPosFSM:
             symbol: Symbol to cancel pending entries for
             reason: Cancel reason code (e.g., CANCEL_STALE_REGIME, CANCEL_SUPERSEDED)
             context: Additional context for logging
+            filter_order_ids: ADVANCED-STALE-CANCEL-01: if set, only cancel these
+                              specific order_ids (per-order granularity). None = cancel all.
         """
         if not self.watchdog:
             return
@@ -1286,12 +1320,14 @@ class ExecPosFSM:
         # Check pending_orders (not yet ACKed)
         for order_id, deadline in list(self.watchdog.pending_orders.items()):
             if deadline.symbol == symbol:
-                orders_to_cancel.append((order_id, deadline))
+                if filter_order_ids is None or order_id in filter_order_ids:
+                    orders_to_cancel.append((order_id, deadline))
 
         # Check acked_orders (ACKed but not yet filled)
         for order_id, deadline in list(self.watchdog.acked_orders.items()):
             if deadline.symbol == symbol:
-                orders_to_cancel.append((order_id, deadline))
+                if filter_order_ids is None or order_id in filter_order_ids:
+                    orders_to_cancel.append((order_id, deadline))
 
         if not orders_to_cancel:
             LOG.debug(
@@ -1320,7 +1356,8 @@ class ExecPosFSM:
                             )
                             return
 
-                        fill_discovered, fill_mode = self._is_fill_discovered_cancel_result(res)
+                        fill_discovered, fill_mode = self._is_fill_discovered_cancel_result(
+                            res)
                         if fill_discovered:
                             clear_reason = (
                                 "cancel_partial_fill_discovered"
@@ -1360,8 +1397,10 @@ class ExecPosFSM:
                                 sym, source="cancel_fill_discovered")
                             return
 
-                        LOG.info(f"EP-01.3: Cancelled pending entry {oid} ({reason})")
+                        LOG.info(
+                            f"EP-01.3: Cancelled pending entry {oid} ({reason})")
                         self.watchdog.on_order_cancel(oid)
+                        self._pending_entry_meta.pop(oid, None)  # ADVANCED-STALE-CANCEL-01
                         order_logger.write({
                             "rid": dl.rid,
                             "event_type": "ORDER_CANCELLED",
@@ -1371,20 +1410,24 @@ class ExecPosFSM:
                             "context": context,
                             "timestamp": get_clock().now_ms()
                         })
-                        self._schedule_supersede_drain(sym, source="cancel_success")
+                        self._schedule_supersede_drain(
+                            sym, source="cancel_success")
                     except Exception as e:
                         if self._is_unknown_order_error(e):
                             LOG.info(
                                 f"EP-01.3: Pending entry {oid} already absent (-2011)")
                             self.watchdog.on_order_cancel(oid)
+                            self._pending_entry_meta.pop(oid, None)  # ADVANCED-STALE-CANCEL-01
                         else:
                             LOG.warning(
                                 f"EP-01.3: Failed to cancel pending entry {oid}: {e}")
 
-                self._submit_async(_do_cancel(order_id, symbol, deadline), loop)
+                self._submit_async(_do_cancel(
+                    order_id, symbol, deadline), loop)
             else:
                 # Just remove from tracking (shadow mode or no adapter)
                 self.watchdog.on_order_cancel(order_id)
+                self._pending_entry_meta.pop(order_id, None)  # ADVANCED-STALE-CANCEL-01
 
     def _cancel_all_pending_entries(self, reason: str = "CANCEL_PANIC_KILL") -> None:
         """
@@ -1479,14 +1522,16 @@ class ExecPosFSM:
         # EP-01.3 P0: fail-closed live position check before replayed OPEN.
         # If a position already exists (fill-race), drop queued supersede open.
         if not self.adapter:
-            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[
+                :80]
             LOG.warning(why)
             return
 
         try:
             positions = await self.adapter.get_open_positions(symbol)
         except Exception:
-            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[
+                :80]
             LOG.warning(why)
             return
 
@@ -1515,12 +1560,14 @@ class ExecPosFSM:
                     has_open_position = True
                     break
         except Exception:
-            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[:80]
+            why = f"EP-01.3 supersede aborted: position check unavailable {symbol}"[
+                :80]
             LOG.warning(why)
             return
 
         if has_open_position:
-            why = f"EP-01.3 supersede aborted: position already open {symbol}"[:80]
+            why = f"EP-01.3 supersede aborted: position already open {symbol}"[
+                :80]
             LOG.warning(why)
             return
 
@@ -1549,8 +1596,181 @@ class ExecPosFSM:
             finally:
                 self._supersede_drain_scheduled.discard(symbol)
 
-        LOG.info(f"EP-01.3: scheduling supersede drain for {symbol} ({source})")
+        LOG.info(
+            f"EP-01.3: scheduling supersede drain for {symbol} ({source})")
         self._submit_async(_drain_once(), loop)
+
+    def _on_features_calculated(self, event: Message) -> None:
+        """
+        ADVANCED-STALE-CANCEL-01: Cache latest features for drift-gate calculation.
+
+        Only caches events at basis_tf_sec to avoid tick-level noise.
+        fail-closed: missing symbol/tf_sec → skip without error.
+        """
+        pld = event.pld or {}
+        symbol = pld.get("symbol")
+        tf_sec = pld.get("tf_sec")
+        if not symbol or tf_sec is None:
+            return
+        try:
+            basis_tf = int(self.config.basis_tf_sec)
+        except AttributeError:
+            basis_tf = 300  # safe fallback
+        if tf_sec != basis_tf:
+            return  # ignore non-basis timeframes
+        self._last_features_cache[symbol] = pld
+
+    def _evaluate_advanced_stale_cancel(
+        self,
+        symbol: str,
+        new_regime: str,
+    ) -> None:
+        """
+        ADVANCED-STALE-CANCEL-01: Cancel pending entries only when ALL 3 gates pass.
+
+        Gate 1 — Regime gate:  new_regime in meta.cancelable_regimes
+                               (derived at placement: allowed_regimes ∩ may_cancel[side] − never_cancel)
+                               Fallback if cancelable_regimes is None: may_cancel_regimes[side] − never_cancel
+        Gate 2 — Age gate:     order age >= min_age_before_cancel_sec
+        Gate 3 — Drift gate:   |current_price - limit_price| >= atr_mult * atr_14
+
+        fail-closed: missing features cache or order metadata → do NOT cancel.
+        Per-order granularity: only orders that pass ALL 3 gates are cancelled.
+        """
+        try:
+            pe_cfg = self.config.domains.execution_position.pending_entry_ttl
+            adv = pe_cfg.advanced_stale_cancel
+        except AttributeError:
+            return
+        if adv is None or not adv.enabled:
+            return
+
+        # Collect candidate orders (pending + acked) for this symbol
+        candidates: List[Tuple[str, Any]] = []
+        if self.watchdog:
+            for oid, dl in list(self.watchdog.pending_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+            for oid, dl in list(self.watchdog.acked_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+
+        if not candidates:
+            return
+
+        now_ms = get_clock().now_ms()
+        features_snap = self._last_features_cache.get(symbol)
+        approved_order_ids: Set[str] = set()
+
+        for order_id, _deadline in candidates:
+            meta = self._pending_entry_meta.get(order_id)
+
+            # --- Gate 1: Regime gate ---
+            # Path A: per-order cancelable_regimes (derived from allowed_regimes at placement)
+            # Path B: fallback — may_cancel_regimes[side] − never_cancel (no allowed_regimes)
+            if meta is None:
+                # fail-closed: no metadata → do not cancel
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate1 SKIP "
+                    f"(no meta → fail-closed, keeping order)"
+                )
+                continue
+            if meta.cancelable_regimes is not None:
+                # Path A: per-order, strategy-aware
+                if new_regime not in meta.cancelable_regimes:
+                    LOG.debug(
+                        f"[ADV-CANCEL] {symbol}/{order_id}: gate1 BLOCK "
+                        f"(regime={new_regime!r} not in cancelable_regimes={meta.cancelable_regimes})"
+                    )
+                    continue
+            else:
+                # Path B: fallback — allowed_regimes not in payload at placement time
+                _side_may = set(getattr(adv, 'may_cancel_regimes', {}).get(meta.side, []))
+                _never = set(getattr(adv, 'never_cancel_regimes', ["UNCERTAIN"]))
+                _effective = _side_may - _never
+                if new_regime not in _effective:
+                    LOG.debug(
+                        f"[ADV-CANCEL] {symbol}/{order_id}: gate1 BLOCK (fallback) "
+                        f"(regime={new_regime!r} not in effective={_effective})"
+                    )
+                    continue
+
+            # --- Gate 2: Age gate ---
+            if meta is None:
+                # No metadata → fail-closed: do not cancel
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate2 SKIP "
+                    f"(no meta → fail-closed, keeping order)"
+                )
+                continue
+            age_ms = now_ms - meta.placed_at_ms
+            min_age_ms = adv.min_age_before_cancel_sec * 1000
+            if age_ms < min_age_ms:
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate2 BLOCK "
+                    f"(age={age_ms}ms < {min_age_ms}ms)"
+                )
+                continue
+
+            # --- Gate 3: Drift gate ---
+            if features_snap is None:
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate3 SKIP "
+                    f"(no features cache → fail-closed, keeping order)"
+                )
+                continue
+            feats = features_snap.get("features", {})
+            price_raw = feats.get("price")
+            atr_raw = feats.get("atr_14")
+            if price_raw is None or atr_raw is None:
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate3 SKIP "
+                    f"(price or atr_14 missing → fail-closed)"
+                )
+                continue
+            try:
+                current_price = Decimal(str(price_raw))
+                atr_14 = Decimal(str(atr_raw))
+                limit_p = Decimal(str(meta.limit_price))
+            except Exception:
+                continue
+            if atr_14 <= 0:
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate3 SKIP "
+                    f"(atr_14 <= 0)"
+                )
+                continue
+
+            threshold = atr_14 * Decimal(str(adv.drift_away.atr_mult))
+            # "Opportunity passed": price moved away from limit in the non-fill direction.
+            # BUY limit: price went UP past limit (retrace opportunity gone).
+            # SELL limit: price went DOWN past limit (rally opportunity gone).
+            if meta.side == "BUY":
+                drift = current_price - limit_p
+            else:
+                drift = limit_p - current_price
+
+            if drift < threshold:
+                LOG.debug(
+                    f"[ADV-CANCEL] {symbol}/{order_id}: gate3 BLOCK "
+                    f"(drift={float(drift):.4f} < threshold={float(threshold):.4f})"
+                )
+                continue
+
+            # All 3 gates passed → mark for cancel
+            LOG.info(
+                f"[ADV-CANCEL] {symbol}/{order_id}: ALL GATES PASSED "
+                f"(regime={new_regime!r}, age={age_ms}ms, drift={float(drift):.4f})"
+            )
+            approved_order_ids.add(order_id)
+
+        if approved_order_ids:
+            self._cancel_pending_entries_for_symbol(
+                symbol=symbol,
+                reason="CANCEL_STALE_REGIME_ADVANCED",
+                context=f"regime={new_regime} approved={approved_order_ids}",
+                filter_order_ids=approved_order_ids,
+            )
 
     def _on_regime_detected(self, event: Message) -> None:
         """
@@ -1587,11 +1807,20 @@ class ExecPosFSM:
         try:
             pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
             if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_regime_change and symbol:
-                self._cancel_pending_entries_for_symbol(
-                    symbol=symbol,
-                    reason="CANCEL_STALE_REGIME",
-                    context=f"regime_changed_to_{regime_str}"
-                )
+                adv = pe_ttl_cfg.advanced_stale_cancel
+                if adv is not None and adv.enabled:
+                    # ADVANCED-STALE-CANCEL-01: evidence-gated 3-gate cancel
+                    self._evaluate_advanced_stale_cancel(
+                        symbol=symbol,
+                        new_regime=regime_str,
+                    )
+                else:
+                    # Legacy: unconditional cancel on any regime flip
+                    self._cancel_pending_entries_for_symbol(
+                        symbol=symbol,
+                        reason="CANCEL_STALE_REGIME",
+                        context=f"regime_changed_to_{regime_str}"
+                    )
         except AttributeError:
             pass  # Config not loaded
 
@@ -1954,7 +2183,8 @@ class ExecPosFSM:
                     current_amts[sym] = 0.0
 
             epsilon = 1e-10
-            all_syms = set(self._prev_position_amts.keys()) | set(current_amts.keys())
+            all_syms = set(self._prev_position_amts.keys()
+                           ) | set(current_amts.keys())
             closed_symbols: List[Tuple[str, float, float]] = []
             for sym in all_syms:
                 prev_amt = float(self._prev_position_amts.get(sym, 0.0))
@@ -1962,7 +2192,8 @@ class ExecPosFSM:
                 if abs(prev_amt) >= epsilon and abs(now_amt) < epsilon:
                     closed_symbols.append((sym, prev_amt, now_amt))
 
-            current_realized_pnl_raw = self._latest_portfolio_state.get("realized_pnl")
+            current_realized_pnl_raw = self._latest_portfolio_state.get(
+                "realized_pnl")
             try:
                 current_realized_pnl = float(current_realized_pnl_raw)
             except Exception:
@@ -1981,7 +2212,8 @@ class ExecPosFSM:
                 fees_total = float(fees_total_raw)
             except Exception:
                 fees_total = 0.0
-            fees_per_close = (fees_total / closes_count) if closes_count > 0 else 0.0
+            fees_per_close = (
+                fees_total / closes_count) if closes_count > 0 else 0.0
 
             if closes_count > 1 and abs(realized_delta_total) > 0.0:
                 LOG.warning(
@@ -2076,7 +2308,8 @@ class ExecPosFSM:
                             event.data_ref,
                         )
                     except Exception as ex:
-                        LOG.error(f"Failed to emit EVT:POSITION_CLOSED via bus fallback: {ex}")
+                        LOG.error(
+                            f"Failed to emit EVT:POSITION_CLOSED via bus fallback: {ex}")
 
                 # Position closed - trigger immediate orphan cleanup for this symbol
                 if hasattr(self, "order_guardian") and self.order_guardian:
@@ -2208,6 +2441,7 @@ class ExecPosFSM:
         try:
             if hasattr(self, "watchdog") and self.watchdog is not None:
                 self.watchdog.on_order_fill(order_id)
+                self._pending_entry_meta.pop(order_id, None)  # ADVANCED-STALE-CANCEL-01
         except Exception as e:
             LOG.warning(
                 f"[FILL] Failed to notify watchdog for {order_id}: {e}")
@@ -2963,7 +3197,8 @@ class ExecPosFSM:
                     else "TP" if str(order_type).upper() == "TAKE_PROFIT_MARKET"
                     else None
                 )
-                bracket_slot = self._extract_bracket_slot(bracket_kind, client_id)
+                bracket_slot = self._extract_bracket_slot(
+                    bracket_kind, client_id)
                 placement_succeeded = False
 
                 LOG.info(
@@ -3074,7 +3309,8 @@ class ExecPosFSM:
                                         order_id=order_id,
                                         client_order_id=str(client_id),
                                         kind=bracket_kind,
-                                        corr_id=getattr(decision, "corr_id", None),
+                                        corr_id=getattr(
+                                            decision, "corr_id", None),
                                         rid=getattr(decision, "rid", None),
                                     )
                                 except Exception as reg_err:
@@ -3089,7 +3325,8 @@ class ExecPosFSM:
                                 }
                                 current_sl = brackets.get("sl_order_id")
                                 current_tp = brackets.get("tp_order_id")
-                                manage_flow.set_bracket_ids(current_sl, current_tp)
+                                manage_flow.set_bracket_ids(
+                                    current_sl, current_tp)
 
                     except Exception as e:
                         LOG.error(f"❌ PLACE_ORDER failed: {e}")
@@ -3773,6 +4010,44 @@ class ExecPosFSM:
                 rid=decision.rid,
                 fill_ttl_override_ms=valid_for_ms,  # EP-01.3-INT
             )
+            # ADVANCED-STALE-CANCEL-01: Record metadata for drift-gate calculation.
+            # Only relevant for LIMIT entries (MARKET entries fill immediately).
+            if order_type == "LIMIT" and price is not None:
+                try:
+                    _tf_sec = int(
+                        (decision.pld or {}).get("tf_sec")
+                        or (decision.pld or {}).get("timeframe_sec")
+                        or 0
+                    )
+                    # Derive per-order cancelable_regimes from payload's allowed_regimes.
+                    # cancelable = (allowed_regimes ∩ may_cancel[side]) − never_cancel
+                    # None if allowed_regimes not in payload → Gate 1 fallback path used.
+                    _cancelable: Optional[List[str]] = None
+                    try:
+                        _allowed = (decision.pld or {}).get("allowed_regimes")
+                        if _allowed:
+                            _pe_cfg = self.config.domains.execution_position.pending_entry_ttl
+                            _adv = _pe_cfg.advanced_stale_cancel
+                            if _adv is not None and _adv.enabled:
+                                _order_side = str(side).upper()
+                                _may = set(getattr(_adv, 'may_cancel_regimes', {}).get(_order_side, []))
+                                _never = set(getattr(_adv, 'never_cancel_regimes', ["UNCERTAIN"]))
+                                _cancelable = list((set(_allowed) & _may) - _never)
+                    except Exception:
+                        pass  # fail-open: cancelable_regimes=None → Gate 1 fallback
+                    self._pending_entry_meta[entry_order_id] = PendingEntryMeta(
+                        symbol=symbol,
+                        side=str(side).upper(),
+                        limit_price=str(price),
+                        placed_at_ms=get_clock().now_ms(),
+                        tf_sec=_tf_sec,
+                        cancelable_regimes=_cancelable,
+                    )
+                except Exception as _meta_err:
+                    LOG.debug(
+                        f"[ADV-CANCEL] Failed to record PendingEntryMeta for "
+                        f"{entry_order_id}: {_meta_err}"
+                    )
 
             # Log to OrderLoggerV1
             # TASK50: Added qty normalization context for forensics
@@ -4366,7 +4641,8 @@ class ExecPosFSM:
 
                 # ✅ NEW: Verify cancel status from exchange response
                 if self._is_cancel_success_response(cancel_result):
-                    _is_fill_discovered, _fill_mode = self._is_fill_discovered_cancel_result(cancel_result)
+                    _is_fill_discovered, _fill_mode = self._is_fill_discovered_cancel_result(
+                        cancel_result)
 
                     if _is_fill_discovered:
                         if _fill_mode == "fill_discovered_partial_cancel":
@@ -4774,7 +5050,8 @@ class ExecPosFSM:
                             "symbol", "") if bracket_data else "",
                     )
                 except Exception as e:
-                    LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+                    LOG.warning(
+                        f"Failed to clear pending brackets from WAL: {e}")
 
                 LOG.info(
                     f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id_key}"
@@ -5130,7 +5407,8 @@ class ExecPosFSM:
                     )
                     self._symbol_brackets.setdefault(
                         symbol, {})["sl_order_id"] = sl_order_id
-                    self._mark_bracket_placement_success(symbol, str(entry_order_id), "SL")
+                    self._mark_bracket_placement_success(
+                        symbol, str(entry_order_id), "SL")
                     sl_succeeded = True
                 except Exception as e:
                     sl_outcome = f"FAILED:{type(e).__name__}"
@@ -5138,7 +5416,8 @@ class ExecPosFSM:
                         f"[LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
             finally:
                 if not sl_succeeded:
-                    self._release_bracket_placement_claim(symbol, str(entry_order_id), "SL")
+                    self._release_bracket_placement_claim(
+                        symbol, str(entry_order_id), "SL")
         else:
             sl_outcome = "SKIPPED_DEDUP"
 
@@ -5239,7 +5518,8 @@ class ExecPosFSM:
 
         # Fail-closed guardrail: never silently claim protection on partial brackets.
         try:
-            brackets = self.order_guardian.get_brackets_for_entry(entry_order_id) or {}
+            brackets = self.order_guardian.get_brackets_for_entry(
+                entry_order_id) or {}
         except Exception:
             brackets = {}
         has_sl = bool(sl_resp) or bool(brackets.get("sl"))
@@ -5264,6 +5544,7 @@ class ExecPosFSM:
             f"[LIMIT-DEFERRED] Brackets placed for {symbol}: "
             f"SL={'OK' if has_sl else 'FAILED'}, TP={'OK' if has_tp else 'FAILED'}"
         )
+
     async def _cleanup_loop(self) -> None:
         """Periodic orphaned-order cleanup loop (interval from config)."""
         while True:
@@ -5719,7 +6000,8 @@ class ExecPosFSM:
             if self.adapter and self._pending_brackets:
                 restored_count = 0
                 for entry_order_id in list(self._pending_brackets.keys()):
-                    bracket_data = self._pending_brackets.get(entry_order_id) or {}
+                    bracket_data = self._pending_brackets.get(
+                        entry_order_id) or {}
                     symbol = str(bracket_data.get("symbol") or "")
                     if not symbol:
                         continue
@@ -5734,7 +6016,8 @@ class ExecPosFSM:
                         continue
 
                     status = str(
-                        dget(order_snapshot if isinstance(order_snapshot, dict) else {}, "status", "")
+                        dget(order_snapshot if isinstance(
+                            order_snapshot, dict) else {}, "status", "")
                     ).upper()
                     if status != "FILLED":
                         continue

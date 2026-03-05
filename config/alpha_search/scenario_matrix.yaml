@@ -14,8 +14,8 @@
 #   - Tuned S01/S03/S05 (aurora) + S15 (ensemble) thresholds/weights
 # ==============================================================================
 
-matrix_id: v4_full_20260225
-version: 4
+matrix_id: v5_1_aurora_path_fix_20260304
+version: 6
 
 runtime:
   max_scenarios: 12
@@ -35,7 +35,7 @@ hot_reload:
   rollback_on_error: true
 
 input:
-  source_mode: live_tail
+  source_mode: live_tail       # live_tail = concurrent with main.py (FeatureMirrorWriter appends, standalone tails)
   stream_path: logs/alpha_input/alpha_input_v1.jsonl
 
 scenarios:
@@ -44,26 +44,30 @@ scenarios:
   # AURORA FAMILY (S01, S03, S05, S06, S20) - 5 scenarios
   # ============================================================================
 
-  - scenario_id: S01_AURORA_BASELINE
+  - scenario_id: S01_MR_RSI_HEAVY
+    # Repurposed from S01_AURORA_BASELINE (Aurora overrides were dead — identical to S03/05/06/20).
+    # 4th MR variant: RSI-signal-weight dominant (0.55) vs S13 BB-dominant (0.60).
+    # Distinct axes: S11=balanced, S12=RSI-threshold-narrow, S13=BB-weight, S01=RSI-weight.
     enabled: true
-    strategy_type: aurora
+    strategy_type: mean_reversion
     config_mode: override
     base_refs:
-      aurora: config/aurora/strategies/aurora.yaml
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
       alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
     overrides:
-      alpha_search.providers.aurora.adapter.base_threshold: 0.12
-      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.40
-      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.35
-      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.35
-      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
-      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.05
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.85
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.85
-      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 1.80
-      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
+      alpha_search_system.mean_reversion.weights.rsi: 0.55
+      alpha_search_system.mean_reversion.weights.bb: 0.25
+      alpha_search_system.mean_reversion.weights.sma: 0.10
+      alpha_search_system.mean_reversion.weights.stoch: 0.10
+      alpha_search_system.mean_reversion.rsi.oversold: 28
+      alpha_search_system.mean_reversion.rsi.overbought: 72
+      alpha_search.providers.aurora.threshold: 0.16
 
-  - scenario_id: S03_AURORA_CONSERVATIVE
+  - scenario_id: S03_AURORA_15M_APPROX
+    # Approximates 15m-bar behavior on 5m input stream.
+    # EMA_bias(0.35) + TFI(0.28) + macro_resid(0.22) dominate — trend and macro signals.
+    # FIX: use aurora.decision.* paths (read by _inject_aurora_params, not alpha_search.adapter.*)
     enabled: true
     strategy_type: aurora
     config_mode: override
@@ -71,19 +75,27 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      alpha_search.providers.aurora.adapter.base_threshold: 0.12
-      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.42
-      alpha_search.providers.aurora.adapter.signal_weights.delta_price: 0.15
-      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.38
-      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.55
-      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.95
-      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.10
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.80
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.80
-      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.20
-      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
+      aurora.decision.signal_threshold: 0.16
+      aurora.decision.signal_weights.obi: 0.18
+      aurora.decision.signal_weights.tfi: 0.28
+      aurora.decision.signal_weights.delta_price: 0.12
+      aurora.decision.signal_weights.ema_bias: 0.35
+      aurora.decision.signal_weights.depth_imbalance: -0.08
+      aurora.decision.signal_weights.macro_resid: 0.22
+      aurora.decision.signal_weights.volume_spike: 0.15
+      aurora.decision.signal_weights.volatility_state: 0.15
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.78
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.78
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.25
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.60
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.88
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
-  - scenario_id: S05_AURORA_MY_BEST
+  - scenario_id: S05_AURORA_MACRO_RESIDUAL
+    # macro_resid DOMINANT (0.38): bets on coin-specific alpha — move NOT explained by BTC macro.
+    # UNCERTAIN threshold=0.85 (below 1.0): macro anomalies valid in any regime.
+    # FIX: use aurora.decision.* paths.
     enabled: true
     strategy_type: aurora
     config_mode: override
@@ -91,19 +103,27 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      alpha_search.providers.aurora.adapter.base_threshold: 0.11
-      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.50
-      alpha_search.providers.aurora.adapter.signal_weights.delta_price: 0.15
-      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.40
-      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.60
-      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
-      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.20
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.75
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.75
-      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.50
-      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
+      aurora.decision.signal_threshold: 0.11
+      aurora.decision.signal_weights.obi: 0.25
+      aurora.decision.signal_weights.tfi: 0.12
+      aurora.decision.signal_weights.delta_price: 0.12
+      aurora.decision.signal_weights.ema_bias: 0.18
+      aurora.decision.signal_weights.depth_imbalance: -0.12
+      aurora.decision.signal_weights.macro_resid: 0.38
+      aurora.decision.signal_weights.volume_spike: 0.12
+      aurora.decision.signal_weights.volatility_state: 0.10
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.30
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 0.85
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
-  - scenario_id: S06_AURORA_LOW_THRESHOLD
+  - scenario_id: S06_AURORA_ETH_CALIBRATED
+    # Weights = ETH calibrated profile (Optuna ridge 70/30).
+    # depth_imbalance=-0.26 (ASK pressure→SELL), macro_resid=0.25, ema_bias=0.20.
+    # FIX: use aurora.decision.* paths.
     enabled: true
     strategy_type: aurora
     config_mode: override
@@ -111,16 +131,27 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      alpha_search.providers.aurora.adapter.base_threshold: 0.11
-      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.40
-      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
-      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.05
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.85
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.85
-      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.00
-      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
+      aurora.decision.signal_threshold: 0.10
+      aurora.decision.signal_weights.obi: 0.19
+      aurora.decision.signal_weights.tfi: 0.09
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.ema_bias: 0.20
+      aurora.decision.signal_weights.depth_imbalance: -0.26
+      aurora.decision.signal_weights.macro_resid: 0.25
+      aurora.decision.signal_weights.volume_spike: 0.20
+      aurora.decision.signal_weights.volatility_state: 0.04
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.35
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.85
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.88
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.88
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.80
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
-  - scenario_id: S20_AURORA_OBI_VERY_HEAVY
+  - scenario_id: S20_AURORA_MICROSTRUCTURE_DEPTH
+    # OBI(0.48) + depth_imbalance(-0.32): order book dominant.
+    # HIGH_VOL multiplier=0.90 (lower threshold → more signals during vol spikes).
+    # FIX: use aurora.decision.* paths.
     enabled: true
     strategy_type: aurora
     config_mode: override
@@ -128,16 +159,22 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      alpha_search.providers.aurora.adapter.base_threshold: 0.13
-      alpha_search.providers.aurora.adapter.signal_weights.obi: 0.45
-      alpha_search.providers.aurora.adapter.feature_neutrals.obi: 0.40
-      alpha_search.providers.aurora.adapter.regime_thresholds.HIGH_VOLATILITY: 1.45
-      alpha_search.providers.aurora.adapter.regime_thresholds.LOW_VOLATILITY: 0.90
-      alpha_search.providers.aurora.adapter.regime_thresholds.MEAN_REVERSION: 1.10
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_UP: 0.80
-      alpha_search.providers.aurora.adapter.regime_thresholds.TREND_DOWN: 0.80
-      alpha_search.providers.aurora.adapter.regime_thresholds.UNCERTAIN: 2.20
-      alpha_search.providers.aurora.adapter.regime_thresholds.DEFAULT: 1.00
+      aurora.decision.signal_threshold: 0.11
+      aurora.decision.signal_weights.obi: 0.48
+      aurora.decision.signal_weights.tfi: 0.15
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.ema_bias: 0.10
+      aurora.decision.signal_weights.depth_imbalance: -0.32
+      aurora.decision.signal_weights.macro_resid: 0.05
+      aurora.decision.signal_weights.volume_spike: 0.22
+      aurora.decision.signal_weights.volatility_state: 0.12
+      aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 0.90
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 1.20
+      aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.82
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.82
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+      aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   # ============================================================================
   # MEAN REVERSION FAMILY (S11, S12, S13) - 3 scenarios (unchanged)

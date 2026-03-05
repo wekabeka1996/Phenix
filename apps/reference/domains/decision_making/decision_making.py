@@ -430,6 +430,66 @@ class DecisionMaking:
             return default
         return d if d.is_finite() else default
 
+    def _validate_md_amr_trace(self, trace: Any) -> tuple[bool, Dict[str, Any]]:
+        """Validate md_amr trace block for WAL policy REJECT_TRADE."""
+        required = ["dir_score", "thr_buy", "thr_sell", "w_raw",
+                    "w_norm", "qty_base", "qty_new", "conf_ratio"]
+        if not isinstance(trace, dict):
+            return False, {"error": "trace_not_dict", "required": required}
+
+        missing = [k for k in required if k not in trace]
+        if missing:
+            return False, {"error": "missing_keys", "missing": missing}
+
+        def _num(v: Any) -> Optional[float]:
+            try:
+                d = Decimal(str(v))
+            except Exception:
+                return None
+            if not d.is_finite():
+                return None
+            return float(d)
+
+        w_required = ["d1", "h1", "m30", "m15"]
+        normalized: Dict[str, Any] = {}
+        for key in ("w_raw", "w_norm"):
+            w = trace.get(key)
+            if not isinstance(w, dict):
+                return False, {"error": f"{key}_not_dict"}
+            missing_w = [k for k in w_required if k not in w]
+            if missing_w:
+                return False, {"error": f"{key}_missing", "missing": missing_w}
+            w_normed: Dict[str, float] = {}
+            for wk in w_required:
+                val = _num(w.get(wk))
+                if val is None:
+                    return False, {"error": f"{key}_{wk}_invalid"}
+                w_normed[wk] = float(val)
+            normalized[key] = w_normed
+
+        scalar_fields = ["dir_score", "thr_buy",
+                         "thr_sell", "qty_base", "qty_new", "conf_ratio"]
+        for k in scalar_fields:
+            val = _num(trace.get(k))
+            if val is None:
+                return False, {"error": f"{k}_invalid"}
+            normalized[k] = float(val)
+
+        if not (-1.0 <= normalized["dir_score"] <= 1.0):
+            return False, {"error": "dir_score_out_of_range", "value": normalized["dir_score"]}
+        if normalized["thr_buy"] <= 0.0 or normalized["thr_sell"] <= 0.0:
+            return False, {"error": "threshold_non_positive"}
+        if normalized["qty_base"] < 0.0 or normalized["qty_new"] < 0.0:
+            return False, {"error": "qty_negative"}
+        if not (0.0 <= normalized["conf_ratio"] <= 2.0):
+            return False, {"error": "conf_ratio_out_of_range", "value": normalized["conf_ratio"]}
+
+        for optional_key in ("atr_zscore", "bias", "dir_components"):
+            if optional_key in trace:
+                normalized[optional_key] = trace.get(optional_key)
+
+        return True, {"normalized": normalized}
+
     def _on_strategy_signal_gateway(self, event: Message) -> None:
         """
         Gateway for strategy signals: apply universal gates before emitting TRADE_INTENT_PROPOSED.
@@ -473,6 +533,45 @@ class DecisionMaking:
                 self.logger.warning(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: invalid side={side!r}")
                 return
+
+            strategy_id_s = str(strategy_id)
+            intent_kind = str(pld.get("intent_kind") or "ENTRY").upper()
+            md_amr_trace_norm: Optional[Dict[str, Any]] = None
+
+            if strategy_id_s == "md_amr":
+                valid_trace, trace_info = self._validate_md_amr_trace(
+                    pld.get("trace"))
+                if not valid_trace:
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=str(rid),
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_trace_invalid",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["wal_trace_invalid"],
+                        details=trace_info,
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                md_amr_trace_norm = trace_info.get("normalized")
+                if intent_kind not in ("ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE"):
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=str(rid),
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context=f"strategy_signal_gateway:md_amr_invalid_intent_kind:{intent_kind}",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["invalid_intent_kind"],
+                        details={"intent_kind": intent_kind},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
 
             self.logger.info(
                 f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Processing {side} signal rid={rid} strategy_id={strategy_id}")
@@ -545,6 +644,112 @@ class DecisionMaking:
                         "arbitration_reason": arbitration_result.get("reason")},
                 )
                 self._record_blocked_intent(symbol)
+                return
+
+            if strategy_id_s == "md_amr" and intent_kind in ("FULL_CLOSE", "PARTIAL_CLOSE"):
+                exit_reason = str(pld.get("exit_reason_code") or "MD_AMR_EXIT")
+                strategy_trace_payload = {
+                    "md_amr": md_amr_trace_norm} if md_amr_trace_norm else None
+                if intent_kind == "FULL_CLOSE":
+                    emitted = self._emit_reduce_only_close(
+                        symbol=symbol,
+                        reason=exit_reason,
+                        rid=str(rid),
+                        strategy_id=str(strategy_id_s),
+                        strategy_trace=strategy_trace_payload,
+                    )
+                    if not emitted:
+                        self._emit_trade_intent_rejected(
+                            symbol=symbol,
+                            strategy_id=str(strategy_id_s),
+                            side=side,
+                            rid=str(rid),
+                            reason_code="NO_POSITION_FOR_CLOSE",
+                            reason="DECISION",
+                            context="strategy_signal_gateway:md_amr_full_close_no_position",
+                            why_chain=(why_chain if isinstance(
+                                why_chain, list) else []) + [exit_reason],
+                        )
+                        self._record_blocked_intent(symbol)
+                    return
+
+                qty_signed, _curr = self._get_portfolio_position_qty_signed(
+                    symbol)
+                if qty_signed is None or abs(qty_signed) < Decimal("1e-9"):
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id_s),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="NO_POSITION_FOR_SCALEOUT",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_no_position",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + [exit_reason],
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                scaleout_fraction_raw = pld.get("scaleout_fraction")
+                try:
+                    scaleout_fraction = float(scaleout_fraction_raw)
+                except Exception:
+                    scaleout_fraction = 0.0
+                if not (0.0 < scaleout_fraction <= 1.0):
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id_s),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_invalid_fraction",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["invalid_scaleout_fraction"],
+                        details={"scaleout_fraction": scaleout_fraction_raw},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                close_side = "SELL" if qty_signed > 0 else "BUY"
+                close_qty = abs(qty_signed) * Decimal(str(scaleout_fraction))
+                if close_qty <= Decimal("1e-9"):
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id_s),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="NO_POSITION_FOR_SCALEOUT",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_zero_qty",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + [exit_reason],
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                ts_ms = pld.get("ts_ms")
+                if ts_ms in (None, 0, "0", ""):
+                    timestamp_ms = self._clock.now_ms()
+                else:
+                    timestamp_ms = int(ts_ms)
+                    if 0 < timestamp_ms < 1_000_000_000_000:
+                        timestamp_ms *= 1000
+
+                why_chain_close = (why_chain if isinstance(why_chain, list) else [
+                ]) + [exit_reason, "md_amr_partial_close"]
+                self._propose_trade_intent(
+                    symbol=symbol,
+                    side=close_side,
+                    qty=decimal.Decimal(str(close_qty)),
+                    price=decimal.Decimal("0"),
+                    why_chain=why_chain_close,
+                    rid=str(rid),
+                    reduce_only=True,
+                    strategy_id=str(strategy_id_s),
+                    decision_ts_ms=timestamp_ms,
+                    strategy_trace=strategy_trace_payload,
+                )
                 return
 
             # Risk-skew limiter escalation state (Commit 5):
@@ -974,6 +1179,15 @@ class DecisionMaking:
                 self._record_blocked_intent(symbol)
                 return
 
+            llm_order = pld.get("order") if isinstance(
+                pld.get("order"), dict) else {}
+            llm_order_type: str | None = None
+            llm_order_tif: str | None = None
+            if strategy_id_s == "llm_microstructure":
+                llm_order_type = str(llm_order.get("type") or "LIMIT").upper()
+                llm_order_tif = str(llm_order.get(
+                    "time_in_force") or "GTC").upper()
+
             sizing_ctx = {
                 "portfolio": self.latest_portfolio,
                 "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
@@ -1001,27 +1215,52 @@ class DecisionMaking:
                 except Exception:
                     margin_pct_mult = None
             # === END Aurora Regime Sizing ===
-            try:
-                qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
-                    symbol, entry_price_dec, side, sizing_ctx, margin_pct_mult=margin_pct_mult
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Sizing error: {e}", exc_info=True)
-                self._emit_trade_intent_rejected(
-                    symbol=symbol,
-                    strategy_id=str(strategy_id),
-                    side=side,
-                    rid=str(rid),
-                    reason_code="SIZING_ERROR",
-                    reason="DECISION",
-                    context=f"strategy_signal_gateway:sizing_exception:{type(e).__name__}",
-                    why_chain=(why_chain if isinstance(
-                        why_chain, list) else []) + ["sizing_exception"],
-                    details={"error": str(e)},
-                )
-                self._record_blocked_intent(symbol)
-                return
+            if strategy_id_s == "llm_microstructure":
+                qty_raw = llm_order.get("qty")
+                try:
+                    qty_dec = decimal.Decimal(str(qty_raw))
+                    if qty_dec <= decimal.Decimal("0"):
+                        raise ValueError("qty must be > 0")
+                    why_sizing = "llm_qty_passthrough"
+                    sizing_reject_reason = None
+                    _sizing_dbg = {"mode": "llm_qty_passthrough"}
+                except Exception:
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="INVALID_LLM_QTY",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:llm_qty_invalid",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["llm_qty_invalid"],
+                        details={"qty": qty_raw},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+            else:
+                try:
+                    qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
+                        symbol, entry_price_dec, side, sizing_ctx, margin_pct_mult=margin_pct_mult
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Sizing error: {e}", exc_info=True)
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="SIZING_ERROR",
+                        reason="DECISION",
+                        context=f"strategy_signal_gateway:sizing_exception:{type(e).__name__}",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["sizing_exception"],
+                        details={"error": str(e)},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
             if qty_dec is None:
                 self.logger.warning(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - "
@@ -1308,6 +1547,10 @@ class DecisionMaking:
                 max_slippage_bps=max_slippage_bps,
                 max_latency_ms=max_latency_ms,
                 risk_score=risk_score_val,
+                strategy_trace={
+                    "md_amr": md_amr_trace_norm} if md_amr_trace_norm is not None else None,
+                entry_order_type_override=llm_order_type if strategy_id_s == "llm_microstructure" else None,
+                entry_tif_override=llm_order_tif if strategy_id_s == "llm_microstructure" else None,
             )
 
             # Update QoS state for successful decision only if QoS is enabled for this strategy.
@@ -1609,7 +1852,8 @@ class DecisionMaking:
             delta_price_cap_pct = decimal.Decimal(
                 str(signals_cfg.delta_price_cap_pct)
             ) if signals_cfg and signals_cfg.delta_price_cap_pct else decimal.Decimal("0.005")
-            normalize_mode = str(getattr(signals_cfg, "normalize_signals_mode", "signed_v2"))
+            normalize_mode = str(
+                getattr(signals_cfg, "normalize_signals_mode", "signed_v2"))
 
             # Call kernel
             kernel_result = AuroraScoringKernel.compute(
@@ -1750,6 +1994,42 @@ class DecisionMaking:
             - allowed (bool): Whether strategy can proceed
             - reason (str): If blocked, why (≤80 chars)
         """
+        symbol_u = str(symbol).upper()
+        strategy_u = str(strategy_id)
+
+        # External LLM strategy has dedicated orchestration policy and does not require
+        # registry assignment/priority rank to pass arbitration.
+        if strategy_u == "llm_microstructure":
+            llm_cfg = getattr(getattr(self.config, "trading",
+                              None), "llm_orchestration", None)
+            mode = str(getattr(llm_cfg, "mode", "baseline")).lower()
+            llm_symbols = [str(s).upper() for s in (
+                getattr(llm_cfg, "symbols_llm", []) or [])]
+            allow = [str(s).upper()
+                     for s in (getattr(llm_cfg, "allowlist_symbols", []) or [])]
+            require_telemetry = bool(
+                getattr(llm_cfg, "require_telemetry", False))
+
+            if mode == "baseline":
+                return {"allowed": False, "reason": "ARBITRATION_REJECT:llm_mode_baseline"}
+            if llm_symbols and symbol_u not in llm_symbols:
+                return {"allowed": False, "reason": "ARBITRATION_REJECT:llm_symbol_not_owned"}
+            if allow and symbol_u not in allow:
+                return {"allowed": False, "reason": "ARBITRATION_REJECT:llm_symbol_not_allowlisted"}
+            if require_telemetry:
+                shadow_cfg = getattr(
+                    getattr(self.config, "domains", None), "shadow_telemetry", None)
+                if not (shadow_cfg and bool(getattr(shadow_cfg, "enabled", False))):
+                    return {"allowed": False, "reason": "ARBITRATION_REJECT:llm_telemetry_required"}
+            return {"allowed": True, "reason": ""}
+
+        llm_cfg = getattr(getattr(self.config, "trading",
+                          None), "llm_orchestration", None)
+        llm_symbols = [str(s).upper()
+                       for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
+        if llm_symbols and symbol_u in llm_symbols:
+            return {"allowed": False, "reason": "ARBITRATION_REJECT:symbol_owned_by_llm"}
+
         # If no strategies registry, allow (backward compat)
         if not self.strategies_registry:
             return {"allowed": True, "reason": ""}
@@ -2493,12 +2773,12 @@ class DecisionMaking:
             reason = ""
 
             # Regime Logic: STRICT enforcement
-            if regime == "BULL_TREND" and not is_long:
+            if regime == "TREND_UP" and not is_long:
                 should_close = True
-                reason = f"Short position in BULL_TREND"
-            elif regime == "BEAR_TREND" and is_long:
+                reason = f"Short position in TREND_UP"
+            elif regime == "TREND_DOWN" and is_long:
                 should_close = True
-                reason = f"Long position in BEAR_TREND"
+                reason = f"Long position in TREND_DOWN"
             elif regime == "UNCERTAIN":
                 should_close = True
                 reason = f"Position in UNCERTAIN regime"
@@ -2517,7 +2797,8 @@ class DecisionMaking:
                 # Emit intent
                 why_chain = ["regime_flip_enforcement", regime]
                 rid = f"rf-{int(self._clock.now_sec())}"
-                strategy_id = regime_data.get("strategy_id", "aurora") if isinstance(regime_data, dict) else "aurora"
+                strategy_id = regime_data.get("strategy_id", "aurora") if isinstance(
+                    regime_data, dict) else "aurora"
 
                 self._propose_trade_intent(
                     symbol=symbol,
@@ -2860,6 +3141,9 @@ class DecisionMaking:
         max_slippage_bps: int | None = None,
         max_latency_ms: int | None = None,
         risk_score: float | None = None,
+        strategy_trace: dict | None = None,
+        entry_order_type_override: str | None = None,
+        entry_tif_override: str | None = None,
     ) -> Optional[Dict[str, Any]]:
         # DM-SAFETY-BYPASSES-P1: Config-based safety gates (no hardcoded strategy_id checks).
         # Directional/price-motion sanity are designed for trend-following entry safety.
@@ -3334,20 +3618,30 @@ class DecisionMaking:
         exec_cfg = None
         try:
             strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
-            exec_cfg = getattr(strat_cfg, "execution", None) if strat_cfg is not None else None
+            exec_cfg = getattr(strat_cfg, "execution",
+                               None) if strat_cfg is not None else None
             if reduce_only:
                 # EP-H2-SAFE-EXIT-DEGRADE:
                 # Reduce-only close uses dedicated exit policy with fail-safe MARKET default.
-                order_type = getattr(exec_cfg, "exit_order_type", None) if exec_cfg is not None else None
-                tif = getattr(exec_cfg, "exit_tif", None) if exec_cfg is not None else None
+                order_type = getattr(
+                    exec_cfg, "exit_order_type", None) if exec_cfg is not None else None
+                tif = getattr(exec_cfg, "exit_tif",
+                              None) if exec_cfg is not None else None
                 if not order_type:
                     order_type = "MARKET"
             else:
-                order_type = getattr(exec_cfg, "entry_order_type", None) if exec_cfg is not None else None
-                tif = getattr(exec_cfg, "entry_tif", None) if exec_cfg is not None else None
+                order_type = getattr(
+                    exec_cfg, "entry_order_type", None) if exec_cfg is not None else None
+                tif = getattr(exec_cfg, "entry_tif",
+                              None) if exec_cfg is not None else None
         except Exception:
             order_type = None
             tif = None
+
+        if not reduce_only and entry_order_type_override:
+            order_type = str(entry_order_type_override).upper()
+        if not reduce_only and entry_tif_override:
+            tif = str(entry_tif_override).upper()
 
         if not order_type:
             self._emit_trade_intent_rejected(
@@ -3395,7 +3689,8 @@ class DecisionMaking:
                     reason_code=NormalizedRejectReasons.UNSUPPORTED_ORDER_TYPE,
                     reason="DECISION",
                     context=f"ORDER-POLICY-01: unsupported order_type={order_type_u}",
-                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    why_chain=(why_chain if isinstance(
+                        why_chain, list) else []),
                     details={"order_type": order_type_u,
                              "supported": sorted(supported_types)},
                 )
@@ -3473,7 +3768,8 @@ class DecisionMaking:
         valid_for_ms: int | None = None
         if order_type_u == "LIMIT":
             if reduce_only:
-                exit_limit_ttl_ms = getattr(exec_cfg, "exit_limit_ttl_ms", None) if exec_cfg is not None else None
+                exit_limit_ttl_ms = getattr(
+                    exec_cfg, "exit_limit_ttl_ms", None) if exec_cfg is not None else None
                 if exit_limit_ttl_ms is not None:
                     valid_for_ms = int(exit_limit_ttl_ms)
                 else:
@@ -3621,6 +3917,8 @@ class DecisionMaking:
             "target_price": target_price_payload,
             "entry_plan": entry_plan_trace,
         }
+        if isinstance(strategy_trace, dict) and strategy_trace:
+            trade_intent["trace"] = strategy_trace
         if str(strategy_id) == "aurora":
             trade_intent["normalize_mode_effective"] = "signed_v2"
 
@@ -3841,7 +4139,15 @@ class DecisionMaking:
 
         return False
 
-    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str, *, strategy_id: str) -> bool:
+    def _emit_reduce_only_close(
+        self,
+        symbol: str,
+        reason: str,
+        rid: str,
+        *,
+        strategy_id: str,
+        strategy_trace: dict | None = None,
+    ) -> bool:
         """Emit immediate reduce-only close intent for Flip Orchestration.
 
         IMPORTANT: Use the originating strategy_id for registry arbitration.
@@ -3885,6 +4191,7 @@ class DecisionMaking:
             rid=rid,
             reduce_only=True,
             strategy_id=str(strategy_id),
+            strategy_trace=strategy_trace,
         )
         return intent is not None
 
@@ -4092,7 +4399,8 @@ class DecisionMaking:
                 context=str(context),
                 why_chain=list(why_chain or []),
                 details=details,
-                normalize_mode_effective="signed_v2" if str(strategy_id) == "aurora" else None,
+                normalize_mode_effective="signed_v2" if str(
+                    strategy_id) == "aurora" else None,
                 src="decision_making",
                 ts_ms=ts_ms,
             )

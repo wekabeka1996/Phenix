@@ -20,7 +20,7 @@ decision_making:
     entry_k_atr: 0.3  # Entry offset = 0.3 * ATR from ref price
     sl_k_atr: 1.5  # Stop-loss = 1.5 * ATR distance
     tp_k_atr: 2.0  # Take-profit = 2.0 * ATR distance
-    obi_weight: 0.1       # <--- ГОЛОВНЕ: Зменшення впливу (0.3 → 0.1)
+    obi_weight: 0.18       # <--- ГОЛОВНЕ: Зменшення впливу (0.3 → 0.1)
     obi_mod_clamp_min: 0.8  # Anti-taker drift: min multiplier
     obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
     require_atr: true     # Fail-closed
@@ -38,11 +38,11 @@ decision_making:
     mode: enforce
     enforce: true
     # Apply QoS only for Aurora strategy; MeanReversion uses its own cadence and should not be blocked here.
-    apply_to_strategies: ["aurora"]
+    apply_to_strategies: ["aurora", "md_amr"]
 
   # Flip-orchestration smoothing (reduce churn on marginal reversals)
   flip:
-    enabled: false  # GLOBAL KILLSWITCH: set false to disable ALL flip closes (reduce_only DEC:CLOSE). Use TP/SL only.
+    enabled: true  # GLOBAL KILLSWITCH: set false to disable ALL flip closes (reduce_only DEC:CLOSE). Use TP/SL only.
 
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
@@ -117,6 +117,9 @@ feature_engineering:
   enable_new_metrics: true
   volume_input_mode: integrate
   enabled_timeframes_sec: [180, 300, 900]
+  legacy_features_log:
+    mode: full
+    sample_every_n: 10
 
   ema:
     period_short: 1 # was 3
@@ -436,6 +439,26 @@ execution_position:
     cancel_on_panic: true
     # DET-BT-13: Timeout (seconds) to wait for supersede cancel confirmation (STRICT SSOT)
     supersede_cancel_timeout_sec: 5.0
+    # ADVANCED-STALE-CANCEL-01: evidence-based cancel policy
+    # Overrides the unconditional cancel_on_regime_change path when enabled: true.
+    # Three gates must ALL pass: regime gate + age gate + drift gate.
+    # fail-closed: missing features cache or order meta → do NOT cancel.
+    advanced_stale_cancel:
+      enabled: true
+      min_age_before_cancel_sec: 300      # 5 min — never cancel freshly placed orders
+      drift_away:
+        mode: "atr"
+        atr_mult: 0.5                     # 0.5 × atr_14 drift from limit_price
+      # Per-side: regimes that MAY cancel this side's pending entry,
+      # subject to also being in the strategy's allowed_regimes.
+      # cancelable_regimes(order) = (allowed_regimes ∩ may_cancel_regimes[side]) − never_cancel_regimes
+      # Pure mean-reversion symbols whose allowed_regimes excludes TREND_DOWN will
+      # never be cancelled by a TREND_DOWN event.
+      may_cancel_regimes:
+        BUY:  ["TREND_DOWN"]              # BUY entries: adverse regime = downtrend
+        SELL: ["TREND_UP"]               # SELL entries: adverse regime = uptrend
+      # Regimes that NEVER cancel, regardless of allowed_regimes or may_cancel_regimes.
+      never_cancel_regimes: ["UNCERTAIN", "MEAN_REVERSION", "LOW_VOLATILITY"]
 
   # EP-01.4-INT-B: Maker-only (post-only) entry orders
   # When enabled, LIMIT entry orders use tif="GTX" (post-only)
@@ -537,3 +560,58 @@ execution_position:
     enabled: false
     windows: []
     # Example: windows: ["22:00-06:00", "12:00-13:00"]
+
+shadow_telemetry:
+  enabled: true
+  required_for_mode: false
+  ingest:
+    source: ipc_tap
+    ipc_endpoint: "tcp://127.0.0.1:7101"
+    allowlist_events:
+      - EVT:BAR_CLOSED
+      - EVT:FEATURES_CALCULATED
+      - EVT:RISK_ASSESSMENT_COMPLETED
+      - EVT:REGIME_DETECTED
+      - EVT:STRATEGY_SIGNAL_PRODUCED
+      - EVT:TRADE_INTENT_PROPOSED
+      - EVT:TRADE_INTENT_REJECTED
+      - EVT:INTENT_DEFERRED
+      - EVT:DECISION_BLOCKED
+      - EVT:STRATEGY_DECISION_BLOCKED
+      - EVT:ORDER_PLACED
+      - EVT:ORDER_REJECTED
+      - EVT:ORDER_STATE_CHANGED
+      - EVT:TRADE_EXECUTED
+      - EVT:POSITION_CLOSED
+      - EVT:LLM_INTENT_RECEIVED_V1
+      - EVT:LLM_INTENT_REJECTED_V1
+      - EVT:LLM_INTENT_ACCEPTED_V1
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  api:
+    enabled: true
+    host: "127.0.0.1"
+    port: 8443
+    tls: false
+    auth_mode: bearer
+    write:
+      enabled: true
+      intents_endpoint: "/intents/llm/v1"
+      rate_limit_per_min: 30
+      max_body_kb: 64
+      symbol_allowlist: ["BNBUSDT"]
+      require_snapshot_ref: true
+      idempotency_ttl_sec: 300
+      consequential: true
+  egress_to_main:
+    mode: ipc
+    ipc_commands_endpoint: "tcp://127.0.0.1:7102"
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  snapshot:
+    trigger_event: EVT:FEATURES_CALCULATED
+    tf_policy:
+      bar_snapshots_enabled: true
+      tick_snapshots_mode: sampled
+      tick_sample_every_n: 20
+      min_tf_sec_for_full: 60

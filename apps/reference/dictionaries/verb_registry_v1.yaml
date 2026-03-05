@@ -18,6 +18,12 @@ registry:
   status: active
   schema: apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json
   since: '2026-01-11'
+- op: CMD
+  verb: LLM_INTENT_SUBMIT_V1
+  owner: shadow_telemetry
+  status: active
+  schema: null
+  since: '2026-03-04'
 - op: DEC
   verb: ADJUST
   owner: execution_position
@@ -133,6 +139,12 @@ registry:
   schema: apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json
   since: '2026-01-08'
 - op: EVT
+  verb: FEATURE_DEFER_EXPIRED
+  owner: decision_making
+  status: experimental
+  schema: apps/reference/domains/decision_making/schemas/feature_defer_expired_v1.json
+  since: '2026-03-04'
+- op: EVT
   verb: FILL
   owner: unknown
   status: experimental
@@ -150,6 +162,24 @@ registry:
   status: active
   schema: schemas/intent_deferred_v1.json
   since: '2026-01-08'
+- op: EVT
+  verb: LLM_INTENT_ACCEPTED_V1
+  owner: shadow_telemetry
+  status: active
+  schema: null
+  since: '2026-03-04'
+- op: EVT
+  verb: LLM_INTENT_RECEIVED_V1
+  owner: shadow_telemetry
+  status: active
+  schema: null
+  since: '2026-03-04'
+- op: EVT
+  verb: LLM_INTENT_REJECTED_V1
+  owner: shadow_telemetry
+  status: active
+  schema: null
+  since: '2026-03-04'
 - op: EVT
   verb: INTENT_DROPPED
   owner: unknown
@@ -310,7 +340,7 @@ registry:
   verb: STRATEGY_SIGNAL_PRODUCED
   owner: decision_making
   status: active
-  schema: null
+  schema: apps/reference/domains/decision_making/schemas/strategy_signal_produced_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: SYMBOL_TIDY

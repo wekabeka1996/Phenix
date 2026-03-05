@@ -19,7 +19,8 @@ mean_reversion:
   # Timeframe for bar aggregation
   # FIX-BACKTEST-TF: Changed from 180 (3m) to 300 (5m) to match BacktestEngine.
   # BacktestEngine emits 5m bars, so MR strategy receiving 3m bars was rejecting everything.
-  timeframe_sec: 180  # 3-minute bars
+  timeframe_sec: 180
+    # 3-minute bars
 
   # Global allowed regimes whitelist (default; can be overridden per-asset)
   allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
@@ -99,8 +100,8 @@ mean_reversion:
         mode: "ISOLATED"
 
       strategy:
-        bb_window: 20
-        bb_num_std: 2.1
+        bb_window: 40
+        bb_num_std: 2.5
         min_bb_width: 0.005  # (min_vol_atr from report)
         entry_threshold: 0.05
         # Exit parameters

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "strategy_signal_produced_v1.json",
+  "title": "Strategy Signal Produced Event",
+  "description": "Schema for EVT:STRATEGY_SIGNAL_PRODUCED payload emitted by strategy handlers.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "strategy_id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "tf_sec": { "type": "integer" },
+    "side": { "type": "string", "enum": ["BUY", "SELL", "buy", "sell"] },
+    "intent_kind": { "type": "string", "enum": ["ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE"] },
+    "exit_reason_code": { "type": ["string", "null"] },
+    "scaleout_fraction": { "type": ["number", "null"] },
+    "score": { "type": "number" },
+    "ts_ms": { "type": "integer" },
+    "rid": { "type": "string" },
+    "why": { "type": "string" },
+    "why_chain": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "readiness": {
+      "type": "object",
+      "properties": {
+        "warmup_ok": { "type": "boolean" }
+      }
+    },
+    "price_ctx": { "type": "object" },
+    "volatility": { "type": ["object", "null"] },
+    "liquidity": { "type": ["object", "null"] },
+    "dir_score": { "type": ["number", "null"] },
+    "channel_state": { "type": ["object", "null"] },
+    "trace": { "type": ["object", "null"] }
+  },
+  "required": ["strategy_id", "symbol", "side", "ts_ms", "rid"]
+}

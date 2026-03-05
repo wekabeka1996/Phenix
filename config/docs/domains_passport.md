@@ -2144,7 +2144,7 @@
 - **Code Reference:** apps/reference/domains/risk_management/risk_management.py:240 (func: _calculate_risk_parameters)
 - **Mathematical/Architectural Role:**
     > Weight in linear risk score (RiskManagement):
-    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + (1-absorption)*w_abs_inv`
+    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + toxicity_term`
     > Then clamped to `[0,1]` and compared to `domains.risk_management.trading_allowed_thresholds.max_risk_score`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Higher ⇒ absorption_inverse contributes more to risk_score ⇒ більше блоків.
@@ -2159,7 +2159,7 @@
 - **Code Reference:** apps/reference/domains/risk_management/risk_management.py:240 (func: _calculate_risk_parameters)
 - **Mathematical/Architectural Role:**
     > Weight in linear risk score (RiskManagement):
-    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + (1-absorption)*w_abs_inv`
+    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + toxicity_term`
     > Then clamped to `[0,1]` and compared to `domains.risk_management.trading_allowed_thresholds.max_risk_score`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Higher ⇒ delta_price_pct contributes more to risk_score ⇒ більше блоків.
@@ -2174,7 +2174,7 @@
 - **Code Reference:** apps/reference/domains/risk_management/risk_management.py:240 (func: _calculate_risk_parameters)
 - **Mathematical/Architectural Role:**
     > Weight in linear risk score (RiskManagement):
-    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + (1-absorption)*w_abs_inv`
+    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + toxicity_term`
     > Then clamped to `[0,1]` and compared to `domains.risk_management.trading_allowed_thresholds.max_risk_score`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Higher ⇒ obi contributes more to risk_score ⇒ більше блоків.
@@ -2189,7 +2189,7 @@
 - **Code Reference:** apps/reference/domains/risk_management/risk_management.py:240 (func: _calculate_risk_parameters)
 - **Mathematical/Architectural Role:**
     > Weight in linear risk score (RiskManagement):
-    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + (1-absorption)*w_abs_inv`
+    > `risk_score = delta_price_pct*w_delta + abs(obi)*w_obi + abs(tfi)*w_tfi + toxicity_term`
     > Then clamped to `[0,1]` and compared to `domains.risk_management.trading_allowed_thresholds.max_risk_score`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Higher ⇒ tfi contributes more to risk_score ⇒ більше блоків.

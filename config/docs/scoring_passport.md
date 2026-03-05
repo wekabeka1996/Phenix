@@ -53,15 +53,9 @@
 
 ### 1.2 Розподіл символів по стратегіях (SSOT: strategies.yaml)
 
-| Символ    | Aurora | Mean Reversion |
-|-----------|--------|----------------|
-| BTCUSDT   | ❌ off | ❌ off         |
-| ETHUSDT   | ❌ off | ❌ off         |
-| SOLUSDT   | ✅ on  | ❌ off         |
-| DOGEUSDT  | ❌ off | ✅ on          |
-| XRPUSDT   | ❌ off | ❌ off         |
+Стратегії розподіляються по символах через список `assignments` у файлі `strategies.yaml`. Кожен символ може бути підключений до однієї або декількох стратегій (наприклад, `aurora`, `mean_reversion`), або не мати активних стратегій взагалі.
 
-> ⚠️ **Критично:** BTCUSDT та ETHUSDT та XRPUSDT мають порожні assignments `[]` — вони взагалі не торгують. Лише SOLUSDT (Aurora) та DOGEUSDT (MR) активні.
+> **Контракт:** Якщо символ не вказаний в `assignments` для конкретної стратегії, система повністю ігнорує розрахунок сигналів цієї стратегії для даного символу.
 
 ---
 
@@ -76,7 +70,7 @@ FE: FeatureEngineering
        ▼
 RiskManagement
   ├─ [L1] DailyGate.can_open() → drawdown/loss check
-  │       Gate: daily_drawdown_pct <= 10.0 (зараз ВИМКНЕНО)
+  │       Gate: daily_drawdown_pct <= max_drawdown_pct
   ├─ [L2] risk_score computation ──────────────────────────────────┐
   │       Formula (детально в розділі 5)                           │
   │       Gate: risk_score <= 0.96                                 │
@@ -310,14 +304,14 @@ FLAT класифікація:
 **Файл:** `apps/reference/domains/risk_management/daily_gate.py`
 
 ```
-Заблокує ALL торгівлю якщо:
-  daily_drawdown_pct >= max_drawdown_pct (10.0%)
-  OR daily_realized_loss >= max_realized_loss_usd ($250)
+Заблокує ALL торгівлю якщо (за умови що гейти увімкнено):
+  daily_drawdown_pct >= max_drawdown_pct
+  OR daily_realized_loss >= max_realized_loss_usd
 
 Reset: щодня о 00:00 UTC
 ```
 
-**Поточний стан:** `disable_daily_loss_limit=true` (вимкнено)
+**Керування станом:** `disable_daily_loss_limit` (дозволяє вимкнути ліміт втрат).
 
 ### 5.2 L2: Instrument Risk Score
 
@@ -327,11 +321,12 @@ Reset: щодня о 00:00 UTC
 
 ```
 delta_price_pct = |delta_price| / price              (нормалізована зміна ціни)
+toxicity = |tfi| * clip(delta_price_pct / absorption_dp_cap_pct, 0, 1)
 
 risk_score = delta_price_pct × w_dp
            + |obi|            × w_obi
            + |tfi|            × w_tfi
-           + (1 - absorption) × w_abs    [тільки якщо use_absorption_penalty=True]
+           + toxicity         × w_abs_inv    [тільки якщо use_absorption_penalty=True]
 
 risk_score = clamp(risk_score, 0, 1)
 ```
@@ -343,20 +338,16 @@ risk_score = clamp(risk_score, 0, 1)
 | `delta_price_pct`   | 0.10  | `risk_score_weights.delta_price_pct`|
 | `|obi|`             | 0.30  | `risk_score_weights.obi`            |
 | `|tfi|`             | 0.30  | `risk_score_weights.tfi`            |
-| `(1-absorption)`    | 0.30  | `risk_score_weights.absorption_inverse` |
-| **Разом**           | **1.00** (без absorption: 0.70) |
-
-> ⚠️ `use_absorption_penalty = false` → absorption_inverse_weight = 0
-> При цьому решта ваг НЕ перерахована: wabs = 0.70 (не 1.0)
+| `toxicity`          | 0.30  | `risk_score_weights.absorption_inverse` |
+| **Разом**           | **1.00** |
 
 #### Поріг:
 ```
-is_trading_allowed = risk_score <= max_risk_score (0.96)
+is_trading_allowed = risk_score <= max_risk_score
 ```
 
 #### Інтерпретація:
-При відключеному absorption максимальний score = 0.70 (якщо OBI=TFI=1.0, delta_price=100%).
-Тобто поріг 0.96 фактично **ніколи не досягається** при поточній конфігурації.
+Ризик розраховується на основі нормалізованих значень `obi`, `tfi`, зміни ціни `delta_price_pct` та метрики токсичності `toxicity`. Вага `absorption_inverse` використовується як множник для метрики токсичності потоку ордерів. Торгівля дозволяється, якщо сумарний ризик-скор не перевищує налаштований поріг `max_risk_score`.
 
 ---
 
@@ -429,7 +420,7 @@ risk_score_weights:
   delta_price_pct: 0.10
   obi: 0.30
   tfi: 0.30
-  absorption_inverse: 0.30   # ВИМКНЕНО (use_absorption_penalty=false)
+  absorption_inverse: 0.30   # Використовується, якщо use_absorption_penalty=true
 
 max_risk_score: 0.96         # Поріг дозволу торгівлі
 ```
@@ -545,30 +536,24 @@ vol_slope_gate_eps: -0.0035  # Slope gate
 
 **КРИТИЧНІ:**
 
-1. **Неузгоджені ваги в risk_score**: `use_absorption_penalty=false` виключає absorption але НЕ перераховує wabs. Реальна сума ваг = 0.70, а не 1.0. Risk score систематично занижений.
-
-2. **regime_thresholds vs regime_threshold_multipliers**: В aurora.yaml є ДВА різних набори:
+1. **regime_thresholds vs regime_threshold_multipliers**: В aurora.yaml є ДВА різних набори:
    - `decision.regime_threshold_multipliers` (множники до base 0.162)
    - `decision.regime_thresholds` (абсолютні порогові значення 99.0 = блок)
    Це може призводити до неочевидної поведінки та плутанини.
 
-3. **Стратегічні прогалини**: BTCUSDT, ETHUSDT, XRPUSDT мають `assignments: []` — вони взагалі не мають активних стратегій. Це, скоріш за все, кроковий стан конфігурації.
-
-4. **DOGEUSDT MR блок**: Поточний режим DOGEUSDT = LOW_VOLATILITY, але MR allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]. LOW_VOLATILITY ≠ FLAT → сигнали блоковані на рівні режиму навіть після відключення drawdown ліміту.
-
 **СЕРЕДНІ:**
 
-5. **macro_sync deprecated але listed**: Фіча в directional_features з вагою 0 (deprecated) і прокоментована. Краще видалити з конфігу щоб не плутати.
+2. **macro_sync deprecated але listed**: Фіча в directional_features з вагою 0 (deprecated) і прокоментована. Краще видалити з конфігу щоб не плутати.
 
-6. **debug print у production**: У `risk_management.py` є `print(f"DEBUG: ...")` в production коді (рядки 132-133). Це не має бути у production бранчі.
+3. **debug print у production**: У `risk_management.py` є `print(f"DEBUG: ...")` в production коді (рядки 132-133). Це не має бути у production бранчі.
 
-7. **Side bias target_ratio = 0.72**: Асиметричний target (72% для однієї сторони mean 28% для другої). Нелогічно в симетричному ринку без directional bias.
+4. **Side bias target_ratio = 0.72**: Асиметричний target (72% для однієї сторони mean 28% для другої). Нелогічно в симетричному ринку без directional bias.
 
 **НЕЗНАЧНІ:**
 
-8. `_on_bar_closed_data_only` — порожній метод (pass). Або прибрати або документувати чому.
+5. `_on_bar_closed_data_only` — порожній метод (pass). Або прибрати або документувати чому.
 
-9. Сигнали для неактивних символів (score > threshold але не emit) кидають попередження "ARBITRATION: symbol not in registry". Краще early-exit.
+6. Сигнали для неактивних символів (score > threshold але не emit) кидають попередження "ARBITRATION: symbol not in registry". Краще early-exit.
 
 ---
 
@@ -645,21 +630,6 @@ f  = 0.167 × 0.8 = 0.133   (13.3% Fractional Kelly)
 
 Це стандартне консервативне fractional Kelly. Математично коректно.
 
-### 9.4 Risk Score — оцінка адекватності
-
-**При поточних налаштуваннях** (`use_absorption_penalty=false`):
-
-```
-risk_score_max = 1.0 × 0.10 + 1.0 × 0.30 + 1.0 × 0.30 = 0.70
-
-Граница блоку: risk_score > 0.96
-
-→ risk_score ніколи не досягне 0.96 при поточних вагах!
-→ Risk gate L2 фактично ЗАВЖДИ ПРОПУСКАЄ.
-```
-
-**Висновок:** Risk gate є неефективним при `use_absorption_penalty=false`. Поріг 0.96 потрібно знизити до ≤ 0.60 або увімкнути absorption.
-
 ---
 
 ## 10. КОРОТКИЙ ПІДСУМОК
@@ -669,18 +639,6 @@ risk_score_max = 1.0 × 0.10 + 1.0 × 0.30 + 1.0 × 0.30 = 0.70
 - Fail-closed поведінка скрізь
 - Зрозуміла explainability chain
 - Гарна модульність (pure kernel)
-
-### Що не працює або субоптимально:
-1. **BTCUSDT/ETHUSDT/XRPUSDT не торгують** (порожні assignments)
-2. **DOGEUSDT MR заблоковано режимом** (LOW_VOLATILITY не в allowed_regimes)
-3. **Risk score gate фактично вимкнений** (max реальний score 0.70 < поріг 0.96)
-4. **Асиметричні ваги** absorption викидається без перерахунку
-
-### Рекомендовані пріоритети:
-1. Додати LOW_VOLATILITY до MR allowed_regimes для DOGEUSDT (або очікувати зміни режиму)
-2. Перевірити assignments у strategies.yaml — додати потрібні символи
-3. Знизити `max_risk_score` до 0.55-0.65 або увімкнути absorption penalty
-4. Видалити debug print з production коду
 
 ---
 

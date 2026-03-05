@@ -221,6 +221,65 @@
       ],
       "description": "EP-01.2-INT: EntryPlan computation trace. Null if EntryPlan not used."
     },
+    "trace": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "md_amr": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "dir_score": { "type": "number" },
+                "thr_buy": { "type": "number" },
+                "thr_sell": { "type": "number" },
+                "w_raw": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "d1": { "type": "number" },
+                    "h1": { "type": "number" },
+                    "m30": { "type": "number" },
+                    "m15": { "type": "number" }
+                  },
+                  "required": ["d1", "h1", "m30", "m15"]
+                },
+                "w_norm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "d1": { "type": "number" },
+                    "h1": { "type": "number" },
+                    "m30": { "type": "number" },
+                    "m15": { "type": "number" }
+                  },
+                  "required": ["d1", "h1", "m30", "m15"]
+                },
+                "qty_base": { "type": "number" },
+                "qty_new": { "type": "number" },
+                "conf_ratio": { "type": "number" }
+              },
+              "required": [
+                "dir_score",
+                "thr_buy",
+                "thr_sell",
+                "w_raw",
+                "w_norm",
+                "qty_base",
+                "qty_new",
+                "conf_ratio"
+              ]
+            }
+          },
+          "required": ["md_amr"]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional strategy trace block used for WAL validation (md_amr)."
+    },
     "valid_for_ms": {
       "anyOf": [
         {

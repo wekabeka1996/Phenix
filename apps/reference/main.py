@@ -44,7 +44,13 @@ from apps.reference.domains.market_data.bar_aggregator import BarAggregator  # B
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
+from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+from apps.reference.domains.shadow_telemetry.main_bridge import (
+    LLMIntentIngressBridge,
+    ShadowEventTapPublisher,
+    register_llm_command_mapper,
+)
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from vfoundation.dr import wal
@@ -441,6 +447,9 @@ def main() -> None:
     fsm = FSMCore()
     _init_order_index(fsm, config)
 
+    shadow_event_tap_publisher: ShadowEventTapPublisher | None = None
+    llm_intent_ingress_bridge: LLMIntentIngressBridge | None = None
+
     # Wrap FSMCore.emit to track events with EntropyMonitor
     original_emit = fsm.emit
 
@@ -458,11 +467,53 @@ def main() -> None:
         )
         entropy_monitor.track_event(tracking_msg)
 
+        # Shadow telemetry mirror (best-effort; fail-closed only when explicitly configured).
+        if shadow_event_tap_publisher is not None:
+            try:
+                shadow_event_tap_publisher.publish(
+                    event_name=event_name,
+                    payload=payload if isinstance(payload, dict) else {},
+                    why=why,
+                )
+            except Exception as tap_exc:
+                LOG.error(
+                    "Shadow telemetry tap publish failed: %s", tap_exc, exc_info=True
+                )
+
         # Call original emit
         return original_emit(event_name, payload, why, data_ref)
 
     fsm.emit = emit_with_monitoring
     LOG.info("✅ FSMCore initialized with EntropyMonitor tracking")
+
+    # Shadow telemetry bridges (additive-only, config-gated).
+    try:
+        shadow_cfg = getattr(getattr(config, "domains", None), "shadow_telemetry", None)
+        if shadow_cfg is not None and bool(getattr(shadow_cfg, "enabled", False)):
+            shadow_log = LOG.getChild("shadow_telemetry")
+            shadow_event_tap_publisher = ShadowEventTapPublisher(
+                cfg=shadow_cfg,
+                logger=shadow_log,
+            )
+            shadow_event_tap_publisher.start()
+
+            llm_intent_ingress_bridge = LLMIntentIngressBridge(
+                fsm=fsm,
+                config=config,
+                logger=shadow_log,
+            )
+            llm_intent_ingress_bridge.start()
+            register_llm_command_mapper(fsm=fsm, logger=shadow_log)
+
+            LOG.info(
+                "✅ Shadow telemetry bridges started (tap=%s, ingress=%s)",
+                shadow_cfg.ingest.ipc_endpoint,
+                shadow_cfg.egress_to_main.ipc_commands_endpoint,
+            )
+        else:
+            LOG.info("ℹ️ Shadow telemetry bridges disabled by config")
+    except Exception as shadow_exc:
+        LOG.error("Failed to initialize shadow telemetry bridges: %s", shadow_exc, exc_info=True)
 
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
@@ -844,6 +895,7 @@ def main() -> None:
     strategy_plugins = StrategyPluginRegistry()
     strategy_plugins.register(AuroraBuiltinPlugin())
     strategy_plugins.register(MeanReversionPlugin())
+    strategy_plugins.register(MDAMRPlugin())
     StrategyRuntime(fsm=fsm, config=config, registry=strategy_plugins).start()
 
     # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
@@ -985,6 +1037,8 @@ def main() -> None:
 
         # Helper to stop components safely if they exist
         for name in [
+            "llm_intent_ingress_bridge",
+            "shadow_event_tap_publisher",
             "account_balance",
             # "account_observer", (Deleted)
             "market_data",

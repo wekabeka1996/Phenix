@@ -1,0 +1,472 @@
+openapi: "3.1.0"
+
+info:
+  title: Aurora Shadow Telemetry API
+  version: "1.0.0"
+  description: >
+    Read-path market snapshots and write-path LLM trade intent ingress
+    for the Aurora trading system.
+
+    All requests over HTTPS via ngrok tunnel.
+    POST /intents/llm/v1 requires Bearer authentication and is
+    consequential (will attempt to submit a live trade order).
+
+servers:
+  - url: https://YOUR-NGROK-URL.ngrok-free.app
+    description: >
+      ngrok HTTPS tunnel. Replace with your current ngrok forwarding URL.
+      Update this value after every ngrok restart (free tier) or use a
+      stable ngrok subdomain (paid plan).
+
+security: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Static bearer token. Set via SHADOW_TELEMETRY_BEARER_TOKEN env var
+        on the server. Provide the same value in Custom GPT Actions
+        authentication settings.
+
+  schemas:
+    HealthResponse:
+      type: object
+      description: Service health status.
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        service:
+          type: string
+          example: "shadow_telemetry"
+        ts_ms:
+          type: integer
+          description: Server timestamp (epoch milliseconds).
+        queue_depth:
+          type: integer
+          description: Pending commands in egress queue.
+      required: [status, service, ts_ms, queue_depth]
+
+    SnapshotTailResponse:
+      type: object
+      description: Bounded list of recent snapshots.
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: Snapshot record (schema is versioned internally).
+        next_cursor:
+          type: string
+          nullable: true
+          description: Pagination cursor. Currently always null (MVP).
+      required: [items, next_cursor]
+
+    LLMOrder:
+      type: object
+      description: Order block. Only LIMIT orders are accepted (policy enforced).
+      properties:
+        type:
+          type: string
+          enum: [LIMIT]
+          default: LIMIT
+          description: Order type. MARKET orders are rejected by policy.
+        limit_price:
+          type: string
+          description: >
+            Limit price as a positive decimal string.
+            Example: "600.50"
+          example: "600.50"
+        qty:
+          type: string
+          description: >
+            Order quantity as a positive decimal string.
+            Example: "0.01"
+          example: "0.01"
+        time_in_force:
+          type: string
+          enum: [GTC, IOC, FOK]
+          default: GTC
+      required: [limit_price, qty]
+
+    LLMBrackets:
+      type: object
+      description: Optional take-profit / stop-loss bracket prices.
+      properties:
+        tp_price:
+          type: string
+          nullable: true
+          description: Take-profit price as positive decimal string.
+          example: "620.00"
+        sl_price:
+          type: string
+          nullable: true
+          description: Stop-loss price as positive decimal string.
+          example: "590.00"
+
+    LLMSnapshotRef:
+      type: object
+      description: >
+        Reference to the market snapshot used for this decision.
+        Required when server config has require_snapshot_ref=true (default).
+      properties:
+        snapshot_id:
+          type: string
+          description: ID of the snapshot record from GET /snapshots/latest.
+          example: "snap-abc123"
+        inputs_digest:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Digest of inputs used for reproducibility.
+          example: "abcdef12"
+      required: [snapshot_id, inputs_digest]
+
+    LLMModelMeta:
+      type: object
+      description: Optional metadata about the model/prompt used.
+      properties:
+        model:
+          type: string
+          nullable: true
+          example: "gpt-4o"
+        temperature:
+          type: number
+          nullable: true
+          minimum: 0.0
+          maximum: 2.0
+          example: 0.2
+        prompt_hash:
+          type: string
+          nullable: true
+          minLength: 8
+          maxLength: 128
+
+    LLMPolicyHints:
+      type: object
+      description: Optional hints to the risk policy layer.
+      properties:
+        max_slippage_bps:
+          type: integer
+          nullable: true
+          minimum: 0
+        expiry_ts_ms:
+          type: integer
+          nullable: true
+          description: Intent expiry epoch-ms. Ignored past this time.
+        risk_tag:
+          type: string
+          nullable: true
+          maxLength: 64
+
+    LLMIntentRequest:
+      type: object
+      description: >
+        Trade intent payload from an LLM. All numeric values transmitted
+        as decimal strings to avoid floating-point representation issues.
+      properties:
+        intent_id:
+          type: string
+          description: >
+            Client-supplied UUID. Auto-generated if omitted.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        ts_ms:
+          type: integer
+          description: >
+            Decision timestamp (epoch milliseconds). Defaults to server
+            receive time if omitted.
+        symbol:
+          type: string
+          minLength: 2
+          maxLength: 20
+          description: >
+            Trading pair symbol. Must be in the server's symbol allowlist.
+          example: "BNBUSDT"
+        side:
+          type: string
+          enum: [BUY, SELL]
+          description: Order direction.
+        order:
+          $ref: "#/components/schemas/LLMOrder"
+        brackets:
+          $ref: "#/components/schemas/LLMBrackets"
+        snapshot_ref:
+          $ref: "#/components/schemas/LLMSnapshotRef"
+          description: >
+            Reference snapshot. Required when require_snapshot_ref=true
+            is set on server (current default). Obtain snapshot_id from
+            GET /snapshots/latest response.
+        model_meta:
+          $ref: "#/components/schemas/LLMModelMeta"
+        why_short:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: >
+            One-sentence rationale for this trade. Stored in audit log.
+          example: "BNB broke above 4h resistance with high volume"
+        idempotency_key:
+          type: string
+          nullable: true
+          minLength: 8
+          maxLength: 256
+          description: >
+            Caller-supplied idempotency key. Resubmitting within TTL
+            (300 s) with same key returns the original response.
+          example: "gpt-session-20260304-001"
+        policy_hints:
+          $ref: "#/components/schemas/LLMPolicyHints"
+      required: [symbol, side, order, why_short]
+
+    IntentAcceptedResponse:
+      type: object
+      description: Successful intent acceptance (queued for async processing).
+      properties:
+        intent_id:
+          type: string
+          description: Intent ID (client-supplied or server-generated UUID).
+        request_id:
+          type: string
+          description: Server-generated request ID for correlation.
+        state:
+          type: string
+          enum: [queued]
+          description: Always "queued" on 202 acceptance.
+      required: [intent_id, request_id, state]
+
+    ErrorResponse:
+      type: object
+      description: Error detail returned for 4xx responses.
+      properties:
+        request_id:
+          type: string
+        reason_code:
+          type: string
+          description: >
+            Machine-readable reason code. Examples: SCHEMA_INVALID,
+            AUTH_MISSING, AUTH_FORBIDDEN, SYMBOL_NOT_ALLOWED,
+            RATE_LIMITED, LIMIT_ONLY_POLICY, SNAPSHOT_REF_REQUIRED,
+            IPC_UNAVAILABLE, IDEMPOTENCY_CONFLICT.
+        reason:
+          type: string
+          description: Human-readable description.
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Service health check
+      description: >
+        Returns service status and IPC queue depth. No authentication
+        required. Use this to verify the tunnel and service are reachable
+        before issuing snapshot or intent calls.
+      tags: [diagnostics]
+      security: []
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: "healthy"
+                service: "shadow_telemetry"
+                ts_ms: 1741046400000
+                queue_depth: 0
+
+  /snapshots/latest:
+    get:
+      operationId: getLatestSnapshot
+      summary: Get the most recent market snapshot
+      description: >
+        Returns the latest feature-engineered snapshot for a symbol/
+        timeframe. Use this to obtain current market context and the
+        snapshot_id required by POST /intents/llm/v1.
+        Returns 404 if no snapshot has been received yet (Aurora not running).
+      tags: [snapshots]
+      security: []
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Filter by symbol (e.g. "BNBUSDT"). Returns the most recent
+            snapshot across all symbols if omitted.
+          example: BNBUSDT
+        - name: tf_sec
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: >
+            Filter by timeframe in seconds (e.g. 3600 = 1h bar).
+            Returns any timeframe if omitted.
+          example: 3600
+      responses:
+        "200":
+          description: Snapshot found.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: >
+                  Snapshot record. Schema is internal and versioned.
+                  Key fields: snapshot_id, symbol, tf_sec, ts_ms,
+                  features (dict), regime, risk.
+        "404":
+          description: No snapshot available for the given filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /snapshots/tail:
+    get:
+      operationId: getSnapshotTail
+      summary: Get recent snapshot history
+      description: >
+        Returns the N most recent snapshots, optionally filtered by symbol.
+        Useful for reviewing recent market context before submitting an intent.
+        Pagination via cursor is reserved (next_cursor always null in MVP).
+      tags: [snapshots]
+      security: []
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by symbol.
+          example: BNBUSDT
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Maximum number of records to return. Default 50, max 200.
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            nullable: true
+          description: Pagination cursor (reserved, currently ignored).
+      responses:
+        "200":
+          description: Recent snapshots list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotTailResponse"
+
+  /intents/llm/v1:
+    post:
+      operationId: submitLLMIntent
+      summary: Submit a trade intent from an LLM
+      description: >
+        Submit a structured trade intent to be validated and forwarded
+        to the Aurora execution engine via IPC.
+
+        **This action is consequential** — it will attempt to place a
+        live order on the exchange. Custom GPT will prompt confirmation
+        before executing.
+
+        The server applies multiple policy guards before accepting:
+        symbol allowlist, LIMIT_ONLY_POLICY, qty/notional caps,
+        price deviation band, rate-limit (30/min), cooldown, and
+        max-open-intents policy.
+
+        On success the intent is queued for async delivery; the 202
+        response confirms queueing, not execution.
+
+        **Required workflow:** call GET /snapshots/latest first to obtain
+        a snapshot_id, include it in snapshot_ref.
+      tags: [intents]
+      security:
+        - BearerAuth: []
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LLMIntentRequest"
+            example:
+              symbol: "BNBUSDT"
+              side: "BUY"
+              order:
+                type: "LIMIT"
+                limit_price: "600.50"
+                qty: "0.01"
+                time_in_force: "GTC"
+              brackets:
+                tp_price: "620.00"
+                sl_price: "590.00"
+              snapshot_ref:
+                snapshot_id: "snap-abc123"
+                inputs_digest: "abcdef12"
+              why_short: "BNB breakout above 4h resistance confirmed"
+              idempotency_key: "gpt-session-20260304-001"
+              model_meta:
+                model: "gpt-4o"
+                temperature: 0.2
+      responses:
+        "202":
+          description: Intent accepted and queued for async processing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntentAcceptedResponse"
+              example:
+                intent_id: "550e8400-e29b-41d4-a716-446655440000"
+                request_id: "req-1741046400000"
+                state: "queued"
+        "400":
+          description: >
+            Schema violation or policy rejection.
+            reason_code identifies the specific guard that fired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or malformed Authorization header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Bearer token not authorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >
+            Idempotency conflict — same key submitted with different payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded (30 requests/min per token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: >
+            IPC unavailable (Aurora not running) or auth not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

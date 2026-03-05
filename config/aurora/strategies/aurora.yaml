@@ -211,9 +211,9 @@ aurora:
         macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.341 (Moved to Gate)
-        obi: 0.15
+        obi: 0.19
         tfi: 0.093
-        absorption: 0.0
+        absorption: 0.2
         volatility_state: 0.036
         depth_imbalance: -0.256
         delta_price: 0.10
@@ -237,12 +237,12 @@ aurora:
 
       regime_sizing:
         HIGH_VOLATILITY: 0.7
-        LOW_VOLATILITY: 0.0
+        LOW_VOLATILITY: 0.5
         MEAN_REVERSION: 0.8
 
       exit:
         sl_pct: 0.019
-        max_hold_sec: 3000
+        max_hold_sec: 6000
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -363,7 +363,7 @@ aurora:
 
       exit:
         sl_pct: 0.0135
-        max_hold_sec: 3000
+        max_hold_sec: 6000
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -495,7 +495,7 @@ aurora:
       # 6. Exits (The Profit Engine)
       exit:
         sl_pct: 0.005  # Base 0.5%
-        max_hold_sec: 3000
+        max_hold_sec: 6000
 
         regime_tpsl:
           enabled: true

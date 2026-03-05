@@ -192,3 +192,19 @@ trading:
     data_sources:
       portfolio_state: testnet  # Read positions/balance from TESTNET account
       market_data: live         # Use LIVE prices for mark-to-market valuations
+
+  llm_orchestration:
+    mode: hybrid_advisory
+    llm_role: advisory
+    require_telemetry: true
+    symbols_llm: ["BNBUSDT"]
+    allowlist_symbols: ["BNBUSDT"]
+    intent_policy:
+      max_open_intents: 3
+      cooldown_sec: 30
+      allow_limit_only: true
+      require_tp_sl: true
+      max_notional_usd: 100.0
+      max_qty: 2.0
+      max_price_deviation_bps: 20.0
+      allowed_tif: ["GTC"]

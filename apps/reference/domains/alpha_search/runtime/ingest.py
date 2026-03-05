@@ -89,8 +89,22 @@ class IngestGateway:
 
         LOG.info(f"Ingest live tail started: {self._stream_path}")
 
+        _missing_warn_interval = 30  # warn every N seconds when file absent
+        _idle_warn_interval = 120    # warn every N seconds when 0 new snapshots
+        _last_missing_warn: float = 0.0
+        _last_idle_warn: float = 0.0
+        _idle_since: float = time.monotonic()
+
         while True:
             if not self._stream_path.exists():
+                now = time.monotonic()
+                if now - _last_missing_warn >= _missing_warn_interval:
+                    LOG.warning(
+                        f"[live_tail] Stream file does not exist yet: {self._stream_path}. "
+                        f"FeatureMirrorWriter in main.py must be running to create it. "
+                        f"If doing offline analysis, switch source_mode to 'replay' in scenario_matrix.yaml."
+                    )
+                    _last_missing_warn = now
                 await asyncio.sleep(self._poll_interval)
                 continue
 
@@ -108,6 +122,7 @@ class IngestGateway:
                     if snapshot:
                         self._snapshots_read += 1
                         lines_found += 1
+                        _idle_since = time.monotonic()
                         yield snapshot
                     else:
                         self._snapshots_rejected += 1
@@ -115,6 +130,15 @@ class IngestGateway:
                 self._offset = f.tell()
 
             if lines_found == 0:
+                now = time.monotonic()
+                idle_secs = now - _idle_since
+                if idle_secs >= _idle_warn_interval and now - _last_idle_warn >= _idle_warn_interval:
+                    LOG.warning(
+                        f"[live_tail] No new snapshots for {idle_secs:.0f}s "
+                        f"(total read={self._snapshots_read}). "
+                        f"Check that main.py + FeatureMirrorWriter are running and writing to {self._stream_path}."
+                    )
+                    _last_idle_warn = now
                 await asyncio.sleep(self._poll_interval)
 
     def _parse_line(self, line: str, line_no: int) -> Optional[AlphaInputV1]:
@@ -143,6 +167,7 @@ class IngestGateway:
             "offset_bytes": self._offset,
             "eof_reached": self._eof_reached,
             "reject_rate_pct": (
-                round(self._snapshots_rejected / max(self._lines_read, 1) * 100, 2)
+                round(self._snapshots_rejected /
+                      max(self._lines_read, 1) * 100, 2)
             ),
         }

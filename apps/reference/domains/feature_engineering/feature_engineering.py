@@ -191,6 +191,38 @@ class FeatureEngineering:
         # Ensure feature logs directory exists
         self._feature_logs_dir = os.path.join("logs", "features")
         os.makedirs(self._feature_logs_dir, exist_ok=True)
+        self._legacy_features_log_mode = "full"
+        self._legacy_features_log_sample_every_n = 10
+        self._legacy_features_log_counter: Dict[str, int] = defaultdict(int)
+
+        # Additive migration control for legacy features sink: full|sample|off
+        try:
+            legacy_cfg = None
+            if hasattr(config, "domains") and hasattr(config.domains, "feature_engineering"):
+                legacy_cfg = getattr(
+                    config.domains.feature_engineering, "legacy_features_log", None)
+            elif isinstance(config, dict):
+                legacy_cfg = (
+                    config.get("domains", {})
+                    .get("feature_engineering", {})
+                    .get("legacy_features_log")
+                )
+
+            if legacy_cfg is not None:
+                if isinstance(legacy_cfg, dict):
+                    mode = str(legacy_cfg.get("mode", "full")).lower()
+                    sample_n = int(legacy_cfg.get("sample_every_n", 10))
+                else:
+                    mode = str(getattr(legacy_cfg, "mode", "full")).lower()
+                    sample_n = int(getattr(legacy_cfg, "sample_every_n", 10))
+
+                if mode in ("full", "sample", "off"):
+                    self._legacy_features_log_mode = mode
+                self._legacy_features_log_sample_every_n = max(1, sample_n)
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to resolve legacy_features_log policy, using defaults: {e}"
+            )
 
     def _log_features_to_file(self, symbol: str, features: dict) -> None:
         """
@@ -198,9 +230,17 @@ class FeatureEngineering:
         Format: JSON string (no prefix)
         Path: logs/features/{symbol}.log
         """
+        if self._legacy_features_log_mode == "off":
+            return
+        if self._legacy_features_log_mode == "sample":
+            self._legacy_features_log_counter[symbol] += 1
+            n = self._legacy_features_log_sample_every_n
+            if n > 1 and (self._legacy_features_log_counter[symbol] % n != 0):
+                return
+
         try:
             file_path = os.path.join(self._feature_logs_dir, f"{symbol}.log")
-            with open(file_path, "a") as f:
+            with open(file_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(features, default=str) + "\n")
         except Exception as e:
             self.logger.error(

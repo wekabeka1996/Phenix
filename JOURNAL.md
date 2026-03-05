@@ -764,3 +764,15 @@ Key findings:
 - Critical follow-ups: pending state is cleared before bracket placement success, no hard policy for `missing_count=2` naked positions, and dedup key is not slot-aware for multi-TP.
 - Duplication audit verdict: **HIGH** risk (execution-manager responsibilities are split across execution_position, decision_making, order_guardian service, and orchestrator).
 
+## 2026-03-04: Architecture Audit (Features & Metrics Inventory)
+- Зроблено аудит екосистеми фічей, метрик та подій (див. `REPORT.md`).
+- Підтверджено перехід від старих метрик (macro_sync) до нових (macro_resid).
+- Ідентифіковано повний pipeline Producer -> Event -> Consumer.
+- Знайдено, що деякі фічі (large_trade_imbalance, volume_zscore) обчислюються, але не беруть явної участі у V2 Scoring.
+
+## 2026-03-04: Observability & Logging Sinks Audit
+- Зроблено аудит точок запису логів (див. `REPORT_logging.md`).
+- Виявлено критичні Disk/IO витоки: `FeatureEngineering._log_features_to_file` та `OrderLoggerV1` використовують `open("...", "a")` без ротації.
+- Feature Log (`logs/features/{symbol}.log`) пишеться синхронно на кожен тік і зберігає лише `features` (без `ts` та `tf_sec`), що унеможливлює його якісне використання.
+- Встановлено, що відповідальність за персистентність `EVT:FEATURES_CALCULATED` має бути делегована Neocortex (з батчингом або ротацією), а прямий запис у `FeatureEngineering` слід видалити.
+

@@ -513,6 +513,119 @@ class MeanReversion1mStrategyConfig(BaseModel):
     )
 
 
+class MDAMRWeightsConfig(BaseModel):
+    """Raw directional weights for MD-AMR multi-timeframe compass."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    d1: float = Field(ge=0.0)
+    h1: float = Field(ge=0.0)
+    m30: float = Field(ge=0.0)
+    m15: float = Field(ge=0.0)
+
+
+class MDAMRLLMGateConfig(BaseModel):
+    """LLM macro shock binary block gate."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False)
+    sentiment_block_threshold: float = Field(default=-0.8, ge=-1.0, le=1.0)
+    block_ttl_sec: int = Field(default=14400, ge=60)
+
+
+class MDAMRAssetConfig(BaseModel):
+    """Per-asset enablement/config for md_amr."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True)
+    cooldown_sec: int = Field(default=60, ge=0)
+    position_mode: Literal["STRICT", "DYNAMIC"] = Field(default="STRICT")
+
+
+class MDAMRReconciliationConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=True)
+    interval_sec: int = Field(default=300, ge=10, le=3600,
+                              description="Seconds between REST position sync calls")
+    drift_tolerance: float = Field(default=1e-6, ge=0.0,
+                                   description="Minimum qty difference to trigger reconciliation")
+
+
+class MDAMRConcentrationGuardConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=False)
+    max_simultaneous_entries_per_bar: int = Field(default=2, ge=1, le=20,
+                                                  description="Max new entries allowed within same bar timestamp")
+
+
+class MDAMROptunaConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    oos_split_ratio: float = Field(default=0.30, ge=0.0, le=0.5,
+                                   description="Fraction of data for out-of-sample validation (0=disabled)")
+    min_oos_calmar_ratio: float = Field(default=0.3, ge=0.0,
+                                        description="Min IS/OOS Calmar ratio to accept trial (overfitting guard)")
+
+
+class MDAMRStrategyConfig(BaseModel):
+    """Full configuration for MD-AMR V1.1 strategy."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable md_amr strategy')
+    type: str = Field(description='Strategy type identifier')
+    description: str = Field(description='Human-readable profile description')
+    timeframe_sec: int = Field(
+        ge=60, le=86400, description='Bar timeframe in seconds')
+    defer_ttl_sec: int = Field(default=60, ge=1, le=300)
+
+    channel_window_bars: int = Field(default=12, ge=3, le=256)
+    channel_robust_pct: float = Field(default=0.0, ge=0.0, le=0.25,
+                                      description="Winsorization percentile for channel SMA (0.0=disabled, 0.05=clip top/bottom 5%)")
+    atr_window: int = Field(default=14, ge=2, le=256)
+    atr_stats_window: int = Field(default=64, ge=8, le=512)
+
+    hysteresis_mult: float = Field(ge=1.0, le=3.0)
+    threshold_z: float = Field(ge=0.1, le=10.0)
+    volatility_dampening_factor: float = Field(ge=0.0, le=1.0)
+    thr_base: float = Field(ge=0.05, le=0.99)
+    thr_floor: float = Field(default=0.10, ge=0.01, le=0.50,
+                             description="Hard minimum floor for deformed thr_buy/thr_sell (prevents near-zero thresholds)")
+    alpha: float = Field(ge=0.0, le=1.0)
+    conf_min: float = Field(ge=0.0, le=1.0)
+    max_hold_bars: int = Field(ge=1, le=10000)
+
+    atr_zscore_clamp: float = Field(default=10.0, ge=1.0, le=100.0,
+                                    description="Clamp absolute Z-Score to prevent extreme dampening swings")
+    atr_std_floor_pct: float = Field(default=0.05, ge=0.0, le=1.0,
+                                     description="Floor for atr_std as fraction of atr_ma (prevents div-by-near-zero)")
+
+    fee_bps: float = Field(default=4.0, ge=0.0)
+    slippage_buffer_bps: float = Field(default=2.0, ge=0.0)
+    scaleout_fraction: float = Field(default=0.5, ge=0.01, le=1.0)
+    scaleout_cost_model: Literal["one_way", "round_trip"] = Field(
+        default="round_trip",
+        description="Cost model for scale-out gate: 'one_way' or 'round_trip'")
+
+    weights: MDAMRWeightsConfig = Field()
+
+    # ORDER-POLICY-01: strategy execution policy consumed by DecisionMaking
+    execution: "StrategyExecutionConfig" = Field(
+        description="Execution policy (SSOT)"
+    )
+    safety_gates: SafetyGatesConfig = Field(
+        description="Safety gates control (directional/price motion gates)"
+    )
+    llm_gate: MDAMRLLMGateConfig = Field(default_factory=MDAMRLLMGateConfig)
+    reconciliation: MDAMRReconciliationConfig = Field(
+        default_factory=MDAMRReconciliationConfig)
+    concentration_guard: MDAMRConcentrationGuardConfig = Field(
+        default_factory=MDAMRConcentrationGuardConfig)
+    optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
+    assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
+
+
 # ==============================================================================
 # STRATEGIES REGISTRY (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
 # ==============================================================================
@@ -1887,6 +2000,21 @@ class BarTAConfig(BaseModel):
         description='Stochastic %%D smoothing period (bars)')
 
 
+class LegacyFeaturesLogConfig(BaseModel):
+    """Legacy per-symbol features log policy for additive migration."""
+    model_config = ConfigDict(extra='forbid')
+
+    mode: Literal["full", "sample", "off"] = Field(
+        default="full",
+        description="Legacy FE sink mode: full (every event), sample (every N), off",
+    )
+    sample_every_n: int = Field(
+        default=10,
+        ge=1,
+        description="Sampling interval when mode=sample (write every N events per symbol)",
+    )
+
+
 class FeatureEngineeringDomainConfig(BaseModel):
     """
     Complete feature engineering domain configuration.
@@ -1944,6 +2072,12 @@ class FeatureEngineeringDomainConfig(BaseModel):
     bar_ta: Optional[BarTAConfig] = Field(
         default=None,
         description='TA indicator computation params for bar events (alpha_search ta_ensemble)'
+    )
+
+    # Legacy per-symbol features sink (additive-only migration control)
+    legacy_features_log: LegacyFeaturesLogConfig = Field(
+        default_factory=LegacyFeaturesLogConfig,
+        description="Legacy logs/features/{symbol}.log write policy (full|sample|off)",
     )
 
     # ════════════════════════════════════════════════════════════════════════════
@@ -2193,6 +2327,127 @@ class EventDedupConfig(BaseModel):
         default=86400000, description="Event TTL in milliseconds (24h)")
 
 
+# ADVANCED-STALE-CANCEL-01: Canonical regime labels from RegimeLabel enum (regime_types.py).
+# Defined here to avoid a cross-module import and to make validation self-contained.
+# MUST stay in sync with apps.reference.core.types.regime_types.RegimeLabel.
+_VALID_REGIME_LABELS: frozenset = frozenset({
+    "TREND_UP", "TREND_DOWN", "MEAN_REVERSION",
+    "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN",
+})
+
+
+class DriftAwayConfig(BaseModel):
+    """ADVANCED-STALE-CANCEL-01: Price drift threshold for evidence-based regime cancel."""
+    model_config = ConfigDict(extra='forbid')
+
+    mode: str = Field(
+        default="atr",
+        description="Threshold mode. Supported: 'atr' (atr_14 * atr_mult).",
+    )
+    atr_mult: float = Field(
+        default=0.5, ge=0.01, le=10.0,
+        description=(
+            "Multiplier applied to atr_14. "
+            "Cancel when |current_price - limit_price| > atr_14 * atr_mult."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def validate_mode(self) -> 'DriftAwayConfig':
+        if self.mode not in ("atr",):
+            raise ValueError(
+                f"drift_away.mode must be 'atr', got '{self.mode}'")
+        return self
+
+
+class AdvancedStaleCancelConfig(BaseModel):
+    """
+    ADVANCED-STALE-CANCEL-01: Evidence-based pending entry cancel policy.
+
+    Replaces unconditional CANCEL_STALE_REGIME with a 3-gate check:
+      Gate 1 - Regime gate:  new_regime in per-order cancelable_regimes
+                             cancelable_regimes = (allowed_regimes ∩ may_cancel_regimes[side])
+                                                  − never_cancel_regimes
+      Gate 2 - Age gate:     order age >= min_age_before_cancel_sec
+      Gate 3 - Drift gate:   price moved away from limit_price by >= drift_away threshold
+
+    fail-closed: if features cache or order metadata is missing, do NOT cancel.
+
+    Per-order cancelable_regimes derivation (at placement time):
+      cancelable_regimes = (strategy.allowed_regimes ∩ may_cancel_regimes[side])
+                           − never_cancel_regimes
+    This means: if a strategy never trades in TREND_DOWN (e.g. pure mean-reversion strategy),
+    regime changes to TREND_DOWN will not cancel its pending entries.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        description="Enable advanced stale cancel (overrides simple cancel_on_regime_change path)."
+    )
+    min_age_before_cancel_sec: int = Field(
+        ge=0,
+        description="Order must be at least this old (seconds) before cancel is considered.",
+    )
+    drift_away: DriftAwayConfig = Field(
+        default_factory=DriftAwayConfig,
+        description="Price drift threshold configuration.",
+    )
+    may_cancel_regimes: Dict[str, List[str]] = Field(
+        description=(
+            "Per-side: regime labels that MAY cancel a pending entry for that side, "
+            "subject to also being in the strategy's allowed_regimes. "
+            "Must use canonical RegimeLabel values: TREND_UP, TREND_DOWN, MEAN_REVERSION, "
+            "HIGH_VOLATILITY, LOW_VOLATILITY. UNCERTAIN must NOT appear. "
+            "Example: {'BUY': ['TREND_DOWN'], 'SELL': ['TREND_UP']}."
+        ),
+    )
+    never_cancel_regimes: List[str] = Field(
+        default=["UNCERTAIN"],
+        description=(
+            "Regime labels that NEVER trigger cancel, even if in allowed_regimes and "
+            "may_cancel_regimes. UNCERTAIN is always effectively in this set. "
+            "Must use canonical RegimeLabel values."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def validate_regime_sets(self) -> 'AdvancedStaleCancelConfig':
+        # Validate may_cancel_regimes
+        for side, regimes in self.may_cancel_regimes.items():
+            if side not in ("BUY", "SELL"):
+                raise ValueError(
+                    f"may_cancel_regimes key must be 'BUY' or 'SELL', got '{side}'"
+                )
+            for r in regimes:
+                if r == "UNCERTAIN":
+                    raise ValueError(
+                        "UNCERTAIN must not appear in may_cancel_regimes — "
+                        "UNCERTAIN regime never cancels pending entries."
+                    )
+                if r not in _VALID_REGIME_LABELS:
+                    raise ValueError(
+                        f"Unknown regime label '{r}' in may_cancel_regimes. "
+                        f"Valid labels: {sorted(_VALID_REGIME_LABELS)}. "
+                        "Check RegimeLabel enum in apps.reference.core.types.regime_types."
+                    )
+        # Validate never_cancel_regimes
+        for r in self.never_cancel_regimes:
+            if r not in _VALID_REGIME_LABELS:
+                raise ValueError(
+                    f"Unknown regime label '{r}' in never_cancel_regimes. "
+                    f"Valid labels: {sorted(_VALID_REGIME_LABELS)}."
+                )
+        # Validate no overlap between may_cancel (all values) and never_cancel
+        all_may = {r for regimes in self.may_cancel_regimes.values() for r in regimes}
+        overlap = all_may & set(self.never_cancel_regimes)
+        if overlap:
+            raise ValueError(
+                f"Regime labels {overlap} appear in both may_cancel_regimes and "
+                "never_cancel_regimes. A regime cannot be in both sets."
+            )
+        return self
+
+
 class PendingEntryTTLConfig(BaseModel):
     """
     EP-01.3-INT: Per-timeframe TTL for pending LIMIT entry orders.
@@ -2235,6 +2490,14 @@ class PendingEntryTTLConfig(BaseModel):
         ...,
         ge=1.0, le=60.0,
         description="Timeout (seconds) to wait for supersede cancel confirmation before forcing new open. Explicit config required."
+    )
+    # ADVANCED-STALE-CANCEL-01: evidence-based cancel policy (optional; None = use legacy path)
+    advanced_stale_cancel: Optional[AdvancedStaleCancelConfig] = Field(
+        default=None,
+        description=(
+            "ADVANCED-STALE-CANCEL-01: If set and enabled=true, replaces unconditional "
+            "CANCEL_STALE_REGIME with a 3-gate evidence policy (regime + age + drift)."
+        ),
     )
 
     @model_validator(mode='after')
@@ -2518,6 +2781,131 @@ class DomainsDebugConfig(BaseModel):
     )
 
 
+class ShadowTelemetryIngestConfig(BaseModel):
+    """Ingress settings for Shadow Telemetry event tap."""
+    model_config = ConfigDict(extra='forbid')
+
+    source: Literal["ipc_tap"] = Field(
+        default="ipc_tap",
+        description="Ingress source type",
+    )
+    ipc_endpoint: str = Field(
+        default="tcp://127.0.0.1:7101",
+        description="Main -> Shadow event stream endpoint",
+    )
+    allowlist_events: List[str] = Field(
+        default_factory=lambda: [
+            "EVT:BAR_CLOSED",
+            "EVT:FEATURES_CALCULATED",
+            "EVT:RISK_ASSESSMENT_COMPLETED",
+            "EVT:REGIME_DETECTED",
+            "EVT:STRATEGY_SIGNAL_PRODUCED",
+            "EVT:TRADE_INTENT_PROPOSED",
+            "EVT:TRADE_INTENT_REJECTED",
+            "EVT:INTENT_DEFERRED",
+            "EVT:DECISION_BLOCKED",
+            "EVT:STRATEGY_DECISION_BLOCKED",
+            "EVT:ORDER_PLACED",
+            "EVT:ORDER_REJECTED",
+            "EVT:ORDER_STATE_CHANGED",
+            "EVT:TRADE_EXECUTED",
+            "EVT:POSITION_CLOSED",
+        ],
+        description="Allowlist of events mirrored from main process",
+    )
+    queue_maxsize: int = Field(
+        default=50000,
+        ge=1,
+        description="Bounded queue size for ingress buffering",
+    )
+    overflow_policy: Literal["fail_closed", "drop_oldest"] = Field(
+        default="fail_closed",
+        description="Queue overflow behavior",
+    )
+
+
+class ShadowTelemetryApiWriteConfig(BaseModel):
+    """Write-path HTTP controls for LLM intents."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True)
+    intents_endpoint: str = Field(default="/intents/llm/v1")
+    rate_limit_per_min: int = Field(default=30, ge=1)
+    max_body_kb: int = Field(default=64, ge=1)
+    symbol_allowlist: List[str] = Field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    require_snapshot_ref: bool = Field(default=True)
+    idempotency_ttl_sec: int = Field(default=300, ge=1)
+    consequential: bool = Field(
+        default=True,
+        description="OpenAPI hint for Actions: x-openai-isConsequential=true",
+    )
+
+
+class ShadowTelemetryApiConfig(BaseModel):
+    """Shadow Telemetry API server settings."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True)
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8443, ge=1, le=65535)
+    tls: bool = Field(default=True)
+    auth_mode: Literal["bearer"] = Field(default="bearer")
+    write: ShadowTelemetryApiWriteConfig = Field(
+        default_factory=ShadowTelemetryApiWriteConfig)
+
+
+class ShadowTelemetryEgressToMainConfig(BaseModel):
+    """Egress command stream settings (Shadow -> Main)."""
+    model_config = ConfigDict(extra='forbid')
+
+    mode: Literal["ipc"] = Field(default="ipc")
+    ipc_commands_endpoint: str = Field(default="tcp://127.0.0.1:7102")
+    queue_maxsize: int = Field(default=50000, ge=1)
+    overflow_policy: Literal["fail_closed",
+                             "drop_oldest"] = Field(default="fail_closed")
+
+
+class ShadowTelemetryTfPolicyConfig(BaseModel):
+    """TF policy for snapshot generation."""
+    model_config = ConfigDict(extra='forbid')
+
+    bar_snapshots_enabled: bool = Field(default=True)
+    tick_snapshots_mode: Literal["off", "sampled",
+                                 "full"] = Field(default="sampled")
+    tick_sample_every_n: int = Field(default=20, ge=1)
+    min_tf_sec_for_full: int = Field(default=60, ge=0)
+
+
+class ShadowTelemetrySnapshotConfig(BaseModel):
+    """Snapshot capture controls."""
+    model_config = ConfigDict(extra='forbid')
+
+    trigger_event: str = Field(default="EVT:FEATURES_CALCULATED")
+    tf_policy: ShadowTelemetryTfPolicyConfig = Field(
+        default_factory=ShadowTelemetryTfPolicyConfig)
+    output_dir: str = Field(
+        default="data/shadow_telemetry/snapshots",
+        description="Root directory for persisted snapshot JSONL files",
+    )
+
+
+class ShadowTelemetryDomainConfig(BaseModel):
+    """Top-level Shadow Telemetry domain config."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False)
+    required_for_mode: bool = Field(default=False)
+    ingest: ShadowTelemetryIngestConfig = Field(
+        default_factory=ShadowTelemetryIngestConfig)
+    api: ShadowTelemetryApiConfig = Field(
+        default_factory=ShadowTelemetryApiConfig)
+    egress_to_main: ShadowTelemetryEgressToMainConfig = Field(
+        default_factory=ShadowTelemetryEgressToMainConfig)
+    snapshot: ShadowTelemetrySnapshotConfig = Field(
+        default_factory=ShadowTelemetrySnapshotConfig)
+
+
 # Top-Level Domains Configuration
 class DomainsConfig(BaseModel):
     """Top-level domains configuration container (CANONICAL)."""
@@ -2531,6 +2919,10 @@ class DomainsConfig(BaseModel):
     position_tracking: PositionTrackingDomainConfig = Field()
     # NOTE: account_observer removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
     execution_position: ExecutionPositionDomainConfig = Field()
+    shadow_telemetry: ShadowTelemetryDomainConfig = Field(
+        default_factory=ShadowTelemetryDomainConfig,
+        description="Shadow telemetry domain (read/write LLM telemetry ingress)",
+    )
 
 
 # ============================================================================
@@ -2921,6 +3313,12 @@ class StrategyExecutionConfig(BaseModel):
         gt=0,
         description="Optional explicit TTL (ms) for reduce-only LIMIT exits when tf_sec is absent."
     )
+    gtx_retry_max: int = Field(default=0, ge=0, le=5,
+                               description="Max retries on GTX reject with price offset")
+    gtx_retry_offset_bps: float = Field(default=2.0, ge=0.0, le=20.0,
+                                        description="Price offset per retry in bps (deeper into book)")
+    gtx_fallback_to_market: bool = Field(default=False,
+                                         description="Fallback to MARKET after max GTX retries exhausted")
 
 
 class AuroraStrategyConfig(BaseModel):
@@ -2967,6 +3365,26 @@ class AuroraStrategyConfig(BaseModel):
         description="Per-symbol Aurora overrides (symbol -> config)")
 
 
+class LLMMicrostructureStrategyConfig(BaseModel):
+    """External-Intent driven LLM strategy policy (must be explicit, no fallback)."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable llm_microstructure strategy')
+    type: str = Field(description='Strategy type identifier')
+    description: str = Field(
+        description='Human description of strategy profile')
+    timeframe_sec: int = Field(
+        ge=1, le=3600,
+        description='Reference timeframe for policy context (informational for external intents)',
+    )
+    execution: StrategyExecutionConfig = Field(
+        description="Execution policy (SSOT)")
+    safety_gates: SafetyGatesConfig = Field(
+        description="Safety gates control (directional/price motion gates)",
+    )
+
+
 class StrategiesConfig(BaseModel):
     """Canonical strategy policy namespace (CFG-STRATEGY-SSOT-FREEZE-03)."""
 
@@ -2979,6 +3397,14 @@ class StrategiesConfig(BaseModel):
     mean_reversion: Optional[MeanReversion1mStrategyConfig] = Field(
         default=None,
         description="Mean Reversion 1m strategy config (from strategies/mean_reversion.yaml)",
+    )
+    md_amr: Optional[MDAMRStrategyConfig] = Field(
+        default=None,
+        description="MD-AMR strategy config (from strategies/md_amr.yaml)",
+    )
+    llm_microstructure: Optional[LLMMicrostructureStrategyConfig] = Field(
+        default=None,
+        description="LLM microstructure strategy config (from strategies/llm_microstructure.yaml)",
     )
 
 
@@ -3094,6 +3520,54 @@ class RiskBudgetsConfig(BaseModel):
     max_daily_loss_pct: float = Field(..., description="Max daily loss %")
 
 
+class LLMIntentPolicyConfig(BaseModel):
+    """Policy limits for external LLM intents."""
+    model_config = ConfigDict(extra='forbid')
+
+    max_open_intents: int = Field(default=3, ge=1)
+    cooldown_sec: int = Field(default=30, ge=0)
+    allow_limit_only: bool = Field(default=True)
+    require_tp_sl: bool = Field(default=True)
+    max_notional_usd: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Hard cap for LLM intent notional in USD (fail-closed if exceeded/clamped)",
+    )
+    max_qty: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Hard cap for LLM intent quantity",
+    )
+    max_price_deviation_bps: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Max allowed absolute deviation of LIMIT price from reference price (bps)",
+    )
+    allowed_tif: List[Literal["GTC"]] = Field(
+        default_factory=lambda: ["GTC"],
+        description="Allowed TIF values for external LLM intents (Stage A: GTC only)",
+    )
+
+
+class LLMOrchestrationConfig(BaseModel):
+    """Global LLM orchestration mode and policy."""
+    model_config = ConfigDict(extra='forbid')
+
+    mode: Literal["baseline", "hybrid_advisory",
+                  "llm_primary"] = Field(default="baseline")
+    llm_role: Literal["advisory", "filter",
+                      "primary"] = Field(default="advisory")
+    require_telemetry: bool = Field(default=False)
+    symbols_llm: List[str] = Field(
+        default_factory=list,
+        description="Symbols explicitly owned by llm_microstructure strategy",
+    )
+    allowlist_symbols: List[str] = Field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    intent_policy: LLMIntentPolicyConfig = Field(
+        default_factory=LLMIntentPolicyConfig)
+
+
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
     model_config = ConfigDict(extra='forbid')
@@ -3143,6 +3617,12 @@ class TradingConfig(BaseModel):
     # Regime-specific TP/SL multipliers (for backtest overrides)
     regime_tpsl: Optional[Dict[str, Any]] = Field(
         default=None, description="Regime-specific TP/SL multipliers")
+
+    # External LLM orchestration controls (write-path policy)
+    llm_orchestration: LLMOrchestrationConfig = Field(
+        default_factory=LLMOrchestrationConfig,
+        description="External LLM orchestration mode and intent policy",
+    )
 
     @field_validator("symbols_to_track")
     @classmethod
@@ -3544,6 +4024,57 @@ class AuroraConfig(BaseModel):
             raise ValueError(
                 "strategies.aurora.decision.signals.normalize_signals_mode='legacy_v1' is forbidden in live/production"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_llm_strategy_contract(self) -> "AuroraConfig":
+        """Fail-closed contract for LLM ownership + explicit strategy policy."""
+        llm_cfg = getattr(getattr(self, "trading", None),
+                          "llm_orchestration", None)
+        if llm_cfg is None:
+            return self
+
+        mode = str(getattr(llm_cfg, "mode", "baseline")).lower()
+        symbols_llm = [str(s).upper() for s in (
+            getattr(llm_cfg, "symbols_llm", []) or []) if str(s).strip()]
+
+        if mode != "baseline" and not symbols_llm:
+            raise ValueError(
+                "CONFIG_ERROR: llm_orchestration.mode!=baseline requires non-empty trading.llm_orchestration.symbols_llm"
+            )
+
+        if symbols_llm:
+            llm_strategy_cfg = getattr(
+                getattr(self, "strategies", None), "llm_microstructure", None)
+            if llm_strategy_cfg is None:
+                raise ValueError(
+                    "CONFIG_ERROR: strategy_config_missing(llm_microstructure)")
+
+            registry = getattr(self, "strategies_registry", None)
+            if registry is None or not isinstance(registry.assignments, dict):
+                raise ValueError(
+                    "CONFIG_ERROR: strategies_registry.assignments required for llm symbol ownership validation"
+                )
+
+            for sym in symbols_llm:
+                assigned = registry.assignments.get(sym)
+                if not isinstance(assigned, list) or assigned != ["llm_microstructure"]:
+                    raise ValueError(
+                        f"CONFIG_ERROR: symbol ownership invalid for {sym}: expected ['llm_microstructure'], got {assigned!r}"
+                    )
+
+            policy = getattr(llm_cfg, "intent_policy", None)
+            max_notional = getattr(
+                policy, "max_notional_usd", None) if policy is not None else None
+            max_qty = getattr(policy, "max_qty",
+                              None) if policy is not None else None
+            max_dev = getattr(policy, "max_price_deviation_bps",
+                              None) if policy is not None else None
+            if max_notional is None or max_qty is None or max_dev is None:
+                raise ValueError(
+                    "CONFIG_ERROR: llm intent caps missing (max_notional_usd, max_qty, max_price_deviation_bps)"
+                )
+
         return self
 
     @model_validator(mode="after")

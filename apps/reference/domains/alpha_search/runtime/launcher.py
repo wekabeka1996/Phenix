@@ -108,6 +108,21 @@ async def main_reactor(
         mode=config.input.source_mode,
     )
 
+    # Startup guard: warn immediately if live_tail stream file is absent
+    _stream_path = project_root / config.input.stream_path
+    if config.input.source_mode == "live_tail" and not _stream_path.exists():
+        logger.warning(
+            f"STARTUP WARNING: source_mode=live_tail but stream file does NOT exist: {_stream_path}\n"
+            f"  -> Domain will receive 0 snapshots until main.py + FeatureMirrorWriter create it.\n"
+            f"  -> For offline analysis: set source_mode=replay in scenario_matrix.yaml\n"
+            f"     and run: python tools/build_alpha_input.py  (generates from data/recorder CSVs)"
+        )
+    elif config.input.source_mode == "replay" and not _stream_path.exists():
+        logger.error(
+            f"STARTUP ERROR: source_mode=replay but stream file not found: {_stream_path}\n"
+            f"  -> Run: python tools/build_alpha_input.py"
+        )
+
     manager = ScenarioManager(
         config=config,
         project_root=project_root,

@@ -155,3 +155,12 @@ fully cleared. 5s timeout (`supersede_cancel_timeout_sec`) is the only reliable 
 - [ ] **EP-BRACKET-STARTUP-IDEMPOTENCE (P2):** Startup reconcile must detect already-existing SL/TP before placement and avoid duplicate `-4130` attempts.
 - [ ] **EP-BRACKET-WS-LATE-CANCEL-RECOVERY (P1):** Make `_handle_cancel_event` fill-aware to avoid dropping deferred brackets on late partial-fill cancel events.
 - [ ] **EP-EXEC-ORCH-SSOT-PLAN (P1):** Start phased deduplication/refactor per `docs/reviews/AUDIT_EXECUTION_MANAGER_DUPLICATION.md` (stopPrice, qty policy, bracket coordinator, idempotent cancel semantics).
+
+## Architecture Audit Follow-ups (2026-03-04)
+- [ ] Очистити FeatureEngineering від мертвого коду/фічей (large_trade_imbalance, volume_zscore), якщо вони дійсно не використовуються ніде в DecisionMaking або Alpha Search.
+- [ ] Додати валідацію `EVT:TRADE_INTENT_DEFERRED` подій у Neocortex логер, щоб мати кращу статистику відхилених угод.
+
+## Observability & Logging Follow-ups (2026-03-04)
+- [ ] ВИДАЛИТИ `FeatureEngineering._log_features_to_file` (apps/reference/domains/feature_engineering/feature_engineering.py) для усунення I/O bottleneck та неконтрольованого росту логів.
+- [ ] Налаштувати Neocortex (transport/adapter.py) на підписку `EVT:FEATURES_CALCULATED` та збереження ПОВНОГО payload (разом з `ts`, `tf_sec`) у parquet або ротований jsonl.
+- [ ] Додати `SafeRotatingFileHandler` до `OrderLoggerV1` (telemetry/order_logger.py) або інтегрувати його у загальний логер, щоб уникнути вичерпання місця на диску.

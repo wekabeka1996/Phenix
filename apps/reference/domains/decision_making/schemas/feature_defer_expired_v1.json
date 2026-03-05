@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "feature_defer_expired_v1.json",
+  "title": "Feature Defer Expired Event",
+  "description": "Schema for EVT:FEATURE_DEFER_EXPIRED emitted when strategy defer TTL expires.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "strategy_id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "rid": { "type": "string" },
+    "missing_fields": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "defer_ttl_sec": { "type": "integer", "minimum": 1 },
+    "expired_at_ms": { "type": "integer" },
+    "reason_code": { "type": "string", "const": "FEATURE_DEFER_EXPIRED" }
+  },
+  "required": [
+    "schema_version",
+    "strategy_id",
+    "symbol",
+    "rid",
+    "missing_fields",
+    "defer_ttl_sec",
+    "expired_at_ms",
+    "reason_code"
+  ]
+}
