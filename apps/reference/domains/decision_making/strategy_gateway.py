@@ -59,10 +59,29 @@ class StrategyGateway:
         self._dm._record_blocked_intent(symbol)
 
     def _defer(self, *, symbol, reason, retry_key, next_ts, pld,
-               why_chain, context, attempt=1, max_attempts=5):
+               why_chain, context, attempt=1, max_attempts=None):
+        if max_attempts is None:
+            try:
+                strategy_id = pld.get("strategy_id", "aurora")
+                strat_cfg = getattr(self.config.strategies, str(strategy_id), getattr(self.config.strategies, "aurora", None))
+                max_attempts = int(getattr(strat_cfg.decision, "retry_max_count", 5))
+            except Exception:
+                max_attempts = 5
+                
+        now_ms = self._clock.now_ms()
+        if attempt > 1 and next_ts > now_ms:
+            base_delay = next_ts - now_ms
+            try:
+                strategy_id = pld.get("strategy_id", "aurora")
+                strat_cfg = getattr(self.config.strategies, str(strategy_id), getattr(self.config.strategies, "aurora", None))
+                factor = float(getattr(strat_cfg.decision, "retry_backoff_factor", 2.0))
+            except Exception:
+                factor = 2.0
+            next_ts = now_ms + int(base_delay * (factor ** (attempt - 1)))
+
         self._dm._emit_intent_deferred_v1(
             symbol=symbol, reason=reason, retry_key=retry_key,
-            next_allowed_ts=next_ts,
+            next_allowed_ts=int(next_ts),
             original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
             original_payload_min=dict(pld),
             attempt=attempt, max_attempts=max_attempts,
@@ -121,7 +140,7 @@ class StrategyGateway:
             arb = dm._check_strategy_arbitration(
                 symbol, str(strategy_id),
                 ts_ms=int(pld["ts_ms"]) if pld.get("ts_ms") is not None else None,
-                commit=False)
+                commit=True)
             if not arb["allowed"]:
                 self._reject(
                     symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
@@ -203,11 +222,11 @@ class StrategyGateway:
                     used_override = True
             except Exception as e:
                 self.logger.error(f"Config Contract Violation: {e}")
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="CONFIG_CONTRACT_ERROR", reason="DECISION", context=f"strategy_signal_gateway:risk_config_error:{e}", why_chain=why_chain)
                 return
             if risk_score > max_risk:
                 self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - risk_score {risk_score:.3f} > max {max_risk} used_override={used_override}")
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="RISK_SCORE_TOO_HIGH", reason="RISK", context=f"strategy_signal_gateway:risk_score_{risk_score:.3f}_gt_{max_risk}", why_chain=why_chain)
                 return
 
             # === GATE 1.5: RISK SKEW + DEGRADED CONTEXT ===
@@ -245,7 +264,7 @@ class StrategyGateway:
                         next_ts=self._clock.now_ms() + int(stale_ttl * 1000), pld=pld,
                         why_chain=(why_chain or []) + ["portfolio_unknown", "fail_closed"],
                         context="strategy_gateway_flip_check")
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="FLIP_GATE_UNKNOWN", reason="DECISION", context="strategy_signal_gateway:flip_unknown_state", why_chain=why_chain)
                 return
 
             # === GATE 3: QOS GATE ===
@@ -270,22 +289,22 @@ class StrategyGateway:
                             context="strategy_gateway_qos")
                         return
                     else:
-                        self._block(symbol)
+                        self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="QOS_RATE_LIMIT", reason="QOS", context=f"strategy_signal_gateway:qos_rejected:{qos_reason}", why_chain=why_chain)
                         return
 
             # === GATE 4: EXPOSURE / SIZING ===
             price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
             entry_price = price_ctx.get("entry_price")
             if entry_price in (None, "", "0", 0):
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="MISSING_ENTRY_PRICE", reason="DECISION", context="strategy_signal_gateway:entry_price_missing", why_chain=why_chain)
                 return
             try:
                 entry_price_dec = decimal.Decimal(str(entry_price))
             except Exception:
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="INVALID_ENTRY_PRICE", reason="DECISION", context="strategy_signal_gateway:entry_price_invalid", why_chain=why_chain)
                 return
             if not dm.latest_portfolio:
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="LATEST_PORTFOLIO_MISSING", reason="DECISION", context="strategy_signal_gateway:latest_portfolio_missing", why_chain=why_chain)
                 return
             sizing_ctx = {
                 "portfolio": dm.latest_portfolio,
@@ -306,6 +325,27 @@ class StrategyGateway:
                             margin_pct_mult = decimal.Decimal(str(mult_raw))
                 except Exception:
                     pass
+            # Phase 0.6: STRESS attenuation — reduce margin_pct_mult when policy=attenuate
+            try:
+                _stress_state = getattr(dm, "_system_stress_states", {}).get(symbol, "NORMAL")
+                if _stress_state == "STRESS":
+                    _strat_cfg = getattr(dm.config.strategies, str(strategy_id), None)
+                    _sg_cfg = getattr(_strat_cfg, "safety_gates", None) if _strat_cfg else None
+                    _policy = str(getattr(_sg_cfg, "system_stress_policy", "off"))
+                    if _policy == "attenuate":
+                        _factor = decimal.Decimal(str(getattr(_sg_cfg, "stress_attenuation_factor", "0.5")))
+                        margin_pct_mult = (margin_pct_mult if margin_pct_mult is not None else decimal.Decimal("1")) * _factor
+            except Exception:
+                pass  # fail-open: attenuation errors must not block trades
+                
+            # PKG-3: Inception fractional sizing
+            try:
+                sizing_cfg = pld.get("sizing") if isinstance(pld.get("sizing"), dict) else None
+                if sizing_cfg and "margin_pct_mult" in sizing_cfg:
+                    _inception_factor = decimal.Decimal(str(sizing_cfg["margin_pct_mult"]))
+                    margin_pct_mult = (margin_pct_mult if margin_pct_mult is not None else decimal.Decimal("1")) * _inception_factor
+            except Exception:
+                pass
             try:
                 qty_dec, why_sizing, sizing_rej, _ = dm._calculate_position_size(
                     symbol, entry_price_dec, side, sizing_ctx, margin_pct_mult=margin_pct_mult)
@@ -318,16 +358,16 @@ class StrategyGateway:
                     details={"error": str(e)})
                 return
             if qty_dec is None:
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="SIZING_QTY_NONE", reason="DECISION", context="strategy_signal_gateway:sizing_qty_none", why_chain=why_chain)
                 return
             if not dm._precheck_exposure_cache(symbol, side, float(qty_dec * entry_price_dec)):
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="EXPOSURE_PRECHECK_FAILED", reason="RISK", context="strategy_signal_gateway:exposure_precheck", why_chain=why_chain)
                 return
 
             # === GATE 5: TTL GATE ===
             signal_ts_ms = pld.get("ts_ms", 0)
             if signal_ts_ms in (None, 0, "0", ""):
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="MISSING_TS_MS", reason="DECISION", context="strategy_signal_gateway:ts_ms_missing", why_chain=why_chain)
                 return
             current_ms = self._clock.now_ms()
             tf_sec_val = int(pld.get("tf_sec") or 0)
@@ -340,7 +380,7 @@ class StrategyGateway:
             else:
                 ttl_ms = dm.features_ttl_sec * 1000
             if current_ms - int(signal_ts_ms) > ttl_ms:
-                self._block(symbol)
+                self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid, reason_code="SIGNAL_STALE", reason="DECISION", context=f"strategy_signal_gateway:signal_is_stale_ttl_{ttl_ms}ms", why_chain=why_chain)
                 return
 
             # === GATE 6: WARMUP ===

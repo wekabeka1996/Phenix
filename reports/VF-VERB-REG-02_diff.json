@@ -2,11 +2,11 @@
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 62,
-    "registry_tokens": 60,
+    "runtime_tokens": 64,
+    "registry_tokens": 62,
     "runtime_not_in_registry": 12,
     "registry_not_in_runtime": 10,
-    "coverage": 0.806452
+    "coverage": 0.8125
   },
   "runtime_not_in_registry": [
     "CMD:CANCEL",

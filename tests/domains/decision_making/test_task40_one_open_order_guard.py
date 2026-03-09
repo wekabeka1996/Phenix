@@ -66,6 +66,7 @@ def _mk_dm(*, fsm):
     dm._qos_state = {}
     dm.symbol_states = {}
     dm._per_symbol_regimes = {}
+    dm._system_stress_states = {}
     dm._emit_trade_intent_rejected = lambda **kw: None
     dm._get_side_bias_params = lambda symbol: (0.5, 60, 0.6, 10)
     dm._side_intent_window = {}
@@ -90,6 +91,8 @@ def _mk_dm(*, fsm):
         side_intent_window=dm._side_intent_window,
         logger=dm.logger,
     )
+
+    dm.normalize_signals_mode = "signed_v2"
 
     return dm
 

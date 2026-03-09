@@ -333,6 +333,10 @@ class MeanReversionHandler:
             config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
             config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.cooldown_sec = base_strat_cfg.cooldown_sec
+            # Tier D: confidence scalars from Pydantic SSOT
+            config.confidence_base = Decimal(str(base_strat_cfg.confidence_base))
+            config.confidence_bb_slope = Decimal(str(base_strat_cfg.confidence_bb_slope))
+            config.confidence_rsi_bonus = Decimal(str(base_strat_cfg.confidence_rsi_bonus))
 
             # Allowed regimes precedence:
             # global default -> per-asset -> per-asset strategy override (if present)
@@ -355,6 +359,10 @@ class MeanReversionHandler:
                 # Wire sl_buffer_pct and tp_buffer_pct from YAML
                 if strat_override.sl_buffer_pct is not None: config.sl_buffer_pct = Decimal(str(strat_override.sl_buffer_pct))
                 if strat_override.tp_buffer_pct is not None: config.tp_buffer_pct = Decimal(str(strat_override.tp_buffer_pct))
+                # Tier D: per-asset confidence overrides
+                if strat_override.confidence_base is not None: config.confidence_base = Decimal(str(strat_override.confidence_base))
+                if strat_override.confidence_bb_slope is not None: config.confidence_bb_slope = Decimal(str(strat_override.confidence_bb_slope))
+                if strat_override.confidence_rsi_bonus is not None: config.confidence_rsi_bonus = Decimal(str(strat_override.confidence_rsi_bonus))
 
             self._strategies[symbol] = MeanReversion1mStrategy(
                 config=config,

@@ -2,8 +2,8 @@
 Дата: 2026-01-08
 
 ## Итоги
-- runtime tokens (без tests): **62**
-- registry tokens: **60**
+- runtime tokens (без tests): **64**
+- registry tokens: **62**
 - runtime_not_in_registry: **12**
 - registry_not_in_runtime: **10**
 

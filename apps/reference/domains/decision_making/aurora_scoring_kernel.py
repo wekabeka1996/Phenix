@@ -106,6 +106,8 @@ class AuroraScoringKernel:
         # Hysteresis support
         neutral_threshold: Optional[decimal.Decimal] = None,
         current_side: str = "",
+        normalize_mode: str = "signed_v2",
+        regime_smoother: Optional[Any] = None,
     ) -> ScoringResult:
         """
         Compute Aurora signal score and side.
@@ -129,6 +131,11 @@ class AuroraScoringKernel:
         Returns:
             ScoringResult with score, side, thresholds, and explainability data
         """
+        if normalize_mode != "signed_v2":
+            raise ValueError(
+                f"AuroraScoringKernel requires normalize_mode='signed_v2', "
+                f"got {normalize_mode!r}. Update YAML config or use forensic tooling directly."
+            )
         result = ScoringResult(
             score=decimal.Decimal("0"),
             side="",
@@ -180,7 +187,7 @@ class AuroraScoringKernel:
             neutrals=feature_neutrals,
             readiness=warmup_readiness,
             essential_features=essential_set,
-            normalize_mode="net_zero",
+            normalize_mode=normalize_mode,
             directional_features=list(direction_strength_cfg["directional_features"]),
             strength_features=list(direction_strength_cfg["strength_features"]),
             strength_alpha=float(direction_strength_cfg["strength_alpha"]),
@@ -219,10 +226,15 @@ class AuroraScoringKernel:
             result.deferred = True
             result.defer_reason = f"INVALID_REGIME_THRESHOLD_VALUE:{regime_name}"
             return result
-        
+
+        if regime_smoother is not None:
+            raw_factor = factor
+            factor = regime_smoother.step(factor, symbol)
+            result.psi_vector["raw_threshold_factor"] = float(raw_factor)
+            result.psi_vector["smoothed_threshold_factor"] = float(factor)
+
         result.threshold_factor = factor
-        signal_threshold = base_threshold * factor
-        
+        signal_threshold = base_threshold * factor        
         # 7. Calculate side bias penalties
         buy_bias_mult = decimal.Decimal("1.0")
         sell_bias_mult = decimal.Decimal("1.0")

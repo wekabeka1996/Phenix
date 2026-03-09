@@ -1,0 +1,101 @@
+config_version: 1.0.1
+# NEW: Defines the operational mode for the trading bot.
+# Options: "live", "testnet", "hybrid_live_data_testnet_exec"
+# HYBRID MODE: Live market data → Testnet execution (safe testing with real data)
+trading_mode: "backtest"
+
+# REQUIRED: typed system config (SystemConfig)
+system:
+  # NOTE: logging configuration moved to observability.yaml (CFG-OBS-001)
+  # See config/aurora/observability.yaml for all logging settings.
+  market_data:
+    queue_maxsize: 10000
+    # DEPRECATED (CFG-OBS-001): local_queue_maxsize and emit_workers removed - not used in runtime
+    tick_ttl_ms: 2000
+    bar_ttl_ms: 10000        # BAR-TTL-REFORM-01: Tolerance for bar latency (2x p95)
+    bar_event_age_mode: "received"
+    ws_heartbeat_sec: 20.0
+    ws_receive_timeout_sec: 60.0
+    proxy_batch_size: 100
+    proxy_queue_get_timeout_sec: 0.01
+    proxy_idle_sleep_sec: 0.01
+
+# REQUIRED: ops config (OpsConfig)
+ops:
+  panic_killswitch: false
+  metrics_url: http://127.0.0.1:8000/metrics
+  reports_dir: reports
+
+# TASK22 (zero defaults): root-level optional keys must be explicitly present
+execution: null
+brackets: null
+# Trailing stop defaults (used when trailing enabled but values not specified)
+trailing:
+  activation_pct: 0.003  # 0.3% profit to activate
+  trail_pct: 0.006       # 0.6% trailing distance
+  min_update_interval_sec: 5
+
+# NOTE: binance_api is now defined in trading.yaml with correct env var names
+# pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)
+
+sequential_tests:
+  wald:
+    alpha: 0.05
+    beta: 0.2
+    mu0: 0.0
+    mu1: 0.5
+    sigma: 1.0
+  glr:
+    alpha: 0.05
+    beta: 0.2
+    min_samples: 5
+risk_core:
+  cvar_threshold_bps: 120
+  stress_scenarios:
+    - flash_crash
+    - volatility_spike
+  inventory_limits:
+    max_abs_position: 500  # 500 BTC max position
+    max_daily_notional: 10000000  # $10M daily notional
+kelly:
+  fraction_cap: 0.85  # Increased for full testnet operation
+  decay_half_life_days: 5
+calibrator:
+  state_store:
+    backend: sqlite
+    path: data/calibrator/state.db
+    versioning: true
+    retention_days: 30
+hawkes:
+  enabled: true
+  kernel:
+    decay_beta_ms: 250.0
+  eta_max: 1.0
+  update_interval_ms: 100
+  window_ms: 1000
+  bivariate: false
+# AURORA_HARDENING_V1 - Enterprise reliability features
+hardening:
+  ttl_config:
+    entry_place_ttl_ms: 5000    # 5 seconds for entry orders
+    bracket_place_ttl_ms: 3000  # 3 seconds for bracket orders
+    cancel_ttl_ms: 2000         # 2 seconds for cancellations
+  retry_config:
+    max_tries: 3                # Maximum retry attempts
+    backoff_ms: 1000            # Base backoff time
+    jitter: true                # Add random jitter
+  circuit_breaker:
+    fail_max: 5                 # Number of failures to open circuit
+    reset_timeout_sec: 30       # Time in OPEN state before HALF_OPEN
+    exclude:                    # Exceptions NOT counted as failures
+      - 'binance.error.ClientError:.*-2010'  # Insufficient balance
+      - 'binance.error.ClientError:.*-1021'  # Timestamp out of window
+    open_threshold_pct: 20      # Open if >20% calls fail in window
+    error_rate_window_sec: 60   # Rolling window for error rate
+    half_open_attempts: 3       # Test calls in HALF_OPEN state
+  market_data:
+    max_allowed_lag_ms: 1000    # Maximum allowed market data lag
+    sequence_check_enabled: true # Enable sequence number validation
+  wal:
+    integrity_check_enabled: true # Enable WAL integrity verification
+    hash_algorithm: "sha256"     # Hash algorithm for integrity checks

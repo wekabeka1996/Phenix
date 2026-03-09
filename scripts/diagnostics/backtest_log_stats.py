@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 LOGS_DIR = ROOT / "logs" / "backtests"
 REPORTS_DIR = ROOT / "reports" / "backtests"
 
@@ -101,12 +101,43 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
     event_counts: Counter[str] = Counter()
     reject_reasons: Counter[str] = Counter()
     cancel_reasons: Counter[str] = Counter()
+    close_reasons: Counter[str] = Counter()
+    
     proposed_intents = 0
     strategy_intents = 0
     placed_orders = 0
+    filled_orders = 0
+    entry_fills = 0  # ORDER_FILLED where order_kind=ENTRY (excludes bracket SL/TP fills)
+    buy_orders = 0
+    sell_orders = 0
+    
+    first_ts = None
+    last_ts = None
+    
+    # Global PnL Tracking
+    net_profit_sum = 0.0
+    wins = 0
+    losses = 0
+    peak_pnl = 0.0
+    max_drawdown = 0.0
+    
+    # Regime mappings
     rid_to_regime: dict[str, str] = {}
     order_id_to_regime: dict[str, str] = {}
     regime_sequence: list[str] = []
+    
+    # Per-Coin Performance
+    symbol_stats: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "net_profit": 0.0,
+            "gross_profit": 0.0,
+            "gross_loss_abs": 0.0,
+        }
+    )
+    
     regime_stats: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "strategy_intents": 0,
@@ -116,6 +147,12 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
             "cancelled_orders": 0,
             "reject_reasons": Counter(),
             "cancel_reasons": Counter(),
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "net_profit": 0.0,
+            "gross_profit": 0.0,
+            "gross_loss_abs": 0.0,
         }
     )
 
@@ -139,6 +176,14 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
                 rid_to_regime[rid] = row_regime
 
             event_counts[event] += 1
+            symbol = str(row.get("symbol", "UNKNOWN")).strip()
+            
+            ts = row.get("timestamp")
+            if ts and event != "BOOT":  # BOOT uses wall-clock at session start, exclude from sim time range
+                if first_ts is None or ts < first_ts:
+                    first_ts = ts
+                if last_ts is None or ts > last_ts:
+                    last_ts = ts
 
             if event == "ORDER_INTENT":
                 meta = row.get("metadata", {})
@@ -162,11 +207,27 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
                 order_id = str(row.get("order_id", "")).strip()
                 if order_id:
                     order_id_to_regime[order_id] = regime
+                
+                side = str(row.get("side", "")).strip().upper()
+                if side == "BUY":
+                    buy_orders += 1
+                elif side == "SELL":
+                    sell_orders += 1
+                    
+            elif event == "ORDER_FILLED":
+                filled_orders += 1
+                ok = row.get("order_kind") or row.get("close_reason", "")
+                if ok in ("ENTRY", "ENTRY_FILLED"):
+                    entry_fills += 1
 
             elif event == "ORDER_REJECTED":
                 nrr = str(row.get("nrr_code", "")).strip()
                 why = str(row.get("why", "")).strip()
-                key = f"{nrr} | {why}" if nrr else (why or "UNKNOWN")
+                
+                # Aggregate reason without floating point confidences to avoid hundreds of unique keys
+                why_base = why.split(" regime_confidence=")[0].rstrip(": ") if " regime_confidence=" in why else why
+                key = f"{nrr} | {why_base}" if nrr else (why_base or "UNKNOWN")
+                
                 reject_reasons[key] += 1
                 regime = row_regime if row_regime != "UNKNOWN" else rid_to_regime.get(rid, "UNKNOWN")
                 bucket = regime_stats[regime]
@@ -184,6 +245,46 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
                 bucket["cancelled_orders"] += 1
                 bucket["cancel_reasons"][reason] += 1
 
+            elif event == "POSITION_CLOSED":
+                reason = str(row.get("why", "UNKNOWN")).strip()
+                close_reasons[reason] += 1
+                
+                meta = row.get("metadata", {})
+                if isinstance(meta, dict):
+                    pnl = _safe_float(meta.get("realized_pnl"), 0.0)
+                    if pnl != 0.0:  # Only count actual PnL changes
+                        net_profit_sum += pnl
+                        
+                        # Drawdown Calculation
+                        if net_profit_sum > peak_pnl:
+                            peak_pnl = net_profit_sum
+                        else:
+                            current_drawdown = peak_pnl - net_profit_sum
+                            if current_drawdown > max_drawdown:
+                                max_drawdown = current_drawdown
+                        
+                        sym_bucket = symbol_stats[symbol]
+                        sym_bucket["trades"] += 1
+                        sym_bucket["net_profit"] += pnl
+                        
+                        regime = row_regime if row_regime != "UNKNOWN" else rid_to_regime.get(rid, "UNKNOWN")
+                        reg_bucket = regime_stats[regime]
+                        reg_bucket["trades"] += 1
+                        reg_bucket["net_profit"] += pnl
+                        
+                        if pnl > 0:
+                            wins += 1
+                            sym_bucket["wins"] += 1
+                            sym_bucket["gross_profit"] += pnl
+                            reg_bucket["wins"] += 1
+                            reg_bucket["gross_profit"] += pnl
+                        else:
+                            losses += 1
+                            sym_bucket["losses"] += 1
+                            sym_bucket["gross_loss_abs"] += abs(pnl)
+                            reg_bucket["losses"] += 1
+                            reg_bucket["gross_loss_abs"] += abs(pnl)
+
     regime_switches = 0
     prev_regime: Optional[str] = None
     for regime in regime_sequence:
@@ -191,8 +292,11 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
             regime_switches += 1
         prev_regime = regime
 
+    # Finalize regime stats
     regime_stats_out: dict[str, Any] = {}
     for regime, stats in regime_stats.items():
+        tr_count = int(stats["trades"])
+        win_rate = (float(stats["wins"]) / tr_count) if tr_count > 0 else 0.0
         regime_stats_out[regime] = {
             "strategy_intents": int(stats["strategy_intents"]),
             "proposed_intents": int(stats["proposed_intents"]),
@@ -201,21 +305,66 @@ def _summarize_order_log(order_log: Path) -> dict[str, Any]:
             "cancelled_orders": int(stats["cancelled_orders"]),
             "reject_reasons": dict(stats["reject_reasons"]),
             "cancel_reasons": dict(stats["cancel_reasons"]),
+            "trades": tr_count,
+            "wins": int(stats["wins"]),
+            "losses": int(stats["losses"]),
+            "win_rate": win_rate,
+            "net_profit": float(stats["net_profit"]),
+            "gross_profit": float(stats["gross_profit"]),
+            "gross_loss_abs": float(stats["gross_loss_abs"]),
         }
 
+    # Finalize symbol stats
+    symbol_stats_out: dict[str, Any] = {}
+    for sym, stats in symbol_stats.items():
+        tr_count = int(stats["trades"])
+        win_rate = (float(stats["wins"]) / tr_count) if tr_count > 0 else 0.0
+        profit_factor = float(stats["gross_profit"]) / float(stats["gross_loss_abs"]) if float(stats["gross_loss_abs"]) > 0 else float('inf')
+        symbol_stats_out[sym] = {
+            "trades": tr_count,
+            "wins": int(stats["wins"]),
+            "losses": int(stats["losses"]),
+            "win_rate": win_rate,
+            "net_profit": float(stats["net_profit"]),
+            "profit_factor": profit_factor
+        }
+
+    # Only include UNKNOWN regime if there was actual activity
     known_regimes = sorted([r for r in regime_stats_out.keys() if r != "UNKNOWN"])
+    if "UNKNOWN" in regime_stats_out:
+        u_stats = regime_stats_out["UNKNOWN"]
+        if u_stats["strategy_intents"] > 0 or u_stats["placed_orders"] > 0 or u_stats["rejected_orders"] > 0 or u_stats["trades"] > 0:
+            known_regimes.append("UNKNOWN")
+    total_trades = wins + losses
+    overall_win_rate = (wins / total_trades) if total_trades > 0 else 0.0
 
     return {
         "event_counts": dict(event_counts),
         "proposed_intents": proposed_intents,
         "strategy_intents": strategy_intents,
         "placed_orders": placed_orders,
+        "filled_orders": filled_orders,
+        "entry_fills": entry_fills,
+        "buy_orders": buy_orders,
+        "sell_orders": sell_orders,
+        "first_ts": first_ts,
+        "last_ts": last_ts,
         "reject_reasons": reject_reasons,
         "cancel_reasons": cancel_reasons,
+        "close_reasons": close_reasons,
         "session_regime_count": len(known_regimes),
         "session_regimes": known_regimes,
         "regime_switches": regime_switches,
         "regime_stats": regime_stats_out,
+        "symbol_stats": symbol_stats_out,
+        "performance": {
+            "total_trades": total_trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": overall_win_rate,
+            "net_profit": net_profit_sum,
+            "max_drawdown": max_drawdown
+        }
     }
 
 
@@ -314,122 +463,116 @@ def _print_human(
     top: int,
 ) -> None:
     print("=" * 72)
-    print("BACKTEST LOG STATS")
+    print("BACKTEST LOG STATS (Extracted Privately From Logs)")
     print("=" * 72)
     print(f"order_log: {order_log}")
-    print(f"report:    {report_path if report_path else 'not found'}")
     print("-" * 72)
 
+    perf = order_stats["performance"]
+    print("PERFORMANCE METRICS:")
+    print(f"  total_trades (closed): {perf['total_trades']}")
+    print(f"  net_profit_sum:      {perf['net_profit']:.2f} USDT")
+    print(f"  win_rate:            {_fmt_pct(perf['win_rate'])}  ({perf['wins']}W / {perf['losses']}L)")
+    print(f"  max_drawdown:        {perf['max_drawdown']:.2f} USDT")
+
+    syms = order_stats.get("symbol_stats", {})
+    if syms:
+        print("\nPER-COIN PERFORMANCE:")
+        sorted_syms = sorted(syms.items(), key=lambda kv: kv[1]["net_profit"], reverse=True)
+        for sym, stat in sorted_syms:
+            pf = stat["profit_factor"]
+            pf_str = f"{pf:.2f}" if pf != float('inf') else "INF"
+            print(f"  {sym:<10} PnL: {stat['net_profit']:>8.2f} USDT | WR: {_fmt_pct(stat['win_rate']):>7} ({stat['wins']:>2}W/{stat['losses']:>2}L) | PF: {pf_str:<5}")
+
+    first_ts = order_stats.get("first_ts")
+    last_ts = order_stats.get("last_ts")
+    if first_ts and last_ts:
+        import datetime
+        start_dt = datetime.datetime.fromtimestamp(first_ts / 1000.0, datetime.timezone.utc)
+        end_dt = datetime.datetime.fromtimestamp(last_ts / 1000.0, datetime.timezone.utc)
+        duration = end_dt - start_dt
+        print("\nTIME CONTEXT:")
+        print(f"  Start:    {start_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"  End:      {end_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"  Duration: {duration}")
+
+    print("-" * 72)
     ec = order_stats["event_counts"]
-    print("Orders / Intents:")
-    print(f"  proposed_intents (Decision): {order_stats['proposed_intents']}")
-    print(f"  strategy_intents (DM source): {order_stats['strategy_intents']}")
-    print(f"  placed_orders: {order_stats['placed_orders']}")
-    print(f"  rejected_orders: {ec.get('ORDER_REJECTED', 0)}")
-    print(f"  cancelled_orders: {ec.get('ORDER_CANCELLED', 0)}")
+    proposed = order_stats.get('proposed_intents', 0)
+    placed = order_stats.get('placed_orders', 0)
+    filled = order_stats.get('filled_orders', 0)
+    entry_filled = order_stats.get('entry_fills', 0)
+    closed = ec.get('POSITION_CLOSED', 0)
+    rejected = ec.get('ORDER_REJECTED', 0)
+    cancelled = ec.get('ORDER_CANCELLED', 0)
+    bracket_fills = filled - entry_filled
+
+    total = proposed + rejected
+
+    print("FUNNEL / CONVERSION:")
+    print(f"  Signals generated:     {total}  (Proposed + Rejected)")
+    if total > 0:
+        print(f"  |- Rejected:            {rejected}  ({(rejected/total)*100:.1f}%)")
+        print(f"  |- Intents proposed:    {proposed}  ({(proposed/total)*100:.1f}%)")
+        if proposed > 0:
+            print(f"  |- Orders placed:       {placed}  ({(placed/proposed)*100:.1f}%)")
+            if placed > 0:
+                print(f"  |  |- Cancelled:        {cancelled}  ({(cancelled/placed)*100:.1f}%)")
+                print(f"  |  |- Entries filled:   {entry_filled}  ({(entry_filled/placed)*100:.1f}%)")
+                if bracket_fills > 0:
+                    print(f"  |  |  |- Bracket fills: {bracket_fills}  (SL/TP on filled entries)")
+                pending = placed - cancelled - entry_filled
+                print(f"  |  \\- Pending/Expired:  {max(pending,0)}  ({(max(pending,0)/placed)*100:.1f}%)")
+            else:
+                print(f"  |  |- Cancelled:        0")
+                print(f"  |  |- Entries filled:   0")
+        else:
+            print(f"  |- Orders placed:       0")
+        print(f"  \\- Positions closed:    {closed}")
+    else:
+        print("  No signals generated.")
+
+    print("\nSIDE DISTRIBUTION (Placed Orders):")
+    print(f"  BUY:  {order_stats.get('buy_orders', 0)}")
+    print(f"  SELL: {order_stats.get('sell_orders', 0)}")
 
     rr: Counter[str] = order_stats["reject_reasons"]
     if rr:
-        print("Top reject reasons:")
+        print("\nTOP REJECT REASONS:")
         for reason, cnt in rr.most_common(top):
             print(f"  {cnt:>5}  {reason}")
 
-    cr: Counter[str] = order_stats["cancel_reasons"]
-    if cr:
-        print("Cancel reasons:")
-        for reason, cnt in cr.most_common(top):
+    cl: Counter[str] = order_stats["close_reasons"]
+    if cl:
+        print("\nTOP CLOSE REASONS:")
+        for reason, cnt in cl.most_common(top):
             print(f"  {cnt:>5}  {reason}")
 
-    print("Regime session view (from DecisionMaking intents):")
-    print(f"  regimes_in_session: {order_stats.get('session_regime_count', 0)}")
-    session_regimes = order_stats.get("session_regimes", [])
-    print(f"  regime_list: {', '.join(session_regimes) if session_regimes else 'none'}")
+    print("\nREGIME OVERVIEW:")
+    print(f"  regime_list: {', '.join(order_stats.get('session_regimes', []))}")
     print(f"  regime_switches: {order_stats.get('regime_switches', 0)}")
 
     regime_stats = order_stats.get("regime_stats", {})
     if regime_stats:
-        print("Orders by regime:")
+        print("\nPERFORMANCE BY REGIME:")
         sorted_regimes = sorted(
             regime_stats.items(),
-            key=lambda kv: kv[1].get("placed_orders", 0) + kv[1].get("rejected_orders", 0),
+            key=lambda kv: kv[1].get("net_profit", 0),
             reverse=True,
         )
         for regime, stats in sorted_regimes:
+            rej = stats.get('rejected_orders', 0)
             print(f"  [{regime}]")
             print(
                 "    "
-                f"strategy_intents={stats.get('strategy_intents', 0)} "
-                f"proposed={stats.get('proposed_intents', 0)} "
-                f"placed={stats.get('placed_orders', 0)} "
-                f"rejected={stats.get('rejected_orders', 0)} "
-                f"cancelled={stats.get('cancelled_orders', 0)}"
-            )
-
-            rej = Counter(stats.get("reject_reasons", {}))
-            if rej:
-                print("    reject_reasons:")
-                for reason, cnt in rej.most_common(top):
-                    print(f"      {cnt:>5}  {reason}")
-
-            can = Counter(stats.get("cancel_reasons", {}))
-            if can:
-                print("    cancel_reasons:")
-                for reason, cnt in can.most_common(top):
-                    print(f"      {cnt:>5}  {reason}")
-
-    if not report_stats:
-        print("-" * 72)
-        print("PnL / win-rate unavailable (matching backtest report not found).")
-        return
-
-    metrics = report_stats["metrics"]
-    print("-" * 72)
-    print("Performance:")
-    print(f"  total_pnl: {_safe_float(metrics.get('total_pnl')):.2f} USDT")
-    print(f"  roi: {_safe_float(metrics.get('roi_pct')):.2f}%")
-    print(f"  win_rate (engine): {_safe_float(metrics.get('win_rate')) * 100:.2f}%")
-    print(f"  total_trades (engine): {int(_safe_float(metrics.get('total_trades')))}")
-
-    print("Reconstructed trades (from report.trades):")
-    print(f"  closed_trades: {report_stats['reconstructed_trades']}")
-    print(f"  wins: {report_stats['wins']}")
-    print(f"  losses: {report_stats['losses']}")
-    print(f"  win_rate (calc): {_fmt_pct(report_stats['win_rate_calc'])}")
-    print(f"  net_profit_sum: {report_stats['net_profit_sum']:.2f} USDT")
-    print(f"  gross_profit_sum: {report_stats['gross_profit_sum']:.2f} USDT")
-    print(f"  gross_loss_sum: -{report_stats['gross_loss_abs_sum']:.2f} USDT")
-
-    close_reasons = report_stats.get("close_reason_counts", {})
-    if close_reasons:
-        print("Close reasons:")
-        for reason, cnt in sorted(close_reasons.items(), key=lambda kv: kv[1], reverse=True)[:top]:
-            print(f"  {cnt:>5}  {reason}")
-
-    regime_trade_stats = report_stats.get("regime_trade_stats", {})
-    if regime_trade_stats:
-        print("Trade performance by regime:")
-        sorted_regimes = sorted(regime_trade_stats.items(), key=lambda kv: kv[1].get("trades", 0), reverse=True)
-        for regime, stats in sorted_regimes:
-            print(f"  [{regime}]")
-            print(
-                "    "
+                f"PnL: {stats.get('net_profit', 0.0):.2f} USDT | "
+                f"WR: {_fmt_pct(stats.get('win_rate', 0.0))} "
+                f"({stats.get('wins', 0)}W/{stats.get('losses', 0)}L) | "
                 f"trades={stats.get('trades', 0)} "
-                f"wins={stats.get('wins', 0)} "
-                f"losses={stats.get('losses', 0)} "
-                f"win_rate={_fmt_pct(_safe_float(stats.get('win_rate')))}"
+                f"intents={stats.get('strategy_intents', 0)} "
+                f"placed={stats.get('placed_orders', 0)}"
+                + (f" rejected={rej}" if rej > 0 else "")
             )
-            print(
-                "    "
-                f"net={_safe_float(stats.get('net_profit_sum')):.2f} USDT "
-                f"profit={_safe_float(stats.get('gross_profit_sum')):.2f} USDT "
-                f"loss=-{_safe_float(stats.get('gross_loss_abs_sum')):.2f} USDT"
-            )
-
-            reasons = Counter(stats.get("close_reasons", {}))
-            if reasons:
-                print("    close_reasons:")
-                for reason, cnt in reasons.most_common(top):
-                    print(f"      {cnt:>5}  {reason}")
 
 
 def main() -> int:

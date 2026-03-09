@@ -1,0 +1,107 @@
+# =============================================================================
+# OBSERVABILITY CONFIGURATION
+# =============================================================================
+# Centralized logging, metrics, and tracing configuration.
+# SSOT for all observability settings (replaces hardcoded main.py values).
+#
+# CFG-OBS-001: Logging configuration must be loaded before any domain init.
+# =============================================================================
+
+config_version: "1.0.0"
+
+logging:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Global Defaults
+  # ─────────────────────────────────────────────────────────────────────────
+  default_level: INFO      # DEBUG | INFO | WARNING | ERROR
+  default_format: text     # text | json
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Rotation Settings (applied to all file handlers unless overridden)
+  # ─────────────────────────────────────────────────────────────────────────
+  rotation:
+    max_bytes: 10485760    # 10 MB
+    backup_count: 5
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Console Sink
+  # ─────────────────────────────────────────────────────────────────────────
+  console:
+    enabled: true
+    level: INFO
+    format: text
+    colorize: false        # Future: ANSI color support
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Core File Sink (aurora_core.log)
+  # ─────────────────────────────────────────────────────────────────────────
+  core:
+    enabled: true
+    path: logs/aurora_core.log
+    level: DEBUG           # Log everything to file
+    format: text
+    max_bytes: 10485760    # 10 MB
+    backup_count: 5
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Domain-Specific Sinks
+  # Each domain gets its own log file for easier debugging.
+  # ─────────────────────────────────────────────────────────────────────────
+  domains:
+    feature_engineering:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880   # 5 MB
+      backup_count: 3
+    
+    risk_management:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 3
+    
+    decision_making:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 3
+    
+    execution_position:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 3
+    
+    regime_detector:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 3
+    
+    mean_reversion:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 3
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Structured Event Chain (JSON format for forensics)
+  # ─────────────────────────────────────────────────────────────────────────
+  event_chain:
+    enabled: true
+    path: logs/event_chain.log
+    level: INFO
+    format: json
+    max_bytes: 10485760
+    backup_count: 5
+
+# =============================================================================
+# FUTURE: Metrics & Tracing (placeholders)
+# =============================================================================
+# metrics:
+#   enabled: false
+#   prometheus_port: 9090
+#   
+# tracing:
+#   enabled: false
+#   otlp_endpoint: http://localhost:4317

@@ -46,6 +46,9 @@ def mock_config():
     strategy.sl_atr_mult = 1.5
     strategy.tp_to_mid = True
     strategy.cooldown_sec = 60
+    strategy.confidence_base = 0.5
+    strategy.confidence_bb_slope = 2.0
+    strategy.confidence_rsi_bonus = 0.2
     cfg.strategies.mean_reversion.strategy = strategy
     
     # Regime thresholds

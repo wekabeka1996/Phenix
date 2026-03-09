@@ -333,3 +333,46 @@
 - MR має пріоритет над trend,
 - після raw-вибору застосовується `hysteresis_bars`, і в `EVT:REGIME_DETECTED` емiтиться **stable_regime** (анти-чьорн), а не raw.
 
+---
+
+### `system_stress.robust_method`
+* **Type:** `Literal["none", "mad"]`
+* **Logic Owner:** `system_stress` (Robust Statistics)
+* **Code Reference:** `apps/reference/domains/system_stress/system_stress_overlay.py` (func: `_z_robust`)
+* **Mathematical Role:**
+    > Зменшення кількості false-positive STRESS-переходів на жирних хвостах розподілу.  
+    > `none`: звичайний Z-score: `(x - mean) / std`.  
+    > `mad`: робастний Z-score: `0.6745 * (x - median) / MAD`.
+* **Tuning Sensitivity:**
+    * 🔼 **"mad" Value:** Менше false-positives від одиничних великих спайків у baseline, метрика стає стійкішою до fat-tail returns.
+    * 🔽 **"none" Value:** Класичний підхід, більш чутливий до екстремальних викидів (std "роздмухується", що може як маскувати нові спайки, так і давати хибні сигнали при виході спайку з вікна).
+* **Invariant/Constraints:** `none` or `mad` (Pydantic: `apps/reference/config_models.py`).
+
+---
+
+### `regime_shift_inception.enabled`
+* **Type:** `bool`
+* **Logic Owner:** `decision_making` (Regime-Shift Inception Guard)
+* **Code Reference:** `apps/reference/domains/decision_making/inception_filter.py`
+* **Mathematical Role:**
+    > Дозволяє стратегії реагувати на raw-режим під час "stable_regime ∉ allowed_regimes". 
+* **Invariant/Constraints:** `false` (Pydantic).
+
+---
+
+### `regime_shift_inception.action`
+* **Type:** `Literal["none", "micro_size", "confirm_next_bar"]`
+* **Logic Owner:** `decision_making`
+* **Mathematical Role:**
+    > Дія при inception: `none` = тільки телеметрія, `micro_size` = вхід зменшеним лотом.
+* **Invariant/Constraints:** `none` (Pydantic).
+
+---
+
+### `regime_shift_inception.micro_size_fraction`
+* **Type:** `float`
+* **Logic Owner:** `decision_making`
+* **Mathematical Role:**
+    > Множник об'єму позиції при `action="micro_size"`.
+* **Invariant/Constraints:** `0.0 < value <= 1.0` (Pydantic).
+

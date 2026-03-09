@@ -100,11 +100,13 @@ class QuadraticScoringKernel:
         # Hysteresis support
         neutral_threshold: Optional[decimal.Decimal] = None,
         current_side: str = "",
+        normalize_mode: str = "signed_v2",
         # Phase 9 extensions
         shield_fn: Optional[ShieldFn] = None,
         pillar_contribs: Optional[Dict[str, float]] = None,
         score_multiplier: float = 1.0,
         linear_score: Optional[float] = None,
+        regime_smoother: Optional[Any] = None,
     ) -> ScoringResult:
         """
         Compute quadratic signal score.

@@ -1,0 +1,33 @@
+# =============================================================================
+# OVERLAY: R4 Backtest Window — September-only (2023-09-01..2023-09-30)
+# =============================================================================
+# Purpose   : Isolated September window — tests B3 generalization on fresh month,
+#             specifically to resolve the BTC/BNB MR watchlist signals from R3.
+# NOTE      : This file is NOT auto-loaded by ConfigLoader.
+#             Apply via: python scripts/diagnostics/run_single_backtest.py
+#                          --side B --start 2023-09-01 --end 2023-09-30
+#             No predefined --rung for September-only; use --start/--end directly.
+# =============================================================================
+# Config used : config/aurora/  (B3 / patched3 — accepted baseline, no changes)
+# Symbols     : BTCUSDT, ETHUSDT, BNBUSDT, DOGEUSDT, 1000PEPEUSDT
+# Parquet     : all 5 symbols OK for 2023-09
+# =============================================================================
+# WHY September-only?
+#   Isolates September regime mix from the Jun-Jul drawdown context.
+#   Cleaner signal for watchlist decisions:
+#     - BTC: was AUG -139.95 anomaly or structural?
+#     - BNB MR: was AUG +5.56 recovery real or low-n noise (n=7)?
+#   Decision rule post-R4:
+#     BTC: if Sep-only strongly negative again  → patched4 candidate
+#     BNB MR: if Sep-only ev/t < -2.0 AND n >= 10 → patched4 candidate
+# =============================================================================
+
+trading:
+  backtest:
+    start_date: "2023-09-01"    # inclusive
+    end_date:   "2023-09-30"    # inclusive — last day of September 2023
+    initial_balance: 1000.0
+
+# Note: September 2023 market context
+#   BTC: recovery month (~26k -> 27k range), relatively calmer
+#   Good contrast to August sell-off — tests if BTC issue was regime-specific

@@ -318,3 +318,44 @@
 **Дата аналізу:** 2026-01-27  
 **Версія конфігу:** 1.0.0 (CFG-STRATEGY-SSOT-FREEZE-02)  
 **Статус:** ✅ Актуальний, готовий до production (з OVERRIDE сигналу)
+
+---
+
+### `decision.regime_smoothing.enabled`
+* **Type:** `bool`
+* **Logic Owner:** `decision_making` (Regime Multiplier Smoother)
+* **Code Reference:** `apps/reference/domains/decision_making/regime_smoother.py`
+* **Mathematical Role:**
+    > Перемикач, що включає згладжування (EMA або linear ramp) множників при зміні режиму.
+* **Tuning Sensitivity:** `True` - згладжує стрибки threshold'ів, `False` - миттєва зміна (fail-closed default).
+* **Invariant/Constraints:** `False` by default (Pydantic).
+
+---
+
+### `decision.regime_smoothing.method`
+* **Type:** `Literal["ema", "linear_ramp"]`
+* **Logic Owner:** `decision_making`
+* **Mathematical Role:**
+    > Алгоритм згладжування множників.
+* **Invariant/Constraints:** `ema` або `linear_ramp` (Pydantic).
+
+---
+
+### `decision.regime_smoothing.ema_alpha`
+* **Type:** `float`
+* **Logic Owner:** `decision_making`
+* **Mathematical Role:**
+    > Коефіцієнт загасання для EMA: `smoothed = α * raw + (1 - α) * prev_smoothed`.
+* **Tuning Sensitivity:**
+    * 🔼 **Higher Value:** Швидша адаптація до нового множника (0.5 = 2-bar half-life).
+    * 🔽 **Lower Value:** Повільніша адаптація (0.1 = 10-bar half-life).
+* **Invariant/Constraints:** `0.0 < value <= 1.0` (Pydantic).
+
+---
+
+### `decision.regime_smoothing.ramp_bars`
+* **Type:** `int`
+* **Logic Owner:** `decision_making`
+* **Mathematical Role:**
+    > Кількість барів для лінійного переходу від старого множника до нового.
+* **Invariant/Constraints:** `1 <= value <= 20` (Pydantic).

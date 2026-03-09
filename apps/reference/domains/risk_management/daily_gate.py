@@ -199,11 +199,11 @@ class DailyRiskState:
             if self.log:
                 self.log.exception("[DailyGate] Failed to save state")
 
-    def _load_state(self) -> None:
+    def _load_state(self, now: Optional[datetime] = None) -> None:
         if not getattr(self, "_persist_state", True):
             self.reset()
             return
-        now = _now_utc()
+        now = now or _now_utc()
         active_date = self._active_trading_date(now=now)
         try:
             if not self._state_path.exists():
@@ -237,7 +237,7 @@ class DailyRiskState:
             self._last_reset_date = active_date
             self._last_gate_open = False
             self._recovery_required = True
-            self._recovery_trading_date = active_date
+            self._recovery_trading_date = active_date  # now= is real or frozen, consistent
 
     def _maybe_reset(self, now: Optional[datetime] = None) -> None:
         """Reset daily metrics if it's time for daily reset."""

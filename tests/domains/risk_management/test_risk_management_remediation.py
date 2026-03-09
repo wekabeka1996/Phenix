@@ -139,10 +139,16 @@ def test_corrupted_state_blocks_intraday_until_next_day(monkeypatch, tmp_path: P
     state_path = tmp_path / "risk_state.json"
     monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(state_path))
 
+    # Freeze wall-clock so _load_state recovery_trading_date matches test's frozen datetime.
+    # Without this, _now_utc() returns real date (2026-03-04) while test uses 2026-02-24,
+    # causing the recovery block to be immediately cleared on the first on_portfolio call.
+    from apps.reference.domains.risk_management import daily_gate as daily_gate_mod
+    now = datetime(2026, 2, 24, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(daily_gate_mod, "_now_utc", lambda: now)
+
     cfg = _cfg_daily_enabled()
     gate = DailyRiskState(cfg)
 
-    now = datetime(2026, 2, 24, 12, 0, tzinfo=timezone.utc)
     gate.on_portfolio({"equity_cross_usdt": "1000"}, now=now)
     gate.on_portfolio({"equity_cross_usdt": "850"}, now=now)
     allowed_before, reason_before = gate.can_open()
@@ -160,6 +166,8 @@ def test_corrupted_state_blocks_intraday_until_next_day(monkeypatch, tmp_path: P
     assert reason_same_day.get("detail") == "NO_EQUITY"
 
     next_day = now + timedelta(days=1)
+    # Advance frozen clock to next day for re-anchor
+    monkeypatch.setattr(daily_gate_mod, "_now_utc", lambda: next_day)
     restarted.on_portfolio({"equity_cross_usdt": "850"}, now=next_day)
     allowed_next_day, _ = restarted.can_open()
 

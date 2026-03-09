@@ -1,0 +1,198 @@
+binance_api:
+  live:
+    api_key: ${BINANCE_FUTURES_API_KEY_LIVE}
+    api_secret: ${BINANCE_FUTURES_API_SECRET_LIVE}
+    rest_url: ${BINANCE_FUTURES_BASE_URL_LIVE}
+    # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in connectors)
+  testnet:
+    api_key: ${BINANCE_TESTNET_API_KEY}
+    api_secret: ${BINANCE_TESTNET_API_SECRET}
+    rest_url: https://testnet.binancefuture.com
+    # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in connectors)
+trading:
+  # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
+  mode: backtest
+  backtest:
+    start_date: "2023-06-01"
+    end_date: "2023-09-30"
+    initial_balance: 1000.0
+    profit_withdrawal_enabled: false
+    profit_withdrawal_roi_pct: 10
+  tca_prefs:
+    max_slippage_pct: 0.5
+    max_slippage_bps: 10
+    max_latency_ms: 500
+    maker_preference: neutral
+    preferred_venue: binance
+    execution_priority: speed
+  risk_budgets:
+    trade_cvar95_max_bps: 100
+    session_cvar95_max_bps: 200
+    max_portfolio_risk_pct: 5.0
+    max_single_position_risk_pct: 1.0
+    max_daily_loss_pct: 2.0
+  risk:
+    max_daily_drawdown_limit: 0.05
+    score_weights:
+      delta_price: 0.05
+      obi: 0.35
+      tfi: 0.35
+      absorption_inverse: 0.25
+    testnet:
+      max_risk_score: 0.9
+    production:
+      max_risk_score: 0.8
+    trading_allowed_thresholds:
+      max_risk_score: 0.9
+    daily:
+      enabled: false
+      max_realized_loss_usd: 250.0
+      max_drawdown_pct: 8.0
+      reset_time_utc: 00:00
+    profile: balanced
+    soft_limits:
+      # LIVE SAFETY: Soft clipping for position sizing risk management.
+      mode: clip
+      clip_min_notional_usdt: 10
+      directional_ratio_max: 20.0
+      side_exposure_usdt: 2000
+      margin_exposure_usdt: 5000
+    regime_adaptation:
+      trend_up_delta: 0.3
+      trend_down_delta: 0.3
+      flat_delta: -0.3
+      bounds:
+      - 2.0
+      - 4.0
+    feature_flags:
+      dynamic_ratio: true
+      clipping_enabled: true
+  market_data:
+    poll_interval_sec: 5.0
+    websocket_streams:
+    - bookTicker
+    - trade
+    use_multiprocessing: true
+    # PURGE-DIRTY-DOZEN: Removed api_call_limits (dead stub, REST replaced by WebSocket) - 2026-01-25
+    macro_sync:
+      enabled: true
+      anchors:
+      - BTCUSDT
+      - ETHUSDT
+      window: 60
+      emit_abs: false
+      align_mode: tail_min_len
+      min_buffer_size: 3
+      time_diff_threshold_ms: 60000
+      anchor_update_from_ticks: false
+    bar_aggregator:
+      enabled: true
+      timeframes_sec:
+      - 180
+      - 300
+      - 900  # REGIME-BAR-FORENSICS-01: Enable 15m bars
+      - 14400 # 4h bars for operator pillar
+      - 86400 # 1d bars for strategist pillar
+  ops:
+    panic_killswitch: false
+  execution:
+    manage:
+      auto: true
+      brackets:
+        oco_emulation: true
+        # TASK-ZOMBIE-FIX: Removed stop_loss_bps (dead duplicate, SSOT is sl.fixed_bps)
+        offset_bps: 5
+        sl:
+          fixed_bps: 40
+        tp:
+          fixed_bps: 80
+      orphan_monitor:
+        enabled: true
+        run_on_startup: true
+        periodic_interval_sec: 300
+        min_order_age_sec: 0
+        batch_cancel_limit: 50
+        rate_limit_per_min: 120
+      # Emergency mode config (optional - set enabled: false to disable)
+      emergency:
+        enabled: false
+        wait_mode_bars: 2
+        emergency_sl_bps: 100
+      # TASK-ZOMBIE-FIX: Removed failsafe (dead, max_hold_sec moved to instruments.<SYM>.exit)
+    fsm_periodic_cleanup_enabled: false
+    cooldown_after_close_ms: 60000
+    anti_race_close_ms: 800
+    fallback: null
+    limit_orders: null
+    exposure:
+      max_equity_utilization_pct: 150.0
+      max_portfolio_fraction: 150.0
+      # TASK-ZOMBIE-FIX: Removed max_side_utilization_pct (dead, never read in exposure_guard)
+      max_directional_ratio: 50.0
+      # TASK-ZOMBIE-FIX: Removed per_symbol_cap_pct (dead, never read in exposure_guard)
+      count_pending_orders: true
+      exclude_reduce_only: true
+      pending_ttl_sec: 90
+      # TASK-ZOMBIE-FIX: Removed pending_reservation_ttl_sec (dead, never read in exposure_guard)
+      post_fill_hold_ttl_sec: 5
+      # TASK-ZOMBIE-FIX: Removed positions_stale_ttl_sec (duplicate, SSOT is domains.execution_position.exposure_guard.stale_ttl_sec)
+      leverage_defaults:
+        BTCUSDT: 20
+        ETHUSDT: 20
+        SOLUSDT: 20
+        XRPUSDT: 20
+        DOGEUSDT: 20
+        __default__: 20
+    # PURGE-DIRTY-DOZEN: Removed open_order_type (dead stub, order_type now in intent) - 2026-01-25
+    order_params:
+      LIMIT:
+        timeInForce: GTC
+      STOP_MARKET:
+        workingType: MARK_PRICE
+      TAKE_PROFIT_MARKET:
+        workingType: MARK_PRICE
+      TRAILING_STOP_MARKET:
+        callbackRate: '0.5'
+    watchdog:
+      ack_ttl_ms: 8000
+      fill_ttl_ms: 60000
+      check_interval_ms: 1000
+      rps_limit: 10
+    orders:
+      default_ttl_seconds: 15
+    preflight_backoff_ms:
+    - 120
+    - 250
+    - 400
+    - 800
+    - 1200
+    - 1800
+    # PURGE-DIRTY-DOZEN: Removed min_post_interval_per_symbol_ms (dead stub, rate limit in adapter) - 2026-01-25
+    allow_trade_with_guardian_tidy_only: false
+    order_guardian:
+      unified: true
+      ledger_db_path: data/order_ledger.db
+  # ═══════════════════════════════════════════════════════════════════════
+  # HYBRID MODE CONFIGURATION (Live Data → Testnet Execution)
+  # ═══════════════════════════════════════════════════════════════════════
+  # Data domains: LIVE (read real market data)
+  # Execution domains: TESTNET (write orders to testnet)
+  # This allows safe testing with real market conditions without risking capital
+  domain_configuration:
+    market_data:
+      trading_mode: live      # Read LIVE Binance market data (WebSocket + REST)
+    feature_engineering:
+      trading_mode: live      # Process features from live data
+    decision_making:
+      trading_mode: live      # Generate signals from live features
+    # PURGE-DIRTY-DOZEN: Removed risk_management, execution_position, audit_trail trading_modes
+    # (dead legacy, global trading_mode is SSOT) - 2026-01-25
+  # ═══════════════════════════════════════════════════════════════════════
+  # RISK MANAGEMENT DATA SOURCES (Hybrid Mode)
+  # ═══════════════════════════════════════════════════════════════════════
+  # portfolio_state: testnet → use testnet account balances/positions
+  # market_data: live → use live prices for risk calculations
+  risk_management:
+    data_sources:
+      portfolio_state: testnet  # Read positions/balance from TESTNET account
+      market_data: live         # Use LIVE prices for mark-to-market valuations

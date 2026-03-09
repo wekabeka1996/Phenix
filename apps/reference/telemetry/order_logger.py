@@ -87,9 +87,13 @@ class OrderLoggerV1:
     def write(self, entry: Dict[str, Any]) -> None:
         """Write order log entry with optional schema validation."""
         entry = _to_jsonable(entry)
-        # Add timestamp if not provided
+        # Add timestamp if not provided — prefer simulated clock in backtest
         if "timestamp" not in entry:
-            entry["timestamp"] = int(time.time() * 1000)  # milliseconds
+            try:
+                from apps.reference.core.time import get_clock
+                entry["timestamp"] = int(get_clock().now_ms())
+            except Exception:
+                entry["timestamp"] = int(time.time() * 1000)
 
         # Validate schema in DEBUG/TEST modes
         env = os.getenv("ENV", "").upper()

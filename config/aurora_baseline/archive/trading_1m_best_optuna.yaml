@@ -1,0 +1,268 @@
+# ==================================================================================
+# 1m Mean Reversion Strategy - Best Optuna Configurations
+# ==================================================================================
+# Generated: 2025-12-03
+# Optimizer: Optuna (500 trials per asset)
+# Validation Period: January 2024
+# Portfolio PnL: +$203.72/month
+#
+# ⚠️  ВАЖЛИВО: ЦЯ КОНФІГУРАЦІЯ НЕ ІНТЕГРОВАНА В AURORA! ⚠️
+#
+# Це R&D результат для НОВОЇ стратегії (Mean Reversion), яка використовує:
+#   - Bollinger Bands (яких НЕМАЄ в поточній Aurora)
+#   - RSI (якого НЕМАЄ в поточній Aurora)
+#   - 1m timeframe (Aurora працює на tick data)
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# ПЛАН ІНТЕГРАЦІЇ (якщо вирішимо додати цю стратегію):
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# ШАГ 1: Feature Engineering (додати нові індикатори)
+# ────────────────────────────────────────────────────────────
+# Файл: apps/reference/domains/feature_engineering/feature_engineering.py
+#
+# Додати методи:
+#   def compute_bollinger_bands(close, window, num_std):
+#       """Calculate BB upper, lower, mid bands"""
+#       sma = close.rolling(window).mean()
+#       std = close.rolling(window).std()
+#       return sma + num_std*std, sma - num_std*std, sma
+#
+#   def compute_rsi(close, window):
+#       """Calculate RSI indicator"""
+#       delta = close.diff()
+#       gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+#       loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+#       rs = gain / loss
+#       return 100 - (100 / (1 + rs))
+#
+# Оновити: config/aurora/features.yaml
+#   bollinger_bands:
+#     enabled: true
+#     windows: [20, 60, 120]
+#     num_std: 2.0
+#   rsi:
+#     enabled: true  
+#     windows: [14, 60]
+#
+# ШАГ 2: 1m Bar Resampler (новий модуль)
+# ────────────────────────────────────────────────────────────
+# Файл: apps/reference/domains/feature_engineering/bar_resampler.py (НОВИЙ!)
+#
+# Потрібно створити:
+#   class BarResampler:
+#       """Resample tick data to 1m OHLCV bars in real-time"""
+#       def add_tick(self, price, volume, timestamp):
+#           # Aggregate ticks into 1-minute bars
+#       def get_current_bar(self) -> OHLCV:
+#           # Return completed bar
+#
+# ШАГ 3: Strategy Layer (Mean Reversion decision logic)
+# ────────────────────────────────────────────────────────────
+# Файл: apps/reference/domains/decision_making/strategies/mean_reversion.py (НОВИЙ!)
+#
+# Потрібно створити:
+#   class MeanReversionStrategy:
+#       def should_enter_long(self, features, config):
+#           # Logic: price < bb_lower, regime in allowed, etc.
+#       def should_enter_short(self, features, config):
+#           # Logic: price > bb_upper, regime in allowed, etc.
+#
+# Оновити: apps/reference/domains/decision_making/decision_making.py
+#   from .strategies.mean_reversion import MeanReversionStrategy
+#   
+#   self.strategies = [
+#       ExistingStrategy(),
+#       MeanReversionStrategy(config)  # New!
+#   ]
+#
+# ШАГ 4: Config Integration
+# ────────────────────────────────────────────────────────────
+# Файл: config/aurora/domains.yaml
+#
+# Додати:
+#   decision_making:
+#     strategies:
+#       mean_reversion:
+#         enabled: false  # Start disabled, enable after testing
+#         config_path: "../trading_1m_best_optuna.yaml"
+#         weight: 0.3  # 30% allocation vs existing strategies
+#
+# ШАГ 5: Testing & Validation
+# ────────────────────────────────────────────────────────────
+# 1. Unit tests для BB/RSI calculation
+# 2. Integration test для BarResampler
+# 3. Paper trading 2 тижні на testnet
+# 4. Walk-forward validation на Feb-Mar 2024
+#
+# ОЦІНКА ЧАСУ: 1-2 тижні for production-ready integration
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# АЛЬТЕРНАТИВА: Спочатку оптимізувати ІСНУЮЧІ фічі Aurora
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Замість додавання нової стратегії, можна оптимізувати параметри,
+# які вже є в системі:
+#   - EMA periods (short/long)
+#   - Volume SMA length
+#   - Volatility windows
+#   - Liquidity thresholds
+#   - Signal thresholds
+#
+# Це швидший шлях до покращення performance без зміни архітектури!
+#
+# Дивись: apps/research/aurora_optuna/ (якщо створимо)
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+strategy:
+  name: "Mean Reversion 1m"
+  version: "v3.0-final"
+  timeframe: "1m"
+  
+  # Global Settings
+  global:
+    position_size_usd: 1000
+    maker_fee: 0.0002  # 0.02%
+    taker_fee: 0.0005  # 0.05%
+    slippage: 0.0001   # 0.01%
+    cost_basis: 0.0008 # maker + taker + slippage
+    
+  # Risk Management
+  risk:
+    max_concurrent_positions: 5
+    daily_loss_limit_usd: 500
+    per_asset_exposure_pct: 20  # 20% of capital per asset
+    
+  # Asset Configurations (Optimized via 500-trial Optuna)
+  assets:
+    
+    # Bitcoin - Most Stable, Tight SL
+    BTCUSDT:
+      enabled: true
+      bb_window: 20              # 20-minute Bollinger Bands
+      min_vol_atr: 0.008         # Min BB width 0.8%
+      sl_pct: 0.0068             # Stop Loss 0.68%
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      metrics:
+        expected_pnl: 45.27
+        win_rate: 0.657
+        calmar: 0.91
+        trades_per_month: 172
+        
+    # Dogecoin - Best Performer, Wide SL
+    DOGEUSDT:
+      enabled: true
+      bb_window: 20              # 20-minute Bollinger Bands
+      min_vol_atr: 0.010         # Min BB width 1.0%
+      sl_pct: 0.0197             # Stop Loss 1.97% (meme volatility)
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      metrics:
+        expected_pnl: 88.38       # Best performer!
+        win_rate: 0.644
+        calmar: 1.07
+        trades_per_month: 146
+        
+    # XRP - Balanced
+    XRPUSDT:
+      enabled: true
+      bb_window: 20              # 20-minute Bollinger Bands
+      min_vol_atr: 0.010         # Min BB width 1.0%
+      sl_pct: 0.0144             # Stop Loss 1.44%
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      metrics:
+        expected_pnl: 31.41
+        win_rate: 0.626
+        calmar: 0.54
+        trades_per_month: 107
+        
+    # Ethereum - Conservative, Wide SL
+    ETHUSDT:
+      enabled: true
+      bb_window: 120             # 120-minute (2-hour) Bollinger Bands
+      min_vol_atr: 0.025         # Min BB width 2.5% (high volatility filter)
+      sl_pct: 0.0282             # Stop Loss 2.82% (widest)
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      metrics:
+        expected_pnl: 37.38
+        win_rate: 0.697
+        calmar: 0.71
+        trades_per_month: 33      # Conservative, high-quality setups
+        
+    # Solana - Optional (low profit margin)
+    SOLUSDT:
+      enabled: false              # Disabled due to low PnL
+      bb_window: 60               # 60-minute (1-hour) Bollinger Bands
+      min_vol_atr: 0.020          # Min BB width 2.0%
+      sl_pct: 0.0156              # Stop Loss 1.56%
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      metrics:
+        expected_pnl: 1.48        # Near break-even
+        win_rate: 0.650
+        calmar: 0.01
+        trades_per_month: 180
+        
+  # Entry Logic
+  entry:
+    # Fee-aware filter: Expected PnL must be > 1.5x cost basis
+    min_expected_return_multiplier: 1.5
+    
+    # LONG conditions:
+    # - price < bb_lower
+    # - regime in allowed_regimes
+    # - bb_width >= min_vol_atr
+    # - (bb_mid - price) / price > cost_basis * 1.5
+    
+    # SHORT conditions:
+    # - price > bb_upper
+    # - regime in allowed_regimes
+    # - bb_width >= min_vol_atr
+    # - (price - bb_mid) / price > cost_basis * 1.5
+    
+  # Exit Logic
+  exit:
+    # Primary: Mean Reversion (price touches BB mid)
+    mean_reversion_exit: true
+    
+    # Secondary: Stop Loss (asset-specific sl_pct)
+    stop_loss_enabled: true
+    
+    # Tertiary: Time-based (optional, disabled by default)
+    max_hold_time_minutes: null
+    
+  # Execution
+  execution:
+    order_type: "MARKET"         # Taker orders (immediate fill)
+    entry_fee_type: "MAKER"      # Assume maker fill on entry (0.02%)
+    exit_fee_type: "TAKER"       # Market exit (0.05%)
+    
+  # Performance Summary (Jan 2024)
+  performance:
+    total_portfolio_pnl: 203.72
+    assets_profitable: 5
+    avg_win_rate: 0.648
+    avg_calmar: 0.65
+    total_trades: 558
+    
+  # Recommended Deployment
+  deployment:
+    recommended_assets: ["BTCUSDT", "DOGEUSDT", "XRPUSDT", "ETHUSDT"]
+    excluded_assets: ["SOLUSDT"]  # Low profit margin
+    expected_monthly_pnl: 202.00  # Without SOL
+    min_capital_usd: 50000        # For 2% risk per trade

@@ -19,6 +19,7 @@ def dm_minimal():
 
     dm.symbol_states = {}
     dm._per_symbol_regimes = {}
+    dm._system_stress_states = {}
 
     dm.intents_blocked_total = 0
     dm.intents_seen_total = 0

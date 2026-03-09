@@ -220,6 +220,100 @@ def compute_rsi(
     ])
 
 
+def compute_bollinger_bands(
+    df: pl.DataFrame,
+    close_col: str = "close",
+    period: int = 20,
+    num_std: float = 2.0,
+) -> pl.DataFrame:
+    """
+    Compute Bollinger Bands and %B.
+    """
+    close = df[close_col].cast(pl.Float64)
+    sma = close.rolling_mean(window_size=period)
+    std = close.rolling_std(window_size=period)
+    upper = sma + (std * num_std)
+    lower = sma - (std * num_std)
+    
+    band_width = upper - lower
+    percent_b = pl.when(band_width > 0).then((close - lower) / band_width).otherwise(0.5)
+    
+    return df.with_columns([
+        sma.alias("bb_sma"),
+        upper.alias("bb_upper"),
+        lower.alias("bb_lower"),
+        percent_b.alias("bb_percent_b"),
+    ])
+
+
+def compute_atr_pct(
+    df: pl.DataFrame,
+    high_col: str = "high",
+    low_col: str = "low",
+    close_col: str = "close",
+    period: int = 14,
+) -> pl.DataFrame:
+    """
+    Compute True Range and ATR as % of close.
+    """
+    high = df[high_col].cast(pl.Float64)
+    low = df[low_col].cast(pl.Float64)
+    close = df[close_col].cast(pl.Float64)
+    
+    prev_close = close.shift(1)
+    
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    
+    # max of (H-L), |H - prev_C|, |L - prev_C|
+    tr = pl.max_horizontal([tr1, tr2.fill_null(0), tr3.fill_null(0)])
+    
+    # ATR using Simple Moving Average to match legacy `update_tr` buffer length
+    atr = tr.rolling_mean(window_size=period)
+    
+    eps = 0.00000001
+    close_safe = pl.max_horizontal([close, pl.lit(eps)])
+    
+    atr_pct = atr / close_safe
+    
+    return df.with_columns([
+        atr_pct.alias("atr_pct"),
+    ])
+
+
+def compute_ema_bias(
+    df: pl.DataFrame,
+    close_col: str = "close",
+    short_span: int = 3,
+    long_span: int = 7,
+    clamp_min: float = -0.04,
+    clamp_max: float = 0.04,
+) -> pl.DataFrame:
+    """
+    Compute EMA bias phi:
+    bias = (EMA_short - EMA_long) / EMA_long
+    """
+    close = df[close_col].cast(pl.Float64)
+    
+    ema_short = close.ewm_mean(span=short_span, adjust=False)
+    ema_long = close.ewm_mean(span=long_span, adjust=False)
+    
+    # Avoid div by zero
+    ema_long_safe = pl.max_horizontal([ema_long, pl.lit(0.00000001)])
+    
+    bias = (ema_short - ema_long) / ema_long_safe
+    
+    bias_clamped = bias.clip(lower_bound=clamp_min, upper_bound=clamp_max)
+    clamp_range = clamp_max - clamp_min
+    
+    phi = (bias_clamped - clamp_min) / clamp_range
+    
+    return df.with_columns([
+        phi.alias("ema_bias"),
+    ])
+
+
 class BacktestFeatureAugmenter:
     """
     Main class for augmenting backtest data with TA indicators.
@@ -236,6 +330,9 @@ class BacktestFeatureAugmenter:
         "rsi": {"period": 14},
         "momentum": {"windows_bars": [5, 60, 1440]},
         "volume_momentum": {"window": 5},
+        "bollinger": {"period": 20, "num_std": 2.0},
+        "atr": {"period": 14},
+        "ema_bias": {"short_span": 3, "long_span": 7, "clamp_min": -0.04, "clamp_max": 0.04},
     }
     
     def __init__(
@@ -288,9 +385,17 @@ class BacktestFeatureAugmenter:
         rsi_period = self._get_cfg("rsi", "period", 14)
         mom_windows = self._get_cfg("momentum", "windows_bars", [5, 60, 1440])
         vol_mom_window = self._get_cfg("volume_momentum", "window", 5)
+        bb_period = self._get_cfg("bollinger", "period", 20)
+        bb_std = self._get_cfg("bollinger", "num_std", 2.0)
+        atr_period = self._get_cfg("atr", "period", 14)
+        ema_bias_short = self._get_cfg("ema_bias", "short_span", 3)
+        ema_bias_long = self._get_cfg("ema_bias", "long_span", 7)
+        ema_bias_min = self._get_cfg("ema_bias", "clamp_min", -0.04)
+        ema_bias_max = self._get_cfg("ema_bias", "clamp_max", 0.04)
         
         LOG.debug(f"Augmenter config: MACD({macd_fast},{macd_slow},{macd_signal}), "
-                  f"RSI({rsi_period}), Momentum({mom_windows})")
+                  f"RSI({rsi_period}), Momentum({mom_windows}), BB({bb_period},{bb_std}), "
+                  f"ATR({atr_period}), EMA_Bias({ema_bias_short},{ema_bias_long})")
         
         # Group by symbol and apply indicators
         result_dfs = []
@@ -304,6 +409,29 @@ class BacktestFeatureAugmenter:
             symbol_df = compute_momentum(symbol_df, windows=mom_windows)
             symbol_df = compute_volume_momentum(symbol_df, window=vol_mom_window)
             symbol_df = compute_rsi(symbol_df, period=rsi_period)
+            symbol_df = compute_bollinger_bands(symbol_df, period=bb_period, num_std=bb_std)
+            symbol_df = compute_atr_pct(symbol_df, period=atr_period)
+            symbol_df = compute_ema_bias(
+                symbol_df, 
+                short_span=ema_bias_short, 
+                long_span=ema_bias_long, 
+                clamp_min=ema_bias_min, 
+                clamp_max=ema_bias_max
+            )
+            
+            # Phase 2: Compute candidate pre-filter mask
+            macd_cross = (pl.col("macd_line") * pl.col("macd_line").shift(1)) <= 0
+            is_candidate = (
+                macd_cross |
+                (pl.col("bb_percent_b") < 0.15) |
+                (pl.col("bb_percent_b") > 0.85) |
+                (pl.col("rsi_14") < 30) |
+                (pl.col("rsi_14") > 70) |
+                pl.col("macd_line").is_null() # Default to true when indicators are warming up
+            )
+            symbol_df = symbol_df.with_columns([
+                is_candidate.fill_null(True).alias("is_candidate")
+            ])
             
             result_dfs.append(symbol_df)
         
@@ -320,7 +448,7 @@ class BacktestFeatureAugmenter:
         LOG.info(f"Augmentation complete. Added columns: "
                  f"macd_line, macd_signal, macd_histogram, "
                  f"stochastic_k, stochastic_d, "
-                 f"price_momentum_5m/1h/1d, volume_momentum_5m, rsi_14")
+                 f"price_momentum_5m/1h/1d, volume_momentum_5m, rsi_14, bb_percent_b, is_candidate, atr_pct, ema_bias")
         
         return result
 
@@ -338,4 +466,11 @@ class BacktestFeatureAugmenter:
             "price_momentum_1d",
             "volume_momentum_5m",
             "rsi_14",
+            "bb_sma",
+            "bb_upper",
+            "bb_lower",
+            "bb_percent_b",
+            "is_candidate",
+            "atr_pct",
+            "ema_bias",
         ]

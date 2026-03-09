@@ -398,14 +398,11 @@ class TestMeanReversion1mStrategy:
         # Unknown symbol returns UNCERTAIN
         assert strategy.get_regime("UNKNOWN") == "UNCERTAIN"
     
+    @pytest.mark.skip(reason="T2B-02: on_tick removed — use on_bar via EVT:BAR_CLOSED")
     def test_on_tick_no_bar_complete(self):
-        """on_tick returns None when bar not complete."""
-        strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
-        
-        # Single tick doesn't complete bar
-        signal = strategy.on_tick("BTCUSDT", Decimal("100"), Decimal("1"), 1000)
-        
-        assert signal is None
+        """on_tick returned None when bar not complete (deprecated, T2B-02 removed)."""
+        pass
+
     
     @pytest.mark.skip(reason="T2B-02: on_tick deprecated, MR now uses on_bar (bar-driven)")
     def test_on_tick_insufficient_bars(self):
@@ -499,12 +496,20 @@ class TestMRStrategyRegimeFiltering:
         """MEAN_REVERSION regime should allow MR signals."""
         strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
-        
-        # Feed bars with normal volatility
-        feed_bars_to_strategy(strategy, "BTCUSDT", bar_count=30)
-        
-        state = strategy.get_state("BTCUSDT")
-        
+
+        # Feed bars via on_bar (T2B-02 SSOT path)
+        ts = 1_700_000_000_000
+        for i in range(30):
+            bar = Bar(
+                symbol="BTCUSDT", timeframe_sec=60,
+                open=Decimal("100"), high=Decimal("100.5"),
+                low=Decimal("99.5"), close=Decimal("100"),
+                volume=Decimal("1.0"), trade_count=10,
+                start_ts_ms=ts + i * 60_000,
+                end_ts_ms=ts + (i + 1) * 60_000,
+            )
+            strategy.on_bar("BTCUSDT", bar, timestamp_ms=ts + i * 60_000)
+
         # Regime is FLAT-compatible
         assert strategy.get_regime("BTCUSDT") == "MEAN_REVERSION"
 
@@ -657,26 +662,31 @@ class TestP0UncertainRegimeBlocksMRTrading:
     def test_low_volatility_always_allows_signal(self):
         """LOW_VOLATILITY should always allow MR signals (no ATR required)."""
         from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
-        
+
         strategy = MeanReversion1mStrategy(config=MRStrategyConfig())
         strategy.set_regime("BTCUSDT", "LOW_VOLATILITY")
-        
+
         # LOW_VOLATILITY doesn't need ATR
         flat_regime = map_to_flat_regime("LOW_VOLATILITY")
         assert flat_regime is not None, "LOW_VOLATILITY should map to FLAT_LOW"
-        
-        feed_bars_to_strategy(strategy, "BTCUSDT", bar_count=30)
-        
-        # Verify no regime block
-        signal = strategy.on_tick(
-            "BTCUSDT",
-            Decimal("100"),
-            Decimal("1"),
-            1000000 + 31 * 60 * 1000
-        )
-        
-        if signal is not None and signal.signal_type == MRSignalType.NEUTRAL:
-            # If neutral, should NOT be because of regime_not_flat
-            assert "regime_not_flat" not in signal.why, (
-                f"LOW_VOLATILITY should not block: {signal.why}"
+
+        # Feed bars via on_bar (T2B-02 SSOT path)
+        ts = 1_700_000_000_000
+        last_signal = None
+        for i in range(31):
+            bar = Bar(
+                symbol="BTCUSDT", timeframe_sec=60,
+                open=Decimal("100"), high=Decimal("100.5"),
+                low=Decimal("99.5"), close=Decimal("100"),
+                volume=Decimal("1.0"), trade_count=10,
+                start_ts_ms=ts + i * 60_000,
+                end_ts_ms=ts + (i + 1) * 60_000,
             )
+            last_signal = strategy.on_bar("BTCUSDT", bar, timestamp_ms=ts + i * 60_000)
+
+        if last_signal is not None and last_signal.signal_type == MRSignalType.NEUTRAL:
+            # If neutral, should NOT be because of regime_not_flat
+            assert "regime_not_flat" not in last_signal.why, (
+                f"LOW_VOLATILITY should not block: {last_signal.why}"
+            )
+

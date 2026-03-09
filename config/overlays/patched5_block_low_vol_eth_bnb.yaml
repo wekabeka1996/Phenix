@@ -1,0 +1,93 @@
+# =============================================================================
+# OVERLAY: patched5 — Block LOW_VOLATILITY for ETH and BNB
+# =============================================================================
+# Target file : config/aurora/strategies/aurora.yaml
+# Applied     : YES — inline edits applied (2026-03-08)
+# Baseline    : patched4b
+# =============================================================================
+#
+# RATIONALE
+# ---------
+# patched4b CUM Jun-Sep (run 20260308_001045) showed LOW_VOLATILITY as the
+# sole structural loss driver across both ETH and BNB:
+#
+#   ETH × LOW_VOLATILITY : n=29, -250.60 USDT, ev=-8.64, WR=69%, SL avg ≈ -28 USDT
+#   BNB × LOW_VOLATILITY : n=67, -235.63 USDT, ev=-3.52, WR=69%, SL avg ≈ -40 USDT
+#   Combined LOW_VOL loss : -486.23 USDT (>100% of total loss)
+#
+# Root cause: SL for LOW_VOLATILITY regime inherits parameters calibrated for
+# higher-volatility regimes. The SL is too wide for LOW_VOL price action —
+# trades drift adverse for long periods (avg hold 353-816 min), then hit SL
+# at large loss.
+#
+# ETH TREND_DOWN (+143.45 CUM) and BNB MR are NOT affected by this change.
+#
+# Projected impact: CUM Jun-Sep flips from -403.70 to ~+81.67 USDT.
+#
+# =============================================================================
+# CUMULATIVE PATCHED5 CHANGES (on top of patched4b)
+# =============================================================================
+# File: strategies/aurora.yaml
+#   1. ETHUSDT.allowed_regimes: removed LOW_VOLATILITY
+#      BEFORE: ["TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY", "MEAN_REVERSION"]
+#      AFTER:  ["TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
+#
+#   2. BNBUSDT.allowed_regimes: removed LOW_VOLATILITY
+#      BEFORE: ["LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION"]
+#      AFTER:  ["FLAT_NORMAL", "MEAN_REVERSION"]
+#
+# Inherited from patched4b (unchanged):
+#   3. BTCUSDT.allowed_regimes : []
+#   4. BTCUSDT removed from symbols_to_track
+#   5. 1000PEPEUSDT.enabled : false
+#   6. 1000PEPEUSDT.allowed_regimes : []
+#   7. 1000PEPEUSDT removed from symbols_to_track
+#   8. BTCUSDT.regime_sizing.HIGH_VOLATILITY : 0.20
+#   9. BTCUSDT.regime_sizing.LOW_VOLATILITY  : 0.25
+#  10. SMA 48/192 (regime.yaml)
+#
+# =============================================================================
+# BEFORE / AFTER DIFF (patched5 changes only)
+# =============================================================================
+#
+# --- BEFORE (patched4b) ------------------------------------------------------
+#
+# aurora:
+#   assets:
+#     ETHUSDT:
+#       allowed_regimes: ["TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY", "MEAN_REVERSION"]
+#     BNBUSDT:
+#       allowed_regimes: ["LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION"]
+#
+# --- AFTER (patched5 — CURRENTLY APPLIED) ------------------------------------
+
+aurora:
+  assets:
+    ETHUSDT:
+      allowed_regimes: ["TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]   # patched5
+    BNBUSDT:
+      allowed_regimes: ["FLAT_NORMAL", "MEAN_REVERSION"]                             # patched5
+
+# =============================================================================
+# VALIDATION ONE-LINER (PowerShell, from repo root)
+# =============================================================================
+#
+# python -X utf8 -c "import yaml; s=yaml.safe_load(open('config/aurora/strategies/aurora.yaml',encoding='utf-8').read()); r=yaml.safe_load(open('config/aurora/regime.yaml',encoding='utf-8').read()); a=s['aurora']['assets']; d=s['aurora']['decision']; print('ETH allowed_regimes:', a['ETHUSDT']['allowed_regimes']); print('BNB allowed_regimes:', a['BNBUSDT']['allowed_regimes']); print('BTC allowed_regimes:', a['BTCUSDT']['allowed_regimes']); print('PEPE allowed_regimes:', a['1000PEPEUSDT']['allowed_regimes']); print('BTC in tracking:', 'BTCUSDT' in d['symbols_to_track']); print('SMA short/long:', r['models']['sma_trend']['sma_short_period'], '/', r['models']['sma_trend']['sma_long_period'])"
+#
+# Expected output:
+#   ETH allowed_regimes: ['TREND_DOWN', 'FLAT_LOW', 'FLAT_NORMAL', 'MEAN_REVERSION']
+#   BNB allowed_regimes: ['FLAT_NORMAL', 'MEAN_REVERSION']
+#   BTC allowed_regimes: []
+#   PEPE allowed_regimes: []
+#   BTC in tracking: False
+#   SMA short/long: 48 / 192
+#
+# =============================================================================
+# HOW TO REVERT patched5 → patched4b
+# =============================================================================
+#
+# In config/aurora/strategies/aurora.yaml:
+#   ETHUSDT.allowed_regimes: add "LOW_VOLATILITY" back
+#   BNBUSDT.allowed_regimes: add "LOW_VOLATILITY" back
+#
+# =============================================================================

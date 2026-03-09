@@ -289,20 +289,19 @@ class RiskManagement:
         obi = _to_dec(features.get("obi"))
         tfi = _to_dec(features.get("tfi"))
         delta_price = _to_dec(features.get("delta_price"))
-            # Absorption (Placeholder: default 0.0)
-            # NOTE: D5 deprecation - absorption is now controlled by use_absorption_penalty flag.
-            # When disabled, absorption term is excluded but other weights are NOT rescaled.
-        absorption = _to_dec(features.get("absorption"))
+        # D5: Absorption math replaced by directionless toxicity proxy (P3).
+        # features["absorption"] (if present) is preserved in payload for telemetry/logs
+        # but NOT used in risk_score math. Only tfi + delta_price_pct feed the formula.
 
         # Calculate risk score for trading permission only
-        # Using absorption and volatility as risk indicators
-        
+        # Using absorption toxicity proxy and volatility as risk indicators
+
         # SSOT: Get weights from config - REQUIRED, no fallbacks
         weights = self._get_risk_score_weights()
         delta_price_weight = decimal.Decimal(str(weights.delta_price_pct))
         obi_weight = decimal.Decimal(str(weights.obi))
         tfi_weight = decimal.Decimal(str(weights.tfi))
-        
+
         # D5: Check absorption penalty flag
         if self._use_absorption_penalty:
             absorption_inverse_weight = decimal.Decimal(str(weights.absorption_inverse))
@@ -317,15 +316,72 @@ class RiskManagement:
             raise ValueError(f"SSOT ERROR: Invalid price in features: {price}")
         delta_price_pct = abs(delta_price) / price
 
-        # Risk score uses normalized features (all in [0, 1] range approximately)
-        # - delta_price_pct: percentage change (0.01 = 1% change)
-        # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]
-        # D5: absorption term is skipped when use_absorption_penalty=False
+        # Risk score uses normalized features.
+        # PKG-ABSORPTION-RISK-FULL: Source-routed absorption term.
+        # source="proxy"   → applied_toxicity = toxicity_term,  applied_feature = 0
+        # source="feature" → applied_toxicity = 0,              applied_feature = feature_term
+        # source="both"    → applied_toxicity = toxicity_term,  applied_feature = feature_term
+        # Default (source="proxy", absorption_feature_w=0) is identical to P3 behavior.
+
+        source = self.domain_config.absorption_penalty_source  # "proxy"|"feature"|"both"
+        abs_source_tag = source
+
+        # --- Proxy term (toxicity): directionless, |tfi| * impact_norm ---
+        if self._use_absorption_penalty and source in ("proxy", "both"):
+            dp_cap = decimal.Decimal(str(self.domain_config.absorption_dp_cap_pct))
+            if dp_cap > 0:
+                impact_norm = min(decimal.Decimal("1"), delta_price_pct / dp_cap)
+            else:
+                impact_norm = decimal.Decimal("0")
+            applied_toxicity = abs(tfi) * impact_norm * absorption_inverse_weight
+        else:
+            applied_toxicity = decimal.Decimal("0")
+
+        # --- Feature term: clip(|absorption|, clip_min, clip_max) * absorption_feature_w ---
+        absorption_feature_weight = decimal.Decimal(
+            str(self.domain_config.risk_score_weights.absorption_feature)
+        )
+        if (
+            self._use_absorption_penalty
+            and source in ("feature", "both")
+            and absorption_feature_weight > 0
+        ):
+            raw_absorption = features.get("absorption")
+            if raw_absorption is not None:
+                try:
+                    abs_val = abs(decimal.Decimal(str(raw_absorption)))
+                    clip_min = decimal.Decimal(str(self.domain_config.absorption_feature_clip_min))
+                    clip_max = decimal.Decimal(str(self.domain_config.absorption_feature_clip_max))
+                    clipped = max(clip_min, min(clip_max, abs_val))
+                    applied_feature = clipped * absorption_feature_weight
+                except Exception:
+                    applied_feature = decimal.Decimal("0")
+                    abs_source_tag += "+abs_parse_err"
+            else:
+                applied_feature = decimal.Decimal("0")
+                abs_source_tag += "+abs_missing"
+        else:
+            applied_feature = decimal.Decimal("0")
+
         risk_score = (
             delta_price_pct * delta_price_weight
             + abs(obi) * obi_weight
             + abs(tfi) * tfi_weight
-            + (decimal.Decimal("1") - absorption) * absorption_inverse_weight
+            + applied_toxicity
+            + applied_feature
+        )
+
+        # Explainability (logged + returned for downstream XAI/tracing)
+        risk_terms = {
+            "toxicity_term": float(applied_toxicity),
+            "absorption_feature_term": float(applied_feature),
+            "abs_source": abs_source_tag,
+        }
+        self.logger.debug(
+            f"risk_terms: dp_pct={float(delta_price_pct):.4f} "
+            f"toxicity={risk_terms['toxicity_term']:.4f} "
+            f"feat_term={risk_terms['absorption_feature_term']:.4f} "
+            f"source={abs_source_tag}"
         )
 
         # Clamp risk_score to [0, 1] range
@@ -356,6 +412,7 @@ class RiskManagement:
         return {
             "is_trading_allowed": is_trading_allowed,
             "risk_score": float(risk_score),  # Always numeric, never null
+            "risk_terms": risk_terms,          # PKG-ABSORPTION-RISK-FULL: XAI/tracing
             # Note: kelly_fraction and cvar_limit_usd are calculated in DecisionMaking from SSOT
         }
 

@@ -23,7 +23,7 @@ try:
 except Exception:
     yaml = None  # type: ignore
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 REPORTS_DIR = ROOT / "reports" / "atlas"
 DIAGRAMS_DIR = ROOT / "docs" / "diagrams"
 DOC_PATH = ROOT / "docs" / "PROJECT_ATLAS.md"

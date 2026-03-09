@@ -145,16 +145,22 @@ class MRStrategyConfig:
     
     sl_atr_mult: Decimal = Decimal("1.5")  # Base ATR multiplier
     tp_to_mid: bool = True
-    
+
     cooldown_sec: int = 60  # 1 minute cooldown
-    
+
     # Buffer percentages to widen TP/SL (additive, on top of ATR-based)
     sl_buffer_pct: Decimal = Decimal("0")  # Default 0%, can set 0.002 for +0.20%
     tp_buffer_pct: Decimal = Decimal("0")  # Default 0%, can set 0.002 for +0.20%
-    
+
     # Whitelist of allowed Flat regimes (e.g., ["FLAT_LOW", "FLAT_NORMAL"])
     # If empty, all Flat regimes are allowed.
     allowed_regimes: List[str] = field(default_factory=list)
+
+    # Tier D: Tunable confidence scalars (Pydantic SSOT → no hardcodes in _evaluate_signal)
+    # WARNING: Defaults here are for UNIT TESTS ONLY. Production values come from YAML.
+    confidence_base: Decimal = Decimal("0.5")        # Base confidence when BB threshold touched
+    confidence_bb_slope: Decimal = Decimal("2.0")    # Slope: confidence growth with |pct_b| distance
+    confidence_rsi_bonus: Decimal = Decimal("0.2")   # Bonus when RSI confirms signal
 
 
 # Maximum bars to keep in memory per symbol (prevents memory leak)
@@ -212,21 +218,22 @@ class MRSymbolState:
 class MeanReversion1mStrategy:
     """
     Mean Reversion strategy for 1-minute bars.
-    
+
+    T2B-02: Tick-based path removed. Only bar-based path (on_bar) is supported.
+
     Workflow:
-    1. Feed ticks via `on_tick()` → resampler aggregates into bars
-    2. When bar completes → compute indicators
+    1. Receive completed bars via on_bar() from global EVT:BAR_CLOSED
+    2. Compute indicators (BB, ATR, RSI)
     3. Check regime → if FLAT, evaluate MR signal
     4. Generate MRSignal with entry/exit parameters
-    
+
     Usage:
         strategy = MeanReversion1mStrategy(config)
-        
-        # In tick handler:
-        signal = strategy.on_tick(symbol, price, volume, timestamp_ms)
-        
+
+        # In bar handler (EVT:BAR_CLOSED):
+        signal = strategy.on_bar(symbol, bar, timestamp_ms)
+
         if signal and signal.is_signal:
-            # Propose trade intent
             side = signal.side
             entry = signal.entry_price
             stop = signal.stop_price
@@ -365,91 +372,7 @@ class MeanReversion1mStrategy:
         
         return signal
     
-    def on_tick(
-        self,
-        symbol: str,
-        price: Decimal,
-        volume: Decimal,
-        timestamp_ms: int
-    ) -> Optional[MRSignal]:
-        """
-        DEPRECATED: Process tick via local BarResampler.
-        
-        T2B-02: This method is deprecated. Use on_bar() with bars from
-        global BarAggregator (EVT:BAR_CLOSED) instead.
-        
-        Args:
-            symbol: Trading pair symbol
-            price: Tick price
-            volume: Tick volume
-            timestamp_ms: Tick timestamp
-            
-        Returns:
-            MRSignal if bar completed and signal generated, None otherwise
-        """
-        state = self.get_state(symbol)
-        
-        # T2B-02: Check if resampler exists (for backward compatibility)
-        if state.resampler is None:
-            # SSOT mode: should use on_bar() instead
-            return None
-        
-        # Add tick to resampler (DEPRECATED path)
-        completed_bar = state.resampler.add_tick(symbol, price, volume, timestamp_ms)
-        
-        if completed_bar is None:
-            # Bar not complete yet
-            return None
-        
-        # Bar completed - add to history
-        state.add_bar(completed_bar)
-        
-        # Check if we have enough bars
-        if len(state.bars) < self.config.min_bars:
-            return self._neutral_signal(symbol, price, timestamp_ms, "insufficient_bars")
-        
-        # Update indicators
-        self._update_indicators(state)
-        
-        # Check cooldown
-        if self._in_cooldown(state, timestamp_ms):
-            return self._neutral_signal(
-                symbol, price, timestamp_ms, "cooldown", 
-                bar=completed_bar, rsi=state.rsi
-            )
-        
-        # Check regime - only trade in FLAT regimes
-        regime = self.get_regime(symbol)
-        atr_pct = self._atr_pct.get(symbol)
-        flat_regime = map_to_flat_regime(regime, atr_pct, self._flat_regime_thresholds)
-        
-        if flat_regime is None:
-            return self._neutral_signal(
-                symbol, price, timestamp_ms, 
-                f"regime_not_flat:{regime}",
-                bar=completed_bar, rsi=state.rsi
-            )
-            
-        # Strict allowlist semantics: only explicitly allowlisted regimes are tradable.
-        # Empty allowlist => allow nothing (fail-closed).
-        if flat_regime.name not in self.config.allowed_regimes:
-            return self._neutral_signal(
-                symbol, price, timestamp_ms,
-                f"regime_not_allowed:{flat_regime.name}",
-                bar=completed_bar, rsi=state.rsi
-            )
-        
-        # Get MR parameters for this regime (with config override support)
-        mr_params = MRParameters.from_flat_regime(flat_regime, self._regime_sizing)
-        
-        # Evaluate MR signal
-        signal = self._evaluate_signal(state, flat_regime, mr_params, timestamp_ms, completed_bar)
-        
-        if signal.is_signal:
-            state.last_signal_ts = timestamp_ms
-            state.last_signal_type = signal.signal_type
-        
-        return signal
+    # T2B-02: on_tick() removed — dead code. Use on_bar() via EVT:BAR_CLOSED.
     
     def _update_indicators(self, state: MRSymbolState) -> None:
         """Update indicators from completed bars."""
@@ -538,23 +461,23 @@ class MeanReversion1mStrategy:
         # LONG: price below lower band
         if pct_b < entry_threshold:
             signal_type = MRSignalType.LONG
-            confidence = Decimal("0.5") + (entry_threshold - pct_b) * Decimal("2")
+            confidence = self.config.confidence_base + (entry_threshold - pct_b) * self.config.confidence_bb_slope
             why_parts.append(f"price_below_lower_bb:pct_b={pct_b:.3f}")
-            
+
             # RSI confirmation
             if rsi is not None and rsi < self.config.rsi_oversold:
-                confidence += Decimal("0.2")
+                confidence += self.config.confidence_rsi_bonus
                 why_parts.append(f"rsi_oversold:{rsi:.1f}")
-        
+
         # SHORT: price above upper band
         elif pct_b > (1 - entry_threshold):
             signal_type = MRSignalType.SHORT
-            confidence = Decimal("0.5") + (pct_b - (1 - entry_threshold)) * Decimal("2")
+            confidence = self.config.confidence_base + (pct_b - (1 - entry_threshold)) * self.config.confidence_bb_slope
             why_parts.append(f"price_above_upper_bb:pct_b={pct_b:.3f}")
-            
+
             # RSI confirmation
             if rsi is not None and rsi > self.config.rsi_overbought:
-                confidence += Decimal("0.2")
+                confidence += self.config.confidence_rsi_bonus
                 why_parts.append(f"rsi_overbought:{rsi:.1f}")
         
         if signal_type == MRSignalType.NEUTRAL:
@@ -650,12 +573,14 @@ class MeanReversion1mStrategy:
     def force_close_all(self, timestamp_ms: int) -> Dict[str, Optional[Bar]]:
         """
         Force close all pending bars (e.g., at session end).
-        
+
+        T2B-02: resampler is None in SSOT mode → returns {symbol: None} safely.
+
         Returns dict of symbol → closed bar (or None).
         """
         result = {}
         for symbol, state in self._states.items():
-            bar = state.resampler.force_close(timestamp_ms)
+            bar = state.resampler.force_close(timestamp_ms) if state.resampler is not None else None
             if bar:
                 state.add_bar(bar)
             result[symbol] = bar
@@ -665,7 +590,8 @@ class MeanReversion1mStrategy:
         """Reset state for symbol."""
         if symbol in self._states:
             self._states[symbol].reset()
-            self._states[symbol].resampler.reset()
+            if self._states[symbol].resampler is not None:  # T2B-02: guard
+                self._states[symbol].resampler.reset()
         self._regimes.pop(symbol, None)
         self._atr_pct.pop(symbol, None)
     
@@ -673,6 +599,7 @@ class MeanReversion1mStrategy:
         """Reset all state."""
         for state in self._states.values():
             state.reset()
-            state.resampler.reset()
+            if state.resampler is not None:  # T2B-02: guard
+                state.resampler.reset()
         self._regimes.clear()
         self._atr_pct.clear()

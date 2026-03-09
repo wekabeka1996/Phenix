@@ -9,11 +9,12 @@ Formula:
   final    = dir * (1 + strength_alpha * strength)
 
 Normalization modes:
-  - off:       no extra transforms beyond upstream feature contracts
   - signed_v2: sign-preserving scaling for [0,1] features with neutral=0.5:
                x' = 2*x - 0.5  ⇒  (x' - 0.5) = 2*(x - 0.5) ∈ [-1,1]
                signed features (neutral=0.0) are clamped to [-1,1]
-  - legacy_v1: handled elsewhere (explicitly dangerous; forbidden in live)
+  - off:       forensic/offline passthrough; bypasses transforms. Not valid in production YAML
+               (rejected by SignalsConfig Literal["signed_v2"]). Pass directly to scoring fn only.
+  - legacy_v1: removed. Was forbidden in live; use 'off' for offline passthrough.
 """
 
 from __future__ import annotations
@@ -145,8 +146,13 @@ def compute_direction_strength_score(
         features_eval = _apply_signed_v2_transforms(
             features=features, neutrals=neutrals, directional_features=directional_set
         )
+    elif normalize_mode == "off":
+        features_eval = features  # explicit kill-switch: passthrough with no transforms
     else:
-        features_eval = features
+        raise ValueError(
+            f"compute_direction_strength_score: unknown normalize_mode={normalize_mode!r}. "
+            f"Valid values: 'signed_v2', 'off'."
+        )
 
     w_dir = {k: v for k, v in weights.items() if k in directional_set}
     w_str = {k: v for k, v in weights.items() if k in strength_set}

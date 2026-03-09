@@ -119,6 +119,7 @@ class IntentBuilder:
         max_slippage_bps: Optional[int],
         max_latency_ms: Optional[int],
         risk_score: Optional[float],
+        normalize_mode: str = "signed_v2",
         sg: "SafetyGateResult",
     ) -> None:
         """Build and emit a TRADE_INTENT_PROPOSED event.
@@ -127,17 +128,6 @@ class IntentBuilder:
         """
         intent_side = sg.intent_side
         trace_ts_ms = sg.trace_ts_ms
-
-        # ── Pre-flight: arbitration ────────────────────────────
-        arb = self._check_strategy_arbitration(
-            symbol, strategy_id, ts_ms=decision_ts_ms, commit=False,
-        )
-        if not arb["allowed"]:
-            self.logger.info(
-                f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {arb['reason']}"
-            )
-            self._record_blocked(symbol)
-            return
 
         # ── Pre-flight: warmup re-check ────────────────────────
         if self._warmup_gate(
@@ -232,6 +222,12 @@ class IntentBuilder:
             td = self._safe_decimal(target_price, default=None)
             target_price_payload = str(td) if td is not None else None
 
+        try:
+            strat_cfg = getattr(self.config.strategies, str(strategy_id), getattr(self.config.strategies, "aurora", None))
+            kelly_frac = str(getattr(getattr(strat_cfg.decision, "kelly", None), "fraction", "0.1"))
+        except Exception:
+            kelly_frac = "0.1"
+
         # ── Payload assembly ───────────────────────────────────
         trade_intent = {
             "rid": str(rid),
@@ -250,7 +246,7 @@ class IntentBuilder:
             },
             "risk_context": {"risk_score": risk_score if risk_score is not None else 0.0},
             "risk_budget": {"trade_cvar95_max_bps": trade_cvar, "session_cvar95_max_bps": session_cvar},
-            "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": "0.1"},
+            "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": kelly_frac},
             "valid_for_ms": valid_for_ms,
             "why": why_chain,
             "dto_version": "1.0.0",
@@ -361,7 +357,7 @@ class IntentBuilder:
             "quantity": float(qty), "price": float(price),
             "source_fsm": "DecisionMaking",
             "regime": sg.regime, "regime_confidence": sg.regime_confidence,
-            "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"]},
+            "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"], "normalize_mode_effective": normalize_mode},
         })
 
     # -- Order policy resolution -----------------------------------------------

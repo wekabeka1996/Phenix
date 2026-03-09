@@ -55,6 +55,71 @@ except ImportError:
 
 LOG = logging.getLogger(__name__)
 
+
+_OHLCV_REQUIRED: frozenset[str] = frozenset({"ts", "open", "high", "low", "close", "volume"})
+_OHLCV_NUMERIC: frozenset[str] = frozenset({"open", "high", "low", "close", "volume"})
+_OHLCV_NUMERIC_DTYPES = (pl.Float32, pl.Float64, pl.Int32, pl.Int64, pl.UInt32, pl.UInt64)
+
+
+def _validate_ohlcv_contract(frame: "pl.DataFrame", symbol: str) -> None:
+    """Phase 0.7: Fail-fast OHLCV data contract validation at parquet load.
+
+    Native polars implementation — no pyarrow / pandas dependency.
+    Validates the post-select engine frame (columns: ts, open, high, low,
+    close, volume) against required columns, dtype classes, null constraints,
+    and OHLCV semantic invariants.
+
+    Raises:
+        ValueError: Prefixed "DataContract violation (ohlcv)" on any failure.
+    """
+    errors: list[str] = []
+    present = set(frame.columns)
+
+    # 1. Missing columns
+    missing = sorted(_OHLCV_REQUIRED - present)
+    if missing:
+        errors.append(f"missing columns: {missing}")
+
+    # 2. Dtype class check (only for present columns)
+    for col in _OHLCV_NUMERIC:
+        if col in present:
+            if frame[col].dtype not in _OHLCV_NUMERIC_DTYPES:
+                errors.append(f"column '{col}': expected numeric, got {frame[col].dtype}")
+    if "ts" in present:
+        if not isinstance(frame["ts"].dtype, pl.Datetime):
+            errors.append(f"column 'ts': expected Datetime, got {frame['ts'].dtype}")
+
+    # 3. Null checks (all required columns are non-nullable)
+    for col in _OHLCV_REQUIRED:
+        if col in present:
+            null_count = frame[col].null_count()
+            if null_count > 0:
+                errors.append(f"column '{col}': {null_count} null(s) in non-nullable column")
+
+    # 4. OHLCV semantic invariants (only when no structural errors)
+    if not errors:
+        high, low, open_, close, volume = (
+            frame["high"], frame["low"], frame["open"], frame["close"], frame["volume"]
+        )
+        for bad_count, msg in [
+            ((high < low).sum(),    "rows with high < low"),
+            ((high < open_).sum(),  "rows with high < open"),
+            ((high < close).sum(),  "rows with high < close"),
+            ((low > open_).sum(),   "rows with low > open"),
+            ((low > close).sum(),   "rows with low > close"),
+            ((volume < 0).sum(),    "rows with volume < 0"),
+        ]:
+            if bad_count:
+                errors.append(f"OHLCV invariant: {bad_count} {msg}")
+
+    if errors:
+        raise ValueError(
+            f"DataContract violation (ohlcv) [{symbol}]: " + "; ".join(errors)
+        )
+
+    LOG.debug("DataContract OHLCV validation passed for %s (%d rows)", symbol, len(frame))
+
+
 @dataclass
 class BacktestResult:
     """Summary of backtest performance."""
@@ -94,6 +159,7 @@ class BacktestEngine:
         profit_withdrawal_roi_pct: float | None = None,
         clock_advance_fn: Any = None,  # Callback to advance global clock: fn(ts_ms: int) -> None
         htf_provider: Any = None,      # Optional HTFHistoryProvider for autonomous warmup
+        turbo_mode: str = "off",       # Phase 1/2/3/4 dispatcher string
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -103,6 +169,7 @@ class BacktestEngine:
         self.event_bus = event_bus if event_bus else LocalBus()
         self.clock_advance_fn = clock_advance_fn  # For backtest timebase synchronization
         self.htf_provider = htf_provider
+        self.turbo_mode = turbo_mode
         self.profit_withdrawal_enabled = (
             profit_withdrawal_enabled
             if isinstance(profit_withdrawal_enabled, bool) or profit_withdrawal_enabled is None
@@ -257,8 +324,15 @@ class BacktestEngine:
                     select_exprs.append(_col_or_zero(name, dtype))
 
                 q = q.select(select_exprs)
-                
-                frames.append(q.collect(streaming=True))  # Materialize per symbol
+
+                collected = q.collect(streaming=True)  # Materialize per symbol
+
+                # Phase 0.7: Fail-fast OHLCV data contract check
+                _validate_ohlcv_contract(collected, symbol)
+
+                frames.append(collected)
+            except ValueError:
+                raise  # DataContract violations are fatal — do not swallow
             except Exception as e:
                 LOG.error(f"Error loading {symbol}: {e}")
                 
@@ -510,8 +584,68 @@ class BacktestEngine:
         loop_unit = "ticks" if self._emit_market_ticks else "bars"
         loop_rate_unit = "ticks/s" if self._emit_market_ticks else "bars/s"
         
+        # Phase 3: Fast-forward vector-warmed bars without EventBus overhead
+        turbo_fast_forward_bars = 0  # disabled; warmup is handled by warmup_feed loop below
+        symbol_counts = {s: 0 for s in self.symbol_list}
+
+        # ── PRE-SIMULATION WARMUP LOOP ────────────────────────────────────────
+        # Replay warmup_feed (start_date - 210 days) through EVT:BAR_CLOSED ONLY.
+        # No broker fills, no portfolio emission, no CMD:PROCESS_STRATEGY.
+        # Goal: warm up all on-bar state — EMA, ATR, macro_resid, macro_sync,
+        #       volatility_state, anchor_prices — so warmup.full_ready==True
+        #       on bar #1 of the real simulation window.
+        if getattr(self, "warmup_feed", None) is not None and len(self.warmup_feed) > 0:
+            warmup_row_count = len(self.warmup_feed)
+            LOG.info(
+                f"[Warmup] Replaying {warmup_row_count} pre-simulation bars "
+                f"(state-only, no decisions) ..."
+            )
+            for wrow in self.warmup_feed.iter_rows(named=True):
+                w_symbol = wrow["symbol"]
+                # Advance clock (needed for cooldown/staleness state)
+                try:
+                    w_ts_val = wrow.get("ts")
+                    if w_ts_val is not None and self.clock_advance_fn is not None:
+                        w_ts_ms = int(w_ts_val.timestamp() * 1000) if hasattr(w_ts_val, "timestamp") else int(w_ts_val)
+                        self.clock_advance_fn(w_ts_ms)
+                except Exception:
+                    pass
+                
+                # Build bar payload — minimal fields needed by FeatureEngineering
+                bar_payload: dict = {
+                    "symbol": w_symbol,
+                    "open": wrow.get("open", 0.0),
+                    "high": wrow.get("high", 0.0),
+                    "low": wrow.get("low", 0.0),
+                    "close": wrow.get("close", 0.0),
+                    "volume": wrow.get("volume", 0.0),
+                    "buy_volume": wrow.get("buy_volume", 0.0),
+                    "sell_volume": wrow.get("sell_volume", 0.0),
+                    "buy_notional": wrow.get("buy_notional", 0.0),
+                    "sell_notional": wrow.get("sell_notional", 0.0),
+                    "buy_count": wrow.get("buy_count", 0),
+                    "sell_count": wrow.get("sell_count", 0),
+                    "avg_bid_qty": wrow.get("avg_bid_qty", 0.0),
+                    "avg_ask_qty": wrow.get("avg_ask_qty", 0.0),
+                    "last_bid_price": wrow.get("last_bid_price", 0.0),
+                    "last_ask_price": wrow.get("last_ask_price", 0.0),
+                    "timeframe": self.timeframe,
+                    "timeframe_sec": _tf_map.get(self.timeframe, 300),
+                    "ts": int(w_ts_val.timestamp() * 1000) if hasattr(w_ts_val, "timestamp") else int(w_ts_val or 0),
+                    # Signal to FeatureEngineering that this is a warmup bar → no CMD:PROCESS_STRATEGY
+                    "_warmup_bar": True,
+                }
+                # Emit bar closed — lets FeatureEngineering update all state
+                self.event_bus.emit("EVT:BAR_CLOSED", payload=bar_payload, why="warmup_replay")
+            
+            LOG.info("[Warmup] Pre-simulation warmup complete.")
+
         for row in row_iterator:
+
             count += 1
+            symbol = row["symbol"]
+            symbol_counts[symbol] += 1
+            
             if max_ticks is not None and count > int(max_ticks):
                 break
 
@@ -526,6 +660,7 @@ class BacktestEngine:
             except Exception:
                 pass
             
+
             # BACKTEST-ARCH-FIX: Emit initial portfolio AFTER first clock advance.
             # DecisionMaking requires latest_portfolio to be set, otherwise it blocks ALL signals
             # with "NRR-PORTFOLIO-UNKNOWN". We emit initial portfolio AFTER clock is set to
@@ -710,7 +845,7 @@ class BacktestEngine:
                 "macd_line", "macd_signal", "macd_histogram",
                 "stochastic_k", "stochastic_d",
                 "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
-                "volume_momentum_5m", "rsi_14"
+                "volume_momentum_5m", "rsi_14", "atr_pct", "ema_bias"
             ]
             augmented_values: Dict[str, float] = {}
             for col in augmented_cols:
@@ -846,6 +981,45 @@ class BacktestEngine:
             f"Simulation ended. Processed {count} {loop_unit} in {duration:.2f}s "
             f"({count/duration:.0f} {loop_rate_unit})"
         )
+        
+        # Cleanup pending orders
+        abandoned_count = 0
+        for oid, order in list(self.broker._orders.items()):
+            if order.status == "ACCEPTED":
+                order.status = "CANCELED"
+                abandoned_count += 1
+                try:
+                    payload = self.broker._order_to_dict(oid)
+                    rid = self.broker._lookup_rid(order_id=oid, client_order_id=order.client_order_id)
+                    if rid:
+                        payload["rid"] = rid
+                    payload["reason"] = "BACKTEST_END"
+                    self.event_bus.emit(
+                        event_name="EVT:ORDER_CANCELLED",
+                        payload=payload,
+                        why="BACKTEST_END",
+                    )
+                    # Write abandoned order to order_logger
+                    try:
+                        from apps.reference.telemetry.order_logger import get_order_logger
+                        get_order_logger().write({
+                            "rid": str(payload.get("rid") or f"backtest_end:{oid}"),
+                            "event_type": "ORDER_CANCELLED",
+                            "symbol": str(payload.get("symbol") or "UNKNOWN"),
+                            "order_id": oid,
+                            "client_order_id": order.client_order_id,
+                            "side": str(payload.get("side") or ""),
+                            "reason": "BACKTEST_END",
+                            "source_fsm": "BacktestEngine",
+                            "order_type": str(payload.get("type") or ""),
+                        })
+                    except Exception as _log_err:
+                        LOG.debug(f"Failed to write abandoned order to order_logger: {_log_err}")
+                except Exception as e:
+                    LOG.debug(f"Failed to emit ORDER_CANCELLED at backtest end: {e}")
+                    
+        if abandoned_count > 0:
+            LOG.info(f"Cleaned up {abandoned_count} abandoned pending orders at backtest end.")
         
         return self._calculate_results()
 

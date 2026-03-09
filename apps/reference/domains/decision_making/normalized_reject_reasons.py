@@ -91,6 +91,8 @@ class NormalizedRejectReasons:
     SHIELD_INVARIANT_VIOLATED = "NRR-056"
     SHIELD_VETO_BLOCKED = "NRR-057"
     STRUCTURAL_GATE_BLOCKED = "NRR-058"
+    # Phase 0.5: System Stress Overlay gate (EXTREME state blocks new entries)
+    SYSTEM_STRESS_ENTRY_BLOCKED = "NRR-059"
     UNKNOWN_ERROR = "NRR-999"
 
 

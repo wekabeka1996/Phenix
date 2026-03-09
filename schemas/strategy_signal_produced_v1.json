@@ -1,0 +1,197 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "strategy_signal_produced_v1.json",
+  "title": "EVT:STRATEGY_SIGNAL_PRODUCED",
+  "description": "Additive schema for strategy signal payloads. Keeps migration compatibility across Aurora, Mean Reversion, and lightweight test injections.",
+  "type": "object",
+  "required": [
+    "symbol"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "strategy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL",
+        "buy",
+        "sell"
+      ]
+    },
+    "signal_type": {
+      "type": "string"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why": {
+      "type": "string"
+    },
+    "why_chain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "score": {
+      "type": "number"
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "price_ctx": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entry_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "stop_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "volatility": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "liquidity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "regime": {
+      "type": "string"
+    },
+    "regime_ctx": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "quantization": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tpsl_ctx": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "mr_params": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "symbol": "BTCUSDT",
+      "strategy_id": "mean_reversion",
+      "signal_type": "LONG_ENTRY"
+    },
+    {
+      "strategy_id": "aurora",
+      "symbol": "BTCUSDT",
+      "side": "BUY",
+      "ts_ms": 1702500000000,
+      "rid": "aurora_BTCUSDT_1702500000000",
+      "why_chain": [
+        "enter:buy:score=0.0069>=thr_buy=0.0021"
+      ],
+      "readiness": {
+        "warmup_ok": true
+      },
+      "price_ctx": {
+        "entry_price": "25668.84",
+        "stop_price": "25540.50",
+        "target_price": "25925.53"
+      },
+      "scoring": {
+        "score": 0.0069,
+        "thr_buy": 0.0021,
+        "thr_sell": 0.0017
+      }
+    }
+  ]
+}

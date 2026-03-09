@@ -53,6 +53,8 @@ class SafetyGateResult:
     vol_pct_10s: Optional[float] = None
     vol_pct_60s: Optional[float] = None
     vol_pct_300s: Optional[float] = None
+    # Phase 0.5: system stress overlay ("NORMAL"|"STRESS"|"EXTREME"); passed downstream for attenuation
+    system_stress_state: str = "NORMAL"
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +285,84 @@ def _check_price_motion_gate(
 
 
 # ---------------------------------------------------------------------------
+# Phase 0.5 / 0.6: System Stress gate helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_stress_policy(
+    config: "AuroraConfig",
+    strategy_id: str,
+) -> tuple[str, float]:
+    """Resolve per-strategy system stress policy and attenuation factor.
+
+    Returns:
+        (stress_policy, stress_attenuation_factor)
+        Falls back to ("off", 1.0) on any missing/bad config — fail-open
+        so strategies without a declared policy are unaffected by Gate 0.5.
+    """
+    try:
+        strat_cfg = getattr(config.strategies, str(strategy_id), None)
+        sg_cfg = getattr(strat_cfg, "safety_gates", None) if strat_cfg else None
+        if sg_cfg is None:
+            return "off", 1.0
+        policy = str(getattr(sg_cfg, "system_stress_policy", "off"))
+        if policy not in ("off", "attenuate", "block"):
+            policy = "off"
+        factor = float(getattr(sg_cfg, "stress_attenuation_factor", 0.5))
+        return policy, max(0.0, min(1.0, factor))
+    except Exception:
+        return "off", 1.0
+
+
+def _check_system_stress_gate(
+    *,
+    symbol: str,
+    reduce_only: bool,
+    apply_safety_gates_flag: bool,
+    system_stress_states: Optional[dict],
+    stress_policy: str = "off",
+) -> tuple:
+    """Gate 0.5 — System Stress Overlay (Phase 0.5 / 0.6).
+
+    Policy semantics (per-strategy, Phase 0.6):
+        off       → Gate fully bypassed; even EXTREME is ignored.
+        attenuate → EXTREME=DENY; STRESS=ALLOW+surface for size attenuation.
+        block     → EXTREME and STRESS both DENY.
+    reduce_only orders always bypass (closing is risk-reducing).
+
+    Returns:
+        (gate_outcome, deny_reason, why_short, stress_state_str)
+    """
+    if (
+        reduce_only
+        or stress_policy == "off"
+        or not apply_safety_gates_flag
+        or system_stress_states is None
+    ):
+        return "ALLOW", None, "ok", "NORMAL"
+
+    stress_state = system_stress_states.get(symbol, "NORMAL")
+
+    if stress_state == "EXTREME":
+        return (
+            "DENY",
+            NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED,
+            f"system_stress=EXTREME blocks new entry for {symbol}",
+            stress_state,
+        )
+
+    if stress_state == "STRESS" and stress_policy == "block":
+        return (
+            "DENY",
+            NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED,
+            f"system_stress=STRESS blocks new entry for {symbol} (policy=block)",
+            stress_state,
+        )
+
+    # STRESS + attenuate → pass, surface state for strategy_gateway attenuation
+    return "ALLOW", None, "ok", stress_state
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -298,6 +378,7 @@ def apply_safety_gates(
     clock: "Clock",
     symbol_states: dict,
     per_symbol_regimes: dict,
+    system_stress_states: Optional[dict] = None,
 ) -> SafetyGateResult:
     """Evaluate all safety gates for a trade intent proposal.
 
@@ -306,10 +387,11 @@ def apply_safety_gates(
     on the returned ``SafetyGateResult``.
 
     Gate sequence:
-        0. Config resolution (FAIL-CLOSED if missing)
-        1. FIX-CONF-GATE-01: Regime confidence gate
-        2. Directional sanity gate (trend vs intent)
-        3. Price motion multi-window gate (flash / bleed)
+        0.  Config resolution (FAIL-CLOSED if missing)
+        0.5 System stress overlay gate (Phase 0.5 / 0.6): policy-driven DENY or surface
+        1.  FIX-CONF-GATE-01: Regime confidence gate
+        2.  Directional sanity gate (trend vs intent)
+        3.  Price motion multi-window gate (flash / bleed)
     """
     result = SafetyGateResult()
     result.trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else clock.now_ms()
@@ -323,6 +405,22 @@ def apply_safety_gates(
         result.deny_reason = NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING
         return result
     result.apply_safety_gates = apply_flag
+
+    # ── Gate 0.5: System Stress Overlay (Phase 0.5 / 0.6) ──────
+    stress_policy, _stress_factor = _resolve_stress_policy(config, strategy_id)
+    ss_outcome, ss_deny, ss_why, ss_state = _check_system_stress_gate(
+        symbol=symbol,
+        reduce_only=reduce_only,
+        apply_safety_gates_flag=apply_flag,
+        system_stress_states=system_stress_states,
+        stress_policy=stress_policy,
+    )
+    result.system_stress_state = ss_state
+    if ss_outcome == "DENY":
+        result.outcome = "DENY"
+        result.deny_reason = ss_deny
+        result.why_short = ss_why
+        return result
 
     # ── Extract context (best-effort) ──────────────────────────
     pm = _extract_price_motion(symbol_states, symbol)

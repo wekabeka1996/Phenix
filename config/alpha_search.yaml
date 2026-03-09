@@ -11,7 +11,7 @@
 # ==============================================================================
 
 alpha_search:
-  enabled: true
+  enabled: false  # DISABLED: not needed during backtest ladder runs
   shadow_mode: true  # If true, signals are logged but not traded
 
   # ============================================================================

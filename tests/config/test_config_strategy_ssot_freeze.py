@@ -158,8 +158,9 @@ class TestStrategySSOTFreezeProvenance:
 
     def test_auroractl_provenance_stage_is_strategy(self, tmp_path: Path) -> None:
         out_path = tmp_path / "prov.json"
+        import sys
         subprocess.check_call(
-            ["python3", "tools/auroractl.py", "config-provenance", "--out", str(out_path), "--config-dir", "config/aurora"],
+            [sys.executable, "tools/cli/auroractl.py", "config-provenance", "--out", str(out_path), "--config-dir", "config/aurora"],
             cwd=Path(__file__).resolve().parents[2],
         )
         rows = json.loads(out_path.read_text(encoding="utf-8"))

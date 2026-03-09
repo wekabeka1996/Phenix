@@ -235,11 +235,13 @@ class TestAbsorptionDedup(unittest.TestCase):
             engine.compute_absorption(state)
         
         value, is_ready, reason = engine.compute_absorption(state)
-        
-        # Should be muted due to high correlation with TFI
-        # Note: with identical formula, corr should be ~1.0
-        self.assertFalse(is_ready, f"Should be muted due to TFI dedup, got ready with reason: {reason}")
-        self.assertIn("dedup_muted", reason or "")
+
+        # P0-CONTRACT: dedup_muted → ready=True (warmup not locked), signal=neutral
+        # reason contains 'dedup_muted_telemetry' prefix (not 'dedup_muted' without telemetry suffix)
+        self.assertTrue(is_ready, f"dedup_muted must NOT lock warmup. got ready=False, reason={reason}")
+        self.assertIn("dedup_muted_telemetry", reason or "", f"Expected dedup_muted_telemetry in reason, got: {reason}")
+        self.assertEqual(float(value), 0.0, f"Muted absorption should emit neutral=0.0, got: {value}")
+        self.assertTrue(state.absorption_dedup_muted, "absorption_dedup_muted flag must be True")
     
     def test_low_correlation_allows_absorption(self):
         """If absorption proxy != TFI, dedup allows it."""
@@ -337,61 +339,65 @@ class TestMacroResidAffectsScoring(unittest.TestCase):
         self.assertIn("macro_resid", list(ds_cfg.directional_features))
     
     def test_same_features_different_macro_resid_changes_score(self):
-        """With identical features at neutrals, macro_resid sign must change v2 dir_score."""
-        from apps.reference.config_loader import get_config
+        """With identical features at neutrals, macro_resid sign must change v2 dir_score.
+        
+        Contract: SAME features at neutral values, DIFFERENT macro_resid sign → opposite final_score signs.
+        Uses isolated fixed weights (not production config) to decouple from config tuning.
+        Production weight coverage is in test_config_has_macro_resid_weights (structural) and
+        test_macro_resid_can_flip_intent_direction (behavioral).
+        """
         from apps.reference.domains.decision_making.scoring_direction_strength_v1 import compute_direction_strength_score
 
-        cfg = get_config()
-        aurora_decision = cfg.strategies.aurora.decision
-        ds_cfg = aurora_decision.direction_strength_scoring
-
-        weights = aurora_decision.signal_weights.model_dump()
-        neutrals = dict(aurora_decision.feature_neutrals)
-
-        features_base = {
-            "obi": 0.0,
-            "tfi": 0.0,
-            "delta_price": 0.0,
-            "ema_bias": 0.5,
-            "depth_imbalance": 0.5,
-            "volume_spike": 0.0,
-            "volatility_state": 0.0,
+        # Isolated weights: macro_resid intentionally dominant to test sign-flip contract.
+        # Does NOT depend on get_config() to avoid coupling to prod weight tuning.
+        weights = {
+            "obi": 0.05,
+            "tfi": 0.05,
+            "delta_price": 0.05,
+            "ema_bias": 0.05,
+            "depth_imbalance": 0.05,
+            "macro_resid": 0.70,  # dominant — sign must flip total score
+            "absorption": 0.05,
         }
-        readiness = {k: True for k in features_base.keys()}
+        neutrals = {
+            "obi": 0.0, "tfi": 0.0, "delta_price": 0.0,
+            "ema_bias": 0.5, "depth_imbalance": 0.5,
+            "macro_resid": 0.0, "absorption": 0.0,
+        }
+        directional_features = ["obi", "tfi", "delta_price", "ema_bias", "depth_imbalance", "macro_resid", "absorption"]
+        features_base = {
+            "obi": 0.0, "tfi": 0.0, "delta_price": 0.0,
+            "ema_bias": 0.5, "depth_imbalance": 0.5,
+            "volume_spike": 0.0, "volatility_state": 0.0,
+            "absorption": 0.0,  # neutral
+        }
+        readiness = {k: True for k in features_base}
         readiness["macro_resid"] = True
 
         ds_pos = compute_direction_strength_score(
             features={**features_base, "macro_resid": 1.0},
-            weights=weights,
-            neutrals=neutrals,
-            readiness=readiness,
-            essential_features=set(aurora_decision.essential_features),
-            normalize_mode=str(aurora_decision.signals.normalize_signals_mode),
-            directional_features=list(ds_cfg.directional_features),
-            strength_features=list(ds_cfg.strength_features),
-            strength_alpha=float(ds_cfg.strength_alpha),
-            strength_cap=float(ds_cfg.strength_cap),
-            symbol="TEST",
+            weights=weights, neutrals=neutrals, readiness=readiness,
+            essential_features=set(),
+            normalize_mode="signed_v2",
+            directional_features=directional_features,
+            strength_features=["volume_spike", "volatility_state"],
+            strength_alpha=0.5, strength_cap=1.0, symbol="TEST",
         )
         ds_neg = compute_direction_strength_score(
             features={**features_base, "macro_resid": -1.0},
-            weights=weights,
-            neutrals=neutrals,
-            readiness=readiness,
-            essential_features=set(aurora_decision.essential_features),
-            normalize_mode=str(aurora_decision.signals.normalize_signals_mode),
-            directional_features=list(ds_cfg.directional_features),
-            strength_features=list(ds_cfg.strength_features),
-            strength_alpha=float(ds_cfg.strength_alpha),
-            strength_cap=float(ds_cfg.strength_cap),
-            symbol="TEST",
+            weights=weights, neutrals=neutrals, readiness=readiness,
+            essential_features=set(),
+            normalize_mode="signed_v2",
+            directional_features=directional_features,
+            strength_features=["volume_spike", "volatility_state"],
+            strength_alpha=0.5, strength_cap=1.0, symbol="TEST",
         )
 
-        self.assertFalse(ds_pos.deferred, f"Unexpected defer: {ds_pos.deny_reason} {ds_pos.dir_result.reasons}")
-        self.assertFalse(ds_neg.deferred, f"Unexpected defer: {ds_neg.deny_reason} {ds_neg.dir_result.reasons}")
+        self.assertFalse(ds_pos.deferred, f"Unexpected defer: {ds_pos.deny_reason}")
+        self.assertFalse(ds_neg.deferred, f"Unexpected defer: {ds_neg.deny_reason}")
+        self.assertGreater(ds_pos.final_score, 0, "macro_resid=+1 must produce positive final_score")
+        self.assertLess(ds_neg.final_score, 0, "macro_resid=-1 must produce negative final_score")
 
-        self.assertGreater(ds_pos.final_score, 0)
-        self.assertLess(ds_neg.final_score, 0)
     
     def test_macro_resid_can_flip_intent_direction(self):
         """macro_resid sign can flip final_score in v2 kernel when other signals are weak."""
@@ -491,6 +497,146 @@ class TestWeightsMigrationValidation(unittest.TestCase):
                     f"{sym} should have macro_resid in weights")
                 self.assertGreater(asset.weights["macro_resid"], 0, 
                     f"{sym} macro_resid weight should be > 0")
+
+
+class TestAbsorptionDedupWindowFromConfig(unittest.TestCase):
+    """P0-SSOT: dedup window must come from config, not hardcoded 10."""
+
+    def test_dedup_respects_configured_window_not_hardcoded_10(self):
+        """With window=20 in config, dedup must wait 20 samples before computing corr.
+
+        Old code used >= 10 unconditionally. New code must use cfg.absorption_dedup_window.
+        """
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+
+        cfg = MagicMock()
+        cfg.absorption_mode = "proxy"
+        cfg.absorption_proxy_window = 5
+        cfg.absorption_proxy_eps = 0.0001
+        cfg.absorption_dedup_enabled = True
+        cfg.absorption_dedup_window = 20  # <-- larger than old hardcoded 10
+        cfg.absorption_dedup_threshold = 0.5
+        cfg.absorption_clip = 1.0
+        cfg.absorption_neutral = 0.0
+
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+
+        # Feed exactly 15 samples (> old hardcode 10, < new window 20)
+        # identical TFI / proxy → corr would be ~1.0 if correlation runs
+        for i in range(15):
+            buy_vol = 1000.0
+            sell_vol = 200.0
+            tfi = 0.9  # constant (worst case: perfect correlation)
+            engine.update_absorption(state, buy_vol, sell_vol, tfi)
+            engine.compute_absorption(state)
+
+        value, is_ready, reason = engine.compute_absorption(state)
+
+        # With 15 samples and window=20, dedup must NOT fire yet.
+        # If old hardcode was still in place, corr would have fired at sample 10.
+        self.assertIsNone(state.absorption_dedup_corr,
+            "With window=20 and only 15 samples, correlation should not have been computed yet")
+        # Value must be non-muted (real proxy value, not 0.0 neutral)
+        self.assertTrue(is_ready, f"Should be ready (dedup not triggered). reason={reason}")
+        self.assertNotIn("dedup_muted", reason or "",
+            f"dedup must not fire before window={cfg.absorption_dedup_window} samples")
+
+
+class TestDpCapPctPydanticValidation(unittest.TestCase):
+    """P0-SSOT: AbsorptionProxyConfig.dp_cap_pct must be explicit — no silent default."""
+
+    def test_mode_proxy_without_dp_cap_pct_raises_validation_error(self):
+        """AbsorptionConfig with mode=proxy must reject missing dp_cap_pct."""
+        from pydantic import ValidationError
+        from apps.reference.config_models import AbsorptionConfig
+
+        with self.assertRaises(ValidationError) as ctx:
+            AbsorptionConfig(
+                mode="proxy",
+                proxy={
+                    "source": "aggressive_trade_imbalance",
+                    "window": 30,
+                    "eps": 0.0001,
+                    # dp_cap_pct intentionally omitted
+                },
+                dedup={"enabled": True, "window": 60, "threshold": 0.8},
+                clip=1.0,
+                neutral=0.0,
+            )
+        err_str = str(ctx.exception)
+        self.assertIn("dp_cap_pct", err_str,
+            "ValidationError must mention dp_cap_pct so the user knows what to fix")
+
+    def test_mode_disabled_does_not_require_dp_cap_pct(self):
+        """When mode=disabled, dp_cap_pct is not needed (not active in formula)."""
+        from apps.reference.config_models import AbsorptionConfig
+
+        # Should not raise
+        cfg = AbsorptionConfig(
+            mode="disabled",
+            proxy=None,
+            dedup=None,
+            clip=1.0,
+            neutral=0.0,
+        )
+        self.assertEqual(cfg.mode, "disabled")
+
+    def test_mode_proxy_with_dp_cap_pct_passes_validation(self):
+        """Valid proxy config with dp_cap_pct should pass strict Pydantic validation."""
+        from apps.reference.config_models import AbsorptionConfig
+
+        cfg = AbsorptionConfig(
+            mode="proxy",
+            proxy={
+                "source": "aggressive_trade_imbalance",
+                "window": 30,
+                "eps": 0.0001,
+                "dp_cap_pct": 0.02,  # explicit SSOT
+            },
+            dedup={"enabled": True, "window": 60, "threshold": 0.8},
+            clip=1.0,
+            neutral=0.0,
+        )
+        self.assertEqual(cfg.proxy.dp_cap_pct, 0.02)
+
+
+class TestAbsorptionDpCapPctPropertyFailClosed(unittest.TestCase):
+    """P0-SSOT: FeatureEngineeringConfig.absorption_dp_cap_pct must fail-closed."""
+
+    def _make_wrapped(self, mode: str, dp_cap_pct=None):
+        from apps.reference.domains.feature_engineering.types import FeatureEngineeringConfig
+        wrapped = FeatureEngineeringConfig.__new__(FeatureEngineeringConfig)
+        mock_cfg = MagicMock()
+        mock_cfg.absorption.mode = mode
+        if dp_cap_pct is not None:
+            mock_cfg.absorption.proxy.dp_cap_pct = dp_cap_pct
+        else:
+            mock_cfg.absorption.proxy.dp_cap_pct = None
+        wrapped._cfg = mock_cfg
+        return wrapped
+
+    def test_disabled_mode_returns_zero_never_raises(self):
+        """When mode=disabled, absorption_dp_cap_pct returns 0.0 (safe, unused)."""
+        wrapped = self._make_wrapped("disabled", dp_cap_pct=None)
+        # Must not raise even though dp_cap_pct=None
+        result = wrapped.absorption_dp_cap_pct
+        self.assertEqual(result, 0.0)
+
+    def test_proxy_mode_with_dp_cap_pct_returns_float(self):
+        """When mode=proxy and dp_cap_pct=0.02 → returns 0.02."""
+        wrapped = self._make_wrapped("proxy", dp_cap_pct=0.02)
+        self.assertAlmostEqual(wrapped.absorption_dp_cap_pct, 0.02)
+
+    def test_proxy_mode_without_dp_cap_pct_raises_value_error(self):
+        """When mode=proxy and dp_cap_pct=None → raises ValueError (fail-closed)."""
+        wrapped = self._make_wrapped("proxy", dp_cap_pct=None)
+        with self.assertRaises(ValueError) as ctx:
+            _ = wrapped.absorption_dp_cap_pct
+        self.assertIn("dp_cap_pct", str(ctx.exception))
+        self.assertIn("domains.yaml", str(ctx.exception),
+            "Error message must tell user WHERE to fix this")
 
 
 if __name__ == "__main__":

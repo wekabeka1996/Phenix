@@ -30,39 +30,34 @@ Format per field:
 
 ### Signal/Decision
 
-- `account_observer.poll_interval`
-  - type/default: `int` / `required`
-  - read: `apps/reference/debug_config.py:test_config_loading`, `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`
-  - effect: Polling interval in seconds.
-  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.live.api_key`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`, `apps\reference\domains\execution_position\lifecycle.py:LifecycleManager.initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.live.api_secret`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`, `apps\reference\domains\execution_position\lifecycle.py:LifecycleManager.initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.live.rest_url`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.testnet.api_key`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`, `apps\reference\domains\execution_position\lifecycle.py:LifecycleManager.initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.testnet.api_secret`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`, `apps\reference\domains\execution_position\lifecycle.py:LifecycleManager.initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `binance_api.testnet.rest_url`
   - type/default: `Optional[str]` / `required`
-  - read: `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `brackets.oco_emulation`
@@ -77,202 +72,222 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `brackets.sl.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `brackets.tp.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.debug.disable_daily_loss_limit`
   - type/default: `bool` / `required`
-  - read: `apps/reference/config_loader.py:ConfigLoader.load_config`, `apps/reference/domains/risk_management/risk_management.py:RiskManagement.__init__`
+  - read: `apps\reference\config_loader.py:ConfigLoader.load_config`, `apps\reference\domains\risk_management\risk_management.py:RiskManagement.__init__`
   - effect: DEV/SHADOW ONLY: disables daily loss/drawdown gate (RiskManagement DailyRiskState)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.debug.disable_positions_stale_gate`
   - type/default: `bool` / `required`
-  - read: `apps/reference/config_loader.py:ConfigLoader.load_config`
+  - read: `apps\reference\config_loader.py:ConfigLoader.load_config`
   - effect: DEV/SHADOW ONLY: disables position stale TTL gate (AuroraBridge portfolio freshness)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.arming.max_attempts`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`, `apps/reference/main.py:main`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`, `apps\reference\main.py:main`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.bar_gating.bar_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Bar duration in milliseconds.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.bar_gating.enable`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.behavior_fsm.enable`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.behavior_fsm.high_vol_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.behavior_fsm.low_vol_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.degraded_context_critical_keys`
   - type/default: `List[str]` / `default_factory=list`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Optional global list of critical DecisionContext keys. If empty, DecisionMaking uses a safe built-in default set..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.degraded_context_critical_keys_by_strategy`
   - type/default: `Dict[str, List[str]]` / `default_factory=dict`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Optional per-strategy overrides for degraded_context_critical_keys. If a strategy_id is present here, its list is used instead of the global list..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.directional_sanity.consecutive_bars`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:apply_safety_gates`
   - effect: Number of consecutive deltas required to confirm trend (1–3). Use 1 for bar-based backtest, 2+ for live tick-based..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.directional_sanity.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:apply_safety_gates`
   - effect: Enable directional sanity gate (fail-closed).
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.decision_making.directional_sanity.min_abs_delta_price`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:apply_safety_gates`
   - effect: Minimum absolute delta_price to consider trend (noise threshold).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.directional_sanity.min_confidence`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:apply_safety_gates`
   - effect: Minimum confidence required (max(regime_confidence, trend_confidence)).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.entry_plan.atr_period`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Expected ATR period (for validation/tracing, must match FE config).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.decision_making.entry_plan.base_atr_mult`
+  - type/default: `float` / `1.5`
+  - read: NOT FOUND
+  - effect: Base ATR multiplier for stop loss (at zero conviction).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.decision_making.entry_plan.confidence_scale`
+  - type/default: `float` / `0.5`
+  - read: NOT FOUND
+  - effect: Scaling factor for conviction: mult = base - scale * confidence.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Enable EntryPlan-based SL/TP injection into trade intents.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.decision_making.entry_plan.entry_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Entry offset as ATR multiplier (e.g., 0.5 = 0.5*ATR from ref price).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.decision_making.entry_plan.min_stop_bps`
+  - type/default: `int` / `15`
+  - read: NOT FOUND
+  - effect: Minimum stop distance in basis points (safety floor).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.entry_plan.obi_missing_policy`
   - type/default: `Literal['neutral']` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Policy when OBI is None: 'neutral' applies multiplier=1.0 (EXPLICIT, not silent).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.obi_mod_clamp_max`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Maximum clamp for OBI multiplier (anti-taker drift safety).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.obi_mod_clamp_min`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Minimum clamp for OBI multiplier (anti-taker drift safety).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.obi_weight`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: OBI modulation weight (0 = no modulation, 1 = full modulation).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.require_atr`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: If True, reject trade intent if ATR is not ready (fail-closed).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.sl_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Stop-loss distance as ATR multiplier (e.g., 1.5 = 1.5*ATR).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.decision_making.entry_plan.structural_stop_enabled`
+  - type/default: `bool` / `False`
+  - read: NOT FOUND
+  - effect: Enable dynamic structural stops based on pillar conviction.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.entry_plan.tp_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Take-profit distance as ATR multiplier (e.g., 2.0 = 2.0*ATR).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.fail_closed_on_degraded_context`
   - type/default: `bool` / `False`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: If true, DecisionMaking may DEFER intents when critical DecisionContext features are missing/invalid (fail-closed)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.features.ttl_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.decision_making.flip.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Master killswitch for FLIP. If false, all flip disabled globally..
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.decision_making.price_motion_sanity.bleed_threshold_norm`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: DENY if pm_norm_bleed <= -threshold for LONG.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.price_motion_sanity.bleed_window_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: Bleed window length (seconds).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.price_motion_sanity.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: Enable price-motion sanity gate (fail-closed).
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.decision_making.price_motion_sanity.flash_threshold_norm`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: DENY if pm_norm_flash <= -threshold for LONG.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.price_motion_sanity.flash_window_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: Flash window length (seconds).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.price_motion_sanity.k_vol`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/feature_engineering/feature_engineering.py:FeatureEngineering._calculate_and_emit_features_for_tf`
+  - read: `apps\reference\domains\feature_engineering\feature_engineering.py:FeatureEngineering._calculate_and_emit_features_for_tf`
   - effect: Normalization factor: pm_norm = ret/(k_vol*vol_pct).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.price_motion_sanity.pm_norm_clip_abs`
   - type/default: `float` / `10.0`
-  - read: `apps/reference/domains/feature_engineering/feature_engineering.py:FeatureEngineering._calculate_and_emit_features_for_tf`
+  - read: `apps\reference\domains\feature_engineering\feature_engineering.py:FeatureEngineering._calculate_and_emit_features_for_tf`
   - effect: Absolute clipping bound for pm_norm: clip to [-clip_abs, +clip_abs]. Default 10.0 for Anti-FOMO..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.price_motion_sanity.require_bleed_ready`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`
   - effect: If true: missing bleed window data => DENY (fail-closed).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.risk_gate.min_intents_for_check`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_and_emit_risk_gate_alert`
+  - read: `apps\reference\domains\decision_making\intent_emitter.py:IntentEmitter.check_and_emit_risk_gate_alert`
   - effect: Minimum intents before checking threshold.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.risk_gate.threshold_pct_production`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_and_emit_risk_gate_alert`
+  - read: `apps\reference\domains\decision_making\intent_emitter.py:IntentEmitter.check_and_emit_risk_gate_alert`
   - effect: Alert if >X% intents blocked (production).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.risk_gate.threshold_pct_testnet`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_and_emit_risk_gate_alert`
+  - read: `apps\reference\domains\decision_making\intent_emitter.py:IntentEmitter.check_and_emit_risk_gate_alert`
   - effect: Alert if >X% intents blocked (testnet).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.risk_skew.defer_window_sec`
@@ -292,27 +307,27 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.bracket_placement.tp_widen_first_bps`
   - type/default: `int` / `20`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._place_deferred_brackets`
+  - read: NOT FOUND
   - effect: First retry: widen TP by N basis points (20 = 0.2%). Handles most -2021 cases..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.bracket_placement.tp_widen_second_bps`
   - type/default: `int` / `50`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: NOT FOUND
   - effect: Second retry: widen TP by N basis points (50 = 0.5%). Handles volatile markets..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.event_dedup.max_size`
   - type/default: `int` / `100000`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Max number of events to track.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.event_dedup.ttl_ms`
   - type/default: `int` / `86400000`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Event TTL in milliseconds (24h).
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.fallback.backoff_ms`
   - type/default: `List[int]` / `required`
-  - read: `apps/reference/adapters/binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
+  - read: `apps\reference\adapters\binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
   - effect: Backoff intervals for retry attempts (ms).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.fallback.policy`
@@ -327,32 +342,32 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.fsm_open.idempotency_window_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_open.py:OpenFlowFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm_open.py:OpenFlowFSM.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.guardian.cleanup_ttl_ms`
   - type/default: `int` / `6000`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._resolve_guardian_config`
+  - read: `apps\reference\domains\execution_position\config_resolver.py:ConfigResolverMixin._resolve_guardian_config`
   - effect: TTL before considering an orphaned bracket for cleanup..
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.guardian.emit_tidy_event`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._resolve_guardian_config`
+  - read: `apps\reference\domains\execution_position\config_resolver.py:ConfigResolverMixin._resolve_guardian_config`
   - effect: Emit EVT:SYMBOL_TIDY after successful orphan cleanup..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.guardian.poll_interval_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._resolve_guardian_config`
+  - read: `apps\reference\domains\execution_position\config_resolver.py:ConfigResolverMixin._resolve_guardian_config`
   - effect: Polling interval for OrderGuardian reconciliation loop..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.guardian.unified`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._resolve_guardian_config`
+  - read: `apps\reference\domains\execution_position\config_resolver.py:ConfigResolverMixin._resolve_guardian_config`
   - effect: Use unified guardian mode (single reconcile loop for all symbols)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.idempotent_cancel.max_retries`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.inflight_reconcile.inflight_ttl_sec`
@@ -377,42 +392,42 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.metrics_collector.recent_rejections_minutes`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.metrics_collector.window_size_minutes`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.shadow_check.absolute_threshold_usd`
   - type/default: `float` / `5000.0`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_shadow_notional`
+  - read: NOT FOUND
   - effect: Absolute mismatch threshold in USD (for large portfolios)..
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.shadow_check.check_every_n_requests`
   - type/default: `int` / `10`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_exposure_fail_closed`
+  - read: NOT FOUND
   - effect: Run shadow check every N exposure requests (sampling rate)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.shadow_check.enabled`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_exposure_fail_closed`
+  - read: NOT FOUND
   - effect: Enable periodic shadow exposure checks..
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.execution_position.shadow_check.large_portfolio_threshold_usd`
   - type/default: `float` / `1000000.0`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_shadow_notional`
+  - read: NOT FOUND
   - effect: Portfolio value above which to use absolute threshold..
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.shadow_check.tolerance_pct`
   - type/default: `float` / `1.0`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_shadow_notional`
+  - read: NOT FOUND
   - effect: Allowed mismatch percentage before warning (1.0 = 1%)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.shadow_check.use_absolute_for_large_portfolios`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._check_shadow_notional`
+  - read: NOT FOUND
   - effect: Use absolute threshold for portfolios above large_portfolio_threshold_usd..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.utils.basis_points_base`
@@ -449,6 +464,11 @@ Format per field:
   - type/default: `float` / `0.0`
   - read: NOT FOUND
   - effect: SIGNED feature: neutral is 0.0.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.absorption.proxy.dp_cap_pct`
+  - type/default: `Optional[float]` / `None`
+  - read: NOT FOUND
+  - effect: Cap for |delta_price/price| normalisation in conflict-weighted formula. Required when absorption.mode != disabled. Example: 0.02 = cap at 2%% delta-price deviation..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.feature_engineering.absorption.proxy.eps`
   - type/default: `float` / `required`
@@ -685,6 +705,126 @@ Format per field:
   - read: NOT FOUND
   - effect: Rolling window size for correlation calculation.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.backfill.d1_candles`
+  - type/default: `int` / `200`
+  - read: NOT FOUND
+  - effect: Number of D1 candles to fetch (≥ sma_period).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.backfill.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable backfill at live startup (disable for backtest).
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `domains.feature_engineering.pillars.backfill.h4_candles`
+  - type/default: `int` / `100`
+  - read: NOT FOUND
+  - effect: Number of H4 candles to fetch.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.backfill.m15_candles`
+  - type/default: `int` / `50`
+  - read: NOT FOUND
+  - effect: Number of M15 candles to fetch.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Master switch for all pillar indicators.
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `domains.feature_engineering.pillars.operator.adx_period`
+  - type/default: `int` / `14`
+  - read: NOT FOUND
+  - effect: ADX calculation period (bars).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.operator.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable Operator pillar (H4 LinReg+ADX).
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `domains.feature_engineering.pillars.operator.linreg_period`
+  - type/default: `int` / `20`
+  - read: NOT FOUND
+  - effect: Linear regression slope window (bars).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.operator.min_bars`
+  - type/default: `int` / `50`
+  - read: NOT FOUND
+  - effect: Minimum H4 bars before pillar is ready.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `domains.feature_engineering.pillars.operator.sensitivity`
+  - type/default: `float` / `3.0`
+  - read: NOT FOUND
+  - effect: tanh normalization sensitivity.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.operator.timeframe_sec`
+  - type/default: `int` / `14400`
+  - read: NOT FOUND
+  - effect: Timeframe in seconds for Operator pillar candles (default H4=14400).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.strategist.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable Strategist pillar (D1 SMA200).
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `domains.feature_engineering.pillars.strategist.min_bars`
+  - type/default: `int` / `200`
+  - read: NOT FOUND
+  - effect: Minimum D1 bars before pillar is ready.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `domains.feature_engineering.pillars.strategist.sensitivity`
+  - type/default: `float` / `3.0`
+  - read: NOT FOUND
+  - effect: tanh normalization sensitivity.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.strategist.sma_period`
+  - type/default: `int` / `200`
+  - read: NOT FOUND
+  - effect: SMA period for territory detection.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.strategist.timeframe_sec`
+  - type/default: `int` / `86400`
+  - read: NOT FOUND
+  - effect: Timeframe in seconds for Strategist pillar candles (default D1=86400).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.tactician.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable Tactician pillar (M15 ROC).
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `domains.feature_engineering.pillars.tactician.min_bars`
+  - type/default: `int` / `20`
+  - read: NOT FOUND
+  - effect: Minimum M15 bars before pillar is ready.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `domains.feature_engineering.pillars.tactician.roc_period`
+  - type/default: `int` / `14`
+  - read: NOT FOUND
+  - effect: ROC lookback period in bars.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.tactician.sensitivity`
+  - type/default: `float` / `3.0`
+  - read: NOT FOUND
+  - effect: tanh normalization sensitivity (higher = faster saturation).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.tactician.timeframe_sec`
+  - type/default: `int` / `900`
+  - read: NOT FOUND
+  - effect: Timeframe in seconds for Tactician pillar candles (default M15=900).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.weights.operator`
+  - type/default: `float` / `0.4`
+  - read: NOT FOUND
+  - effect: Weight for Operator (H4 LinReg+ADX) pillar.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.weights.strategist`
+  - type/default: `float` / `0.3`
+  - read: NOT FOUND
+  - effect: Weight for Strategist (D1 SMA200) pillar.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.pillars.weights.tactician`
+  - type/default: `float` / `0.3`
+  - read: NOT FOUND
+  - effect: Weight for Tactician (M15 ROC) pillar.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.feature_engineering.readiness_registry.declared_keys`
   - type/default: `List[str]` / `required`
   - read: NOT FOUND
@@ -714,6 +854,11 @@ Format per field:
   - type/default: `float` / `required`
   - read: NOT FOUND
   - effect: Lookback window for counting events (seconds).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.feature_engineering.trace_features`
+  - type/default: `bool` / `False`
+  - read: NOT FOUND
+  - effect: Enable per-tick feature logging (WARNING: high I/O cost).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.feature_engineering.volatility.sma_length`
   - type/default: `int` / `required`
@@ -787,32 +932,32 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.feature_engineering.warmup.enforcement_mode`
   - type/default: `Literal['fail_fast', 'warn_only', 'disabled']` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: LOCKED to fail_fast in production. warn_only/disabled forbidden..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.position_tracking.enable_market_tick_subscription`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/position_tracking/position_tracking.py:PositionTracking.__init__`
+  - read: `apps\reference\domains\position_tracking\position_tracking.py:PositionTracking.__init__`
   - effect: Enable EVT:MARKET_TICK_RECEIVED subscription for mark-price PnL (optional).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.position_tracking.positions_stale_ttl_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._handle_flip_orchestration`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._initiate_flip_close`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: `apps\reference\domains\decision_making\flip_orchestration.py:FlipOrchestrator.handle_flip_orchestration`, `apps\reference\domains\decision_making\flip_orchestration.py:FlipOrchestrator.initiate_flip_close`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`
   - effect: Portfolio freshness TTL for AuroraBridge gate.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.position_tracking.precision.decimal_places`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/position_tracking/position_tracking.py:PositionTracking.__init__`
+  - read: `apps\reference\domains\position_tracking\position_tracking.py:PositionTracking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.position_tracking.precision.flat_position_threshold`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/position_tracking/position_tracking.py:PositionTracking.__init__`
+  - read: `apps\reference\domains\position_tracking\position_tracking.py:PositionTracking.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.position_tracking.precision.quantity_min_threshold`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/position_tracking/position_tracking.py:PositionTracking.__init__`
+  - read: `apps\reference\domains\position_tracking\position_tracking.py:PositionTracking.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `execution.allow_trade_with_guardian_tidy_only`
@@ -822,7 +967,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.fallback.backoff_ms`
   - type/default: `List[int]` / `required`
-  - read: `apps/reference/adapters/binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
+  - read: `apps\reference\adapters\binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
   - effect: Backoff intervals for retry attempts (ms).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.fallback.policy`
@@ -857,12 +1002,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.brackets.sl.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.brackets.tp.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.emergency.emergency_sl_bps`
@@ -882,32 +1027,32 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.orphan_monitor.batch_cancel_limit`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Max number of orders to cancel in one batch.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.orphan_monitor.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Enable orphan monitoring.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `execution.manage.orphan_monitor.periodic_interval_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Interval between orphan checks.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.orphan_monitor.rate_limit_per_min`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Rate limit for cancel requests per minute.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.manage.orphan_monitor.run_on_startup`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Run orphan check immediately on FSM startup.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.preflight_backoff_ms`
   - type/default: `Optional[List[int]]` / `None`
-  - read: NOT FOUND
+  - read: `apps\reference\domains\execution_position\bracket_manager.py:BracketManager.preflight_position_check`
   - effect: DEPRECATED: No consumption found.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.watchdog.ack_ttl_ms`
@@ -941,17 +1086,17 @@ Format per field:
   - effect: Require stronger opposite signal before emitting reduce-only CLOSE during flip. Example: 1.3 means opposite score must exceed its threshold by 30%..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `instruments.<SYMBOL>.min_notional`
-  - type/default: `str` / `required`
+  - type/default: `Decimal` / `required`
   - read: NOT FOUND
   - effect: Minimum notional value (MIN_NOTIONAL).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `instruments.<SYMBOL>.min_qty`
-  - type/default: `str` / `required`
+  - type/default: `Decimal` / `required`
   - read: NOT FOUND
   - effect: Minimum quantity (LOT_SIZE minQty).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `instruments.<SYMBOL>.step_size`
-  - type/default: `str` / `required`
+  - type/default: `Decimal` / `required`
   - read: NOT FOUND
   - effect: Quantity precision (LOT_SIZE stepSize).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
@@ -961,8 +1106,8 @@ Format per field:
   - effect: Symbol name (e.g., BTCUSDT).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `instruments.<SYMBOL>.tick_size`
-  - type/default: `str` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM._place_brackets`, `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM._quantize_prices`
+  - type/default: `Decimal` / `required`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM._place_brackets`, `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM._quantize_prices`
   - effect: Price precision.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `ops.metrics_url`
@@ -972,7 +1117,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `ops.panic_killswitch`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_open.py:OpenFlowFSM.handle`
+  - read: `apps\reference\domains\execution_position\fsm_open.py:OpenFlowFSM.handle`
   - effect: Emergency kill switch - blocks all new CMD:OPEN when True.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `ops.reports_dir`
@@ -1002,7 +1147,7 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.assets.<SYMBOL>.liquidity_gate.failsafe_qty_check`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_liquidity_gate`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._check_liquidity_gate`
   - effect: [NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.liquidity_gate.kappa_max`
@@ -1037,12 +1182,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.side_bias.penalty_factor`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_side_bias_state`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._get_side_bias_state`
   - effect: Penalty multiplier for counter-bias trades.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.side_bias.target_ratio`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_side_bias_state`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._get_side_bias_state`
   - effect: Target long/short ratio (e.g., 0.5 = balanced).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.side_bias.window_sec`
@@ -1072,12 +1217,12 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.assets.<SYMBOL>.weights`
   - type/default: `Optional[Dict[str, float]]` / `None`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_signal_weights`
+  - read: NOT FOUND
   - effect: Per-feature signal weights from Optuna.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.anchor_shock_veto.anchor_symbol`
   - type/default: `str` / `'BTCUSDT'`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._process_decision`
+  - read: `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._process_decision`
   - effect: Symbol used as anchor.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.anchor_shock_veto.enabled`
@@ -1092,7 +1237,7 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.bar_gating.bar_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM.__init__`
   - effect: Bar duration in milliseconds.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.bar_gating.enable`
@@ -1115,94 +1260,129 @@ Format per field:
   - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.dashboard.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: NOT FOUND
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.dashboard.metrics`
+  - type/default: `List[str]` / `['sharpe_ratio', 'win_rate', 'memory_coverage']`
+  - read: `apps\reference\domains\decision_making\dashboard.py:DashboardMetrics.get_metrics`
+  - effect: List of metrics to track and log.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.dashboard.sharpe_window_days`
+  - type/default: `int` / `30`
+  - read: `apps\reference\domains\decision_making\dashboard.py:DashboardMetrics.__init__`
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.direction_strength_scoring.directional_features`
   - type/default: `List[str]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Signed features that define direction (dir component)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.direction_strength_scoring.strength_alpha`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Strength influence: final = dir * (1 + strength_alpha * strength)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.direction_strength_scoring.strength_cap`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Clamp for strength component (>=0)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.direction_strength_scoring.strength_features`
   - type/default: `List[str]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Magnitude/confirmation features (strength component)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.atr_period`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Expected ATR period (for validation/tracing, must match FE config).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.entry_plan.base_atr_mult`
+  - type/default: `float` / `1.5`
+  - read: NOT FOUND
+  - effect: Base ATR multiplier for stop loss (at zero conviction).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.entry_plan.confidence_scale`
+  - type/default: `float` / `0.5`
+  - read: NOT FOUND
+  - effect: Scaling factor for conviction: mult = base - scale * confidence.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Enable EntryPlan-based SL/TP injection into trade intents.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.decision.entry_plan.entry_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Entry offset as ATR multiplier (e.g., 0.5 = 0.5*ATR from ref price).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.entry_plan.min_stop_bps`
+  - type/default: `int` / `15`
+  - read: NOT FOUND
+  - effect: Minimum stop distance in basis points (safety floor).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.entry_plan.obi_missing_policy`
   - type/default: `Literal['neutral']` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Policy when OBI is None: 'neutral' applies multiplier=1.0 (EXPLICIT, not silent).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.obi_mod_clamp_max`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Maximum clamp for OBI multiplier (anti-taker drift safety).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.obi_mod_clamp_min`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Minimum clamp for OBI multiplier (anti-taker drift safety).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.obi_weight`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: OBI modulation weight (0 = no modulation, 1 = full modulation).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.require_atr`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: If True, reject trade intent if ATR is not ready (fail-closed).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.sl_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Stop-loss distance as ATR multiplier (e.g., 1.5 = 1.5*ATR).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.entry_plan.structural_stop_enabled`
+  - type/default: `bool` / `False`
+  - read: NOT FOUND
+  - effect: Enable dynamic structural stops based on pillar conviction.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.entry_plan.tp_k_atr`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`
+  - read: NOT FOUND
   - effect: Take-profit distance as ATR multiplier (e.g., 2.0 = 2.0*ATR).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.essential_features`
   - type/default: `List[str]` / `default_factory=list`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_essential_features`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._get_essential_features`
   - effect: Features that must be present/ready.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.feature_neutrals`
   - type/default: `Dict[str, float]` / `default_factory=dict`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_feature_neutrals`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._get_feature_neutrals`
   - effect: Neutral offsets for V2 scoring.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.gates.anti_flat_sigma`
   - type/default: `float` / `0.5`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: Block ENTRY if |pm_norm| < anti_flat_sigma (dead market, fee churn).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.gates.anti_fomo_sigma`
   - type/default: `float` / `4.0`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: Block ENTRY if |pm_norm| > anti_fomo_sigma (extreme impulse, snapback risk).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.gates.enabled`
@@ -1212,7 +1392,7 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.decision.gates.motion_window_sec`
   - type/default: `int` / `900`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: Which pm_norm window to use: 10, 60, 300, or 900 (seconds).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.kelly.base_probability`
@@ -1257,7 +1437,7 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.decision.liquidity_gate.failsafe_qty_check`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_liquidity_gate`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._check_liquidity_gate`
   - effect: [NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.liquidity_gate.kappa_max`
@@ -1290,11 +1470,36 @@ Format per field:
   - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.money_management.enabled`
+  - type/default: `bool` / `False`
+  - read: NOT FOUND
+  - effect: Enable Phase 9 risk-based sizing.
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.money_management.max_notional_cap`
+  - type/default: `Optional[Decimal]` / `None`
+  - read: NOT FOUND
+  - effect: Optional hard cap on notional value (USDT).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.money_management.risk_per_trade_pct`
+  - type/default: `float` / `0.01`
+  - read: NOT FOUND
+  - effect: Risk per trade as fraction of equity (e.g. 0.01 = 1%).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.money_management.stop_distance_pct`
+  - type/default: `float` / `0.005`
+  - read: NOT FOUND
+  - effect: Assumed stop distance for sizing calculation (e.g. 0.005 = 0.5%).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.neutral_threshold`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._process_decision`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._process_decision`
   - effect: Neutral zone threshold.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.operational_mode`
+  - type/default: `OperationalMode` / `<OperationalMode.PARANOID: 'paranoid'>`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
+  - effect: Phase 6: Operational Mode (PARANOID=Strict, CURIOUS=Relaxed).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.production.signal_threshold`
   - type/default: `Optional[float]` / `required`
   - read: NOT FOUND
@@ -1310,14 +1515,124 @@ Format per field:
   - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
-- `strategies.aurora.decision.scoring_version`
-  - type/default: `Literal['v1', 'v2']` / `'v1'`
+- `strategies.aurora.decision.score_multiplier`
+  - type/default: `float` / `1.0`
   - read: NOT FOUND
-  - effect: Scoring engine version.
+  - effect: Multiplier for linear score before quadratic transform.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.default_multiplier`
+  - type/default: `float` / `1.0`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Multiplier for unknown regimes.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable ContextShield.
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.scoring_engine.context_shield.stale_mult_danger`
+  - type/default: `float` / `0.35`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Multiplier for stale danger regimes (more aggressive reduction).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.stale_mult_normal`
+  - type/default: `float` / `0.7`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Multiplier for stale non-danger regimes.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.ttl_ms`
+  - type/default: `int` / `14400000`
+  - read: NOT FOUND
+  - effect: Regime staleness TTL in milliseconds (default: 4h = 14,400,000ms).
+  - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
+- `strategies.aurora.decision.scoring_engine.danger_zone_shield.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable DangerZoneShield.
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.scoring_engine.danger_zone_shield.motion_threshold`
+  - type/default: `float` / `3.0`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: |price_motion_norm| above this → VETO.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.danger_zone_shield.spread_threshold`
+  - type/default: `float` / `50.0`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: spread_bps above this → VETO.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.danger_zone_shield.vol_threshold`
+  - type/default: `float` / `0.95`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: volatility_state above this → VETO.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.memory_shield.decay_rate`
+  - type/default: `float` / `0.95`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Exponential decay rate for state visits (weight = visits * decay^days).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: Enable MemoryShield.
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.scoring_engine.memory_shield.exploring_multiplier`
+  - type/default: `float` / `0.8`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.exploring_threshold`
+  - type/default: `int` / `50`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: NOT FOUND
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.memory_shield.flush_interval_sec`
+  - type/default: `float` / `60.0`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Minimum seconds between disk flushes (LIVE only)..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.known_multiplier`
+  - type/default: `float` / `1.0`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.max_states`
+  - type/default: `int` / `200`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: LRU capacity for state memory.
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.memory_shield.storage_path`
+  - type/default: `Optional[str]` / `None`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: JSON file path for LIVE persistence. None → RAM-only (safe for backtest)..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.unknown_multiplier`
+  - type/default: `float` / `0.6`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.memory_shield.unknown_threshold`
+  - type/default: `int` / `10`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: NOT FOUND
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.min_pillar_confidence`
+  - type/default: `float` / `0.0`
+  - read: NOT FOUND
+  - effect: Minimum pillar_sum magnitude to consider actionable (below → neutral).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.shield_enabled`
+  - type/default: `bool` / `False`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Enable shield cascade (Phase 3). False = NullShield..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_version`
+  - type/default: `Literal['v1', 'v2', 'quadratic']` / `'v1'`
+  - read: NOT FOUND
+  - effect: Scoring engine version: v1, v2, or quadratic (Phase 9).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.side_bias_min_intents`
   - type/default: `int` / `18`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Min intents in window to activate side bias penalty.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.side_bias_min_score`
@@ -1327,24 +1642,29 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.side_bias_penalty_factor`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Side bias penalty factor.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.side_bias_target_ratio`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Side bias target ratio.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.side_bias_window_sec`
   - type/default: `Optional[int]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Side bias window (seconds).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.signal_threshold`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._get_signal_threshold`
+  - read: `apps\reference\domains\decision_making\config_resolver.py:DMConfigResolver.get_signal_threshold`
   - effect: Signal score threshold. PRODUCTION MUST OVERRIDE in trading.yaml!.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.signal_weights.absorption`
+  - type/default: `float` / `0.0`
+  - read: NOT FOUND
+  - effect: R2: Absorption feature weight (SIGNED [-1,1], neutral=0.0). 0.0 = disabled (backward compat). Set >0 after Phase 2 calibration..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.signal_weights.delta_price`
   - type/default: `float` / `required`
   - read: NOT FOUND
@@ -1392,7 +1712,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.signals.delta_price_cap_pct`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Delta price cap as pct of price (e.g. 0.02 = 2%). Required (no hardcoded fallback)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.signals.enable_new_metrics`
@@ -1401,9 +1721,9 @@ Format per field:
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.signals.normalize_signals_mode`
-  - type/default: `Literal['off', 'legacy_v1', 'signed_v2']` / `required`
+  - type/default: `Literal['signed_v2']` / `required`
   - read: NOT FOUND
-  - effect: Signal normalization mode. 'legacy_v1' is forbidden in live/production..
+  - effect: Signal normalization mode. Production invariant is 'signed_v2'. No other value is valid in production config. Forensic/offline passthrough: pass normalize_mode='off' directly to the scoring fn, bypassing this config. 'legacy_v1' + 'off' rem…
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.symbols_to_track`
   - type/default: `Optional[List[str]]` / `None`
@@ -1430,9 +1750,19 @@ Format per field:
   - read: NOT FOUND
   - effect: Enable directional sanity and price motion gates for this strategy.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.safety_gates.stress_attenuation_factor`
+  - type/default: `float` / `0.5`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_resolve_stress_policy`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`
+  - effect: Multiplicative factor applied to margin_pct_mult when STRESS and policy=attenuate.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.safety_gates.system_stress_policy`
+  - type/default: `Literal['off', 'attenuate', 'block']` / `'off'`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_resolve_stress_policy`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`
+  - effect: System stress gate policy: off=bypass Gate 0.5 entirely, attenuate=EXTREME denied + STRESS reduces size, block=EXTREME and STRESS both denied.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.shadow_mode_enabled`
   - type/default: `bool` / `False`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._shadow_compare_kernel`
+  - read: `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.shadow_compare_kernel`
   - effect: Enable shadow mode: compare legacy scoring with kernel and log divergences.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.timeframe_sec`
@@ -1447,7 +1777,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.assets.<SYMBOL>.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/mean_reversion_handler.py:MeanReversionHandler._parse_config`
+  - read: `apps\reference\domains\decision_making\mean_reversion_handler.py:MeanReversionHandler._parse_config`
   - effect: NOT FOUND
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.mean_reversion.assets.<SYMBOL>.liquidity_gate.enabled`
@@ -1457,7 +1787,7 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.mean_reversion.assets.<SYMBOL>.liquidity_gate.failsafe_qty_check`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_liquidity_gate`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._check_liquidity_gate`
   - effect: [NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.assets.<SYMBOL>.liquidity_gate.kappa_max`
@@ -1484,6 +1814,21 @@ Format per field:
   - type/default: `Optional[int]` / `None`
   - read: NOT FOUND
   - effect: BB window size.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.assets.<SYMBOL>.strategy.confidence_base`
+  - type/default: `Optional[float]` / `None`
+  - read: NOT FOUND
+  - effect: Override base confidence scalar.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.assets.<SYMBOL>.strategy.confidence_bb_slope`
+  - type/default: `Optional[float]` / `None`
+  - read: NOT FOUND
+  - effect: Override BB slope multiplier.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.assets.<SYMBOL>.strategy.confidence_rsi_bonus`
+  - type/default: `Optional[float]` / `None`
+  - read: NOT FOUND
+  - effect: Override RSI confirmation bonus.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.assets.<SYMBOL>.strategy.entry_threshold`
   - type/default: `Optional[float]` / `None`
@@ -1517,7 +1862,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/mean_reversion_handler.py:MeanReversionHandler._parse_config`
+  - read: `apps\reference\domains\decision_making\mean_reversion_handler.py:MeanReversionHandler._parse_config`
   - effect: Enable MR 1m strategy.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.mean_reversion.liquidity_gate.enabled`
@@ -1527,7 +1872,7 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.mean_reversion.liquidity_gate.failsafe_qty_check`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_liquidity_gate`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._check_liquidity_gate`
   - effect: [NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.liquidity_gate.kappa_max`
@@ -1545,6 +1890,16 @@ Format per field:
   - read: NOT FOUND
   - effect: Enable directional sanity and price motion gates for this strategy.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.mean_reversion.safety_gates.stress_attenuation_factor`
+  - type/default: `float` / `0.5`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_resolve_stress_policy`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`
+  - effect: Multiplicative factor applied to margin_pct_mult when STRESS and policy=attenuate.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.safety_gates.system_stress_policy`
+  - type/default: `Literal['off', 'attenuate', 'block']` / `'off'`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:_resolve_stress_policy`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`
+  - effect: System stress gate policy: off=bypass Gate 0.5 entirely, attenuate=EXTREME denied + STRESS reduces size, block=EXTREME and STRESS both denied.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.strategy.atr_window`
   - type/default: `int` / `required`
   - read: NOT FOUND
@@ -1559,6 +1914,21 @@ Format per field:
   - type/default: `int` / `required`
   - read: NOT FOUND
   - effect: Bollinger Bands window.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.strategy.confidence_base`
+  - type/default: `float` / `0.5`
+  - read: NOT FOUND
+  - effect: Base confidence when BB threshold touched (0.5 = 50%).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.strategy.confidence_bb_slope`
+  - type/default: `float` / `2.0`
+  - read: NOT FOUND
+  - effect: Slope: how fast confidence grows with |pct_b| distance from threshold.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.strategy.confidence_rsi_bonus`
+  - type/default: `float` / `0.2`
+  - read: NOT FOUND
+  - effect: Confidence bonus when RSI confirms oversold/overbought (0.2 = +20%).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.strategy.entry_threshold`
   - type/default: `float` / `required`
@@ -1595,6 +1965,11 @@ Format per field:
   - read: NOT FOUND
   - effect: RSI window.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.mean_reversion.strategy.score_multiplier`
+  - type/default: `float` / `1.0`
+  - read: NOT FOUND
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.strategy.sl_atr_mult`
   - type/default: `float` / `required`
   - read: NOT FOUND
@@ -1607,7 +1982,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.timeframe_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/mean_reversion_handler.py:MeanReversionHandler._parse_config`
+  - read: `apps\reference\domains\decision_making\mean_reversion_handler.py:MeanReversionHandler._parse_config`
   - effect: Bar timeframe in seconds.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.arbitration.logging.log_level`
@@ -1617,27 +1992,27 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.arbitration.logging.rejected_why_prefix`
   - type/default: `str` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_strategy_arbitration`
+  - read: NOT FOUND
   - effect: Prefix for why-codes when strategy intent is rejected.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.arbitration.mode`
   - type/default: `Literal['priority']` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_strategy_arbitration`
+  - read: NOT FOUND
   - effect: Arbitration mode: 'priority' (only supported mode, lower number = higher priority).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.arbitration.priority`
   - type/default: `Dict[str, int]` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_strategy_arbitration`
+  - read: NOT FOUND
   - effect: Strategy priority ranks (lower = higher priority).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.arbitration.window_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_strategy_arbitration`
+  - read: NOT FOUND
   - effect: Decision window size in ms for multi-strategy arbitration (SSOT; no silent defaults)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.assignments`
   - type/default: `Dict[str, List[str]]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._is_symbol_enabled`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_strategy_arbitration`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._is_strategy_assigned`, `apps/reference/domains/decision_making/mean_reversion_handler.py:MeanReversionHandler._get_mr_assigned_symbols`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._collect_leverage_configs`, … (+2 more)
+  - read: `apps\reference\domains\decision_making\aurora_handler.py:AuroraHandler._is_symbol_enabled`, `apps\reference\domains\decision_making\mean_reversion_handler.py:MeanReversionHandler._get_mr_assigned_symbols`, `apps\reference\domains\execution_position\leverage_config.py:LeverageConfigManager.collect_configs`, `apps\reference\domains\strategies\registry.py:StrategyRuntime.start`, `backtest_engine\reporting.py:build_backtest_report`
   - effect: Per-symbol strategy assignments (symbol → list[strategy_id]).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies_registry.version`
@@ -1647,12 +2022,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.bar_event_age_mode`
   - type/default: `Literal['received', 'close_ts']` / `'received'`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._features_ready`
+  - read: `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.features_ready`
   - effect: How to calculate bar age: 'received' (arrival time) or 'close_ts' (event time).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.bar_ttl_ms`
   - type/default: `Optional[int]` / `10000`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._features_ready`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`, `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\decision_making\readiness_gates.py:ReadinessGates.features_ready`, `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`, `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Max age of bar data in ms (BAR-TTL-REFORM-01).
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `system.market_data.emit_workers`
@@ -1667,22 +2042,22 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.proxy_batch_size`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/market_data/proxy.py:MarketDataProxy._load_system_market_data_settings`
+  - read: `apps\reference\domains\market_data\proxy.py:MarketDataProxy._load_system_market_data_settings`
   - effect: Proxy consumer: max items processed per batch.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.proxy_idle_sleep_sec`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/market_data/proxy.py:MarketDataProxy._load_system_market_data_settings`
+  - read: `apps\reference\domains\market_data\proxy.py:MarketDataProxy._load_system_market_data_settings`
   - effect: Proxy consumer: sleep when queue is empty (sec).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.proxy_queue_get_timeout_sec`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/market_data/proxy.py:MarketDataProxy._load_system_market_data_settings`
+  - read: `apps\reference\domains\market_data\proxy.py:MarketDataProxy._load_system_market_data_settings`
   - effect: Proxy consumer: blocking get() timeout (sec).
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `system.market_data.queue_maxsize`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/market_data/proxy.py:MarketDataProxy._load_system_market_data_settings`
+  - read: `apps\reference\domains\market_data\proxy.py:MarketDataProxy._load_system_market_data_settings`
   - effect: Max size of IPC queue (worker → proxy).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `system.market_data.tick_ttl_ms`
@@ -1707,7 +2082,7 @@ Format per field:
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.domain_configuration.decision_making.trading_mode`
   - type/default: `Literal['live', 'testnet']` / `required`
-  - read: `apps/reference/bootstrap/preflight.py:check_hybrid_coherence`
+  - read: `apps\reference\bootstrap\preflight.py:check_hybrid_coherence`
   - effect: Trading mode for this domain: 'live' or 'testnet'.
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.domain_configuration.execution_position.trading_mode`
@@ -1717,12 +2092,12 @@ Format per field:
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.domain_configuration.feature_engineering.trading_mode`
   - type/default: `Literal['live', 'testnet']` / `required`
-  - read: `apps/reference/bootstrap/preflight.py:check_hybrid_coherence`
+  - read: `apps\reference\bootstrap\preflight.py:check_hybrid_coherence`
   - effect: Trading mode for this domain: 'live' or 'testnet'.
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.domain_configuration.market_data.trading_mode`
   - type/default: `Literal['live', 'testnet']` / `required`
-  - read: `apps/reference/bootstrap/preflight.py:check_hybrid_coherence`
+  - read: `apps\reference\bootstrap\preflight.py:check_hybrid_coherence`
   - effect: Trading mode for this domain: 'live' or 'testnet'.
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.domain_configuration.risk_management.trading_mode`
@@ -1732,12 +2107,12 @@ Format per field:
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 - `trading.market_data.bar_aggregator.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/main.py:main`
+  - read: `apps\reference\bootstrap\domain_builder.py:build_live_domains`
   - effect: Enable bar aggregator (EVT:BAR_CLOSED emission).
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `trading.market_data.bar_aggregator.timeframes_sec`
   - type/default: `List[int]` / `required`
-  - read: `apps/reference/main.py:main`
+  - read: `apps\reference\bootstrap\domain_builder.py:build_live_domains`
   - effect: Bar timeframes in seconds (e.g., [180, 300] for 3m and 5m).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.macro_sync.align_mode`
@@ -1752,7 +2127,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.macro_sync.anchors`
   - type/default: `List[str]` / `required`
-  - read: `apps/reference/domains/market_data/market_data_connector.py:MarketDataConnector.__init__`
+  - read: `apps\reference\domains\market_data\market_data_connector.py:MarketDataConnector.__init__`
   - effect: Anchor symbols for macro alignment.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.macro_sync.emit_abs`
@@ -1782,12 +2157,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.poll_interval_sec`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/market_data/market_data_connector.py:MarketDataConnector.__init__`, `apps/reference/services/limit_order_monitor.py:LimitOrderMonitor.__init__`
+  - read: `apps\reference\domains\market_data\market_data_connector.py:MarketDataConnector.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.use_multiprocessing`
   - type/default: `bool` / `required`
-  - read: `apps/reference/main.py:main`
+  - read: `apps\reference\bootstrap\domain_builder.py:build_live_domains`
   - effect: Enable multiprocessing.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.market_data.websocket_streams`
@@ -1797,7 +2172,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.mode`
   - type/default: `str` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._check_and_emit_risk_gate_alert`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._initialize_adapter`
+  - read: `apps\reference\domains\decision_making\intent_emitter.py:IntentEmitter.check_and_emit_risk_gate_alert`, `apps\reference\domains\execution_position\adapter_init.py:AdapterInitMixin._initialize_adapter`
   - effect: testnet | production | live.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.ops.metrics_url`
@@ -1807,7 +2182,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.ops.panic_killswitch`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_open.py:OpenFlowFSM.handle`
+  - read: `apps\reference\domains\execution_position\fsm_open.py:OpenFlowFSM.handle`
   - effect: Emergency kill switch - blocks all new CMD:OPEN when True.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.ops.reports_dir`
@@ -1822,12 +2197,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.symbols_to_track`
   - type/default: `List[str]` / `required`
-  - read: NOT FOUND
+  - read: `apps\reference\main.py:run_backtest_simulation`
   - effect: List of symbols to track for multi-TF aggregation. Derived deterministically from strategies.yaml assignments by ConfigLoader unless explicitly set..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading_mode`
   - type/default: `str` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.trading_mode`, `apps/reference/domains/account_balance/account_connector.py:AccountConnector.__init__`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`, `apps/reference/main.py:main`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.trading_mode`, `apps\reference\domains\account_balance\account_connector.py:AccountConnector.__init__`, `apps\reference\domains\decision_making\safety_gates.py:_check_price_motion_gate`, `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`, `apps\reference\domains\execution_position\fsm.py:ExecPosFSM._execute_decision`, `apps\reference\main.py:main`, … (+1 more)
   - effect: Trading mode: testnet | production | live.
   - risk: Wrong mode can accidentally place live orders or invalidate backtest comparability.
 
@@ -1835,92 +2210,97 @@ Format per field:
 
 - `basis_tf_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_regime_liveness`, `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\decision_making\aurora_handler.py:AuroraHandler._check_regime_liveness`, `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`, `apps\reference\domains\system_stress\system_stress_overlay.py:SystemStressOverlay.__init__`
   - effect: Bar-only regime updates: only process FEATURES_CALCULATED with matching tf_sec. REQUIRED - missing value fails config load (fail-closed)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.arming.require_regime_warmup`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `domains.decision_making.directional_sanity.min_regime_confidence`
+  - type/default: `float` / `0.0`
+  - read: `apps\reference\domains\decision_making\safety_gates.py:apply_safety_gates`
+  - effect: Minimum regime_confidence required to open position (0.0 = disabled). Separate from min_confidence which blends regime+trend. FIX-CONF-GATE-01..
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `liveness_factor`
   - type/default: `int` / `3`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._check_regime_liveness`
+  - read: `apps\reference\domains\decision_making\aurora_handler.py:AuroraHandler._check_regime_liveness`
   - effect: If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, block trading. Default: 3 (i.e., 15 minutes for 5m basis)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.mean_reversion.confidence_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Confidence scaling factor.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.mean_reversion.threshold`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Max price deviation from SMAs for MR regime.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `models.sma_trend.confidence_max`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector._calculate_confidence`, `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector._calculate_confidence`, `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Maximum confidence value.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.sma_trend.confidence_min`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector._calculate_confidence`, `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector._calculate_confidence`, `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Minimum confidence value.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.sma_trend.confidence_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector._calculate_confidence`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector._calculate_confidence`
   - effect: Confidence scaling factor.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.sma_trend.sma_long_period`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: Long SMA period for trend detection.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.sma_trend.sma_short_period`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: Short SMA period for trend detection.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.allow_close_to_close_atr`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: Allow close-to-close TR/ATR when OHLC is unavailable (explicit opt-in).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.atr_period`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: ATR calculation period.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.atr_sma_length`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: ATR SMA length for baseline.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Enable volatility regime detection.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `models.volatility.high_vol_confidence_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Confidence scaling for high vol.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.low_vol_confidence_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Confidence scaling for low vol.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.low_vol_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: Low vol threshold (ATR < low_vol_mult * avg).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `models.volatility.threshold_multiplier`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.handle_event`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.handle_event`
   - effect: High vol threshold (ATR > threshold_mult * avg).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.allowed_regimes`
@@ -1940,12 +2320,12 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.volatility_entry_logic.regime_multipliers`
   - type/default: `Dict[str, float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._emit_signal`
+  - read: NOT FOUND
   - effect: Regime → multiplier. MUST include 'DEFAULT' key (fail-closed)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.blocked_regimes`
   - type/default: `Optional[List[str]]` / `None`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._process_decision`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._process_decision`
   - effect: Regime kill-switch: if current regime is in this list, suppress Aurora strategy signals (no entry/exit/hold/flip intents from strategy; safety exits like SL/TP still apply)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.mean_reversion.allowed_regimes`
@@ -1953,9 +2333,29 @@ Format per field:
   - read: NOT FOUND
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.regime_smoothing.ema_alpha`
+  - type/default: `float` / `0.3`
+  - read: NOT FOUND
+  - effect: EMA decay factor (0.3 = ~5-bar half-life).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.regime_smoothing.enabled`
+  - type/default: `bool` / `False`
+  - read: NOT FOUND
+  - effect: Enable regime multiplier smoothing (fail-closed default).
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.regime_smoothing.method`
+  - type/default: `Literal['ema', 'linear_ramp']` / `'ema'`
+  - read: NOT FOUND
+  - effect: Smoothing method.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.regime_smoothing.ramp_bars`
+  - type/default: `int` / `6`
+  - read: NOT FOUND
+  - effect: Linear ramp duration in bars (used when method=linear_ramp).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.regime_threshold_multipliers`
   - type/default: `Dict[str, float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`, `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._get_regime_thresholds`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\config_resolver.py:DMConfigResolver.get_regime_thresholds`
   - effect: Regime threshold multipliers.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.regime_thresholds`
@@ -1963,6 +2363,21 @@ Format per field:
   - read: NOT FOUND
   - effect: Regime-specific signal thresholds.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.scoring_engine.context_shield.danger_regimes`
+  - type/default: `List[str]` / `default_factory=<lambda>`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Regime names considered dangerous for stale penalty.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.no_regime_multiplier`
+  - type/default: `float` / `0.5`
+  - read: `apps\reference\domains\decision_making\aurora_scoring_helpers.py:AuroraScoringHelpersMixin._build_shield_cascade`
+  - effect: Multiplier when no regime detected.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.scoring_engine.context_shield.regime_multipliers`
+  - type/default: `Dict[str, float]` / `default_factory=<lambda>`
+  - read: NOT FOUND
+  - effect: Regime → multiplier mapping (keys MUST match RegimeDetector output).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.allowed_regimes`
   - type/default: `List[str]` / `required`
   - read: NOT FOUND
@@ -2025,7 +2440,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `uncertain_cutoff`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/regime_detector/regime_detector.py:RegimeDetector.__init__`
+  - read: `apps\reference\domains\regime_detector\regime_detector.py:RegimeDetector.__init__`
   - effect: Min confidence to emit non-UNCERTAIN regime. Below this threshold, demote to UNCERTAIN. REQUIRED - missing value fails config load (fail-closed)..
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 
@@ -2033,59 +2448,64 @@ Format per field:
 
 - `domains.decision_making.position_sizing.liquidity_based_cap_usd`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.position_sizing.min_position_size_usd`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.execution_position.exposure_guard.max_concentration_pct`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.max_directional_ratio`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.max_equity_utilization_pct`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.max_long_utilization_pct`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.max_portfolio_fraction`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.max_short_utilization_pct`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.pending_ttl_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.post_fill_ttl_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.execution_position.exposure_guard.stale_ttl_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
+- `domains.risk_management.absorption_dp_cap_pct`
+  - type/default: `Optional[float]` / `None`
+  - read: `apps\reference\domains\risk_management\risk_management.py:RiskManagement._calculate_risk_parameters`
+  - effect: Cap for delta_price_pct normalisation in absorption toxicity penalty (0..1). Required when use_absorption_penalty=True. No hardcoded fallback — must be set in domains.yaml under risk_management..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.risk_management.risk_score_weights.absorption_inverse`
   - type/default: `float` / `required`
   - read: NOT FOUND
@@ -2108,32 +2528,32 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.risk_management.trading_allowed_thresholds.max_risk_score`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._on_strategy_signal_gateway`, `apps/reference/domains/risk_management/risk_management.py:RiskManagement._get_max_risk_score`
+  - read: `apps\reference\domains\decision_making\strategy_gateway.py:StrategyGateway.process_signal`, `apps\reference\domains\risk_management\risk_management.py:RiskManagement._get_max_risk_score`
   - effect: Max risk score. PRODUCTION MUST OVERRIDE in domains.yaml!.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.risk_management.use_absorption_penalty`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/risk_management/risk_management.py:RiskManagement.__init__`, `apps/reference/domains/risk_management/risk_management.py:RiskManagement._get_use_absorption_penalty`
-  - effect: Whether to include absorption penalty in risk score. Set to False to disable deprecated absorption feature..
+  - read: `apps\reference\domains\risk_management\risk_management.py:RiskManagement.__init__`, `apps\reference\domains\risk_management\risk_management.py:RiskManagement._get_use_absorption_penalty`
+  - effect: Whether to include absorption toxicity penalty in risk score. Set to False to disable (default). Requires absorption_dp_cap_pct when True..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.risk_management.validation.total_weight_max`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/risk_management/risk_management.py:RiskManagement.validate_risk_thresholds`
+  - read: `apps\reference\domains\risk_management\risk_management.py:RiskManagement.validate_risk_thresholds`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.risk_management.validation.total_weight_min`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/risk_management/risk_management.py:RiskManagement.validate_risk_thresholds`
+  - read: `apps\reference\domains\risk_management\risk_management.py:RiskManagement.validate_risk_thresholds`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.exposure.count_pending_orders`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: Count pending orders in exposure.
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `execution.exposure.exclude_reduce_only`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: Exclude reduce-only from exposure.
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `execution.exposure.leverage_defaults`
@@ -2163,7 +2583,7 @@ Format per field:
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `execution.exposure.post_fill_hold_ttl_sec`
   - type/default: `int` / `required`
-  - read: `backtest_engine/wrappers.py:BacktestExecPosFSM._on_order_fill`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._on_order_fill`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `instruments.<SYMBOL>.sizing.margin_pct`
@@ -2173,47 +2593,52 @@ Format per field:
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `strategies.aurora.assets.<SYMBOL>.leverage.max_notional_value`
   - type/default: `Optional[Decimal]` / `None`
-  - read: NOT FOUND
+  - read: `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._emit_signal`
   - effect: Optional: Max notional value cap for this leverage. From leverageBracket API..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `strategies.aurora.assets.<SYMBOL>.leverage.mode`
   - type/default: `Literal['ISOLATED', 'CROSSED']` / `'ISOLATED'`
-  - read: `apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
+  - read: `apps\reference\domains\execution_position\bootstrapping\leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
   - effect: Margin mode. ISOLATED recommended for position-level risk control..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `strategies.aurora.assets.<SYMBOL>.leverage.target`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
+  - read: `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._emit_signal`, `apps\reference\domains\execution_position\bootstrapping\leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
   - effect: Target leverage (1-125). Binance Futures max is 125x..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
+- `strategies.aurora.decision.scoring_engine.exposure_cap`
+  - type/default: `float` / `1.0`
+  - read: NOT FOUND
+  - effect: Maximum absolute exposure after quadratic transform.
+  - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `strategies.mean_reversion.assets.<SYMBOL>.leverage.max_notional_value`
   - type/default: `Optional[Decimal]` / `None`
-  - read: NOT FOUND
+  - read: `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._emit_signal`
   - effect: Optional: Max notional value cap for this leverage. From leverageBracket API..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `strategies.mean_reversion.assets.<SYMBOL>.leverage.mode`
   - type/default: `Literal['ISOLATED', 'CROSSED']` / `'ISOLATED'`
-  - read: `apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
+  - read: `apps\reference\domains\execution_position\bootstrapping\leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
   - effect: Margin mode. ISOLATED recommended for position-level risk control..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `strategies.mean_reversion.assets.<SYMBOL>.leverage.target`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
+  - read: `apps\reference\domains\decision_making\aurora_decision.py:AuroraDecisionMixin._emit_signal`, `apps\reference\domains\execution_position\bootstrapping\leverage_bootstrapper.py:LeverageBootstrapper.sync_symbol`
   - effect: Target leverage (1-125). Binance Futures max is 125x..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `trading.risk`
   - type/default: `Dict[str, Any]` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard._load_soft_limit_config`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard._load_soft_limit_config`
   - effect: Legacy risk configuration (daily gate, etc).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.risk.daily.enabled`
   - type/default: `bool` / `NOT FOUND (untyped dict)`
-  - read: `apps/reference/domains/risk_management/daily_gate.py:DailyRiskState.__init__`
+  - read: `apps\reference\domains\risk_management\daily_gate.py:DailyRiskState.__init__`
   - effect: NOT FOUND (untyped dict; see consumer code)
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `trading.risk.daily.max_drawdown_pct`
   - type/default: `float` / `NOT FOUND (untyped dict)`
-  - read: `apps/reference/domains/risk_management/daily_gate.py:DailyRiskState.__init__`
+  - read: `apps\reference\domains\risk_management\daily_gate.py:DailyRiskState.__init__`
   - effect: NOT FOUND (untyped dict; see consumer code)
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.risk.daily.max_realized_loss_usd`
@@ -2223,7 +2648,7 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.risk.daily.reset_time_utc`
   - type/default: `str` / `NOT FOUND (untyped dict)`
-  - read: `apps/reference/domains/risk_management/daily_gate.py:DailyRiskState.__init__`
+  - read: `apps\reference\domains\risk_management\daily_gate.py:DailyRiskState.__init__`
   - effect: NOT FOUND (untyped dict; see consumer code)
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.risk.feature_flags.clipping_enabled`
@@ -2323,12 +2748,12 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.risk_budgets.session_cvar95_max_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: NOT FOUND
   - effect: Max CVaR-95 per session (bps).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.risk_budgets.trade_cvar95_max_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: NOT FOUND
   - effect: Max CVaR-95 per trade (bps).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.risk_management.data_sources.market_data`
@@ -2338,7 +2763,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.risk_management.data_sources.portfolio_state`
   - type/default: `Literal['live', 'testnet', 'follow_execution']` / `required`
-  - read: `apps/reference/bootstrap/preflight.py:check_hybrid_coherence`
+  - read: `apps\reference\bootstrap\preflight.py:check_hybrid_coherence`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 
@@ -2346,17 +2771,17 @@ Format per field:
 
 - `domains.execution_position.maker_only_entry.enabled`
   - type/default: `bool` / `False`
-  - read: `apps/reference/domains/execution_position/fsm_open.py:OpenFlowFSM.handle`
+  - read: `apps\reference\domains\execution_position\fsm_open.py:OpenFlowFSM.handle`
   - effect: Enable maker-only enforcement for entry LIMIT orders.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `domains.execution_position.order_capabilities.supported_order_types`
   - type/default: `List[Literal['LIMIT', 'MARKET']]` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Allowed order types. No defaults - must be explicitly configured..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.order_capabilities.supported_tif`
   - type/default: `List[Literal['GTC', 'GTX', 'IOC', 'FOK']]` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Allowed time-in-force values. No defaults - must be explicitly configured..
   - risk: Forcing maker can reduce fees but increase missed fills; allowing taker can improve fills but raise costs.
 - `domains.execution_position.order_index.ttl_sec`
@@ -2366,12 +2791,12 @@ Format per field:
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.order_lifecycle.fill_settlement_delay_ms`
   - type/default: `int` / `500`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._on_order_fill`
+  - read: NOT FOUND
   - effect: Delay after fill before bracket placement (REST API lag). 500ms typical for Binance Futures..
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.order_lifecycle.position_close_cleanup_delay_ms`
   - type/default: `int` / `2000`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: NOT FOUND
   - effect: Delay after CLOSE before orphan bracket cleanup. Exchange-side settlement time..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.utils.client_order_id_max_length`
@@ -2381,12 +2806,12 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `execution.manage.orphan_monitor.min_order_age_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Minimum age of order before considering it for orphan cleanup.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `execution.order_guardian`
   - type/default: `Optional[Dict[str, Any]]` / `None`
-  - read: `apps/reference/domains/execution_position/order_guardian.py:OrderGuardian._resolve_guardian_cfg`
+  - read: `apps\reference\domains\execution_position\order_guardian.py:OrderGuardian._resolve_guardian_cfg`
   - effect: DEPRECATED: Guardian not config.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.order_params`
@@ -2406,7 +2831,7 @@ Format per field:
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
 - `instruments.<SYMBOL>.execution.margin_mode`
   - type/default: `Literal['isolated', 'cross']` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._collect_leverage_configs`
+  - read: `apps\reference\domains\execution_position\leverage_config.py:LeverageConfigManager.collect_configs`
   - effect: Binance margin mode. ISOLATED = per-position margin, CROSS = shared wallet margin..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `instruments.<SYMBOL>.execution.max_notional_utilization`
@@ -2416,27 +2841,47 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `instruments.<SYMBOL>.execution.target_leverage`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.resolve_symbol_leverage`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._collect_leverage_configs`, `apps/reference/domains/position_tracking/position_tracking.py:PositionTracking._resolve_leverage_for_symbol`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.resolve_symbol_leverage`, `apps\reference\domains\execution_position\leverage_config.py:LeverageConfigManager.collect_configs`, `apps\reference\domains\position_tracking\position_tracking.py:PositionTracking._resolve_leverage_for_symbol`
   - effect: Target leverage for this instrument (1-125). Must match or be set on exchange..
   - risk: Too high leverage increases liquidation/exposure risk; too low can underuse capital and reduce returns.
+- `strategies.aurora.decision.execution.gates_enabled`
+  - type/default: `List[ExecutionGateName]` / `[<ExecutionGateName.HARD_VETO: 'HARD_VETO'>, <ExecutionGateName.DIRECTION: 'DIRECTION'>, <ExecutionGateName.THRESHOLD…`
+  - read: `apps\reference\domains\decision_making\execution_gate.py:ExecutionGate.check_entry`
+  - effect: Active execution gates (order invariant, but typically checked in stage order).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.execution.structural_gate.enabled`
+  - type/default: `bool` / `True`
+  - read: NOT FOUND
+  - effect: NOT FOUND
+  - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
+- `strategies.aurora.decision.execution.structural_gate.max_risk_reward`
+  - type/default: `Optional[float]` / `None`
+  - read: `apps\reference\domains\decision_making\execution_gate.py:ExecutionGate._check_structural`
+  - effect: Optional cap on R/R (to filter unrealistic TPs).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.execution.structural_gate.min_risk_reward`
+  - type/default: `float` / `1.5`
+  - read: `apps\reference\domains\decision_making\execution_gate.py:ExecutionGate._check_structural`
+  - effect: Minimum Risk/Reward ratio (TP_dist / SL_dist).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.execution.entry_order_type`
   - type/default: `Literal['LIMIT', 'MARKET']` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.execution.entry_tif`
   - type/default: `Optional[Literal['GTC', 'GTX', 'IOC', 'FOK']]` / `None`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Time-in-force for LIMIT orders. Required for LIMIT, None for MARKET..
   - risk: Forcing maker can reduce fees but increase missed fills; allowing taker can improve fills but raise costs.
 - `strategies.mean_reversion.execution.entry_order_type`
   - type/default: `Literal['LIMIT', 'MARKET']` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.mean_reversion.execution.entry_tif`
   - type/default: `Optional[Literal['GTC', 'GTX', 'IOC', 'FOK']]` / `None`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Time-in-force for LIMIT orders. Required for LIMIT, None for MARKET..
   - risk: Forcing maker can reduce fees but increase missed fills; allowing taker can improve fills but raise costs.
 - `trading.execution.allow_trade_with_guardian_tidy_only`
@@ -2446,12 +2891,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.exposure.count_pending_orders`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: Count pending orders in exposure.
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `trading.execution.exposure.exclude_reduce_only`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/exposure_guard.py:ExposureGuard.__init__`
+  - read: `apps\reference\domains\execution_position\exposure_guard.py:ExposureGuard.__init__`
   - effect: Exclude reduce-only from exposure.
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `trading.execution.exposure.leverage_defaults`
@@ -2481,12 +2926,12 @@ Format per field:
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `trading.execution.exposure.post_fill_hold_ttl_sec`
   - type/default: `int` / `required`
-  - read: `backtest_engine/wrappers.py:BacktestExecPosFSM._on_order_fill`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._on_order_fill`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `trading.execution.fallback.backoff_ms`
   - type/default: `List[int]` / `required`
-  - read: `apps/reference/adapters/binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
+  - read: `apps\reference\adapters\binance_adapter.py:BinanceAdapter._get_fallback_backoff_ms`
   - effect: Backoff intervals for retry attempts (ms).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.fallback.policy`
@@ -2521,12 +2966,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.brackets.sl.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.brackets.tp.fixed_bps`
   - type/default: `int` / `required`
-  - read: `apps/reference/domain_config.py:DomainConfigResolver.get_brackets_strict`
+  - read: `apps\reference\domain_config.py:DomainConfigResolver.get_brackets_strict`
   - effect: Fixed basis points.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.emergency.emergency_sl_bps`
@@ -2546,37 +2991,37 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.orphan_monitor.batch_cancel_limit`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Max number of orders to cancel in one batch.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.orphan_monitor.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Enable orphan monitoring.
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `trading.execution.manage.orphan_monitor.min_order_age_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Minimum age of order before considering it for orphan cleanup.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trading.execution.manage.orphan_monitor.periodic_interval_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Interval between orphan checks.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.orphan_monitor.rate_limit_per_min`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Rate limit for cancel requests per minute.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.manage.orphan_monitor.run_on_startup`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Run orphan check immediately on FSM startup.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.order_guardian`
   - type/default: `Optional[Dict[str, Any]]` / `None`
-  - read: `apps/reference/domains/execution_position/order_guardian.py:OrderGuardian._resolve_guardian_cfg`
+  - read: `apps\reference\domains\execution_position\order_guardian.py:OrderGuardian._resolve_guardian_cfg`
   - effect: DEPRECATED: Guardian not config.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.order_params`
@@ -2591,7 +3036,7 @@ Format per field:
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `trading.execution.preflight_backoff_ms`
   - type/default: `Optional[List[int]]` / `None`
-  - read: NOT FOUND
+  - read: `apps\reference\domains\execution_position\bracket_manager.py:BracketManager.preflight_position_check`
   - effect: DEPRECATED: No consumption found.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.watchdog.ack_ttl_ms`
@@ -2629,27 +3074,27 @@ Format per field:
   - risk: Disabling can remove safety gates; enabling with bad params can block good trades.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.max_sl_pct`
   - type/default: `float` / `0.06`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._apply_tpsl_guardrails`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._apply_tpsl_guardrails`
   - effect: Max SL% (6%) - clamp down if above.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.max_tp_rr`
   - type/default: `float` / `3.0`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._apply_tpsl_guardrails`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._apply_tpsl_guardrails`
   - effect: Max TP RR ratio - clamp down if above.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.min_dist_bps`
   - type/default: `int` / `15`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._apply_tpsl_guardrails`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._apply_tpsl_guardrails`
   - effect: Min distance in bps from entry to SL/TP - FAIL-CLOSED if below (cannot clamp).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.min_sl_pct`
   - type/default: `float` / `0.003`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._apply_tpsl_guardrails`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._apply_tpsl_guardrails`
   - effect: Min SL% (0.3%) - clamp up if below.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.min_tp_rr`
   - type/default: `float` / `0.3`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._apply_tpsl_guardrails`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._apply_tpsl_guardrails`
   - effect: Min TP RR ratio - clamp up if below.
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.mode`
@@ -2659,7 +3104,7 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.rr_by_regime`
   - type/default: `Optional[Dict[str, float]]` / `None`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._compute_tpsl_atr`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._compute_tpsl_atr`
   - effect: Risk-reward ratio per regime (atr mode only).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.sl_k_atr`
@@ -2669,17 +3114,17 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.sl_mult`
   - type/default: `Dict[str, float]` / `default_factory=<lambda>`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._compute_tpsl_pct_mult`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._compute_tpsl_pct_mult`
   - effect: SL multiplier per regime (requires DEFAULT key).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.exit.regime_tpsl.tp_mult`
   - type/default: `Dict[str, float]` / `default_factory=<lambda>`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._compute_tpsl_pct_mult`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._compute_tpsl_pct_mult`
   - effect: TP RR multiplier per regime (requires DEFAULT key).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.exit.sl_pct`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._compute_tpsl_pct_mult`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._compute_tpsl_pct_mult`
   - effect: Stop-loss as percentage from entry (e.g., 0.005 = 0.5%).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.take_profit.partial_exit_pct`
@@ -2689,12 +3134,12 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.take_profit.tp_high_ratio`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: `apps\reference\domains\execution_position\open_executor.py:OpenExecutor._resolve_sl_tp`
   - effect: TP2 as ratio to ATR or fixed percent.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.take_profit.tp_low_ratio`
   - type/default: `Optional[float]` / `required`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._compute_tpsl_pct_mult`
+  - read: `apps\reference\domains\decision_making\aurora_tpsl.py:AuroraTpslMixin._compute_tpsl_pct_mult`
   - effect: TP1 as ratio to ATR or fixed percent.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.trailing_stop.activation_pct`
@@ -2712,14 +3157,49 @@ Format per field:
   - read: NOT FOUND
   - effect: Minimum seconds between SL updates (rate limit).
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.assets.<SYMBOL>.trailing_stop.trail_atr_mult`
+  - type/default: `Optional[float]` / `None`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
+  - effect: Trail distance = ATR × this multiplier (preferred over trail_pct).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.assets.<SYMBOL>.trailing_stop.trail_pct`
   - type/default: `Optional[float]` / `required`
   - read: NOT FOUND
-  - effect: Trail distance as % from high-water mark.
+  - effect: Trail distance as % from high-water mark (fallback if ATR unavailable).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.exit.danger_zone_action`
+  - type/default: `DangerZoneExitType` / `<DangerZoneExitType.TIGHTEN_STOPS: 'TIGHTEN_STOPS'>`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: Action when DangerZone triggers while in position (Default: TIGHTEN_STOPS).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.exit.danger_zone_tighten_factor`
+  - type/default: `float` / `0.5`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: Factor to tighten stops by if DangerZone triggers (e.g. 0.5 = reduce SL distance by 50%).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.exit.max_hold_time_sec`
+  - type/default: `int` / `86400`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: Maximum holding time in seconds before forced exit (Time Stop).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.exit.signal_exit_enabled`
+  - type/default: `bool` / `True`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: NOT FOUND
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `strategies.aurora.decision.exit.signal_reversal_threshold`
+  - type/default: `float` / `-0.1`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: Score threshold to trigger exit if position is opposing (e.g. -0.1 for LONG).
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `strategies.aurora.decision.exit.time_exit_enabled`
+  - type/default: `bool` / `False`
+  - read: `apps\reference\domains\decision_making\exit_manager.py:ExitManager.__init__`
+  - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trailing.activation_pct`
   - type/default: `float` / `0.003`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM._check_trailing_stop`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM._check_trailing_stop`
   - effect: 0.3% profit to activate.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trailing.min_update_interval_sec`
@@ -2729,7 +3209,7 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `trailing.trail_pct`
   - type/default: `float` / `0.006`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM._check_trailing_stop`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM._check_trailing_stop`
   - effect: 0.6% trailing distance.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 
@@ -2737,37 +3217,37 @@ Format per field:
 
 - `domains.decision_making.arming.retry_backoff_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`, `apps/reference/main.py:main`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`, `apps\reference\main.py:main`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.qos.apply_to_strategies`
   - type/default: `List[str]` / `default_factory=list`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Optional allowlist of strategy_id values that should have QoS applied in the strategy gateway. Empty => apply to all strategies (backward compatible)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.qos.enforce`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.qos.exposure_block_cooldown_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `domains.decision_making.qos.max_intents_per_minute_per_symbol`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `domains.decision_making.qos.mode`
   - type/default: `str` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: defer | block.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.decision_making.qos.symbol_cooldown_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\config_resolver.py:DMConfigResolver._default_symbol_cooldown_sec`, `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Global fallback cooldown. Per-symbol config takes priority..
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `domains.decision_making.risk_skew.defer_cooldown_sec`
@@ -2782,57 +3262,62 @@ Format per field:
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.bracket_placement.retry_backoff_ms`
   - type/default: `List[int]` / `[200, 400]`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: NOT FOUND
   - effect: Backoff delays between retries (ms). [200, 400] = exponential backoff..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `domains.execution_position.guardian.symbol_cooldown_ms`
   - type/default: `int` / `4000`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._resolve_guardian_config`
+  - read: `apps\reference\domains\execution_position\config_resolver.py:ConfigResolverMixin._resolve_guardian_config`
   - effect: Cooldown after symbol tidy before next cleanup attempt..
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `domains.execution_position.pending_entry_ttl.cancel_on_panic`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.on_panic_killswitch_activated`
+  - read: NOT FOUND
   - effect: Cancel pending entry immediately when panic_killswitch is activated.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.cancel_on_regime_change`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._on_regime_detected`
+  - read: NOT FOUND
   - effect: Cancel pending entry when EVT:REGIME_DETECTED indicates regime changed.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.cancel_on_supersede`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: NOT FOUND
   - effect: Cancel old pending entry when new open request arrives for same symbol.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.enabled`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._on_regime_detected`, `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.on_panic_killswitch_activated`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Enable per-timeframe pending entry TTL (if False, uses global watchdog fill_ttl_ms).
+  - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
+- `domains.execution_position.pending_entry_ttl.regime_change_cancel_mode`
+  - type/default: `str` / `'immediate'`
+  - read: `apps\reference\domains\execution_position\event_handlers.py:EPEventHandlers.on_regime_detected`
+  - effect: FIX-SOFT-CANCEL-01: How to handle pending orders on regime change. 'immediate' = cancel at once (original). 'let_ttl_expire' = skip cancel, let order live until TTL expires naturally. Only applies when cancel_on_regime_change=true..
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.reject_unknown_tf`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: If True (fail-closed), reject entry if tf_sec not in ttl_by_tf_sec map.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.supersede_cancel_timeout_sec`
   - type/default: `float` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM._execute_decision`
+  - read: NOT FOUND
   - effect: Timeout (seconds) to wait for supersede cancel confirmation before forcing new open. Explicit config required..
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `domains.execution_position.pending_entry_ttl.ttl_by_tf_sec`
   - type/default: `Dict[int, int]` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: `apps\reference\domains\decision_making\intent_builder.py:IntentBuilder._resolve_order_policy`
   - effect: Map of timeframe_seconds -> entry_ttl_seconds. E.g. {180: 45, 300: 60, 900: 180} means 3m bars get 45s TTL, 5m get 60s, 15m get 180s..
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `execution.anti_race_close_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM.__init__`
   - effect: Anti-race window (ms).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `execution.cooldown_after_close_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Global cooldown after any position closes (ms). Blocks new CMD:OPEN during this window..
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.cooldown_sec`
@@ -2842,12 +3327,12 @@ Format per field:
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.holding_period.apply_to_flips`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: Also apply holding period to FLIP signals (not just exits).
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.holding_period.emergency_exit_threshold`
   - type/default: `float` / `0.7`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_emergency_threshold`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_holding_period.py:AuroraHoldingPeriodMixin._get_emergency_threshold`
   - effect: |score| threshold for emergency override (allows exit even within holding period).
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.holding_period.enabled`
@@ -2857,7 +3342,7 @@ Format per field:
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.holding_period.min_duration_sec`
   - type/default: `float` / `30.0`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_min_duration_sec`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_holding_period.py:AuroraHoldingPeriodMixin._get_min_duration_sec`
   - effect: Minimum seconds to hold position before allowing signal-based exit.
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.assets.<SYMBOL>.reentry_cooldown_sec`
@@ -2872,12 +3357,12 @@ Format per field:
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.holding_period.apply_to_flips`
   - type/default: `bool` / `True`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`
   - effect: Also apply holding period to FLIP signals (not just exits).
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.holding_period.emergency_exit_threshold`
   - type/default: `float` / `0.7`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_emergency_threshold`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_holding_period.py:AuroraHoldingPeriodMixin._get_emergency_threshold`
   - effect: |score| threshold for emergency override (allows exit even within holding period).
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.holding_period.enabled`
@@ -2887,37 +3372,37 @@ Format per field:
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.holding_period.min_duration_sec`
   - type/default: `float` / `30.0`
-  - read: `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._get_min_duration_sec`, `apps/reference/domains/decision_making/aurora_handler.py:AuroraHandler._load_config`
+  - read: `apps\reference\domains\decision_making\aurora_config_loader.py:AuroraConfigLoaderMixin._load_config`, `apps\reference\domains\decision_making\aurora_holding_period.py:AuroraHoldingPeriodMixin._get_min_duration_sec`
   - effect: Minimum seconds to hold position before allowing signal-based exit.
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.qos.apply_to_strategies`
   - type/default: `List[str]` / `default_factory=list`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Optional allowlist of strategy_id values that should have QoS applied in the strategy gateway. Empty => apply to all strategies (backward compatible)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.qos.enforce`
   - type/default: `bool` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.qos.exposure_block_cooldown_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Loose limits can blow exposure/drawdown; overly tight limits can block most trades.
 - `strategies.aurora.decision.qos.max_intents_per_minute_per_symbol`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: NOT FOUND
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.qos.mode`
   - type/default: `str` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: defer | block.
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `strategies.aurora.decision.qos.symbol_cooldown_sec`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__`
+  - read: `apps\reference\domains\decision_making\config_resolver.py:DMConfigResolver._default_symbol_cooldown_sec`, `apps\reference\domains\decision_making\decision_making.py:DecisionMaking.__init__`
   - effect: Global fallback cooldown. Per-symbol config takes priority..
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `strategies.aurora.decision.reentry_cooldown_sec`
@@ -2937,7 +3422,7 @@ Format per field:
   - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
 - `strategies.aurora.decision.retry_ttl_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._emit_intent_deferred_v1`
+  - read: `apps\reference\domains\decision_making\intent_emitter.py:IntentEmitter.emit_intent_deferred_v1`
   - effect: Retry TTL in ms.
   - risk: Too short can cause premature cancels/false timeouts; too long can leave stale orders/locks.
 - `strategies.mean_reversion.assets.<SYMBOL>.strategy.cooldown_sec`
@@ -2952,12 +3437,12 @@ Format per field:
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 - `trading.execution.anti_race_close_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm_manage.py:ManageFlowFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm_manage.py:ManageFlowFSM.__init__`
   - effect: Anti-race window (ms).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.execution.cooldown_after_close_ms`
   - type/default: `int` / `required`
-  - read: `apps/reference/domains/execution_position/fsm.py:ExecPosFSM.__init__`
+  - read: `apps\reference\domains\execution_position\fsm.py:ExecPosFSM.__init__`
   - effect: Global cooldown after any position closes (ms). Blocks new CMD:OPEN during this window..
   - risk: Too small values can cause churn/fee drag; too large values can miss reversals and reduce trade count.
 
@@ -2988,6 +3473,21 @@ Format per field:
   - read: `backtest_engine/mock_broker.py:MockBroker.__init__`
   - effect: Backtest: market/stop/TP slippage in basis points.
   - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
+- `trading.backtest.stress_overrides.fee_mult`
+  - type/default: `float` / `1.0`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - effect: Commission multiplier.
+  - risk: Mis-modeled costs can make backtests non-transferable and distort sizing/TP/SL.
+- `trading.backtest.stress_overrides.slippage_bps`
+  - type/default: `Optional[float]` / `None`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - effect: Absolute slippage override in bps (if set, takes precedence over slippage_mult)..
+  - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
+- `trading.backtest.stress_overrides.slippage_mult`
+  - type/default: `float` / `1.0`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - effect: Multiplier over base slippage if slippage_bps is not set..
+  - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
 - `trading.tca_prefs.execution_priority`
   - type/default: `Literal['speed', 'price', 'balanced']` / `'speed'`
   - read: NOT FOUND
@@ -2995,17 +3495,17 @@ Format per field:
   - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
 - `trading.tca_prefs.maker_preference`
   - type/default: `Literal['maker', 'taker', 'neutral', 'any']` / `'neutral'`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: NOT FOUND
   - effect: Execution preference (maker/taker/neutral).
   - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
 - `trading.tca_prefs.max_latency_ms`
   - type/default: `int` / `500`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: NOT FOUND
   - effect: Max allowed latency (intent to filled) in ms.
   - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
 - `trading.tca_prefs.max_slippage_bps`
   - type/default: `int` / `10`
-  - read: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking._propose_trade_intent`
+  - read: NOT FOUND
   - effect: Max allowed slippage in basis points.
   - risk: Too tight limits can reject trades; too loose can allow bad fills and degrade PnL.
 - `trading.tca_prefs.max_slippage_pct`
@@ -3021,20 +3521,50 @@ Format per field:
 
 ### Backtest plumbing
 
+- `trading.backtest.backtest_mode`
+  - type/default: `Literal['strict', 'relaxed']` / `'strict'`
+  - read: `apps\reference\main.py:run_backtest_simulation`
+  - effect: Backtest runtime mode. 'strict' keeps SSOT fail-closed gates; 'relaxed' enables explicit backtest-only relaxations (with logging)..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.backtest.end_date`
   - type/default: `str` / `required`
-  - read: `apps/reference/main.py:run_backtest_simulation`
+  - read: `apps\reference\main.py:run_backtest_simulation`
   - effect: Backtest end date (YYYY-MM-DD).
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.backtest.initial_balance`
   - type/default: `float` / `10000.0`
-  - read: `apps/reference/main.py:run_backtest_simulation`, `backtest_engine/wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - read: `apps\reference\main.py:run_backtest_simulation`, `backtest_engine\engine.py:BacktestEngine._maybe_withdraw_profits`, `backtest_engine\engine.py:BacktestEngine._profit_withdrawal_trigger_balance`, `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
   - effect: Initial USDT balance.
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `trading.backtest.max_ticks`
+  - type/default: `Optional[int]` / `None`
+  - read: `apps\reference\bootstrap\backtest_runner.py:resolve_backtest_max_ticks`
+  - effect: Optional cap for bars processed in this run (debug/testing)..
+  - risk: Too strict can suppress trades; too lax can overtrade and increase drawdowns/fees.
+- `trading.backtest.profit_withdrawal_enabled`
+  - type/default: `Optional[bool]` / `None`
+  - read: `apps\reference\main.py:run_backtest_simulation`
+  - effect: Optional toggle for backtest profit withdrawal. If None, the feature is enabled automatically when profit_withdrawal_roi_pct is set..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `trading.backtest.profit_withdrawal_roi_pct`
+  - type/default: `Optional[float]` / `None`
+  - read: `apps\reference\main.py:run_backtest_simulation`
+  - effect: Optional: if set, simulates withdrawing profits during backtest. When equity_free_usdt reaches initial_balance*(1+roi_pct/100), all profit above initial_balance is withdrawn and trading continues with initial_balance again..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 - `trading.backtest.start_date`
   - type/default: `str` / `required`
-  - read: `apps/reference/main.py:run_backtest_simulation`
+  - read: `apps\reference\main.py:run_backtest_simulation`
   - effect: Backtest start date (YYYY-MM-DD).
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `trading.backtest.stress_overrides.funding_bps_per_day`
+  - type/default: `float` / `0.0`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - effect: Funding charge/credit in bps/day applied to open notional per bar..
+  - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
+- `trading.backtest.stress_overrides.latency_ms`
+  - type/default: `int` / `0`
+  - read: `backtest_engine\wrappers.py:BacktestExecPosFSM._initialize_adapter`
+  - effect: Artificial execution latency in milliseconds (affects fill timing)..
   - risk: Misconfiguration can change behavior subtly; validate with config_hash + config snapshot in reports.
 
 ## 3) Конфіги, що “тіньово” впливають
@@ -3059,9 +3589,6 @@ Only fields found in code paths above (i.e., `read != NOT FOUND`).
 
 - `trading_mode`
 - `strategies_registry.assignments`
-- `strategies_registry.arbitration.mode`
-- `strategies_registry.arbitration.window_ms`
-- `strategies_registry.arbitration.priority`
 - `instruments.<SYMBOL>.tick_size`
 - `instruments.<SYMBOL>.execution.margin_mode`
 - `instruments.<SYMBOL>.execution.target_leverage`

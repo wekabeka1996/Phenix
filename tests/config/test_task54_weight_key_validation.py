@@ -124,10 +124,11 @@ class TestWeightKeyValidation:
         """CANONICAL_WEIGHT_KEYS should contain all expected weighted features (liquidity is a gate, not a weight)."""
         expected = {
             "obi", "tfi", "delta_price", "ema_bias", "volume_spike",
-            "volatility_state", "depth_imbalance", "macro_sync", "macro_resid"
+            "volatility_state", "depth_imbalance", "macro_sync", "macro_resid",
+            "absorption",   # R2: Experimental, default weight=0.0 until Phase 2 calibration
         }
         assert CANONICAL_WEIGHT_KEYS == expected
-        assert len(CANONICAL_WEIGHT_KEYS) == 9
+        assert len(CANONICAL_WEIGHT_KEYS) == 10
 
     def test_typo_key_rejected(self):
         """Typos in weight keys should fail validation."""

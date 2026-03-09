@@ -222,7 +222,9 @@ class AuroraDecisionMixin:
         # Call scoring kernel
         effective_regime_thresholds = self._get_regime_thresholds(symbol=symbol, instr_cfg=instr_cfg)
 
-        extra_kwargs = {}
+        extra_kwargs = {
+            "regime_smoother": getattr(self, "_regime_smoother", None),
+        }
         if self.scoring_kernel_cls is QuadraticScoringKernel:
             extra_kwargs["shield_fn"] = self._shield_fn
             extra_kwargs["pillar_contribs"] = features.get("pillar_contribs", {})
@@ -251,6 +253,7 @@ class AuroraDecisionMixin:
             side_bias_state=side_bias,
             direction_strength_cfg=self.direction_strength_cfg,
             delta_price_cap_pct=self.delta_price_cap_pct,
+            normalize_mode=self.normalize_signals_mode,
             neutral_threshold=effective_neutral,
             current_side=current_side,
         )
@@ -314,31 +317,82 @@ class AuroraDecisionMixin:
         current_position_side = state.position_side
         effective_side = result.side
 
-        # === STRICT REGIME ALLOWLIST GATE ===
+        # PKG-3: Regime-Shift Inception Check
+        inception_cfg = getattr(self.config, "regime_shift_inception", None)
+        micro_fraction = 1.0
+        
         allowed_regimes = None
         try:
             allowed_regimes = getattr(instr_cfg, "allowed_regimes", None)
         except Exception:
             allowed_regimes = None
-        if not RegimeAllowlistContract.is_regime_allowed(current_regime=str(state.regime), allowed_regimes=allowed_regimes):
+
+        state_regime_for_gate = str(state.regime)
+        if inception_cfg and getattr(inception_cfg, "enabled", False) and allowed_regimes:
+            raw_regime = str(state.regime_raw_event) if state.regime_raw_event else ""
+            if raw_regime and raw_regime != str(state.regime):
+                raw_factor = effective_regime_thresholds.get(raw_regime, 1.0)
+                raw_threshold = effective_threshold * decimal.Decimal(str(raw_factor))
+                
+                from apps.reference.domains.decision_making.inception_filter import check_inception_eligibility
+                inc_res = check_inception_eligibility(
+                    raw_regime=raw_regime,
+                    stable_regime=str(state.regime),
+                    allowed_regimes=list(allowed_regimes),
+                    signal_score=result.score,
+                    signal_threshold_for_raw=raw_threshold,
+                    stress_state=state.system_stress_state,
+                    config=inception_cfg
+                )
+                
+                # Telemetry
+                action_taken = getattr(inception_cfg, "action", "none") if inc_res.eligible else "none"
+                self.emit_fn("EVT:REGIME_SHIFT_SUSPECTED", {
+                    "symbol": symbol,
+                    "ts_ms": int(self.wall_time_fn() * 1000),
+                    "raw_regime": raw_regime,
+                    "stable_regime": str(state.regime),
+                    "confirm_count": 0,
+                    "confirm_required": 1,
+                    "eligible": inc_res.eligible,
+                    "action_taken": action_taken,
+                    "why": inc_res.why[:80]
+                })
+
+                if inc_res.eligible and action_taken == "micro_size":
+                    micro_fraction = inc_res.micro_fraction
+                    _compute_kwargs["regime_name"] = raw_regime
+                    try:
+                        new_result = self.scoring_kernel_cls.compute(**_compute_kwargs, **extra_kwargs)
+                        if new_result.side:
+                            result = new_result
+                            effective_side = result.side
+                            result.why_chain.append(f"INCEPTION_RESCUE:{raw_regime}")
+                            result.why_chain.append(inc_res.why)
+                            state_regime_for_gate = raw_regime
+                    except Exception as e:
+                        self.logger.error(f"[{symbol}] Inception fallback failed: {e}")
+
+        # === STRICT REGIME ALLOWLIST GATE ===
+        if not RegimeAllowlistContract.is_regime_allowed(current_regime=state_regime_for_gate, allowed_regimes=allowed_regimes):
             self._emit_strategy_blocked(
                 symbol=symbol,
                 reason_code="REGIME_NOT_ALLOWLISTED",
                 reason="REGIME",
                 context="aurora_handler:strict_regime_allowlist",
                 details={
-                    "regime": state.regime,
+                    "regime": state_regime_for_gate,
                     "allowed_regimes": list(allowed_regimes or []),
                     "score": float(result.score),
                     "thr_buy": float(result.thr_buy),
                     "thr_sell": float(result.thr_sell),
                     "explain": RegimeAllowlistContract.explain_blocking(
                         symbol=symbol,
-                        current_regime=str(state.regime),
+                        current_regime=state_regime_for_gate,
                         allowed_regimes=list(allowed_regimes) if allowed_regimes else None,
                     ),
                 },
-                why_chain=["REGIME_ALLOWLIST", f"REGIME={state.regime}", "STRICT"],
+                why_chain=["REGIME_ALLOWLIST", f"REGIME={state_regime_for_gate}", "STRICT"],
             )
             return
 
@@ -574,9 +628,10 @@ class AuroraDecisionMixin:
                 effective_side=effective_side,
                 entry_plan=entry_plan_res,
                 stop_loss_override=stop_loss_override,
+                micro_fraction=micro_fraction,
             )
         else:
-            self._emit_signal(symbol, result, features, cmd, effective_side=effective_side)
+            self._emit_signal(symbol, result, features, cmd, effective_side=effective_side, micro_fraction=micro_fraction)
 
         # Update side bias history
         self._update_side_bias(symbol, effective_side)
@@ -591,6 +646,7 @@ class AuroraDecisionMixin:
         effective_side: str | None = None,
         entry_plan: Optional[EntryPlanResult] = None,
         stop_loss_override: Optional[decimal.Decimal] = None,
+        micro_fraction: float = 1.0,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with readiness contract."""
         state = self._symbol_states[symbol]
@@ -688,6 +744,9 @@ class AuroraDecisionMixin:
                 "thr_sell": float(result.thr_sell),
                 "regime": result.regime,
                 "psi_vector": result.psi_vector,
+            },
+            "sizing": {
+                "margin_pct_mult": float(micro_fraction),
             },
             "volatility": features.get("volatility"),
             "liquidity": features.get("liquidity"),

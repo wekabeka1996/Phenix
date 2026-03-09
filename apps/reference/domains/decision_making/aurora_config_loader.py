@@ -159,9 +159,21 @@ class AuroraConfigLoaderMixin:
                 "strength_cap": float(getattr(ds_cfg, "strength_cap", 1.5)) if ds_cfg else 1.5,
             }
 
-            # Signals config
+            # Signals config — production MUST have signals (enforced by Pydantic SignalsConfig).
+            # Strict pydantic path: signals=None is a contract violation → fail-closed.
+            # Non-strict path (tests with partial mocks): fallback to "signed_v2".
             signals = getattr(decision, "signals", None)
             self.delta_price_cap_pct = decimal.Decimal(str(getattr(signals, "delta_price_cap_pct", "0.005"))) if signals else decimal.Decimal("0.005")
+            if signals is None:
+                if self._strict_pydantic_config:
+                    from apps.reference.config_contract import ConfigContractError
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.signals",
+                        why="signals config is required (normalize_signals_mode). Check aurora.yaml."
+                    )
+                self.normalize_signals_mode = "signed_v2"
+            else:
+                self.normalize_signals_mode = str(signals.normalize_signals_mode)
 
             # ═══════════════ Phase 9: Quadratic Kernel Routing ═══════════════
             scoring_ver = getattr(decision, "scoring_version", "v1")

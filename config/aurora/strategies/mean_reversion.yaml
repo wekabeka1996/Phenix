@@ -32,8 +32,10 @@ mean_reversion:
 
   # DM-SAFETY-BYPASSES-P1: Explicit safety gates control (fail-closed if missing)
   # Mean reversion trades AGAINST trend → safety gates DISABLED.
+  # Phase 0.6: off — MR is counter-trend; stress overlay does not apply.
   safety_gates:
     enabled: false
+    system_stress_policy: "off"       # "off" | "attenuate" | "block" (quoted: YAML parses bare 'off' as bool)
 
   
   # ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +70,15 @@ mean_reversion:
     
     # Cooldown between signals (seconds)
     cooldown_sec: 60
+
+    # ─── Tier D: Confidence Scalars ──────────────────────────────────────────
+    # Controls how signal confidence [0, 1] is calculated:
+    #   confidence = confidence_base + |pct_b_distance| * confidence_bb_slope
+    #   + confidence_rsi_bonus (if RSI confirms)
+    # Clamped to 1.0 before emitting.
+    confidence_base: 0.5        # Base confidence when BB threshold just touched (50%)
+    confidence_bb_slope: 2.0    # Sensitivity: 0.1 extra distance → +0.2 confidence
+    confidence_rsi_bonus: 0.2   # Bonus when RSI confirms oversold/overbought (+20%)
   
   # ─────────────────────────────────────────────────────────────────────────────
   # FLAT Regime Thresholds (for regime classification)

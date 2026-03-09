@@ -126,7 +126,7 @@ def _mk_cfg(*, symbol: str):
                     side_bias_target_ratio=0.6,
                     side_bias_min_intents=1,
                     signals=SimpleNamespace(
-                        normalize_signals_mode="off",
+                        normalize_signals_mode="signed_v2",
                         enable_new_metrics=True,
                         delta_price_cap_pct=0.02,
                     ),

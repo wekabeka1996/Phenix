@@ -28,6 +28,7 @@ def mock_config():
     config.strategies.aurora.decision = SimpleNamespace()
     config.strategies.aurora.decision.signals = SimpleNamespace()
     config.strategies.aurora.decision.signals.delta_price_cap_pct = "0.005"
+    config.strategies.aurora.decision.signals.normalize_signals_mode = "signed_v2"
     config.strategies.aurora.decision.neutral_threshold = "0.05"
     config.strategies.aurora.decision.signal_threshold = "0.1"
     

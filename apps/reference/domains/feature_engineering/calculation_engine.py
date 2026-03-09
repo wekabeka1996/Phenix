@@ -522,19 +522,28 @@ class FeatureCalculationEngine:
         if self.cfg.absorption_dedup_enabled:
             tfi_vals = list(state.absorption_tfi_buffer)
             proxy_vals = list(state.absorption_proxy_buffer)
-            
-            if len(tfi_vals) >= 10 and len(proxy_vals) >= 10:
-                # Calculate correlation
-                corr = self._pearson_corr(proxy_vals[-10:], tfi_vals[-10:])
+
+            # P0-SSOT: use dedup_window from config — no hardcoded 10
+            dedup_window = self.cfg.absorption_dedup_window
+            if len(tfi_vals) >= dedup_window and len(proxy_vals) >= dedup_window:
+                # Correlation on the full config-sized window (buffers already trimmed)
+                corr = self._pearson_corr(proxy_vals[-dedup_window:], tfi_vals[-dedup_window:])
                 state.absorption_dedup_corr = corr
-                
+
                 threshold = self.cfg.absorption_dedup_threshold
                 if abs(corr) > threshold:
-                    # MUTED: absorption too correlated with TFI
+                    # MUTED: absorption correlated with TFI — emit neutral but READY.
+                    # P0-CONTRACT: dedup_muted ≠ not_ready.
+                    # Warmup must NOT be locked by dedup; this is telemetry-only.
                     state.absorption_dedup_muted = True
-                    state.absorption_ready = False
-                    state.absorption_not_ready_reason = f"dedup_muted:corr={corr:.3f}>{threshold}"
-                    return (neutral, False, state.absorption_not_ready_reason)
+                    muted_reason = f"dedup_muted_telemetry:corr={corr:.3f}>{threshold}"
+                    state.absorption_not_ready_reason = muted_reason
+                    state.absorption_ready = True  # warmup ≠ locked
+                    return (
+                        decimal.Decimal(str(self.cfg.absorption_neutral)),
+                        True,   # ready=True: warmup proceeds normally
+                        muted_reason,
+                    )
                 else:
                     state.absorption_dedup_muted = False
         

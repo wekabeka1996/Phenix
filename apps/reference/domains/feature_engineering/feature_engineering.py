@@ -673,7 +673,7 @@ class FeatureEngineering:
             "macd_line", "macd_signal", "macd_histogram",
             "stochastic_k", "stochastic_d",
             "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
-            "volume_momentum_5m", "rsi_14",
+            "volume_momentum_5m", "rsi_14", "bb_percent_b", "is_candidate",
         ]
         for k in aug_keys:
             v = bar_get(k, seed_tick.get(k))
@@ -1072,6 +1072,8 @@ class FeatureEngineering:
                 
                 # EMA Bias
                 self._update_ema(symbol, price)
+                # In Phase 3, this might be overwritten later by the augmented pass-through 
+                # if running in backtest. In live mode, it calculates normally.
                 features["ema_bias"] = str(self._compute_ema_bias(symbol))
 
                 # Volume Spike (TASK24.C2: time-normalized, dt-aware)
@@ -1148,7 +1150,7 @@ class FeatureEngineering:
                 "macd_line", "macd_signal", "macd_histogram",
                 "stochastic_k", "stochastic_d",
                 "price_momentum_5m", "price_momentum_1h", "price_momentum_1d",
-                "volume_momentum_5m", "rsi_14"
+                "volume_momentum_5m", "rsi_14", "atr_pct", "ema_bias"
             ]
             for k in aug_keys:
                 if k in current_tick and current_tick[k] is not None:
@@ -1159,11 +1161,10 @@ class FeatureEngineering:
             # ================================================================
             # EMISSION
             # ================================================================
-                else:
-                    # Disabled: emit neutral, mark not ready
-                    features["macro_resid"] = str(self.cfg.zero_value)
-                    hot.macro_resid_ready = False
-                    hot.macro_resid_not_ready_reason = "disabled_in_config"
+            # NOTE: macro_resid disabled-path was here but removed (bug).
+            # When macro_resid_enabled=False, `hot.macro_resid_ready=False`
+            # and reason should be set inside `if self.cfg.macro_resid_enabled: ... else:`.
+            # That else is already INSIDE the `if enable_new_metrics:` block correctly.
 
                 # ================================================================
                 # R2 (P2): ABSORPTION — Experimental (Default OFF)
@@ -1514,6 +1515,15 @@ class FeatureEngineering:
                     f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup missing"
                 )
                 _emit_cmd_blocked("WARMUP_MISSING", "warmup missing")
+            elif bar_data.get("_warmup_bar") is True:
+                # PRE-SIMULATION WARMUP BAR: state-only pass, no decision.
+                pass
+            elif bar_data.get("is_candidate") is False:
+
+                # SPARSE DECISION LOOP (Phase 2):
+                # Skip emitting CMD:PROCESS_STRATEGY for non-candidate bars.
+                # Do not emit blocked reason as this is a high-frequency expected shortcut.
+                pass
             else:
                 warmup_mode = str(self.cfg.warmup_enforcement_mode or "fail_fast")
                 warmup_full_ready = warmup.get("full_ready") is True
@@ -1589,7 +1599,15 @@ class FeatureEngineering:
                     eps = decimal.Decimal("0.00000001")
                     close_safe = max(bar_close, eps)
                     range_pct = float(bar_range / close_safe)
-                    atr_pct = float(vol_state.last_atr / float(close_safe)) if vol_state.atr_ready and vol_state.last_atr else None
+                    
+                    # Phase 3 Vectorized Warmup
+                    # Try to use precomputed atr_pct from the augmented backtest feed
+                    if "atr_pct" in bar_data and bar_data["atr_pct"] is not None:
+                        atr_pct = float(bar_data["atr_pct"])
+                        vol_state.atr_ready = True  # Mock ready for downstream
+                        vol_state.last_atr = atr_pct * float(close_safe) # Update state for downstream dependency
+                    else:
+                        atr_pct = float(vol_state.last_atr / float(close_safe)) if vol_state.atr_ready and vol_state.last_atr else None
                     
                     # =========================================================
                     # EP-01.1: OBI SNAPSHOT AT BAR CLOSE

@@ -204,14 +204,15 @@ class QoSRateControl:
 
     # ── Exposure Block ───────────────────────────────────────────────
 
-    def handle_exposure_block(self, symbol: str) -> None:
+    def handle_exposure_block(self, symbol: str, strategy_id: str = "aurora") -> None:
         """Handle exposure block event by updating QoS state.
 
         T2B-08: Uses injected Clock for deterministic testing.
-        NOTE: Split-Brain bug documented — writes to flat key, not partitioned.
+        QOS-SPLIT-BRAIN-FIX: Now writes to strategy-partitioned state.
         """
         current_time = self._clock.now_sec()
-        self._qos_state["last_exposure_block"] = current_time
+        strat_state = self._qos_state[strategy_id]
+        strat_state["last_exposure_block"] = current_time
         self.logger.warning(
             f"[{symbol}] Exposure block recorded at {current_time} "
-            f"(WARNING: This may have no effect due to Split-Brain bug)")
+            f"for strategy {strategy_id}")

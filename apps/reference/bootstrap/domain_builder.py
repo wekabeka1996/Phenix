@@ -17,6 +17,7 @@ from apps.reference.domains.market_data.proxy import MarketDataProxy
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.risk_management.risk_management import RiskManagement
+from apps.reference.domains.system_stress.system_stress_overlay import SystemStressOverlay
 from vfoundation.core import FSMCore
 
 
@@ -32,6 +33,7 @@ class LiveDomainBundle:
     regime_detector: RegimeDetector
     csv_recorder: CsvRecorder
     bar_aggregator: Optional[BarAggregator]
+    system_stress_overlay: Optional[SystemStressOverlay] = None
 
 
 _DEBUG_EVENTS = [
@@ -111,6 +113,9 @@ def build_live_domains(
     regime_detector = RegimeDetector(config=config, fsm=fsm)
     csv_recorder = CsvRecorder(fsm=fsm, config=config)
 
+    # Phase 0.5: System Stress Overlay (no-op when system_stress.enabled=false)
+    system_stress_overlay = SystemStressOverlay(config=config, fsm=fsm)
+
     return LiveDomainBundle(
         account_balance=account_balance,
         market_data=market_data,
@@ -122,4 +127,5 @@ def build_live_domains(
         regime_detector=regime_detector,
         csv_recorder=csv_recorder,
         bar_aggregator=bar_aggregator,
+        system_stress_overlay=system_stress_overlay,
     )

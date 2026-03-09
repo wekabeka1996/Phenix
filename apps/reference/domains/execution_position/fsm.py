@@ -283,6 +283,10 @@ class ExecPosFSM(
         # Used to flush trade_lifecycle on robust position-close detection (portfolio snapshot).
         self._last_lifecycle_rid_by_symbol: Dict[str, str] = {}
         self._last_lifecycle_fill_price_by_symbol: Dict[str, float] = {}
+
+        # PnL + close_reason cache: populated on ORDER_FILLED, consumed on POSITION_CLOSED.
+        self._last_realized_pnl_by_symbol: Dict[str, float] = {}
+        self._last_close_reason_by_symbol: Dict[str, str] = {}
         
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # PHASE4: Rehydrate pending brackets from WAL on startup

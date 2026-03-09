@@ -44,6 +44,7 @@ class AuroraAlphaAdapter(AlphaModel):
         "volatility_state": 0.1,
         "depth_imbalance": -0.15,
         "macro_resid": 0.1,
+        "absorption": 0.0,   # R2: disabled until Phase 2 calibration
     }
     
     # Default feature neutrals (from aurora.yaml:decision.feature_neutrals)
@@ -57,13 +58,15 @@ class AuroraAlphaAdapter(AlphaModel):
         "depth_imbalance": 0.5,
         "macro_sync": 0.5,
         "macro_resid": 0.0,
+        "absorption": 0.0,   # R2: SIGNED feature, neutral is 0.0
     }
     
     # Default direction/strength config
     DEFAULT_DIRECTION_STRENGTH_CFG = {
         "directional_features": [
-            "obi", "tfi", "delta_price", "ema_bias", 
-            "depth_imbalance", "macro_resid", "macro_sync"
+            "obi", "tfi", "delta_price", "ema_bias",
+            "depth_imbalance", "macro_resid", "macro_sync",
+            "absorption",   # R2: SIGNED [-1,1], neutral=0.0
         ],
         "strength_features": ["volume_spike", "volatility_state"],
         "strength_alpha": 0.5,

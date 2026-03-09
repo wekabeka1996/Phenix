@@ -214,7 +214,7 @@ registry:
   verb: ORDER_ACK
   owner: execution_position
   status: experimental
-  schema: null
+  schema: schemas/order_ack_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_EXECUTED
@@ -310,7 +310,7 @@ registry:
   verb: STRATEGY_SIGNAL_PRODUCED
   owner: decision_making
   status: active
-  schema: null
+  schema: schemas/strategy_signal_produced_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: SYMBOL_TIDY
@@ -366,6 +366,18 @@ registry:
   status: experimental
   schema: null
   since: '2026-02-24'
+- op: EVT
+  verb: REGIME_SHIFT_SUSPECTED
+  owner: decision_making
+  status: active
+  schema: apps/reference/domains/decision_making/schemas/regime_shift_suspected_v1.json
+  since: '2026-03-02'
+- op: EVT
+  verb: SYSTEM_STRESS_STATE_UPDATED
+  owner: system_stress
+  status: active
+  schema: schemas/system_stress_state_updated_v1.json
+  since: '2026-03-02'
 policies:
   wildcard:
     UPD: true

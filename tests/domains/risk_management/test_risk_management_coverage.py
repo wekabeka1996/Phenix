@@ -453,7 +453,10 @@ def test_risk_debug_override_emit_exception_and_clamp_paths(monkeypatch) -> None
     )
     assert out_hi["risk_score"] == 1.0
 
-    # clamp < 0 path (absorption > 1 with other terms near zero)
+    # clamp < 0 path: with NEW formula all terms >= 0 so negative score is unreachable.
+    # Test verifies the [0,1] range invariant is still upheld (score is valid, non-negative).
+    # Previously: (1-absorption)*w with absorption=2 gave -0.3 → clamped 0.0.
+    # Now: toxicity-proxy or feature-term, both >= 0.
     out_lo = rm._calculate_risk_parameters(
         {
             "price": "100",
@@ -463,7 +466,9 @@ def test_risk_debug_override_emit_exception_and_clamp_paths(monkeypatch) -> None
             "absorption": "2",
         }
     )
-    assert out_lo["risk_score"] == 0.0
+    assert 0.0 <= out_lo["risk_score"] <= 1.0, (
+        f"risk_score must be in [0,1], got {out_lo['risk_score']}"
+    )
 
 
 def test_validate_risk_thresholds_error_branches() -> None:

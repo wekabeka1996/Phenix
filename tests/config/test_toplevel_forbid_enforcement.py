@@ -41,7 +41,7 @@ def _valid_decision_kwargs():
             "macro_resid": 0.0,
         },
         "signals": {
-            "normalize_signals_mode": "off",
+            "normalize_signals_mode": "signed_v2",
             "enable_new_metrics": True,
             "delta_price_cap_pct": 0.02,
         },

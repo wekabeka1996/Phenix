@@ -41,6 +41,7 @@ class _AuroraHandlerWrapper:
         logger.info("🚀 Aurora Strategy: Registering Event Listeners (CMD:PROCESS_STRATEGY, REGIME_DETECTED)")
         self.fsm.listen("CMD:PROCESS_STRATEGY", self._on_process_strategy)
         self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime)
+        self.fsm.listen("EVT:SYSTEM_STRESS_STATE_UPDATED", self._on_system_stress)
         # T2B-03: Keep FEATURES_CALCULATED for data-only (no warmup update), NOT as trigger
         self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_data_only)
         # P0-3-FIX: Position state sync via canonical execution event
@@ -55,6 +56,11 @@ class _AuroraHandlerWrapper:
         """Forward regime events to handler."""
         pld = event.pld if hasattr(event, "pld") else event
         self.handler.on_regime_detected(pld)
+
+    def _on_system_stress(self, event: Any) -> None:
+        """Forward system stress events to handler."""
+        pld = event.pld if hasattr(event, "pld") else event
+        self.handler.on_system_stress(pld)
     
     def _on_features_data_only(self, event: Any) -> None:
         """T2B-03: Data-only handler for FEATURES_CALCULATED (no warmup update, NO decision trigger)."""

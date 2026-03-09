@@ -197,6 +197,14 @@ class SignalWeights(BaseModel):
         default=0.0,
         description='DEPRECATED: Use macro_resid. Kept for backward compat.'
     )
+    # R2: absorption (SIGNED [-1,1], neutral=0.0). Default 0.0 = backward compat (off until weight > 0)
+    absorption: float = Field(
+        default=0.0,
+        description=(
+            'R2: Absorption feature weight (SIGNED [-1,1], neutral=0.0). '
+            '0.0 = disabled (backward compat). Set >0 after Phase 2 calibration.'
+        )
+    )
 
 
 class BarGatingConfig(BaseModel):
@@ -218,8 +226,13 @@ class SignalsConfig(BaseModel):
     """Signals configuration (strategy-level, SSOT)."""
     model_config = ConfigDict(extra="forbid")
 
-    normalize_signals_mode: Literal["off", "legacy_v1", "signed_v2"] = Field(
-        description="Signal normalization mode. 'legacy_v1' is forbidden in live/production."
+    normalize_signals_mode: Literal["signed_v2"] = Field(
+        description=(
+            "Signal normalization mode. Production invariant is 'signed_v2'. "
+            "No other value is valid in production config. "
+            "Forensic/offline passthrough: pass normalize_mode='off' directly to the scoring fn, "
+            "bypassing this config. 'legacy_v1' + 'off' removed from YAML boundary."
+        )
     )
     enable_new_metrics: bool = Field()
     delta_price_cap_pct: float = Field(
@@ -387,6 +400,20 @@ class MRStrategyParamsConfig(BaseModel):
     tp_to_mid: bool = Field(description='Target mid BB')
     cooldown_sec: int = Field(description='Cooldown between signals')
 
+    # Tier D: Tunable confidence scalars (replaces hardcoded 0.5 / 2 / 0.2)
+    confidence_base: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description='Base confidence when BB threshold touched (0.5 = 50%)'
+    )
+    confidence_bb_slope: float = Field(
+        default=2.0, ge=0.1, le=20.0,
+        description='Slope: how fast confidence grows with |pct_b| distance from threshold'
+    )
+    confidence_rsi_bonus: float = Field(
+        default=0.2, ge=0.0, le=0.5,
+        description='Confidence bonus when RSI confirms oversold/overbought (0.2 = +20%)'
+    )
+
 
 class MRRegimeThresholdsConfig(BaseModel):
     """Regime thresholds for FLAT regime classification.
@@ -416,6 +443,10 @@ class MRStrategyOverrideConfig(BaseModel):
     sl_buffer_pct: Optional[float] = Field(default=None, description='Additional SL buffer percentage (0.002 = 0.20%)')
     tp_buffer_pct: Optional[float] = Field(default=None, description='Additional TP buffer percentage (0.002 = 0.20%)')
     allowed_regimes: Optional[List[str]] = Field(default=None, description='Override allowed regimes for this symbol')
+    # Tier D: per-asset confidence overrides
+    confidence_base: Optional[float] = Field(default=None, ge=0.0, le=1.0, description='Override base confidence scalar')
+    confidence_bb_slope: Optional[float] = Field(default=None, ge=0.1, le=20.0, description='Override BB slope multiplier')
+    confidence_rsi_bonus: Optional[float] = Field(default=None, ge=0.0, le=0.5, description='Override RSI confirmation bonus')
 
 
 class MRAssetConfig(BaseModel):
@@ -460,16 +491,37 @@ class MRRegimeSizingConfig(BaseModel):
 # DM-SAFETY-BYPASSES-P1: Safety gates configuration
 class SafetyGatesConfig(BaseModel):
     """Safety gates control for directional sanity and price motion gates.
-    
+
     DM-SAFETY-BYPASSES-P1: Replaces hardcoded strategy_id == 'aurora' check.
     - Aurora (trend-following): enabled=true → gates APPLY
     - Mean Reversion (counter-trend): enabled=false → gates SKIPPED
     - Missing config → FAIL-CLOSED (trade blocked)
+
+    Phase 0.6: system_stress_policy controls how Gate 0.5 behaves per-strategy:
+    - off       → Gate 0.5 fully bypassed (even EXTREME is ignored)
+    - attenuate → EXTREME=DENY(NRR-059); STRESS=ALLOW + reduce margin_pct_mult by factor
+    - block     → EXTREME and STRESS both DENY(NRR-059)
     """
     model_config = ConfigDict(extra='forbid')
-    
+
     enabled: bool = Field(
         description='Enable directional sanity and price motion gates for this strategy'
+    )
+    # Phase 0.6: per-strategy system stress policy
+    system_stress_policy: Literal["off", "attenuate", "block"] = Field(
+        default="off",
+        description=(
+            "System stress gate policy: "
+            "off=bypass Gate 0.5 entirely, "
+            "attenuate=EXTREME denied + STRESS reduces size, "
+            "block=EXTREME and STRESS both denied"
+        ),
+    )
+    stress_attenuation_factor: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Multiplicative factor applied to margin_pct_mult when STRESS and policy=attenuate",
     )
 
 
@@ -658,6 +710,27 @@ class DashboardConfig(BaseModel):
         default=["sharpe_ratio", "win_rate", "memory_coverage"],
         description="List of metrics to track and log"
     )
+class RegimeShiftInceptionConfig(BaseModel):
+    """Regime-shift inception: rescue-only micro-entry on first bar of regime shift."""
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=False, description='Enable inception detection (fail-closed default)')
+    action: Literal["none", "micro_size", "confirm_next_bar"] = Field(
+        default="none",
+        description='Action on inception: none=telemetry only, micro_size=25% entry, confirm_next_bar=wait'
+    )
+    micro_size_fraction: float = Field(
+        default=0.25, gt=0.0, le=1.0,
+        description='Position size fraction for micro-entry (0.25 = 25% of normal)'
+    )
+
+class RegimeSmoothingConfig(BaseModel):
+    """EMA/ramp smoothing for regime threshold multipliers."""
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=False, description='Enable regime multiplier smoothing (fail-closed default)')
+    method: Literal["ema", "linear_ramp"] = Field(default="ema", description='Smoothing method')
+    ema_alpha: float = Field(default=0.3, gt=0.0, le=1.0, description='EMA decay factor (0.3 = ~5-bar half-life)')
+    ramp_bars: int = Field(default=6, ge=1, le=20, description='Linear ramp duration in bars (used when method=linear_ramp)')
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
     
@@ -671,8 +744,8 @@ class DecisionConfig(BaseModel):
 
     # IMPORTANT: Default exists for test compatibility, but production MUST override
     signal_threshold: float = Field(description='Signal score threshold. PRODUCTION MUST OVERRIDE in trading.yaml!')
-    cooldown_sec: Optional[int] = Field(description='Global cooldown (deprecated, use per-instrument)')
-    side_bias_min_score: Optional[float] = Field(description='Min score for side bias')
+    cooldown_sec: Optional[int] = Field(default=None, description='[DEPRECATED] Global cooldown (use per-instrument qos)')
+    side_bias_min_score: Optional[float] = Field(default=None, description='[DEPRECATED] Min score for side bias')
     side_bias_penalty_factor: Optional[float] = Field(description='Side bias penalty factor')
     side_bias_target_ratio: Optional[float] = Field(description='Side bias target ratio')
     side_bias_window_sec: Optional[int] = Field(description='Side bias window (seconds)')
@@ -701,6 +774,10 @@ class DecisionConfig(BaseModel):
 
     regime_thresholds: Dict[str, float] = Field(description='Regime-specific signal thresholds')
     regime_threshold_multipliers: Dict[str, float] = Field(description='Regime threshold multipliers')
+    regime_smoothing: Optional[RegimeSmoothingConfig] = Field(
+        default=None,
+        description='PKG-2: EMA/ramp smoothing for regime threshold multipliers'
+    )
     blocked_regimes: Optional[List[str]] = Field(
         default=None,
         description=(
@@ -954,8 +1031,203 @@ class RegimeModelConfig(BaseModel):
 class RegimeDetectorConfig(BaseModel):
     """Regime detector configuration."""
     model_config = ConfigDict(extra='forbid')
-    
+
     models: RegimeModelsConfig = Field(description='Regime detection models config')
+
+
+# ═══════════════ SYSTEM STRESS GUARD (Phase 0.0) ═══════════════
+# Independent circuit-breaker overlay: NORMAL → STRESS → EXTREME.
+# Not a replacement for TREND/MR regimes — a separate guard layer.
+
+# Canonical trigger keys for weight validation
+STRESS_TRIGGER_KEYS = frozenset({"atr", "vol", "gap", "range", "volume", "spread", "depth"})
+# Price-only triggers (no orderbook required)
+STRESS_PRICE_TRIGGERS = frozenset({"atr", "vol", "gap", "range", "volume"})
+# Orderbook-only triggers
+STRESS_ORDERBOOK_TRIGGERS = frozenset({"spread", "depth"})
+
+
+class SystemStressThresholdsConfig(BaseModel):
+    """Sigma thresholds for individual stress indicators.
+
+    0.0 = disabled for that trigger (explicitly opt-out).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    atr_sigma: float = Field(ge=0.0, le=10.0, description='ATR z-score threshold')
+    vol_sigma: float = Field(ge=0.0, le=10.0, description='Realized vol z-score threshold')
+    gap_sigma: float = Field(ge=0.0, le=10.0, description='Bar gap z-score threshold')
+    range_sigma: float = Field(ge=0.0, le=10.0, description='Bar range z-score threshold')
+    volume_sigma: float = Field(ge=0.0, le=10.0, description='Volume z-score (0.0=disabled)')
+    spread_sigma: float = Field(ge=0.0, le=10.0, description='Spread z-score (orderbook only)')
+    depth_drop_pct: float = Field(ge=0.0, le=100.0, description='Depth drop % (orderbook only, 0.0=disabled)')
+
+
+class SystemStressAggregationConfig(BaseModel):
+    """How to combine individual stress trigger signals into a composite score."""
+    model_config = ConfigDict(extra='forbid')
+
+    method: Literal["weighted_vote", "k_of_n", "max"] = Field(
+        description='Aggregation method for stress triggers'
+    )
+    weights: Optional[Dict[str, float]] = Field(
+        default=None,
+        description='Trigger weights (required if method=weighted_vote). Keys must be from STRESS_TRIGGER_KEYS.'
+    )
+    k: Optional[int] = Field(
+        default=None, ge=1,
+        description='Minimum triggers required (required if method=k_of_n)'
+    )
+
+    @model_validator(mode='after')
+    def _validate_method_deps(self) -> 'SystemStressAggregationConfig':
+        if self.method == "weighted_vote":
+            if not self.weights:
+                raise ValueError("aggregation.weights required when method=weighted_vote")
+            # Validate keys are from canonical set
+            invalid = set(self.weights.keys()) - STRESS_TRIGGER_KEYS
+            if invalid:
+                raise ValueError(
+                    f"aggregation.weights invalid keys: {sorted(invalid)}. "
+                    f"Allowed: {sorted(STRESS_TRIGGER_KEYS)}"
+                )
+            total = sum(self.weights.values())
+            if abs(total - 1.0) > 0.01:
+                raise ValueError(f"aggregation.weights must sum to ~1.0, got {total:.4f}")
+        if self.method == "k_of_n" and self.k is None:
+            raise ValueError("aggregation.k required when method=k_of_n")
+        return self
+
+
+class SystemStressStateMappingConfig(BaseModel):
+    """Hysteresis state transitions NORMAL → STRESS → EXTREME.
+
+    Ordering invariants enforced:
+    - exit_stress < enter_stress < enter_extreme
+    - exit_extreme < enter_extreme
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enter_stress: float = Field(ge=0.0, le=1.0, description='Composite score to enter STRESS')
+    exit_stress: float = Field(ge=0.0, le=1.0, description='Composite score to exit STRESS → NORMAL')
+    enter_extreme: float = Field(ge=0.0, le=1.0, description='Composite score to enter EXTREME')
+    exit_extreme: float = Field(ge=0.0, le=1.0, description='Composite score to exit EXTREME → STRESS')
+    consecutive_bars_enter: int = Field(ge=1, le=20, description='Consecutive bars above threshold to confirm entry')
+    consecutive_bars_exit: int = Field(ge=1, le=20, description='Consecutive bars below threshold to confirm exit')
+    min_duration_bars: int = Field(ge=0, le=100, description='Minimum bars to stay in a state before allowing exit')
+    switch_window_bars: int = Field(ge=1, description='Rolling window (bars) for switch counting')
+    max_switches_per_window: int = Field(ge=1, le=50, description='Max state switches in window before circuit breaker')
+    circuit_breaker_mode: Literal["halt"] = Field(
+        description='Action on max_switches breach. halt = fail-closed (block all entries).'
+    )
+
+    @model_validator(mode='after')
+    def _validate_ordering(self) -> 'SystemStressStateMappingConfig':
+        if self.exit_stress >= self.enter_stress:
+            raise ValueError(
+                f"exit_stress ({self.exit_stress}) must be < enter_stress ({self.enter_stress}) (hysteresis)"
+            )
+        if self.exit_extreme >= self.enter_extreme:
+            raise ValueError(
+                f"exit_extreme ({self.exit_extreme}) must be < enter_extreme ({self.enter_extreme}) (hysteresis)"
+            )
+        if self.enter_stress >= self.enter_extreme:
+            raise ValueError(
+                f"enter_stress ({self.enter_stress}) must be < enter_extreme ({self.enter_extreme})"
+            )
+        return self
+
+
+class SystemStressConfig(BaseModel):
+    """System-wide stress overlay (independent of TREND/MR regimes).
+
+    When enabled, monitors market microstructure for abnormal conditions
+    and emits NORMAL/STRESS/EXTREME state for DM gating.
+    Disabled by default (None at AuroraConfig root = off).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Master enable (off by default in YAML)')
+    sources_enabled: List[Literal["price", "orderbook"]] = Field(
+        min_length=1,
+        description='Data sources required. "price" = OHLCV only. "orderbook" = L2 required.'
+    )
+    require_l2_if_enabled: bool = Field(
+        description='Fail-fast if "orderbook" in sources_enabled but L2 data is unavailable'
+    )
+    baseline_method: Literal["rolling", "expanding"] = Field(
+        description='Baseline method for z-score calculation'
+    )
+    baseline_window: Optional[int] = Field(
+        default=None, ge=10,
+        description='Rolling window size (bars). REQUIRED if baseline_method=rolling.'
+    )
+    burn_in_bars: int = Field(
+        ge=1,
+        description='Minimum bars before stress signal is emitted (warmup period)'
+    )
+    robust_method: Literal["none", "mad"] = Field(
+        default="none",
+        description='Robust statistics method (none=std, mad=median absolute deviation)'
+    )
+    thresholds: SystemStressThresholdsConfig = Field(
+        description='Per-trigger sigma thresholds (0.0 = disabled for that trigger)'
+    )
+    aggregation: SystemStressAggregationConfig = Field(
+        description='How to combine trigger signals'
+    )
+    state_mapping: SystemStressStateMappingConfig = Field(
+        description='Hysteresis rules for NORMAL/STRESS/EXTREME transitions'
+    )
+
+    @model_validator(mode='after')
+    def _validate_rolling_window(self) -> 'SystemStressConfig':
+        if self.baseline_method == "rolling" and self.baseline_window is None:
+            raise ValueError("baseline_window required when baseline_method=rolling")
+        return self
+
+    @model_validator(mode='after')
+    def _validate_orderbook_triggers(self) -> 'SystemStressConfig':
+        """If orderbook not in sources_enabled, orderbook-only thresholds must be 0."""
+        has_orderbook = "orderbook" in self.sources_enabled
+        if not has_orderbook:
+            if self.thresholds.spread_sigma > 0:
+                raise ValueError(
+                    "spread_sigma > 0 requires 'orderbook' in sources_enabled"
+                )
+            if self.thresholds.depth_drop_pct > 0:
+                raise ValueError(
+                    "depth_drop_pct > 0 requires 'orderbook' in sources_enabled"
+                )
+        return self
+
+    @model_validator(mode='after')
+    def _validate_weight_keys_match_active_triggers(self) -> 'SystemStressConfig':
+        """Weight keys must correspond to triggers that are actually enabled (>0)."""
+        if self.aggregation.method != "weighted_vote" or not self.aggregation.weights:
+            return self
+
+        # Build set of active trigger keys from thresholds
+        threshold_map = {
+            "atr": self.thresholds.atr_sigma,
+            "vol": self.thresholds.vol_sigma,
+            "gap": self.thresholds.gap_sigma,
+            "range": self.thresholds.range_sigma,
+            "volume": self.thresholds.volume_sigma,
+            "spread": self.thresholds.spread_sigma,
+            "depth": self.thresholds.depth_drop_pct,
+        }
+        active_triggers = {k for k, v in threshold_map.items() if v > 0}
+        weight_keys = set(self.aggregation.weights.keys())
+
+        # Weights for disabled triggers (waste, likely a typo)
+        wasted = weight_keys - active_triggers
+        if wasted:
+            raise ValueError(
+                f"aggregation.weights has keys for disabled triggers (sigma=0): {sorted(wasted)}. "
+                "Remove them or enable the trigger."
+            )
+        return self
 
 
 class FallbackConfig(BaseModel):
@@ -1838,7 +2110,18 @@ class AbsorptionProxyConfig(BaseModel):
         gt=0.0,
         description='Epsilon for division safety'
     )
-    
+    # P0: Cap for |delta_price / price| normalisation (required when mode != disabled)
+    # No hardcoded fallback — must come from YAML SSOT.
+    dp_cap_pct: Optional[float] = Field(
+        default=None,
+        gt=0.0, le=1.0,
+        description=(
+            'Cap for |delta_price/price| normalisation in conflict-weighted formula. '
+            'Required when absorption.mode != disabled. '
+            'Example: 0.02 = cap at 2%% delta-price deviation.'
+        )
+    )
+
     @field_validator('source')
     @classmethod
     def source_not_tfi(cls, v: str) -> str:
@@ -1895,9 +2178,22 @@ class AbsorptionConfig(BaseModel):
     
     @model_validator(mode='after')
     def validate_proxy_required(self) -> 'AbsorptionConfig':
-        """Validate proxy config required when mode=proxy."""
-        if self.mode == 'proxy' and self.proxy is None:
-            raise ValueError("proxy config required when mode='proxy'")
+        """Validate proxy config required when mode != disabled.
+
+        P0-SSOT: dp_cap_pct must be explicit in YAML — no silent hardcoded fallback.
+        """
+        if self.mode != 'disabled':
+            if self.proxy is None:
+                raise ValueError(
+                    f"absorption.proxy config required when mode='{self.mode}' "
+                    "(set it in domains.yaml under absorption.proxy)"
+                )
+            if self.proxy.dp_cap_pct is None:
+                raise ValueError(
+                    f"absorption.proxy.dp_cap_pct required when mode='{self.mode}'. "
+                    "Add 'dp_cap_pct: 0.02' under absorption.proxy in domains.yaml. "
+                    "No hardcoded fallback — explicit YAML SSOT only."
+                )
         return self
 
 
@@ -2324,6 +2620,14 @@ class RiskScoreWeightsConfig(BaseModel):
     obi: float = Field()
     tfi: float = Field()
     absorption_inverse: float = Field()
+    # PKG-ABSORPTION-RISK-FULL: weight for emitted absorption feature value.
+    # Default 0.0 → identical to old behavior when omitted from YAML.
+    absorption_feature: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Weight for emitted absorption feature in risk score (source='feature'|'both'). "
+                    "Default 0.0 → no effect.",
+    )
 
 
 class TradingAllowedThresholdsConfig(BaseModel):
@@ -2353,7 +2657,51 @@ class RiskManagementDomainConfig(BaseModel):
     # D5: Absorption deprecation flag
     # When False, absorption term is excluded from risk score calculation
     # NOTE: Other weights are NOT rescaled when absorption is disabled (per Plan v1)
-    use_absorption_penalty: bool = Field(description='Whether to include absorption penalty in risk score. Set to False to disable deprecated absorption feature.')
+    use_absorption_penalty: bool = Field(
+        description='Whether to include absorption toxicity penalty in risk score. '
+                    'Set to False to disable (default). Requires absorption_dp_cap_pct when True.'
+    )
+
+    # P3-SSOT: Cap for |delta_price_pct| in toxicity formula.
+    # Required when use_absorption_penalty=True — fail-closed, no hardcoded fallback.
+    absorption_dp_cap_pct: Optional[float] = Field(
+        default=None,
+        gt=0.0, le=1.0,
+        description=(
+            'Cap for delta_price_pct normalisation in absorption toxicity penalty (0..1). '
+            'Required when use_absorption_penalty=True. '
+            'No hardcoded fallback — must be set in domains.yaml under risk_management.'
+        )
+    )
+
+    # PKG-ABSORPTION-RISK-FULL: source-routing for absorption term in risk score.
+    # "proxy"   → toxicity = |tfi| * clip(|dp_pct|/dp_cap, 0, 1)  (P3 default, backward compat)
+    # "feature" → feature_term = clip(|absorption|, clip_min, clip_max) * absorption_feature_w
+    # "both"    → both terms applied
+    absorption_penalty_source: Literal["proxy", "feature", "both"] = Field(
+        default="proxy",
+        description='Source for absorption penalty term: proxy (default), feature, or both. '
+                    'Default "proxy" → identical to P3 behavior.',
+    )
+    absorption_feature_clip_min: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Clip min for |absorption| before applying absorption_feature weight. Default 0.0.",
+    )
+    absorption_feature_clip_max: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Clip max for |absorption| before applying absorption_feature weight. Default 1.0.",
+    )
+
+    @model_validator(mode='after')
+    def _require_dp_cap_when_penalty_enabled(self) -> 'RiskManagementDomainConfig':
+        """P3-SSOT: Fail-closed — absorption_dp_cap_pct required when penalty is on."""
+        if self.use_absorption_penalty and self.absorption_dp_cap_pct is None:
+            raise ValueError(
+                "risk_management.absorption_dp_cap_pct is required when use_absorption_penalty=True. "
+                "Add 'absorption_dp_cap_pct: 0.02' to domains.yaml under risk_management:. "
+                "No hardcoded fallback — explicit YAML SSOT only."
+            )
+        return self
 
 
 # Position Tracking Domain
@@ -2968,7 +3316,7 @@ CANONICAL_WEIGHT_KEYS = frozenset({
     "volatility_state", "depth_imbalance",
     "macro_sync",   # DEPRECATED: kept for backward compat, use macro_resid
     "macro_resid",  # R1: Beta-adjusted residual (SIGNED, neutral=0)
-    # liquidity_kappa REMOVED: Moved to LiquidityGateConfig
+    "absorption",   # R2: Experimental (SIGNED [-1,1]). Default weight=0.0 until Phase 2 calibration.
 })
 
 
@@ -3199,6 +3547,22 @@ class DomainConfigurationConfig(BaseModel):
     audit_trail: Optional[DomainModeConfig] = Field(default=None, description='DEPRECATED: Use global trading_mode')
 
 
+class BacktestEngineConfig(BaseModel):
+    """Configuration for Backtest Turbo Pipeline."""
+    model_config = ConfigDict(extra='forbid')
+    
+    turbo_mode: Literal["off", "phase1", "phase2", "phase3", "phase4"] = Field(
+        default="off",
+        description="Turbo mode: off (standard event path) | phase1 (multiprocess) | phase2 | phase3 | phase4"
+    )
+
+class BacktestParallelismConfig(BaseModel):
+    """Configuration for Optuna Multiprocessing (Phase 1)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    n_workers: int = Field(default=1, description="Worker processes for Optuna")
+    worker_seed_base: int = Field(default=42, description="Base seed for deterministic RID under multiprocessing")
+
 
 class BacktestConfig(BaseModel):
     """Configuration for Backtest Execution Mode."""
@@ -3242,6 +3606,15 @@ class BacktestConfig(BaseModel):
             "(fee/slippage/latency/funding). Used by Stage2 robustness reruns."
         ),
     )
+    engine: "BacktestEngineConfig" = Field(
+        default_factory=BacktestEngineConfig,
+        description="Backtest engine turbo settings"
+    )
+    parallelism: "BacktestParallelismConfig" = Field(
+        default_factory=BacktestParallelismConfig,
+        description="Parallelism settings for Optuna multiprocessing"
+    )
+
 
 
 class BacktestStressOverridesConfig(BaseModel):
@@ -3606,6 +3979,11 @@ class AuroraConfig(BaseModel):
     # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
     models: Optional[RegimeModelsConfig] = Field(default=None, description='Regime detection models from regime.yaml')
 
+    regime_shift_inception: Optional[RegimeShiftInceptionConfig] = Field(
+        default=None,
+        description='PKG-3: Rescue-only micro-entry on first bar of regime shift'
+    )
+
     # regime.yaml SSOT (top-level keys)
     # REG-FIX-01: BAR-ONLY SSOT - these fields are REQUIRED (no silent defaults)
     basis_tf_sec: int = Field(
@@ -3647,6 +4025,14 @@ class AuroraConfig(BaseModel):
     # SCORCHED-EARTH-2026-01-27: hmm and features fields DELETED (zero runtime references, regime.yaml not read by code)
     # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
 
+    # Phase 0.0: System Stress Guard (independent circuit-breaker overlay)
+    # None = disabled (no system_stress section in YAML or explicit null).
+    # When present, all sub-fields are validated even if enabled=false.
+    system_stress: Optional[SystemStressConfig] = Field(
+        default=None,
+        description='System-wide stress guard (NORMAL/STRESS/EXTREME). None = disabled.'
+    )
+
     @field_validator('trading_mode')
     @classmethod
     def validate_trading_mode(cls, v: str) -> str:
@@ -3677,28 +4063,6 @@ class AuroraConfig(BaseModel):
         """
         if self.execution is None and getattr(self.trading, "execution", None) is not None:
             self.execution = self.trading.execution
-        return self
-
-    @model_validator(mode="after")
-    def _forbid_legacy_normalize_signals_in_live(self) -> "AuroraConfig":
-        """Fail-fast: legacy normalize mode must not run in live/production/hybrid."""
-        mode = str(getattr(self, "trading_mode", "")).lower()
-        is_live_like = mode in ("live", "production", "hybrid_live_data_testnet_exec")
-
-        aurora_cfg = getattr(self.strategies, "aurora", None)
-        if aurora_cfg is None:
-            return self
-        decision = getattr(aurora_cfg, "decision", None)
-        if decision is None:
-            return self
-        signals = getattr(decision, "signals", None)
-        if signals is None:
-            return self
-
-        if is_live_like and str(signals.normalize_signals_mode) == "legacy_v1":
-            raise ValueError(
-                "strategies.aurora.decision.signals.normalize_signals_mode='legacy_v1' is forbidden in live/production"
-            )
         return self
 
     @model_validator(mode="after")
@@ -3737,6 +4101,9 @@ class AuroraConfig(BaseModel):
             aurora_symbols = [str(s) for s in self.instruments.keys()]
 
         aurora = getattr(self.strategies, "aurora", None)
+        if not aurora_symbols:
+            # No symbols assigned to aurora — skip TP/SL SSOT validation
+            return self
         if aurora is None:
             raise ValueError(
                 "strategies.aurora is required: TP/SL SSOT lives in config/aurora/strategies/aurora.yaml"

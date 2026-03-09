@@ -47,11 +47,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
+reports/arhive/*
 # Translations
 *.mo
 *.pot
-
 # Django stuff:
 *.log
 local_settings.py
@@ -197,6 +196,8 @@ coverage*.xml
 # Analysis results
 analyzer*.json
 analysis_results.json
+results_phase*.txt
+results_phase*.log
 
 .gemini/
 gha-creds-*.json

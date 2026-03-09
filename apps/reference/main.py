@@ -28,6 +28,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+from apps.reference.domains.system_stress.system_stress_overlay import SystemStressOverlay
 from apps.reference.core.time.clock import MockClock, set_clock, reset_clock
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
@@ -647,7 +648,8 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         profit_withdrawal_roi_pct=profit_withdrawal_roi_pct,
         event_bus=fsm,
         clock_advance_fn=_advance_global_clock, # Wire clock sync
-        htf_provider=htf_provider
+        htf_provider=htf_provider,
+        turbo_mode=getattr(config.trading.backtest.engine, "turbo_mode", "off")
     )
 
     from backtest_engine.wrappers import BacktestExecPosFSM
@@ -686,7 +688,11 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     # Task 18: RegimeDetector requires AuroraConfig object
     regime_detector = RegimeDetector(config, fsm, clock=bt_clock)
     fsm.register_domain("regime_detector", regime_detector)
-    
+
+    # Phase 0.5: System Stress Overlay (no-op when system_stress.enabled=false)
+    system_stress_overlay = SystemStressOverlay(config=config, fsm=fsm)
+    fsm.register_domain("system_stress_overlay", system_stress_overlay)
+
     # Risk Management
     # Task 18: RiskManagement requires AuroraConfig object
     risk_management = RiskManagement(fsm, config)
@@ -766,6 +772,24 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
         LOG.warning(f"⚠️ AlphaSearch Plugin disabled (init failed): {e}")
         alpha_plugin = None
     
+    # Phase 4: Fast-Path EventBus swap
+    # After ALL domains registered their listeners on `fsm`, copy into BacktestFastBus.
+    # This bypasses: schema validation, RLock, Message() allocation on every bar.
+    _turbo_mode_now = getattr(config.trading.backtest.engine, "turbo_mode", "off")
+    if _turbo_mode_now == "phase4":
+        try:
+            from backtest_engine.fast_bus import BacktestFastBus
+            fast_bus = BacktestFastBus()
+            fast_bus.copy_from(fsm)
+            # Also update BacktestBarResampler's emit_fn if it was wired
+            if hasattr(engine, "_bar_resampler") and engine._bar_resampler is not None:
+                engine._bar_resampler._emit_fn = fast_bus.emit
+            # Swap the engine's event_bus to the fast bus
+            engine.event_bus = fast_bus
+            LOG.info("🚀 [Phase 4] BacktestFastBus activated — FSMCore bypassed for hot loop.")
+        except Exception as _e4:
+            LOG.warning(f"⚠️ Phase 4 FastBus swap failed, falling back to FSMCore: {_e4}")
+
     # 4. Run Simulation
     try:
         max_ticks = resolve_backtest_max_ticks(config)

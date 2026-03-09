@@ -69,6 +69,8 @@ class DecisionMaking:
             "exposure_cache": None, "exposure_cache_timestamp": 0.0,
         }
         self._per_symbol_regimes: Dict[str, Dict[str, Any]] = {}
+        # Phase 0.5: per-symbol system stress state ("NORMAL"|"STRESS"|"EXTREME")
+        self._system_stress_states: Dict[str, str] = {}
         self._side_intent_window: Dict[str, Dict[str, list]] = {}
         self._pending_flips: Dict[str, Dict[str, Any]] = {}
         self._arb_window_winner: Dict[str, tuple] = {}
@@ -148,6 +150,15 @@ class DecisionMaking:
         self._behavior_enabled = dm_cfg.behavior_fsm.enable
         self._behavior_state: Dict[str, str] = {}
 
+        # Derive normalize_signals_mode for WAL observability (mirrors AuroraConfigLoaderMixin pattern)
+        try:
+            _aurora = getattr(getattr(self.config, "strategies", None), "aurora", None)
+            _decision = getattr(_aurora, "decision", None) if _aurora else None
+            _signals = getattr(_decision, "signals", None) if _decision else None
+            self.normalize_signals_mode = str(_signals.normalize_signals_mode) if _signals is not None else "signed_v2"
+        except Exception:
+            self.normalize_signals_mode = "signed_v2"
+
         self._cfg = DMConfigResolver(
             self.config, self.strategies_registry, self._arb_signal_buffer,
             self._arb_window_winner, self.flip_global_enabled, self.logger)
@@ -203,6 +214,8 @@ class DecisionMaking:
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
         self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED", self.update_exposure_cache)
         self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED", self._on_strategy_signal_gateway)
+        # Phase 0.5: system stress overlay state updates
+        self.fsm.listen("EVT:SYSTEM_STRESS_STATE_UPDATED", self._on_system_stress)
         self._domain_bridge = DomainBridge("decision_making", bus=self.fsm)
         self._domain_bridge.register_health_fn(self.is_healthy)
         self._last_status_ts = 0.0
@@ -290,7 +303,8 @@ class DecisionMaking:
             symbol=symbol, side=side, reduce_only=reduce_only, strategy_id=strategy_id,
             decision_ts_ms=decision_ts_ms, why_chain=why_chain, config=self.config,
             clock=self._clock, symbol_states=self.symbol_states,
-            per_symbol_regimes=self._per_symbol_regimes)
+            per_symbol_regimes=self._per_symbol_regimes,
+            system_stress_states=self._system_stress_states)
         if sg.outcome == "CONFIG_ERROR":
             self._emit_trade_intent_rejected(
                 symbol=symbol, strategy_id=str(strategy_id), side=str(side), rid=str(rid),
@@ -308,7 +322,8 @@ class DecisionMaking:
             reduce_only=reduce_only, strategy_id=strategy_id, decision_ts_ms=decision_ts_ms,
             stop_price=stop_price, target_price=target_price, entry_plan_trace=entry_plan_trace,
             tf_sec=tf_sec, max_slippage_bps=max_slippage_bps,
-            max_latency_ms=max_latency_ms, risk_score=risk_score, sg=sg)
+            max_latency_ms=max_latency_ms, risk_score=risk_score,
+            normalize_mode=self.normalize_signals_mode, sg=sg)
 
     def _handle_safety_deny(self, symbol, side, rid, why_chain, sg) -> None:
         _g = lambda a, d=None: getattr(sg, a, d)  # noqa: E731
@@ -393,6 +408,18 @@ class DecisionMaking:
     def on_portfolio(self, event): self._evt.on_portfolio(event)
     def on_regime(self, event): self._evt.on_regime(event)
     def update_exposure_cache(self, event): self._evt.update_exposure_cache(event)
+
+    def _on_system_stress(self, event: "Message") -> None:
+        """Phase 0.5: cache latest system stress state per symbol."""
+        try:
+            pld = event.pld if isinstance(event.pld, dict) else {}
+            symbol = pld.get("symbol")
+            state = pld.get("state")
+            if symbol and state in ("NORMAL", "STRESS", "EXTREME"):
+                self._system_stress_states[symbol] = state
+                self.logger.debug(f"[{symbol}] SystemStress state cached: {state}")
+        except Exception as exc:
+            self.logger.warning(f"_on_system_stress: unexpected error: {exc}")
 
     # -- Readiness stubs -------------------------------------------------------
     def _features_ready(self, symbol, features_data): return self._readiness.features_ready(symbol, features_data)

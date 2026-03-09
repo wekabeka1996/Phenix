@@ -178,7 +178,7 @@ class IntentEmitter:
             "reason": reason,
             "next_allowed_ts": next_ts,
             "attempt": 1,
-            "max_attempts": 3,
+            "max_attempts": int(getattr(self.config.strategies.aurora.decision, "retry_max_count", 3)),
             "original_event": {
                 "event_name": "EVT:TRADE_INTENT_PROPOSED",
                 "payload_min": original_context,

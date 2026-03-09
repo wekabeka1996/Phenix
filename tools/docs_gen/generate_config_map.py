@@ -13,7 +13,7 @@ import yaml
 from pydantic import BaseModel
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 APPS_REF = ROOT / "apps" / "reference"
 CONFIG_DIR = ROOT / "config" / "aurora"

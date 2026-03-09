@@ -297,12 +297,13 @@ feature_engineering:
   # When enabled, uses aggressive_trade_imbalance as proxy.
   # Has dedup guard: mutes if correlated with TFI (would be redundant signal).
   absorption:
-    mode: disabled              # disabled | proxy | full
+    mode: full                  # disabled | proxy | full — PKG-ABSORPTION-RISK-FULL: enable real compute
     # Proxy source: must NOT be 'tfi' (would be absurd)
     proxy:
       source: aggressive_trade_imbalance
       window: 30                # Rolling window for proxy calculation
       eps: 0.0001               # Epsilon for division safety
+      dp_cap_pct: 0.02          # P0-SSOT: cap for |delta_price/price| (2%). Required when mode != disabled.
     # Dedup guard: mute absorption if too correlated with TFI
     dedup:
       enabled: true
@@ -359,11 +360,22 @@ feature_engineering:
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
   use_absorption_penalty: false
+  # P3-SSOT: Toxicity normalization cap. Required when use_absorption_penalty=true (fail-closed validator).
+  # Preset for readiness — enable without re-editing YAML.
+  absorption_dp_cap_pct: 0.02
+  # PKG-ABSORPTION-RISK-FULL: Source routing for absorption risk term.
+  # "proxy"  = P3 toxicity (|tfi|*impact_norm, backward compat default)
+  # "feature" = emitted absorption feature value
+  # "both"   = proxy + feature combined
+  absorption_penalty_source: feature   # active source: emitted feature value
+  absorption_feature_clip_min: 0.0
+  absorption_feature_clip_max: 1.0
   risk_score_weights:
     delta_price_pct: 0.1
     obi: 0.3
     tfi: 0.3
     absorption_inverse: 0.3
+    absorption_feature: 0.2    # PKG-ABSORPTION-RISK-FULL: conservative start weight
   
   trading_allowed_thresholds:
     max_risk_score: 0.96  # Increased by 20% to allow more trading

@@ -41,7 +41,7 @@ class TestAuroraHandlerInit:
                             strength_alpha=0.6,
                             strength_cap=2.0,
                         ),
-                        signals=SimpleNamespace(delta_price_cap_pct=0.01),
+                        signals=SimpleNamespace(delta_price_cap_pct=0.01, normalize_signals_mode="signed_v2"),
                     ),
                     assets={},
                 )

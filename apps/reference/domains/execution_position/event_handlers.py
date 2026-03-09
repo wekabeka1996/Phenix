@@ -24,6 +24,12 @@ try:
 except ImportError:
     _trade_lifecycle = None
 
+# ORDER LOGGER INT
+try:
+    from apps.reference.telemetry.order_logger import get_order_logger as _get_order_logger
+except ImportError:
+    _get_order_logger = None
+
 
 class EPEventHandlers:
     """Handles FSM bus events for execution_position domain."""
@@ -153,9 +159,28 @@ class EPEventHandlers:
                     self._fsm._last_any_position_closed_ts = closed_at
 
                     _pos_close_regime = self._fsm._open_regime_by_symbol.pop(sym, {})
+                    
+                    # Try to extract PnL from the matched position data
+                    pos_pnl = 0.0
+                    for pos in positions:
+                        if pos.get("symbol") == sym:
+                            pos_pnl = float(pos.get("realizedPnl") or 0.0)
+                            break
+                    # Fall back to cached fill PnL when portfolio payload has no realizedPnl
+                    if pos_pnl == 0.0:
+                        try:
+                            pos_pnl = float(self._fsm._last_realized_pnl_by_symbol.get(sym, 0.0))
+                        except Exception:
+                            pass
+                    close_reason = "POSITION_CLOSED_DETECTED"
+                    try:
+                        close_reason = self._fsm._last_close_reason_by_symbol.pop(sym, "POSITION_CLOSED_DETECTED")
+                    except Exception:
+                        pass
+                    
                     LOG.info(
                         f"[POSITION_CLOSED] {sym}: position closed (was {prev_amt}, now {now_amt})"
-                        f" | open_regime={_pos_close_regime.get('regime')}"
+                        f" | open_regime={_pos_close_regime.get('regime')} | realized_pnl={pos_pnl}"
                     )
 
                     # FIX-LIFECYCLE-01: Flush lifecycle record
@@ -186,6 +211,24 @@ class EPEventHandlers:
                                 self._fsm._last_lifecycle_fill_price_by_symbol.pop(sym, None)
                             except Exception:
                                 pass
+
+                    if _get_order_logger is not None:
+                        try:
+                            _get_order_logger().write({
+                                "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
+                                "event_type": "POSITION_CLOSED",
+                                "symbol": sym,
+                                "side": "N/A",  # Not immediately available in this context without tracking
+                                "source_fsm": "ExecPosFSM",
+                                "why": close_reason,
+                                "close_reason": close_reason,
+                                "metadata": {
+                                    "close_price": float(close_price) if 'close_price' in locals() and close_price is not None else None,
+                                    "realized_pnl": pos_pnl
+                                }
+                            })
+                        except Exception as e:
+                            LOG.error(f"Failed to write POSITION_CLOSED to order_logger: {e}")
 
                     # Trigger orphan cleanup
                     if hasattr(self._fsm, "order_guardian") and self._fsm.order_guardian:
@@ -279,6 +322,19 @@ class EPEventHandlers:
         rid = payload.get("rid") or event.rid
         client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
 
+        # Infer order_kind from clientOrderId prefix
+        _coid = str(payload.get("clientOrderId") or "").upper()
+        if _coid.startswith("ENTRY-"):
+            order_kind = "ENTRY"
+        elif _coid.startswith("SL-"):
+            order_kind = "SL"
+        elif _coid.startswith("TP-"):
+            order_kind = "TP"
+        elif _coid.startswith("CLOSE-"):
+            order_kind = "CLOSE"
+        else:
+            order_kind = payload.get("close_reason", "UNKNOWN")
+
         if not order_id or not symbol or filled_qty is None:
             LOG.warning(f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
             return
@@ -307,6 +363,48 @@ class EPEventHandlers:
                     fill_qty=float(filled_qty) if filled_qty else None,
                     fees=float(payload.get("commission", 0)) if payload.get("commission") else None,
                 )
+            except Exception:
+                pass
+
+        if _get_order_logger is not None:
+            try:
+                # Find order_index safely
+                oi = getattr(self._fsm, "order_index", None)
+                if not oi and hasattr(self._fsm, "fsm"):
+                    oi = getattr(self._fsm.fsm, "order_index", None)
+                
+                res_id = None
+                if oi:
+                    intent = oi.get_intent_for_order(str(payload.get("clientOrderId") or payload.get("orderId")))
+                    if intent:
+                        res_id = getattr(intent, "reservation_id", None)
+
+                _get_order_logger().write({
+                    "rid": str(payload.get("clientOrderId") or payload.get("orderId") or "unknown_fill"),
+                    "event_type": "ORDER_FILLED",
+                    "symbol": symbol,
+                    "side": payload.get("side", ""),
+                    "quantity": float(filled_qty) if filled_qty else None,
+                    "price": float(payload.get("price", 0)) if payload.get("price") else None,
+                    "source_fsm": "ExecPosFSM",
+                    "reservation_id": res_id,
+                    "order_kind": order_kind,
+                    "close_reason": payload.get("close_reason"),
+                    "metadata": {
+                        "fill_trade_id": str(payload.get("tradeId", "")),
+                        "realized_pnl": float(payload.get("realizedPnl") or 0.0),
+                        "commission": float(payload.get("commission", 0.0)),
+                        "commissionAsset": str(payload.get("commissionAsset", "")),
+                    }
+                })
+            except Exception as e:
+                LOG.error(f"Failed to write ORDER_FILLED to order_logger: {e}")
+
+        # Cache realized PnL and close_reason per symbol for POSITION_CLOSED logging
+        if symbol and order_kind in ("SL", "TP", "CLOSE", "MARKET_FILLED"):
+            try:
+                self._fsm._last_realized_pnl_by_symbol[symbol] = float(payload.get("realizedPnl") or 0.0)
+                self._fsm._last_close_reason_by_symbol[symbol] = order_kind
             except Exception:
                 pass
 

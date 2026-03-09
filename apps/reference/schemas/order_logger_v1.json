@@ -22,9 +22,12 @@
         "ORDER_PLACED",
         "ORDER_FILLED",
         "ORDER_CANCELLED",
+        "ORDER_CANCELLATION_FAILED",
         "ORDER_TIMEOUT",
         "ORDER_REJECTED",
-        "ORDER_STATE_CHANGED"
+        "ORDER_STATE_CHANGED",
+        "POSITION_CLOSED",
+        "QTY_NORMALIZE_REJECTED"
       ],
       "description": "Type of order event"
     },
@@ -80,6 +83,30 @@
     "metadata": {
       "type": "object",
       "description": "Additional metadata"
+    },
+    "close_reason": {
+      "type": "string",
+      "description": "Why the order/position closed: SL_HIT, TP_HIT, ENTRY_FILLED, MARKET_FILLED, BACKTEST_END, CANCEL_STALE_REGIME, etc."
+    },
+    "order_kind": {
+      "type": "string",
+      "description": "Order role: ENTRY, SL, TP, CLOSE"
+    },
+    "order_type": {
+      "type": "string",
+      "description": "Exchange order type: LIMIT, MARKET, STOP_MARKET, TAKE_PROFIT_MARKET"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Cancellation or rejection reason string"
+    },
+    "bracket_type": {
+      "type": "string",
+      "description": "Bracket order type: SL or TP"
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context for cancellations"
     }
   },
   "required": ["rid", "event_type", "symbol", "source_fsm"]

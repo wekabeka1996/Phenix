@@ -1,0 +1,24 @@
+# =============================================================================
+# OVERLAY: patched5 — Cumulative Jun-Sep window
+# =============================================================================
+# Baseline : patched5 (patched4b + LOW_VOL removed from ETH and BNB)
+# =============================================================================
+# NOTE: Dates passed via --start / --end CLI args only.
+# Config state at time of this run (patched5):
+#   ETHUSDT.allowed_regimes : [TREND_DOWN, FLAT_LOW, FLAT_NORMAL, MEAN_REVERSION]
+#   BNBUSDT.allowed_regimes : [FLAT_NORMAL, MEAN_REVERSION]
+#   BTCUSDT.allowed_regimes : []  (blocked)
+#   1000PEPEUSDT.allowed_regimes : []  (blocked)
+#   SMA short/long          : 48 / 192
+# =============================================================================
+# Prior result for comparison:
+#   patched4b CUM Jun-Sep (20260308_001045): -403.70 USDT
+#   LOW_VOL total loss in that run: ETH -250.60 + BNB -235.63 = -486.23 USDT
+#   Projected patched5 CUM (without LOW_VOL): ~+81.67 USDT
+# =============================================================================
+
+trading:
+  backtest:
+    start_date: "2023-06-01"
+    end_date:   "2023-09-30"
+    initial_balance: 1000.0

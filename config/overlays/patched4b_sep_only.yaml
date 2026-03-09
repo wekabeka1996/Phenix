@@ -1,0 +1,40 @@
+# =============================================================================
+# OVERLAY: patched4b — September-only window
+# =============================================================================
+# Experiment  : patched4b / ETH+BNB Sep clean baseline (BTC blocked)
+# Baseline    : patched4a_v2 + patched4b BTC block
+# Purpose     : Isolate ETH+BNB September performance with BTC completely removed
+#               from Aurora decision pipeline
+# =============================================================================
+#
+# WINDOW
+# ------
+# start_date : 2023-09-01
+# end_date   : 2023-09-30
+# balance    : 1000.0 USDT
+#
+# NOTE: Dates are passed via --start / --end CLI args. This file documents the window.
+#
+# RUN COMMAND (PowerShell):
+#   python scripts/diagnostics/run_single_backtest.py --side B --start 2023-09-01 --end 2023-09-30 2>&1 | Tee-Object reports/backtests/SEP_patched4b_stdout.txt
+#
+# =============================================================================
+# WHY patched4b
+# =============================================================================
+# patched4a_v2 Sep-only (run 20260307_182925) result:
+#   total_pnl = -90.11 USDT
+#   BTC  = -86.79 (35 trades, 83% SL rate, negative in ALL regimes except TREND_DOWN n=2)
+#   ETH  =  +3.95 (19 trades) — TREND_DOWN +104.80, LOW_VOL -101.13
+#   BNB  =  +3.87 (22 trades) — MR +4.36, LOW_VOL -0.49
+#   ETH + BNB = +7.82 USDT — breakeven without BTC
+#
+# patched4b answers:
+#   "What is the clean ETH+BNB baseline for September without BTC noise?"
+#   "Does ETH TREND_DOWN ev=+17.47 hold with a clean sample?"
+# =============================================================================
+
+trading:
+  backtest:
+    start_date: "2023-09-01"
+    end_date:   "2023-09-30"
+    initial_balance: 1000.0

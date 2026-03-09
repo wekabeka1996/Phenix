@@ -38,6 +38,9 @@ from optimization.robustness import (
     ColdHoldoutGate,
     HoldoutResult,
 )
+from concurrent.futures import ProcessPoolExecutor
+from optimization._worker import _run_trial_in_process
+from apps.reference.config_loader import ConfigLoader
 
 LOG = logging.getLogger(__name__)
 
@@ -331,6 +334,20 @@ class AuroraOptimizer:
 
         best_overall = Stage0Result()
 
+        loader = ConfigLoader(config_dir=self.config_dir)
+        trading_cfg = loader.load_trading_config()
+        turbo_mode = getattr(trading_cfg.backtest.engine, 'turbo_mode', 'off')
+        
+        # We respect optuna_cfg.n_jobs or parallelism.n_workers
+        n_workers = getattr(trading_cfg.backtest.parallelism, 'n_workers', n_jobs)
+        worker_seed_base = getattr(trading_cfg.backtest.parallelism, 'worker_seed_base', 42)
+
+        if turbo_mode != "off" and n_workers > 1:
+            executor = ProcessPoolExecutor(max_workers=n_workers)
+            LOG.info(f"Stage 0 using ProcessPoolExecutor with {n_workers} workers (turbo_mode={turbo_mode})")
+        else:
+            executor = None
+
         for tf_sec in outer_grid:
             study_name = f"{prefix}_tf{tf_sec}"
             LOG.info(f"=== Stage 0: basis_tf_sec={tf_sec}, study={study_name} ===")
@@ -350,14 +367,35 @@ class AuroraOptimizer:
                 overlay = _build_overlay(sampled)
                 overlay["basis_tf_sec"] = tf_sec
 
-                metrics, stage_result = self.adapter.run_stage0(
-                    overlay,
-                    start_date=self.train_range.start if self.train_range else None,
-                    end_date=self.train_range.end if self.train_range else None,
-                )
-
-                if not stage_result.success:
-                    return -1e9
+                if executor:
+                    start_dt = self.train_range.start if self.train_range else None
+                    end_dt = self.train_range.end if self.train_range else None
+                    worker_seed = worker_seed_base ^ trial.number
+                    
+                    future = executor.submit(
+                        _run_trial_in_process,
+                        config_dir=str(self.config_dir),
+                        data_dir=str(self.data_dir) if self.data_dir else None,
+                        locked_symbols=self._locked_symbols,
+                        locked_strategy_id=self._locked_strategy_id,
+                        overlay=overlay,
+                        start_date=start_dt,
+                        end_date=end_dt,
+                        stage=0,
+                        worker_seed=worker_seed
+                    )
+                    res = future.result()
+                    if not res.get("success"):
+                        return -1e9
+                    metrics = res.get("metrics")
+                else:
+                    metrics, stage_result = self.adapter.run_stage0(
+                        overlay,
+                        start_date=self.train_range.start if self.train_range else None,
+                        end_date=self.train_range.end if self.train_range else None,
+                    )
+                    if not stage_result.success:
+                        return -1e9
 
                 score = compute_stability_score(
                     metrics, w_flicker=w_flicker, w_uncertain=w_uncertain,
@@ -413,6 +451,18 @@ class AuroraOptimizer:
         raw_space = self.s1_search_space.get("search_space", {})
         flat_space = _flatten_search_space(raw_space)
 
+        loader = ConfigLoader(config_dir=self.config_dir)
+        trading_cfg = loader.load_trading_config()
+        turbo_mode = getattr(trading_cfg.backtest.engine, 'turbo_mode', 'off')
+        n_workers = getattr(trading_cfg.backtest.parallelism, 'n_workers', n_jobs)
+        worker_seed_base = getattr(trading_cfg.backtest.parallelism, 'worker_seed_base', 42)
+
+        if turbo_mode != "off" and n_workers > 1:
+            executor = ProcessPoolExecutor(max_workers=n_workers)
+            LOG.info(f"Stage 1 using ProcessPoolExecutor with {n_workers} workers (turbo_mode={turbo_mode})")
+        else:
+            executor = None
+
         study = optuna.create_study(
             study_name=prefix,
             direction="maximize",
@@ -428,14 +478,35 @@ class AuroraOptimizer:
             overlay = _build_overlay(sampled)
             _merge_config(overlay, regime_config)
 
-            metrics, stage_result = self.adapter.run_stage1(
-                overlay,
-                start_date=self.train_range.start if self.train_range else None,
-                end_date=self.train_range.end if self.train_range else None,
-            )
-
-            if not stage_result.success:
-                return -1e9
+            if executor:
+                start_dt = self.train_range.start if self.train_range else None
+                end_dt = self.train_range.end if self.train_range else None
+                worker_seed = worker_seed_base ^ trial.number
+                
+                future = executor.submit(
+                    _run_trial_in_process,
+                    config_dir=str(self.config_dir),
+                    data_dir=str(self.data_dir) if self.data_dir else None,
+                    locked_symbols=self._locked_symbols,
+                    locked_strategy_id=self._locked_strategy_id,
+                    overlay=overlay,
+                    start_date=start_dt,
+                    end_date=end_dt,
+                    stage=1,
+                    worker_seed=worker_seed
+                )
+                res = future.result()
+                if not res.get("success"):
+                    return -1e9
+                metrics = res.get("metrics")
+            else:
+                metrics, stage_result = self.adapter.run_stage1(
+                    overlay,
+                    start_date=self.train_range.start if self.train_range else None,
+                    end_date=self.train_range.end if self.train_range else None,
+                )
+                if not stage_result.success:
+                    return -1e9
 
             score = compute_alpha_score(metrics, penalty_config)
 

@@ -70,8 +70,11 @@ class SymbolState:
     def __init__(self):
         # Regime cache (from EVT:REGIME_DETECTED)
         self.regime = None
+        self.regime_raw_event = None
         self.regime_confidence = 0.0
         self.regime_ts_ms = 0
+        
+        self.system_stress_state = "NORMAL"
 
         # Anti-churn regime inertia (monotonic timebase)
         self.regime_raw = None
@@ -343,9 +346,9 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         symbol = event.get("symbol")
         if not symbol:
             return
-        
         state = self._symbol_states[symbol]
         state.regime = event.get("regime")
+        state.regime_raw_event = event.get("raw_regime")
         state.regime_confidence = float(event.get("confidence", 0.0))
         state.regime_ts_ms = int(event.get("ts_ms", int(self.wall_time_fn() * 1000)))
 
@@ -367,6 +370,13 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         self.logger.debug(
             f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f}, changed={changed})"
         )
+        
+    def on_system_stress(self, event: Dict[str, Any]) -> None:
+        symbol = event.get("symbol")
+        state_str = event.get("state")
+        if symbol and state_str:
+            self._symbol_states[symbol].system_stress_state = state_str
+            self.logger.debug(f"[{symbol}] System stress cached: {state_str}")
     
     # =========================================================================
     # T2B-03: CMD:PROCESS_STRATEGY - Primary Entry Point

@@ -851,7 +851,31 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 0.0
-    
+
+    @property
+    def absorption_dp_cap_pct(self) -> float:
+        """R2: Cap for |delta_price/price| normalisation.
+
+        P0-SSOT: Fail-closed — raises ValueError when mode != disabled and
+        dp_cap_pct is absent. No silent numeric fallback.
+        Use only when absorption_mode != 'disabled'.
+        """
+        if self.absorption_mode == "disabled":
+            # Safe to return anything — caller must gate on mode first.
+            return 0.0
+        try:
+            val = self._cfg.absorption.proxy.dp_cap_pct
+        except AttributeError:
+            val = None
+        if val is None:
+            raise ValueError(
+                "absorption.proxy.dp_cap_pct is not configured but "
+                f"absorption.mode='{self.absorption_mode}'. "
+                "Add 'dp_cap_pct: 0.02' under absorption.proxy in domains.yaml. "
+                "No hardcoded fallback — explicit YAML SSOT only."
+            )
+        return float(val)
+
     @property
     def macro_sync_enabled(self) -> bool:
         return self._cfg.macro_sync.enabled

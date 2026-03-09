@@ -70,7 +70,7 @@ class MockBroker(AbstractExchangeAdapter):
         # Realism parameters (Backtest Hardening)
         slippage_bps: float = 2.0,  # Default 2 bps slippage for market orders
         slippage_map: Optional[Dict[str, float]] = None,  # Per-symbol slippage override
-        fill_probability_at_touch: float = 0.0,  # Probability of fill when price == limit (0.0 = conservative)
+        fill_probability_at_touch: float = 1.0,  # Probability of fill when price == limit (1.0 = deterministic touch)
         max_volume_participation: float = 0.05,  # Max 5% of bar volume per order
         sl_fill_model: str = "optimistic",  # "optimistic" (default) | "conservative" | "close_based"
         sl_min_bps: float = 5.0,  # Min slippage bps for optimistic SL model
@@ -616,6 +616,7 @@ class MockBroker(AbstractExchangeAdapter):
         pos = self._positions[symbol]
         curr_amt = float(pos.position_amount)
         curr_entry = float(pos.entry_price)
+        pnl = 0.0  # realized PnL for this fill; non-zero only when reducing/closing position
         
         # Direction
         qty_signed = qty if side == "BUY" else -qty
@@ -660,6 +661,20 @@ class MockBroker(AbstractExchangeAdapter):
         if new_amt == 0:
             pos.side = "FLAT"
 
+        # Derive close_reason from order type stored in meta
+        _meta = self._order_meta.get(order_id, {})
+        _order_type_str = str(_meta.get("type") or "").upper()
+        if _order_type_str == "STOP_MARKET":
+            _close_reason = "SL_HIT"
+        elif _order_type_str == "TAKE_PROFIT_MARKET":
+            _close_reason = "TP_HIT"
+        elif _order_type_str == "LIMIT":
+            _close_reason = "ENTRY_FILLED"
+        elif _order_type_str == "MARKET":
+            _close_reason = "MARKET_FILLED"
+        else:
+            _close_reason = "UNKNOWN"
+
         payload: Dict[str, Any] = {
             "orderId": str(order_id),
             "symbol": symbol,
@@ -673,6 +688,9 @@ class MockBroker(AbstractExchangeAdapter):
             "timestamp": get_clock().now_ms(),  # Use simulated clock
             "clientOrderId": order.client_order_id,
             "status": "FILLED",
+            "close_reason": _close_reason,
+            "order_type": _order_type_str or None,
+            "realizedPnl": str(round(pnl, 8)),
         }
         rid = self._lookup_rid(order_id=str(order_id), client_order_id=order.client_order_id)
         if rid:
