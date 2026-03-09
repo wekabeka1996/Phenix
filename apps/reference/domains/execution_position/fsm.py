@@ -279,6 +279,7 @@ class ExecPosFSM:
         # TP/SL Intent Data Cache (PHASE A2 fix)
         # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
         self._pending_intent_data: Dict[str, Dict[str, Any]] = {}
+        self._open_position_context: Dict[str, Dict[str, Any]] = {}
 
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Pending TP/SL for LIMIT entries (placed on fill)
         # Key = entry_order_id, Value = {"symbol", "side", "sl", "tp", "qty", "rid", "idem_key", "tick_size"}
@@ -701,6 +702,44 @@ class ExecPosFSM:
                 f"TASK47c-P3: Leverage bootstrap SUCCESS for all {len(leverage_configs)} symbols")
 
         return set(results.failed)
+
+    def _build_audit_fields(
+        self,
+        *,
+        symbol: str,
+        decision: Optional[Message] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        exit_reason: Optional[str] = None,
+        cancel_reason: Optional[str] = None,
+        close_fill_price: Any = None,
+        realized_pnl_net: Any = None,
+        maker_only_reject: Any = None,
+        fallback_decision: Any = None,
+    ) -> Dict[str, Any]:
+        decision_pld = decision.pld if decision is not None and isinstance(
+            decision.pld, dict) else {}
+        event_pld = payload if isinstance(payload, dict) else {}
+        open_ctx = self._open_position_context.get(str(symbol), {})
+
+        strategy_id_event = event_pld.get(
+            "strategy_id") or decision_pld.get("strategy_id")
+        regime_event = event_pld.get("regime") or decision_pld.get("regime")
+        return {
+            "lifecycle_id": event_pld.get("lifecycle_id") or decision_pld.get("lifecycle_id") or open_ctx.get("lifecycle_id"),
+            "strategy_id_open": open_ctx.get("strategy_id_open") or strategy_id_event,
+            "strategy_id_close": strategy_id_event or open_ctx.get("strategy_id_open"),
+            "regime_open": open_ctx.get("regime_open") or regime_event,
+            "regime_close": regime_event or self._last_regime_by_symbol.get(str(symbol)),
+            "exit_reason": exit_reason,
+            "close_fill_price": close_fill_price,
+            "realized_pnl_net": realized_pnl_net,
+            "cancel_reason": cancel_reason,
+            "arbitration_result": event_pld.get("arbitration_result") or decision_pld.get("arbitration_result") or open_ctx.get("arbitration_result"),
+            "arbitration_winner": event_pld.get("arbitration_winner") or decision_pld.get("arbitration_winner") or open_ctx.get("arbitration_winner"),
+            "safety_gate_reason_code": event_pld.get("safety_gate_reason_code") or decision_pld.get("safety_gate_reason_code") or open_ctx.get("safety_gate_reason_code"),
+            "maker_only_reject": maker_only_reject,
+            "fallback_decision": fallback_decision,
+        }
 
     def _collect_leverage_configs(self) -> Dict[str, "LeverageConfig"]:
         """Collect LeverageConfig from instruments.yaml SSOT.
@@ -1401,6 +1440,11 @@ class ExecPosFSM:
                             f"EP-01.3: Cancelled pending entry {oid} ({reason})")
                         self.watchdog.on_order_cancel(oid)
                         self._pending_entry_meta.pop(oid, None)  # ADVANCED-STALE-CANCEL-01
+                        cancel_audit = self._build_audit_fields(
+                            symbol=sym,
+                            payload={"rid": dl.rid},
+                            cancel_reason=reason,
+                        )
                         order_logger.write({
                             "rid": dl.rid,
                             "event_type": "ORDER_CANCELLED",
@@ -1408,7 +1452,8 @@ class ExecPosFSM:
                             "order_id": oid,
                             "reason": reason,
                             "context": context,
-                            "timestamp": get_clock().now_ms()
+                            "timestamp": get_clock().now_ms(),
+                            **cancel_audit,
                         })
                         self._schedule_supersede_drain(
                             sym, source="cancel_success")
@@ -1463,6 +1508,106 @@ class ExecPosFSM:
                 reason=reason,
                 context="panic_killswitch_activated"
             )
+
+    def _evaluate_supersede_reprice_guard(
+        self,
+        symbol: str,
+        decision: Message,
+        pending_order_ids: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Evaluate whether a same-side LIMIT supersede materially improves price.
+
+        When configured, the result can be used in shadow mode for telemetry or
+        in enforce mode to skip cancel/repost churn.
+        """
+        try:
+            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+            guard_cfg = pe_ttl_cfg.supersede_reprice_guard
+        except AttributeError:
+            return None
+
+        if guard_cfg is None or not getattr(guard_cfg, "enabled", False):
+            return None
+
+        pld = decision.pld or {}
+        if str(pld.get("order_type", "")).upper() != "LIMIT":
+            return None
+
+        new_side = str(pld.get("side", "")).upper()
+        new_price_raw = pld.get("price")
+        if not new_side or new_price_raw in (None, ""):
+            return None
+
+        try:
+            new_price = Decimal(str(new_price_raw))
+        except Exception:
+            return None
+
+        if new_price <= 0:
+            return None
+
+        features_snap = self._last_features_cache.get(symbol) or {}
+        feats = features_snap.get("features", {}) if isinstance(features_snap, dict) else {}
+        atr_14 = None
+        atr_raw = feats.get("atr_14")
+        if atr_raw not in (None, ""):
+            try:
+                atr_14 = Decimal(str(atr_raw))
+            except Exception:
+                atr_14 = None
+        if atr_14 is not None and atr_14 <= 0:
+            atr_14 = None
+
+        analyses: List[Dict[str, Any]] = []
+        for order_id in pending_order_ids:
+            meta = self._pending_entry_meta.get(order_id)
+            if meta is None or str(meta.side).upper() != new_side:
+                return None
+
+            old_price = Decimal(str(meta.limit_price))
+            bps_threshold_px = (
+                old_price
+                * Decimal(str(getattr(guard_cfg, "min_price_improvement_bps", 0.0)))
+                / Decimal("10000")
+            )
+            atr_threshold_px = Decimal("0")
+            atr_mult = Decimal(str(getattr(guard_cfg, "min_price_improvement_atr_mult", 0.0)))
+            if atr_14 is not None and atr_mult > 0:
+                atr_threshold_px = atr_14 * atr_mult
+            threshold_px = max(bps_threshold_px, atr_threshold_px)
+
+            if new_side == "BUY":
+                improvement_px = new_price - old_price
+            else:
+                improvement_px = old_price - new_price
+
+            improvement_bps = float((improvement_px / old_price) * Decimal("10000"))
+            threshold_bps = float((threshold_px / old_price) * Decimal("10000")) if old_price > 0 else 0.0
+            analyses.append(
+                {
+                    "order_id": order_id,
+                    "old_price": str(old_price),
+                    "new_price": str(new_price),
+                    "improvement_px": float(improvement_px),
+                    "improvement_bps": improvement_bps,
+                    "threshold_px": float(threshold_px),
+                    "threshold_bps": threshold_bps,
+                    "noop_candidate": improvement_px <= threshold_px,
+                }
+            )
+
+        if not analyses:
+            return None
+
+        return {
+            "symbol": symbol,
+            "side": new_side,
+            "enforce": bool(getattr(guard_cfg, "enforce", False)),
+            "noop_candidate": all(item["noop_candidate"] for item in analyses),
+            "analyses": analyses,
+            "atr_14": None if atr_14 is None else float(atr_14),
+        }
 
     def on_panic_killswitch_activated(self) -> None:
         """
@@ -2243,6 +2388,12 @@ class ExecPosFSM:
 
                 self._position_close_seq += 1
                 trade_id = f"{sym}:{close_ts_ms}:{self._position_close_seq}"
+                audit_fields = self._build_audit_fields(
+                    symbol=sym,
+                    exit_reason=None,
+                    close_fill_price=None,
+                    realized_pnl_net=float(realized_per_close),
+                )
 
                 close_payload = {
                     "event_type": "POSITION_CLOSED",
@@ -2254,6 +2405,7 @@ class ExecPosFSM:
                     "side": "LONG" if prev_amt > 0 else "SHORT",
                     "position_amt_before_close": prev_amt,
                     "position_amt_after_close": now_amt,
+                    **audit_fields,
                 }
                 LOG.info(
                     "[POSITION_CLOSED] %s: position closed (was %s, now %s)",
@@ -2312,6 +2464,7 @@ class ExecPosFSM:
                             f"Failed to emit EVT:POSITION_CLOSED via bus fallback: {ex}")
 
                 # Position closed - trigger immediate orphan cleanup for this symbol
+                self._open_position_context.pop(sym, None)
                 if hasattr(self, "order_guardian") and self.order_guardian:
                     loop = self._get_async_loop()
                     if loop:
@@ -2472,6 +2625,16 @@ class ExecPosFSM:
             if manage_flow:
                 LOG.info(
                     f"INJECTING_INTENT_DATA for {symbol} (rid={rid}): {intent_data}")
+                self._open_position_context[symbol] = {
+                    "lifecycle_id": intent_data.get("lifecycle_id") or f"{symbol}:{rid}",
+                    "strategy_id_open": intent_data.get("strategy_id"),
+                    "regime_open": intent_data.get("regime"),
+                    "open_rid": rid,
+                    "arbitration_result": intent_data.get("arbitration_result"),
+                    "arbitration_winner": intent_data.get("arbitration_winner"),
+                    "safety_gate_reason_code": intent_data.get("safety_gate_reason_code"),
+                    "entry_fill_price": payload.get("price") or payload.get("avgPrice") or payload.get("avg_fill_price"),
+                }
                 sl_price = intent_data.get("stop_price")
                 tp_price = intent_data.get("target_price")
                 # BUG FIX: Check for real value, not just truthy ("None" string is truthy!)
@@ -2803,7 +2966,13 @@ class ExecPosFSM:
                             "stop_price": raw_stop if _is_real_value(raw_stop) else None,
                             "target_price": raw_target if _is_real_value(raw_target) else None,
                             "sl_pct": raw_sl_pct if _is_real_value(raw_sl_pct) else None,
-                            "timestamp": get_clock().now_sec()
+                            "timestamp": get_clock().now_sec(),
+                            "strategy_id": pld.get("strategy_id"),
+                            "regime": pld.get("regime"),
+                            "lifecycle_id": pld.get("lifecycle_id") or f"{pld.get('symbol', '')}:{result.rid}",
+                            "arbitration_result": pld.get("arbitration_result"),
+                            "arbitration_winner": pld.get("arbitration_winner"),
+                            "safety_gate_reason_code": pld.get("safety_gate_reason_code"),
                         }
                         self._pending_intent_data[result.rid] = intent_data
                         LOG.info(
@@ -2991,6 +3160,11 @@ class ExecPosFSM:
                             if self._is_unknown_order_error(result):
                                 LOG.info(
                                     f"ℹ️ {bracket_type} bracket {order_id} already absent (-2011) for {symbol}")
+                                cancel_audit = self._build_audit_fields(
+                                    symbol=symbol,
+                                    decision=decision,
+                                    cancel_reason="close_cancel_idempotent",
+                                )
                                 order_logger.write({
                                     "rid": decision.rid or "manual-close",
                                     "event_type": "ORDER_CANCELLED",
@@ -2998,7 +3172,8 @@ class ExecPosFSM:
                                     "order_id": order_id,
                                     "bracket_type": bracket_type,
                                     "reason": "close_cancel_idempotent",
-                                    "timestamp": get_clock().now_ms()
+                                    "timestamp": get_clock().now_ms(),
+                                    **cancel_audit,
                                 })
                             else:
                                 LOG.warning(
@@ -3017,6 +3192,11 @@ class ExecPosFSM:
                             if self._is_cancel_success_response(result):
                                 LOG.info(
                                     f"✅ Cancelled {bracket_type} bracket {order_id} for {symbol}")
+                                cancel_audit = self._build_audit_fields(
+                                    symbol=symbol,
+                                    decision=decision,
+                                    cancel_reason="manual_close",
+                                )
                                 order_logger.write({
                                     "rid": decision.rid or "manual-close",
                                     "event_type": "ORDER_CANCELLED",
@@ -3025,7 +3205,8 @@ class ExecPosFSM:
                                     "bracket_type": bracket_type,
                                     "reason": "manual_close",
                                     "adapter_response": result,
-                                    "timestamp": get_clock().now_ms()
+                                    "timestamp": get_clock().now_ms(),
+                                    **cancel_audit,
                                 })
                             else:
                                 cancel_status = self._cancel_status_str(result)
@@ -3375,6 +3556,38 @@ class ExecPosFSM:
                 try:
                     pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
                     if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_supersede:
+                        reprice_guard = self._evaluate_supersede_reprice_guard(
+                            symbol=symbol,
+                            decision=decision,
+                            pending_order_ids=pending_order_ids,
+                        )
+                        if reprice_guard is not None:
+                            noop_candidate = bool(reprice_guard.get("noop_candidate"))
+                            guard_mode = "enforce" if reprice_guard.get("enforce") else "shadow"
+                            LOG.info(
+                                f"EP-01.3: {symbol} supersede reprice guard "
+                                f"(mode={guard_mode}, noop_candidate={noop_candidate}, "
+                                f"analyses={reprice_guard.get('analyses')})"
+                            )
+                            order_logger.write({
+                                "rid": decision.rid,
+                                "event_type": "ORDER_SUPERSEDE_REPRICE_ANALYZED",
+                                "symbol": symbol,
+                                "side": side,
+                                "reason": "SUPERSEDE_REPRICE_GUARD",
+                                "mode": guard_mode,
+                                "noop_candidate": noop_candidate,
+                                "atr_14": reprice_guard.get("atr_14"),
+                                "analyses": reprice_guard.get("analyses"),
+                                "timestamp": get_clock().now_ms(),
+                            })
+                            if noop_candidate and reprice_guard.get("enforce"):
+                                LOG.info(
+                                    f"EP-01.3: {symbol} supersede reprice guard kept resting order(s); "
+                                    "skip cancel/repost"
+                                )
+                                return
+
                         LOG.info(
                             f"EP-01.3: {symbol} has {len(pending_order_ids)} pending entries, "
                             f"queueing new DEC:OPEN until cancel confirmed"
@@ -3896,6 +4109,12 @@ class ExecPosFSM:
                             f"MAKER_ONLY_REJECT: GTX order rejected (code={err_code}), "
                             f"symbol={symbol}, side={side}, NO FALLBACK"
                         )
+                        reject_audit = self._build_audit_fields(
+                            symbol=symbol,
+                            decision=decision,
+                            maker_only_reject=True,
+                            fallback_decision="NONE",
+                        )
                         order_logger.write({
                             "rid": decision.rid,
                             "event_type": "ORDER_REJECTED",
@@ -3913,6 +4132,7 @@ class ExecPosFSM:
                                 "error_msg": err_msg[:200],
                                 "fallback": "NONE",
                             },
+                            **reject_audit,
                         })
                         # Emit rejection event
                         reject_msg = Message(
@@ -3926,6 +4146,7 @@ class ExecPosFSM:
                                 "side": side,
                                 "reason": MAKER_ONLY_REJECT,
                                 "error_code": err_code,
+                                **reject_audit,
                             },
                             why=MAKER_ONLY_REJECT,
                         )
@@ -4415,6 +4636,12 @@ class ExecPosFSM:
 
             # Log to OrderLoggerV1
             decision_pld = decision.pld or {}
+            reject_audit = self._build_audit_fields(
+                symbol=decision_pld.get("symbol", ""),
+                decision=decision,
+                maker_only_reject=False,
+                fallback_decision=None,
+            )
             order_logger.write({
                 "rid": decision.rid,
                 "event_type": "ORDER_REJECTED",
@@ -4424,7 +4651,8 @@ class ExecPosFSM:
                 "nrr_code": "NRR-015",  # Exchange rejected
                 "why": f"Adapter execution failed: {str(e)}",
                 "source_fsm": "ExecPosFSM",
-                "metadata": {"error": str(e), "decision_verb": decision.verb}
+                "metadata": {"error": str(e), "decision_verb": decision.verb},
+                **reject_audit,
             })
 
             # B2: WAL persistence for ORDER_REJECTED (INTENT-TO-ORDER-TRACE-SSOT-01)
@@ -4443,6 +4671,7 @@ class ExecPosFSM:
                         "reason_text": str(e)[:200],
                         "exception_class": type(e).__name__,
                         "ts_ms": get_clock().now_ms(),
+                        **reject_audit,
                     },
                     why="adapter_execution_failed",
                 )
@@ -4691,6 +4920,11 @@ class ExecPosFSM:
                             f"✅ Cancelled timed-out order {deadline.order_id}: {cancel_result}")
 
                         # Log successful cancellation to order_log (use global order_logger, not self.order_logger)
+                        cancel_audit = self._build_audit_fields(
+                            symbol=deadline.symbol,
+                            payload={"rid": deadline.rid},
+                            cancel_reason="timeout_cancellation",
+                        )
                         order_logger.write({
                             "rid": deadline.rid,
                             "event_type": "ORDER_CANCELLED",
@@ -4699,7 +4933,8 @@ class ExecPosFSM:
                             "reason": "timeout_cancellation",
                             "timeout_type": deadline.timeout_type.value,
                             "adapter_response": cancel_result,
-                            "timestamp": get_clock().now_ms()
+                            "timestamp": get_clock().now_ms(),
+                            **cancel_audit,
                         })
                 else:
                     status = str(
@@ -4728,6 +4963,11 @@ class ExecPosFSM:
                     self.watchdog.cancel_success_count += 1
                     LOG.info(
                         f"✅ Timed-out order {deadline.order_id} already absent (-2011)")
+                    cancel_audit = self._build_audit_fields(
+                        symbol=deadline.symbol,
+                        payload={"rid": deadline.rid},
+                        cancel_reason="timeout_cancel_idempotent",
+                    )
                     order_logger.write({
                         "rid": deadline.rid,
                         "event_type": "ORDER_CANCELLED",
@@ -4735,7 +4975,8 @@ class ExecPosFSM:
                         "order_id": deadline.order_id,
                         "reason": "timeout_cancel_idempotent",
                         "timeout_type": deadline.timeout_type.value,
-                        "timestamp": get_clock().now_ms()
+                        "timestamp": get_clock().now_ms(),
+                        **cancel_audit,
                     })
                 else:
                     LOG.warning(

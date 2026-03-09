@@ -1,0 +1,135 @@
+{
+  "generated_at": "2026-03-09T07:08:54.086193Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-09.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 1,
+    "pending_orders_count": 2,
+    "anomalies_count": 2
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "DOGEUSDT:rid-54096416d6fc1df8",
+      "position_id": "DOGEUSDT:sell:0.09142",
+      "order_id": "728899561",
+      "client_order_id": "ENTRY-4a4507438ab4",
+      "symbol": "DOGEUSDT",
+      "strategy_id": "mean_reversion",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-09T05:50:02.333000Z",
+      "entry_price": 0.09142,
+      "entry_regime": "FLAT_LOW",
+      "entry_reason": "price_above_upper_bb:pct_b=0.977;regime:FLAT_LOW; margin_first_ok; strategy_prices:sl=0.09203642857142857142857142857,tp=0.0897469152317704003000",
+      "signal_context": null,
+      "tp_config": "0.0897469152317704003000",
+      "sl_config": "0.09203642857142857142857142857",
+      "current_regime": "unknown",
+      "unrealized_pnl": 147.5208,
+      "age_sec": 4731,
+      "latest_risk_flags": [
+        "NRR-046"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    }
+  ],
+  "pending_orders": [
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773027900740",
+      "position_id": null,
+      "order_id": "12714502583",
+      "client_order_id": "ENTRY-2f75cb86aa64",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-09T03:45:01.582000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": 66409.0,
+      "sl_config": 67543.3,
+      "current_regime": "LOW_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 12232,
+      "latest_risk_flags": [
+        "NRR-018",
+        "NRR-027",
+        "NRR-029"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    },
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1773009904226",
+      "position_id": null,
+      "order_id": "1763470916",
+      "client_order_id": "ENTRY-d789a4989e3e",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-08T22:45:04.957000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": 82.44,
+      "sl_config": 80.17,
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 30229,
+      "latest_risk_flags": [
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "NRR-028",
+        "NRR-018",
+        "NRR-027",
+        "NRR-029"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "timeout_risk",
+      "symbol": "BTCUSDT",
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773027900740",
+      "age_sec": 12232
+    },
+    {
+      "type": "timeout_risk",
+      "symbol": "SOLUSDT",
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1773009904226",
+      "age_sec": 30229
+    }
+  ],
+  "unresolved_ambiguities": [
+    "Market entries still lack a guaranteed explicit ORDER_FILLED verb in WAL; open-state inference uses ORDER_PLACED + ACCOUNT_UPDATE continuity and PENDING_BRACKETS_CLEARED(reason=filled).",
+    "Current regime for active DOGEUSDT lifecycle is unknown in latest reject telemetry; entry regime is FLAT_LOW from intent context."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-09.jsonl",
+    "logs/order_log_v1.jsonl",
+    "logs/*.jsonl",
+    "reports/trade_lifecycle_failure_vectors_20260308_rca.md",
+    "reports/testnet_last_50_trades.csv",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_latest.json"
+  ]
+}

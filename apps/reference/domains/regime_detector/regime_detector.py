@@ -17,7 +17,7 @@ from collections import deque, defaultdict
 from decimal import Decimal
 from typing import Dict, Any, Optional
 
-from vfoundation.core.protocol import Message
+from vfoundation.core.protocol import Message, truncate_why
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
 from apps.reference.core.time.clock import Clock, LiveClock
@@ -636,11 +636,15 @@ class RegimeDetector:
             "hysteresis_confirm_count": self._hysteresis_count[symbol],
         }
 
+        why = truncate_why(
+            f"Regime '{stable_regime}' detected by {source_model} for {symbol}"
+            + (" (unchanged)" if not changed else "")
+        ) or "regime_detected"
+
         self.fsm.emit(
             "EVT:REGIME_DETECTED",
             payload,
-            why=f"Regime '{stable_regime}' detected by {source_model} for {symbol}" +
-                (" (unchanged)" if not changed else ""),
+            why=why,
         )
 
         # Log only on meaningful transitions (avoid hot-path log spam).

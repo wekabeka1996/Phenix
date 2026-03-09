@@ -177,6 +177,13 @@ class AuroraHandler:
             self.timeframe_sec = aurora.timeframe_sec
 
         decision = getattr(aurora, "decision", None) if aurora else None
+        execution = getattr(aurora, "execution", None) if aurora else None
+
+        self.execution_entry_tif = str(getattr(
+            execution, "entry_tif", "") or "").upper()
+        self.execution_gtx_retry_offset_bps = decimal.Decimal(
+            str(getattr(execution, "gtx_retry_offset_bps", 0.0) or 0.0)
+        )
 
         if decision:
             if self._strict_pydantic_config:
@@ -1113,7 +1120,8 @@ class AuroraHandler:
 
         # Emit signal
         self._emit_signal(symbol, result, features, cmd,
-                          effective_side=effective_side)
+                          effective_side=effective_side,
+                          allowed_regimes=allowed_regimes)
 
         # P0-3-FIX: Do NOT track entry on signal emission.
         # Entry tracking is now driven by EVT:TRADE_EXECUTED only.
@@ -2135,6 +2143,7 @@ class AuroraHandler:
         source_event: Dict[str, Any],
         *,
         effective_side: str | None = None,
+        allowed_regimes=None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with readiness contract."""
         state = self._symbol_states[symbol]
@@ -2176,8 +2185,44 @@ class AuroraHandler:
                 return
             mult = decimal.Decimal(str(mult_raw))
 
-            # 3. Calculate offset
+            # 3. Calculate offset.
+            # Base ATR offset stays as the primary term, but for LIMIT+GTX entries
+            # we also widen the quote when the bar closes with strong impulse relative
+            # to its own range and never ignore the configured GTX buffer.
             offset = volatility * mult
+
+            volatility_block = features.get("volatility")
+            bar_range = None
+            if isinstance(volatility_block, dict):
+                bar_range = volatility_block.get("bar_range")
+
+            range_offset = decimal.Decimal("0")
+            if bar_range not in (None, ""):
+                try:
+                    bar_range_dec = decimal.Decimal(str(bar_range))
+                    if bar_range_dec > 0:
+                        delta_price_raw = features.get("delta_price")
+                        delta_price_dec = decimal.Decimal(
+                            str(delta_price_raw if delta_price_raw not in (
+                                None, "") else "0")
+                        )
+                        pressure_ratio = min(
+                            abs(delta_price_dec) / bar_range_dec,
+                            decimal.Decimal("1"),
+                        )
+                        range_offset = bar_range_dec * mult * pressure_ratio
+                except (decimal.InvalidOperation, ValueError):
+                    range_offset = decimal.Decimal("0")
+
+            gtx_offset = decimal.Decimal("0")
+            if self.execution_entry_tif == "GTX" and self.execution_gtx_retry_offset_bps > 0:
+                gtx_offset = (
+                    anchor_price
+                    * self.execution_gtx_retry_offset_bps
+                    / decimal.Decimal("10000")
+                )
+
+            offset = max(offset, range_offset, gtx_offset)
 
             # 4. Apply offset based on side
             if side.lower() == "buy":
@@ -2187,7 +2232,8 @@ class AuroraHandler:
 
             self.logger.debug(
                 f"[{symbol}] Limit Offset: {offset:.6f} for Regime: {regime} "
-                f"(atr={volatility:.6f}, mult={mult}, entry={entry_price:.6f})"
+                f"(atr={volatility:.6f}, mult={mult}, range_offset={range_offset:.6f}, "
+                f"gtx_offset={gtx_offset:.6f}, entry={entry_price:.6f})"
             )
         # === END VOLATILITY OFFSET ===
 

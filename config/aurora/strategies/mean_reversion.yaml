@@ -19,8 +19,8 @@ mean_reversion:
   # Timeframe for bar aggregation
   # FIX-BACKTEST-TF: Changed from 180 (3m) to 300 (5m) to match BacktestEngine.
   # BacktestEngine emits 5m bars, so MR strategy receiving 3m bars was rejecting everything.
-  timeframe_sec: 180
-    # 3-minute bars
+  timeframe_sec: 300
+    # 5-minute bars
 
   # Global allowed regimes whitelist (default; can be overridden per-asset)
   allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
@@ -113,7 +113,7 @@ mean_reversion:
 
     # --- BTC (BRONZE 🥉) ---
     BTCUSDT:
-      enabled: true
+      enabled: false
       position_mode: "STRICT"
 
       # P1: Active Leverage Management
@@ -134,7 +134,7 @@ mean_reversion:
 
     # --- XRP (SILVER 🥈) ---
     XRPUSDT:
-      enabled: true
+      enabled: false
       position_mode: "STRICT"
 
       # P1: Active Leverage Management
@@ -168,7 +168,7 @@ mean_reversion:
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     SOLUSDT:
-      enabled: true
+      enabled: false
       position_mode: "STRICT"
       strategy:
         # Source: config/aurora/archive/aurora_fullscale_optuna_v1.yaml (SOLUSDT scalping mode, 1m bars).

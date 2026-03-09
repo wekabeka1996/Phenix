@@ -24,10 +24,19 @@ def _copy_canonical_config_dir(dst_config_dir: Path) -> None:
     shutil.copytree(src, dst_config_dir)
 
 
-def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
+def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "testnet_key")
+    monkeypatch.setenv("BINANCE_TESTNET_API_SECRET", "testnet_secret")
+    monkeypatch.setenv("BINANCE_FUTURES_API_KEY_LIVE", "live_key")
+    monkeypatch.setenv("BINANCE_FUTURES_API_SECRET_LIVE", "live_secret")
+    monkeypatch.setenv("BINANCE_FUTURES_BASE_URL_LIVE", "https://fapi.binance.com")
+
+
+def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange: load canonical config via ConfigLoader (SSOT)
     config_dir = tmp_path / "config" / "aurora"
     _copy_canonical_config_dir(config_dir)
+    _set_required_env(monkeypatch)
 
     loader = ConfigLoader(config_dir=config_dir)
     cfg = loader.load_config()
@@ -44,6 +53,7 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
     # Top-level fields
     assert mr.enabled == raw_mr["enabled"]
     assert mr.timeframe_sec == raw_mr["timeframe_sec"]
+    assert mr.timeframe_sec == 300
     assert mr.allowed_regimes == raw_mr["allowed_regimes"]
     # Strategy fields
     raw_strategy = raw_mr["strategy"]
@@ -105,3 +115,20 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
         # MRAssetRiskConfig purged (DEAD CODE): per-asset risk fields were never read in runtime.
         # MRRiskConfig purged (DEAD CODE): global risk config was never read in runtime.
         # Risk decisions are centralized in RiskManagement and PositionSizing domains.
+
+
+def test_mean_reversion_launch_contract_rejects_non_300_tf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_dir = tmp_path / "config" / "aurora"
+    _copy_canonical_config_dir(config_dir)
+    _set_required_env(monkeypatch)
+
+    mr_yaml_path = config_dir / "strategies" / "mean_reversion.yaml"
+    raw = yaml.safe_load(mr_yaml_path.read_text(encoding="utf-8"))
+    raw["mean_reversion"]["timeframe_sec"] = 180
+    mr_yaml_path.write_text(
+        yaml.safe_dump(raw, sort_keys=False), encoding="utf-8"
+    )
+
+    loader = ConfigLoader(config_dir=config_dir)
+    with pytest.raises(ValueError, match="timeframe_sec must equal 300"):
+        loader.load_config()

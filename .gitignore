@@ -211,3 +211,7 @@ best_aurora*.json
 regime_filters*.json
 best_metrics*.json
 node_modules
+
+# Shadow telemetry bearer token (never commit)
+tools/.shadow_token
+.shadow_token

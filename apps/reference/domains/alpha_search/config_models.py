@@ -113,6 +113,13 @@ class ProviderConfig(BaseModel):
         default=None,
         description="Allowed symbols (None = all)"
     )
+    min_tf_sec: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Minimum bar timeframe (seconds) this provider will process. "
+                    "EVT:FEATURES_CALCULATED with tf_sec < min_tf_sec are silently skipped. "
+                    "Use for ta_ensemble (needs 5m TA features) to avoid spam on 3m symbols."
+    )
     threshold: float = Field(
         default=0.2,
         ge=0.0,
@@ -191,6 +198,13 @@ class VirtualTraderExitConfig(BaseModel):
         le=100.0,
         description="Per-trade adverse move stop in percent (e.g. 1.2 = 1.2%)"
     )
+    cooldown_bars_after_close: int = Field(
+        default=0,
+        ge=0,
+        description="After any virtual position closes, block new entries for this many bars "
+                    "(per provider+symbol pair). Addresses 90%+ reversal-exit rate by preventing "
+                    "immediate re-entry on noisy signal flips."
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -207,6 +221,11 @@ class VirtualTraderConfig(BaseModel):
     notional_size: float = Field(
         default=1000.0,
         description="Notional size for virtual trades (for PnL calc)"
+    )
+    flip_on_reversal: bool = Field(
+        default=False,
+        description="If True: on opposite signal close current position AND immediately open in new direction. "
+                    "If False: close on reversal then wait for next independent entry bar."
     )
     exit: VirtualTraderExitConfig = Field(
         default_factory=VirtualTraderExitConfig)

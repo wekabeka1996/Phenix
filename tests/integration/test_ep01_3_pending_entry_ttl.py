@@ -36,6 +36,7 @@ class TestPendingEntryTTLConfig:
             cancel_on_regime_change=True,
             cancel_on_supersede=True,
             cancel_on_panic=True,
+            supersede_cancel_timeout_sec=5.0,
         )
         
         assert cfg.enabled is True
@@ -55,6 +56,7 @@ class TestPendingEntryTTLConfig:
                 cancel_on_regime_change=True,
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
+                supersede_cancel_timeout_sec=5.0,
             )
         
         assert "tf_sec must be >= 60" in str(exc_info.value)
@@ -72,6 +74,7 @@ class TestPendingEntryTTLConfig:
                 cancel_on_regime_change=True,
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
+                supersede_cancel_timeout_sec=5.0,
             )
         
         assert "TTL must be > 0" in str(exc_info.value)
@@ -89,6 +92,7 @@ class TestPendingEntryTTLConfig:
                 cancel_on_regime_change=True,
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
+                supersede_cancel_timeout_sec=5.0,
                 unknown_field=123,  # Extra field
             )
 
@@ -343,7 +347,7 @@ class TestConfigLoading:
         if not yaml_path.exists():
             pytest.skip("domains.yaml not found")
         
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
         
         assert "execution_position" in config

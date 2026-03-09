@@ -1,0 +1,150 @@
+{
+  "generated_at": "2026-03-08T23:05:04.778158Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-09.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 2,
+    "pending_orders_count": 1,
+    "anomalies_count": 2
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773008403767",
+      "position_id": "ETHUSDT:sell:1926.11",
+      "order_id": "8502592826",
+      "client_order_id": "ENTRY-0bbfabce4cab",
+      "symbol": "ETHUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T22:20:03.772000Z",
+      "entry_price": 1926.11,
+      "entry_regime": "HIGH_VOLATILITY",
+      "entry_reason": "enter:sell:score=-0.1203<=-thr_sell=0.1170",
+      "signal_context": "tpsl:regime=HIGH_VOLATILITY mode=pct_mult sl_pct_post=0.0150 tp_rr_pre=1.05 rr_post=1.05; margin_first_ok; strategy_prices:sl=1955.00742099999999995360,tp=1895.667648954514280911788336",
+      "tp_config": "1895.667648954514280911788336",
+      "sl_config": "1955.00742099999999995360",
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": -123.5458,
+      "age_sec": 2697,
+      "latest_risk_flags": [
+        "NRR-046",
+        "NRR-SYMBOL-BUSY",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": "ORDER_CANCELLED@2026-03-08T06:05:07.479000Z",
+      "anomaly_flags": [
+        "forbidden_regime_exposure",
+        "symbol_busy_conflict"
+      ]
+    },
+    {
+      "lifecycle_id": "DOGEUSDT:rid-3abda79d7725aff1",
+      "position_id": "DOGEUSDT:buy:0.08801",
+      "order_id": "728072422",
+      "client_order_id": "ENTRY-01a2817da367",
+      "symbol": "DOGEUSDT",
+      "strategy_id": "mean_reversion",
+      "side": "buy",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T22:05:03.830000Z",
+      "entry_price": 0.08801,
+      "entry_regime": "FLAT_HIGH",
+      "entry_reason": "price_below_lower_bb:pct_b=-0.418;rsi_oversold:10.6;regime:FLAT_HIGH",
+      "signal_context": "margin_first_ok; strategy_prices:sl=0.08594151785714285714285714286,tp=0.09127537907625702400",
+      "tp_config": "0.09127537907625702400",
+      "sl_config": "0.08594151785714285714285714286",
+      "current_regime": "unknown",
+      "unrealized_pnl": 184.21996952,
+      "age_sec": 3597,
+      "latest_risk_flags": [
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    }
+  ],
+  "pending_orders": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1773009904226",
+      "position_id": null,
+      "order_id": "1763470916",
+      "client_order_id": "ENTRY-d789a4989e3e",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-08T22:45:04.235000Z",
+      "entry_price": 81.60872142857143,
+      "entry_regime": "HIGH_VOLATILITY",
+      "entry_reason": "enter:buy:score=0.1476>=thr_buy=0.1035",
+      "signal_context": "tpsl:regime=HIGH_VOLATILITY mode=pct_mult sl_pct_post=0.0175 tp_rr_pre=0.58 rr_post=0.58; margin_first_ok; strategy_prices:sl=80.17648836749999997403525,tp=82.43368767174857140187569600",
+      "tp_config": "82.43368767174857140187569600",
+      "sl_config": "80.17648836749999997403525",
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 1197,
+      "latest_risk_flags": [
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": "ORDER_CANCELLED@2026-03-08T22:00:04.293000Z",
+      "anomaly_flags": []
+    }
+  ],
+  "anomalies": [
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773008403767",
+      "symbol": "ETHUSDT",
+      "type": "forbidden regime exposure",
+      "severity": "medium",
+      "evidence": "ETHUSDT active lifecycle flagged: forbidden_regime_exposure."
+    },
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773008403767",
+      "symbol": "ETHUSDT",
+      "type": "symbol busy conflict",
+      "severity": "medium",
+      "evidence": "ETHUSDT active lifecycle flagged: symbol_busy_conflict."
+    }
+  ],
+  "unresolved_ambiguities": [
+    "DOGEUSDT fill transition has no explicit ORDER_FILLED event in WAL; open state inferred from market ORDER_PLACED + persistent ACCOUNT_UPDATE_RECEIVED position continuity.",
+    "Pending status is inferred from absence of ORDER_CANCELLED/ORDER_TIMEOUT/PENDING_BRACKETS_CLEARED(reason=filled) for the same order_id in current-day WAL."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-09.jsonl",
+    "logs/order_log_v1.jsonl",
+    "logs/*.jsonl",
+    "reports/trade_lifecycle_failure_vectors_20260308_rca.md",
+    "reports/testnet_last_50_trades.csv",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_latest.json"
+  ]
+}

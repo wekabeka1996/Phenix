@@ -1,0 +1,100 @@
+﻿{
+  "generated_at": "2026-03-08T07:08:12.0882787Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-08.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 2,
+    "pending_orders_count": 0,
+    "anomalies_count": 2
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772951404614",
+      "position_id": "SOLUSDT:sell:82.35",
+      "order_id": "1760011777",
+      "client_order_id": "ENTRY-7c7e117c57a1",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T06:30:05.4990000+00:00",
+      "entry_price": 82.35,
+      "entry_regime": "MEAN_REVERSION",
+      "entry_reason": "entry inferred from ORDER_PLACED + account position continuity",
+      "tp_config": "tpsl:regime=MEAN_REVERSION mode=pct_mult sl_pct_post=0.0115 tp_rr_pre=0.27 rr_post=0.27",
+      "sl_config": "tpsl:regime=MEAN_REVERSION mode=pct_mult sl_pct_post=0.0115 tp_rr_pre=0.27 rr_post=0.27",
+      "current_regime": "MEAN_REVERSION",
+      "unrealized_pnl": -45.74266455,
+      "age_sec": 2274,
+      "latest_risk_flags": [
+        "NRR-SYMBOL-BUSY"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "symbol_busy_conflict"
+      ]
+    },
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1772948404463",
+      "position_id": "BTCUSDT:buy:67133.1",
+      "order_id": "12692919970",
+      "client_order_id": "ENTRY-53f78f0d0216",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T05:40:05.2630000+00:00",
+      "entry_price": 67133.1,
+      "entry_regime": "MEAN_REVERSION",
+      "entry_reason": "entry inferred from ORDER_PLACED + account position continuity",
+      "tp_config": "tpsl:regime=MEAN_REVERSION mode=pct_mult sl_pct_post=0.0050 tp_rr_pre=1.50 rr_post=1.50",
+      "sl_config": "tpsl:regime=MEAN_REVERSION mode=pct_mult sl_pct_post=0.0050 tp_rr_pre=1.50 rr_post=1.50",
+      "current_regime": "MEAN_REVERSION",
+      "unrealized_pnl": 26.37678713,
+      "age_sec": 5274,
+      "latest_risk_flags": [
+        "NRR-SYMBOL-BUSY"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "symbol_busy_conflict"
+      ]
+    }
+  ],
+  "pending_orders": [],
+  "anomalies": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772951404614",
+      "symbol": "SOLUSDT",
+      "type": "symbol-busy conflict",
+      "severity": "medium",
+      "evidence": "ops/wal/2026-03-08.jsonl rid=aurora_SOLUSDT_1772953499732 reason_code=NRR-SYMBOL-BUSY"
+    },
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1772948404463",
+      "symbol": "BTCUSDT",
+      "type": "symbol-busy conflict",
+      "severity": "medium",
+      "evidence": "ops/wal/2026-03-08.jsonl rid=aurora_BTCUSDT_1772953499986 reason_code=NRR-SYMBOL-BUSY"
+    }
+  ],
+  "unresolved_ambiguities": [
+    "Fill/open transitions are inferred from ACCOUNT_UPDATE_RECEIVED because explicit fill events are sparse in WAL.",
+    "No explicit strategy-ownership tag exists on every lifecycle event; ownership checks remain best-effort.",
+    "TP/SL absolute bracket prices are not consistently emitted; tpsl context strings are used when available."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-08.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/aurora_forensic_2026-03-06_2026-03-07_conflicts.csv",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_20260308_030655.json"
+  ]
+}

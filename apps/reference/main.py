@@ -45,6 +45,7 @@ from apps.reference.domains.strategies.registry import StrategyPluginRegistry, S
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
 from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
+from apps.reference.domains.strategies.plugins.llm_microstructure import LlmMicrostructurePlugin
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 from apps.reference.domains.shadow_telemetry.main_bridge import (
     LLMIntentIngressBridge,
@@ -455,6 +456,8 @@ def main() -> None:
 
     def emit_with_monitoring(event_name: str, payload: dict, why: str, data_ref=None):
         """Emit with entropy monitoring"""
+        why_short = truncate_why(str(why), 80) or str(event_name)
+
         # Track event for anomaly detection
         from vfoundation.core.protocol import Message
         tracking_msg = Message(
@@ -463,7 +466,7 @@ def main() -> None:
             src="fsm_core",
             dst="any",
             pld=payload,
-            why=why
+            why=why_short
         )
         entropy_monitor.track_event(tracking_msg)
 
@@ -473,7 +476,7 @@ def main() -> None:
                 shadow_event_tap_publisher.publish(
                     event_name=event_name,
                     payload=payload if isinstance(payload, dict) else {},
-                    why=why,
+                    why=why_short,
                 )
             except Exception as tap_exc:
                 LOG.error(
@@ -481,14 +484,15 @@ def main() -> None:
                 )
 
         # Call original emit
-        return original_emit(event_name, payload, why, data_ref)
+        return original_emit(event_name, payload, why_short, data_ref)
 
     fsm.emit = emit_with_monitoring
     LOG.info("✅ FSMCore initialized with EntropyMonitor tracking")
 
     # Shadow telemetry bridges (additive-only, config-gated).
     try:
-        shadow_cfg = getattr(getattr(config, "domains", None), "shadow_telemetry", None)
+        shadow_cfg = getattr(
+            getattr(config, "domains", None), "shadow_telemetry", None)
         if shadow_cfg is not None and bool(getattr(shadow_cfg, "enabled", False)):
             shadow_log = LOG.getChild("shadow_telemetry")
             shadow_event_tap_publisher = ShadowEventTapPublisher(
@@ -513,7 +517,8 @@ def main() -> None:
         else:
             LOG.info("ℹ️ Shadow telemetry bridges disabled by config")
     except Exception as shadow_exc:
-        LOG.error("Failed to initialize shadow telemetry bridges: %s", shadow_exc, exc_info=True)
+        LOG.error("Failed to initialize shadow telemetry bridges: %s",
+                  shadow_exc, exc_info=True)
 
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
@@ -896,6 +901,8 @@ def main() -> None:
     strategy_plugins.register(AuroraBuiltinPlugin())
     strategy_plugins.register(MeanReversionPlugin())
     strategy_plugins.register(MDAMRPlugin())
+    # sentinel: bridge-driven via shadow_telemetry
+    strategy_plugins.register(LlmMicrostructurePlugin())
     StrategyRuntime(fsm=fsm, config=config, registry=strategy_plugins).start()
 
     # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)

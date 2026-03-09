@@ -1,0 +1,201 @@
+{
+  "generated_at": "2026-03-08T15:05:10.230486Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-08.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 3,
+    "pending_orders_count": 4,
+    "anomalies_count": 2
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1772972102224",
+      "position_id": "ETHUSDT:sell:1935.59",
+      "order_id": "8498407174",
+      "client_order_id": "ENTRY-8c08db8d6acf",
+      "symbol": "ETHUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T12:20:39.853000Z",
+      "entry_price": 1935.59,
+      "entry_regime": "HIGH_VOLATILITY",
+      "entry_reason": "hold:sell:score=-0.3170<=-thr_neutral=-0.0500",
+      "signal_context": "tpsl:regime=HIGH_VOLATILITY mode=pct_mult sl_pct_post=0.0150 tp_rr_pre=1.05 rr_post=1.05",
+      "tp_config": 1905.0,
+      "sl_config": 1964.64,
+      "current_regime": "MEAN_REVERSION",
+      "unrealized_pnl": -37.66014,
+      "age_sec": 9866,
+      "latest_risk_flags": [
+        "REGIME_NOT_ALLOWLISTED",
+        "NRR-046",
+        "ANCHOR_SHOCK_VETO",
+        "GATE_ANTI_FLAT_SIGMA",
+        "NRR-SYMBOL-BUSY"
+      ],
+      "last_cancel_supersede_timeout": "ORDER_CANCELLED@2026-03-08T06:05:07.479000Z",
+      "anomaly_flags": [
+        "forbidden_regime_exposure"
+      ]
+    },
+    {
+      "lifecycle_id": "BNBUSDT:mdamr-3fcf6abde2cf1d04",
+      "position_id": "BNBUSDT:buy:615.47",
+      "order_id": "1298314324",
+      "client_order_id": "ENTRY-b989808c77c5",
+      "symbol": "BNBUSDT",
+      "strategy_id": "md_amr",
+      "side": "buy",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T13:30:08.387000Z",
+      "entry_price": 615.47,
+      "entry_regime": "MEAN_REVERSION",
+      "entry_reason": "MD_AMR_ENTRY_LONG",
+      "signal_context": "tpsl:regime=MEAN_REVERSION sl_pct=0.0114 rr=0.47",
+      "tp_config": 618.78,
+      "sl_config": 608.43,
+      "current_regime": "MEAN_REVERSION",
+      "unrealized_pnl": 17.45121052,
+      "age_sec": 5698,
+      "latest_risk_flags": [
+        "NRR-046"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    },
+    {
+      "lifecycle_id": "XRPUSDT:mdamr-82d2a8c71e1ca08a",
+      "position_id": "XRPUSDT:buy:1.3475",
+      "order_id": "1517569846",
+      "client_order_id": "ENTRY-927e1b63f224",
+      "symbol": "XRPUSDT",
+      "strategy_id": "md_amr",
+      "side": "buy",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T13:31:06.866000Z",
+      "entry_price": 1.3475,
+      "entry_regime": "MEAN_REVERSION",
+      "entry_reason": "MD_AMR_ENTRY_LONG",
+      "signal_context": "tpsl:regime=MEAN_REVERSION sl_pct=0.0114 rr=0.47",
+      "tp_config": 1.3548,
+      "sl_config": 1.3321,
+      "current_regime": "MEAN_REVERSION",
+      "unrealized_pnl": -1.21758191,
+      "age_sec": 5639,
+      "latest_risk_flags": [
+        "NRR-046",
+        "NRR-SYMBOL-BUSY"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "strategy_ownership_violation"
+      ]
+    }
+  ],
+  "pending_orders": [
+    {
+      "lifecycle_id": "BNBUSDT:mdamr-3fcf6abde2cf1d04",
+      "symbol": "BNBUSDT",
+      "strategy_id": "md_amr",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-08T13:30:08.424000Z",
+      "entry_price": "608.12",
+      "entry_regime": "MEAN_REVERSION",
+      "age_sec": 5698,
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [],
+      "order_id": null,
+      "client_order_id": "SL-f66f5783ddbe",
+      "order_type": "STOP_MARKET",
+      "reduce_only": true
+    },
+    {
+      "lifecycle_id": "BNBUSDT:mdamr-3fcf6abde2cf1d04",
+      "symbol": "BNBUSDT",
+      "strategy_id": "md_amr",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-08T13:30:08.424000Z",
+      "entry_price": "619.08",
+      "entry_regime": "MEAN_REVERSION",
+      "age_sec": 5698,
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [],
+      "order_id": null,
+      "client_order_id": "TP-d8d72bc23280",
+      "order_type": "TAKE_PROFIT_MARKET",
+      "reduce_only": true
+    },
+    {
+      "lifecycle_id": "XRPUSDT:mdamr-82d2a8c71e1ca08a",
+      "symbol": "XRPUSDT",
+      "strategy_id": "md_amr",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-08T13:31:06.903000Z",
+      "entry_price": "1.3314",
+      "entry_regime": "MEAN_REVERSION",
+      "age_sec": 5639,
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [],
+      "order_id": null,
+      "client_order_id": "SL-f8ebabce421c",
+      "order_type": "STOP_MARKET",
+      "reduce_only": true
+    },
+    {
+      "lifecycle_id": "XRPUSDT:mdamr-82d2a8c71e1ca08a",
+      "symbol": "XRPUSDT",
+      "strategy_id": "md_amr",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-08T13:31:06.903000Z",
+      "entry_price": "1.3554",
+      "entry_regime": "MEAN_REVERSION",
+      "age_sec": 5639,
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [],
+      "order_id": null,
+      "client_order_id": "TP-9252b36bc3d3",
+      "order_type": "TAKE_PROFIT_MARKET",
+      "reduce_only": true
+    }
+  ],
+  "anomalies": [
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1772972102224",
+      "symbol": "ETHUSDT",
+      "type": "forbidden regime exposure",
+      "severity": "medium",
+      "evidence": "REGIME_NOT_ALLOWLISTED at 1772982302882 while position remains open in latest account update."
+    },
+    {
+      "lifecycle_id": "XRPUSDT:mdamr-82d2a8c71e1ca08a",
+      "symbol": "XRPUSDT",
+      "type": "strategy ownership violation",
+      "severity": "medium",
+      "evidence": "mean_reversion.yaml sets assets.XRPUSDT.enabled=false while active md_amr position exists."
+    }
+  ],
+  "unresolved_ambiguities": [
+    "No explicit ORDER_FILLED telemetry for open entries; fill time inferred from PENDING_BRACKETS_CLEARED(reason=filled).",
+    "Aurora ETH protective bracket order IDs are not explicitly emitted in current-day WAL, so pending protective status is inferred only for mdamr brackets.",
+    "Strategy ownership checks use live YAML and may diverge from runtime-effective config snapshots."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-08.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_latest.json"
+  ]
+}

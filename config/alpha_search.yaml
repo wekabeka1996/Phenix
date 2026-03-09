@@ -103,6 +103,7 @@ alpha_search:
     ta_ensemble:
       enabled: true            # All 3 TA models active
       symbols: null            # All symbols
+      min_tf_sec: 300          # Skip on 3m bars (BNBUSDT tf_sec=180); TA features only computed at 5m+
       threshold: 0.18           # було 0.15
       fail_closed: true
 
@@ -125,11 +126,13 @@ alpha_search:
     enabled: true
     per_provider: true         # Separate PnL per provider
     max_positions_per_symbol: 1
-    notional_size: 1000
+    notional_size: 5000        # increased from 1000 (v6: higher notional per trade)
+    flip_on_reversal: false    # If true: close current pos + immediately open opposite on reversal signal
     exit:
       max_bars: 12
       max_hold_sec: 1800
       max_drawdown_exit: 1.2
+      cooldown_bars_after_close: 3    # v6b: block re-entry for 3 bars after close (address 91% reversal-exit rate)
 
   # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation

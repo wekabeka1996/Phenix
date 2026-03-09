@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-03-09T07:12:07.900339Z",
+  "date_tag": "20260309",
+  "closed_count": 2,
+  "closed_lifecycles": [
+    "SOLUSDT:aurora_SOLUSDT_1773009904226",
+    "ETHUSDT:aurora_ETHUSDT_1773008403767"
+  ],
+  "strategy_summary": {
+    "aurora": {
+      "trades": 2,
+      "realized_pnl_sum": -143.32351000000065,
+      "wins": 0,
+      "losses": 1
+    }
+  },
+  "regime_summary": {
+    "HIGH_VOLATILITY": {
+      "trades": 2,
+      "realized_pnl_sum": -143.32351000000065
+    }
+  },
+  "category_counts": {
+    "cancel pathology": 1,
+    "execution issue": 1,
+    "bad timing": 1,
+    "unclear": 1
+  },
+  "top_losses": [
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773008403767",
+      "symbol": "ETHUSDT",
+      "realized_pnl": -143.32351000000065,
+      "categories": "bad timing; unclear"
+    },
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1773009904226",
+      "symbol": "SOLUSDT",
+      "realized_pnl": null,
+      "categories": "cancel pathology; execution issue"
+    }
+  ],
+  "evidence_files_used": [
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_20260308_230504.json",
+    "reports/auto/active_positions_snapshot_20260309_030810.json",
+    "ops/wal/2026-03-09.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml"
+  ]
+}

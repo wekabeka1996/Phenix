@@ -617,6 +617,55 @@ class DecisionMaking:
                 self._record_blocked_intent(symbol)
                 return
 
+            if intent_kind == "ENTRY":
+                current_regime = self._resolve_symbol_regime(
+                    symbol,
+                    preferred=pld.get("regime"),
+                )
+                if self._is_uncertain_hard_block(current_regime):
+                    self.logger.info(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - UNCERTAIN hard block ({strategy_id})"
+                    )
+                    inc_decision_blocked(
+                        stage="gateway", reason_code="REGIME_GATE_BLOCKED")
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="REGIME_GATE_BLOCKED",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:uncertain_hard_block",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["REGIME_GATE_BLOCKED", "UNCERTAIN"],
+                        details={"regime": current_regime},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                symbol_busy = self._get_symbol_entry_block_reason(
+                    symbol, reduce_only=False)
+                if symbol_busy is not None:
+                    self.logger.info(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - symbol busy ({symbol_busy.get('reason')})"
+                    )
+                    inc_decision_blocked(
+                        stage="gateway", reason_code="NRR-SYMBOL-BUSY")
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=side,
+                        rid=str(rid),
+                        reason_code="NRR-SYMBOL-BUSY",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:symbol_busy",
+                        why_chain=(why_chain if isinstance(
+                            why_chain, list) else []) + ["NRR-SYMBOL-BUSY"],
+                        details=symbol_busy,
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
             # === GATE 0: STRATEGY ARBITRATION ===
             # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check if this strategy is allowed
             arbitration_result = self._check_strategy_arbitration(
@@ -3496,6 +3545,47 @@ class DecisionMaking:
             self._record_blocked_intent(symbol)
             return
 
+        current_regime = self._resolve_symbol_regime(symbol, preferred=regime)
+        if self._is_uncertain_hard_block(current_regime) and not reduce_only:
+            self.logger.info(
+                f"[{symbol}] TRADE_INTENT_BLOCKED: UNCERTAIN hard block strategy={strategy_id}"
+            )
+            inc_decision_blocked(stage="decision", reason_code="REGIME_GATE_BLOCKED")
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code="REGIME_GATE_BLOCKED",
+                reason="DECISION",
+                context="decision_making:uncertain_hard_block",
+                why_chain=(why_chain or []) + ["REGIME_GATE_BLOCKED", "UNCERTAIN"],
+                details={"regime": current_regime},
+            )
+            self._record_blocked_intent(symbol)
+            return
+
+        symbol_busy = self._get_symbol_entry_block_reason(
+            symbol, reduce_only=reduce_only)
+        if symbol_busy is not None:
+            self.logger.info(
+                f"[{symbol}] TRADE_INTENT_BLOCKED: symbol busy ({symbol_busy.get('reason')})"
+            )
+            inc_decision_blocked(stage="decision", reason_code="NRR-SYMBOL-BUSY")
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code="NRR-SYMBOL-BUSY",
+                reason="DECISION",
+                context="decision_making:symbol_busy",
+                why_chain=(why_chain or []) + ["NRR-SYMBOL-BUSY"],
+                details=symbol_busy,
+            )
+            self._record_blocked_intent(symbol)
+            return
+
         # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check strategy arbitration
         arbitration_result = self._check_strategy_arbitration(
             symbol, strategy_id, ts_ms=decision_ts_ms, commit=False
@@ -4083,6 +4173,63 @@ class DecisionMaking:
             return "FLAT"
 
         return "LONG" if qty_signed > 0 else "SHORT"
+
+    def _resolve_symbol_regime(
+        self,
+        symbol: str,
+        *,
+        preferred: Any = None,
+    ) -> Optional[str]:
+        if preferred not in (None, ""):
+            return str(preferred)
+
+        regime_evt = self._per_symbol_regimes.get(symbol)
+        if isinstance(regime_evt, dict):
+            regime = regime_evt.get("regime") or regime_evt.get("overall_regime")
+            if regime not in (None, ""):
+                return str(regime)
+
+        if isinstance(self.latest_regime, dict):
+            latest_symbol = self.latest_regime.get("symbol")
+            if latest_symbol in (None, "", symbol):
+                regime = self.latest_regime.get(
+                    "regime") or self.latest_regime.get("overall_regime")
+                if regime not in (None, ""):
+                    return str(regime)
+
+        return None
+
+    @staticmethod
+    def _is_uncertain_hard_block(regime: Any) -> bool:
+        return str(regime or "").upper() == "UNCERTAIN"
+
+    def _get_symbol_entry_block_reason(
+        self,
+        symbol: str,
+        *,
+        reduce_only: bool,
+    ) -> Optional[Dict[str, Any]]:
+        if reduce_only:
+            return None
+
+        qty_signed, curr_pos = self._get_portfolio_position_qty_signed(symbol)
+        tol = decimal.Decimal("1e-9")
+        if qty_signed is not None and abs(qty_signed) >= tol:
+            return {
+                "reason": "active_position",
+                "qty_signed": str(qty_signed),
+                "position_state": "LONG" if qty_signed > 0 else "SHORT",
+                "position": curr_pos,
+            }
+
+        pending_flip = self._pending_flips.get(symbol)
+        if isinstance(pending_flip, dict):
+            return {
+                "reason": "pending_flip_close",
+                "pending_flip": pending_flip,
+            }
+
+        return None
 
     def _get_portfolio_position_qty_signed(
         self, symbol: str

@@ -73,19 +73,213 @@ md_amr:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
+      # MD-AMR-TPSL-01: TP/SL — values from aurora.yaml BTCUSDT (verbatim)
+      exit:
+        sl_pct: 0.005       # 0.5% base SL
+        tp_rr: 1.0          # base TP RR (tp_low_ratio from aurora)
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.80
+            HIGH_VOLATILITY: 1.30
+            TREND_UP: 1.00
+            TREND_DOWN: 1.00
+          tp_mult:
+            DEFAULT: 1.5
+            LOW_VOLATILITY: 1.50
+            HIGH_VOLATILITY: 1.60
+            TREND_UP: 3.50
+            TREND_DOWN: 3.50
+          min_sl_pct: 0.003
+          max_sl_pct: 0.060
+          min_tp_rr: 0.5
+          max_tp_rr: 5.0
+          min_dist_bps: 15
+
     ETHUSDT:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
+      # MD-AMR-TPSL-01: TP/SL — values from aurora.yaml ETHUSDT (verbatim)
+      exit:
+        sl_pct: 0.019       # 1.9% base SL
+        tp_rr: 0.4          # base TP RR (tp_low_ratio from aurora)
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.65
+            LOW_VOLATILITY: 0.70
+            FLAT_NORMAL: 0.80
+            MEAN_REVERSION: 0.90
+            TREND_UP: 1.05
+            TREND_DOWN: 1.05
+            HIGH_VOLATILITY: 1.30
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.70
+            LOW_VOLATILITY: 0.75
+            FLAT_NORMAL: 0.85
+            MEAN_REVERSION: 0.80
+            TREND_UP: 1.20
+            TREND_DOWN: 1.20
+            HIGH_VOLATILITY: 1.60
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.002
+          max_sl_pct: 0.015
+          min_tp_rr: 0.3
+          max_tp_rr: 3.5
+          min_dist_bps: 12
+
     SOLUSDT:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
+      # MD-AMR-TPSL-01: TP/SL — values from aurora.yaml SOLUSDT (verbatim)
+      exit:
+        sl_pct: 0.0135      # 1.35% base SL
+        tp_rr: 0.36         # base TP RR (tp_low_ratio from aurora)
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.60
+            LOW_VOLATILITY: 0.65
+            FLAT_NORMAL: 0.75
+            MEAN_REVERSION: 0.85
+            TREND_UP: 1.15
+            TREND_DOWN: 1.15
+            HIGH_VOLATILITY: 1.30
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.65
+            LOW_VOLATILITY: 0.70
+            FLAT_NORMAL: 0.80
+            MEAN_REVERSION: 0.75
+            TREND_UP: 1.30
+            TREND_DOWN: 1.30
+            HIGH_VOLATILITY: 1.60
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.020
+          min_tp_rr: 0.25
+          max_tp_rr: 3.5
+          min_dist_bps: 18
+
     DOGEUSDT:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
+      # MD-AMR-TPSL-01: TP/SL — averaged values from BTC+ETH+SOL aurora configs
+      exit:
+        sl_pct: 0.013       # avg(0.005, 0.019, 0.0135)
+        tp_rr: 0.60         # avg(1.0, 0.4, 0.36)
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.00
+            FLAT_LOW: 0.62        # avg(0.65, 0.60) — ETH+SOL only
+            LOW_VOLATILITY: 0.72  # avg(0.80, 0.70, 0.65)
+            FLAT_NORMAL: 0.78     # avg(0.80, 0.75) — ETH+SOL only
+            MEAN_REVERSION: 0.88  # avg(0.90, 0.85) — ETH+SOL only
+            TREND_UP: 1.07        # avg(1.0, 1.05, 1.15)
+            TREND_DOWN: 1.07      # avg(1.0, 1.05, 1.15)
+            HIGH_VOLATILITY: 1.30 # avg(1.30, 1.30, 1.30)
+            UNCERTAIN: 1.00       # avg(1.00, 1.00) — ETH+SOL only
+          tp_mult:
+            DEFAULT: 1.20         # avg(1.5, 1.0, 1.0)
+            FLAT_LOW: 0.68        # avg(0.70, 0.65) — ETH+SOL only
+            LOW_VOLATILITY: 1.00  # avg(1.50, 0.75, 0.70)
+            FLAT_NORMAL: 0.85     # avg(0.85, 0.80) — ETH+SOL only
+            MEAN_REVERSION: 0.78  # avg(0.80, 0.75) — ETH+SOL only
+            TREND_UP: 2.00        # avg(3.5, 1.20, 1.30)
+            TREND_DOWN: 2.00      # avg(3.5, 1.20, 1.30)
+            HIGH_VOLATILITY: 1.60 # avg(1.60, 1.60, 1.60)
+            UNCERTAIN: 1.00       # avg(1.00, 1.00) — ETH+SOL only
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.030
+          min_tp_rr: 0.35
+          max_tp_rr: 4.0
+          min_dist_bps: 15
+
     XRPUSDT:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
+      allowed_regimes: ["MEAN_REVERSION", "LOW_VOLATILITY", "HIGH_VOLATILITY", "FLAT_LOW", "FLAT_HIGH"]
+      # MD-AMR-TPSL-01: TP/SL — averaged values from BTC+ETH+SOL aurora configs (same as DOGE)
+      exit:
+        sl_pct: 0.013       # avg(0.005, 0.019, 0.0135)
+        tp_rr: 0.60         # avg(1.0, 0.4, 0.36)
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.00
+            FLAT_LOW: 0.62
+            LOW_VOLATILITY: 0.72
+            FLAT_NORMAL: 0.78
+            MEAN_REVERSION: 0.88
+            TREND_UP: 1.07
+            TREND_DOWN: 1.07
+            HIGH_VOLATILITY: 1.30
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.20
+            FLAT_LOW: 0.68
+            LOW_VOLATILITY: 1.00
+            FLAT_NORMAL: 0.85
+            MEAN_REVERSION: 0.78
+            TREND_UP: 2.00
+            TREND_DOWN: 2.00
+            HIGH_VOLATILITY: 1.60
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.030
+          min_tp_rr: 0.35
+          max_tp_rr: 4.0
+          min_dist_bps: 15
+
+    BNBUSDT:
+      enabled: true
+      cooldown_sec: 60
+      position_mode: "STRICT"
+      allowed_regimes: ["MEAN_REVERSION", "LOW_VOLATILITY", "HIGH_VOLATILITY", "FLAT_LOW", "FLAT_HIGH"]
+      exit:
+        sl_pct: 0.013
+        tp_rr: 0.60
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.00
+            FLAT_LOW: 0.62
+            LOW_VOLATILITY: 0.72
+            FLAT_NORMAL: 0.78
+            MEAN_REVERSION: 0.88
+            TREND_UP: 1.07
+            TREND_DOWN: 1.07
+            HIGH_VOLATILITY: 1.30
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.20
+            FLAT_LOW: 0.68
+            LOW_VOLATILITY: 1.00
+            FLAT_NORMAL: 0.85
+            MEAN_REVERSION: 0.78
+            TREND_UP: 2.00
+            TREND_DOWN: 2.00
+            HIGH_VOLATILITY: 1.60
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.030
+          min_tp_rr: 0.35
+          max_tp_rr: 4.0
+          min_dist_bps: 15

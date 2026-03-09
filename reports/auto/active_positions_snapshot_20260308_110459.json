@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-03-08T11:04:59.733386Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-08.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 0,
+    "pending_orders_count": 0,
+    "anomalies_count": 0
+  },
+  "active_positions": [],
+  "pending_orders": [],
+  "anomalies": [],
+  "unresolved_ambiguities": [
+    "No active/pending lifecycles at snapshot time; closure inferred from latest ACCOUNT_UPDATE_RECEIVED positions=[].",
+    "Recent NRR-SYMBOL-BUSY rejects persist even after flat account updates; may indicate stale symbol-busy cache.",
+    "Explicit fill events are sparse; entry/exit transitions rely on ACCOUNT_UPDATE_RECEIVED continuity."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-08.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_20260308_070812.json"
+  ]
+}

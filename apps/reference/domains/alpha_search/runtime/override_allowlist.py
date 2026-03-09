@@ -86,6 +86,16 @@ MR_OVERRIDE_PATHS: Set[str] = {
     "alpha_search.providers.ta_ensemble.threshold",
     # Aurora provider threshold (for cross-strategy differentiation)
     "alpha_search.providers.aurora.threshold",
+    # Virtual trader behaviour tuning
+    "alpha_search.virtual_trader.flip_on_reversal",
+    "alpha_search.virtual_trader.notional_size",
+    # Provider timeframe filter
+    "alpha_search.providers.ta_ensemble.min_tf_sec",
+    "alpha_search.providers.aurora.min_tf_sec",
+    # Exit / cooldown tuning
+    "alpha_search.virtual_trader.exit.cooldown_bars_after_close",
+    "alpha_search.virtual_trader.exit.max_drawdown_exit",
+    "alpha_search.virtual_trader.exit.max_bars",
 }
 
 
@@ -108,6 +118,16 @@ ENSEMBLE_OVERRIDE_PATHS: Set[str] = {
     "alpha_search_system.momentum.*",
     "alpha_search_system.mean_reversion.*",
     "alpha_search_system.volatility.*",
+    # Virtual trader behaviour tuning
+    "alpha_search.virtual_trader.flip_on_reversal",
+    "alpha_search.virtual_trader.notional_size",
+    # Provider timeframe filter
+    "alpha_search.providers.ta_ensemble.min_tf_sec",
+    "alpha_search.providers.aurora.min_tf_sec",
+    # Exit / cooldown tuning
+    "alpha_search.virtual_trader.exit.cooldown_bars_after_close",
+    "alpha_search.virtual_trader.exit.max_drawdown_exit",
+    "alpha_search.virtual_trader.exit.max_bars",
 }
 
 

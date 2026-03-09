@@ -26,31 +26,35 @@ assignments:
   # ETH: enabled for aurora
   ETHUSDT:
     - aurora
-    - md_amr
+
 
   # SOL: Aurora + Mean Reversion
   SOLUSDT:
     - aurora
-    - md_amr
+
 
   # BTC: Aurora (re-enabled 2026-03-03, testnet/hybrid)
   # Calibrated weights applied: tools/calibrate_aurora_signal_weights.py 2026-03-03
   BTCUSDT:
     - aurora
-    - md_amr
+
 
   # DOGE: MR-only (champion MR asset, +$387 in research)
   DOGEUSDT:
     - mean_reversion
-    - md_amr
+
 
   # XRP: MR-only (MR silver medal, +$121)
   XRPUSDT:
-    - mean_reversion
     - md_amr
 
   # BNB: LLM external-intent owner (Stage A)
   BNBUSDT:
+    - md_amr
+    # - llm_microstructure
+
+  # 1000PEPE: LLM external-intent owner
+  1000PEPEUSDT:
     - llm_microstructure
 
 

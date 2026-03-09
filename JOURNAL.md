@@ -1,4 +1,27 @@
-# Engineering Journal
+﻿# Engineering Journal
+
+## 2026-03-06: FORENSIC-AUDIT - advanced stale cancel factual runtime verification
+
+**Mode:** Forensic audit + regression hardening. Runtime untouched unless bug reproduced.
+**Scope:** `tests/domains/execution_position/test_advanced_stale_cancel.py`, `tests/config/test_advanced_stale_cancel_config_validation.py`, forensic report.
+
+### Findings
+- `advanced_stale_cancel` is live on the current branch: canonical regime SSOT, `domains.yaml`, and `ExecPosFSM._on_regime_detected()` routing are aligned on `TREND_UP/TREND_DOWN`.
+- `AdvancedStaleCancelConfig` already fails closed on unknown regime labels during config validation.
+- Legacy `BULL_TREND/BEAR_TREND` drift remains in DecisionMaking tests only; no active runtime use found in `apps/reference`.
+
+### Changes
+- Converted stale-cancel test defaults to canonical labels to avoid masking namespace drift.
+- Added a pulse regression that drives `_on_regime_detected()` end-to-end into `CANCEL_STALE_REGIME_ADVANCED`.
+- Added a full `ConfigLoader.load_config()` regression that injects `BEAR_TREND` into `domains.yaml` and asserts fail-fast `ValidationError`.
+- Wrote audit report: `reports/forensics/2026-03-06_advanced_stale_cancel_audit.md`.
+
+### Validation
+- `pytest -q tests/domains/execution_position/test_advanced_stale_cancel.py`
+- `pytest -q tests/config/test_advanced_stale_cancel_config_validation.py`
+- `pytest -q tests/domains/decision_making/test_regime_flip_close.py` -> confirms separate legacy test drift (`BULL_TREND/BEAR_TREND`)
+
+---
 
 ## 2026-03-04: PKG-ABSORPTION-RISK-FULL: enable full absorption + optional risk_score wiring
 
@@ -13,7 +36,7 @@
 - 7 new tests (`test_absorption_feature_risk.py`); existing proxy fixture pinned to `source="proxy"`
 
 ### Default path unchanged
-`absorption_penalty_source` defaults to `"proxy"` — zero effect if config not touched.
+`absorption_penalty_source` defaults to `"proxy"` â€” zero effect if config not touched.
 
 ### Report
 `reports/forensics/2026-03-03_absorption_risk_enable/report.md`
@@ -80,8 +103,8 @@
 
 ## 2026-03-03: PKG-RG-CALIBRATE - Regime parameter calibrator tool
 
-**Mode:** TDD implementation.  
-**Scope:** `tools/calibrate_aurora_regime_params.py`, `tools/regime_calibration/`  
+**Mode:** TDD implementation.
+**Scope:** `tools/calibrate_aurora_regime_params.py`, `tools/regime_calibration/`
 
 **Changes (additive-only):**
 1. Created `tools/calibrate_aurora_regime_params.py` CLI script to optimize `RegimeDetector` parameters.
@@ -96,7 +119,7 @@
 
 ## 2026-03-01: EP-WATCHDOG-POLLING-DEFERRED-BRACKETS-TIMEOUT-ISOLATION complete
 
-**Mode:** TDD test isolation hardening.  
+**Mode:** TDD test isolation hardening.
 **Scope:** watchdog polling deferred-brackets timeout path.
 
 **Changes:**
@@ -110,7 +133,7 @@
 
 ## 2026-03-01: EP-H1.1-ALPHA_SEARCH-SYMBOL-PLUMBING complete
 
-**Mode:** TDD regression repair.  
+**Mode:** TDD regression repair.
 **Scope:** alpha_search symbol pass-through + provider gating behavior.
 
 **Changes:**
@@ -126,8 +149,8 @@
 
 ## 2026-03-01: EP-INT-FLIP-VERTICAL-QTY-FIXTURE complete
 
-**Mode:** TDD integration fixture alignment.  
-**Scope:** DM↔Bridge↔ExecPos vertical flip close integration test.
+**Mode:** TDD integration fixture alignment.
+**Scope:** DMâ†”Bridgeâ†”ExecPos vertical flip close integration test.
 
 **Changes:**
 1. Updated integration monkeypatch in `test_flip_vertical_dm_bridge_execpos.py` to return intent payload (not `None`) after event emission.
@@ -139,7 +162,7 @@
 
 ## 2026-03-01: EP-H1-ALPHA_SEARCH-MANIFEST complete
 
-**Mode:** TDD implementation.  
+**Mode:** TDD implementation.
 **Scope:** ta_ensemble required-feature manifest + missing-feature gating.
 
 **Changes (additive-only):**
@@ -155,7 +178,7 @@
 
 ## 2026-03-01: EP-H4-WATCHDOG-CONFIG-HARDENING complete
 
-**Mode:** TDD implementation.  
+**Mode:** TDD implementation.
 **Scope:** watchdog config contract hardening (test-integrity + fail-fast).
 
 **Changes (additive-only):**
@@ -174,7 +197,7 @@
 
 ## 2026-03-01: EP-H2-SAFE-EXIT-DEGRADE complete
 
-**Mode:** TDD implementation.  
+**Mode:** TDD implementation.
 **Scope:** reduce-only close fail-safe on missing tf/TTL, exit policy split from entry policy.
 
 **Changes (additive-only):**
@@ -194,6 +217,24 @@
 
 **Mode:** TDD implementation.
 **Scope:** `apps/reference/domains/execution_position/fsm.py`, `tests/domains/execution_position/test_supersede_fill_race_guard.py`
+
+---
+
+## 2026-03-07: FORENSIC-AUDIT - mean_reversion / md_amr live viability review
+
+**Mode:** Evidence-only forensic audit. No code/config mutation.
+**Scope:** `reports/aurora_forensic_report_2026-03-06_2026-03-07.md`, `reports/aurora_forensic_2026-03-06_2026-03-07_trades.csv`, `ops/wal/2026-03-05..2026-03-07.jsonl`, `logs/mean_reversion/bars_180s.jsonl`, `logs/order_log_v1.jsonl`, strategy YAMLs.
+
+### Findings
+- `mean_reversion` is live-loss-making in the audited window: 16 reconstructed trades, win rate `43.75%`, profit factor `0.5637`, net pnl `-208.83`.
+- Loss concentration is worse on `XRPUSDT` than `DOGEUSDT`; DOGE remains mixed rather than fully broken.
+- Current live `mean_reversion` evidence is on `180s` bars, not `300s`; `bars_300s.jsonl` is stale relative to the audit window.
+- DOGE MR losses are primarily explained by early fade entries into continued downside expansion on longs; execution/fill failure is not the primary driver.
+- `md_amr` is operationally alive but blocked: live-window WAL shows proposals/rejections with `0` opens, while order logs show repeated safety-gate rejects (including `XRPUSDT`).
+- `BNBUSDT` is assigned to `md_amr` in `strategies.yaml` but has no asset block in `config/aurora/strategies/md_amr.yaml`, so live trade capability for BNB is not evidenced.
+
+### Outcome
+- Next-run recommendation from evidence: keep `DOGEUSDT` on `mean_reversion` only with caution, do not promote MR to `5m` directly from this audit alone, classify `md_amr` as `ACTIVE BUT BLOCKED`, and treat `BNBUSDT -> md_amr` as unsupported until configuration/runtime evidence is aligned.
 
 **Changes (additive-only, P0):**
 1. `_process_queued_supersede()` converted to async drain path with fail-closed live position check via `adapter.get_open_positions(symbol)`.
@@ -235,14 +276,14 @@
 **No code changes. Context/audit only.**
 
 ---
-## 2026-02-24: EP-01.3 Supersede Cancel Timeout â€” Forensic Investigation Complete
+## 2026-02-24: EP-01.3 Supersede Cancel Timeout Ã¢â‚¬â€ Forensic Investigation Complete
 
 **Mode:** Forensic only. No implementation.
 **Scope:** `apps/reference/domains/execution_position/fsm.py`, `config/aurora/domains.yaml`
 **Doc:** `docs/forensics/EP_SUPERSEDE_CANCEL_TIMEOUT_CONTEXT.md`
 
 **Finding:**
-Log message `EP-01.3: supersede cancel timeout, proceeding with queued open` observed 3Ã— in
+Log message `EP-01.3: supersede cancel timeout, proceeding with queued open` observed 3Ãƒâ€” in
 `logs/domain_execution_position.log` (SOLUSDT 09:05, BTCUSDT 09:25, SOLUSDT 09:30).
 In all cases the old order was confirmed dead (cancelled or FILLED) in < 1s, yet the 5-second
 timeout fired anyway.
@@ -250,21 +291,21 @@ timeout fired anyway.
 **Root cause confirmed:** `_do_cancel()` fire-and-forget closure (`fsm.py:1084-1130`) does NOT
 call `_process_queued_supersede()` after successful cancel. A WS-event path *does* exist in
 `_handle_cancel_event()` (`fsm.py:4410`), but it silently aborts when `watchdog.pending_orders +
-watchdog.acked_orders` still contains any entry for that symbol â€” a timing-dependent condition.
+watchdog.acked_orders` still contains any entry for that symbol Ã¢â‚¬â€ a timing-dependent condition.
 Result: the 5-second timeout (`config/aurora/domains.yaml:416`, `supersede_cancel_timeout_sec: 5.0`)
 is the **only reliable execution path** for queued DEC:OPEN in all 3 observed cases.
 
-**Risk flags (UNAUDITED â€” block implementation):**
-- Fill-race case (BTCUSDT): order FILLED before cancel, timeout fires â†’ new DEC:OPEN runs â†’
-  ExposureGuard behavior not verified â†’ potential **double-position risk**
-- Cancel-failure loop: if cancel fails â†’ supersede re-queues â†’ new timeout â†’ infinite 5s cycle
+**Risk flags (UNAUDITED Ã¢â‚¬â€ block implementation):**
+- Fill-race case (BTCUSDT): order FILLED before cancel, timeout fires Ã¢â€ â€™ new DEC:OPEN runs Ã¢â€ â€™
+  ExposureGuard behavior not verified Ã¢â€ â€™ potential **double-position risk**
+- Cancel-failure loop: if cancel fails Ã¢â€ â€™ supersede re-queues Ã¢â€ â€™ new timeout Ã¢â€ â€™ infinite 5s cycle
 - See forensic doc Section 5 + Section 7 for full risk matrix and open TODOs
 
 **No code changed. No tests added. Investigation only.**
 
 ---
 
-## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 â€” Exception-path absorption + truthful cancel logging
+## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 Ã¢â‚¬â€ Exception-path absorption + truthful cancel logging
 
 **Mode:** TDD implementation.
 **Scope:** `apps/reference/domains/execution_position/idempotent_cancel.py`, `apps/reference/domains/execution_position/fsm.py`
@@ -295,14 +336,14 @@ is the **only reliable execution path** for queued DEC:OPEN in all 3 observed ca
 **Mode:** TDD implementation.
 **Scope:** `apps/reference/domains/execution_position/fsm.py`, `apps/reference/domains/execution_position/fsm_manage.py`, `apps/reference/adapters/binance_adapter.py`
 
-**Problem:** `DEC:PLACE_ORDER` for `TAKE_PROFIT_MARKET` was executed with `stopPrice=None` (`... @ None/None`), forwarded to Binance as `stopPrice="None"` â†’ `-1102`.
+**Problem:** `DEC:PLACE_ORDER` for `TAKE_PROFIT_MARKET` was executed with `stopPrice=None` (`... @ None/None`), forwarded to Binance as `stopPrice="None"` Ã¢â€ â€™ `-1102`.
 
 **Changes (fail-closed, additive-only):**
-1. **fsm.py** â€” module-level `_CONDITIONAL_ORDER_TYPES` + `_is_valid_stop_price()` helper. Preflight in `_execute_decision()` PLACE_ORDER handler blocks conditional orders with missing/invalid `stopPrice` before any adapter call. Logs `âŒ EP-1102 missing stopPrice {symbol} {order_type}` (â‰¤80 chars).
-2. **fsm_manage.py** â€” `_emit_place_order()` raises `ValueError(EP-1102 â€¦)` when called for a conditional order type with an invalid price, preventing bad messages from entering the bus.
-3. **binance_adapter.py** â€” `_assert_valid_stop_price()` helper called at the top of `place_stop_market_close_position` and `place_take_profit_market_close_position`; raises `ValueError` before any HTTP call.
+1. **fsm.py** Ã¢â‚¬â€ module-level `_CONDITIONAL_ORDER_TYPES` + `_is_valid_stop_price()` helper. Preflight in `_execute_decision()` PLACE_ORDER handler blocks conditional orders with missing/invalid `stopPrice` before any adapter call. Logs `Ã¢ÂÅ’ EP-1102 missing stopPrice {symbol} {order_type}` (Ã¢â€°Â¤80 chars).
+2. **fsm_manage.py** Ã¢â‚¬â€ `_emit_place_order()` raises `ValueError(EP-1102 Ã¢â‚¬Â¦)` when called for a conditional order type with an invalid price, preventing bad messages from entering the bus.
+3. **binance_adapter.py** Ã¢â‚¬â€ `_assert_valid_stop_price()` helper called at the top of `place_stop_market_close_position` and `place_take_profit_market_close_position`; raises `ValueError` before any HTTP call.
 
-**Tests:** `tests/domains/execution_position/test_ep_missing_stopprice_1102.py` â€” 36 tests (classes Aâ€“D); all pass. 88/88 in targeted regression suite, 0 regressions.
+**Tests:** `tests/domains/execution_position/test_ep_missing_stopprice_1102.py` Ã¢â‚¬â€ 36 tests (classes AÃ¢â‚¬â€œD); all pass. 88/88 in targeted regression suite, 0 regressions.
 
 **Context doc:** `docs/forensics/EP_MISSING_STOPPRICE_1102_CONTEXT.md`
 
@@ -311,21 +352,21 @@ is the **only reliable execution path** for queued DEC:OPEN in all 3 observed ca
 
 
 
-## 2026-02-24: EP-ORDER-CLIENTORDERID-4015 â€” Forensic Investigation Complete
+## 2026-02-24: EP-ORDER-CLIENTORDERID-4015 Ã¢â‚¬â€ Forensic Investigation Complete
 
 **Task:** EP-ORDER-CLIENTORDERID-4015 (investigation only; no code changes)
-**Scope:** `apps/reference/domains/execution_position/` â€” clientOrderId generation, `apps/reference/adapters/binance_adapter.py`
+**Scope:** `apps/reference/domains/execution_position/` Ã¢â‚¬â€ clientOrderId generation, `apps/reference/adapters/binance_adapter.py`
 **Evidence source:** `logs/domain_execution_position.log.1` (4 confirmed -4015 occurrences)
 
-### Root Cause â€” CONFIRMED
+### Root Cause Ã¢â‚¬â€ CONFIRMED
 
-**Classification:** `CLIENTORDERID_OVERFLOW` â€” raw `idem_base` string was used directly as clientOrderId component without hashing, producing IDs of 42â€“64 chars.
+**Classification:** `CLIENTORDERID_OVERFLOW` Ã¢â‚¬â€ raw `idem_base` string was used directly as clientOrderId component without hashing, producing IDs of 42Ã¢â‚¬â€œ64 chars.
 
 In `fsm_manage.py:_place_brackets()`:
 ```python
 idem_base = f"{msg.rid}_{int(self.position_open_ts)}"
 # Example: "aurora_BTCUSDT_1771850701848_1771850735" = 39 chars
-# Pre-fix cid: "SL-aurora_BTCUSDT_1771850701848_1771850735" = 42 chars  â† -4015
+# Pre-fix cid: "SL-aurora_BTCUSDT_1771850701848_1771850735" = 42 chars  Ã¢â€ Â -4015
 ```
 
 Binance constraint: `len(newClientOrderId) < 36` (max 35 chars). All 4 occurrences were bracket SL/TP from the ManageFlowFSM DEC:BATCH path.
@@ -345,7 +386,7 @@ In the same log sessions, deferred bracket paths succeeded with 15-char MD5 IDs 
 
 `generate_client_order_id()` (`utils.py:159`) now applies an MD5 hash (`hexdigest()[:12]`), producing IDs of 15-18 chars across all 3 branches. The `max_len=32` guard provides an additional truncation safety net. All 12 callsites in `fsm.py` + `fsm_manage.py` route through this function.
 
-Existing regression tests: `tests/domains/execution_position/test_fsm_manage_bracket_fixes.py::TestClientOrderIdLength` â€” 4 parametrized tests with UUID and long-rid inputs.
+Existing regression tests: `tests/domains/execution_position/test_fsm_manage_bracket_fixes.py::TestClientOrderIdLength` Ã¢â‚¬â€ 4 parametrized tests with UUID and long-rid inputs.
 
 ### Open Actions
 
@@ -356,13 +397,13 @@ Existing regression tests: `tests/domains/execution_position/test_fsm_manage_bra
 
 ---
 
-## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 â€” Forensic Investigation Complete
+## 2026-02-24: EP-IDEMPOTENT-CANCEL-2011 Ã¢â‚¬â€ Forensic Investigation Complete
 
 **Task:** EP-IDEMPOTENT-CANCEL-2011 (investigation only; no code changes)
 **Scope:** `apps/reference/domains/execution_position/fsm.py`, `idempotent_cancel.py`, `apps/reference/adapters/binance_adapter.py`
-**Evidence source:** `logs/domain_execution_position.log` â€” 2 confirmed -2011 occurrences (lines 3709, 3732)
+**Evidence source:** `logs/domain_execution_position.log` Ã¢â‚¬â€ 2 confirmed -2011 occurrences (lines 3709, 3732)
 
-### Root Causes â€” CONFIRMED (two bugs + one structural race)
+### Root Causes Ã¢â‚¬â€ CONFIRMED (two bugs + one structural race)
 
 **Classification:** `CONCURRENT_DUPLICATE_CANCEL + EXCEPTION_ABSORPTION_GAP`
 
@@ -371,10 +412,10 @@ Existing regression tests: `tests/domains/execution_position/test_fsm_manage_bra
 
 Fix: add `code = getattr(e, "code", None); if code in (-2011, -2013): return absorbed_success` at the top of the exception handler in `cancel_order_idempotent()`.
 
-**Bug #2 (P0): `_do_cancel()` logs "âœ… Cancelled" unconditionally**
-After `await self._cancel_order()`, the FSM logs success regardless of `res.success`. A FAILED `IdempotentCancelResult` is silently discarded and "âœ…" is emitted â€” misleading all log readers.
+**Bug #2 (P0): `_do_cancel()` logs "Ã¢Å“â€¦ Cancelled" unconditionally**
+After `await self._cancel_order()`, the FSM logs success regardless of `res.success`. A FAILED `IdempotentCancelResult` is silently discarded and "Ã¢Å“â€¦" is emitted Ã¢â‚¬â€ misleading all log readers.
 
-Fix: check `res.success` before logging "âœ…"; log WARNING on failure.
+Fix: check `res.success` before logging "Ã¢Å“â€¦"; log WARNING on failure.
 
 **Structural race (P1): two concurrent cancels for the same order_id**
 When a regime change and a supersede intent arrive within ~281 ms, both call `_cancel_pending_entries_for_symbol()` for the same pending order. Two concurrent async `_do_cancel()` tasks are submitted without deduplication. The pre-check for the second cancel sees `NEW` (first cancel not done yet), proceeds, then gets -2011 when order is already gone.
@@ -383,64 +424,64 @@ Fix (dedup guard): track in-flight cancel task IDs in a `_pending_cancel_tasks: 
 
 ### Evidence Summary
 
-| Timestamp | order_id | symbol | Trigger | before â†’ after | Result |
+| Timestamp | order_id | symbol | Trigger | before Ã¢â€ â€™ after | Result |
 |---|---|---|---|---|---|
-| 09:05:05,082 | 1726744894 | BTCUSDT | CANCEL_SUPERSEDED attempt 1 | NEW â†’ None | FAILED (-2011 exception) |
-| 09:05:05,547 | 1726744894 | BTCUSDT | CANCEL_SUPERSEDED attempt 2 | NEW â†’ None | FAILED (-2011 exception) |
+| 09:05:05,082 | 1726744894 | BTCUSDT | CANCEL_SUPERSEDED attempt 1 | NEW Ã¢â€ â€™ None | FAILED (-2011 exception) |
+| 09:05:05,547 | 1726744894 | BTCUSDT | CANCEL_SUPERSEDED attempt 2 | NEW Ã¢â€ â€™ None | FAILED (-2011 exception) |
 
-Concurrent CANCEL_STALE_REGIME for the same order succeeded at 09:05:04,841 (673ms RTT). The SUPERSEDED cancel pre-check ran at ~09:05:04,750 â€” before stale regime cancel completed â€” so it saw `NEW` and proceeded.
+Concurrent CANCEL_STALE_REGIME for the same order succeeded at 09:05:04,841 (673ms RTT). The SUPERSEDED cancel pre-check ran at ~09:05:04,750 Ã¢â‚¬â€ before stale regime cancel completed Ã¢â‚¬â€ so it saw `NEW` and proceeded.
 
-**Behavioral impact: NONE** â€” order was correctly removed from Binance and from watchdog tracking. The failure is diagnostic only.
+**Behavioral impact: NONE** Ã¢â‚¬â€ order was correctly removed from Binance and from watchdog tracking. The failure is diagnostic only.
 
 **PRE_CHECK_TERMINAL_FILLED** path verified correct: 4 cases in `log` + `log.1` where FILLED orders trigger the short-circuit correctly. No -2011 in those cases.
 
 ### Recommended Policy
 
 **Option A (recommended):** Treat -2011 from exceptions as idempotent success ALWAYS in cancel context.
-`cancel is idempotent by nature â†’ -2011 means order gone â†’ desired postcondition achieved`.
+`cancel is idempotent by nature Ã¢â€ â€™ -2011 means order gone Ã¢â€ â€™ desired postcondition achieved`.
 
 ### Open Actions
 
-- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-A**: `idempotent_cancel.py` â€” add BinanceAPIError(-2011/-2013) absorption in exception handler (no retry).
-- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-B**: `fsm.py:_do_cancel()` â€” check `res.success`; log WARNING on FAILED, "âœ…" only on success.
-- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-C**: `fsm.py:_cancel_pending_entries_for_symbol()` â€” add `_pending_cancel_tasks` dedup guard.
-- [ ] **EP-IDEMPOTENT-CANCEL-2011-TEST**: Implement Class Aâ€“D tests per `docs/forensics/EP_IDEMPOTENT_CANCEL_2011_CONTEXT.md`.
+- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-A**: `idempotent_cancel.py` Ã¢â‚¬â€ add BinanceAPIError(-2011/-2013) absorption in exception handler (no retry).
+- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-B**: `fsm.py:_do_cancel()` Ã¢â‚¬â€ check `res.success`; log WARNING on FAILED, "Ã¢Å“â€¦" only on success.
+- [ ] **EP-IDEMPOTENT-CANCEL-2011-FIX-C**: `fsm.py:_cancel_pending_entries_for_symbol()` Ã¢â‚¬â€ add `_pending_cancel_tasks` dedup guard.
+- [ ] **EP-IDEMPOTENT-CANCEL-2011-TEST**: Implement Class AÃ¢â‚¬â€œD tests per `docs/forensics/EP_IDEMPOTENT_CANCEL_2011_CONTEXT.md`.
 
 **Full forensic document:** `docs/forensics/EP_IDEMPOTENT_CANCEL_2011_CONTEXT.md`
 
 ---
 
-## 2026-02-18: Forensic Audit â€” H1/H2/H3 Config Hypotheses Verification
+## 2026-02-18: Forensic Audit Ã¢â‚¬â€ H1/H2/H3 Config Hypotheses Verification
 
 **Mode:** Read-only. No code/config changes.
 **Scope:** `apps/reference/domains/regime_detector/regime_detector.py`, `apps/reference/config_models.py`, `config/aurora/regime.yaml`
 
 ### What was checked
-1. **H1** â€” Directionality of `uncertain_cutoff` on UNCERTAIN demotions.
-2. **H2** â€” Directionality of `sma_trend.confidence_multiplier` on computed confidence.
-3. **H3** â€” Existence of Grok-proposed YAML keys in Pydantic schemas + `extra='forbid'` enforcement.
+1. **H1** Ã¢â‚¬â€ Directionality of `uncertain_cutoff` on UNCERTAIN demotions.
+2. **H2** Ã¢â‚¬â€ Directionality of `sma_trend.confidence_multiplier` on computed confidence.
+3. **H3** Ã¢â‚¬â€ Existence of Grok-proposed YAML keys in Pydantic schemas + `extra='forbid'` enforcement.
 
 ### What was confirmed
 
-**H1 â€” VERIFIED (TRUE):**
-- `regime_detector.py:539`: `if regime != "UNCERTAIN" and float(confidence) < self._uncertain_cutoff: â†’ regime = "UNCERTAIN"`
-- Operator is `<`. Raising cutoff from 0.60 â†’ 0.67 **expands** the demote zone â†’ more UNCERTAIN. Confirmed.
+**H1 Ã¢â‚¬â€ VERIFIED (TRUE):**
+- `regime_detector.py:539`: `if regime != "UNCERTAIN" and float(confidence) < self._uncertain_cutoff: Ã¢â€ â€™ regime = "UNCERTAIN"`
+- Operator is `<`. Raising cutoff from 0.60 Ã¢â€ â€™ 0.67 **expands** the demote zone Ã¢â€ â€™ more UNCERTAIN. Confirmed.
 
-**H2 â€” VERIFIED (TRUE with nuance):**
+**H2 Ã¢â‚¬â€ VERIFIED (TRUE with nuance):**
 - `regime_detector.py:182-195`: formula = `abs(spread_ratio * confidence_multiplier)` clamped to `[conf_min, conf_max]`.
-- Lowering multiplier (e.g. 30 â†’ 16) lowers raw confidence. Floor is `conf_min` (cannot go below it), but if result falls below `uncertain_cutoff` while above `conf_min`, the regime is demoted to UNCERTAIN by H1 gate. Net effect: more UNCERTAIN or flat at floor.
+- Lowering multiplier (e.g. 30 Ã¢â€ â€™ 16) lowers raw confidence. Floor is `conf_min` (cannot go below it), but if result falls below `uncertain_cutoff` while above `conf_min`, the regime is demoted to UNCERTAIN by H1 gate. Net effect: more UNCERTAIN or flat at floor.
 
-**H3 â€” MOSTLY SAFE; ONE TRAP:**
-- `volatility_entry_logic` â€” EXISTS at `AuroraInstrumentConfig:2791`.
-- `regime_multipliers` â€” EXISTS **only inside** `VolatilityEntryConfig:2657`. As a top-level key under `AuroraInstrumentConfig` it does NOT exist â†’ would crash under `extra='forbid'`.
+**H3 Ã¢â‚¬â€ MOSTLY SAFE; ONE TRAP:**
+- `volatility_entry_logic` Ã¢â‚¬â€ EXISTS at `AuroraInstrumentConfig:2791`.
+- `regime_multipliers` Ã¢â‚¬â€ EXISTS **only inside** `VolatilityEntryConfig:2657`. As a top-level key under `AuroraInstrumentConfig` it does NOT exist Ã¢â€ â€™ would crash under `extra='forbid'`.
   Correct path: `aurora.assets.<SYMBOL>.volatility_entry_logic.regime_multipliers`.
-- `position_mode` â€” EXISTS at `AuroraInstrumentConfig:2724`.
-- `leverage` â€” EXISTS at `AuroraInstrumentConfig:2729`.
-- `holding_period.min_duration_sec` â€” EXISTS at `HoldingPeriodConfig:606`.
-- `aurora.decision.gates.anti_fomo_sigma` â€” EXISTS via `DecisionConfig.gates` (`VolAdjGatesConfig:633`).
-- `motion_window_sec`, `anti_flat_sigma` â€” EXISTS in `VolAdjGatesConfig:627,639`.
+- `position_mode` Ã¢â‚¬â€ EXISTS at `AuroraInstrumentConfig:2724`.
+- `leverage` Ã¢â‚¬â€ EXISTS at `AuroraInstrumentConfig:2729`.
+- `holding_period.min_duration_sec` Ã¢â‚¬â€ EXISTS at `HoldingPeriodConfig:606`.
+- `aurora.decision.gates.anti_fomo_sigma` Ã¢â‚¬â€ EXISTS via `DecisionConfig.gates` (`VolAdjGatesConfig:633`).
+- `motion_window_sec`, `anti_flat_sigma` Ã¢â‚¬â€ EXISTS in `VolAdjGatesConfig:627,639`.
 
-### Next action items (TODO â€” no code changes yet)
+### Next action items (TODO Ã¢â‚¬â€ no code changes yet)
 - [ ] **TODO-H3-TRAP**: Audit any Grok-generated config snippets that place `regime_multipliers` at the top level of an asset block. Must be nested under `volatility_entry_logic`.
 - [ ] **TODO-H2-IMPACT**: If `sma_trend.confidence_multiplier` is lowered to 16, verify `conf_min` (floor) in `config/aurora/regime.yaml` models.sma_trend. If `conf_min > uncertain_cutoff`, then lowering multiplier has no visible effect (floor dominates). If `conf_min < uncertain_cutoff`, more UNCERTAIN events will appear.
 - [ ] **TODO-H1-VALIDATE**: Run `tools/bars_regime_analysis.py` in dry mode with `uncertain_cutoff=0.62` vs `0.60` to quantify the UNCERTAIN rate delta before applying to live.
@@ -487,7 +528,7 @@ Concurrent CANCEL_STALE_REGIME for the same order succeeded at 09:05:04,841 (673
     - **ANNOTATED** `_handle_exposure_block` with failure warning/TODO.
     - **VERIFIED** QoS tests pass.
 
-## 2026-01-30: DM_SAFETY_BYPASSES_P1 â€” Critical Security Hardening
+## 2026-01-30: DM_SAFETY_BYPASSES_P1 Ã¢â‚¬â€ Critical Security Hardening
 
 **Task:** DM_SAFETY_BYPASSES_P1
 **Context:** Identified and fixed two critical security vulnerabilities in the `decision_making` domain.
@@ -497,13 +538,13 @@ Concurrent CANCEL_STALE_REGIME for the same order succeeded at 09:05:04,841 (673
 2. **Fail-open exposure cache:** Missing/stale/error cache conditions allowed trades, violating fail-closed principle.
 
 **Changes:**
-1. `decision_making.py`: Safety gates now read from `strategies.<id>.safety_gates.enabled` config. Missing config â†’ FAIL-CLOSED (NRR-054).
+1. `decision_making.py`: Safety gates now read from `strategies.<id>.safety_gates.enabled` config. Missing config Ã¢â€ â€™ FAIL-CLOSED (NRR-054).
 2. `decision_making.py`: Exposure cache precheck now returns `False` (block) on missing/stale/error (NRR-053).
 3. `normalized_reject_reasons.py`: Added NRR-053 (EXPOSURE_CACHE_UNAVAILABLE), NRR-054 (CONFIG_SAFETY_GATES_MISSING).
 4. `config_models.py`: Added `SafetyGatesConfig` Pydantic model.
 5. `aurora.yaml`, `mean_reversion.yaml`: Added explicit `safety_gates.enabled` field.
 
-**Risk Note â€” Mean Reversion safety_gates.enabled=false:**
+**Risk Note Ã¢â‚¬â€ Mean Reversion safety_gates.enabled=false:**
 MR intentionally trades against trend (counter-trend), so directional sanity and price motion gates are DISABLED.
 **Alternative guards protecting MR:**
 - Regime gating: MR only trades in FLAT regimes (`allowed_regimes`).
@@ -531,11 +572,11 @@ MR intentionally trades against trend (counter-trend), so directional sanity and
 4. **Data quality:** `vfoundation/dictionaries/global_v2_2_framework.yaml` contains a markdown code-fence and is not valid YAML for parsing; this is currently harmless because it's not parsed.
 
 **Reports:**
-- `reports/VF-DICT-FORENSIC-01.md` â€” inventory, validity, duplication signals
-- `reports/VF-DICT-FORENSIC-02.md` â€” proven code/CLI references
-- `reports/VF-DICT-FORENSIC-03.md` â€” where runtime validation lives today
-- `reports/VF-DICT-FORENSIC-04.md` â€” Aurora event-space vs dictionary declarations (OP-level)
-- `reports/VF-DICT-FORENSIC-05.md` â€” Option A/B/C evolution menu (no implementation)
+- `reports/VF-DICT-FORENSIC-01.md` Ã¢â‚¬â€ inventory, validity, duplication signals
+- `reports/VF-DICT-FORENSIC-02.md` Ã¢â‚¬â€ proven code/CLI references
+- `reports/VF-DICT-FORENSIC-03.md` Ã¢â‚¬â€ where runtime validation lives today
+- `reports/VF-DICT-FORENSIC-04.md` Ã¢â‚¬â€ Aurora event-space vs dictionary declarations (OP-level)
+- `reports/VF-DICT-FORENSIC-05.md` Ã¢â‚¬â€ Option A/B/C evolution menu (no implementation)
 
 ## 2026-01-08: Config Contract Ghost Rejections Eliminated
 
@@ -554,7 +595,7 @@ All configuration-related trading blocks are now observable in the event stream.
 - **2026-01-08:** Deleted dead legacy spot `AccountObserver` domain (reachability=0 for Futures, unwired from main.py).
 - **2026-01-08:** Fixed test env: FastAPI missing (installed in .venv but pytest not using it?).
 
-## 2026-01-08: VF-VERB-REG â€” SSOT Verb Registry (seed + warn-only drift gate)
+## 2026-01-08: VF-VERB-REG Ã¢â‚¬â€ SSOT Verb Registry (seed + warn-only drift gate)
 
 **Task:** VF-VERB-REG-01/02/03
 **Context:** Prepare a single SSOT verb registry seeded from runtime string-scan (no runtime enforcement). Add a warn-only CI gate to surface drift immediately without breaking.
@@ -565,37 +606,37 @@ All configuration-related trading blocks are now observable in the event stream.
 3. **Owner labeling (top-N):** marked owner + status for the top-20 most frequent runtime tokens; schema is populated only when an exact `<verb_lower>_v1.json` exists (otherwise `null`).
 
 **Reports:**
-- `reports/VF-VERB-REG-01.md` â€” seed generation summary
-- `reports/VF-VERB-REG-02.md` + `reports/VF-VERB-REG-02_diff.json` â€” warn-only drift output
-- `reports/VF-VERB-REG-03.md` â€” owner labeling summary
+- `reports/VF-VERB-REG-01.md` Ã¢â‚¬â€ seed generation summary
+- `reports/VF-VERB-REG-02.md` + `reports/VF-VERB-REG-02_diff.json` Ã¢â‚¬â€ warn-only drift output
+- `reports/VF-VERB-REG-03.md` Ã¢â‚¬â€ owner labeling summary
 
 **Non-goals (explicit):** no runtime deny/allow by verb; no attempt to extract registry from `Router.register` (not used in prod wiring).
 
-## 2026-01-08: VF-VERB-REG-04/05 â€” Owner inference report + coverage threshold
+## 2026-01-08: VF-VERB-REG-04/05 Ã¢â‚¬â€ Owner inference report + coverage threshold
 
 **Task:** VF-VERB-REG-04/05
 **Context:** Speed up cleanup of `owner: unknown` with evidence-based path heuristics (no auto-changes). Tighten drift gate so it fails only once coverage is basically complete.
 
 **Changes:**
-1. **Owner inference report (no autofix):** Added `tests/vfoundation/test_verb_owner_inference_report.py` which scans runtime `.py` (no tests), aggregates occurrences per file and per `apps/reference/domains/<X>/` bucket, and suggests owner only when â‰¥70% of occurrences land in one domain.
+1. **Owner inference report (no autofix):** Added `tests/vfoundation/test_verb_owner_inference_report.py` which scans runtime `.py` (no tests), aggregates occurrences per file and per `apps/reference/domains/<X>/` bucket, and suggests owner only when Ã¢â€°Â¥70% of occurrences land in one domain.
 2. **Artifacts:** Writes `reports/VF-VERB-REG-04_owner_suggestions.json` and `reports/VF-VERB-REG-04.md`.
 3. **Coverage gate policy:** Updated `tests/vfoundation/test_verb_registry_warn_only.py` to fail only if `coverage >= 98%` AND `runtime_not_in_registry > 0` (until then it stays warn-only).
 
-## 2026-01-08: VF-VERB-REG-06 â€” Apply owner suggestions (>=70%)
+## 2026-01-08: VF-VERB-REG-06 Ã¢â‚¬â€ Apply owner suggestions (>=70%)
 
 **Task:** VF-VERB-REG-06
 **Context:** Apply evidence-based owner suggestions to reduce `owner: unknown` without guesses.
 
 **Changes:**
-- Updated `apps/reference/dictionaries/verb_registry_v1.yaml` by changing **only** `owner` for entries where current owner was `unknown` and inference confidence was â‰¥70%.
+- Updated `apps/reference/dictionaries/verb_registry_v1.yaml` by changing **only** `owner` for entries where current owner was `unknown` and inference confidence was Ã¢â€°Â¥70%.
 - Regenerated VF-VERB-REG-04 reports after the update.
 
 **Artifacts:**
-- `reports/VF-VERB-REG-06_applied.json` â€” applied changes with confidence + evidence
-- `reports/VF-VERB-REG-06.md` â€” short summary
+- `reports/VF-VERB-REG-06_applied.json` Ã¢â‚¬â€ applied changes with confidence + evidence
+- `reports/VF-VERB-REG-06.md` Ã¢â‚¬â€ short summary
 - **2026-01-08:** Validated and Frozen 'Alpha Search' domain (Task ALPHA-FREEZE-01/02). Added determinism tests, safe metrics, and offline eval script.
 
-## 2026-01-08: AGENT-NAV-VERB-REG-01 â€” Agent Navigation Playbook (registry-first)
+## 2026-01-08: AGENT-NAV-VERB-REG-01 Ã¢â‚¬â€ Agent Navigation Playbook (registry-first)
 
 **Task:** AGENT-NAV-VERB-REG-01
 **Context:** After establishing SSOT for system language (Verb Registry) and governance dictionaries, we need an explicit, contract-first navigation instruction for Copilot/LLM agents.
@@ -675,23 +716,23 @@ Copilot/agents now have a single official procedure that forbids guessing verbs/
 - Targeted: `python -m pytest -q tests/domains/decision_making/test_sol_uncertain_gate.py::test_sol_uncertain_blocked tests/domains/test_tpsl_config_production.py::TestAuroraConfigLoading::test_solusdt_exit_config_loaded tests/domains/test_tpsl_config_production.py::TestBracketPriceCalculation::test_solusdt_sl_calculation tests/domains/test_tpsl_config_production.py::TestBracketPriceCalculation::test_sol_sl_pct_applied tests/domains/test_tpsl_config_production.py::TestEndToEndBracketCalculation::test_solusdt_full_bracket_path_uses_aurora_config tests/contracts/test_regime_allowlist.py -q` -> **102 passed**.
 - Full suite: `python -m pytest -q` currently blocked by environment issues (`polars` missing and pytest marker `timeout` not registered).
 
-## 2026-02-24: EP-ORDER-PRECISION-1111 â€” Forensic Investigation Complete
+## 2026-02-24: EP-ORDER-PRECISION-1111 Ã¢â‚¬â€ Forensic Investigation Complete
 
 **Task:** EP-ORDER-PRECISION-1111 (investigation only; no code changes)
-**Scope:** `apps/reference/domains/execution_position/` â€” bracket order placement, `config/aurora/instruments.yaml`
+**Scope:** `apps/reference/domains/execution_position/` Ã¢â‚¬â€ bracket order placement, `config/aurora/instruments.yaml`
 **Evidence source:** `logs/domain_execution_position.log` + `logs/domain_execution_position.log.1` (8 confirmed -1111 occurrences)
 
-### Root Cause â€” CONFIRMED
+### Root Cause Ã¢â‚¬â€ CONFIRMED
 
-**Classification:** `NORMALIZER_BYPASS` â€” post-offset re-quantization missing
+**Classification:** `NORMALIZER_BYPASS` Ã¢â‚¬â€ post-offset re-quantization missing
 
 In `fsm_manage.py:_place_brackets()`:
-1. `_quantize_prices()` correctly aligns `sl` and `tp` to `tick_size` âœ“
-2. `TPSLValidationRules.add_safety_offset(sl, tick_size, offset_bps=5)` returns `max(tick_size, sl * 5/10000)`. The percentage branch is **not a tick_size multiple** âœ—
-3. `sl = sl - sl_offset` â†’ tick alignment destroyed âœ—
-4. `str(sl)` passed to adapter â†’ Binance rejects with `-1111`
+1. `_quantize_prices()` correctly aligns `sl` and `tp` to `tick_size` Ã¢Å“â€œ
+2. `TPSLValidationRules.add_safety_offset(sl, tick_size, offset_bps=5)` returns `max(tick_size, sl * 5/10000)`. The percentage branch is **not a tick_size multiple** Ã¢Å“â€”
+3. `sl = sl - sl_offset` Ã¢â€ â€™ tick alignment destroyed Ã¢Å“â€”
+4. `str(sl)` passed to adapter Ã¢â€ â€™ Binance rejects with `-1111`
 
-Identical bug in `fsm.py:_place_deferred_brackets()` (LIMIT-DEFERRED fill path) â€” unquantized values survive into `bracket_data` WAL and replay on fill/restart.
+Identical bug in `fsm.py:_place_deferred_brackets()` (LIMIT-DEFERRED fill path) Ã¢â‚¬â€ unquantized values survive into `bracket_data` WAL and replay on fill/restart.
 
 ### Mathematical Proof
 
@@ -707,19 +748,19 @@ All 4 symbols: `raw = quantized - offset` reproduces log values exactly.
 ### Impact
 
 - 8 confirmed -1111 occurrences across 4 symbols (BTCUSDT, SOLUSDT, DOGEUSDT, XRPUSDT).
-- After -1111, SL/TP placement fails silently (`except Exception` absorbs error). Position is left **without brackets** â€” no stop-loss protection.
-- SOLUSDT `76.031965` appears in both log files â†’ confirms unquantized value stored in WAL and replayed.
+- After -1111, SL/TP placement fails silently (`except Exception` absorbs error). Position is left **without brackets** Ã¢â‚¬â€ no stop-loss protection.
+- SOLUSDT `76.031965` appears in both log files Ã¢â€ â€™ confirms unquantized value stored in WAL and replayed.
 
 ### Next Actions
 
-- [ ] **EP-ORDER-PRECISION-1111-FIX-A**: `fsm_manage.py:_place_brackets()` â€” add `quantize_stop_price(sl, tick_size, side=sl_side)` after offset subtraction.
-- [ ] **EP-ORDER-PRECISION-1111-FIX-B**: WAL/bracket_data storage point â€” ensure quantized prices written before deferred path reads them.
+- [ ] **EP-ORDER-PRECISION-1111-FIX-A**: `fsm_manage.py:_place_brackets()` Ã¢â‚¬â€ add `quantize_stop_price(sl, tick_size, side=sl_side)` after offset subtraction.
+- [ ] **EP-ORDER-PRECISION-1111-FIX-B**: WAL/bracket_data storage point Ã¢â‚¬â€ ensure quantized prices written before deferred path reads them.
 - [ ] **EP-ORDER-PRECISION-1111-TEST**: Implement 5 regression tests per `docs/forensics/EP_PRECISION_1111_CONTEXT.md`.
 - [ ] **EP-ORDER-PRECISION-1111-GUARD** (optional): Precision assertion in `BinanceAdapter.place_stop_market_close_position()` as defense-in-depth.
 
 **Full forensic document:** `docs/forensics/EP_PRECISION_1111_CONTEXT.md`
 
-## 2026-02-24: EP-ORDER-PRECISION-1111 â€” Fix Implemented (TDD)
+## 2026-02-24: EP-ORDER-PRECISION-1111 Ã¢â‚¬â€ Fix Implemented (TDD)
 
 **Status: CLOSED**
 
@@ -727,15 +768,15 @@ All 4 symbols: `raw = quantized - offset` reproduces log values exactly.
 
 | File | Lines | Change |
 |------|-------|--------|
-| `apps/reference/domains/execution_position/fsm_manage.py` | 699â€“710 | Re-quantize `sl_price`, `tp1_price`, `tp2_price` after offset arithmetic before emitting BATCH |
-| `apps/reference/domains/execution_position/fsm.py` | 4809â€“4813 | Defensive re-quantize `sl`/`tp` in `_place_deferred_brackets()` before adapter calls |
-| `apps/reference/domains/execution_position/fsm.py` | 4843â€“4851 | Fail-closed guard: skip TP if SL placement failed (unprotected position prevention) |
-| `tests/domains/execution_position/test_ep_precision_1111.py` | new | 17 regression tests (Aâ€“D), all pass |
+| `apps/reference/domains/execution_position/fsm_manage.py` | 699Ã¢â‚¬â€œ710 | Re-quantize `sl_price`, `tp1_price`, `tp2_price` after offset arithmetic before emitting BATCH |
+| `apps/reference/domains/execution_position/fsm.py` | 4809Ã¢â‚¬â€œ4813 | Defensive re-quantize `sl`/`tp` in `_place_deferred_brackets()` before adapter calls |
+| `apps/reference/domains/execution_position/fsm.py` | 4843Ã¢â‚¬â€œ4851 | Fail-closed guard: skip TP if SL placement failed (unprotected position prevention) |
+| `tests/domains/execution_position/test_ep_precision_1111.py` | new | 17 regression tests (AÃ¢â‚¬â€œD), all pass |
 
 ### Fix Summary
 
 **Path A (`fsm_manage.py:_place_brackets`):**
-After `add_safety_offset()` arithmetic, re-quantize using `quantize_stop_price(float(price), float(tick_size), side=bracket_side)` â†’ wraps back to `Decimal`. This restores tick alignment before `str(price)` is emitted to the adapter.
+After `add_safety_offset()` arithmetic, re-quantize using `quantize_stop_price(float(price), float(tick_size), side=bracket_side)` Ã¢â€ â€™ wraps back to `Decimal`. This restores tick alignment before `str(price)` is emitted to the adapter.
 
 **Path B (`fsm.py:_place_deferred_brackets`):**
 Defensive re-quantize of `sl`/`tp` from `bracket_data` using already-known `sl_side`/`tp_side`. A no-op for clean values from WAL, guards against any edge-case unquantized replay.
@@ -764,15 +805,23 @@ Key findings:
 - Critical follow-ups: pending state is cleared before bracket placement success, no hard policy for `missing_count=2` naked positions, and dedup key is not slot-aware for multi-TP.
 - Duplication audit verdict: **HIGH** risk (execution-manager responsibilities are split across execution_position, decision_making, order_guardian service, and orchestrator).
 
-## 2026-03-04: Architecture Audit (Features & Metrics Inventory)
-- Зроблено аудит екосистеми фічей, метрик та подій (див. `REPORT.md`).
-- Підтверджено перехід від старих метрик (macro_sync) до нових (macro_resid).
-- Ідентифіковано повний pipeline Producer -> Event -> Consumer.
-- Знайдено, що деякі фічі (large_trade_imbalance, volume_zscore) обчислюються, але не беруть явної участі у V2 Scoring.
+[2026-03-07 14:03:00 +02:00] | [Objective: UNCERTAIN + LOW_VOLATILITY forensic audit] | [Artifacts: reports/aurora_regime_forensic_uncertain_low_vol_2026-03-07.md; reports/aurora_forensic_report_2026-03-06_2026-03-07.md; reports/aurora_forensic_2026-03-06_2026-03-07_trades.csv; reports/aurora_forensic_2026-03-06_2026-03-07_summary.json] | [Decision: UNCERTAIN hard no-trade = YES; LOW_VOLATILITY = KEEP BUT NARROW SYMBOL SET; next-run NO-GO unless UNCERTAIN enforcement and aurora LOW_VOL narrowing are hard-enforced] | [Open Questions: Why BTC/SOL aurora traded UNCERTAIN despite YAML bans; why ETH aurora traded LOW_VOL with sizing=0.0; why XRP ran mean_reversion and SOL received md_amr intent against strategies registry; whether MR external LOW_VOL should be unified with FLAT_* taxonomy]
 
-## 2026-03-04: Observability & Logging Sinks Audit
-- Зроблено аудит точок запису логів (див. `REPORT_logging.md`).
-- Виявлено критичні Disk/IO витоки: `FeatureEngineering._log_features_to_file` та `OrderLoggerV1` використовують `open("...", "a")` без ротації.
-- Feature Log (`logs/features/{symbol}.log`) пишеться синхронно на кожен тік і зберігає лише `features` (без `ts` та `tf_sec`), що унеможливлює його якісне використання.
-- Встановлено, що відповідальність за персистентність `EVT:FEATURES_CALCULATED` має бути делегована Neocortex (з батчингом або ротацією), а прямий запис у `FeatureEngineering` слід видалити.
+[2026-03-07 17:33:20 +02:00] | [Objective: final pre-launch synthesis] | [Artifacts: reports/aurora_final_prelaunch_decision_pack_2026-03-07.md; reports/aurora_forensic_report_2026-03-06_2026-03-07.md; reports/aurora_regime_forensic_uncertain_low_vol_2026-03-07.md; config/aurora/strategies.yaml; config/aurora/strategies/mean_reversion.yaml; config/aurora/strategies/md_amr.yaml] | [Decision: launch state = NOT READY; aurora = enable with restrictions; mean_reversion = enable with restrictions only after 300s revert on DOGE, otherwise shadow only; md_amr = shadow only; UNCERTAIN = disable; LOW_VOLATILITY = BTC-only for aurora] | [Residual Risks: UNCERTAIN runtime enforcement not yet verified; symbol-level mutex/arbitration remains P0; BNBUSDT assigned to md_amr without explicit md_amr asset block or direct md_amr BNB lifecycle evidence; WAL close attribution is still too imprecise]
 
+[2026-03-07 23:08:32 UTC] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260307_230832.md; reports/auto/active_positions_snapshot_20260307_230832.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=3 pending=57 anomalies=63; major=stale pending bracket telemetry and symbol-busy conflicts on active books] | [Open Questions: exchange-open order snapshot unavailable; some lifecycle entry timestamps inferred from account updates]
+
+[2026-03-08 03:06:55 UTC] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_030655.md; reports/auto/active_positions_snapshot_20260308_030655.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=1 pending=0 anomalies=1; SOLUSDT short lifecycle remains open with symbol-busy conflict telemetry] | [Open Questions: WAL has no explicit ORDER_FILLED event for the current SOL lifecycle; entry inferred from PENDING_BRACKETS_CLEARED(reason=filled)+account updates]
+[2026-03-08T07:08:12.0882787Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_070812.md; reports/auto/active_positions_snapshot_20260308_070812.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=2, pending=0, anomalies=2, symbols=SOLUSDT,BTCUSDT] | [Open Questions: lifecycle ownership and exact fill transitions remain inferred from account telemetry]
+[2026-03-08T11:04:59.733386Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_110459.md; reports/auto/active_positions_snapshot_20260308_110459.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=0, pending=0, anomalies=0] | [Open Questions: stale symbol-busy persists after flat account updates]
+[2026-03-08T11:06:48.245102Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_110648.md; reports/auto/active_positions_snapshot_20260308_110648.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=0, pending=0, anomalies=1] | [Open Questions: stale symbol-busy after flat account updates]
+[2026-03-08T15:05:10.230486Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_150510.md; reports/auto/active_positions_snapshot_20260308_150510.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=3, pending=4, anomalies=2] | [Open Questions: validate runtime-effective mean_reversion enablement for XRPUSDT/BNBUSDT ownership alignment]
+[2026-03-08T19:04:18.247000Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_190418.md; reports/auto/active_positions_snapshot_20260308_190418.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=5, pending=0, anomalies=4] | [Open Questions: Confirm runtime-effective strategy ownership for md_amr symbols and unresolved bracket close telemetry for legacy aurora lifecycles.]
+
+[2026-03-08T23:05:04.778158Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260308_230504.md; reports/auto/active_positions_snapshot_20260308_230504.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=2 pending=1 anomalies=2; active symbols=ETHUSDT,DOGEUSDT] | [Open Questions: DOGEUSDT fill transition has no explicit ORDER_FILLED event in WAL; open state inferred from market ORDER_PLACED + persistent ACCOUNT_UPDATE_RECEIVED position continuity.; Pending status is inferred from absence of ORDER_CANCELLED/ORDER_TIMEOUT/PENDING_BRACKETS_CLEARED(reason=filled) for the same order_id in current-day WAL.]
+
+
+
+[2026-03-09T03:08:10.897271Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260309_030810.md; reports/auto/active_positions_snapshot_20260309_030810.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=1 pending=0 anomalies=0; active symbols=DOGEUSDT] | [Open Questions: DOGEUSDT fill transition has no explicit ORDER_FILLED verb in WAL; active state is inferred from ACCOUNT_UPDATE_RECEIVED continuity after market ORDER_PLACED.; No pending orders remain after applying current-day ORDER_TIMEOUT/ORDER_CANCELLED/PENDING_BRACKETS_CLEARED terminal signals to prior pending continuity.]
+[2026-03-09T07:10:37.023843Z] | [Objective: Active trade snapshot audit] | [Artifacts: reports/auto/active_positions_snapshot_latest.md; reports/auto/active_positions_snapshot_20260309_071037.md; reports/auto/active_positions_snapshot_20260309_071037.json; reports/auto/trade_lifecycle_ledger.jsonl; reports/auto/anomalies_register_latest.md] | [Findings: active=1 pending=0 anomalies=0; active symbols=DOGEUSDT] | [Open Questions: Fill transitions still inferred from ORDER_PLACED + ACCOUNT_UPDATE + PENDING_BRACKETS_CLEARED(reason=filled) where explicit ORDER_FILLED is absent.]
+[2026-03-09T07:12:07.901500Z] | [Objective: Daily trade postmortem audit] | [Artifacts] reports/auto/closed_positions_postmortem_latest.md; reports/auto/closed_positions_postmortem_20260309.md; reports/auto/closed_positions_postmortem_20260309.csv; reports/auto/postmortem_summary_20260309.json | [Findings] closed=2 categories={'cancel pathology': 1, 'execution issue': 1, 'bad timing': 1, 'unclear': 1} | [Recommended Actions] Add explicit close WAL payload; tune fill-timeout by symbol/regime; review ETH short gating in HIGH_VOLATILITY

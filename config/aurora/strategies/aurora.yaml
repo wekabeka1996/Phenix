@@ -70,6 +70,7 @@ aurora:
       TREND_DOWN: 0.12
       UNCERTAIN: 99.0
       DEFAULT: 0.12
+    blocked_regimes: ["UNCERTAIN"]
     kelly:
       base_probability: 0.5
       kelly_cap: 0.25
@@ -211,9 +212,9 @@ aurora:
         macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.341 (Moved to Gate)
-        obi: 0.19
+        obi: 0.15
         tfi: 0.093
-        absorption: 0.2
+        absorption: 0.0
         volatility_state: 0.036
         depth_imbalance: -0.256
         delta_price: 0.10
@@ -237,12 +238,12 @@ aurora:
 
       regime_sizing:
         HIGH_VOLATILITY: 0.7
-        LOW_VOLATILITY: 0.5
+        LOW_VOLATILITY: 0.0
         MEAN_REVERSION: 0.8
 
       exit:
         sl_pct: 0.019
-        max_hold_sec: 6000
+        max_hold_sec: null
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -284,7 +285,7 @@ aurora:
         trail_pct: 0.006
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]
       signal_threshold:
         enabled: true
         value: 0.09
@@ -363,7 +364,7 @@ aurora:
 
       exit:
         sl_pct: 0.0135
-        max_hold_sec: 6000
+        max_hold_sec: null
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -399,7 +400,7 @@ aurora:
         tp_high_ratio: 0.60
         partial_exit_pct: 0.31
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]
 
       trailing_stop:
         enabled: true
@@ -495,7 +496,7 @@ aurora:
       # 6. Exits (The Profit Engine)
       exit:
         sl_pct: 0.005  # Base 0.5%
-        max_hold_sec: 6000
+        max_hold_sec: null
 
         regime_tpsl:
           enabled: true

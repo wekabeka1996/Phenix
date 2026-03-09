@@ -42,8 +42,7 @@ def _make_deadline(symbol: str = SYMBOL, order_id: str = ORDER_ID) -> OrderDeadl
 def _make_adv_cfg(min_age_sec: int = 300, atr_mult: float = 0.5) -> MagicMock:
     """
     MagicMock shaped like AdvancedStaleCancelConfig.
-    Uses self-consistent mock labels (BEAR_TREND/BULL_TREND) for unit-level gate tests.
-    Canonical-label regression tests override may_cancel_regimes directly.
+    Defaults to canonical RegimeLabel values so tests exercise the real namespace.
     """
     adv = MagicMock()
     adv.enabled = True
@@ -51,8 +50,8 @@ def _make_adv_cfg(min_age_sec: int = 300, atr_mult: float = 0.5) -> MagicMock:
     adv.drift_away.atr_mult = atr_mult
     # Fallback Gate 1 path: may_cancel_regimes[side] − never_cancel
     adv.may_cancel_regimes = {
-        "BUY": ["BEAR_TREND"],
-        "SELL": ["BULL_TREND"],
+        "BUY": ["TREND_DOWN"],
+        "SELL": ["TREND_UP"],
     }
     adv.never_cancel_regimes = ["UNCERTAIN"]
     return adv
@@ -119,12 +118,12 @@ def _setup(fsm, adv_cfg, meta=None, features=None) -> MagicMock:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Gate 1 — Regime gate (via fallback Path B: may_cancel_regimes[side])
-# These tests use self-consistent mock labels (BEAR_TREND) to isolate gate logic.
+# These tests use canonical labels from RegimeLabel SSOT.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_uncertain_never_cancels(fsm_harness):
     """
-    Gate 1 blocks: UNCERTAIN is not in may_cancel_regimes["BUY"] = ["BEAR_TREND"],
+    Gate 1 blocks: UNCERTAIN is not in may_cancel_regimes["BUY"] = ["TREND_DOWN"],
     and it is also in never_cancel_regimes.
     Even if age and drift gates would both pass, no cancel should fire.
     """
@@ -141,7 +140,7 @@ def test_uncertain_never_cancels(fsm_harness):
 
 def test_regime_not_in_may_cancel_no_cancel(fsm_harness):
     """
-    Gate 1 blocks: MEAN_REVERSION is NOT in may_cancel_regimes["BUY"] = ["BEAR_TREND"].
+    Gate 1 blocks: MEAN_REVERSION is NOT in may_cancel_regimes["BUY"] = ["TREND_DOWN"].
     Cancel must not fire.
     """
     fsm, _bus, _cfg = fsm_harness
@@ -159,7 +158,7 @@ def test_regime_not_in_may_cancel_no_cancel(fsm_harness):
 
 def test_age_gate_blocks_fresh_order(fsm_harness):
     """
-    Gate 1 passes (BEAR_TREND is in may_cancel_regimes for BUY).
+    Gate 1 passes (TREND_DOWN is in may_cancel_regimes for BUY).
     Gate 2 blocks: order placed only 1 second ago — below min_age of 300 s.
     """
     fsm, _bus, _cfg = fsm_harness
@@ -177,7 +176,7 @@ def test_age_gate_blocks_fresh_order(fsm_harness):
     cancel_mock = _setup(fsm, adv_cfg, meta=fresh_meta,
                          features=_features_snap())
 
-    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="BEAR_TREND")
+    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="TREND_DOWN")
 
     cancel_mock.assert_not_called()
 
@@ -194,7 +193,7 @@ def test_no_features_cache_fail_closed(fsm_harness):
     # features=None → _last_features_cache stays empty
     cancel_mock = _setup(fsm, adv_cfg, meta=_old_meta(), features=None)
 
-    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="BEAR_TREND")
+    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="TREND_DOWN")
 
     cancel_mock.assert_not_called()
 
@@ -214,7 +213,7 @@ def test_drift_too_small_no_cancel(fsm_harness):
         features=_features_snap(price="95010.0", atr_14="1000.0"),
     )
 
-    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="BEAR_TREND")
+    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="TREND_DOWN")
 
     cancel_mock.assert_not_called()
 
@@ -224,7 +223,7 @@ def test_drift_too_small_no_cancel(fsm_harness):
 def test_all_gates_pass_cancel_fires(fsm_harness):
     """
     All 3 gates pass (fallback Path B — cancelable_regimes is None):
-      Gate 1: BEAR_TREND in may_cancel_regimes["BUY"]
+      Gate 1: TREND_DOWN in may_cancel_regimes["BUY"]
       Gate 2: order placed at epoch+1ms → age >> 300 s
       Gate 3: drift = 2 000 > threshold = 1000 * 0.5 = 500
 
@@ -241,7 +240,7 @@ def test_all_gates_pass_cancel_fires(fsm_harness):
         features=_features_snap(price="97000.0", atr_14="1000.0"),
     )
 
-    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="BEAR_TREND")
+    fsm._evaluate_advanced_stale_cancel(symbol=SYMBOL, new_regime="TREND_DOWN")
 
     cancel_mock.assert_called_once()
     kwargs = cancel_mock.call_args.kwargs
@@ -266,7 +265,7 @@ def test_canonical_trend_down_invalidates_buy_fallback(fsm_harness):
     """
     Regression (fallback path): TREND_DOWN must pass Gate 1 for a BUY order
     when cancelable_regimes is None (no allowed_regimes in payload).
-    Protects against BEAR_TREND vs TREND_DOWN label drift.
+    Protects against non-canonical label drift.
     """
     fsm, _bus, _cfg = fsm_harness
     adv_cfg = _make_adv_cfg()
@@ -308,6 +307,30 @@ def test_canonical_trend_up_invalidates_sell_fallback(fsm_harness):
     cancel_mock.assert_called_once()
     assert cancel_mock.call_args.kwargs.get("reason") == "CANCEL_STALE_REGIME_ADVANCED"
     assert ORDER_ID in cancel_mock.call_args.kwargs.get("filter_order_ids", set())
+
+
+def test_on_regime_detected_routes_to_advanced_cancel_with_canonical_regime(fsm_harness):
+    """
+    Integration pulse: _on_regime_detected must route canonical EVT:REGIME_DETECTED
+    payloads into the advanced cancel path and cancel only the approved pending entry.
+    """
+    fsm, _bus, _cfg = fsm_harness
+    adv_cfg = _make_adv_cfg(atr_mult=0.5)
+    cancel_mock = _setup(
+        fsm,
+        adv_cfg,
+        meta=_old_meta("BUY", "95000.0", cancelable_regimes=["TREND_DOWN"]),
+        features=_features_snap(price="97000.0", atr_14="1000.0"),
+    )
+    event = MagicMock()
+    event.pld = {"symbol": SYMBOL, "regime": "TREND_DOWN"}
+
+    fsm._on_regime_detected(event)
+
+    cancel_mock.assert_called_once()
+    kwargs = cancel_mock.call_args.kwargs
+    assert kwargs.get("reason") == "CANCEL_STALE_REGIME_ADVANCED"
+    assert ORDER_ID in kwargs.get("filter_order_ids", set())
 
 
 # ─────────────────────────────────────────────────────────────────────────────

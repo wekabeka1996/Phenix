@@ -1,0 +1,144 @@
+{
+  "generated_at": "2026-03-08T03:05:00.801000+00:00",
+  "source_scope": {
+    "wal_file": "c:/Users/user/Music/Phenix/ops/wal/2026-03-08.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "c:/Users/user/Music/Phenix/logs/order_log_v1.jsonl",
+    "historical_memory": "c:/Users/user/Music/Phenix/reports/auto"
+  },
+  "summary": {
+    "active_positions_count": 1,
+    "pending_orders_count": 3,
+    "anomalies_count": 2
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772935803130",
+      "position_id": "SOLUSDT:sell:82.84",
+      "order_id": "1759113874",
+      "client_order_id": "ENTRY-aeac3cd7ef76",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T02:15:42.059000+00:00",
+      "entry_price": 82.84,
+      "entry_regime": "HIGH_VOLATILITY",
+      "entry_reason": "hold:sell:score=-0.1953<=-thr_neutral=-0.0500",
+      "tp_config": 82.0030819536,
+      "sl_config": 84.294350775,
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": 56.52754326,
+      "age_sec": 2958,
+      "latest_risk_flags": [
+        "NRR-SYMBOL-BUSY",
+        "ANCHOR_SHOCK_VETO",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "symbol_busy_conflict",
+        "opposite_side_overlap"
+      ]
+    }
+  ],
+  "pending_orders": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772916600018",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-07T20:50:01.225000+00:00",
+      "entry_price": 82.91,
+      "entry_regime": null,
+      "current_regime": "HIGH_VOLATILITY",
+      "tp_config": null,
+      "sl_config": null,
+      "unrealized_pnl": null,
+      "age_sec": 22499,
+      "position_id": null,
+      "order_id": "1758054440",
+      "client_order_id": "ENTRY-60368c6214af",
+      "entry_reason": "pending_entry",
+      "latest_risk_flags": [],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "opposite_side_overlap"
+      ]
+    },
+    {
+      "lifecycle_id": "DOGEUSDT:rid-9657bd20a43ca82c",
+      "symbol": "DOGEUSDT",
+      "strategy_id": null,
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-08T02:50:04.448000+00:00",
+      "entry_price": 0.0,
+      "entry_regime": null,
+      "current_regime": null,
+      "tp_config": null,
+      "sl_config": null,
+      "unrealized_pnl": null,
+      "age_sec": 896,
+      "position_id": null,
+      "order_id": "726017235",
+      "client_order_id": "ENTRY-7e2d1c6bd2d2",
+      "entry_reason": "pending_entry",
+      "latest_risk_flags": [],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    },
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1772939103463",
+      "symbol": "ETHUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-08T03:05:04.210000+00:00",
+      "entry_price": 1943.55,
+      "entry_regime": null,
+      "current_regime": "HIGH_VOLATILITY",
+      "tp_config": null,
+      "sl_config": null,
+      "unrealized_pnl": null,
+      "age_sec": -3,
+      "position_id": null,
+      "order_id": "8494632317",
+      "client_order_id": "ENTRY-dab66ec511ee",
+      "entry_reason": "pending_entry",
+      "latest_risk_flags": [],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    }
+  ],
+  "anomalies": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772935803130",
+      "symbol": "SOLUSDT",
+      "type": "symbol-busy conflict",
+      "severity": "medium",
+      "evidence": "WAL line 4956 TRADE_INTENT_REJECTED NRR-SYMBOL-BUSY"
+    },
+    {
+      "lifecycle_id": "*",
+      "symbol": "SOLUSDT",
+      "type": "opposite-side overlap",
+      "severity": "high",
+      "evidence": "Both buy and sell active/pending for same symbol in current snapshot"
+    }
+  ],
+  "unresolved_ambiguities": [
+    "Lifecycle IDs are partially missing in runtime events; fallback IDs used where absent.",
+    "Entry fill events are inferred from PENDING_BRACKETS_CLEARED(reason=filled) and account updates.",
+    "Strategy ownership checks are best-effort; explicit owner tags not present on all events."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-08.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl"
+  ]
+}

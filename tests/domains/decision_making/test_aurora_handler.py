@@ -34,7 +34,8 @@ class TestAuroraHandlerInit:
                         side_bias_target_ratio=0.7,
                         side_bias_penalty_factor=0.3,
                         side_bias_min_intents=15,
-                        regime_threshold_multipliers={"DEFAULT": 1.0, "HIGH_VOL": 1.5},
+                        regime_threshold_multipliers={
+                            "DEFAULT": 1.0, "HIGH_VOL": 1.5},
                         direction_strength_scoring=SimpleNamespace(
                             directional_features=["obi", "tfi"],
                             strength_features=["volume_spike"],
@@ -52,9 +53,9 @@ class TestAuroraHandlerInit:
             )
         )
         emit_fn = MagicMock()
-        
+
         handler = AuroraHandler(config=config, emit_fn=emit_fn)
-        
+
         assert handler.signal_threshold == Decimal("0.15")
         assert handler.side_bias_window_sec == 300.0
         assert handler.side_bias_target_ratio == 0.7
@@ -97,9 +98,9 @@ class TestRegimeCaching:
             "ts_ms": 1700000000000,
             "warmup": {"full_ready": True, "ticks_seen": 100},
         }
-        
+
         handler.on_regime_detected(event)
-        
+
         state = handler._symbol_states["BTCUSDT"]
         assert state.regime == "TREND_UP"
         assert state.regime_confidence == 0.85
@@ -111,6 +112,132 @@ class TestRegimeCaching:
         """on_regime_detected should handle missing symbol gracefully."""
         event = {"regime": "TREND_UP"}
         handler.on_regime_detected(event)  # Should not raise
+
+
+class TestVolatilityEntryPricing:
+    @pytest.fixture
+    def handler(self):
+        emitted: list[tuple[str, dict]] = []
+
+        config = SimpleNamespace(
+            strategies=SimpleNamespace(
+                aurora=SimpleNamespace(
+                    timeframe_sec=300,
+                    execution=SimpleNamespace(
+                        entry_tif="GTX",
+                        gtx_retry_offset_bps=2.0,
+                    ),
+                    decision=SimpleNamespace(
+                        signal_threshold=0.1,
+                        side_bias_window_sec=420,
+                        side_bias_target_ratio=0.72,
+                        side_bias_penalty_factor=0.25,
+                        side_bias_min_intents=18,
+                        regime_threshold_multipliers={"DEFAULT": 1.0},
+                        direction_strength_scoring=SimpleNamespace(
+                            directional_features=["obi", "tfi"],
+                            strength_features=[],
+                            strength_alpha=0.5,
+                            strength_cap=1.5,
+                        ),
+                        signals=SimpleNamespace(
+                            normalize_signals_mode="signed_v2",
+                            enable_new_metrics=True,
+                            delta_price_cap_pct=0.005,
+                        ),
+                    ),
+                    assets={
+                        "BTCUSDT": SimpleNamespace(
+                            enabled=True,
+                            volatility_entry_logic=SimpleNamespace(
+                                enabled=True,
+                                regime_multipliers={
+                                    "LOW_VOLATILITY": 0.5,
+                                    "DEFAULT": 0.2,
+                                },
+                            ),
+                        )
+                    },
+                )
+            )
+        )
+
+        def emit_fn(name: str, payload: dict) -> None:
+            emitted.append((name, payload))
+
+        handler = AuroraHandler(
+            config=config,
+            emit_fn=emit_fn,
+            monotonic_fn=lambda: 1000.0,
+            wall_time_fn=lambda: 1000.0,
+        )
+        state = handler._symbol_states["BTCUSDT"]
+        state.regime = "LOW_VOLATILITY"
+        state.regime_effective = "LOW_VOLATILITY"
+        state.warmup_full_ready = True
+        return handler, emitted
+
+    def test_bar_impulse_widens_limit_entry(self, handler):
+        aurora_handler, emitted = handler
+        result = SimpleNamespace(
+            side="buy",
+            score=Decimal("0.9"),
+            thr_buy=Decimal("0.1"),
+            thr_sell=Decimal("0.1"),
+            why_chain=[],
+            psi_vector={},
+            regime="LOW_VOLATILITY",
+        )
+
+        aurora_handler._emit_signal(
+            "BTCUSDT",
+            result,
+            {
+                "price": "100",
+                "delta_price": "8",
+                "volatility": {
+                    "atr_14": "1",
+                    "atr_ready": True,
+                    "bar_range": "10",
+                },
+            },
+            {},
+        )
+
+        payload = next(p for name, p in emitted if name ==
+                       "EVT:STRATEGY_SIGNAL_PRODUCED")
+        assert Decimal(payload["price_ctx"]["entry_price"]) == Decimal("96")
+
+    def test_gtx_buffer_sets_minimum_limit_offset(self, handler):
+        aurora_handler, emitted = handler
+        result = SimpleNamespace(
+            side="buy",
+            score=Decimal("0.9"),
+            thr_buy=Decimal("0.1"),
+            thr_sell=Decimal("0.1"),
+            why_chain=[],
+            psi_vector={},
+            regime="LOW_VOLATILITY",
+        )
+
+        aurora_handler._emit_signal(
+            "BTCUSDT",
+            result,
+            {
+                "price": "100",
+                "delta_price": "0.001",
+                "volatility": {
+                    "atr_14": "0.01",
+                    "atr_ready": True,
+                    "bar_range": "1",
+                },
+            },
+            {},
+        )
+
+        payload = next(p for name, p in emitted if name ==
+                       "EVT:STRATEGY_SIGNAL_PRODUCED")
+        assert Decimal(payload["price_ctx"]["entry_price"]) == Decimal("99.98")
 
 
 class TestSideBiasHistory:
@@ -146,13 +273,13 @@ class TestSideBiasHistory:
         """_get_side_bias_state should count recent history."""
         now = time.time()
         state = handler._symbol_states["BTCUSDT"]
-        
+
         # Add some history
         state.buy_timestamps = [now - 10, now - 20, now - 30]
         state.sell_timestamps = [now - 5, now - 15]
-        
+
         bias_state = handler._get_side_bias_state("BTCUSDT")
-        
+
         assert bias_state.buy_count == 3
         assert bias_state.sell_count == 2
 
@@ -160,13 +287,13 @@ class TestSideBiasHistory:
         """_get_side_bias_state should filter entries outside window."""
         now = time.time()
         state = handler._symbol_states["BTCUSDT"]
-        
+
         # Add some history - some outside 60s window
         state.buy_timestamps = [now - 10, now - 100]  # One inside, one outside
         state.sell_timestamps = [now - 5, now - 200]  # One inside, one outside
-        
+
         bias_state = handler._get_side_bias_state("BTCUSDT")
-        
+
         assert bias_state.buy_count == 1  # Only recent one
         assert bias_state.sell_count == 1  # Only recent one
 
@@ -175,9 +302,9 @@ class TestSideBiasHistory:
         handler._update_side_bias("BTCUSDT", "buy")
         handler._update_side_bias("BTCUSDT", "sell")
         handler._update_side_bias("BTCUSDT", "buy")
-        
+
         state = handler._symbol_states["BTCUSDT"]
-        
+
         assert len(state.buy_timestamps) == 2
         assert len(state.sell_timestamps) == 1
 
@@ -201,10 +328,10 @@ class TestSignalEmission:
                         regime_threshold_multipliers={"DEFAULT": 1.0},
                         direction_strength_scoring=SimpleNamespace(
                             directional_features=["obi", "tfi"],
-                        strength_features=[],
-                        strength_alpha=0.5,
-                        strength_cap=1.5,
-                    ),
+                            strength_features=[],
+                            strength_alpha=0.5,
+                            strength_cap=1.5,
+                        ),
                         signals=SimpleNamespace(
                             normalize_signals_mode="signed_v2",
                             enable_new_metrics=True,
@@ -227,26 +354,26 @@ class TestSignalEmission:
         )
         emit_fn = MagicMock()
         handler = AuroraHandler(config=config, emit_fn=emit_fn)
-        
+
         # Set up warmup
         handler._symbol_states["BTCUSDT"].warmup_full_ready = True
         handler._symbol_states["BTCUSDT"].regime = "DEFAULT"
-        
+
         return handler, emit_fn
 
     def test_signal_includes_readiness(self, handler_with_symbol):
         """Emitted signal should include readiness.warmup_ok."""
         handler, emit_fn = handler_with_symbol
-        
+
         event = {
             "symbol": "BTCUSDT",
             "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": True, "ready": {"obi": True, "tfi": True}},
         }
-        
+
         handler.on_features_calculated(event)
-        
+
         if emit_fn.call_count > 0:
             call_args = emit_fn.call_args
             payload = call_args[0][1]
@@ -257,14 +384,14 @@ class TestSignalEmission:
         """Handler should fail-closed and emit an explicit block reason when warmup not ready."""
         handler, emit_fn = handler_with_symbol
         handler._symbol_states["BTCUSDT"].warmup_full_ready = False
-        
+
         event = {
             "symbol": "BTCUSDT",
             "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": False, "ready": {"obi": True, "tfi": True}},
         }
-        
+
         handler.on_features_calculated(event)
 
         assert emit_fn.call_count == 1
@@ -276,14 +403,14 @@ class TestSignalEmission:
         """Handler should skip disabled symbols."""
         handler, emit_fn = handler_with_symbol
         handler.config.strategies.aurora.assets["BTCUSDT"].enabled = False
-        
+
         event = {
             "symbol": "BTCUSDT",
             "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": True, "ready": {"obi": True, "tfi": True}},
         }
-        
+
         handler.on_features_calculated(event)
-        
+
         assert emit_fn.call_count == 0

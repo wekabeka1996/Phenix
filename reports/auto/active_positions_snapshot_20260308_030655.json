@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-03-08T03:06:55.959000+00:00",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-08.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 1,
+    "pending_orders_count": 0,
+    "anomalies_count": 1
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772935803130",
+      "position_id": "SOLUSDT:sell:82.84",
+      "order_id": "1759113874",
+      "client_order_id": "ENTRY-aeac3cd7ef76",
+      "symbol": "SOLUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T02:15:42.059000+00:00",
+      "entry_price": 82.84,
+      "entry_regime": "HIGH_VOLATILITY",
+      "entry_reason": "hold:sell:score=-0.1953<=-thr_neutral=-0.0500",
+      "tp_config": 82.0030819536,
+      "sl_config": 84.294350775,
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": 52.86493692,
+      "age_sec": 3073,
+      "latest_risk_flags": [
+        "NRR-SYMBOL-BUSY",
+        "ANCHOR_SHOCK_VETO",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "symbol_busy_conflict"
+      ]
+    }
+  ],
+  "pending_orders": [],
+  "anomalies": [
+    {
+      "lifecycle_id": "SOLUSDT:aurora_SOLUSDT_1772935803130",
+      "symbol": "SOLUSDT",
+      "type": "symbol-busy conflict",
+      "severity": "medium",
+      "evidence": "WAL line 4956 NRR-SYMBOL-BUSY"
+    }
+  ],
+  "unresolved_ambiguities": [
+    "Some lifecycle_id values are absent in runtime events; stable fallback IDs are used.",
+    "Entry fill is inferred from PENDING_BRACKETS_CLEARED(reason=filled) plus account updates.",
+    "No explicit strategy-owner tag exists on all events; ownership checks are best-effort."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-08.jsonl",
+    "logs/order_log_v1.jsonl",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl"
+  ]
+}

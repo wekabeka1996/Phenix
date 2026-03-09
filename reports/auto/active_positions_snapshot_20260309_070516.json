@@ -1,0 +1,198 @@
+{
+  "generated_at": "2026-03-09T07:05:16.231080Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-09.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 1,
+    "pending_orders_count": 4,
+    "anomalies_count": 4
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "DOGEUSDT:rid-54096416d6fc1df8",
+      "position_id": "DOGEUSDT:sell:0.09142",
+      "order_id": "728899561",
+      "client_order_id": "ENTRY-4a4507438ab4",
+      "symbol": "DOGEUSDT",
+      "strategy_id": "mean_reversion",
+      "side": "sell",
+      "status": "open_position",
+      "entry_ts": "2026-03-09T05:50:02.333000Z",
+      "entry_price": 0.09142,
+      "entry_regime": "FLAT_LOW",
+      "entry_reason": "price_above_upper_bb:pct_b=0.977;regime:FLAT_LOW; margin_first_ok",
+      "signal_context": "strategy_prices:sl=0.09203642857142857142857142857,tp=0.0897469152317704003000",
+      "tp_config": "0.0897469152317704003000",
+      "sl_config": "0.09203642857142857142857142857",
+      "current_regime": "unknown",
+      "unrealized_pnl": 148.4550984,
+      "age_sec": 4509,
+      "latest_risk_flags": [
+        "NRR-046"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    }
+  ],
+  "pending_orders": [
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773018900049",
+      "position_id": null,
+      "order_id": "12711871431",
+      "client_order_id": "ENTRY-868cda3dc394",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-09T01:15:00.826000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": null,
+      "sl_config": null,
+      "current_regime": "LOW_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 21015,
+      "latest_risk_flags": [
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    },
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773023099984",
+      "position_id": null,
+      "order_id": "12713115787",
+      "client_order_id": "ENTRY-6945d9cdb2e0",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-09T02:25:00.792000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": null,
+      "sl_config": null,
+      "current_regime": "LOW_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 16815,
+      "latest_risk_flags": [
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    },
+    {
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773028200440",
+      "position_id": null,
+      "order_id": "12714587717",
+      "client_order_id": "ENTRY-1b937f155cea",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "buy",
+      "status": "pending",
+      "entry_ts": "2026-03-09T03:50:02.209000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": null,
+      "sl_config": null,
+      "current_regime": "LOW_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 11714,
+      "latest_risk_flags": [
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    },
+    {
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773028500415",
+      "position_id": null,
+      "order_id": "8504905354",
+      "client_order_id": "ENTRY-45d1dde94c01",
+      "symbol": "ETHUSDT",
+      "strategy_id": "aurora",
+      "side": "sell",
+      "status": "pending",
+      "entry_ts": "2026-03-09T03:55:01.196000Z",
+      "entry_price": null,
+      "entry_regime": "unknown",
+      "entry_reason": null,
+      "signal_context": null,
+      "tp_config": null,
+      "sl_config": null,
+      "current_regime": "HIGH_VOLATILITY",
+      "unrealized_pnl": null,
+      "age_sec": 11415,
+      "latest_risk_flags": [
+        "NRR-046",
+        "REGIME_NOT_ALLOWLISTED"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": [
+        "timeout_risk"
+      ]
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "timeout_risk",
+      "symbol": "BTCUSDT",
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773018900049",
+      "age_sec": 21015
+    },
+    {
+      "type": "timeout_risk",
+      "symbol": "BTCUSDT",
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773023099984",
+      "age_sec": 16815
+    },
+    {
+      "type": "timeout_risk",
+      "symbol": "BTCUSDT",
+      "lifecycle_id": "BTCUSDT:aurora_BTCUSDT_1773028200440",
+      "age_sec": 11714
+    },
+    {
+      "type": "timeout_risk",
+      "symbol": "ETHUSDT",
+      "lifecycle_id": "ETHUSDT:aurora_ETHUSDT_1773028500415",
+      "age_sec": 11415
+    }
+  ],
+  "unresolved_ambiguities": [
+    "Market entries still lack a guaranteed explicit ORDER_FILLED verb in WAL; open-state inference uses ORDER_PLACED + persistent ACCOUNT_UPDATE_RECEIVED positions.",
+    "Current regime for active DOGEUSDT lifecycle is inferred from latest reject telemetry per symbol and may lag bar-close regime transitions."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-09.jsonl",
+    "logs/order_log_v1.jsonl",
+    "logs/*.jsonl",
+    "reports/trade_lifecycle_failure_vectors_20260308_rca.md",
+    "reports/testnet_last_50_trades.csv",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_latest.json"
+  ]
+}

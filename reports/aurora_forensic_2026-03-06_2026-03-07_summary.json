@@ -1,0 +1,86 @@
+{
+  "window_start_utc": "2026-03-05 22:00:00",
+  "window_end_utc": "2026-03-07 11:32:15",
+  "trade_count": 60,
+  "strategy_metrics": [
+    {
+      "strategy": "aurora",
+      "total_trades": 44,
+      "win_rate": 0.6590909090909091,
+      "profit_factor": 1.4311668678285574,
+      "average_R": 0.1563187079160172,
+      "average_pnl": 5.942554237959067,
+      "max_drawdown": -308.69161814448205,
+      "average_hold_time_min": 51.74867916666667,
+      "sharpe_like_metric": 0.8046964776071677,
+      "net_pnl": 261.47238647019896
+    },
+    {
+      "strategy": "mean_reversion",
+      "total_trades": 16,
+      "win_rate": 0.4375,
+      "profit_factor": 0.5637142906919731,
+      "average_R": 0.16593587701674636,
+      "average_pnl": -13.051811132662756,
+      "max_drawdown": -440.45496132899973,
+      "average_hold_time_min": 86.38352395833333,
+      "sharpe_like_metric": -0.9670407707126766,
+      "net_pnl": -208.8289781226041
+    }
+  ],
+  "regime_metrics": [
+    {
+      "regime": "HIGH_VOLATILITY",
+      "trade_count": 5,
+      "win_rate": 0.4,
+      "avg_pnl": -3.0732781103560076,
+      "avg_R": 0.23890276247168665,
+      "net_pnl": -15.36639055178004
+    },
+    {
+      "regime": "LOW_VOLATILITY",
+      "trade_count": 15,
+      "win_rate": 0.6,
+      "avg_pnl": -5.592295635311895,
+      "avg_R": 0.3717567130009997,
+      "net_pnl": -83.88443452967843
+    },
+    {
+      "regime": "MEAN_REVERSION",
+      "trade_count": 23,
+      "win_rate": 0.6521739130434783,
+      "avg_pnl": 12.763865372803686,
+      "avg_R": 0.1950881276685559,
+      "net_pnl": 293.56890357448475
+    },
+    {
+      "regime": "UNCERTAIN",
+      "trade_count": 17,
+      "win_rate": 0.5882352941176471,
+      "avg_pnl": -8.33380412620185,
+      "avg_R": -0.10146436842220681,
+      "net_pnl": -141.67467014543146
+    }
+  ],
+  "counterfactual_summary": {
+    "sl_trades": 14,
+    "sl_reversed_within_3_bars": 0,
+    "sl_to_profit_with_larger_sl": {
+      "sl_x1.25": 10
+    },
+    "tp_extension_hits": {
+      "tp_x1.25": 16,
+      "tp_x1.5": 12,
+      "tp_x2": 12
+    },
+    "ambiguous_paths": 0
+  },
+  "cancel_reason_counts": {
+    "manual_close": 2,
+    "CANCEL_SUPERSEDED": 7,
+    "timeout_cancellation": 6
+  },
+  "supersede_event_count": 9,
+  "fill_discovered_count": 2,
+  "conflict_count": 1
+}

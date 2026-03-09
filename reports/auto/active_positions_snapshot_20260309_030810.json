@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-03-09T03:08:10.897271Z",
+  "source_scope": {
+    "wal_file": "ops/wal/2026-03-09.jsonl",
+    "wal_scope_rule": "current_day_only",
+    "order_log": "logs/order_log_v1.jsonl",
+    "historical_memory": "reports/auto/"
+  },
+  "summary": {
+    "active_positions_count": 1,
+    "pending_orders_count": 0,
+    "anomalies_count": 0
+  },
+  "active_positions": [
+    {
+      "lifecycle_id": "DOGEUSDT:rid-3abda79d7725aff1",
+      "position_id": "DOGEUSDT:buy:0.08801",
+      "order_id": "728072422",
+      "client_order_id": "ENTRY-01a2817da367",
+      "symbol": "DOGEUSDT",
+      "strategy_id": "mean_reversion",
+      "side": "buy",
+      "status": "open_position",
+      "entry_ts": "2026-03-08T22:05:04.544000Z",
+      "entry_price": 0.08801,
+      "entry_regime": "FLAT_HIGH",
+      "entry_reason": "price_below_lower_bb:pct_b=-0.418;rsi_oversold:10.6;regime:FLAT_HIGH",
+      "signal_context": "margin_first_ok; strategy_prices:sl=0.08594151785714285714285714286,tp=0.09127537907625702400",
+      "tp_config": "0.09127537907625702400",
+      "sl_config": "0.08594151785714285714285714286",
+      "current_regime": "unknown",
+      "unrealized_pnl": 236.05894,
+      "age_sec": 18186,
+      "latest_risk_flags": [
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046",
+        "NRR-046"
+      ],
+      "last_cancel_supersede_timeout": null,
+      "anomaly_flags": []
+    }
+  ],
+  "pending_orders": [],
+  "anomalies": [],
+  "unresolved_ambiguities": [
+    "DOGEUSDT fill transition has no explicit ORDER_FILLED verb in WAL; active state is inferred from ACCOUNT_UPDATE_RECEIVED continuity after market ORDER_PLACED.",
+    "No pending orders remain after applying current-day ORDER_TIMEOUT/ORDER_CANCELLED/PENDING_BRACKETS_CLEARED terminal signals to prior pending continuity."
+  ],
+  "evidence_files_used": [
+    "ops/wal/2026-03-09.jsonl",
+    "logs/order_log_v1.jsonl",
+    "logs/*.jsonl",
+    "reports/trade_lifecycle_failure_vectors_20260308_rca.md",
+    "reports/testnet_last_50_trades.csv",
+    "config/aurora/strategies/aurora.yaml",
+    "config/aurora/strategies/mean_reversion.yaml",
+    "config/aurora/trading.yaml",
+    "config/aurora/regime.yaml",
+    "reports/auto/trade_lifecycle_ledger.jsonl",
+    "reports/auto/active_positions_snapshot_20260308_230504.json"
+  ]
+}

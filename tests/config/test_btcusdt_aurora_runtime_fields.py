@@ -52,7 +52,8 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
 
     # ── Instruments SSOT leverage (used by ExecPos bootstrap) ──
     instruments_path = cfg_dir / "instruments.yaml"
-    instruments_data = yaml.safe_load(instruments_path.read_text(encoding="utf-8"))
+    instruments_data = yaml.safe_load(
+        instruments_path.read_text(encoding="utf-8"))
     instruments_data["instruments"]["BTCUSDT"]["execution"]["target_leverage"] = 21
     instruments_data["instruments"]["BTCUSDT"]["execution"]["margin_mode"] = "isolated"
     _write_yaml(instruments_path, instruments_data)
@@ -174,7 +175,8 @@ class TestBtcusdtAuroraRuntimeFields:
         state.last_regime_heartbeat_ms = int(now * 1000)
 
         # Side-bias override affects both parameters + pruning window
-        state.buy_timestamps = [now - 200, now - 10]   # one should be pruned by 123s window
+        # one should be pruned by 123s window
+        state.buy_timestamps = [now - 200, now - 10]
         state.sell_timestamps = [now - 50]
         sb = handler._get_side_bias_state(symbol)
         assert sb.window_sec == 123
@@ -222,8 +224,13 @@ class TestBtcusdtAuroraRuntimeFields:
                 "bar": {"open": 100, "high": 100, "low": 100, "close": 100, "volume": 1},
                 "features": {
                     "price": "100",
-                    "atr": "10",
+                    "delta_price": "8",
                     "liquidity_kappa": "0.85",  # passes kappa_min=0.8
+                    "volatility": {
+                        "atr_14": "10",
+                        "atr_ready": True,
+                        "bar_range": "10",
+                    },
                 },
                 "warmup": {
                     "full_ready": True,
@@ -235,9 +242,14 @@ class TestBtcusdtAuroraRuntimeFields:
         assert Decimal(str(captured["base_threshold"])) == Decimal("0.345")
         assert captured["regime_thresholds"]["LOW_VOLATILITY"] == 2.5
 
-        # Signal emitted; entry_price must reflect volatility_entry_logic multiplier (BUY: 100 - 10*0.5 = 95)
+        # Signal emitted; entry_price must reflect the widest active buffer.
+        # BUY base ATR offset = 10 * 0.5 = 5.
+        # Bar impulse offset = 10 * 0.5 * (8/10) = 4.
+        # GTX buffer = 100 * 2bps = 0.02.
+        # Final offset remains 5, so BUY entry = 95.
         assert any(name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
-        sig = next(payload for name, payload in emitted if name == "EVT:STRATEGY_SIGNAL_PRODUCED")
+        sig = next(payload for name, payload in emitted if name ==
+                   "EVT:STRATEGY_SIGNAL_PRODUCED")
         assert sig["symbol"] == symbol
         assert sig["side"] == "BUY"
         assert Decimal(sig["price_ctx"]["entry_price"]) == Decimal("95")
@@ -246,12 +258,85 @@ class TestBtcusdtAuroraRuntimeFields:
         assert "target_price" in sig["price_ctx"]
         assert sig.get("tpsl_ctx", {}).get("mode") == "pct_mult"
 
+    def test_gtx_buffer_widens_entry_when_atr_is_too_small(self, tmp_path: Path) -> None:
+        cfg_dir = _copy_config_to_tmp(tmp_path)
+        _mutate_btc_aurora_fields(cfg_dir)
+
+        loader = ConfigLoader(config_dir=cfg_dir)
+        config = loader.load_config()
+
+        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+
+        emitted: list[tuple[str, dict]] = []
+
+        def emit_fn(name: str, payload: dict) -> None:
+            emitted.append((name, payload))
+
+        now = 1000.0
+        handler = AuroraHandler(
+            config=config,
+            emit_fn=emit_fn,
+            monotonic_fn=lambda: now,
+            wall_time_fn=lambda: now,
+        )
+
+        symbol = "BTCUSDT"
+        state = handler._symbol_states[symbol]
+        state.regime = "LOW_VOLATILITY"
+        state.regime_effective = "LOW_VOLATILITY"
+        state.last_regime_heartbeat_ms = int(now * 1000)
+
+        class _SpyKernel:
+            @staticmethod
+            def compute(**kwargs):  # type: ignore[no-untyped-def]
+                return SimpleNamespace(
+                    side="buy",
+                    score=Decimal("0.9"),
+                    thr_buy=Decimal("0.1"),
+                    thr_sell=Decimal("0.1"),
+                    why_chain=[],
+                    psi_vector={},
+                    regime=kwargs.get("regime_name"),
+                    deferred=False,
+                    defer_reason=None,
+                )
+
+        handler.scoring_kernel_cls = _SpyKernel
+
+        handler.on_process_strategy(
+            {
+                "symbol": symbol,
+                "tf_sec": 300,
+                "bar_close_ts": int(now * 1000),
+                "bar": {"open": 100, "high": 100, "low": 100, "close": 100, "volume": 1},
+                "features": {
+                    "price": "100",
+                    "delta_price": "0.001",
+                    "liquidity_kappa": "0.85",
+                    "volatility": {
+                        "atr_14": "0.01",
+                        "atr_ready": True,
+                        "bar_range": "1",
+                    },
+                },
+                "warmup": {
+                    "full_ready": True,
+                    "ready": {"liquidity_kappa": True},
+                },
+            }
+        )
+
+        sig = next(payload for name, payload in emitted if name ==
+                   "EVT:STRATEGY_SIGNAL_PRODUCED")
+        assert Decimal(sig["price_ctx"]["entry_price"]) == Decimal("99.98")
+
         # ── ExecutionPosition ManageFlow: take_profit / trailing_stop / max_hold_sec wired ──
         from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
 
         manage = ManageFlowFSM(config=config)
         assert manage._get_take_profit_params(symbol) == (0.55, 1.23, 0.66)
-        assert manage._get_trailing_stop_params(symbol) == (True, 0.031, 0.017, 7)
+        assert manage._get_trailing_stop_params(
+            symbol) == (True, 0.031, 0.017, 7)
         assert manage._get_max_hold_sec(symbol) == 1234
 
         # ── ExecutionPosition bootstrap surface: leverage config reaches collector ──
@@ -322,9 +407,11 @@ class TestBtcusdtAuroraRuntimeFields:
             }
         )
 
-        assert not any(name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
+        assert not any(
+            name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
         assert any(name == "EVT:STRATEGY_DECISION_BLOCKED" for name, _ in emitted)
-        blocked = next(payload for name, payload in emitted if name == "EVT:STRATEGY_DECISION_BLOCKED")
+        blocked = next(payload for name, payload in emitted if name ==
+                       "EVT:STRATEGY_DECISION_BLOCKED")
         assert blocked["symbol"] == symbol
         assert blocked["reason_code"] == "LIQUIDITY_LOW"
 
@@ -339,13 +426,15 @@ class TestBtcusdtAuroraRuntimeFields:
 
         dm = DecisionMaking(fsm=MagicMock(), config=config)
         dm.latest_portfolio = {"equity": "1000"}
-        dm._clock = SimpleNamespace(now_ms=lambda: 1_000_000, now_sec=lambda: 1000.0)
+        dm._clock = SimpleNamespace(
+            now_ms=lambda: 1_000_000, now_sec=lambda: 1000.0)
 
         # Bypass unrelated gates for this audit test
         dm._record_blocked_intent = MagicMock()
         dm._emit_trade_intent_rejected = MagicMock()
         dm._emit_intent_deferred_v1 = MagicMock()
-        dm._check_strategy_arbitration = MagicMock(return_value={"allowed": True})
+        dm._check_strategy_arbitration = MagicMock(
+            return_value={"allowed": True})
         dm._warmup_gate_before_trade_intent = MagicMock(return_value=False)
         dm._precheck_exposure_cache = MagicMock(return_value=True)
         dm._is_strategy_qos_enabled = MagicMock(return_value=False)
@@ -382,5 +471,6 @@ class TestBtcusdtAuroraRuntimeFields:
         assert kwargs["margin_pct_mult"] == Decimal("2.0")
 
         # Position mode + per-symbol cooldown are reachable via helpers (no magic fallbacks)
-        assert dm._resolve_position_mode(symbol="BTCUSDT", source="aurora") == "STRICT"
+        assert dm._resolve_position_mode(
+            symbol="BTCUSDT", source="aurora") == "STRICT"
         assert dm._get_symbol_cooldown("BTCUSDT", strategy_id="aurora") == 99

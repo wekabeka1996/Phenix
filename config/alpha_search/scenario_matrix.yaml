@@ -14,8 +14,8 @@
 #   - Tuned S01/S03/S05 (aurora) + S15 (ensemble) thresholds/weights
 # ==============================================================================
 
-matrix_id: v5_1_aurora_path_fix_20260304
-version: 6
+matrix_id: v6b_dedup_noflip_cooldown_20260307
+version: 8
 
 runtime:
   max_scenarios: 12
@@ -62,7 +62,8 @@ scenarios:
       alpha_search_system.mean_reversion.weights.stoch: 0.10
       alpha_search_system.mean_reversion.rsi.oversold: 28
       alpha_search_system.mean_reversion.rsi.overbought: 72
-      alpha_search.providers.aurora.threshold: 0.16
+      alpha_search.providers.aurora.threshold: 0.28       # v6b: 0.32→0.28 (distinct aurora vs S11 0.32)
+      alpha_search.providers.ta_ensemble.threshold: 0.38  # v6b: tighter ta_ensemble (S11=0.32) → different signal composition
 
   - scenario_id: S03_AURORA_15M_APPROX
     # Approximates 15m-bar behavior on 5m input stream.
@@ -75,7 +76,7 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.16
+      aurora.decision.signal_threshold: 0.26       # v6: 0.16→0.26 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.18
       aurora.decision.signal_weights.tfi: 0.28
       aurora.decision.signal_weights.delta_price: 0.12
@@ -89,7 +90,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.25
       aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.60
       aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.88
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S05_AURORA_MACRO_RESIDUAL
@@ -103,7 +104,7 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.11
+      aurora.decision.signal_threshold: 0.22       # v6: 0.11→0.22 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.25
       aurora.decision.signal_weights.tfi: 0.12
       aurora.decision.signal_weights.delta_price: 0.12
@@ -117,7 +118,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 0.85
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.50       # v6: 0.85→2.50 (UNCERTAIN regime tightened)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S06_AURORA_ETH_CALIBRATED
@@ -131,7 +132,7 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.10
+      aurora.decision.signal_threshold: 0.22       # v6: 0.10→0.22 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.19
       aurora.decision.signal_weights.tfi: 0.09
       aurora.decision.signal_weights.delta_price: 0.10
@@ -145,7 +146,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.88
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.88
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.80
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 1.80→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S20_AURORA_MICROSTRUCTURE_DEPTH
@@ -159,7 +160,7 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
-      aurora.decision.signal_threshold: 0.11
+      aurora.decision.signal_threshold: 0.15       # v6b: 0.22→0.15 restored (0.22 degraded G/1k from 0.195→0.119)
       aurora.decision.signal_weights.obi: 0.48
       aurora.decision.signal_weights.tfi: 0.15
       aurora.decision.signal_weights.delta_price: 0.10
@@ -173,7 +174,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.82
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.82
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   # ============================================================================
@@ -188,7 +189,9 @@ scenarios:
       mean_reversion: config/aurora/strategies/mean_reversion.yaml
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
-    overrides: {}
+    overrides:
+      alpha_search.providers.aurora.threshold: 0.32       # v6: added (reduce trades ~55%)
+      alpha_search.providers.ta_ensemble.threshold: 0.32
 
   - scenario_id: S12_MR_RSI_25_75
     enabled: true
@@ -199,9 +202,10 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
-      alpha_search_system.mean_reversion.rsi.oversold: 25
-      alpha_search_system.mean_reversion.rsi.overbought: 75
-      alpha_search.providers.aurora.threshold: 0.19
+      alpha_search_system.mean_reversion.rsi.oversold: 22       # v6: 25→22 (tighter RSI filter)
+      alpha_search_system.mean_reversion.rsi.overbought: 78      # v6: 75→78
+      alpha_search.providers.aurora.threshold: 0.33              # v6: 0.19→0.33
+      alpha_search.providers.ta_ensemble.threshold: 0.33
 
   - scenario_id: S13_MR_BB_HEAVY
     enabled: true
@@ -216,8 +220,8 @@ scenarios:
       alpha_search_system.mean_reversion.weights.rsi: 0.2
       alpha_search_system.mean_reversion.weights.sma: 0.1
       alpha_search_system.mean_reversion.weights.stoch: 0.1
-      alpha_search.providers.aurora.threshold: 0.14
-      alpha_search.providers.ta_ensemble.threshold: 0.13
+      alpha_search.providers.aurora.threshold: 0.30       # v6: 0.14→0.30
+      alpha_search.providers.ta_ensemble.threshold: 0.30  # v6: 0.13→0.30
 
   # ============================================================================
   # ENSEMBLE FAMILY (S15, S18, S19, S21) - 4 scenarios
@@ -237,8 +241,8 @@ scenarios:
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.33
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.33
-      alpha_search.providers.ta_ensemble.threshold: 0.11
-      alpha_search.providers.aurora.threshold: 0.14
+      alpha_search.providers.ta_ensemble.threshold: 0.28       # v6: 0.11→0.28
+      alpha_search.providers.aurora.threshold: 0.28              # v6: 0.14→0.28
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
 
   - scenario_id: S18_ENSEMBLE_MOMENTUM_AGGRESSIVE
@@ -256,8 +260,9 @@ scenarios:
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.1
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
-      alpha_search.providers.aurora.threshold: 0.10
-      alpha_search.providers.ta_ensemble.threshold: 0.10
+      alpha_search.providers.aurora.threshold: 0.28              # v6: 0.10→0.28
+      alpha_search.providers.ta_ensemble.threshold: 0.28        # v6: 0.10→0.28
+      # flip_on_reversal removed (v6b): increased MaxDD 1229→2341, worse win rate 28→27%
 
   - scenario_id: S19_ENSEMBLE_MR_SHORT_BIAS
     enabled: true
@@ -274,8 +279,8 @@ scenarios:
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.2
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
-      alpha_search.providers.aurora.threshold: 0.15
-      alpha_search.providers.ta_ensemble.threshold: 0.11
+      alpha_search.providers.aurora.threshold: 0.30       # v6b: 0.28→0.30 (distinct from S15 aurora=0.28)
+      alpha_search.providers.ta_ensemble.threshold: 0.24  # v6b: 0.28→0.24 (distinct from S15 ta_ensemble=0.28)
 
   - scenario_id: S21_ENSEMBLE_REGIME_ADAPTIVE
     enabled: true
@@ -292,5 +297,6 @@ scenarios:
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.2
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
-      alpha_search.providers.aurora.threshold: 0.13
-      alpha_search.providers.ta_ensemble.threshold: 0.14
+      alpha_search.providers.aurora.threshold: 0.25              # v6: 0.13→0.25
+      alpha_search.providers.ta_ensemble.threshold: 0.25        # v6: 0.14→0.25
+      # flip_on_reversal removed (v6b): increased MaxDD 1229→2593, lose streak 12→22

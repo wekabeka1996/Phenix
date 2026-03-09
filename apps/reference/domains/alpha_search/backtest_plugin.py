@@ -147,6 +147,9 @@ class AlphaSearchBacktestPlugin:
         self.open_positions: Dict[str, List[VirtualPosition]] = {
             name: [] for name in self.providers
         }
+        # Cooldown after close: (provider_id, symbol) → bars_remaining
+        # Prevents immediate re-entry after close (VirtualTraderExitConfig.cooldown_bars_after_close)
+        self._open_cooldowns: Dict[Tuple[str, str], int] = {}
         self.closed_positions: Dict[str, List[Dict[str, Any]]] = {
             name: [] for name in self.providers
         }
@@ -384,6 +387,14 @@ class AlphaSearchBacktestPlugin:
             if not self._is_symbol_allowed(symbol, cfg):
                 continue
 
+            # Skip provider if bar timeframe is below its minimum (e.g. ta_ensemble needs 5m)
+            if cfg.min_tf_sec is not None and cache_entry.tf_sec < cfg.min_tf_sec:
+                LOG.debug(
+                    f"[{symbol}] Skipping {provider_id}: tf_sec={cache_entry.tf_sec} "
+                    f"< min_tf_sec={cfg.min_tf_sec}"
+                )
+                continue
+
             # Skip provider if ALL of its required features are absent
             # (e.g. ta_ensemble needs rsi_14/bb_position/macd — absent on tick data)
             if hasattr(model, "get_required_features"):
@@ -414,7 +425,8 @@ class AlphaSearchBacktestPlugin:
                     if is_ensemble_provider:
                         continue
                     if cfg.fail_closed:
-                        self._emit_fail_closed_score(provider_id, symbol, tf_sec, bar_close_ts)
+                        self._emit_fail_closed_score(
+                            provider_id, symbol, tf_sec, bar_close_ts)
                     continue
 
             # Get current price for virtual trader
@@ -634,6 +646,15 @@ class AlphaSearchBacktestPlugin:
         """Check exits for open virtual positions."""
         positions = self.open_positions[provider_id]
         exit_cfg = self.config.virtual_trader.exit
+        cooldown_n = int(getattr(exit_cfg, "cooldown_bars_after_close", 0))
+
+        # Tick down cooldowns for this provider (called once per bar per provider)
+        if cooldown_n > 0:
+            for k in list(self._open_cooldowns):
+                if k[0] == provider_id:
+                    self._open_cooldowns[k] -= 1
+                    if self._open_cooldowns[k] <= 0:
+                        del self._open_cooldowns[k]
 
         for i in range(len(positions) - 1, -1, -1):
             pos = positions[i]
@@ -687,6 +708,10 @@ class AlphaSearchBacktestPlugin:
                     exit_meta=exit_meta,
                 )
                 positions.pop(i)
+                # Set cooldown so next entry for this symbol is blocked
+                if cooldown_n > 0:
+                    self._open_cooldowns[(
+                        provider_id, pos.symbol)] = cooldown_n
 
     def _maybe_open_virtual_position(
         self,
@@ -704,6 +729,10 @@ class AlphaSearchBacktestPlugin:
         # Check existing positions for this symbol
         existing = sum(1 for p in positions if p.symbol == symbol)
         if existing >= max_per_symbol:
+            return
+
+        # Check cooldown guard (post-close re-entry block)
+        if self._open_cooldowns.get((provider_id, symbol), 0) > 0:
             return
 
         side = "BUY" if score.score > 0 else "SELL"

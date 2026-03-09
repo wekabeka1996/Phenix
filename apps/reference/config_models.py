@@ -534,6 +534,29 @@ class MDAMRLLMGateConfig(BaseModel):
     block_ttl_sec: int = Field(default=14400, ge=60)
 
 
+_MD_AMR_ALLOWED_REGIME_ALIASES: Dict[str, str] = {
+    "LOW_FLAT": "FLAT_LOW",
+    "HIGH_FLAT": "FLAT_HIGH",
+    "HIGHT_FLAT": "FLAT_HIGH",
+    "NORMAL_FLAT": "FLAT_NORMAL",
+    "HIGH_VOLATILYTY": "HIGH_VOLATILITY",
+    "LOW_VOLATILYTY": "LOW_VOLATILITY",
+    "HIGHT_VOLATILITY": "HIGH_VOLATILITY",
+}
+
+_MD_AMR_ALLOWED_REGIMES: frozenset[str] = frozenset({
+    "TREND_UP",
+    "TREND_DOWN",
+    "MEAN_REVERSION",
+    "HIGH_VOLATILITY",
+    "LOW_VOLATILITY",
+    "UNCERTAIN",
+    "FLAT_LOW",
+    "FLAT_NORMAL",
+    "FLAT_HIGH",
+})
+
+
 class MDAMRAssetConfig(BaseModel):
     """Per-asset enablement/config for md_amr."""
 
@@ -542,6 +565,37 @@ class MDAMRAssetConfig(BaseModel):
     enabled: bool = Field(default=True)
     cooldown_sec: int = Field(default=60, ge=0)
     position_mode: Literal["STRICT", "DYNAMIC"] = Field(default="STRICT")
+    allowed_regimes: Optional[List[str]] = Field(
+        default=None,
+        description="Explicit regime allowlist for md_amr. Assigned live symbols must set a non-empty list.",
+    )
+    # MD-AMR-TPSL-01: per-symbol exit/TP/SL config (forward ref — MDAMRExitConfig defined later)
+    exit: Optional["MDAMRExitConfig"] = Field(
+        default=None,
+        description="MD-AMR-TPSL-01: TP/SL config. None = no brackets emitted."
+    )
+
+    @field_validator('allowed_regimes', mode='before')
+    @classmethod
+    def _normalize_allowed_regimes(cls, value: Any) -> Any:
+        if value is None or not isinstance(value, list):
+            return value
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_regime in value:
+            regime = str(raw_regime or '').strip().upper()
+            if not regime:
+                continue
+            regime = _MD_AMR_ALLOWED_REGIME_ALIASES.get(regime, regime)
+            if regime not in _MD_AMR_ALLOWED_REGIMES:
+                raise ValueError(
+                    f"Unknown md_amr allowed_regimes value '{raw_regime}'. Valid values: {sorted(_MD_AMR_ALLOWED_REGIMES)}"
+                )
+            if regime not in seen:
+                seen.add(regime)
+                normalized.append(regime)
+        return normalized
 
 
 class MDAMRReconciliationConfig(BaseModel):
@@ -2438,7 +2492,8 @@ class AdvancedStaleCancelConfig(BaseModel):
                     f"Valid labels: {sorted(_VALID_REGIME_LABELS)}."
                 )
         # Validate no overlap between may_cancel (all values) and never_cancel
-        all_may = {r for regimes in self.may_cancel_regimes.values() for r in regimes}
+        all_may = {r for regimes in self.may_cancel_regimes.values()
+                   for r in regimes}
         overlap = all_may & set(self.never_cancel_regimes)
         if overlap:
             raise ValueError(
@@ -2446,6 +2501,35 @@ class AdvancedStaleCancelConfig(BaseModel):
                 "never_cancel_regimes. A regime cannot be in both sets."
             )
         return self
+
+
+class SupersedeRepriceGuardConfig(BaseModel):
+    """
+    Guard against cancel/repost churn when a same-side supersede barely changes price.
+
+    For same-side LIMIT replacements, the new order must improve aggressiveness by at least:
+      max(limit_price * min_price_improvement_bps / 10_000,
+          atr_14 * min_price_improvement_atr_mult)
+
+    When enforce=False the system only logs structured telemetry and keeps current behavior.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        description="Enable supersede reprice guard analysis for same-side LIMIT replacements."
+    )
+    enforce: bool = Field(
+        description="If True, skip cancel/repost when price improvement is below threshold."
+    )
+    min_price_improvement_bps: float = Field(
+        ge=0.0,
+        description="Minimum same-side price improvement in bps required to justify cancel/repost.",
+    )
+    min_price_improvement_atr_mult: float = Field(
+        ge=0.0,
+        description="ATR-based minimum improvement multiplier. 0 disables ATR contribution.",
+    )
 
 
 class PendingEntryTTLConfig(BaseModel):
@@ -2490,6 +2574,13 @@ class PendingEntryTTLConfig(BaseModel):
         ...,
         ge=1.0, le=60.0,
         description="Timeout (seconds) to wait for supersede cancel confirmation before forcing new open. Explicit config required."
+    )
+    supersede_reprice_guard: Optional[SupersedeRepriceGuardConfig] = Field(
+        default=None,
+        description=(
+            "Optional guard for same-side LIMIT supersedes. Prevents cancel/repost churn when "
+            "the new price does not materially improve aggressiveness. Supports shadow-only mode."
+        ),
     )
     # ADVANCED-STALE-CANCEL-01: evidence-based cancel policy (optional; None = use legacy path)
     advanced_stale_cancel: Optional[AdvancedStaleCancelConfig] = Field(
@@ -3042,6 +3133,31 @@ class AuroraExitConfig(BaseModel):
     )
 
 
+class MDAMRExitConfig(BaseModel):
+    """
+    MD-AMR-TPSL-01: Per-symbol exit/TP/SL config for md_amr strategy.
+    Uses same pct_mult computation as aurora (sl_pct × sl_mult, tp_rr × tp_mult per regime).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    sl_pct: float = Field(
+        gt=0.0, lt=0.5,
+        description="Base stop-loss as fraction of entry price (e.g. 0.005 = 0.5%)"
+    )
+    tp_rr: float = Field(
+        default=1.0, gt=0.0, lt=20.0,
+        description="Base take-profit risk-reward ratio. TP_dist = sl_pct * tp_rr."
+    )
+    regime_tpsl: Optional[RegimeTpSlConfig] = Field(
+        default=None,
+        description="Regime-based TP/SL multipliers (MD-AMR-TPSL-01). Reuses RegimeTpSlConfig."
+    )
+
+
+# MD-AMR-TPSL-01: MDAMRAssetConfig uses a forward ref to MDAMRExitConfig — rebuild now.
+MDAMRAssetConfig.model_rebuild()
+
+
 class AuroraTakeProfitConfig(BaseModel):
     """Aurora take-profit configuration per instrument."""
     model_config = ConfigDict(extra='forbid')
@@ -3124,7 +3240,9 @@ class MaxRiskScoreConfig(BaseModel):
 class VolatilityEntryConfig(BaseModel):
     """Volatility-based limit entry pricing (Maker/GTX compliance).
 
-    Calculates entry price offset: LimitPrice = AnchorPrice ± (ATR × RegimeMultiplier).
+    Calculates entry price offset with a strict minimum ATR buffer and optional
+    bar-impulse / GTX widening: LimitPrice = AnchorPrice ± max(ATR × RegimeMultiplier,
+    bar impulse offset, GTX buffer).
     - LONG/BUY: entry_price = anchor_price - offset (bid below)
     - SHORT/SELL: entry_price = anchor_price + offset (ask above)
 
@@ -4176,6 +4294,78 @@ class AuroraConfig(BaseModel):
         if missing:
             raise ValueError("TP/SL SSOT validation failed: " +
                              "; ".join(sorted(missing)))
+
+        return self
+
+    @model_validator(mode="after")
+    def _validate_next_run_strategy_contracts(self) -> "AuroraConfig":
+        registry = getattr(self, "strategies_registry", None)
+        assignments = getattr(registry, "assignments", None)
+        assignments = assignments if isinstance(assignments, dict) else {}
+
+        md_amr_symbols = sorted(
+            str(sym)
+            for sym, strategy_ids in assignments.items()
+            if isinstance(strategy_ids, list) and "md_amr" in strategy_ids
+        )
+        if md_amr_symbols:
+            md_amr = getattr(self.strategies, "md_amr", None)
+            if md_amr is None:
+                raise ValueError(
+                    "MD-AMR live contract validation failed: strategies.md_amr missing"
+                )
+            if not bool(md_amr.enabled):
+                raise ValueError(
+                    f"MD-AMR live contract validation failed: assigned symbols {md_amr_symbols} but strategies.md_amr.enabled=false"
+                )
+
+            md_issues: list[str] = []
+            for symbol in md_amr_symbols:
+                asset_cfg = md_amr.assets.get(symbol) if isinstance(
+                    md_amr.assets, dict) else None
+                if asset_cfg is None:
+                    md_issues.append(
+                        f"{symbol} missing strategies.md_amr.assets.{symbol}"
+                    )
+                    continue
+                if not bool(asset_cfg.enabled):
+                    md_issues.append(
+                        f"{symbol} strategies.md_amr.assets.{symbol}.enabled must be true"
+                    )
+                if getattr(asset_cfg, "exit", None) is None:
+                    md_issues.append(
+                        f"{symbol} missing strategies.md_amr.assets.{symbol}.exit"
+                    )
+                allowed = getattr(asset_cfg, "allowed_regimes", None)
+                if not isinstance(allowed, list) or not any(str(x).strip() for x in allowed):
+                    md_issues.append(
+                        f"{symbol} strategies.md_amr.assets.{symbol}.allowed_regimes must be a non-empty list"
+                    )
+            if md_issues:
+                raise ValueError(
+                    "MD-AMR live contract validation failed: " +
+                    "; ".join(md_issues)
+                )
+
+        mr_symbols = sorted(
+            str(sym)
+            for sym, strategy_ids in assignments.items()
+            if isinstance(strategy_ids, list) and "mean_reversion" in strategy_ids
+        )
+        if mr_symbols:
+            mr = getattr(self.strategies, "mean_reversion", None)
+            if mr is None:
+                raise ValueError(
+                    "Mean reversion launch validation failed: strategies.mean_reversion missing"
+                )
+            if not bool(mr.enabled):
+                raise ValueError(
+                    f"Mean reversion launch validation failed: assigned symbols {mr_symbols} but strategies.mean_reversion.enabled=false"
+                )
+            if int(getattr(mr, "timeframe_sec", 0) or 0) != 300:
+                raise ValueError(
+                    "Mean reversion launch validation failed: strategies.mean_reversion.timeframe_sec must equal 300"
+                )
 
         return self
 

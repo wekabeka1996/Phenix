@@ -21,7 +21,7 @@ instruments:
     sizing:
       margin_pct: 0.14
     flip:
-      enabled: true
+      enabled: false
       hysteresis_mult: 3.0
 
   ETHUSDT:
@@ -38,7 +38,7 @@ instruments:
     sizing:
       margin_pct: 0.11
     flip:
-      enabled: true
+      enabled: false
       hysteresis_mult: 1.3
 
   BTCUSDT:
@@ -57,7 +57,7 @@ instruments:
     sizing:
       margin_pct: 0.13
     flip:
-      enabled: true
+      enabled: false
       hysteresis_mult: 3.0
 
   DOGEUSDT:
@@ -74,7 +74,7 @@ instruments:
     sizing:
       margin_pct: 0.11
     flip:
-      enabled: true
+      enabled: false
       hysteresis_mult: 2.5
 
   XRPUSDT:
@@ -91,7 +91,7 @@ instruments:
     sizing:
       margin_pct: 0.11
     flip:
-      enabled: true
+      enabled: false
       hysteresis_mult: 1.3
 
   BNBUSDT:
@@ -108,5 +108,23 @@ instruments:
     sizing:
       margin_pct: 0.08
     flip:
-      enabled: true
+      enabled: false
+      hysteresis_mult: 1.0
+
+  1000PEPEUSDT:
+    symbol: "1000PEPEUSDT"
+    # Binance Futures exchangeInfo checked 2026-03-07
+    step_size: "1"
+    tick_size: "0.0000001"
+    min_qty: "1"
+    min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.08
+    flip:
+      enabled: false
       hysteresis_mult: 1.0

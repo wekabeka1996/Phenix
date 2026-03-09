@@ -197,8 +197,8 @@ trading:
     mode: hybrid_advisory
     llm_role: advisory
     require_telemetry: true
-    symbols_llm: ["BNBUSDT"]
-    allowlist_symbols: ["BNBUSDT"]
+    symbols_llm: ["1000PEPEUSDT"]
+    allowlist_symbols: ["1000PEPEUSDT"]
     intent_policy:
       max_open_intents: 3
       cooldown_sec: 30
