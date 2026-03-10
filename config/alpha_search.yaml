@@ -11,7 +11,7 @@
 # ==============================================================================
 
 alpha_search:
-  enabled: false  # DISABLED: not needed during backtest ladder runs
+  enabled: true
   shadow_mode: true  # If true, signals are logged but not traded
 
   # ============================================================================
@@ -24,8 +24,8 @@ alpha_search:
 
   # Cache for features between events
   cache:
-    max_per_symbol: 4           # Keep last 4 bars per symbol
-    require_same_bar_close_ts: true
+    max_per_symbol: 10          # Keep last 10 bars per symbol
+    require_same_bar_close_ts: false  # Fuzzy match to avoid cache misses
 
   # ============================================================================
   # Providers (A3.2) — aurora and/or ta_ensemble
@@ -37,7 +37,7 @@ alpha_search:
         - BTCUSDT
         - ETHUSDT
         - SOLUSDT
-      threshold: 0.12
+      threshold: 0.155          # було 0.12 → ближче до нашої 0.162
       fail_closed: true
 
       adapter:
@@ -47,10 +47,64 @@ alpha_search:
           - delta_price
           - macro_resid
 
+        # -------------------------------------------------------
+        # All scoring params are defined here — alpha_search SSOT.
+        # No hardcoded values in code. Override in scenario_matrix.
+        # -------------------------------------------------------
+        base_threshold: 0.12
+        delta_price_cap_pct: 0.02
+
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          volume_spike: 0.10
+          volatility_state: 0.10
+
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+
+        regime_thresholds:
+          HIGH_VOLATILITY: 1.0
+          LOW_VOLATILITY: 0.9
+          MEAN_REVERSION: 0.75
+          TREND_UP: 1.0
+          TREND_DOWN: 1.0
+          UNCERTAIN: 1.15
+          DEFAULT: 1.0
+
+        direction_strength:
+          directional_features:
+            - obi
+            - tfi
+            - delta_price
+            - ema_bias
+            - depth_imbalance
+            - macro_resid
+            - macro_sync
+          strength_features:
+            - volume_spike
+            - volatility_state
+          strength_alpha: 0.5
+          strength_cap: 1.0
+
     ta_ensemble:
-      enabled: false           # Disabled by default (Aurora-first)
-      symbols: null            # All symbols when enabled
-      threshold: 0.20
+      enabled: true            # All 3 TA models active
+      symbols: null            # All symbols
+      min_tf_sec: 300          # Skip on 3m bars (BNBUSDT tf_sec=180); TA features only computed at 5m+
+      threshold: 0.18           # було 0.15
       fail_closed: true
 
       ensemble:
@@ -72,10 +126,13 @@ alpha_search:
     enabled: true
     per_provider: true         # Separate PnL per provider
     max_positions_per_symbol: 1
-    notional_size: 1000
+    notional_size: 5000        # increased from 1000 (v6: higher notional per trade)
+    flip_on_reversal: false    # If true: close current pos + immediately open opposite on reversal signal
     exit:
       max_bars: 12
-      max_hold_sec: 3600
+      max_hold_sec: 1800
+      max_drawdown_exit: 1.2
+      cooldown_bars_after_close: 3    # v6b: block re-entry for 3 bars after close (address 91% reversal-exit rate)
 
   # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation

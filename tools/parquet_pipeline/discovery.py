@@ -21,7 +21,7 @@ def discover_files(
 ) -> List[Path]:
     """Find parquet files for symbol/TF.  Prefers *_enriched over raw.
 
-    Search order (matches backtest_engine.engine._find_data_files):
+        Search order matches the historical replay file layout:
       1) data_dir / symbol / tf
       2) data_dir / symbol / klines / tf
 
@@ -59,7 +59,8 @@ def discover_files(
                 month_to_file.setdefault(f.stem, f)
 
         if months:
-            month_to_file = {k: v for k, v in month_to_file.items() if k in months}
+            month_to_file = {k: v for k,
+                             v in month_to_file.items() if k in months}
 
         selected = [month_to_file[k] for k in sorted(month_to_file)]
         if selected:

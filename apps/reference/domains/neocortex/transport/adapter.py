@@ -8,20 +8,29 @@ Phase 4: Added Shadow Intent emission and checkpointing.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, Awaitable
 from pathlib import Path
+import numpy as np
 
-from config_models import NeocortexConfig
-from logic.ingest.parser import FeatureParser
-from logic.ingest.observation import MarketObservation
-from logic.ingest.normalizer import WelfordNormalizer
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from logic.brain.bridge import BrainBridge
-from logic.telemetry import TelemetryLogger
+from apps.reference.domains.neocortex.config_models import NeocortexConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.ingest.normalizer import (
+    MultiSymbolWelfordNormalizer,
+    WelfordNormalizer,
+    sanitize_symbol,
+)
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
+from apps.reference.domains.neocortex.logic.telemetry import TelemetryLogger
+from apps.reference.domains.neocortex.logic.reward.feature_buffer import FeatureRingBuffer
+from apps.reference.domains.neocortex.logic.reward.regime_labeler import RegimeLabeler, REGIME_NAMES
+from apps.reference.domains.neocortex.logic.reward.reward_calculator import RegimeRewardCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +39,12 @@ class NeocortexAdapter:
     """
     Orchestrates the data flow:
     Raw Event -> FeatureParser -> Amygdala -> EpisodicBuffer -> BrainBridge -> Shadow Intent
-    
+
     Phase 4: Emits EVT:NEOCORTEX_SHADOW_INTENT
     """
-    
+
     def __init__(
-        self, 
+        self,
         config: NeocortexConfig,
         parser: FeatureParser,
         amygdala: ValuationEngine,
@@ -51,68 +60,264 @@ class NeocortexAdapter:
         self.brain_bridge = brain_bridge
         self.event_emitter = event_emitter
         self.fsm_core = fsm_core
-        
+
         # Training control
-        self._training_in_progress = False
         self._samples_since_last_train = 0
         self._train_batch_size = config.neuro.vae.batch_size
         self._total_train_steps = 0
         self._last_checkpoint_step = 0
         self._checkpoint_interval = config.neuro.checkpoint_every_n_steps
-        
+        self._max_inflight_training_tasks = max(
+            1, int(getattr(config.system, "brain_workers", 1)))
+        self._inflight_training_tasks = 0
+        self._waiting_for_reward_source = False
+
         # Shadow intent control
         self._shadow_intents_emitted = 0
-        
+
         # Shadow intent JSONL logging
         self._shadow_intent_log_path = self.config.system.data_dir / "shadow_intents.jsonl"
+        self._shadow_intent_log_max_bytes = 10 * 1024 * 1024
+        self._shadow_intent_log_backups = 5
         self._shadow_intent_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._shadow_intent_log: Optional[Any] = None
-        try:
-            self._shadow_intent_log = open(self._shadow_intent_log_path, "a")
-            logger.info(f"Shadow intent log opened: {self._shadow_intent_log_path}")
-        except Exception as e:
-            logger.warning(f"Failed to open shadow intent log: {e}")
+        logger.info(
+            f"Shadow intent log configured: {self._shadow_intent_log_path}")
 
         # Online feature normalization (z-score) to stabilize VAE training.
+        self._normalization_scope = str(
+            getattr(self.config.ingest, "normalization_scope", "global")
+        ).lower()
         self._normalizer_state_path = self.config.system.data_dir / "normalizer_state.npz"
-        self._normalizer = WelfordNormalizer(dim=len(self.config.ingest.feature_list), eps=1e-8)
-        try:
-            loaded = self._normalizer.load_state(self._normalizer_state_path)
-            if loaded:
-                logger.info(
-                    "Loaded normalizer state: count=%s path=%s",
-                    self._normalizer.count,
-                    self._normalizer_state_path,
-                )
-        except Exception as e:
-            logger.warning("Failed to load normalizer state (starting fresh): %s", e, exc_info=True)
+        self._normalizer_states_dir = self.config.system.data_dir / "normalizer_states"
+        self._normalizer = None
+        self._normalizers_by_symbol: Optional[MultiSymbolWelfordNormalizer] = None
+        self._init_normalizers()
+
+        # Checkpoint-side metadata (used to detect preprocessing mismatch).
+        self._checkpoint_metadata_path = (
+            self.config.system.checkpoint_dir / "checkpoint_metadata.json"
+        )
 
         # Phase R1.5/R2: Episode collection + dream/PPO trigger
         # Configurable via neuro.yaml, default=1 for immediate PPO training in backtest
-        self.dream_threshold = getattr(config.neuro, 'dream_episode_threshold', 1)
+        self.dream_threshold = getattr(
+            config.neuro, 'dream_episode_threshold', 1)
+        if self.config.system.run_mode == "live" and self.dream_threshold < 5:
+            logger.warning(
+                "dream_episode_threshold=%s is too low for live mode; forcing to 5",
+                self.dream_threshold,
+            )
+            self.dream_threshold = 5
         self._completed_episodes: List[Dict[str, Any]] = []
         self._dream_in_progress = False
         self._dreams_triggered = 0
         self._ppo_trains_triggered = 0
-        
+
         # Backpressure control
         self._backpressure_threshold = self._train_batch_size * 2
         self._backpressure_sleep_sec = 0.01
         self._backpressure_events = 0
-        
+
         # Pending async tasks for clean shutdown
         self._pending_tasks: List[asyncio.Task] = []
-        
+
         # Telemetry logging
-        self.telemetry = TelemetryLogger(log_dir=self.config.system.data_dir.parent / "logs")
+        self.telemetry = TelemetryLogger(
+            log_dir=self.config.system.data_dir.parent / "logs")
         logger.info(f"Telemetry CSV: {self.telemetry.filepath_str}")
-        
-        logger.info("Neocortex Adapter initialized (Phase 4: Shadow Intents + Checkpointing)")
+
+        # Regime Oracle infrastructure (REGIME_PIVOT_PLAN Phase 2)
+        self._reward_mode = getattr(config.neuro.ppo, "reward_mode", "pnl")
+        self._oracle_ring_buffer: Optional[FeatureRingBuffer] = None
+        self._oracle_labeler: Optional[RegimeLabeler] = None
+        self._oracle_reward_calc: Optional[RegimeRewardCalculator] = None
+        self._oracle_settlements = 0
+
+        if self._reward_mode == "regime_oracle":
+            oracle_cfg = config.oracle
+            if oracle_cfg is None:
+                raise ValueError(
+                    "reward_mode='regime_oracle' requires oracle config "
+                    "(config/regime_oracle_reward.yaml)"
+                )
+            self._oracle_ring_buffer = FeatureRingBuffer(
+                horizon_bars=oracle_cfg.horizon_bars
+            )
+            self._oracle_labeler = RegimeLabeler.from_config(oracle_cfg)
+            self._oracle_reward_calc = RegimeRewardCalculator.from_config(
+                oracle_cfg)
+            logger.info(
+                "Regime Oracle initialized: horizon=%d, reward_mode=%s",
+                oracle_cfg.horizon_bars,
+                self._reward_mode,
+            )
+
+        logger.info(
+            "Neocortex Adapter initialized (Phase 4: Shadow Intents + Checkpointing)")
+
+    def _init_normalizers(self) -> None:
+        """Initialize global/per-symbol normalizers with backward-compat fallback."""
+        dim = len(self.config.ingest.feature_list)
+        if self._normalization_scope == "per_symbol":
+            self._normalizers_by_symbol = MultiSymbolWelfordNormalizer(
+                dim=dim, eps=1e-8)
+            loaded_count = 0
+            try:
+                loaded_count = self._normalizers_by_symbol.load_states(
+                    self._normalizer_states_dir)
+            except Exception as e:
+                logger.warning(
+                    "Failed to load per-symbol normalizer states (starting fresh): %s",
+                    e,
+                    exc_info=True,
+                )
+            if loaded_count > 0:
+                logger.info(
+                    "Loaded %d per-symbol normalizer states from %s",
+                    loaded_count,
+                    self._normalizer_states_dir,
+                )
+            elif self._normalizer_state_path.exists():
+                # Do not silently migrate old global stats into per-symbol mode.
+                logger.warning(
+                    "Legacy global normalizer state found at %s while normalization_scope=per_symbol. "
+                    "Starting fresh per-symbol states.",
+                    self._normalizer_state_path,
+                )
+            return
+
+        self._normalizer = WelfordNormalizer(dim=dim, eps=1e-8)
+        try:
+            loaded = self._normalizer.load_state(self._normalizer_state_path)
+            if loaded:
+                logger.info(
+                    "Loaded global normalizer state: count=%s path=%s",
+                    self._normalizer.count,
+                    self._normalizer_state_path,
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to load global normalizer state (starting fresh): %s", e, exc_info=True)
+
+    def _normalize_features_for_symbol(
+        self,
+        symbol: str,
+        raw_features_vector,
+    ):
+        """Update + normalize features using current normalization scope."""
+        vec = np.asarray(raw_features_vector, dtype=np.float32).reshape(-1)
+        if self._normalization_scope == "per_symbol":
+            symbol_key = sanitize_symbol(symbol)
+            if self._normalizers_by_symbol is not None:
+                self._normalizers_by_symbol.update(symbol_key, vec)
+                return self._normalizers_by_symbol.normalize(symbol_key, vec)
+            return vec
+
+        if self._normalizer is not None:
+            self._normalizer.update(vec)
+            return self._normalizer.normalize(vec)
+        return vec
+
+    def _extract_raw_feature_map(self, payload: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Extract raw feature map from payload for oracle labeling.
+        Keeps raw values (before parser transforms) to preserve label semantics.
+        """
+        features = payload.get("features")
+        if not isinstance(features, dict):
+            features = payload
+        flat_features: Dict[str, Any] = {}
+        if isinstance(features, dict):
+            def _emit(key: str, value: Any) -> None:
+                if key not in flat_features:
+                    flat_features[key] = value
+
+            def _recurse(prefix: list[str], obj: Any) -> None:
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        parts = str(k).split(".") if isinstance(k, str) and "." in k else [str(k)]
+                        _recurse(prefix + [p for p in parts if p], v)
+                    return
+                key = "_".join([p for p in prefix if p])
+                _emit(key, obj)
+
+            _recurse([], features)
+        else:
+            flat_features = {}
+
+        raw_map: Dict[str, float] = {}
+        for name in self.config.ingest.feature_list:
+            value = flat_features.get(name, 0.0)
+            try:
+                f_value = float(value)
+            except (TypeError, ValueError):
+                f_value = 0.0
+            if not np.isfinite(f_value):
+                f_value = 0.0
+            raw_map[name] = f_value
+        return raw_map
+
+    def _build_preprocessing_metadata(self) -> Dict[str, Any]:
+        return {
+            "version": 1,
+            "timestamp": time.time(),
+            "feature_list": list(self.config.ingest.feature_list),
+            "preprocessing": {
+                "normalization_scope": self._normalization_scope,
+                "price_feature_mode": getattr(self.config.ingest, "price_feature_mode", "raw"),
+                "delta_price_mode": getattr(self.config.ingest, "delta_price_mode", "raw"),
+                "normalization_method": self.config.ingest.normalization_method,
+                "normalization_window": self.config.ingest.normalization_window,
+            },
+        }
+
+    def _save_checkpoint_metadata(self) -> None:
+        try:
+            self._checkpoint_metadata_path.parent.mkdir(
+                parents=True, exist_ok=True)
+            metadata = self._build_preprocessing_metadata()
+            with open(self._checkpoint_metadata_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, ensure_ascii=True, indent=2)
+        except Exception as e:
+            logger.warning(
+                "Failed to write checkpoint metadata: %s", e, exc_info=True)
+
+    def _validate_checkpoint_metadata(self) -> None:
+        if not self._checkpoint_metadata_path.exists():
+            return
+        try:
+            with open(self._checkpoint_metadata_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            loaded_prep = loaded.get("preprocessing", {})
+            current = self._build_preprocessing_metadata()["preprocessing"]
+            mismatch = {
+                key: (loaded_prep.get(key), current.get(key))
+                for key in current.keys()
+                if loaded_prep.get(key) != current.get(key)
+            }
+            loaded_features = loaded.get("feature_list", [])
+            current_features = list(self.config.ingest.feature_list)
+            if loaded_features != current_features:
+                mismatch["feature_list"] = ("<different>", "<current>")
+            if mismatch:
+                logger.warning(
+                    "Checkpoint preprocessing metadata mismatch detected: %s",
+                    mismatch,
+                )
+                self._emit_alert(
+                    severity="WARN",
+                    code="CHECKPOINT_PREPROCESSING_MISMATCH",
+                    message="Checkpoint metadata does not match current preprocessing config",
+                    details={"mismatch": mismatch},
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to read checkpoint metadata: %s", e, exc_info=True)
 
     async def handle_features(self, payload: Dict[str, Any]):
         """
         Callback for EVT:FEATURES_CALCULATED.
-        
+
         Full pipeline:
         0. Backpressure (wait if buffer overloaded)
         1. Parse -> MarketObservation
@@ -123,21 +328,42 @@ class NeocortexAdapter:
         6. Train -> Background
         """
         try:
-            # 0. Backpressure: Wait if buffer is too full (prevents ingestion outpacing training)
-            while len(self.buffer) > self._backpressure_threshold:
+            # 0. Non-blocking backpressure signal (never block ingestion loop)
+            if (
+                len(self.buffer) > self._backpressure_threshold
+                and self._inflight_training_tasks >= self._max_inflight_training_tasks
+            ):
                 self._backpressure_events += 1
                 if self._backpressure_events % 100 == 1:
                     logger.debug(
-                        f"Backpressure active: buffer={len(self.buffer)} > threshold={self._backpressure_threshold}"
+                        "Backpressure signal: buffer=%s threshold=%s inflight=%s max_inflight=%s",
+                        len(self.buffer),
+                        self._backpressure_threshold,
+                        self._inflight_training_tasks,
+                        self._max_inflight_training_tasks,
                     )
-                await asyncio.sleep(self._backpressure_sleep_sec)
-            
+                    self._emit_alert(
+                        severity="WARN",
+                        code="BACKPRESSURE_SUSTAINED",
+                        message="Buffer pressure sustained while training queue saturated",
+                        details={
+                            "buffer_size": len(self.buffer),
+                            "threshold": self._backpressure_threshold,
+                            "inflight_tasks": self._inflight_training_tasks,
+                            "max_inflight_tasks": self._max_inflight_training_tasks,
+                        },
+                    )
+
             # 1. Parse (String -> Float32 Typed Observation)
             obs = self.parser.parse(payload)
+            symbol = str(payload.get("symbol") or "UNKNOWN")
+            raw_feature_map = self._extract_raw_feature_map(payload)
 
             # 1.5 Normalize features online for stable ML training
-            self._normalizer.update(obs.features_vector)
-            norm_vec = self._normalizer.normalize(obs.features_vector)
+            # Capture raw features BEFORE normalization for Oracle labeler
+            raw_features_vector = obs.features_vector
+            norm_vec = self._normalize_features_for_symbol(
+                symbol=symbol, raw_features_vector=raw_features_vector)
             obs = MarketObservation(
                 ts=obs.ts,
                 mid_price=obs.mid_price,
@@ -146,27 +372,31 @@ class NeocortexAdapter:
                 features_vector=norm_vec,
                 normalized=True,
             )
-            
+
             # 2. Value (Calculate Importance)
             reward = float(payload.get('reward_signal', 0.0))
             importance = self.amygdala.update(obs, reward)
-            
+
             # 3. Memorize (Store in Buffer)
             self.buffer.add(obs, importance)
             self._samples_since_last_train += 1
-            
+
             # 4. Log Debug
             logger.debug(
                 f"Ingested tick TS={obs.ts:.3f} Imp={importance:.4f} "
                 f"Dim={obs.feature_dim} BufferLen={len(self.buffer)}"
             )
-            
+
             # 5. Generate Shadow Intent (if bridge available)
-            await self._generate_shadow_intent(obs, payload)
-            
+            await self._generate_shadow_intent(
+                obs,
+                payload,
+                raw_features_for_labeler=raw_feature_map,
+            )
+
             # 6. Trigger Training (if ready)
             await self._maybe_train()
-            
+
         except Exception as e:
             logger.error(f"Failed to ingest feature event: {e}", exc_info=True)
 
@@ -180,6 +410,18 @@ class NeocortexAdapter:
             episode_dict = self._episode_to_dict(episode)
 
             self._completed_episodes.append(episode_dict)
+            if not bool(episode_dict.get("reward_missing", False)):
+                self.telemetry.log_episode(
+                    reward=float(episode_dict.get("reward", 0.0)),
+                    pnl=episode_dict.get("pnl"),
+                )
+
+            self.telemetry.log_buffer_stats(
+                buffer_size=len(self.buffer),
+                episodes_collected=len(self._completed_episodes),
+                episodes_processed=0,
+                samples_since_train=self._samples_since_last_train,
+            )
             logger.info(
                 "Episode added. Buffer size: %s / Threshold: %s",
                 len(self._completed_episodes),
@@ -188,7 +430,8 @@ class NeocortexAdapter:
 
             await self._maybe_dream()
         except Exception as e:
-            logger.error(f"Failed to add completed episode: {e}", exc_info=True)
+            logger.error(
+                f"Failed to add completed episode: {e}", exc_info=True)
 
     async def train_ppo_now(self) -> None:
         """Manual debug hook to force PPO training on whatever is buffered."""
@@ -200,7 +443,8 @@ class NeocortexAdapter:
                 logger.info("train_ppo_now: no episodes buffered; skipping")
                 return
 
-            logger.info("train_ppo_now: forcing PPO train on %d episodes", len(episodes_to_process))
+            logger.info("train_ppo_now: forcing PPO train on %d episodes", len(
+                episodes_to_process))
             await self._trigger_ppo_training(episodes_to_process)
         except Exception as e:
             logger.error(f"train_ppo_now failed: {e}", exc_info=True)
@@ -222,8 +466,21 @@ class NeocortexAdapter:
             }
 
         reward = raw.get("reward", 0.0)
+        reward_missing = reward is None
         if reward is None:
-            logger.warning("Episode reward is None; forcing 0.0 (episode=%s)", raw.get("symbol"))
+            logger.warning(
+                "No structured reward for episode %s; moving training to waiting_for_reward_source",
+                raw.get("symbol"),
+            )
+            self._emit_alert(
+                severity="WARN",
+                code="NO_STRUCTURED_REWARD_RECEIVED",
+                message="Structured reward missing; training gated until reward source is available",
+                details={
+                    "symbol": raw.get("symbol"),
+                    "timestamp": raw.get("timestamp"),
+                },
+            )
             reward = 0.0
 
         features = raw.get("features") or {}
@@ -236,6 +493,7 @@ class NeocortexAdapter:
             "timestamp": raw.get("timestamp"),
             "side": raw.get("side") or "FLAT",
             "reward": float(reward),
+            "reward_missing": reward_missing,
             "pnl": raw.get("pnl"),
             "features_vector": features_vector,
         }
@@ -254,13 +512,37 @@ class NeocortexAdapter:
 
         logger.info("TRIGGERING DREAM SEQUENCE NOW!")
 
-        episodes_to_process = list(self._completed_episodes)
+        episodes_to_process = [
+            ep for ep in self._completed_episodes if not bool(ep.get("reward_missing", False))
+        ]
         self._completed_episodes.clear()
 
+        if not episodes_to_process:
+            self._waiting_for_reward_source = True
+            logger.warning(
+                "No trainable episodes in buffer (structured reward missing). "
+                "State=waiting_for_reward_source"
+            )
+            self._emit_alert(
+                severity="WARN",
+                code="NO_STRUCTURED_REWARD_RECEIVED",
+                message=(
+                    "No fallback policy active: training is waiting for structured reward source "
+                    "while ingestion remains active"
+                ),
+                details={
+                    "state": "waiting_for_reward_source",
+                    "dream_threshold": self.dream_threshold,
+                },
+            )
+            return
+
+        self._waiting_for_reward_source = False
         self._dream_in_progress = True
         self._dreams_triggered += 1
 
-        asyncio.create_task(self._run_dream_sequence(episodes_to_process))
+        self._track_task(self._run_dream_sequence(
+            episodes_to_process), "dream_sequence")
 
     async def _run_dream_sequence(self, episodes_to_process: List[Dict[str, Any]]) -> None:
         try:
@@ -273,61 +555,168 @@ class NeocortexAdapter:
     async def _trigger_ppo_training(self, episodes_to_process: List[Dict[str, Any]]) -> None:
         if self.brain_bridge is None:
             logger.warning("PPO training skipped: BrainBridge not available")
+            self._emit_alert(
+                severity="WARN",
+                code="BRAIN_BRIDGE_UNAVAILABLE",
+                message="BrainBridge not available; training skipped in degraded mode",
+            )
             return
 
         self._ppo_trains_triggered += 1
-        logger.info("PPO training triggered on %d episodes", len(episodes_to_process))
+        logger.info("PPO training triggered on %d episodes",
+                    len(episodes_to_process))
 
         result = await self.brain_bridge.train_ppo_async(episodes_to_process)
         if not result:
-            logger.warning("PPO training returned empty result (likely PPO disabled); skipping")
+            logger.warning(
+                "PPO training returned empty result (likely PPO disabled); skipping")
         elif "error" in result:
             logger.warning("PPO training error: %s", result.get("error"))
         else:
+            def _get_float(*keys: str) -> Optional[float]:
+                for key in keys:
+                    if key not in result:
+                        continue
+                    value = result.get(key)
+                    if value is None:
+                        continue
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid PPO metric value for key '%s': %r", key, value)
+                return None
+
+            ppo_loss_pi = _get_float("loss_pi", "policy_loss", "ppo_loss_pi")
+            ppo_loss_v = _get_float("loss_v", "value_loss", "ppo_loss_v")
+            ppo_entropy = _get_float("entropy", "ppo_entropy")
+            episodes_processed_raw = result.get("episodes_processed")
+            try:
+                episodes_processed = (
+                    int(episodes_processed_raw)
+                    if episodes_processed_raw is not None
+                    else len(episodes_to_process)
+                )
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid episodes_processed value in PPO result: %r",
+                    episodes_processed_raw,
+                )
+                episodes_processed = len(episodes_to_process)
+            train_step_raw = result.get("train_step")
+            try:
+                train_step = (
+                    int(train_step_raw)
+                    if train_step_raw is not None
+                    else self._total_train_steps
+                )
+            except (TypeError, ValueError):
+                train_step = self._total_train_steps
+            available_metrics = {
+                "ppo_loss_pi": ppo_loss_pi,
+                "ppo_loss_v": ppo_loss_v,
+                "ppo_entropy": ppo_entropy,
+            }
+            if any(v is not None for v in available_metrics.values()):
+                self.telemetry.log_training(
+                    ppo_loss_pi=ppo_loss_pi,
+                    ppo_loss_v=ppo_loss_v,
+                    ppo_entropy=ppo_entropy,
+                    train_step=train_step,
+                )
+            else:
+                logger.warning(
+                    "PPO result has no recognized telemetry keys: keys=%s",
+                    sorted(result.keys()),
+                )
+
+            self.telemetry.log_buffer_stats(
+                buffer_size=len(self.buffer),
+                episodes_collected=len(self._completed_episodes),
+                episodes_processed=episodes_processed,
+                samples_since_train=self._samples_since_last_train,
+            )
             logger.info("PPO update complete: %s", result)
 
-    async def _generate_shadow_intent(self, obs: MarketObservation, original_payload: Dict):
+    async def _generate_shadow_intent(
+        self,
+        obs: MarketObservation,
+        original_payload: Dict,
+        raw_features_for_labeler: Optional[Dict[str, float]] = None,
+    ):
         """
         Encode observation and generate shadow trading intent.
+
+        In regime_oracle mode, also pushes to FeatureRingBuffer and handles
+        settlement (reward computation) when H bars have elapsed.
         """
         if self.brain_bridge is None:
             return
-            
+
         try:
             # Encode observation to latent space
             z = await self.brain_bridge.encode_async(obs)
-            
+
             # Get action from PPO
             action_result = await self.brain_bridge.act_async(z)
-            
-            # Build shadow intent event
+
+            intent_ts = time.time()
+            symbol = str(original_payload.get("symbol", "UNKNOWN"))
+            action_name = str(action_result.get("action_name", "FLAT"))
+            source_ts = float(obs.ts)
+            idempotent_seed = f"{symbol}|{action_name}|{source_ts:.6f}|{self._total_train_steps}"
+            idempotent_hash = hashlib.sha256(
+                idempotent_seed.encode("utf-8")).hexdigest()[:16]
+            idempotent_key = (
+                f"neocortex:r2:{symbol}:{action_name}:{int(source_ts * 1000)}:{idempotent_hash}"
+            )
+
+            # Build canonical shadow intent payload (dual emit with legacy event name).
+            event_type = (
+                "EVT:NEOCORTEX_REGIME_PREDICTION"
+                if self._reward_mode == "regime_oracle"
+                else "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED"
+            )
             shadow_intent = {
-                "event_type": "EVT:NEOCORTEX_SHADOW_INTENT",
-                "timestamp": time.time(),
-                "symbol": original_payload.get("symbol", "UNKNOWN"),
+                "event_type": event_type,
+                "schema_version": "1.0.0",
+                "timestamp": intent_ts,
+                "symbol": symbol,
                 "action": action_result["action"],
-                "action_name": action_result["action_name"],
+                "action_name": action_name,
                 "value": action_result["value"],
                 "confidence": action_result["confidence"],
                 "latent_state": z.tolist() if hasattr(z, 'tolist') else list(z),
-                "source_ts": obs.ts,
-                "train_steps": self._total_train_steps
+                "source_ts": source_ts,
+                "train_steps": self._total_train_steps,
+                "idempotent_key": idempotent_key,
+                "why": [
+                    f"confidence={float(action_result.get('confidence', 0.0)):.6f}",
+                    f"value={float(action_result.get('value', 0.0)):.6f}",
+                ],
             }
-            
-            # Emit event
+
+            # Emit canonical + legacy events during migration window.
             if self.event_emitter is not None:
-                self.event_emitter("EVT:NEOCORTEX_SHADOW_INTENT", shadow_intent)
-            
+                canonical_payload = dict(shadow_intent)
+                legacy_payload = dict(shadow_intent)
+                legacy_payload["event_type"] = "EVT:NEOCORTEX_SHADOW_INTENT"
+                self.event_emitter(event_type, canonical_payload)
+                self.event_emitter(
+                    "EVT:NEOCORTEX_SHADOW_INTENT", legacy_payload)
+
             self._shadow_intents_emitted += 1
-            
+
             # Persist to JSONL file
-            if self._shadow_intent_log is not None:
-                try:
-                    self._shadow_intent_log.write(json.dumps(shadow_intent) + "\n")
-                    self._shadow_intent_log.flush()
-                except Exception as log_err:
-                    logger.warning(f"Failed to write shadow intent to JSONL: {log_err}")
-            
+            try:
+                self._rotate_shadow_intent_log_if_needed()
+                with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
+                    shadow_log.write(json.dumps(shadow_intent) + "\n")
+                    shadow_log.flush()
+            except Exception as log_err:
+                logger.warning(
+                    f"Failed to write shadow intent to JSONL: {log_err}")
+
             # Log to telemetry CSV
             self.telemetry.log_shadow_intent(
                 action=action_result["action"],
@@ -335,15 +724,130 @@ class NeocortexAdapter:
                 confidence=action_result["confidence"],
                 value=action_result["value"]
             )
-            
+
+            # --- Regime Oracle: settlement and episode creation ---
+            if self._reward_mode == "regime_oracle" and self._oracle_ring_buffer is not None:
+                await self._handle_oracle_settlement(
+                    symbol=symbol,
+                    source_ts=source_ts,
+                    z=z,
+                    action_result=action_result,
+                    raw_features_for_labeler=raw_features_for_labeler,
+                    model_features_vector=obs.features_vector,
+                )
+
             # Log shadow intent
             logger.info(
                 f"Shadow Intent: {action_result['action_name']} "
                 f"(conf={action_result['confidence']:.3f}, val={action_result['value']:.3f})"
             )
-            
+
         except Exception as e:
-            logger.error(f"Shadow intent generation failed: {e}", exc_info=True)
+            logger.error(
+                f"Shadow intent generation failed: {e}", exc_info=True)
+
+    async def _handle_oracle_settlement(
+        self,
+        symbol: str,
+        source_ts: float,
+        z,
+        action_result: Dict[str, Any],
+        raw_features_for_labeler: Optional[Dict[str, float]],
+        model_features_vector: Optional[np.ndarray],
+    ) -> None:
+        """
+        Push current bar into the FeatureRingBuffer and, if H bars have
+        accumulated, settle the oldest prediction by computing the realized
+        regime and reward.
+
+        Creates an episode dict and feeds it into the dream/PPO pipeline
+        (via _completed_episodes + _maybe_dream).
+        """
+        feature_names = self.config.ingest.feature_list
+        features_dict = dict(raw_features_for_labeler or {})
+        if not features_dict:
+            logger.debug("Oracle settlement: raw feature map is empty for %s", symbol)
+
+        settled = self._oracle_ring_buffer.push_and_settle(
+            symbol=symbol,
+            timestamp=source_ts,
+            latent_z=z,
+            predicted_action=int(action_result["action"]),
+            features=features_dict,
+            model_features=model_features_vector,
+        )
+
+        if settled is None:
+            remaining = self._oracle_ring_buffer.warmup_remaining(symbol)
+            if remaining > 0:
+                logger.debug(
+                    "Oracle warmup: %s needs %d more bars before first settlement",
+                    symbol, remaining,
+                )
+            return
+
+        # Compute realized regime from feature pair (t, t+H)
+        realized_regime = self._oracle_labeler.compute_realized_regime(
+            settled.features_t, settled.features_t_plus_h
+        )
+
+        # Compute reward
+        reward = self._oracle_reward_calc.compute_reward(
+            settled.predicted_action, realized_regime
+        )
+        correct = settled.predicted_action == realized_regime
+
+        self._oracle_settlements += 1
+
+        # Log to telemetry
+        self.telemetry.log_oracle_prediction(
+            predicted_regime=settled.predicted_action,
+            realized_regime=realized_regime,
+            oracle_reward=reward,
+            oracle_correct=correct,
+        )
+
+        logger.info(
+            "Oracle settlement #%d: predicted=%s realized=%s reward=%.3f correct=%s",
+            self._oracle_settlements,
+            REGIME_NAMES.get(settled.predicted_action,
+                             str(settled.predicted_action)),
+            REGIME_NAMES.get(realized_regime, str(realized_regime)),
+            reward,
+            correct,
+        )
+
+        # Create episode dict compatible with PPO training pipeline
+        if settled.model_features_t is not None:
+            model_features = settled.model_features_t.astype(
+                np.float32, copy=False).tolist()
+        else:
+            model_features = [
+                float(settled.features_t.get(name, 0.0))
+                for name in feature_names
+            ]
+
+        episode = {
+            "symbol": symbol,
+            "timestamp": settled.timestamp_t,
+            "side": REGIME_NAMES.get(settled.predicted_action, "FLAT"),
+            "action": settled.predicted_action,
+            "realized_regime": int(realized_regime),
+            "reward": reward,
+            "pnl": None,
+            "features_vector": model_features,
+        }
+
+        # Feed into dream/PPO pipeline
+        self._completed_episodes.append(episode)
+        self.telemetry.log_buffer_stats(
+            buffer_size=len(self.buffer),
+            episodes_collected=len(self._completed_episodes),
+            episodes_processed=0,
+            samples_since_train=self._samples_since_last_train,
+        )
+
+        await self._maybe_dream()
 
     async def _maybe_train(self):
         """
@@ -351,28 +855,43 @@ class NeocortexAdapter:
         """
         if self.brain_bridge is None:
             return
-        if self._training_in_progress:
-            return
-            
+
         if len(self.buffer) < self.config.ingest.min_samples_before_ready:
             return
-            
+
         if self._samples_since_last_train < self._train_batch_size:
             return
-            
-        self._training_in_progress = True
-        
+
+        if self._inflight_training_tasks >= self._max_inflight_training_tasks:
+            self._backpressure_events += 1
+            if self._backpressure_events % 100 == 1:
+                logger.debug(
+                    "Training queue saturated: inflight=%s max_inflight=%s",
+                    self._inflight_training_tasks,
+                    self._max_inflight_training_tasks,
+                )
+                self._emit_alert(
+                    severity="WARN",
+                    code="TRAINING_QUEUE_SATURATED",
+                    message="Training queue saturated; delaying new training batches",
+                    details={
+                        "inflight_tasks": self._inflight_training_tasks,
+                        "max_inflight_tasks": self._max_inflight_training_tasks,
+                    },
+                )
+            return
+
         try:
             batch_items = self.buffer.get_batch(self._train_batch_size)
             batch_obs = [item[0] for item in batch_items]
-            
-            asyncio.create_task(self._run_training(batch_obs))
-            
+            self._inflight_training_tasks += 1
+            self._track_task(self._run_training(batch_obs), "train_batch")
             self._samples_since_last_train = 0
-            
+
         except Exception as e:
             logger.error(f"Failed to start training: {e}", exc_info=True)
-            self._training_in_progress = False
+            self._inflight_training_tasks = max(
+                0, self._inflight_training_tasks - 1)
 
     async def _run_training(self, batch_obs: List[MarketObservation]):
         """
@@ -380,18 +899,19 @@ class NeocortexAdapter:
         """
         try:
             losses = await self.brain_bridge.train_async(batch_obs)
-            
+
             self._total_train_steps += 1
-            
+
             if "error" in losses:
-                logger.warning(f"Training step {self._total_train_steps} error: {losses['error']}")
+                logger.warning(
+                    f"Training step {self._total_train_steps} error: {losses['error']}")
             else:
                 logger.info(
                     f"Training step {self._total_train_steps}: "
                     f"VAE={losses.get('vae_loss', 0):.4f} "
                     f"WM={losses.get('wm_loss', 0):.4f}"
                 )
-                
+
                 # Log to telemetry CSV
                 self.telemetry.log_training(
                     vae_loss=losses.get('vae_loss'),
@@ -400,38 +920,129 @@ class NeocortexAdapter:
                     wm_loss=losses.get('wm_loss'),
                     train_step=self._total_train_steps
                 )
-            
+
             # Check if checkpoint needed
             await self._maybe_checkpoint()
-                
+
         except Exception as e:
             logger.error(f"Training execution failed: {e}", exc_info=True)
-            
+
         finally:
-            self._training_in_progress = False
+            self._inflight_training_tasks = max(
+                0, self._inflight_training_tasks - 1)
+
+    def _track_task(self, coro: Awaitable[Any], task_name: str) -> asyncio.Task:
+        """
+        Register background task for graceful shutdown and leak detection.
+        """
+        task = asyncio.create_task(coro)
+        self._pending_tasks.append(task)
+
+        def _on_done(done_task: asyncio.Task) -> None:
+            try:
+                self._pending_tasks.remove(done_task)
+            except ValueError:
+                pass
+
+            if done_task.cancelled():
+                return
+
+            try:
+                exc = done_task.exception()
+            except Exception:
+                exc = None
+
+            if exc is not None:
+                logger.error("Background task '%s' failed: %s",
+                             task_name, exc, exc_info=True)
+
+        task.add_done_callback(_on_done)
+        return task
+
+    def _emit_alert(
+        self,
+        severity: str,
+        code: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        payload = {
+            "event_type": "EVT:NEOCORTEX_ALERT",
+            "timestamp": time.time(),
+            "severity": severity,
+            "code": code,
+            "message": message,
+            "details": details or {},
+        }
+        logger.warning("[%s] %s", code, message)
+        if self.event_emitter is not None:
+            try:
+                self.event_emitter("EVT:NEOCORTEX_ALERT", payload)
+            except Exception as emit_err:
+                logger.error(
+                    "Failed to emit EVT:NEOCORTEX_ALERT: %s", emit_err)
+
+    def _rotate_shadow_intent_log_if_needed(self) -> None:
+        try:
+            if not self._shadow_intent_log_path.exists():
+                return
+            if self._shadow_intent_log_path.stat().st_size < self._shadow_intent_log_max_bytes:
+                return
+
+            for idx in range(self._shadow_intent_log_backups - 1, 0, -1):
+                src = Path(f"{self._shadow_intent_log_path}.{idx}")
+                dst = Path(f"{self._shadow_intent_log_path}.{idx + 1}")
+                if src.exists():
+                    src.replace(dst)
+
+            rotated = Path(f"{self._shadow_intent_log_path}.1")
+            self._shadow_intent_log_path.replace(rotated)
+            logger.info(
+                "Rotated shadow intent log: %s -> %s",
+                self._shadow_intent_log_path,
+                rotated,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to rotate shadow intent log: %s", e, exc_info=True)
 
     async def _maybe_checkpoint(self):
         """
         Save checkpoint if interval reached.
         """
         steps_since_checkpoint = self._total_train_steps - self._last_checkpoint_step
-        
+
         if steps_since_checkpoint >= self._checkpoint_interval:
             checkpoint_dir = self.config.system.checkpoint_dir
             success = await self.brain_bridge.save_async(str(checkpoint_dir))
-            
+
             if success:
                 self._last_checkpoint_step = self._total_train_steps
-                logger.info(f"Checkpoint saved at step {self._total_train_steps}")
+                logger.info(
+                    f"Checkpoint saved at step {self._total_train_steps}")
                 self._save_normalizer_state()
+                self._save_checkpoint_metadata()
             else:
-                logger.warning(f"Checkpoint save failed at step {self._total_train_steps}")
+                logger.warning(
+                    f"Checkpoint save failed at step {self._total_train_steps}")
 
     def _save_normalizer_state(self) -> None:
         try:
-            self._normalizer.save_state(self._normalizer_state_path)
+            if self._normalization_scope == "per_symbol":
+                if self._normalizers_by_symbol is not None:
+                    saved_count = self._normalizers_by_symbol.save_states(
+                        self._normalizer_states_dir
+                    )
+                    logger.info(
+                        "Saved %d per-symbol normalizer states to %s",
+                        saved_count,
+                        self._normalizer_states_dir,
+                    )
+            else:
+                self._normalizer.save_state(self._normalizer_state_path)
         except Exception as e:
-            logger.warning("Failed to save normalizer state: %s", e, exc_info=True)
+            logger.warning(
+                "Failed to save normalizer state: %s", e, exc_info=True)
 
     async def start(self):
         """
@@ -441,7 +1052,13 @@ class NeocortexAdapter:
             logger.info("Starting BrainBridge...")
             success = await self.brain_bridge.start()
             if not success:
-                logger.warning("BrainBridge start failed, continuing without neural training")
+                logger.warning(
+                    "BrainBridge start failed, continuing without neural training")
+                self._emit_alert(
+                    severity="WARN",
+                    code="BRAIN_BRIDGE_UNAVAILABLE",
+                    message="BrainBridge start failed; ingestion stays active, training disabled",
+                )
                 self.brain_bridge = None
             else:
                 # Try to load existing checkpoint
@@ -450,18 +1067,20 @@ class NeocortexAdapter:
                     loaded = await self.brain_bridge.load_async(str(checkpoint_dir))
                     if loaded:
                         logger.info("Restored from checkpoint")
+                        self._validate_checkpoint_metadata()
 
     async def shutdown_async(self):
         """
         Async graceful shutdown with final checkpoint save.
-        
+
         This ensures all pending training completes and weights are persisted.
         """
         logger.info("NeocortexAdapter: Starting async shutdown...")
-        
+
         # 1. Wait for pending training tasks
         if self._pending_tasks:
-            logger.info(f"Waiting for {len(self._pending_tasks)} pending tasks...")
+            logger.info(
+                f"Waiting for {len(self._pending_tasks)} pending tasks...")
             pending_valid = [t for t in self._pending_tasks if not t.done()]
             if pending_valid:
                 try:
@@ -471,61 +1090,55 @@ class NeocortexAdapter:
                     )
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for pending tasks")
-        
+
         # 2. Force final PPO training if episodes are buffered
         if self._completed_episodes and self.brain_bridge is not None:
-            logger.info(f"Final PPO training on {len(self._completed_episodes)} buffered episodes...")
+            logger.info(
+                f"Final PPO training on {len(self._completed_episodes)} buffered episodes...")
             try:
                 await self._trigger_ppo_training(list(self._completed_episodes))
                 self._completed_episodes.clear()
             except Exception as e:
                 logger.warning(f"Final PPO training failed: {e}")
-        
+
         # 3. Save final checkpoint (CRITICAL)
         if self.brain_bridge is not None:
             checkpoint_dir = self.config.system.checkpoint_dir
-            logger.info(f"Saving final checkpoint at step {self._total_train_steps}...")
+            logger.info(
+                f"Saving final checkpoint at step {self._total_train_steps}...")
             try:
                 success = await self.brain_bridge.save_async(str(checkpoint_dir))
                 if success:
-                    logger.info(f"✓ Final checkpoint saved at step {self._total_train_steps}")
+                    logger.info(
+                        f"✓ Final checkpoint saved at step {self._total_train_steps}")
                 else:
                     logger.warning("Final checkpoint save returned False")
             except Exception as e:
                 logger.error(f"Final checkpoint save failed: {e}")
-        
+
         # 4. Save normalizer state
         self._save_normalizer_state()
-        
-        # 5. Close shadow intent log
-        if self._shadow_intent_log is not None:
-            try:
-                self._shadow_intent_log.close()
-            except Exception:
-                pass
-        
-        # 6. Shutdown brain bridge
+        self._save_checkpoint_metadata()
+
+        # 5. Shutdown brain bridge
         if self.brain_bridge is not None:
             self.brain_bridge.shutdown()
-        
+
         logger.info(
             f"NeocortexAdapter async shutdown complete: "
             f"TrainSteps={self._total_train_steps} "
             f"ShadowIntents={self._shadow_intents_emitted} "
-            f"BackpressureEvents={self._backpressure_events}"
+            f"BackpressureEvents={self._backpressure_events} "
+            f"InflightTasks={self._inflight_training_tasks}"
         )
-    
+
     def shutdown(self):
         """
         Sync shutdown fallback (prefer shutdown_async when possible).
         """
         logger.warning("Using sync shutdown - checkpoint may not be saved!")
         self._save_normalizer_state()
-        if self._shadow_intent_log is not None:
-            try:
-                self._shadow_intent_log.close()
-            except Exception:
-                pass
+        self._save_checkpoint_metadata()
         if self.brain_bridge is not None:
             self.brain_bridge.shutdown()
         logger.info(
@@ -537,13 +1150,24 @@ class NeocortexAdapter:
     @property
     def stats(self) -> Dict[str, Any]:
         """Get adapter statistics."""
-        return {
+        base = {
             "total_train_steps": self._total_train_steps,
             "shadow_intents_emitted": self._shadow_intents_emitted,
             "buffer_size": len(self.buffer),
             "samples_since_train": self._samples_since_last_train,
+            "inflight_tasks": self._inflight_training_tasks,
+            "backpressure_events": self._backpressure_events,
             "episodes_buffered": len(self._completed_episodes),
             "dream_threshold": self.dream_threshold,
             "dreams_triggered": self._dreams_triggered,
             "ppo_trains_triggered": self._ppo_trains_triggered,
+            "waiting_for_reward_source": self._waiting_for_reward_source,
+            "reward_mode": self._reward_mode,
         }
+        if self._reward_mode == "regime_oracle":
+            base["oracle_settlements"] = self._oracle_settlements
+            base["oracle_warmup_symbols"] = {
+                sym: self._oracle_ring_buffer.warmup_remaining(sym)
+                for sym in (self._oracle_ring_buffer.symbols if self._oracle_ring_buffer else [])
+            }
+        return base

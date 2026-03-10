@@ -36,6 +36,7 @@ class EntryManager:
         symbol: str,
         reason: str,
         context: str = "",
+        filter_order_ids: set[str] | None = None,
     ) -> None:
         """
         EP-01.3-INT: Cancel pending entry orders for a symbol.
@@ -51,12 +52,12 @@ class EntryManager:
 
         # Check pending_orders (not yet ACKed)
         for order_id, deadline in list(watchdog.pending_orders.items()):
-            if deadline.symbol == symbol:
+            if deadline.symbol == symbol and (filter_order_ids is None or str(order_id) in filter_order_ids):
                 orders_to_cancel.append((order_id, deadline))
 
         # Check acked_orders (ACKed but not yet filled)
         for order_id, deadline in list(watchdog.acked_orders.items()):
-            if deadline.symbol == symbol:
+            if deadline.symbol == symbol and (filter_order_ids is None or str(order_id) in filter_order_ids):
                 orders_to_cancel.append((order_id, deadline))
 
         if not orders_to_cancel:
@@ -78,6 +79,7 @@ class EntryManager:
                         LOG.info(f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
                         # Remove from watchdog tracking
                         watchdog.on_order_cancel(oid)
+                        self._fsm._pending_entry_meta.pop(str(oid), None)
                         # Log cancellation
                         order_logger.write({
                             "rid": dl.rid,
@@ -98,6 +100,7 @@ class EntryManager:
                         if self._fsm._is_unknown_order_error(e):
                             LOG.info(f"✅ EP-01.3: Pending entry {oid} already absent (-2011)")
                             watchdog.on_order_cancel(oid)
+                            self._fsm._pending_entry_meta.pop(str(oid), None)
                         else:
                             LOG.warning(f"EP-01.3: Failed to cancel pending entry {oid}: {e}")
 
@@ -105,6 +108,7 @@ class EntryManager:
             else:
                 # Just remove from tracking (shadow mode or no adapter)
                 watchdog.on_order_cancel(order_id)
+                self._fsm._pending_entry_meta.pop(str(order_id), None)
 
     def cancel_all_pending_entries(self, reason: str = "CANCEL_PANIC_KILL") -> None:
         """

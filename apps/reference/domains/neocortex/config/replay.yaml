@@ -15,6 +15,10 @@ core_log: "logs/aurora_core.log"
 # Processing parameters
 batch_size: 100           # Events before yield to event loop
 poll_interval: 0.1        # Seconds to wait when tailing
+max_feature_lines_total_per_cycle: 1000
+max_feature_lines_per_symbol_per_cycle: 200
+max_order_lines_per_cycle: 500
+max_core_lines_per_cycle: 500
 
 # Symbols to monitor
 symbols:

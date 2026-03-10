@@ -15,9 +15,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Add parent paths
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_models import load_config, NeuroConfig
+from apps.reference.domains.neocortex.config_models import load_config, NeuroConfig
 
 
 class TestCheckpointFrequency:
@@ -66,7 +65,7 @@ class TestPPOWeightUpdate:
         config_dir = Path(__file__).parent.parent / "config"
         config = load_config(config_dir)
         
-        from logic.brain.core import BrainCore
+        from apps.reference.domains.neocortex.logic.brain.core import BrainCore
         brain = BrainCore(config.neuro, device="cpu", rng_seed=42)
         return brain
     
@@ -184,7 +183,7 @@ class TestVAETraining:
         config_dir = Path(__file__).parent.parent / "config"
         config = load_config(config_dir)
         
-        from logic.brain.core import BrainCore
+        from apps.reference.domains.neocortex.logic.brain.core import BrainCore
         return BrainCore(config.neuro, device="cpu", rng_seed=42)
     
     def test_vae_loss_decreases(self, brain_core):
@@ -211,3 +210,6 @@ class TestVAETraining:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
+
+
+

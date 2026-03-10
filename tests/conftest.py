@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 import inspect
+from pathlib import Path
 from unittest.mock import MagicMock
 from apps.reference.config_models import AuroraConfig, DomainsConfig
 from apps.reference.config_loader import ConfigLoader
@@ -90,6 +91,60 @@ def root_mock_config(domains_config):
     """Mock configuration object with domains loaded."""
     # print("DEBUG: mock_config fixture in tests/conftest.py CALLED")
     return MockAuroraConfig(domains_config)
+
+
+@pytest.fixture(autouse=True)
+def _restore_vfoundation_wal_globals():
+    """Prevent WAL directory mutations from leaking across tests."""
+    from vfoundation import config as vf_config
+    from vfoundation.dr import wal as wal_mod
+
+    original_cfg_wal_dir = vf_config.config.wal_dir
+    original_wal_dir = wal_mod.WAL_DIR
+    try:
+        yield
+    finally:
+        vf_config.config.wal_dir = original_cfg_wal_dir
+        wal_mod.set_wal_dir(Path(original_wal_dir))
+
+
+@pytest.fixture(autouse=True)
+def _restore_schema_validator_module_state():
+    """Reset schema_validator import flags after reload/monkeypatch tests."""
+    import vfoundation.core.schema_validator as sv
+
+    def _reset() -> None:
+        try:
+            import jsonschema as _jsonschema  # type: ignore[import-untyped]
+        except ImportError:
+            sv.HAS_JSONSCHEMA = False
+            if hasattr(sv, "jsonschema"):
+                try:
+                    delattr(sv, "jsonschema")
+                except Exception:
+                    pass
+        else:
+            sv.jsonschema = _jsonschema
+            sv.HAS_JSONSCHEMA = True
+
+        try:
+            import yaml as _yaml  # type: ignore[import-untyped]
+        except ImportError:
+            sv.HAS_YAML = False
+            if hasattr(sv, "yaml"):
+                try:
+                    delattr(sv, "yaml")
+                except Exception:
+                    pass
+        else:
+            sv.yaml = _yaml
+            sv.HAS_YAML = True
+
+    _reset()
+    try:
+        yield
+    finally:
+        _reset()
 
 
 # MR Signal Factory for Tests

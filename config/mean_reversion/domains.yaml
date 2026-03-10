@@ -12,7 +12,7 @@ decision_making:
   position_sizing:
     min_position_size_usd: 10
     liquidity_based_cap_usd: 10000
-  
+
   # EP-01.2-INT: EntryPlan for ATR-based entry/SL/TP computation
   entry_plan:
     enabled: true
@@ -29,7 +29,7 @@ decision_making:
     base_atr_mult: 1.5
     confidence_scale: 0.5
     min_stop_bps: 15
-  
+
   qos:
     # LIVE SAFETY: stop intent spam and "shadow pass-through".
     # NOTE: `defer` requires a running asyncio loop (not available in this runtime),
@@ -50,16 +50,16 @@ decision_making:
 
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
-  
+
   bar_gating:
     enable: false
     bar_ms: 900000  # 15 minutes
-  
+
   behavior_fsm:
     enable: false
     high_vol_multiplier: 2.0
     low_vol_multiplier: 0.5
-  
+
   # Commit 5: Risk Skew Guard
   risk_skew:
     # LIVE SAFETY: Max age difference between features.ts and risk.ts
@@ -91,7 +91,7 @@ decision_making:
     # Blocks entries when regime_confidence < threshold (low/mid confidence = noise).
     # 0.0 = disabled, 0.85 = recommended (only high-confidence regime signals).
     min_regime_confidence: 0.65
-    # FIX-NRR026-BACKTEST: Reduced from 2 to 1 for bar-based backtest.
+    # FIX-NRR026: Reduced from 2 to 1 for bar-driven replay.
     # With 5m bars, requiring 2 consecutive bars (10 min) for trend confirmation
     # is too restrictive. Single bar direction is sufficient for bar-based trading.
     # LIVE: Consider setting back to 2 for more conservative trend detection.
@@ -374,10 +374,10 @@ risk_management:
     tfi: 0.3
     absorption_inverse: 0.3
     absorption_feature: 0.2    # PKG-ABSORPTION-RISK-FULL: conservative start weight
-  
+
   trading_allowed_thresholds:
     max_risk_score: 0.96  # Increased by 20% to allow more trading
-  
+
   validation:
     total_weight_min: 0.5
     total_weight_max: 2.0
@@ -390,7 +390,7 @@ position_tracking:
   # Portfolio freshness TTL for AuroraBridge gate
   # Must be > account_observer.poll_interval_sec to avoid race conditions
   positions_stale_ttl_sec: 15
-  
+
   # TASK-ZOMBIE-FIX: Removed thread_timeouts section (dead, join_timeout_sec never read in runtime)
   enable_market_tick_subscription: false
 
@@ -406,7 +406,7 @@ execution_position:
     backoff_ms: [200, 500, 1000]  # Retry backoff intervals (ms)
 
   # TASK-ZOMBIE-FIX: Removed duplicate watchdog section (FSM reads from trading.execution.watchdog)
-  
+
   exposure_guard:
     pending_ttl_sec: 90
     post_fill_ttl_sec: 5
@@ -426,13 +426,13 @@ execution_position:
     # With 19% limit ($1,900), any BTC order exceeds this. Set to 500% to disable for backtest.
     # LIVE: Set back to 19% or appropriate value for per-symbol risk limits!
     max_concentration_pct: 500.0
-  
+
   fsm_open:
     idempotency_window_sec: 60
-  
+
   order_index:
     ttl_sec: 3600
-  
+
   # TASK51-C: In-flight order reconciliation config
   inflight_reconcile:
     inflight_ttl_sec: 60      # TTL before reconciliation check (seconds)
@@ -440,14 +440,14 @@ execution_position:
     reconcile_interval_sec: 10  # Interval between reconcile attempts
     # PURGE-DEAD-CONFIG-03: reconcile_retries/backoff_ms removed (retry logic not implemented)
     verbose_logging: true     # Log reconciliation details
-  
+
   metrics_collector:
     window_size_minutes: 60
     recent_rejections_minutes: 5
-  
+
   idempotent_cancel:
     max_retries: 2
-  
+
   utils:
     client_order_id_max_length: 32
     basis_points_base: 10000.0

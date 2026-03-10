@@ -26,6 +26,7 @@ def test_mr_signal_contains_prices():
     from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
         MeanReversion1mStrategy, MRStrategyConfig
     )
+    from apps.reference.domains.feature_engineering.bar_resampler import Bar
     
     # Create config with sl_atr_mult and tp_to_mid
     config = MRStrategyConfig(
@@ -53,9 +54,21 @@ def test_mr_signal_contains_prices():
         price = Decimal(str(price_val))
         volume = Decimal("1.0")
         
-        signal = strategy.on_tick("TESTUSDT", price, volume, ts)
-        
-        if signal:
+        bar = Bar(
+            symbol="TESTUSDT",
+            timeframe_sec=1,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=volume,
+            trade_count=1,
+            start_ts_ms=ts - 1000,
+            end_ts_ms=ts,
+        )
+        signal = strategy.on_bar("TESTUSDT", bar, ts)
+
+        if signal and signal.is_signal:
             logger.info(f"Signal Generated: {signal.signal_type.name}")
             logger.info(f"  entry_price: {signal.entry_price}")
             logger.info(f"  stop_price: {signal.stop_price}")

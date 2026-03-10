@@ -8,7 +8,8 @@ import yaml
 try:
     from dotenv import load_dotenv
 except ImportError:
-    def load_dotenv(dotenv_path: str | Path | None = None, *args, **kwargs):  # type: ignore[no-redef]
+    # type: ignore[no-redef]
+    def load_dotenv(dotenv_path: str | Path | None = None, *args, **kwargs):
         """Minimal .env loader fallback (avoids hard dependency on python-dotenv).
 
         Supports simple KEY=VALUE lines with optional quotes; ignores comments/blank lines.
@@ -24,7 +25,7 @@ except ImportError:
                 if not line or line.startswith("#"):
                     continue
                 if line.startswith("export "):
-                    line = line[len("export ") :].lstrip()
+                    line = line[len("export "):].lstrip()
                 if "=" not in line:
                     continue
                 key, value = line.split("=", 1)
@@ -85,7 +86,8 @@ def deep_merge(source, destination, *, _path: str = "", _provenance: Optional[Di
                     )
 
             node = destination[key]
-            deep_merge(value, node, _path=path, _provenance=_provenance, _source_name=_source_name)
+            deep_merge(value, node, _path=path,
+                       _provenance=_provenance, _source_name=_source_name)
         else:
             destination[key] = value
             if _provenance is not None and _source_name is not None:
@@ -116,7 +118,7 @@ class AuroraConfig(PydanticAuroraConfig):
 class ConfigLoader:
     _ENV_VAR_PATTERN = re.compile(r"\$\{\s*(\w+)\s*\}")
 
-    def __init__(self, config_dir: Optional[Path] = None, optuna_overlay: Optional[Dict[str, Any]] = None):
+    def __init__(self, config_dir: Optional[Path] = None):
         # Prefer explicit arg
         if config_dir is not None:
             self.config_dir = config_dir
@@ -124,7 +126,8 @@ class ConfigLoader:
             # Detect test override directory if present
             project_root = Path(__file__).resolve().parents[3]
             tests_dir = project_root / "tests" / "config" / "aurora"
-            default_dir = Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
+            default_dir = Path(__file__).resolve(
+            ).parent.parent.parent / "config" / "aurora"
             required = (
                 "system.yaml",
                 "trading.yaml",
@@ -137,17 +140,14 @@ class ConfigLoader:
                 self.config_dir = tests_dir
             else:
                 self.config_dir = default_dir
-        
+
         # CFG-RUNTIME-BOOTSTRAP-07: Store config name for diagnostic logging
         self.config_name = "aurora"  # Default config name
-        
-        # OPTUNA-OVERLAY-01: Optional overlay dict to override SSOT params during optimization
-        self.optuna_overlay = optuna_overlay
 
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
-            
+
         self.provenance_map: Dict[str, str] = {}
 
     @staticmethod
@@ -172,7 +172,8 @@ class ConfigLoader:
                 key = str(k)
                 path = f"{prefix}.{key}" if prefix else key
                 if isinstance(v, dict):
-                    out.update(ConfigLoader._flatten_leaf_paths(v, prefix=path))
+                    out.update(
+                        ConfigLoader._flatten_leaf_paths(v, prefix=path))
                 else:
                     out[path] = v
         else:
@@ -207,16 +208,16 @@ class ConfigLoader:
                 + more
             ),
         )
-    
+
     @staticmethod
     def _get_strict_mode() -> bool:
         """
         Get strict config validation mode.
-        
+
         CFG-FREEZE-SSOT-06: Strict mode by default (opt-out for migrations).
         - Default: STRICT (STRICT_CONFIG_CONFLICTS not set or ="1")
         - Opt-out: export STRICT_CONFIG_CONFLICTS=0
-        
+
         Returns:
             True if strict mode enabled (default), False otherwise.
         """
@@ -291,21 +292,28 @@ class ConfigLoader:
 
         # Merge: trading_config (source) → system_config (destination)
         merged_config: Dict[str, Any] = {}
-        deep_merge(system_config, merged_config, _provenance=self.provenance_map, _source_name="system.yaml")
-        deep_merge(trading_config, merged_config, _provenance=self.provenance_map, _source_name="trading.yaml")
-        deep_merge(regime_config, merged_config, _provenance=self.provenance_map, _source_name="regime.yaml")
+        deep_merge(system_config, merged_config,
+                   _provenance=self.provenance_map, _source_name="system.yaml")
+        deep_merge(trading_config, merged_config,
+                   _provenance=self.provenance_map, _source_name="trading.yaml")
+        deep_merge(regime_config, merged_config,
+                   _provenance=self.provenance_map, _source_name="regime.yaml")
 
         # =========================================================================
         # CANONICAL domains.yaml LOGIC (CFG-DOMAINS-STEP-01)
         # =========================================================================
         if 'domains' in domains_config:
             merged_config['domains'] = domains_config['domains']
-            flat_domains = self._flatten_leaf_paths(domains_config['domains'], prefix="domains")
-            for p in flat_domains: self.provenance_map[p] = "domains.yaml"
+            flat_domains = self._flatten_leaf_paths(
+                domains_config['domains'], prefix="domains")
+            for p in flat_domains:
+                self.provenance_map[p] = "domains.yaml"
         elif domains_config:
             merged_config['domains'] = domains_config
-            flat_domains = self._flatten_leaf_paths(domains_config, prefix="domains")
-            for p in flat_domains: self.provenance_map[p] = "domains.yaml"
+            flat_domains = self._flatten_leaf_paths(
+                domains_config, prefix="domains")
+            for p in flat_domains:
+                self.provenance_map[p] = "domains.yaml"
         else:
             raise ValueError(
                 "❌ CRITICAL: No domains configuration found! "
@@ -321,7 +329,8 @@ class ConfigLoader:
             raise ConfigContractError(path="trading.domains", why=msg)
 
         if not merged_config.get('domains'):
-            raise ValueError("❌ CRITICAL: domains config is empty after merge!")
+            raise ValueError(
+                "❌ CRITICAL: domains config is empty after merge!")
 
         # =========================================================================
         # CANONICAL instruments.yaml LOGIC (CFG-INSTRUMENTS-AURORA-SSOT-01)
@@ -332,12 +341,17 @@ class ConfigLoader:
             instruments_raw.get("instruments"), dict
         ):
             merged_config["instruments"] = instruments_raw["instruments"]
-            flat_inst = self._flatten_leaf_paths(instruments_raw["instruments"], prefix="instruments")
-            for p in flat_inst: self.provenance_map[p] = "instruments.yaml"
+            flat_inst = self._flatten_leaf_paths(
+                instruments_raw["instruments"], prefix="instruments")
+            for p in flat_inst:
+                self.provenance_map[p] = "instruments.yaml"
         else:
-            merged_config["instruments"] = instruments_raw if isinstance(instruments_raw, dict) else {}
-            flat_inst = self._flatten_leaf_paths(merged_config["instruments"], prefix="instruments")
-            for p in flat_inst: self.provenance_map[p] = "instruments.yaml"
+            merged_config["instruments"] = instruments_raw if isinstance(
+                instruments_raw, dict) else {}
+            flat_inst = self._flatten_leaf_paths(
+                merged_config["instruments"], prefix="instruments")
+            for p in flat_inst:
+                self.provenance_map[p] = "instruments.yaml"
 
         if not merged_config.get("instruments"):
             raise ValueError(
@@ -404,8 +418,8 @@ class ConfigLoader:
                     profile_path = strategies_dir / f"{strategy_id}.yaml"
                     if not profile_path.exists():
                         raise ValueError(
-                            f"❌ CRITICAL: Strategy '{strategy_id}' assigned in strategies.yaml "
-                            f"but profile missing: {profile_path}. "
+                            f"strategy_config_missing({strategy_id}) "
+                            f"assigned in strategies.yaml but profile missing: {profile_path}. "
                             f"Expected: config/aurora/strategies/{strategy_id}.yaml"
                         )
 
@@ -415,12 +429,14 @@ class ConfigLoader:
                     if isinstance(profile_raw, dict):
                         data_to_merge = profile_raw[strategy_id] if strategy_id in profile_raw else profile_raw
                         strategy_configs[strategy_id] = data_to_merge
-                        
-                        flat_strat = self._flatten_leaf_paths(data_to_merge, prefix=f"strategies.{strategy_id}")
+
+                        flat_strat = self._flatten_leaf_paths(
+                            data_to_merge, prefix=f"strategies.{strategy_id}")
                         for p in flat_strat:
                             self.provenance_map[p] = f"strategies/{strategy_id}.yaml"
-                        
-                        LOG.info(f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
+
+                        LOG.info(
+                            f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
 
         # Canonical runtime namespace (CFG-STRATEGY-SSOT-FREEZE-03)
         merged_config["strategies"] = strategy_configs
@@ -428,18 +444,13 @@ class ConfigLoader:
         # Attach system_meta under dedicated namespace (no runtime injection here)
         merged_config["system_meta"] = system_meta
 
-        # OPTUNA-OVERLAY-01: Apply Optuna overlay LAST (highest priority)
-        if self.optuna_overlay:
-            deep_merge(self.optuna_overlay, merged_config, _provenance=self.provenance_map, _source_name="optuna_overlay")
-            LOG.info(f"✅ Optuna overlay applied: {list(self.optuna_overlay.keys())}")
-
         return merged_config
 
     def _load_observability(self) -> ObservabilityConfig:
         """Load observability.yaml with Pydantic validation.
-        
+
         CFG-OBS-001: Centralized logging/metrics/tracing configuration.
-        
+
         Returns:
             ObservabilityConfig with validated settings (defaults if file missing)
         """
@@ -448,15 +459,17 @@ class ConfigLoader:
             if not obs_raw:
                 LOG.info("observability.yaml is empty, using defaults")
                 return ObservabilityConfig()
-            
+
             config = ObservabilityConfig.model_validate(obs_raw)
-            LOG.info(f"✅ Loaded observability.yaml (version: {config.config_version})")
-            
+            LOG.info(
+                f"✅ Loaded observability.yaml (version: {config.config_version})")
+
             # Track provenance
-            flat_paths = self._flatten_leaf_paths(obs_raw, prefix="observability")
+            flat_paths = self._flatten_leaf_paths(
+                obs_raw, prefix="observability")
             for p in flat_paths:
                 self.provenance_map[p] = "observability.yaml"
-            
+
             return config
         except FileNotFoundError:
             LOG.info("observability.yaml not found, using defaults")
@@ -469,7 +482,8 @@ class ConfigLoader:
 
     def _inject_runtime_meta(self, config: AuroraConfig) -> AuroraConfig:
         """Inject runtime-only metadata AFTER successful validation."""
-        runtime = SystemRuntimeMeta(config_name=self.config_name, config_dir=str(self.config_dir))
+        runtime = SystemRuntimeMeta(
+            config_name=self.config_name, config_dir=str(self.config_dir))
         return config.model_copy(
             update={
                 "system_meta": config.system_meta.model_copy(update={"runtime": runtime})
@@ -492,8 +506,10 @@ class ConfigLoader:
         risk = trading.get("risk", {})
 
         strategies = config.get("strategies", {})
-        aurora = strategies.get("aurora", {}) if isinstance(strategies, dict) else {}
-        decision = aurora.get("decision", {}) if isinstance(aurora, dict) else {}
+        aurora = strategies.get("aurora", {}) if isinstance(
+            strategies, dict) else {}
+        decision = aurora.get("decision", {}) if isinstance(
+            aurora, dict) else {}
 
         if not isinstance(decision, dict):
             return
@@ -640,48 +656,49 @@ class ConfigLoader:
     def _validate_ssot_conflicts(self, resolved_config: Dict[str, Any]) -> None:
         """
         CFG-TRADING-YAML-BURN-DOWN-01: Validate that SSOT files have priority.
-        
+
         Check if trading.yaml contains duplicate sections that conflict with SSOT:
         - domains.yaml → config.domains (SSOT)
         - instruments.yaml → config.instruments (SSOT)
-        
+
         Policy:
         - If strict_config_conflicts=true (env STRICT_CONFIG_CONFLICTS=1) → FAIL
         - Otherwise → WARNING only (default)
-        
+
         Raises:
             ValueError: If conflicts detected in strict mode
         """
         import os
-        
+
         strict_mode = self._get_strict_mode()
-        
+
         conflicts_found = []
-        
+
         # Check 1: domains conflict
         canonical_domains = resolved_config.get("domains", {})
         trading_block = resolved_config.get("trading", {})
-        
+
         if isinstance(trading_block, dict):
             # Note: trading.domains is now a MIRROR, but check if it was DIFFERENT before mirror
             # We already handle this in load_config, but this is extra validation
             pass
-        
+
         # Check 2: instruments conflict (already handled by load_config warnings)
         # This method serves as a central audit point for future SSOT conflicts
-        
+
         # Check 3: NEW - detect if trading.yaml has deprecated SSOT-duplicating sections
         # These sections should NOT exist in trading.yaml anymore
         deprecated_ssot_keys = [
             # Format: (trading.yaml_path, ssot_file, description)
             # Example: ("trading.aurora_instruments", "instruments.yaml", "Per-symbol Aurora params"),
         ]
-        
+
         # For now, this is a placeholder for future burn-down phases
         # Current phase: audit only
-        
+
         if conflicts_found:
-            msg = "⚠️  CONFIG CONFLICTS detected:\n" + "\n".join(conflicts_found)
+            msg = "⚠️  CONFIG CONFLICTS detected:\n" + \
+                "\n".join(conflicts_found)
             if strict_mode:
                 raise ValueError(msg)
             else:
@@ -728,50 +745,53 @@ class ConfigLoader:
 
         if missing:
             missing_sorted = "; ".join(sorted(missing))
-            raise ValueError(f"Missing instruments precision: {missing_sorted}")
+            raise ValueError(
+                f"Missing instruments precision: {missing_sorted}")
 
     def _validate_execution_config_for_live(self, resolved_config: Dict[str, Any]) -> None:
         """TASK47c-A: Fail-closed validation for LIVE execution.
-        
+
         Validates that all active symbols have complete execution config:
         - margin_mode (isolated | cross)
         - target_leverage (1-125)
         - leverage_policy (verify_only | set_and_verify)
         - max_notional_utilization (0.0-1.0)
-        
+
         This is MANDATORY for LIVE execution. Missing any field → ValueError (startup crash).
-        
+
         Raises:
             ValueError: If any active symbol is missing execution fields
         """
         active_symbols = self._extract_active_symbols(resolved_config)
         if not active_symbols:
             return
-        
+
         instruments = resolved_config.get("instruments")
         if not isinstance(instruments, dict):
             raise ValueError(
                 "LIVE execution fail-closed: instruments map is missing or invalid"
             )
-        
-        required_fields = ("margin_mode", "target_leverage", "leverage_policy", "max_notional_utilization")
+
+        required_fields = ("margin_mode", "target_leverage",
+                           "leverage_policy", "max_notional_utilization")
         missing: list[str] = []
-        
+
         for symbol in active_symbols:
             spec = instruments.get(symbol)
             if not isinstance(spec, dict):
                 missing.append(f"{symbol} missing instrument spec")
                 continue
-            
+
             # Check for execution config (can be at root level or nested under 'execution')
             execution = spec.get("execution", spec)
-            
+
             for field in required_fields:
                 if execution.get(field) is None:
                     missing.append(f"{symbol} missing execution.{field}")
-        
+
         if missing:
-            missing_sorted = "; ".join(sorted(missing[:10]))  # Limit to first 10
+            missing_sorted = "; ".join(
+                sorted(missing[:10]))  # Limit to first 10
             more = f" (and {len(missing) - 10} more)" if len(missing) > 10 else ""
             raise ValueError(
                 f"LIVE execution fail-closed: Missing required execution config. "
@@ -791,7 +811,8 @@ class ConfigLoader:
 
         instruments = resolved_config.get("instruments")
         if not isinstance(instruments, dict):
-            raise ValueError("LIVE sizing fail-closed: instruments map is missing or invalid")
+            raise ValueError(
+                "LIVE sizing fail-closed: instruments map is missing or invalid")
 
         missing: list[str] = []
         for symbol in active_symbols:
@@ -800,7 +821,8 @@ class ConfigLoader:
                 missing.append(f"{symbol} missing instrument spec")
                 continue
             sizing = spec.get("sizing", spec)
-            raw = sizing.get("margin_pct") if isinstance(sizing, dict) else None
+            raw = sizing.get("margin_pct") if isinstance(
+                sizing, dict) else None
             if raw is None:
                 missing.append(f"{symbol} missing sizing.margin_pct")
                 continue
@@ -821,7 +843,6 @@ class ConfigLoader:
             )
 
     # SCORCHED-EARTH-2026-01-27: _apply_backtest_symbols_filter MOVED to apps.reference.backtest.symbol_filter
-
 
     def load_config(
         self,
@@ -874,11 +895,10 @@ class ConfigLoader:
         )
 
         system_meta = self._extract_system_meta(system_config, regime_config)
-        
+
         # SCORCHED-EARTH-2026-01-27: features.yaml check DELETED
         # File moved to archive/, check was dead code.
-        
-        
+
         # =========================================================================
         # DEPRECATED MR DETECTION (CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN)
         # =========================================================================
@@ -894,7 +914,8 @@ class ConfigLoader:
                     "SSOT for MR config: config/aurora/strategies/mean_reversion.yaml. "
                     "Action required: Remove mean_reversion from trading.yaml."
                 )
-                raise ConfigContractError(path="trading.mean_reversion", why=msg)
+                raise ConfigContractError(
+                    path="trading.mean_reversion", why=msg)
 
         # =========================================================================
         # CFG-STRATEGY-SSOT-FREEZE-02: trading.decision must NOT live in trading.yaml
@@ -915,7 +936,7 @@ class ConfigLoader:
 
         # SCORCHED-EARTH-2026-01-27: aurora_instruments.yaml check DELETED
         # File moved to archive/, check was dead code.
-        
+
         # =========================================================================
         # DEPRECATED FEATURE_ENGINEERING DETECTION (CFG-FREEZE-SSOT-06)
         # =========================================================================
@@ -925,23 +946,25 @@ class ConfigLoader:
         # Check multiple locations where feature_engineering might appear in trading.yaml
         feature_eng_found = False
         feature_eng_locations = []
-        
+
         if isinstance(trading_config, dict):
             # Check root level: trading.feature_engineering
             if "feature_engineering" in trading_config:
                 fe_section = trading_config.get("feature_engineering")
                 if isinstance(fe_section, dict) and fe_section:
                     feature_eng_found = True
-                    feature_eng_locations.append("trading.feature_engineering (root level)")
-            
+                    feature_eng_locations.append(
+                        "trading.feature_engineering (root level)")
+
             # Check nested in trading: trading.trading.feature_engineering
             nested_trading = trading_config.get("trading", {})
             if isinstance(nested_trading, dict) and "feature_engineering" in nested_trading:
                 fe_section = nested_trading.get("feature_engineering")
                 if isinstance(fe_section, dict) and fe_section:
                     feature_eng_found = True
-                    feature_eng_locations.append("trading.trading.feature_engineering (nested)")
-        
+                    feature_eng_locations.append(
+                        "trading.trading.feature_engineering (nested)")
+
         if feature_eng_found:
             locations_str = ", ".join(feature_eng_locations)
             msg = (
@@ -950,7 +973,8 @@ class ConfigLoader:
                 "SSOT for feature_engineering: config/aurora/domains.yaml. "
                 "Action required: Remove feature_engineering from trading.yaml."
             )
-            raise ConfigContractError(path="trading.feature_engineering", why=msg)
+            raise ConfigContractError(
+                path="trading.feature_engineering", why=msg)
 
         merged_config = self._merge_config_fragments(
             system_config=system_config,
@@ -1009,7 +1033,8 @@ class ConfigLoader:
                     trading_exec = trading_block.get("execution")
 
                 # Prefer cloning trading.execution as the base to keep schema-valid required fields.
-                exec_block = copy.deepcopy(trading_exec) if isinstance(trading_exec, dict) else {}
+                exec_block = copy.deepcopy(trading_exec) if isinstance(
+                    trading_exec, dict) else {}
                 merged_config["execution"] = exec_block
 
             if "order_guardian" in exec_block and exec_block.get("order_guardian") is not None:
@@ -1091,11 +1116,13 @@ class ConfigLoader:
             # if runtime schema does not include domains.feature_engineering.pillars,
             # retry once after dropping only this key instead of hard-failing every trial.
             errors = list(e.errors())
-            only_pillars_extra = bool(errors) and all(self._is_pillars_extra_forbidden(err) for err in errors)
+            only_pillars_extra = bool(errors) and all(
+                self._is_pillars_extra_forbidden(err) for err in errors)
             if only_pillars_extra:
                 try:
                     domains_cfg = resolved_config.get("domains")
-                    fe_cfg = domains_cfg.get("feature_engineering") if isinstance(domains_cfg, dict) else None
+                    fe_cfg = domains_cfg.get("feature_engineering") if isinstance(
+                        domains_cfg, dict) else None
                     if isinstance(fe_cfg, dict) and "pillars" in fe_cfg:
                         fe_cfg.pop("pillars", None)
                         LOG.warning(
@@ -1123,7 +1150,8 @@ class ConfigLoader:
         - In LIVE execution, missing block is a configuration contract violation.
         """
         if not isinstance(resolved_config, dict):
-            raise ValueError("LIVE config invalid: resolved_config is not a dict")
+            raise ValueError(
+                "LIVE config invalid: resolved_config is not a dict")
 
         domains = resolved_config.get("domains")
         if not isinstance(domains, dict):
@@ -1131,7 +1159,8 @@ class ConfigLoader:
 
         dm = domains.get("decision_making")
         if not isinstance(dm, dict):
-            raise ValueError("LIVE config fail-closed: missing domains.decision_making")
+            raise ValueError(
+                "LIVE config fail-closed: missing domains.decision_making")
 
         ds = dm.get("directional_sanity")
         if not isinstance(ds, dict):
@@ -1159,7 +1188,8 @@ class ConfigLoader:
         - In LIVE execution, missing block is a configuration contract violation.
         """
         if not isinstance(resolved_config, dict):
-            raise ValueError("LIVE config invalid: resolved_config is not a dict")
+            raise ValueError(
+                "LIVE config invalid: resolved_config is not a dict")
 
         domains = resolved_config.get("domains")
         if not isinstance(domains, dict):
@@ -1167,7 +1197,8 @@ class ConfigLoader:
 
         dm = domains.get("decision_making")
         if not isinstance(dm, dict):
-            raise ValueError("LIVE config fail-closed: missing domains.decision_making")
+            raise ValueError(
+                "LIVE config fail-closed: missing domains.decision_making")
 
         pm = dm.get("price_motion_sanity")
         if not isinstance(pm, dict):
@@ -1197,58 +1228,59 @@ class ConfigLoader:
 
     def _validate_essential_features_readiness_contract(self, resolved_config: dict) -> None:
         """P0-0: Fail-fast: essential_features ⊆ declared_ready_keys.
-        
+
         This prevents config/code drift where essential features are configured
         but never emitted by FeatureEngineering.
-        
+
         Contract:
         - essential_features (from aurora.yaml) must be subset of
           readiness_registry.declared_keys (from domains.yaml)
         """
         if not isinstance(resolved_config, dict):
             return
-        
+
         # Get declared_keys from domains.feature_engineering.readiness_registry
         domains = resolved_config.get("domains")
         if not isinstance(domains, dict):
             return
-        
+
         fe = domains.get("feature_engineering")
         if not isinstance(fe, dict):
             return
-        
+
         rr = fe.get("readiness_registry")
         if not isinstance(rr, dict):
             # No readiness_registry defined - skip validation (backward compat)
             LOG.debug("P0-0: readiness_registry not defined, skipping validation")
             return
-        
+
         declared_keys = rr.get("declared_keys")
         if not isinstance(declared_keys, list) or not declared_keys:
-            LOG.debug("P0-0: declared_keys empty or not a list, skipping validation")
+            LOG.debug(
+                "P0-0: declared_keys empty or not a list, skipping validation")
             return
-        
+
         declared_set = set(declared_keys)
-        
+
         # Get essential_features from strategies.aurora.decision
         strategies = resolved_config.get("strategies")
         if not isinstance(strategies, dict):
             return
-        
+
         aurora = strategies.get("aurora")
         if not isinstance(aurora, dict):
             return
-        
+
         decision = aurora.get("decision")
         if not isinstance(decision, dict):
             return
-        
+
         essential = decision.get("essential_features")
         if not isinstance(essential, list) or not essential:
             return
-        
+
         essential_set = set(essential)
-        
+
         # P0-0: Validate essential ⊆ declared
         missing = essential_set - declared_set
         if missing:
@@ -1261,8 +1293,9 @@ class ConfigLoader:
                     "or remove from essential_features."
                 ),
             )
-        
-        LOG.info(f"✅ P0-0: essential_features {sorted(essential_set)} ⊆ declared_keys (contract valid)")
+
+        LOG.info(
+            f"✅ P0-0: essential_features {sorted(essential_set)} ⊆ declared_keys (contract valid)")
 
     def _apply_timeframe_sec_ssot_precedence(self, resolved_config: dict) -> None:
         """Apply strict SSOT precedence for timeframe_sec.

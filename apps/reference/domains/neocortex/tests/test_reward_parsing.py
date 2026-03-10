@@ -16,15 +16,14 @@ import numpy as np
 
 # Import from neocortex - adjust path as needed
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from logic.ingest.parsers.core_parser import (
+from apps.reference.domains.neocortex.logic.ingest.parsers.core_parser import (
     parse_core_log_line, 
     CoreEventType,
     CoreLogEntry,
     parse_scientific_notation
 )
-from logic.ingest.parsers.order_parser import (
+from apps.reference.domains.neocortex.logic.ingest.parsers.order_parser import (
     parse_order_log_line,
     OrderEventType,
     OrderLogEntry
@@ -59,6 +58,23 @@ class TestCoreLogParsing:
         assert entry is not None
         assert entry.symbol == "BTCUSDT"
         assert entry.event_type == CoreEventType.POSITION_CLOSED
+
+    def test_parse_position_closed_structured_payload(self):
+        """Parse structured EVT:POSITION_CLOSED payload from log line."""
+        line = (
+            '2026-01-10 03:10:42,580 - execution_position.fsm - INFO - '
+            'EVT:POSITION_CLOSED symbol=BTCUSDT trade_id=BTCUSDT:1700000001000:1 '
+            'close_ts_ms=1700000001000 realized_pnl_net=3.5 fees=0.1'
+        )
+        entry = parse_core_log_line(line)
+
+        assert entry is not None
+        assert entry.event_type == CoreEventType.POSITION_CLOSED
+        assert entry.symbol == "BTCUSDT"
+        assert entry.trade_id == "BTCUSDT:1700000001000:1"
+        assert entry.close_ts_ms == 1700000001000
+        assert entry.realized_pnl_net == pytest.approx(3.5)
+        assert entry.fees == pytest.approx(0.1)
     
     def test_parse_equity_update(self):
         """Parse equity update from positions update log."""
@@ -273,7 +289,7 @@ class TestMultiTailerIntegration:
     
     def test_episode_receives_reward(self, temp_logs):
         """Verify episode handler can receive reward (sync version)."""
-        from logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
+        from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
         
         config = MultiSourceConfig(
             enabled=True,
@@ -299,7 +315,174 @@ class TestMultiTailerIntegration:
         assert tailer._last_equity == 250.0
         assert tailer._features_processed == 0
 
+    @pytest.mark.asyncio
+    async def test_no_structured_reward_results_in_none_reward(self, temp_logs):
+        """No fallback policy: missing structured reward should not be synthesized from equity."""
+        from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig, Episode
+
+        captured = []
+
+        async def feature_handler(_payload):
+            return None
+
+        async def episode_handler(ep):
+            captured.append(ep)
+
+        tailer = MultiTailer(
+            config=MultiSourceConfig(
+                enabled=True,
+                features_dir=temp_logs["features_dir"],
+                orders_file=temp_logs["orders_file"],
+                core_log=temp_logs["core_log"],
+                symbols=["BTCUSDT"],
+            ),
+            feature_handler=feature_handler,
+            episode_handler=episode_handler,
+        )
+        tailer._pending_episodes["BTCUSDT"] = Episode(
+            symbol="BTCUSDT",
+            timestamp=1700000000.0,
+            features={"rsi": 50.0},
+            side="BUY",
+        )
+
+        await tailer._handle_position_close(
+            CoreLogEntry(
+                timestamp=1700000001.0,
+                timestamp_str="2026-01-10 00:00:01,000",
+                event_type=CoreEventType.POSITION_CLOSED,
+                symbol="BTCUSDT",
+            )
+        )
+
+        assert len(captured) == 1
+        assert captured[0].reward is None
+        assert captured[0].pnl is None
+
+    @pytest.mark.asyncio
+    async def test_structured_reward_is_used_and_normalized(self, temp_logs):
+        """Structured realized_pnl_net should drive reward calculation."""
+        from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig, Episode
+
+        captured = []
+
+        async def feature_handler(_payload):
+            return None
+
+        async def episode_handler(ep):
+            captured.append(ep)
+
+        tailer = MultiTailer(
+            config=MultiSourceConfig(
+                enabled=True,
+                features_dir=temp_logs["features_dir"],
+                orders_file=temp_logs["orders_file"],
+                core_log=temp_logs["core_log"],
+                symbols=["BTCUSDT"],
+            ),
+            feature_handler=feature_handler,
+            episode_handler=episode_handler,
+        )
+        tailer._pending_episodes["BTCUSDT"] = Episode(
+            symbol="BTCUSDT",
+            timestamp=1700000000.0,
+            features={"rsi": 50.0},
+            side="BUY",
+        )
+
+        await tailer._handle_position_close(
+            CoreLogEntry(
+                timestamp=1700000001.0,
+                timestamp_str="2026-01-10 00:00:01,000",
+                event_type=CoreEventType.POSITION_CLOSED,
+                symbol="BTCUSDT",
+                realized_pnl_net=10.0,
+                trade_id="BTCUSDT:1700000001000:1",
+                close_ts_ms=1700000001000,
+                fees=0.1,
+            )
+        )
+
+        assert len(captured) == 1
+        assert captured[0].pnl == pytest.approx(10.0)
+        assert captured[0].reward == pytest.approx(float(np.tanh(1.0)))
+
+    @pytest.mark.asyncio
+    async def test_structured_close_log_line_flows_end_to_end(self, tmp_path):
+        """Structured core log line should close pending episode with valid pnl/reward."""
+        from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
+
+        features_dir = tmp_path / "features"
+        features_dir.mkdir(parents=True, exist_ok=True)
+        (features_dir / "BTCUSDT.log").write_text(
+            '{"price": "90000", "obi": "0.1", "rsi": "50.0", "vol": "0.03"}\n',
+            encoding="utf-8",
+        )
+        orders_file = tmp_path / "order_log_v1.jsonl"
+        orders_file.write_text(
+            json.dumps(
+                {
+                    "event_type": "ORDER_PLACED",
+                    "symbol": "BTCUSDT",
+                    "side": "BUY",
+                    "quantity": 0.001,
+                    "timestamp": 1_700_000_000.0,
+                    "metadata": {"order_type": "MARKET_ENTRY"},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        core_log = tmp_path / "aurora_core.log"
+        core_log.write_text(
+            (
+                "2026-01-10 03:10:42,580 - execution_position.fsm - INFO - "
+                "EVT:POSITION_CLOSED symbol=BTCUSDT trade_id=BTCUSDT:1700000001000:1 "
+                "close_ts_ms=1700000001000 realized_pnl_net=3.5 fees=0.1\n"
+            ),
+            encoding="utf-8",
+        )
+
+        captured = []
+
+        async def feature_handler(_payload):
+            return None
+
+        async def episode_handler(ep):
+            captured.append(ep)
+
+        tailer = MultiTailer(
+            config=MultiSourceConfig(
+                enabled=True,
+                features_dir=features_dir,
+                orders_file=orders_file,
+                core_log=core_log,
+                symbols=["BTCUSDT"],
+                poll_interval=0.01,
+                max_feature_lines_total_per_cycle=100,
+                max_feature_lines_per_symbol_per_cycle=100,
+                max_order_lines_per_cycle=10,
+                max_core_lines_per_cycle=10,
+            ),
+            feature_handler=feature_handler,
+            episode_handler=episode_handler,
+            state_path=tmp_path / "state.json",
+        )
+
+        task = asyncio.create_task(tailer.run())
+        await asyncio.sleep(0.25)
+        tailer.stop()
+        await task
+
+        assert len(captured) == 1
+        assert captured[0].position_closed is True
+        assert captured[0].pnl == pytest.approx(3.5)
+        assert captured[0].reward == pytest.approx(float(np.tanh(3.5 / 10.0)))
+
 
 # Run tests if executed directly
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+

@@ -50,7 +50,7 @@ class CircuitBreaker:
                 return True
             elif self.state == "OPEN":
                 # Check if cool-down period has passed
-                if time.time() - self.open_ts > self.cool_down_s:
+                if time.time() - self.open_ts >= self.cool_down_s:
                     # Transition to half-open for probing
                     self.state = "HALF_OPEN"
                     return True

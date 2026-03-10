@@ -241,6 +241,11 @@ class FeatureEngineering:
         # Ensure feature logs directory exists
         self._feature_logs_dir = os.path.join("logs", "features")
         os.makedirs(self._feature_logs_dir, exist_ok=True)
+        self._legacy_features_log_mode = self.cfg.legacy_features_log_mode
+        self._legacy_features_log_sample_every_n = max(
+            1, int(self.cfg.legacy_features_log_sample_every_n)
+        )
+        self._legacy_features_log_counter: Dict[str, int] = defaultdict(int)
 
     def _log_features_to_file(self, symbol: str, features: dict) -> None:
         """
@@ -248,9 +253,20 @@ class FeatureEngineering:
         Format: JSON string (no prefix)
         Path: logs/features/{symbol}.log
         """
+        if self._legacy_features_log_mode == "off":
+            return
+        if self._legacy_features_log_mode == "sample":
+            self._legacy_features_log_counter[symbol] += 1
+            if (
+                self._legacy_features_log_sample_every_n > 1
+                and self._legacy_features_log_counter[symbol]
+                % self._legacy_features_log_sample_every_n
+                != 0
+            ):
+                return
         try:
             file_path = os.path.join(self._feature_logs_dir, f"{symbol}.log")
-            with open(file_path, "a") as f:
+            with open(file_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(features, default=str) + "\n")
         except Exception as e:
             self.logger.error(f"Error logging features to file for {symbol}: {e}")

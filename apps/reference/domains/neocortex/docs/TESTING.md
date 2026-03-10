@@ -1,17 +1,65 @@
-# Тестування домену Neocortex
+# Neocortex — тестування та acceptance критерії
 
-## 1. Стратегія тестування
-Тестування розділене на перевірку інгесту (цілісність даних) та перевірку збіжності моделей (ML convergence).
+## 1) Цілі тестування
 
-## 2. Ключові тестові набори
-- **Ingest Parity**: Перевірка, що дані, прочитані з WAL, ідентичні подіям у рантаймі.
-- **Shadow Decision Accuracy**: Порівняння рішень Neocortex з рішеннями Aurora на історичних даних.
-- **Buffer Stability**: Тести на переповнення епізодичної пам'яті та коректність видалення старих записів.
+- Гарантувати **SSOT конфігів** (YAML) без hardcoded дефолтів у коді.
+- Гарантувати **відтворюваність** (replay WAL → однакові alerts/reports).
+- Гарантувати **безпеку**: R0–R2 не мають впливу на торгівлю.
 
-## 3. Методи верифікації
-- **Final Verification**: Автоматизовані скрипти, що перевіряють чекпоінти моделей на стабільність.
-- **Log Forensic**: Аналіз `neocortex_blackbox.jsonl` на наявність логічних помилок у ланцюжку міркувань (reasoning).
+---
 
-## 4. Прогалини (Gaps)
-- Відсутні тести на стійкість до раптових змін структури WAL (schema drift).
-- Немає автоматизованих тестів на деградацію продуктивності (catastrophic forgetting) після тривалого навчання.
+## 2) Матриця тестів
+
+### 2.1. Config Contract (обовʼязково)
+
+- missing key → startup crash
+- extra key → startup crash
+- unresolved `${VAR}` → startup crash
+- “no defaults” guard для `config_models.py`
+- заборона `os.getenv` у домені (окрім YAML `${VAR}` резольверу)
+
+### 2.2. Unit (математика/ядро)
+
+- timestamp normalization
+- WAL normalizer (rid/symbol/ts)
+- viability calibrator (tau), deterministic on fixture
+- world model: forward/update/nll finite
+- router deterministic selection
+
+### 2.3. Contract (events)
+
+- `NEOCORTEX_*` payload schemas (див. `apps/reference/domains/neocortex/docs/EVENTS.md`)
+- TradeIntent payload валідний під `apps/reference/domains/decision_making/schemas/trade_intent_v1.json`
+
+### 2.4. Integration
+
+- ingest `wal_small.jsonl` → alerts/report
+- ingest `features_tape_small.jsonl` → state updates (R1)
+- shadow intents + divergence report (R2)
+
+---
+
+## 3) Фікстури
+
+Рекомендована структура:
+- `tests/domains/neocortex/fixtures/wal_small.jsonl`
+- `tests/domains/neocortex/fixtures/features_tape_small.jsonl`
+- `tests/config/aurora/neocortex/*` (повний комплект YAML)
+
+---
+
+## 4) Acceptance (DoD)
+
+R0:
+- ingest ідемпотентний, replay відтворюваний
+- alerts/report стабільні
+- 0 side effects
+
+R1:
+- viability/world/efe/empowerment відтворювані
+- немає degraded‑режимів
+
+R2:
+- shadow_intents без спаму (idempotent_key)
+- divergence report відтворюваний
+

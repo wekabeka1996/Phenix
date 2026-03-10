@@ -1,0 +1,15 @@
+llm_microstructure:
+  enabled: true
+  type: external_intent
+  description: "External LLM intent strategy (contract-first ingress, fail-closed gates)"
+  timeframe_sec: 60
+  execution:
+    entry_order_type: "LIMIT"
+    entry_tif: "GTC"
+    exit_order_type: "MARKET"
+    exit_tif: null
+    gtx_retry_max: 0
+    gtx_retry_offset_bps: 2.0
+    gtx_fallback_to_market: false
+  safety_gates:
+    enabled: true

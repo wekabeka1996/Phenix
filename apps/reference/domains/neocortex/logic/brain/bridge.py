@@ -16,9 +16,9 @@ from concurrent.futures import Future
 
 import numpy as np
 
-from config_models import NeuroConfig
-from logic.ingest.observation import MarketObservation
-from logic.brain.worker import brain_service_worker, BridgeTask, BridgeResult
+from apps.reference.domains.neocortex.config_models import NeuroConfig
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.brain.worker import brain_service_worker, BridgeTask, BridgeResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class BrainBridge:
     Maintains the Task/Result queues and a background listener thread.
     """
     
-    def __init__(self, config: NeuroConfig, rng_seed: int = 0):
+    def __init__(self, config: NeuroConfig, max_workers: int = 1, rng_seed: int = 0):
         self.config = config
         self.rng_seed = int(rng_seed)
         
@@ -253,3 +253,4 @@ class BrainBridge:
         # In python mp.Queue, strict cleanup is tricky, but letting GC handle it usually works if process dead.
         self._task_queue = None
         self._result_queue = None
+

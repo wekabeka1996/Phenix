@@ -28,8 +28,8 @@ def test_vae_reparameterization_formula():
     
     Common bug: forgetting the 0.5 factor.
     """
-    from logic.brain.vae import VariationalAutoencoder
-    from config_models import VAEConfig
+    from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+    from apps.reference.domains.neocortex.config_models import VAEConfig
     
     config = VAEConfig(
         input_dim=4,
@@ -71,7 +71,7 @@ def test_vae_kld_formula():
     For mu=0, logvar=0 (standard normal):
     KLD = -0.5 * sum(1 + 0 - 0 - 1) = -0.5 * 0 = 0
     """
-    from logic.brain.vae import VariationalAutoencoder
+    from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
     
     mu = torch.zeros(1, 4)
     logvar = torch.zeros(1, 4)
@@ -92,7 +92,7 @@ def test_vae_kld_nonzero():
     For mu=1, logvar=0 (mean shifted):
     KLD = -0.5 * sum(1 + 0 - 1 - 1) = -0.5 * sum(-1) = 0.5 per dimension
     """
-    from logic.brain.vae import VariationalAutoencoder
+    from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
     
     mu = torch.ones(1, 4)  # 4 dimensions, mu=1 each
     logvar = torch.zeros(1, 4)
@@ -116,8 +116,8 @@ def test_world_model_output_shape():
     Verify World Model preserves latent dimension.
     Input: z_t (B, D) -> Output: z_{t+1} (B, D)
     """
-    from logic.brain.world_model import WorldModel
-    from config_models import WorldModelConfig
+    from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
+    from apps.reference.domains.neocortex.config_models import WorldModelConfig
     
     config = WorldModelConfig(
         hidden_dim=16,
@@ -142,8 +142,8 @@ def test_world_model_gradient_flow():
     """
     Verify gradients flow through World Model.
     """
-    from logic.brain.world_model import WorldModel
-    from config_models import WorldModelConfig
+    from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
+    from apps.reference.domains.neocortex.config_models import WorldModelConfig
     
     config = WorldModelConfig(
         hidden_dim=16,
@@ -173,8 +173,8 @@ def test_valuation_importance_formula():
     """
     Verify: importance = max(abs(reward), epsilon)
     """
-    from logic.amygdala.valuation import ValuationEngine
-    from logic.ingest.observation import MarketObservation
+    from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+    from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
     import numpy as np
     
     amygdala = ValuationEngine()
@@ -202,8 +202,8 @@ def test_valuation_trace_buffer_limit():
     """
     Verify trace buffer respects maxlen.
     """
-    from logic.amygdala.valuation import ValuationEngine
-    from logic.ingest.observation import MarketObservation
+    from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+    from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
     import numpy as np
     
     amygdala = ValuationEngine()
@@ -229,8 +229,8 @@ def test_episodic_buffer_fifo_order():
     """
     Verify FIFO ordering is preserved.
     """
-    from logic.memory.buffer import EpisodicBuffer
-    from logic.ingest.observation import MarketObservation
+    from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+    from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
     import numpy as np
     
     buffer = EpisodicBuffer(capacity=5)
@@ -259,8 +259,8 @@ def test_vae_extreme_logvar():
     """
     Test VAE with extreme logvar values (numerical stability).
     """
-    from logic.brain.vae import VariationalAutoencoder
-    from config_models import VAEConfig
+    from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+    from apps.reference.domains.neocortex.config_models import VAEConfig
     
     config = VAEConfig(
         input_dim=4,
@@ -290,8 +290,8 @@ def test_vae_loss_not_nan():
     """
     Test VAE loss doesn't produce NaN.
     """
-    from logic.brain.vae import VariationalAutoencoder
-    from config_models import VAEConfig
+    from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+    from apps.reference.domains.neocortex.config_models import VAEConfig
     
     config = VAEConfig(
         input_dim=4,
@@ -312,3 +312,4 @@ def test_vae_loss_not_nan():
     assert not torch.isnan(losses['loss']), "Loss is NaN"
     assert not torch.isnan(losses['mse']), "MSE is NaN"
     assert not torch.isnan(losses['kld']), "KLD is NaN"
+

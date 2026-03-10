@@ -119,6 +119,7 @@ class IntentBuilder:
         max_slippage_bps: Optional[int],
         max_latency_ms: Optional[int],
         risk_score: Optional[float],
+        strategy_trace: Optional[dict] = None,
         normalize_mode: str = "signed_v2",
         sg: "SafetyGateResult",
     ) -> None:
@@ -258,6 +259,8 @@ class IntentBuilder:
             "regime": sg.regime,
             "regime_confidence": sg.regime_confidence,
         }
+        if isinstance(strategy_trace, dict) and strategy_trace:
+            trade_intent["trace"] = strategy_trace
 
         # ── Arbitration commit ─────────────────────────────────
         commit = self._check_strategy_arbitration(symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)

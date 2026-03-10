@@ -1,62 +1,133 @@
 # Tools Directory
 
-This directory contains utility functions and analytical tools, grouped by operational domain.
+This directory contains maintenance, diagnostics, and research utilities grouped by domain.
 
-## 📂 analysis
-Tools for examining outputs and test distributions.
-- `analyze_health.py`: Checks the RL/Neocortex model health metrics.
-- `analyze_test_results.py`: Parses JUnit XML reports for aggregated test failure patterns.
-- `bars_regime_analysis.py`: Analyzes backtest results to build regime datasets.
-- `sl_fill_sensitivity.py`: Backtest script simulating SL slippage sensitivity.
-- `plot_dataset.py`: Visualizes OHLCV bars, regimes, and confidence with `matplotlib`.
+Root-level Python and PowerShell files are compatibility launchers.
+Canonical implementations now live in the subfolders below.
 
-## 📂 ci_cd
-Integrations and automated checks used as CI/CD gates.
-- `audit_yaml_loading.py`: Validates that Pydantic properly loads the `aurora` YAML configs.
-- `inventory_config_defaults.py`: Checks AST definitions to ensure the "Zero Defaults" policy.
-- `validate_configs.py`: High-level structural validation of configuration files.
-- `compare_run_config_snapshot.py`: Compares a backtest config snapshot against the current branch.
+## analysis
+Exploratory analysis and post-run reports.
+- `analyze_features.py`
+- `analyze_health.py`
+- `async_ast_analyzer.py`
+- `analyze_test_results.py`
+- `bars_regime_analysis.py`
+- `generate_async_report.py`
+- `plot_dataset.py`
+- `sl_fill_sensitivity.py`
 
-## 📂 diagnostics
-Scripts that poke the live system, the exchange, or perform deep traces.
-- `check_orders.py` / `check_positions.py`: Binance connection tests to print active states.
-- `diagnose_execution.py`: Guardian checks enforcing determinism and safety limits.
-- `measure_api_latency.py`: RTT latency tests for `fapi.binance.com`.
-- `validate_testnet.py`: E2E Binance Testnet validation for Orders/Margins.
-- `smoke_tidy_gate.py`: Quick `grep` through the guardian logs.
-- `verify_config.py` / `verify_flip_config.py`: Fast import smoke tests for config loads.
-- `execution_vs_upstream_trace_01.py`: Compares execution traces vs decision-making intents.
-- `log_audit.py`: Validates core invariants against logs (e.g. "DENY never becomes OPEN").
-- `feature_integrity_replay_check.py`: WAL log sanity and replay integrity verification.
+## alpha_search
+Alpha-search specific tooling.
+- `alpha_search_report.py`
+- `alpha_search_runtime_summary.py`
+- `build_alpha_input.py`
 
-## 📂 monitoring
-Operational observability scripts meant to be run periodically.
-- `live_observability_summary.py`: Aggregates TTF, fill counts, and reject rates.
-- `obs02_ctx_log_inventory.py`: Inventories JSONL logs to verify log formats.
-- `extract_equity_free_usdt.py`: Extracts free equity balances from system logs.
-- `analyze_wal.py`: Reads the WAL (Write-Ahead Log) to diagnose system deviations.
-- `metrics_summary.py`: Extracts basic operational metrics.
+## backtest
+Backtest post-processing and diagnostics.
+- `backtest_diagnostics.py`
+- `backtest_summarize.py`
 
-## 📂 forensics
-Deep incident investigation tooling.
-- `forensic_analysis.py`: Post-mortem diagnostics, specifically for PPO loss checks.
-- `dir_strength_forensics.py`: Focuses on scoring distributions (Direction vs Strength).
-- `gate_effect_report.py`: Evaluates the drop-off rates due to liquidity/cost gates.
-- `confidence_calibration.py`: Calibrates confidence thresholds against historical logs.
-- `pipeline_counts_report.py` / `rid_duplicates_report.py`: Verifies the robustness of WAL logs.
+## calibration
+Parameter calibration for Aurora and MD/AMR flows.
+- `calibrate_aurora_regime_params.py`
+- `calibrate_aurora_signal_weights.py`
+- `calibrate_md_amr_weights.py`
 
-## 📂 simulation
-- `regime_replay.py`: Generates synthetic price data (trends, spikes) to test Regime Detection.
-- `strategy_replay.py`: Re-evaluates DecisionMaking logic historically to verify gates offline.
-- `config_tuner.py`: Simulates A/B tests with configs against historical feature logs.
+## ci_cd
+Config validation and CI gate scripts.
+- `audit_yaml_loading.py`
+- `compare_run_config_snapshot.py`
+- `inventory_config_defaults.py`
+- `validate_configs.py`
 
-## 📂 docs_gen
-- `build_project_atlas.py`: Compiles the `PROJECT_ATLAS.md` from schemas and events.
-- `generate_config_map.py` / `generate_trading_config_audit.py`: Generates config documentations.
-- `generate_config_default_path_map.py`: Builds YAML mapping files.
+## cli
+Command-line entrypoints.
+- `auroractl.py`
 
-## 📂 backtest
-- `backtest_diagnostics.py` / `backtest_summarize.py`: Post-processing logic for backtest metrics.
+## diagnostics
+Live checks, testnet probes, replay verification, and trace tooling.
+- `check_orders.py`
+- `check_positions.py`
+- `diagnose_latent.py`
+- `diagnose_execution.py`
+- `execution_vs_upstream_trace_01.py`
+- `feature_integrity_replay_check.py`
+- `log_audit.py`
+- `measure_api_latency.py`
+- `quadratic_regime_repro.py`
+- `smoke_tidy_gate.py`
+- `validate_testnet.py`
+- `verify_config.py`
+- `verify_flip_config.py`
 
-## 📂 cli
-- `auroractl.py`: A wrapper CLI for quick environment actions (config-validate, diff).
+## docs_gen
+Project atlas and config documentation generators.
+- `build_project_atlas.py`
+- `config_default_path_map.yaml`
+- `generate_config_default_path_map.py`
+- `generate_config_map.py`
+- `generate_trading_config_audit.py`
+
+## forensics
+Incident analysis, WAL forensics, and post-mortem tooling.
+- `bracket_coverage_report.py`
+- `confidence_calibration.py`
+- `deep_wal_forensics.py`
+- `dir_strength_forensics.py`
+- `entry_execution_report.py`
+- `entry_fill_audit.py`
+- `extract_last_trades.py`
+- `forensic_analysis.py`
+- `forensic_analysis_v2.py`
+- `gate_effect_report.py`
+- `log_forensics_cancel_audit.py`
+- `pending_entry_counterfactuals.py`
+- `pipeline_counts_report.py`
+- `post_cancel_price_drift.py`
+- `rid_duplicates_report.py`
+- `wal_intent_summary.py`
+
+## maintenance
+Repository hygiene and one-off refactoring helpers.
+- `autofill_config_defaults_into_yaml.py`
+- `ascii_sanitize_repo.py`
+- `batch_replace_tests.py`
+- `rescue_brain.py`
+- `reset_ppo.py`
+- `rewire_config_models_remove_defaults.py`
+- `sanitize_configs.py`
+- `sanitize_repo_bytes.py`
+
+## monitoring
+Operational observability and recurring runtime checks.
+- `analyze_log.ps1`
+- `analyze_log_detail.ps1`
+- `analyze_wal.py`
+- `extract_equity_free_usdt.py`
+- `live_observability_summary.py`
+- `metrics_summary.py`
+- `obs02_ctx_log_inventory.py`
+- `parse_aurora_logs.py`
+- `restart_shadow_telemetry.ps1`
+
+## parquet_contract
+Local parquet contract validation helpers.
+
+## parquet_pipeline
+Offline parquet dataset build, audit, stress, and preset tooling.
+
+## regime_calibration
+Low-level regime calibration support modules.
+
+## simulation
+Offline simulation, replay, and config tuning utilities.
+- `config_tuner.py`
+- `md_amr_data_adapter.py`
+- `regime_replay.py`
+- `strategy_replay.py`
+- `synthetic_llm_intent_generator.py`
+
+## testing
+Ad-hoc test runners that are not part of the main pytest suite.
+- `run_order_tests.py`
+- `run_tests.py`

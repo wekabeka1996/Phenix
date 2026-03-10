@@ -151,7 +151,8 @@ class SchemaIndex:
                     self._hints_cache[model] = {}
             for field_name, field in model.model_fields.items():
                 child_prefix = f"{prefix}.{field_name}" if prefix else field_name
-                ann = self._hints_cache[model].get(field_name, field.annotation)
+                ann = self._hints_cache[model].get(
+                    field_name, field.annotation)
                 self._walk(ann, child_prefix)
             return
 
@@ -415,7 +416,8 @@ def iter_schema_leaf_fields(root_model: type[BaseModel], *, globalns: dict[str, 
 
 
 def scan_config_usage(*, schema_paths: set[str], roots: list[Path]) -> dict[str, list[UsageOcc]]:
-    raise NotImplementedError("scan_config_usage replaced by scan_usage_detailed()")
+    raise NotImplementedError(
+        "scan_config_usage replaced by scan_usage_detailed()")
 
 
 def _annotation_last(node: ast.AST | None) -> str | None:
@@ -525,7 +527,8 @@ def scan_usage_detailed(
                 if isinstance(base_expr, ast.Name) and base_expr.id in local_types:
                     base_model = local_types[base_expr.id]
                 elif isinstance(base_expr, ast.Attribute):
-                    base_model = infer_model_from_value(local_types, self_attr_types, base_expr)
+                    base_model = infer_model_from_value(
+                        local_types, self_attr_types, base_expr)
 
                 if base_model is not None:
                     fld = base_model.model_fields.get(field_name)
@@ -571,7 +574,8 @@ def scan_usage_detailed(
     def record(path: str, file_rel: str, qualname: str, lineno: int) -> None:
         if not path:
             return
-        usages[path].append(UsageOcc(file=file_rel, qualname=qualname, lineno=lineno))
+        usages[path].append(
+            UsageOcc(file=file_rel, qualname=qualname, lineno=lineno))
 
     skip_terminal = {
         "model_dump",
@@ -607,8 +611,10 @@ def scan_usage_detailed(
         for node in ast.walk(fn):
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
                 callee = node.value.func
-                is_get_cfg = isinstance(callee, ast.Name) and callee.id == "get_config"
-                is_load_cfg = isinstance(callee, ast.Attribute) and callee.attr == "load_config"
+                is_get_cfg = isinstance(
+                    callee, ast.Name) and callee.id == "get_config"
+                is_load_cfg = isinstance(
+                    callee, ast.Attribute) and callee.attr == "load_config"
                 if is_get_cfg or is_load_cfg:
                     for t in node.targets:
                         if isinstance(t, ast.Name):
@@ -619,7 +625,8 @@ def scan_usage_detailed(
             before = (len(local_types), len(self_attr_types))
             for node in ast.walk(fn):
                 if isinstance(node, ast.Assign):
-                    inferred = infer_model_from_value(local_types, self_attr_types, node.value)
+                    inferred = infer_model_from_value(
+                        local_types, self_attr_types, node.value)
                     if inferred is None:
                         continue
                     for tgt in node.targets:
@@ -632,7 +639,8 @@ def scan_usage_detailed(
                         ):
                             self_attr_types[tgt.attr] = inferred
                 elif isinstance(node, ast.AnnAssign) and node.value is not None:
-                    inferred = infer_model_from_value(local_types, self_attr_types, node.value)
+                    inferred = infer_model_from_value(
+                        local_types, self_attr_types, node.value)
                     if inferred is None:
                         continue
                     tgt = node.target
@@ -756,7 +764,8 @@ def scan_usage_detailed(
                         if isinstance(a0, ast.Name) and a0.id in local_types:
                             model = local_types[a0.id]
                         elif isinstance(a0, ast.Attribute):
-                            model = infer_model_from_value(local_types, self_attr_types, a0)
+                            model = infer_model_from_value(
+                                local_types, self_attr_types, a0)
 
                         # If we can't infer the base type, attempt a schema-unique field-name match.
                         # This is safe only when exactly one model declares this field name.
@@ -789,14 +798,16 @@ def scan_usage_detailed(
                     continue
 
                 init_fn = next(
-                    (n for n in node.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"),
+                    (n for n in node.body if isinstance(
+                        n, ast.FunctionDef) and n.name == "__init__"),
                     None,
                 )
                 if init_fn is not None:
                     inferred_self: dict[str, type[BaseModel]] = {}
                     init_local_types: dict[str, type[BaseModel]] = {}
                     for arg in init_fn.args.args + init_fn.args.kwonlyargs:
-                        model = model_from_annotation(_annotation_last(arg.annotation))
+                        model = model_from_annotation(
+                            _annotation_last(arg.annotation))
                         if model is not None:
                             init_local_types[arg.arg] = model
 
@@ -805,7 +816,8 @@ def scan_usage_detailed(
                         before = (len(init_local_types), len(inferred_self))
                         for sub in ast.walk(init_fn):
                             if isinstance(sub, ast.Assign):
-                                inferred = infer_model_from_value(init_local_types, inferred_self, sub.value)
+                                inferred = infer_model_from_value(
+                                    init_local_types, inferred_self, sub.value)
                                 if inferred is None:
                                     continue
                                 for tgt in sub.targets:
@@ -818,7 +830,8 @@ def scan_usage_detailed(
                                     ):
                                         inferred_self[tgt.attr] = inferred
                             elif isinstance(sub, ast.AnnAssign) and sub.value is not None:
-                                inferred = infer_model_from_value(init_local_types, inferred_self, sub.value)
+                                inferred = infer_model_from_value(
+                                    init_local_types, inferred_self, sub.value)
                                 if inferred is None:
                                     continue
                                 tgt = sub.target
@@ -842,13 +855,15 @@ def scan_usage_detailed(
                             item,
                             file_rel=file_rel,
                             qualname=f"{node.name}.{item.name}",
-                            self_attrs=class_self_attrs.get(f"{file_rel}:{node.name}"),
+                            self_attrs=class_self_attrs.get(
+                                f"{file_rel}:{node.name}"),
                         )
 
             # Module-level functions
             for node in module_tree.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    scan_function(node, file_rel=file_rel, qualname=node.name, self_attrs=None)
+                    scan_function(node, file_rel=file_rel,
+                                  qualname=node.name, self_attrs=None)
 
             # Note: module-level statements are not scanned here; most config reads are in functions/methods.
 
@@ -877,7 +892,8 @@ def scan_dynamic_dict_usage(
     out: dict[str, list[UsageOcc]] = defaultdict(list)
 
     def record(path: str, file_rel: str, qualname: str, lineno: int) -> None:
-        out[path].append(UsageOcc(file=file_rel, qualname=qualname, lineno=lineno))
+        out[path].append(
+            UsageOcc(file=file_rel, qualname=qualname, lineno=lineno))
 
     def scan_function_body(body: list[ast.stmt], *, file_rel: str, qualname: str) -> None:
         # var -> canonical dict path (e.g. trading.risk.daily)
@@ -929,7 +945,8 @@ def scan_dynamic_dict_usage(
                     continue
                 name = tgt.id
 
-                chain = _expr_chain(node.value) if isinstance(node.value, ast.AST) else None
+                chain = _expr_chain(node.value) if isinstance(
+                    node.value, ast.AST) else None
                 if chain:
                     for i in range(len(chain)):
                         cand = ".".join(chain[i:])
@@ -938,7 +955,8 @@ def scan_dynamic_dict_usage(
                             break
 
                 # var2 = var1["k"] / var1.get("k") / (var1["k"] if … else …) / (var1.get("k") or …)
-                derived = _derived_alias(node.value) if isinstance(node.value, ast.AST) else None
+                derived = _derived_alias(node.value) if isinstance(
+                    node.value, ast.AST) else None
                 if derived is not None:
                     alias[name] = derived
 
@@ -953,7 +971,8 @@ def scan_dynamic_dict_usage(
             if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
                 base = node.value.id
                 if base in alias and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
-                    record(f"{alias[base]}.{node.slice.value}", file_rel, qualname, lineno)
+                    record(f"{alias[base]}.{node.slice.value}",
+                           file_rel, qualname, lineno)
 
             # alias.get("k")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
@@ -966,7 +985,8 @@ def scan_dynamic_dict_usage(
                 ):
                     base = node.func.value.id
                     if base in alias:
-                        record(f"{alias[base]}.{node.args[0].value}", file_rel, qualname, lineno)
+                        record(f"{alias[base]}.{node.args[0].value}",
+                               file_rel, qualname, lineno)
 
     for root in roots:
         for pf in root.rglob("*.py"):
@@ -988,13 +1008,17 @@ def scan_dynamic_dict_usage(
                     self.class_stack.pop()
 
                 def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                    qn = ".".join([*self.class_stack, node.name]) if self.class_stack else node.name
-                    scan_function_body(node.body, file_rel=file_rel, qualname=qn)
+                    qn = ".".join([*self.class_stack, node.name]
+                                  ) if self.class_stack else node.name
+                    scan_function_body(
+                        node.body, file_rel=file_rel, qualname=qn)
                     self.generic_visit(node)
 
                 def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-                    qn = ".".join([*self.class_stack, node.name]) if self.class_stack else node.name
-                    scan_function_body(node.body, file_rel=file_rel, qualname=qn)
+                    qn = ".".join([*self.class_stack, node.name]
+                                  ) if self.class_stack else node.name
+                    scan_function_body(
+                        node.body, file_rel=file_rel, qualname=qn)
                     self.generic_visit(node)
 
             Visitor().visit(tree)
@@ -1050,10 +1074,6 @@ def _category(path: str) -> str:
     ):
         return "Costs/Fill realism"
 
-    # Backtest
-    if low.startswith("trading.backtest") or "backtest" in low:
-        return "Backtest plumbing"
-
     # Entry execution
     if (
         ".execution." in low
@@ -1107,7 +1127,8 @@ def main() -> int:
     out_path = REPO_ROOT / "reports" / "config_audit_trading.md"
 
     # 1) Schema-derived field list (filtered later by top-level prefixes)
-    all_fields = iter_schema_leaf_fields(config_models_module.AuroraConfig, globalns=vars(config_models_module))
+    all_fields = iter_schema_leaf_fields(
+        config_models_module.AuroraConfig, globalns=vars(config_models_module))
 
     include_prefixes = (
         "trading_mode",
@@ -1129,14 +1150,16 @@ def main() -> int:
         "binance_api.",
     )
 
-    fields: list[FieldRow] = [f for f in all_fields if f.path == "trading_mode" or f.path.startswith(include_prefixes)]
+    fields: list[FieldRow] = [f for f in all_fields if f.path ==
+                              "trading_mode" or f.path.startswith(include_prefixes)]
 
     # 2) Augment: expand dynamic Dict[str, Any] blocks we know affect trading (legacy but live).
     # Currently: trading.risk.* leaf keys from YAML (untyped in schema).
     try:
         import yaml
 
-        raw = yaml.safe_load((REPO_ROOT / "config" / "aurora" / "trading.yaml").read_text(encoding="utf-8"))
+        raw = yaml.safe_load(
+            (REPO_ROOT / "config" / "aurora" / "trading.yaml").read_text(encoding="utf-8"))
         risk_block = (raw or {}).get("trading", {}).get("risk", {})
 
         def _flatten_yaml(obj: Any, prefix: str) -> dict[str, Any]:
@@ -1153,7 +1176,8 @@ def main() -> int:
             out[prefix] = obj
             return out
 
-        risk_leafs = _flatten_yaml(risk_block, "trading.risk") if isinstance(risk_block, dict) else {}
+        risk_leafs = _flatten_yaml(risk_block, "trading.risk") if isinstance(
+            risk_block, dict) else {}
 
         def _infer_value_type(v: Any) -> str:
             if v is None:
@@ -1188,63 +1212,22 @@ def main() -> int:
         # Best-effort: if YAML can't be parsed, skip expansion.
         pass
 
-    # 2b) Backtest realism knobs (not YAML today; hardcoded defaults in MockBroker)
-    # These are critical for PnL/WR realism in backtests.
-    backtest_realism_fields = [
-        FieldRow(
-            path="backtest_engine.MockBroker.commission_maker",
-            type_str="float",
-            default_str="0.0002 (hardcoded default)",
-            effect="Backtest: maker fee rate applied to fills.",
-        ),
-        FieldRow(
-            path="backtest_engine.MockBroker.commission_taker",
-            type_str="float",
-            default_str="0.0004 (hardcoded default)",
-            effect="Backtest: taker fee rate applied to fills.",
-        ),
-        FieldRow(
-            path="backtest_engine.MockBroker.slippage_bps",
-            type_str="float",
-            default_str="2.0 (hardcoded default)",
-            effect="Backtest: market/stop/TP slippage in basis points.",
-        ),
-        FieldRow(
-            path="backtest_engine.MockBroker.fill_probability_at_touch",
-            type_str="float",
-            default_str="0.0 (hardcoded default)",
-            effect="Backtest: probability to fill when price only touches limit (0 = trade-through only).",
-        ),
-        FieldRow(
-            path="backtest_engine.MockBroker.max_volume_participation",
-            type_str="float",
-            default_str="0.05 (hardcoded default)",
-            effect="Backtest: max fraction of bar volume a single order can take.",
-        ),
-    ]
-    fields.extend(backtest_realism_fields)
-
     # 3) Scan code usage (typed config access + best-effort dict `.get()` usage)
-    schema = SchemaIndex(config_models_module.AuroraConfig, globalns=vars(config_models_module))
+    schema = SchemaIndex(config_models_module.AuroraConfig,
+                         globalns=vars(config_models_module))
     usage_map = scan_usage_detailed(
         schema,
         model_module=config_models_module,
-        roots=[REPO_ROOT / "apps" / "reference", REPO_ROOT / "backtest_engine"],
+        roots=[REPO_ROOT / "apps" / "reference"],
     )
     # Dynamic dict: trading.risk.* (legacy but used)
     dyn_usage = scan_dynamic_dict_usage(
-        roots=[REPO_ROOT / "apps" / "reference", REPO_ROOT / "backtest_engine"],
+        roots=[REPO_ROOT / "apps" / "reference"],
         dynamic_roots={"trading.risk"},
     )
     for p, occs in dyn_usage.items():
         usage_map.setdefault(p, [])
         usage_map[p].extend(occs)
-    # Hardcode the "read" location for MockBroker realism knobs.
-    for f in backtest_realism_fields:
-        usage_map.setdefault(f.path, [])
-        usage_map[f.path].append(
-            UsageOcc(file="backtest_engine/mock_broker.py", qualname="MockBroker.__init__", lineno=0)
-        )
     # Final de-dup after merge
     for p, occs in list(usage_map.items()):
         seen: set[tuple[str, str]] = set()
@@ -1270,7 +1253,6 @@ def main() -> int:
         "Exit/TP/SL",
         "Cooldown/Re-entry",
         "Costs/Fill realism",
-        "Backtest plumbing",
     ]
 
     # 5) Render markdown
@@ -1284,13 +1266,14 @@ def main() -> int:
 
     # 1) Config files table (manual, anchored to ConfigLoader behavior)
     lines.append("## 1) Конфіг-файли та їх роль (таблиця)\n\n")
-    lines.append("| Файл | Хто лоадить | Merge / пріоритет | Секції, що впливають на торгову поведінку |\n")
+    lines.append(
+        "| Файл | Хто лоадить | Merge / пріоритет | Секції, що впливають на торгову поведінку |\n")
     lines.append("| :--- | :--- | :--- | :--- |\n")
     lines.append(
         "| `config/aurora/system.yaml` | `apps/reference/config_loader.py:ConfigLoader.load_config()` | merged first at root; some keys extracted → `system_meta.*` | `trading_mode`, `system.market_data.*` (TTL/WS), `ops.panic_killswitch`, `trailing.*` |\n"
     )
     lines.append(
-        "| `config/aurora/trading.yaml` | `apps/reference/config_loader.py:ConfigLoader.load_config()` | deep-merged after system.yaml; provides `trading.*` + `binance_api.*` | `trading.mode`, `trading.backtest.*`, `trading.tca_prefs.*`, `trading.risk_budgets.*`, `trading.execution.*`, `trading.risk.*` (legacy gates) |\n"
+        "| `config/aurora/trading.yaml` | `apps/reference/config_loader.py:ConfigLoader.load_config()` | deep-merged after system.yaml; provides `trading.*` + `binance_api.*` | `trading.mode`, `trading.tca_prefs.*`, `trading.risk_budgets.*`, `trading.execution.*`, `trading.risk.*` (legacy gates) |\n"
     )
     lines.append(
         "| `config/aurora/regime.yaml` | `apps/reference/config_loader.py:ConfigLoader.load_config()` | deep-merged after trading.yaml | `basis_tf_sec`, `uncertain_cutoff`, `liveness_factor`, `models.*` (regime detector) |\n"
@@ -1338,7 +1321,8 @@ def main() -> int:
             disp_path = _display_path(f.path)
             usages = usage_map.get(f.path)
             lines.append(f"- `{disp_path}`\n")
-            lines.append(f"  - type/default: `{f.type_str}` / `{f.default_str}`\n")
+            lines.append(
+                f"  - type/default: `{f.type_str}` / `{f.default_str}`\n")
             lines.append(f"  - read: {_render_usage(usages)}\n")
             lines.append(f"  - effect: {f.effect}\n")
             lines.append(f"  - risk: {_risk_sentence(disp_path)}\n")
@@ -1349,20 +1333,18 @@ def main() -> int:
     lines.append("### Potential Silent Behavior\n\n")
     lines.append(
         "- `trading.symbols_to_track` is **derived** from `strategies_registry.assignments` in `ConfigLoader._derive_symbols_to_track_ssot()` (YAML value is forbidden in strict mode).\n"
-        "- Backtest safety: if `trading.mode: backtest`, loader may force root `trading_mode=backtest` (see `ConfigLoader.load_config()` backtest sync block).\n"
         "- Root aliasing: `AuroraConfig._backcompat_root_execution_alias()` sets root `execution = trading.execution` when root is null.\n"
         "- Timeframe precedence: `ConfigLoader._apply_timeframe_sec_ssot_precedence()` can override `strategies.mean_reversion.timeframe_sec` using `strategies.aurora.assets.<SYMBOL>.timeframe_sec` overrides.\n"
         "- Liquidity gate precedence (explicit but easy to miss): per-asset → per-strategy → Aurora decision-level (see `LiquidityGateConfig` docstring).\n"
         "- `getattr(..., default)` fallbacks: `apps/reference/domains/decision_making/decision_making.py:DecisionMaking.__init__` uses `getattr(trading_config, 'tca_prefs', {})` / `risk_budgets` (silent empty dict if missing).\n"
-        "- Null → default example: `backtest_engine/wrappers.py:BacktestExecPosFSM._on_order_fill` uses `float(getattr(exp_cfg, 'post_fill_hold_ttl_sec', ttl) or ttl)` (0/None collapses to default).\n"
         "- 0 → None example: `apps/reference/domains/decision_making/decision_making.py` does `int(tca_budget.get('max_slippage_bps', 0)) or None`.\n"
-        "- Backtest realism defaults are **not** YAML-controlled today: `backtest_engine/mock_broker.py:MockBroker.__init__` defaults (commission/slippage/trade-through/volume cap) apply unless explicitly passed.\n"
     )
     lines.append("\n")
 
     # 4) Safe baselines
     lines.append("## 4) Мінімальний “safe baseline”\n\n")
-    lines.append("Only fields found in code paths above (i.e., `read != NOT FOUND`).\n\n")
+    lines.append(
+        "Only fields found in code paths above (i.e., `read != NOT FOUND`).\n\n")
 
     def is_used(path: str) -> bool:
         return bool(usage_map.get(path))
@@ -1448,11 +1430,16 @@ def main() -> int:
     lines.append("## Як збирати (практичні команди)\n\n")
     lines.append("Ripgrep quick-start:\n\n")
     lines.append("```bash\n")
-    lines.append("rg -n \"load_config|ConfigLoader|deep_merge|strategies_registry|assignments\" apps/reference backtest_engine\n")
-    lines.append("rg -n \"Aurora.*Config|MeanReversion.*Config|BaseModel\" apps/reference/config_models.py\n")
-    lines.append("rg -n \"fees|commission|slippage|trade_through|volume_cap\" apps/reference backtest_engine\n")
-    lines.append("rg -n \"market_regime|RegimeDetector|basis_tf_sec|atr_baseline\" apps/reference config/aurora\n")
-    lines.append("rg -n \"tp_rr|sl_pct|regime_tpsl|guardrails|cooldown|reentry|post_only|GTX|timeInForce|TIF\" apps/reference config/aurora\n")
+    lines.append(
+        "rg -n \"load_config|ConfigLoader|deep_merge|strategies_registry|assignments\" apps/reference backtest_engine\n")
+    lines.append(
+        "rg -n \"Aurora.*Config|MeanReversion.*Config|BaseModel\" apps/reference/config_models.py\n")
+    lines.append(
+        "rg -n \"fees|commission|slippage|trade_through|volume_cap\" apps/reference backtest_engine\n")
+    lines.append(
+        "rg -n \"market_regime|RegimeDetector|basis_tf_sec|atr_baseline\" apps/reference config/aurora\n")
+    lines.append(
+        "rg -n \"tp_rr|sl_pct|regime_tpsl|guardrails|cooldown|reentry|post_only|GTX|timeInForce|TIF\" apps/reference config/aurora\n")
     lines.append("```\n\n")
 
     lines.append("Pydantic field inventory (auto):\n\n")

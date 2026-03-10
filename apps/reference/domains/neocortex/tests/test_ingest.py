@@ -5,9 +5,9 @@ Ingestion Logic Tests
 import pytest
 import numpy as np
 from pydantic import ValidationError
-from config_models import IngestConfig
-from logic.ingest.parser import FeatureParser
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.config_models import IngestConfig
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 # =============================================================================
 # FIXTURES
@@ -104,6 +104,58 @@ def test_parser_garbage_values(parser):
     expected = np.array([0.0, 0.5, 0.0], dtype=np.float32)
     np.testing.assert_array_almost_equal(obs.features_vector, expected)
 
+
+def test_parser_applies_delta_pct_and_log_price_modes():
+    cfg = IngestConfig(
+        feature_list=["price", "delta_price", "ema_bias"],
+        normalization_method="zscore",
+        normalization_window=100,
+        buffer_size=1000,
+        min_samples_before_ready=10,
+        nan_strategy="zero",
+        price_feature_mode="log",
+        delta_price_mode="pct",
+    )
+    parser = FeatureParser(cfg)
+
+    payload = {
+        "timestamp": 1.0,
+        "features": {
+            "price": "200.0",
+            "delta_price": "10.0",
+            "ema_bias": "0.6",
+        },
+    }
+    obs = parser.parse(payload)
+    expected = np.array([np.log(200.0), 0.05, 0.6], dtype=np.float32)
+    np.testing.assert_allclose(obs.features_vector, expected, rtol=1e-5, atol=1e-6)
+
+
+def test_parser_price_drop_mode_and_clipping():
+    cfg = IngestConfig(
+        feature_list=["price", "delta_price", "macro_resid"],
+        normalization_method="zscore",
+        normalization_window=100,
+        buffer_size=1000,
+        min_samples_before_ready=10,
+        nan_strategy="zero",
+        price_feature_mode="drop",
+        delta_price_mode="pct",
+        feature_clip_abs={"delta_price": 0.1, "macro_resid": 2.0},
+    )
+    parser = FeatureParser(cfg)
+    payload = {
+        "timestamp": 1.0,
+        "features": {
+            "price": "100.0",
+            "delta_price": "1000.0",  # pct=10 -> clipped to 0.1
+            "macro_resid": "inf",      # non-finite -> 0
+        },
+    }
+    obs = parser.parse(payload)
+    expected = np.array([0.0, 0.1, 0.0], dtype=np.float32)
+    np.testing.assert_allclose(obs.features_vector, expected, rtol=1e-6, atol=1e-7)
+
 def test_observation_tensor_conversion():
     """Test conversion to tensor (mocking torch availability if needed)."""
     obs = MarketObservation(
@@ -129,3 +181,4 @@ def test_market_observation_immutability():
     with pytest.raises(FrozenInstanceError if hasattr(pytest, 'FrozenInstanceError') else AttributeError):
         # Dataclass frozen raises FrozenInstanceError or AttributeError depending on Python version/impl
         obs.ts = 2.0
+

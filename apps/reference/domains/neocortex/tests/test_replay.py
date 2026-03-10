@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from config_models import ReplayConfig
-from logic.ingest.wal_replayer import WALReplayer
+from apps.reference.domains.neocortex.config_models import ReplayConfig
+from apps.reference.domains.neocortex.logic.ingest.wal_replayer import WALReplayer
 
 
 # =============================================================================
@@ -214,3 +214,4 @@ def test_replayer_stats():
     assert "events_filtered" in stats
     assert "running" in stats
     assert "completed" in stats
+

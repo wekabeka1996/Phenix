@@ -46,6 +46,78 @@ class CloseExecutor:
             LOG.error("DEC:CLOSE missing symbol; cannot execute")
             return
 
+        requested_close_qty: Optional[Decimal] = None
+        requested_close_qty_raw = pld.get("qty")
+        if requested_close_qty_raw not in (None, "", "0", 0):
+            try:
+                requested_close_qty = abs(Decimal(str(requested_close_qty_raw)))
+            except Exception:
+                LOG.warning(
+                    "DEC:CLOSE invalid qty=%r for %s; falling back to full close",
+                    requested_close_qty_raw,
+                    symbol,
+                )
+
+        if requested_close_qty is not None:
+            try:
+                positions = await self._fsm.adapter.get_open_positions()
+                positions_list = [
+                    p.to_dict() if hasattr(p, "to_dict") else (
+                        p.__dict__ if not isinstance(p, dict) else p
+                    )
+                    for p in positions
+                ]
+                pos = next((p for p in positions_list if p.get("symbol") == symbol), None)
+            except Exception:
+                pos = None
+
+            amt = 0.0
+            if pos is not None:
+                try:
+                    amt = float(pos["positionAmt"] if "positionAmt" in pos else 0)
+                except Exception:
+                    amt = 0.0
+            if abs(amt) < 1e-10:
+                LOG.info(f"No open position to close for {symbol}")
+                self._fsm._symbol_brackets.pop(symbol, None)
+                return
+
+            position_qty = abs(Decimal(str(amt)))
+            if Decimal("0") < requested_close_qty < position_qty:
+                close_side = "SELL" if amt > 0 else "BUY"
+                close_id = generate_client_order_id(
+                    "CLOSE",
+                    symbol,
+                    idempotent_key=str(pld.get("idempotent_key") or decision.rid or "manual-close"),
+                )
+                await self._fsm.adapter.place_market_reduce_only(
+                    symbol,
+                    close_side,
+                    str(requested_close_qty),
+                    new_client_order_id=close_id,
+                )
+                LOG.info(
+                    "Partial close executed for %s: side=%s qty=%s",
+                    symbol,
+                    close_side,
+                    requested_close_qty,
+                )
+                lifecycle_cfg = self._fsm.config.domains.execution_position.order_lifecycle
+                await get_clock().sleep_ms(lifecycle_cfg.fill_settlement_delay_ms)
+                try:
+                    await self._fsm.order_guardian.reconcile_symbol(symbol, decision.rid)
+                except Exception as e:
+                    LOG.warning(f"Partial close reconcile failed for {symbol}: {e}")
+                close_elapsed_ms = int(get_clock().now_sec() * 1000 - decision.ts) if decision.ts else 0
+                self._fsm._emit_observability_event("DEC_CLOSE_COMPLETED", {
+                    "symbol": symbol,
+                    "elapsed_ms": close_elapsed_ms,
+                    "orphans_cancelled": 0,
+                    "partial_close": True,
+                    "requested_qty": str(requested_close_qty),
+                })
+                return
+
         # PHASE A2: Set closing flag to prevent bracket placement race condition
         manage = self._fsm.manage_flows.get(symbol)
         if manage:

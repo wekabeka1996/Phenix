@@ -298,13 +298,15 @@ class DecisionMaking:
         reduce_only=False, strategy_id="aurora", decision_ts_ms=None,
         stop_price=None, target_price=None, entry_plan_trace=None,
         tf_sec=None, max_slippage_bps=None, max_latency_ms=None, risk_score=None,
+        strategy_trace=None,
     ):
+        system_stress_states = self._system_stress_states if hasattr(self, "_system_stress_states") else {}
         sg = apply_safety_gates(
             symbol=symbol, side=side, reduce_only=reduce_only, strategy_id=strategy_id,
             decision_ts_ms=decision_ts_ms, why_chain=why_chain, config=self.config,
             clock=self._clock, symbol_states=self.symbol_states,
             per_symbol_regimes=self._per_symbol_regimes,
-            system_stress_states=self._system_stress_states)
+            system_stress_states=system_stress_states)
         if sg.outcome == "CONFIG_ERROR":
             self._emit_trade_intent_rejected(
                 symbol=symbol, strategy_id=str(strategy_id), side=str(side), rid=str(rid),
@@ -323,6 +325,7 @@ class DecisionMaking:
             stop_price=stop_price, target_price=target_price, entry_plan_trace=entry_plan_trace,
             tf_sec=tf_sec, max_slippage_bps=max_slippage_bps,
             max_latency_ms=max_latency_ms, risk_score=risk_score,
+            strategy_trace=strategy_trace,
             normalize_mode=self.normalize_signals_mode, sg=sg)
 
     def _handle_safety_deny(self, symbol, side, rid, why_chain, sg) -> None:
@@ -445,8 +448,14 @@ class DecisionMaking:
     def _generate_flip_retry_key(self, symbol, side, seed=None): return self._flip.generate_flip_retry_key(symbol, side, seed)
     def _handle_flip_orchestration(self, symbol, intent_side, original_pld, source="aurora"):
         return self._flip.handle_flip_orchestration(symbol, intent_side, original_pld, source)
-    def _emit_reduce_only_close(self, symbol, reason, rid, *, strategy_id):
-        return self._flip.emit_reduce_only_close(symbol, reason, rid, strategy_id=strategy_id)
+    def _emit_reduce_only_close(self, symbol, reason, rid, *, strategy_id, strategy_trace=None):
+        return self._flip.emit_reduce_only_close(
+            symbol,
+            reason,
+            rid,
+            strategy_id=strategy_id,
+            strategy_trace=strategy_trace,
+        )
     def _resolve_position_mode(self, *, symbol, source): return self._flip.resolve_position_mode(symbol=symbol, source=source)
     def _initiate_flip_close(self, symbol, intent_side, original_pld, source):
         return self._flip.initiate_flip_close(symbol, intent_side, original_pld, source)

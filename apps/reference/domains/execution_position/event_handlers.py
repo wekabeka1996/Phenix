@@ -37,6 +37,14 @@ class EPEventHandlers:
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
 
+    def on_features_calculated(self, event: "Message") -> None:
+        """Cache latest features snapshot for runtime adapters."""
+        payload = event.pld or {}
+        symbol = payload.get("symbol")
+        if not symbol:
+            return
+        self._fsm._last_features_cache[str(symbol)] = dict(payload)
+
     def on_regime_detected(self, event: "Message") -> None:
         """
         EP-01: Handle EVT:REGIME_DETECTED to update ExposureGuard risk limits.
@@ -51,6 +59,9 @@ class EPEventHandlers:
             LOG.warning("EP-01: EVT:REGIME_DETECTED missing 'regime' field, skipping")
             return
 
+        if symbol:
+            self._fsm._last_regime_by_symbol[str(symbol)] = str(regime_str)
+
         bucket = map_regime_to_bucket(regime_str)
         self._fsm.exposure_guard.on_regime_changed(bucket)
 
@@ -63,18 +74,22 @@ class EPEventHandlers:
         try:
             pe_ttl_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
             if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_regime_change and symbol:
-                cancel_mode = getattr(pe_ttl_cfg, 'regime_change_cancel_mode', 'immediate')
-                if cancel_mode == 'let_ttl_expire':
-                    LOG.info(
-                        f"EP-01.3: Regime changed for {symbol} -> {regime_str}, "
-                        f"but regime_change_cancel_mode=let_ttl_expire, skipping cancel"
-                    )
+                adv = getattr(pe_ttl_cfg, "advanced_stale_cancel", None)
+                if adv is not None and getattr(adv, "enabled", False):
+                    self._fsm._evaluate_advanced_stale_cancel(symbol, str(regime_str))
                 else:
-                    self._fsm._entry_mgr.cancel_pending_entries_for_symbol(
-                        symbol=symbol,
-                        reason="CANCEL_STALE_REGIME",
-                        context=f"regime_changed_to_{regime_str}"
-                    )
+                    cancel_mode = getattr(pe_ttl_cfg, 'regime_change_cancel_mode', 'immediate')
+                    if cancel_mode == 'let_ttl_expire':
+                        LOG.info(
+                            f"EP-01.3: Regime changed for {symbol} -> {regime_str}, "
+                            f"but regime_change_cancel_mode=let_ttl_expire, skipping cancel"
+                        )
+                    else:
+                        self._fsm._entry_mgr.cancel_pending_entries_for_symbol(
+                            symbol=symbol,
+                            reason="CANCEL_STALE_REGIME",
+                            context=f"regime_changed_to_{regime_str}"
+                        )
         except AttributeError:
             pass
 
@@ -175,6 +190,10 @@ class EPEventHandlers:
                     close_reason = "POSITION_CLOSED_DETECTED"
                     try:
                         close_reason = self._fsm._last_close_reason_by_symbol.pop(sym, "POSITION_CLOSED_DETECTED")
+                    except Exception:
+                        pass
+                    try:
+                        self._fsm._open_strategy_by_symbol.pop(sym, None)
                     except Exception:
                         pass
                     
@@ -338,6 +357,8 @@ class EPEventHandlers:
         if not order_id or not symbol or filled_qty is None:
             LOG.warning(f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
             return
+
+        self._fsm._pending_entry_meta.pop(str(order_id), None)
 
         event_key = f"fill_{order_id}_{symbol}"
         if not self._fsm._mark_processed_event(event_key):

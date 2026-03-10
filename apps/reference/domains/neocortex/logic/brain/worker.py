@@ -11,6 +11,7 @@ import logging
 import multiprocessing as mp
 import numpy as np
 import time
+import os
 
 logger = logging.getLogger("brain_worker")
 
@@ -48,14 +49,17 @@ def brain_service_worker(
     try:
         # Lazy import heavy libraries
         import torch
-        from config_models import NeuroConfig
-        from logic.brain.core import BrainCore
+        from apps.reference.domains.neocortex.config_models import NeuroConfig
+        from apps.reference.domains.neocortex.logic.brain.core import BrainCore
         
         # Initialize
         config = NeuroConfig(**config_dict)
-        brain_core = BrainCore(config, rng_seed=int(rng_seed))
+        requested_device = os.getenv("NEOCORTEX_DEVICE")
+        brain_core = BrainCore(config, device=requested_device, rng_seed=int(rng_seed))
         
         logger.info(f"BrainCore Service Ready (Device: {brain_core.device})")
+        if str(brain_core.device).startswith("cpu"):
+            logger.warning("GPU unavailable or disabled; BrainCore worker running on CPU")
         
         # Send INIT success
         result_queue.put(BridgeResult(task_id="INIT", success=True, data="READY"))

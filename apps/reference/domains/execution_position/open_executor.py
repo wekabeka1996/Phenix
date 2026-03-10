@@ -191,6 +191,16 @@ class OpenExecutor:
         try:
             pe_ttl_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
             if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_supersede:
+                guard_result = self._fsm._evaluate_supersede_reprice_guard(symbol, decision, pending_order_ids)
+                if guard_result is not None and not bool(guard_result.get("allow_cancel")):
+                    analyses = guard_result.get("analyses") or []
+                    LOG.info(
+                        "EP-01.3: %s supersede reprice guard blocked cancel/repost (analyses=%s)",
+                        symbol,
+                        analyses,
+                    )
+                    if bool(guard_result.get("enforce")):
+                        return True
                 LOG.info(f"EP-01.3: {symbol} has {len(pending_order_ids)} pending entries, queueing new DEC:OPEN")
                 self._fsm._supersede_canceling.add(symbol)
                 self._fsm._supersede_queue[symbol] = {
@@ -391,6 +401,12 @@ class OpenExecutor:
             symbol=symbol, order_id=str(entry_resp["orderId"]),
             client_order_id=entry_id, side=side, qty=qty,
             corr_id=decision.corr_id, rid=decision.rid)
+        try:
+            metadata = decision.pld.get("metadata") if isinstance(decision.pld.get("metadata"), dict) else {}
+            strategy_id = metadata.get("strategy_id") or decision.pld.get("strategy") or "aurora"
+            self._fsm._open_strategy_by_symbol[symbol] = str(strategy_id)
+        except Exception:
+            pass
 
         # Polling tracking
         if hasattr(self._fsm.adapter, 'track_order'):
@@ -459,6 +475,42 @@ class OpenExecutor:
         # Watchdog ACK
         self._fsm.watchdog.ensure_started()
         self._fsm.watchdog.on_order_ack(entry_order_id)
+
+        if str(order_type).upper() == "LIMIT":
+            try:
+                from apps.reference.domains.execution_position.fsm import PendingEntryMeta
+
+                metadata = decision.pld.get("metadata") if isinstance(decision.pld.get("metadata"), dict) else {}
+                tf_sec = metadata.get("tf_sec") or decision.pld.get("tf_sec") or 0
+                try:
+                    tf_sec_int = int(tf_sec)
+                except Exception:
+                    tf_sec_int = 0
+
+                strategy_id = metadata.get("strategy_id") or decision.pld.get("strategy") or "aurora"
+                strategy_cfg = getattr(self._fsm.config.strategies, str(strategy_id), None)
+                assets = getattr(strategy_cfg, "assets", None) if strategy_cfg is not None else None
+                asset_cfg = assets.get(symbol) if isinstance(assets, dict) else None
+                allowed_regimes = getattr(asset_cfg, "allowed_regimes", None) if asset_cfg is not None else None
+
+                cancelable_regimes = None
+                pe_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
+                adv = getattr(pe_cfg, "advanced_stale_cancel", None)
+                if adv is not None and getattr(adv, "enabled", False) and isinstance(allowed_regimes, list):
+                    may_cancel = set(getattr(adv, "may_cancel_regimes", {}).get(str(side).upper(), []))
+                    never_cancel = set(getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
+                    cancelable_regimes = sorted((set(str(x) for x in allowed_regimes) & may_cancel) - never_cancel)
+
+                self._fsm._pending_entry_meta[entry_order_id] = PendingEntryMeta(
+                    symbol=symbol,
+                    side=str(side).upper(),
+                    limit_price=str(decision.pld.get("price")),
+                    placed_at_ms=get_clock().now_ms(),
+                    tf_sec=tf_sec_int,
+                    cancelable_regimes=cancelable_regimes,
+                )
+            except Exception as meta_err:
+                LOG.debug("Failed to record PendingEntryMeta for %s: %s", entry_order_id, meta_err)
 
     def _store_pending_brackets(self, entry_resp, symbol, side, sl, tp, qty, decision,
                                  idem_key, tick_size, entry_id):

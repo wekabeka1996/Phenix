@@ -12,7 +12,7 @@ decision_making:
   position_sizing:
     min_position_size_usd: 10
     liquidity_based_cap_usd: 10000
-  
+
   # EP-01.2-INT: EntryPlan for ATR-based entry/SL/TP computation
   entry_plan:
     enabled: true
@@ -20,7 +20,7 @@ decision_making:
     entry_k_atr: 0.3  # Entry offset = 0.3 * ATR from ref price
     sl_k_atr: 1.5  # Stop-loss = 1.5 * ATR distance
     tp_k_atr: 2.0  # Take-profit = 2.0 * ATR distance
-    obi_weight: 0.1       # <--- ГОЛОВНЕ: Зменшення впливу (0.3 → 0.1)
+    obi_weight: 0.1       # <--- :   (0.3  0.1)
     obi_mod_clamp_min: 0.8  # Anti-taker drift: min multiplier
     obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
     require_atr: true     # Fail-closed
@@ -29,7 +29,7 @@ decision_making:
     base_atr_mult: 1.5
     confidence_scale: 0.5
     min_stop_bps: 15
-  
+
   qos:
     # LIVE SAFETY: stop intent spam and "shadow pass-through".
     # NOTE: `defer` requires a running asyncio loop (not available in this runtime),
@@ -50,16 +50,16 @@ decision_making:
 
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
-  
+
   bar_gating:
     enable: false
     bar_ms: 900000  # 15 minutes
-  
+
   behavior_fsm:
     enable: false
     high_vol_multiplier: 2.0
     low_vol_multiplier: 0.5
-  
+
   # Commit 5: Risk Skew Guard
   risk_skew:
     # LIVE SAFETY: Max age difference between features.ts and risk.ts
@@ -91,7 +91,7 @@ decision_making:
     # Blocks entries when regime_confidence < threshold (low/mid confidence = noise).
     # 0.0 = disabled, 0.85 = recommended (only high-confidence regime signals).
     min_regime_confidence: 0.65
-    # FIX-NRR026-BACKTEST: Reduced from 2 to 1 for bar-based backtest.
+    # FIX-NRR026: Reduced from 2 to 1 for bar-driven replay.
     # With 5m bars, requiring 2 consecutive bars (10 min) for trend confirmation
     # is too restrictive. Single bar direction is sufficient for bar-based trading.
     # LIVE: Consider setting back to 2 for more conservative trend detection.
@@ -111,7 +111,7 @@ decision_making:
     # VOL-ADJ-GATES-CLIP-CONFIG-01: pm_norm clipping bound for Anti-FOMO detection
     pm_norm_clip_abs: 10.0
 
-  # P1: Degraded DecisionContext gate (fail-closed) — OFF by default.
+  # P1: Degraded DecisionContext gate (fail-closed)  OFF by default.
   # If enabled, DecisionMaking may DEFER when critical features are missing/invalid.
   fail_closed_on_degraded_context: false
 
@@ -125,6 +125,12 @@ feature_engineering:
   enable_new_metrics: true
   volume_input_mode: integrate
   enabled_timeframes_sec: [180, 300, 900]
+
+  legacy_features_log:
+    # Legacy FE sink is now explicit and schema-controlled.
+    # Keep "full" to preserve current runtime behavior until rollout tuning.
+    mode: full
+    sample_every_n: 10
 
   ema:
     period_short: 1 # was 3
@@ -189,9 +195,9 @@ feature_engineering:
     correlation_default: 0.0
     ms_per_sec: 1000
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # P0-0: READINESS CONTRACT REGISTRY (SSOT)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # All keys that FE can emit in warmup.ready. essential_features MUST be subset.
   readiness_registry:
     declared_keys:
@@ -210,28 +216,28 @@ feature_engineering:
       - large_trade_imbalance
       - volume_zscore
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # WARMUP ENFORCEMENT: MANDATORY MODE (NOT A SWITCH!)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   warmup:
-    # LIVE SAFETY: fail_fast — system does not trade until all features ready
+    # LIVE SAFETY: fail_fast  system does not trade until all features ready
     enforcement_mode: fail_fast  # Options: disabled | fail_fast
     # TASK-ZOMBIE-FIX: Removed validate_essential_subset (dead, never read in runtime)
-    # Invariant: full_ready=True ⇒ all declared_keys present
+    # Invariant: full_ready=True  all declared_keys present
     check_full_ready_invariant: true
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # P0-1: VOLATILITY STATE HARD FLOOR + CAP + FIREWALL
   # TASK-ZOMBIE-FIX: Removed dead fields (hard_floor_enabled, hist_floor_enabled, hist_floor_k_small)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   volatility_state:
     cap_max: 3.0
     tick_floor: 0.0001
     division_eps: 0.000000001
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # P0-2: SPREAD BPS HEALTH GATE (Book Truth Validation)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   spread_bps:
     health_gate:
       enabled: true
@@ -240,9 +246,9 @@ feature_engineering:
       min_trades_count: 1           # STEP 2: Min trades in window (OR with update_events)
       window_sec: 10.0              # Lookback window for counting
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # P0-3: FEATURE SANITY FIREWALL (Central NaN/Inf/Out-of-Range Protection)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   feature_sanity:
     enabled: true
     # Behavior on NaN/Inf: neutral_and_not_ready = return neutral + mark not_ready
@@ -267,11 +273,11 @@ feature_engineering:
       # Raw physical features (non-negative)
       spread_bps: { min: 0.0, max: 10000.0 }
 
-  # ═══════════════════════════════════════════════════════════════════════════════
-  # R1 (P1): MACRO RESID — Beta-Adjusted Residual (replaces macro_sync for direction)
-  # ═══════════════════════════════════════════════════════════════════════════════
-  # Why: macro_sync (correlation-based) is UNSIGNED [0,1] → can't see SELL.
-  # macro_resid = r_asset - beta * r_btc → SIGNED, neutral=0, sees both directions.
+  #
+  # R1 (P1): MACRO RESID  Beta-Adjusted Residual (replaces macro_sync for direction)
+  #
+  # Why: macro_sync (correlation-based) is UNSIGNED [0,1]  can't see SELL.
+  # macro_resid = r_asset - beta * r_btc  SIGNED, neutral=0, sees both directions.
   # Formula: resid = r_asset - beta * r_btc; macro_resid = clip(resid/scale, -clip, +clip)
   macro_resid:
     enabled: true
@@ -291,13 +297,13 @@ feature_engineering:
     neutral: 0.0                # SIGNED feature: neutral is 0.0
     # TASK-ZOMBIE-FIX: Removed bounds (dead, feature_sanity.feature_bounds is SSOT)
 
-  # ═══════════════════════════════════════════════════════════════════════════════
-  # R2 (P2): ABSORPTION — Experimental (Default OFF, no live impact)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # R2 (P2): ABSORPTION  Experimental (Default OFF, no live impact)
+  #
   # When enabled, uses aggressive_trade_imbalance as proxy.
   # Has dedup guard: mutes if correlated with TFI (would be redundant signal).
   absorption:
-    mode: full                  # disabled | proxy | full — PKG-ABSORPTION-RISK-FULL: enable real compute
+    mode: full                  # disabled | proxy | full  PKG-ABSORPTION-RISK-FULL: enable real compute
     # Proxy source: must NOT be 'tfi' (would be absurd)
     proxy:
       source: aggressive_trade_imbalance
@@ -308,20 +314,20 @@ feature_engineering:
     dedup:
       enabled: true
       window: 60                # Rolling correlation window
-      threshold: 0.8            # If |corr(absorption, TFI)| > threshold → mute
+      threshold: 0.8            # If |corr(absorption, TFI)| > threshold  mute
     # Output clipping
     clip: 1.0                   # |absorption| <= 1.0
     # Semantic definition
     neutral: 0.0                # SIGNED feature: neutral is 0.0
     # TASK-ZOMBIE-FIX: Removed bounds (dead, feature_sanity.feature_bounds is SSOT)
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Phase 9: MULTI-TIMEFRAME PILLARS (Quadratic Brain)
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Three pillars extract directional conviction from different timeframes:
-  # - Tactician (M15): ROC → tactical momentum
-  # - Operator  (H4):  LinReg+ADX → working vector
-  # - Strategist (D1): SMA(200) → global territory
+  # - Tactician (M15): ROC  tactical momentum
+  # - Operator  (H4):  LinReg+ADX  working vector
+  # - Strategist (D1): SMA(200)  global territory
   # All normalize to [-1, +1] via tanh.
   pillars:
     enabled: true               # Master switch for all pillars
@@ -353,7 +359,7 @@ feature_engineering:
 
     backfill:
       enabled: true             # Enable backfill at live startup
-      d1_candles: 200           # D1 candles to fetch (≥ sma_period)
+      d1_candles: 200           # D1 candles to fetch ( sma_period)
       h4_candles: 100           # H4 candles to fetch
       m15_candles: 50           # M15 candles to fetch
 
@@ -361,7 +367,7 @@ risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
   use_absorption_penalty: false
   # P3-SSOT: Toxicity normalization cap. Required when use_absorption_penalty=true (fail-closed validator).
-  # Preset for readiness — enable without re-editing YAML.
+  # Preset for readiness  enable without re-editing YAML.
   absorption_dp_cap_pct: 0.02
   # PKG-ABSORPTION-RISK-FULL: Source routing for absorption risk term.
   # "proxy"  = P3 toxicity (|tfi|*impact_norm, backward compat default)
@@ -376,10 +382,10 @@ risk_management:
     tfi: 0.3
     absorption_inverse: 0.3
     absorption_feature: 0.2    # PKG-ABSORPTION-RISK-FULL: conservative start weight
-  
+
   trading_allowed_thresholds:
     max_risk_score: 0.96  # Increased by 20% to allow more trading
-  
+
   validation:
     total_weight_min: 0.5
     total_weight_max: 2.0
@@ -392,7 +398,7 @@ position_tracking:
   # Portfolio freshness TTL for AuroraBridge gate
   # Must be > account_observer.poll_interval_sec to avoid race conditions
   positions_stale_ttl_sec: 15
-  
+
   # TASK-ZOMBIE-FIX: Removed thread_timeouts section (dead, join_timeout_sec never read in runtime)
   enable_market_tick_subscription: false
 
@@ -408,7 +414,7 @@ execution_position:
     backoff_ms: [200, 500, 1000]  # Retry backoff intervals (ms)
 
   # TASK-ZOMBIE-FIX: Removed duplicate watchdog section (FSM reads from trading.execution.watchdog)
-  
+
   exposure_guard:
     pending_ttl_sec: 90
     post_fill_ttl_sec: 5
@@ -428,13 +434,13 @@ execution_position:
     # With 19% limit ($1,900), any BTC order exceeds this. Set to 500% to disable for backtest.
     # LIVE: Set back to 19% or appropriate value for per-symbol risk limits!
     max_concentration_pct: 500.0
-  
+
   fsm_open:
     idempotency_window_sec: 60
-  
+
   order_index:
     ttl_sec: 3600
-  
+
   # TASK51-C: In-flight order reconciliation config
   inflight_reconcile:
     inflight_ttl_sec: 60      # TTL before reconciliation check (seconds)
@@ -442,14 +448,14 @@ execution_position:
     reconcile_interval_sec: 10  # Interval between reconcile attempts
     # PURGE-DEAD-CONFIG-03: reconcile_retries/backoff_ms removed (retry logic not implemented)
     verbose_logging: true     # Log reconciliation details
-  
+
   metrics_collector:
     window_size_minutes: 60
     recent_rejections_minutes: 5
-  
+
   idempotent_cancel:
     max_retries: 2
-  
+
   utils:
     client_order_id_max_length: 32
     basis_points_base: 10000.0
@@ -480,6 +486,23 @@ execution_position:
     cancel_on_panic: true
     # DET-BT-13: Timeout (seconds) to wait for supersede cancel confirmation (STRICT SSOT)
     supersede_cancel_timeout_sec: 5.0
+    supersede_reprice_guard:
+      # Phase 1 adapter is implemented but rollout stays explicit.
+      enabled: false
+      enforce: false
+      min_price_improvement_bps: 5.0
+      min_price_improvement_atr_mult: 0.10
+    advanced_stale_cancel:
+      # Current-native stale-cancel adapter; keep disabled until hybrid validation.
+      enabled: false
+      min_age_before_cancel_sec: 300
+      drift_away:
+        mode: atr
+        atr_mult: 0.5
+      may_cancel_regimes:
+        BUY: ["TREND_DOWN"]
+        SELL: ["TREND_UP"]
+      never_cancel_regimes: ["UNCERTAIN", "MEAN_REVERSION", "LOW_VOLATILITY"]
 
   # EP-01.4-INT-B: Maker-only (post-only) entry orders
   # When enabled, LIMIT entry orders use tif="GTX" (post-only)
@@ -494,9 +517,9 @@ execution_position:
   order_capabilities:
     supported_order_types: ["LIMIT", "MARKET"]
     supported_tif: ["GTC", "GTX", "IOC", "FOK"]
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # MAGIC-NUM-EXTRACTION: Bracket Placement Configuration
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Handles Binance -2021 error: "The stop price is too close to the mark price"
   # Strategy: Progressive TP widening with exponential backoff
   bracket_placement:
@@ -506,10 +529,17 @@ execution_position:
     tp_widen_second_bps: 60
     # Backoff delays between retries (ms) - exponential: 200, 400
     retry_backoff_ms: [200, 400]
+  bracket_health_check:
+    # Current adapter is wired through BracketManager / OrderGuardian.
+    # Default off until live-like validation confirms no duplicate placement.
+    enabled: false
+    interval_sec: 45
+    grace_period_ms: 15000
+    max_placements_per_cycle: 2
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # MAGIC-NUM-EXTRACTION: Order Lifecycle Timing Configuration
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Timing parameters for order lifecycle stages
   order_lifecycle:
     # Delay after MARKET fill before bracket placement (REST API propagation lag)
@@ -519,9 +549,9 @@ execution_position:
     # Conservative: 2000ms to ensure all exchange state is finalized
     position_close_cleanup_delay_ms: 2000
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # MAGIC-NUM-EXTRACTION: Shadow Exposure Check Configuration
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Periodic validation: FSM-tracked exposure vs exchange-reported positions
   # Detects state drift between internal tracking and exchange reality
   shadow_check:
@@ -540,9 +570,9 @@ execution_position:
     # Portfolio size threshold for switching to absolute tolerance
     large_portfolio_threshold_usd: 1000000.0
 
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # MAGIC-NUM-EXTRACTION: OrderGuardian Configuration
-  # ═══════════════════════════════════════════════════════════════════════════════
+  #
   # Centralized orphan bracket detection and cleanup
   guardian:
     # Polling interval for reconciliation loop (ms)
@@ -556,3 +586,60 @@ execution_position:
     cleanup_ttl_ms: 6000
     # Cooldown after symbol tidy before next cleanup attempt (ms)
     symbol_cooldown_ms: 4000
+
+shadow_telemetry:
+  # Phase 2 subsystem: tracked in runtime and enabled for llm_microstructure shadow flow.
+  enabled: true
+  required_for_mode: true
+  ingest:
+    source: ipc_tap
+    ipc_endpoint: "tcp://127.0.0.1:7101"
+    allowlist_events:
+      - EVT:BAR_CLOSED
+      - EVT:FEATURES_CALCULATED
+      - EVT:RISK_ASSESSMENT_COMPLETED
+      - EVT:REGIME_DETECTED
+      - EVT:STRATEGY_SIGNAL_PRODUCED
+      - EVT:TRADE_INTENT_PROPOSED
+      - EVT:TRADE_INTENT_REJECTED
+      - EVT:INTENT_DEFERRED
+      - EVT:DECISION_BLOCKED
+      - EVT:STRATEGY_DECISION_BLOCKED
+      - EVT:ORDER_PLACED
+      - EVT:ORDER_REJECTED
+      - EVT:ORDER_STATE_CHANGED
+      - EVT:TRADE_EXECUTED
+      - EVT:POSITION_CLOSED
+      - EVT:LLM_INTENT_RECEIVED_V1
+      - EVT:LLM_INTENT_REJECTED_V1
+      - EVT:LLM_INTENT_ACCEPTED_V1
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8443
+    tls: false
+    auth_mode: bearer
+    write:
+      enabled: true
+      intents_endpoint: "/intents/llm/v1"
+      rate_limit_per_min: 30
+      max_body_kb: 64
+      symbol_allowlist: ["1000PEPEUSDT"]
+      require_snapshot_ref: true
+      idempotency_ttl_sec: 300
+      consequential: true
+  egress_to_main:
+    mode: ipc
+    ipc_commands_endpoint: "tcp://127.0.0.1:7102"
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  snapshot:
+    trigger_event: "EVT:FEATURES_CALCULATED"
+    tf_policy:
+      bar_snapshots_enabled: true
+      tick_snapshots_mode: sampled
+      tick_sample_every_n: 20
+      min_tf_sec_for_full: 60
+    output_dir: "data/shadow_telemetry/snapshots"

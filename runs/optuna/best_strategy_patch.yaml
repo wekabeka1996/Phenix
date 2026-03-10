@@ -1,5 +1,0 @@
-best_alpha_score: -9.122305780121236
-best_params:
-  domains.decision_making.directional_sanity.min_confidence: 0.45
-  strategies.aurora.decision.signal_threshold: 0.75
-best_sharpe: 0.6594404183867824

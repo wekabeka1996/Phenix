@@ -40,6 +40,52 @@ LOG = logging.getLogger(__name__)
 _DEFAULT_REGISTRY = "apps/reference/dictionaries/verb_registry_v1.yaml"
 
 
+def _get_jsonschema_module():
+    """Resolve jsonschema lazily when module state was reloaded in tests.
+
+    If HAS_JSONSCHEMA was explicitly patched to False while the jsonschema module
+    is still present in globals(), respect that override and return None.
+    """
+    global HAS_JSONSCHEMA
+
+    if HAS_JSONSCHEMA:
+        return jsonschema
+
+    existing = globals().get("jsonschema")
+    if existing is not None:
+        return None
+
+    try:
+        import jsonschema as _jsonschema  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+
+    globals()["jsonschema"] = _jsonschema
+    HAS_JSONSCHEMA = True
+    return _jsonschema
+
+
+def _get_yaml_module():
+    """Resolve yaml lazily after reload-based tests leave stale module flags."""
+    global HAS_YAML
+
+    if HAS_YAML:
+        return yaml
+
+    existing = globals().get("yaml")
+    if existing is not None:
+        return None
+
+    try:
+        import yaml as _yaml  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+
+    globals()["yaml"] = _yaml
+    HAS_YAML = True
+    return _yaml
+
+
 class SchemaValidator:
     """
     Validates Message payloads against JSON schemas defined in the verb registry.
@@ -84,16 +130,17 @@ class SchemaValidator:
         if schema is None:
             return []  # No schema → always passes (lenient)
 
-        if not HAS_JSONSCHEMA:
+        jsonschema_mod = _get_jsonschema_module()
+        if jsonschema_mod is None:
             LOG.warning("jsonschema not installed; cannot validate %s:%s", op, verb)
             return []
 
         try:
-            jsonschema.validate(instance=pld, schema=schema)
+            jsonschema_mod.validate(instance=pld, schema=schema)
             return []
-        except jsonschema.ValidationError as e:
+        except jsonschema_mod.ValidationError as e:
             return [f"{op}:{verb} — {e.message}"]
-        except jsonschema.SchemaError as e:
+        except jsonschema_mod.SchemaError as e:
             LOG.error("Invalid schema for %s:%s — %s", op, verb, e.message)
             return [f"{op}:{verb} — invalid schema: {e.message}"]
 
@@ -108,7 +155,8 @@ class SchemaValidator:
     # ── Private ──────────────────────────────────────────────────────
 
     def _load_registry(self) -> None:
-        if not HAS_YAML:
+        yaml_mod = _get_yaml_module()
+        if yaml_mod is None:
             LOG.warning("PyYAML not installed; schema validation disabled")
             return
 
@@ -118,7 +166,7 @@ class SchemaValidator:
             return
 
         with open(registry_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = yaml_mod.safe_load(f)
 
         entries = data.get("registry", [])
         loaded = 0

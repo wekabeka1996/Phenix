@@ -26,6 +26,16 @@ feature_list:
 # Normalization
 normalization_method: "zscore"  # Options: zscore, minmax, robust
 normalization_window: 500  # Rolling window for statistics
+normalization_scope: "per_symbol"  # Options: global, per_symbol
+price_feature_mode: "log"  # raw, log, drop
+delta_price_mode: "pct"  # raw, pct
+feature_clip_abs:
+  # Pre-normalization safety clips for heavy-tail features.
+  delta_price: 0.2
+  ema_bias: 1.0
+  spread_bps: 500.0
+  macro_resid: 5.0
+  volume_zscore: 10.0
 
 # Buffering
 buffer_size: 10000  # Max observations in memory

@@ -337,6 +337,7 @@ class SystemStressOverlay:
         self._sm = ss_cfg.state_mapping
         self._agg = ss_cfg.aggregation
         self._thr = ss_cfg.thresholds
+        self._robust_method: str = str(getattr(ss_cfg, "robust_method", "none") or "none")
 
         # Per-symbol metric state
         self._metric_states: Dict[str, _SymbolStressState] = {}
@@ -411,7 +412,10 @@ class SystemStressOverlay:
         """Process one OHLC bar for a symbol: update metrics, run FSM, emit if changed."""
         # Lazily initialise per-symbol state
         if symbol not in self._metric_states:
-            self._metric_states[symbol] = _SymbolStressState(window=self._window, robust_method=self._cfg.robust_method)
+            self._metric_states[symbol] = _SymbolStressState(
+                window=self._window,
+                robust_method=self._robust_method,
+            )
             self._actuators[symbol] = _StressActuator(sm=self._sm)
             self._last_state[symbol] = "NORMAL"
 

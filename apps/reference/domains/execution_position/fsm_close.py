@@ -87,10 +87,16 @@ class CloseFlowFSM:
         if msg.op == "CMD" and msg.verb == "CLOSE":
             # Always emit DEC:CLOSE on CMD:CLOSE; actual position existence is verified
             # downstream (adapter/open-positions check) for idempotent safety.
+            cmd_pld = msg.pld or {}
             return self._emit_close(
                 msg,
                 "MANUAL_CLOSE",
-                {"trigger": "CMD:CLOSE", "reason": (msg.pld or {}).get("reason")},
+                {
+                    "trigger": "CMD:CLOSE",
+                    "reason": cmd_pld.get("reason"),
+                    "qty": cmd_pld.get("qty"),
+                    "trace": cmd_pld.get("trace"),
+                },
             )
 
         if msg.op not in ("EVT", "UPD"):

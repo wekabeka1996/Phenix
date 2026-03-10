@@ -74,6 +74,8 @@ class IntentRouter:
                         "reason": pld.get("reason") or "intent_reduce_only",
                         "idempotent_key": pld.get("idempotent_key"),
                         "retry_key": pld.get("retry_key"),
+                        "qty": order_info.get("qty"),
+                        "trace": pld.get("trace"),
                     },
                     why=f"intent_reduce_only:{intent_rid}",
                     data_ref=msg.data_ref
@@ -116,6 +118,7 @@ class IntentRouter:
                 target_price_raw = self._fsm._resolve_price(pld, "target_price")
 
                 cmd_payload = {
+                    "rid": intent_rid,
                     "symbol": symbol,
                     "side": pld.get("side"),
                     "qty": str(order_info.get("qty")),
@@ -133,6 +136,8 @@ class IntentRouter:
                 cmd_metadata: Dict[str, Any] = {}
                 if strategy_id:
                     cmd_metadata["strategy_id"] = str(strategy_id)
+                if pld.get("tf_sec") is not None:
+                    cmd_metadata["tf_sec"] = pld.get("tf_sec")
                 if isinstance(tca_budget, dict) and tca_budget:
                     cmd_metadata["tca_budget"] = dict(tca_budget)
                 if isinstance(risk_ctx, dict) and risk_ctx:
@@ -160,6 +165,8 @@ class IntentRouter:
 
                 if hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
+                    if result.rid:
+                        out_pld.setdefault("rid", result.rid)
                     self._fsm.bus.emit(
                         f"{result.op}:{result.verb}",
                         out_pld,
@@ -179,6 +186,7 @@ class IntentRouter:
                             "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-REJECTED",
+                            "reason": result.why[:240] if result.why else "execution_rejected",
                             "stage": "EXECUTION",
                             "why": result.why[:240] if result.why else "execution_rejected",
                             "details": {
@@ -205,6 +213,7 @@ class IntentRouter:
                             "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-INTERNAL-ERROR",
+                            "reason": "execution_no_result",
                             "stage": "EXECUTION",
                             "why": "execution_no_result",
                             "details": {
@@ -227,6 +236,7 @@ class IntentRouter:
                             "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-EXCEPTION",
+                            "reason": f"EXCEPTION: {str(e)}"[:240],
                             "stage": "EXECUTION",
                             "why": f"EXCEPTION: {str(e)}"[:240],
                             "details": {

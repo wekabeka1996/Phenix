@@ -1,9 +1,9 @@
 """
 FSMP-P1-T02: Manage Flow FSM for execution_position domain.
 
-States: FLAT|OPENED → TRACKING → EMIT_DEC_ADJUST → TRACKING
+States: FLAT|OPENED  TRACKING  EMIT_DEC_ADJUST  TRACKING
 Rules: per-instrument trailing_stop, max_hold_time, TP1/TP2 partial exit
-Output: DEC:ADJUST(tp?, sl?, move_to_be?)
+Output: DEC:ADJUST(tpWARN, slWARN, move_to_beWARN)
 
 Shadow-mode: decisions only, no live modifications.
 """
@@ -58,7 +58,7 @@ class ManageFlowFSM:
 
     FAIL-CLOSED POLICY: No fallback to global config!
     All symbols MUST have explicit config in strategies.aurora.assets.<SYM>.
-    Missing config → ValueError (system crash, not silent fallback).
+    Missing config  ValueError (system crash, not silent fallback).
     
     Rules execute on EVT:PARTIAL_FILL|FILL|UPD:*.
     """
@@ -132,7 +132,7 @@ class ManageFlowFSM:
         
         self._wait_mode_until_ts: int = 0
 
-        # Anti-race window (ms) — SSOT: trading.execution.anti_race_close_ms (FAIL-CLOSED)
+        # Anti-race window (ms)  SSOT: trading.execution.anti_race_close_ms (FAIL-CLOSED)
         if not (self.config.trading and self.config.trading.execution):
             raise ValueError(
                 "trading.execution config is required for ManageFlowFSM. "
@@ -374,7 +374,7 @@ class ManageFlowFSM:
         self.sl_order_id = sl_order_id
         self.tp_order_id = tp_order_id
         # Log synchronization for debugging
-        LOG.debug(f"✅ Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
+        LOG.debug(f" Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
 
     def handle(self, msg: Message) -> Optional[Message]:
         """
@@ -435,13 +435,13 @@ class ManageFlowFSM:
             else:
                 self.state = ManageState.TRACKING
 
-        # State transition: FLAT → BRACKETS_PENDING on PARTIAL_FILL or FILL
+        # State transition: FLAT  BRACKETS_PENDING on PARTIAL_FILL or FILL
         if self.state == ManageState.FLAT and msg.verb in (
             "PARTIAL_FILL",
             "FILL",
             "TRADE_EXECUTED",
         ):
-            # 🔍 CRITICAL FIX: Distinguish between ENTRY and EXIT fills
+            #  CRITICAL FIX: Distinguish between ENTRY and EXIT fills
             # If this is an EXIT order (TP/SL), position is CLOSING, not opening!
             pld = msg.pld or {}
             order_type = pld.get("order_type") or (pld["type"] if "type" in pld else "")
@@ -451,7 +451,7 @@ class ManageFlowFSM:
             )
             is_reduce_only = str(pld["reduceOnly"] if "reduceOnly" in pld else "").lower() == "true"
 
-            # 🔍 DIAGNOSTIC: Log all FILL events in FLAT state
+            #  DIAGNOSTIC: Log all FILL events in FLAT state
             LOG.debug(f"FILL event in FLAT: verb={msg.verb}, "
                       f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
                       f"pld_keys={list(pld.keys())}")
@@ -461,7 +461,7 @@ class ManageFlowFSM:
                 (close_position or is_reduce_only)
 
             if is_exit_order:
-                # ⚠️ Position is CLOSING via TP/SL - do NOT create new TP/SL!
+                #  Position is CLOSING via TP/SL - do NOT create new TP/SL!
                 LOG.info(
                     f"EXIT fill detected ({order_type}), position closing, NOT placing brackets")
                 self.position_qty = None
@@ -477,7 +477,7 @@ class ManageFlowFSM:
                 # HOTFIX: Auto-clear closing flag on ENTRY (we're opening, not closing)
                 if self._closing_position:
                     self._closing_position = False
-                    LOG.info("[BRK] ENTRY detected → closing_flag=False")
+                    LOG.info("[BRK] ENTRY detected  closing_flag=False")
 
                 LOG.info(
                     f"ENTRY fill - creating position from {msg.verb}")
@@ -561,7 +561,7 @@ class ManageFlowFSM:
             # Local IDs present - likely phantoms if we're placing new brackets
             LOG.info(
                 f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}, "
-                f"TP1={self.tp1_order_id}, TP2={self.tp2_order_id}) → clearing phantoms")
+                f"TP1={self.tp1_order_id}, TP2={self.tp2_order_id})  clearing phantoms")
             self.sl_order_id = None
             self.tp_order_id = None
             self.tp1_order_id = None
@@ -702,7 +702,7 @@ class ManageFlowFSM:
                 tp1_qty = total_qty
                 tp2_qty = Decimal("0")
 
-            # Generate unique client order IDs — FIX-4015: use hash-based IDs (≤32 chars)
+            # Generate unique client order IDs  FIX-4015: use hash-based IDs (32 chars)
             idem_base = f"{msg.rid}_{int(self.position_open_ts)}"
             sl_client_id = generate_client_order_id("SL", symbol, idempotent_key=idem_base)
             tp1_client_id = generate_client_order_id("TP1", symbol, idempotent_key=idem_base)
@@ -918,9 +918,9 @@ class ManageFlowFSM:
         if tick_size_dec <= 0:
             raise ValueError(f"instruments.{symbol}.tick_size must be > 0, got {tick_size_dec}")
 
-        # FIX-1111: side-aware rounding — bracket orders are always the opposite side
-        # BUY position → SELL brackets → FLOOR (avoid trigger too early)
-        # SELL position → BUY brackets → CEIL (avoid trigger too early)
+        # FIX-1111: side-aware rounding  bracket orders are always the opposite side
+        # BUY position  SELL brackets  FLOOR (avoid trigger too early)
+        # SELL position  BUY brackets  CEIL (avoid trigger too early)
         bracket_side = self._get_opposite_side() if self.position_side else "SELL"
         tick_size_float = float(tick_size_dec)
 
@@ -1056,7 +1056,7 @@ class ManageFlowFSM:
                                     msg.pld or {}).get("ts") else get_clock().now_ms()
                             except Exception:
                                 now_ts = get_clock().now_ms()
-                            # Direct access (fail-closed: missing emergency config → crash)
+                            # Direct access (fail-closed: missing emergency config  crash)
                             if not hasattr(self, "_bar_ms") or not hasattr(self, "_wait_mode_bars"):
                                 raise ValueError(
                                     "CRITICAL: Emergency mode activated but _bar_ms/_wait_mode_bars not configured. "
@@ -1322,7 +1322,7 @@ class ManageFlowFSM:
         cancel_msg = self._emit_cancel_order(
             msg, self.sl_order_id or "", "trailing_adjust")
 
-        # FIX-4015: use hash-based ID for trailing stop (≤32 chars)
+        # FIX-4015: use hash-based ID for trailing stop (32 chars)
         _trail_sym = (msg.pld or {}).get("symbol") or self.symbol or ""
         _trail_idem = f"{msg.rid}_{int(self.position_open_ts)}_trail_{int(get_clock().now_sec())}"
         new_client_id = generate_client_order_id("SL", _trail_sym, idempotent_key=_trail_idem)

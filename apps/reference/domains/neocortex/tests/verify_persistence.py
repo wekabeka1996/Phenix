@@ -14,15 +14,14 @@ import logging
 from pathlib import Path
 
 # Add parent dirs to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_models import load_config
-from logic.ingest.parser import FeatureParser
-from logic.ingest.observation import MarketObservation
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from logic.brain.bridge import BrainBridge
-from transport.adapter import NeocortexAdapter
+from apps.reference.domains.neocortex.config_models import load_config
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -136,3 +135,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

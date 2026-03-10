@@ -122,7 +122,8 @@ def _extract_basis_tf_sec(resolved_cfg: dict) -> int:
         if isinstance(node, dict) and "basis_tf_sec" in node:
             return int(node["basis_tf_sec"])
 
-    raise AnalysisError("FAIL-CLOSED: basis_tf_sec not found in resolved_config.json")
+    raise AnalysisError(
+        "FAIL-CLOSED: basis_tf_sec not found in resolved_config.json")
 
 
 def _select_parquet_files(data_root: Path, symbol: str, tf_str: str) -> list[Path]:
@@ -173,15 +174,18 @@ def _load_ohlcv(
     start_ts = datetime.combine(start_d, time.min)
     end_ts = datetime.combine(end_d, time.max)
 
-    q = q.filter((pl.col("open_time") >= start_ts) & (pl.col("open_time") <= end_ts))
+    q = q.filter((pl.col("open_time") >= start_ts)
+                 & (pl.col("open_time") <= end_ts))
 
     # Standardize / select required columns; keep close_time for ts_close.
-    needed = ["open_time", "close_time", "open", "high", "low", "close", "volume"]
+    needed = ["open_time", "close_time", "open",
+              "high", "low", "close", "volume"]
     missing = [c for c in needed if c not in schema]
     if missing:
         raise AnalysisError(f"OHLCV schema missing columns: {missing}")
 
-    df = q.select([pl.col(c) for c in needed]).sort("open_time").collect(engine="streaming")
+    df = q.select([pl.col(c) for c in needed]).sort(
+        "open_time").collect(engine="streaming")
     if df.is_empty():
         raise AnalysisError(
             f"OHLCV empty after date filter for {symbol} tf={tf_str} range {start_d}..{end_d}"
@@ -221,22 +225,34 @@ def _extract_detector_params(resolved_cfg: dict) -> DetectorParams:
         return d[k]
 
     return DetectorParams(
-        sma_short_period=int(req(sma, "sma_short_period", path="models.sma_trend")),
-        sma_long_period=int(req(sma, "sma_long_period", path="models.sma_trend")),
-        confidence_min=float(req(sma, "confidence_min", path="models.sma_trend")),
-        confidence_max=float(req(sma, "confidence_max", path="models.sma_trend")),
-        confidence_multiplier=float(req(sma, "confidence_multiplier", path="models.sma_trend")),
+        sma_short_period=int(
+            req(sma, "sma_short_period", path="models.sma_trend")),
+        sma_long_period=int(
+            req(sma, "sma_long_period", path="models.sma_trend")),
+        confidence_min=float(
+            req(sma, "confidence_min", path="models.sma_trend")),
+        confidence_max=float(
+            req(sma, "confidence_max", path="models.sma_trend")),
+        confidence_multiplier=float(
+            req(sma, "confidence_multiplier", path="models.sma_trend")),
         uncertain_cutoff=float(resolved_cfg.get("uncertain_cutoff", 0.0)),
         vol_enabled=bool(req(vol, "enabled", path="models.volatility")),
         atr_period=int(req(vol, "atr_period", path="models.volatility")),
-        atr_sma_length=int(req(vol, "atr_sma_length", path="models.volatility")),
-        allow_close_to_close_atr=bool(req(vol, "allow_close_to_close_atr", path="models.volatility")),
-        threshold_multiplier=float(req(vol, "threshold_multiplier", path="models.volatility")),
-        low_vol_multiplier=float(req(vol, "low_vol_multiplier", path="models.volatility")),
-        high_vol_confidence_multiplier=float(req(vol, "high_vol_confidence_multiplier", path="models.volatility")),
-        low_vol_confidence_multiplier=float(req(vol, "low_vol_confidence_multiplier", path="models.volatility")),
+        atr_sma_length=int(
+            req(vol, "atr_sma_length", path="models.volatility")),
+        allow_close_to_close_atr=bool(
+            req(vol, "allow_close_to_close_atr", path="models.volatility")),
+        threshold_multiplier=float(
+            req(vol, "threshold_multiplier", path="models.volatility")),
+        low_vol_multiplier=float(
+            req(vol, "low_vol_multiplier", path="models.volatility")),
+        high_vol_confidence_multiplier=float(
+            req(vol, "high_vol_confidence_multiplier", path="models.volatility")),
+        low_vol_confidence_multiplier=float(
+            req(vol, "low_vol_confidence_multiplier", path="models.volatility")),
         mr_threshold=float(req(mr, "threshold", path="models.mean_reversion")),
-        mr_confidence_multiplier=float(req(mr, "confidence_multiplier", path="models.mean_reversion")),
+        mr_confidence_multiplier=float(
+            req(mr, "confidence_multiplier", path="models.mean_reversion")),
     )
 
 
@@ -356,7 +372,8 @@ def _detect_regime_per_bar(
         high_mask = ok & (vol_ratio > params.threshold_multiplier)
         if np.any(high_mask):
             excess = vol_ratio[high_mask] - params.threshold_multiplier
-            conf = np.minimum(conf_max, conf_min + excess * params.high_vol_confidence_multiplier)
+            conf = np.minimum(conf_max, conf_min + excess *
+                              params.high_vol_confidence_multiplier)
             regime[high_mask] = "HIGH_VOLATILITY"
             confidence[high_mask] = conf
             source_model[high_mask] = "volatility_v2"
@@ -364,29 +381,34 @@ def _detect_regime_per_bar(
         low_mask = ok & (vol_ratio < params.low_vol_multiplier)
         if np.any(low_mask):
             calm = params.low_vol_multiplier - vol_ratio[low_mask]
-            conf = np.minimum(conf_max, conf_min + calm * params.low_vol_confidence_multiplier)
+            conf = np.minimum(conf_max, conf_min + calm *
+                              params.low_vol_confidence_multiplier)
             regime[low_mask] = "LOW_VOLATILITY"
             confidence[low_mask] = conf
             source_model[low_mask] = "volatility_v2"
 
     # Priority 2: Mean reversion
-    mr_mask_base = (regime == "UNCERTAIN") & sma_short_ready & sma_long_ready & price_ok
+    mr_mask_base = (
+        regime == "UNCERTAIN") & sma_short_ready & sma_long_ready & price_ok
     if np.any(mr_mask_base):
         with np.errstate(divide="ignore", invalid="ignore"):
             sma_spread = np.abs(sma_short - sma_long) / sma_long
             dev_short = np.abs(close - sma_short) / sma_short
             dev_long = np.abs(close - sma_long) / sma_long
         tight = np.maximum.reduce([sma_spread, dev_short, dev_long])
-        mr_ok = mr_mask_base & (sma_spread < params.mr_threshold) & (dev_short < params.mr_threshold) & (dev_long < params.mr_threshold)
+        mr_ok = mr_mask_base & (sma_spread < params.mr_threshold) & (
+            dev_short < params.mr_threshold) & (dev_long < params.mr_threshold)
         if np.any(mr_ok):
             tightness = params.mr_threshold - tight[mr_ok]
-            conf = np.minimum(conf_max, conf_min + tightness * params.mr_confidence_multiplier)
+            conf = np.minimum(conf_max, conf_min + tightness *
+                              params.mr_confidence_multiplier)
             regime[mr_ok] = "MEAN_REVERSION"
             confidence[mr_ok] = conf
             source_model[mr_ok] = "mean_reversion_v2"
 
     # Priority 3: SMA trend
-    trend_mask_base = (regime == "UNCERTAIN") & sma_short_ready & sma_long_ready & price_ok
+    trend_mask_base = (
+        regime == "UNCERTAIN") & sma_short_ready & sma_long_ready & price_ok
     if np.any(trend_mask_base):
         conf_trend = _calculate_confidence(
             sma_short=sma_short,
@@ -410,7 +432,8 @@ def _detect_regime_per_bar(
 
     # uncertain_cutoff demotion
     if params.uncertain_cutoff and params.uncertain_cutoff > 0:
-        demote = (regime != "UNCERTAIN") & np.isfinite(confidence) & (confidence < params.uncertain_cutoff)
+        demote = (regime != "UNCERTAIN") & np.isfinite(
+            confidence) & (confidence < params.uncertain_cutoff)
         if np.any(demote):
             regime[demote] = "UNCERTAIN"
             confidence[demote] = conf_min
@@ -434,11 +457,15 @@ def _compute_forward_excursions(df: pl.DataFrame, horizons: Iterable[int]) -> pl
         out = out.with_columns([fut_max_high, fut_min_low])
         out = out.with_columns(
             [
-                ((pl.col(f"_fut_max_high_h{h}") - pl.col("close")) / pl.col("close")).alias(f"mfe_up_pct_H{h}"),
-                ((pl.col("close") - pl.col(f"_fut_min_low_h{h}")) / pl.col("close")).alias(f"mae_down_pct_H{h}"),
+                ((pl.col(f"_fut_max_high_h{h}") - pl.col("close")
+                  ) / pl.col("close")).alias(f"mfe_up_pct_H{h}"),
+                ((pl.col("close") - pl.col(f"_fut_min_low_h{h}")) / pl.col(
+                    "close")).alias(f"mae_down_pct_H{h}"),
                 # Short symmetry
-                ((pl.col("close") - pl.col(f"_fut_min_low_h{h}")) / pl.col("close")).alias(f"mfe_down_pct_H{h}"),
-                ((pl.col(f"_fut_max_high_h{h}") - pl.col("close")) / pl.col("close")).alias(f"mae_up_pct_H{h}"),
+                ((pl.col("close") - pl.col(f"_fut_min_low_h{h}")) / pl.col(
+                    "close")).alias(f"mfe_down_pct_H{h}"),
+                ((pl.col(f"_fut_max_high_h{h}") - pl.col("close")
+                  ) / pl.col("close")).alias(f"mae_up_pct_H{h}"),
             ]
         ).drop([f"_fut_max_high_h{h}", f"_fut_min_low_h{h}"])
     return out
@@ -514,9 +541,11 @@ def _extract_costs_bps_rt(resolved_cfg: dict, result: dict, *, symbol: str, buff
             slippage_bps_rt = 0.0
 
     fees_bps_rt = float(fees_bps_rt) if fees_bps_rt is not None else 0.0
-    slippage_bps_rt = float(slippage_bps_rt) if slippage_bps_rt is not None else 0.0
+    slippage_bps_rt = float(
+        slippage_bps_rt) if slippage_bps_rt is not None else 0.0
 
-    min_dist_bps = int(math.ceil(fees_bps_rt + slippage_bps_rt + float(buffer_bps)))
+    min_dist_bps = int(
+        math.ceil(fees_bps_rt + slippage_bps_rt + float(buffer_bps)))
     min_dist_pct = min_dist_bps / 10000.0
     return {
         "fees_bps_rt": fees_bps_rt,
@@ -539,7 +568,8 @@ def _group_quantiles(df: pl.DataFrame, metrics: list[str]) -> dict:
             ]
         )
         for q in QUANTILES:
-            exprs.append(pl.col(m).quantile(q, "linear").alias(f"{m}__p{int(q*100):02d}"))
+            exprs.append(pl.col(m).quantile(
+                q, "linear").alias(f"{m}__p{int(q*100):02d}"))
 
     agg = df.group_by("market_regime").agg(exprs).sort("market_regime")
     out: dict[str, dict[str, Any]] = {}
@@ -555,7 +585,8 @@ def _group_quantiles(df: pl.DataFrame, metrics: list[str]) -> dict:
             }
             for q in QUANTILES:
                 key = f"p{int(q*100):02d}"
-                m_out["quantiles"][key] = _as_float_or_none(row.get(f"{m}__p{int(q*100):02d}"))
+                m_out["quantiles"][key] = _as_float_or_none(
+                    row.get(f"{m}__p{int(q*100):02d}"))
             reg_out["metrics"][m] = m_out
         out[reg] = reg_out
     return out
@@ -592,8 +623,10 @@ def _write_md_report(
     lines: list[str] = []
     lines.append(f"# bars_regime distributions — {run_id}\n")
     lines.append(f"- Symbol: `{symbol}`\n")
-    lines.append(f"- Timeframe: `{tf_str}` (basis_tf_sec={period['basis_tf_sec']})\n")
-    lines.append(f"- Period: `{period['start_date']}` → `{period['end_date']}`\n")
+    lines.append(
+        f"- Timeframe: `{tf_str}` (basis_tf_sec={period['basis_tf_sec']})\n")
+    lines.append(
+        f"- Period: `{period['start_date']}` → `{period['end_date']}`\n")
     lines.append(f"- Bars: `{period['bars']}`\n")
     lines.append("\n## Detector params\n")
     lines.append("```yaml\n")
@@ -646,9 +679,12 @@ def _write_md_report(
     lw_reg, lw_val = _best("lower_wick_pct", "p90")
     rng_reg, rng_val = _best("range_pct", "p90")
     lines.append("\n## Quick takeaways\n")
-    lines.append(f"- Biggest **upper wick** (p90): `{uw_reg}` ({_fmt_pct(uw_val)})\n")
-    lines.append(f"- Biggest **lower wick** (p90): `{lw_reg}` ({_fmt_pct(lw_val)})\n")
-    lines.append(f"- Biggest **range** (p90): `{rng_reg}` ({_fmt_pct(rng_val)})\n")
+    lines.append(
+        f"- Biggest **upper wick** (p90): `{uw_reg}` ({_fmt_pct(uw_val)})\n")
+    lines.append(
+        f"- Biggest **lower wick** (p90): `{lw_reg}` ({_fmt_pct(lw_val)})\n")
+    lines.append(
+        f"- Biggest **range** (p90): `{rng_reg}` ({_fmt_pct(rng_val)})\n")
 
     # Asymmetry in TREND_DOWN (upper vs lower wick)
     td = summary_by_regime.get("TREND_DOWN", {}).get("metrics", {})
@@ -656,14 +692,17 @@ def _write_md_report(
     td_lw = td.get("lower_wick_pct", {}).get("quantiles", {}).get("p90")
     if td_uw is not None and td_lw is not None:
         asym = td_uw - td_lw
-        lines.append(f"- `TREND_DOWN` wick asymmetry (p90 upper - p90 lower): `{_fmt_pct(asym)}`\n")
+        lines.append(
+            f"- `TREND_DOWN` wick asymmetry (p90 upper - p90 lower): `{_fmt_pct(asym)}`\n")
 
     # Tables
     lines.append("\n## Distributions by regime (geometry)\n")
-    geom_metrics = ["range_pct", "upper_wick_pct", "lower_wick_pct", "body_pct"]
+    geom_metrics = ["range_pct", "upper_wick_pct",
+                    "lower_wick_pct", "body_pct"]
     for m in geom_metrics:
         lines.append(f"\n### `{m}`\n\n")
-        lines.append("| regime | count | mean | std | p10 | p25 | p50 | p75 | p90 | p95 |\n")
+        lines.append(
+            "| regime | count | mean | std | p10 | p25 | p50 | p75 | p90 | p95 |\n")
         lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
         for reg, d in summary_by_regime.items():
             mm = d["metrics"].get(m, {})
@@ -700,8 +739,10 @@ def _write_md_report(
         lines.append(f"\n### Horizon H={h} bars ({horizon_label})\n\n")
         for m in [f"mfe_up_pct_H{h}", f"mae_down_pct_H{h}", f"mfe_down_pct_H{h}", f"mae_up_pct_H{h}"]:
             lines.append(f"\n#### `{m}`\n\n")
-            lines.append("| regime | count | mean | std | p10 | p25 | p50 | p75 | p90 | p95 |\n")
-            lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+            lines.append(
+                "| regime | count | mean | std | p10 | p25 | p50 | p75 | p90 | p95 |\n")
+            lines.append(
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
             for reg, d in summary_by_regime.items():
                 mm = d["metrics"].get(m, {})
                 q = mm.get("quantiles", {})
@@ -747,7 +788,8 @@ def _recommend_tpsl(
 ) -> dict:
     min_dist_pct = float(costs["min_dist_pct"])
     out: dict[str, Any] = {}
-    regimes = [r for r in df.select("market_regime").unique().sort("market_regime").to_series().to_list()]
+    regimes = [r for r in df.select("market_regime").unique().sort(
+        "market_regime").to_series().to_list()]
 
     for reg in regimes:
         sub = df.filter(pl.col("market_regime") == reg)
@@ -786,7 +828,8 @@ def _recommend_tpsl(
                     tp = min_dist_pct
                     bumped_tp = True
 
-                rr_raw = (tp / sl) if (tp is not None and sl is not None and sl > 0) else None
+                rr_raw = (
+                    tp / sl) if (tp is not None and sl is not None and sl > 0) else None
                 rr = rr_raw
                 if rr is not None:
                     rr = float(max(1.0, min(4.0, rr)))
@@ -810,8 +853,10 @@ def _recommend_tpsl(
                     "rr_raw": rr_raw,
                 }
 
-            reg_out["long"][f"H{h}"] = reco_block(mae_col=long_mae, mfe_col=long_mfe)
-            reg_out["short"][f"H{h}"] = reco_block(mae_col=short_mae, mfe_col=short_mfe)
+            reg_out["long"][f"H{h}"] = reco_block(
+                mae_col=long_mae, mfe_col=long_mfe)
+            reg_out["short"][f"H{h}"] = reco_block(
+                mae_col=short_mae, mfe_col=short_mfe)
 
         out[str(reg)] = reg_out
     return out
@@ -832,13 +877,15 @@ def _maybe_make_plots(df: pl.DataFrame, out_dir: Path, *, horizons: list[int]) -
         h = int(horizons[0])
         metrics += [f"mfe_up_pct_H{h}", f"mae_down_pct_H{h}"]
 
-    regimes = [r for r in df.select("market_regime").unique().sort("market_regime").to_series().to_list()]
+    regimes = [r for r in df.select("market_regime").unique().sort(
+        "market_regime").to_series().to_list()]
 
     for metric in metrics:
         # Histogram overlay (density)
         plt.figure(figsize=(10, 5))
         for reg in regimes:
-            vals = df.filter(pl.col("market_regime") == reg).select(pl.col(metric)).to_series().drop_nulls().to_numpy()
+            vals = df.filter(pl.col("market_regime") == reg).select(
+                pl.col(metric)).to_series().drop_nulls().to_numpy()
             if vals.size < 100:
                 continue
             plt.hist(vals, bins=60, alpha=0.35, density=True, label=reg)
@@ -853,7 +900,8 @@ def _maybe_make_plots(df: pl.DataFrame, out_dir: Path, *, horizons: list[int]) -
         # ECDF
         plt.figure(figsize=(10, 5))
         for reg in regimes:
-            vals = df.filter(pl.col("market_regime") == reg).select(pl.col(metric)).to_series().drop_nulls().to_numpy()
+            vals = df.filter(pl.col("market_regime") == reg).select(
+                pl.col(metric)).to_series().drop_nulls().to_numpy()
             if vals.size < 100:
                 continue
             xs = np.sort(vals)
@@ -875,18 +923,18 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
     basis_tf_sec = _extract_basis_tf_sec(resolved_cfg)
     tf_str = _tf_str_from_sec(basis_tf_sec)
 
-    # Determine backtest period (prefer config_snapshot.trading.backtest, fallback to result.metadata).
-    cs = result.get("config_snapshot") or {}
-    bt = cs.get("trading.backtest") or {}
-    start_d = _maybe_parse_date(bt.get("start_date")) or _maybe_parse_date((result.get("metadata") or {}).get("start_date"))
-    end_d = _maybe_parse_date(bt.get("end_date")) or _maybe_parse_date((result.get("metadata") or {}).get("end_date"))
+    metadata = result.get("metadata") or {}
+    start_d = _maybe_parse_date(metadata.get("start_date"))
+    end_d = _maybe_parse_date(metadata.get("end_date"))
     if start_d is None or end_d is None:
-        raise AnalysisError("Could not determine backtest start/end date from result.json config_snapshot/metadata")
+        raise AnalysisError(
+            "Could not determine analysis start/end date from result.json metadata")
 
     detector_params = _extract_detector_params(resolved_cfg)
 
     # Load OHLCV (from project dataset, matching backtest engine selection rules).
-    ohlcv = _load_ohlcv(symbol=symbol, tf_str=tf_str, start_d=start_d, end_d=end_d, data_root=data_root)
+    ohlcv = _load_ohlcv(symbol=symbol, tf_str=tf_str,
+                        start_d=start_d, end_d=end_d, data_root=data_root)
 
     # Build base frame
     df = (
@@ -903,10 +951,14 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
         .drop(["open_time", "close_time"])
         .with_columns(
             [
-                ((pl.col("high") - pl.col("low")) / pl.col("close")).alias("range_pct"),
-                ((pl.col("close") - pl.col("open")).abs() / pl.col("close")).alias("body_pct"),
-                ((pl.col("high") - pl.max_horizontal(["open", "close"])) / pl.col("close")).alias("upper_wick_pct"),
-                ((pl.min_horizontal(["open", "close"]) - pl.col("low")) / pl.col("close")).alias("lower_wick_pct"),
+                ((pl.col("high") - pl.col("low")) /
+                 pl.col("close")).alias("range_pct"),
+                ((pl.col("close") - pl.col("open")).abs() /
+                 pl.col("close")).alias("body_pct"),
+                ((pl.col("high") - pl.max_horizontal(["open", "close"])) / pl.col(
+                    "close")).alias("upper_wick_pct"),
+                ((pl.min_horizontal(["open", "close"]) - pl.col("low")
+                  ) / pl.col("close")).alias("lower_wick_pct"),
             ]
         )
     )
@@ -916,8 +968,10 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
     high = df.select("high").to_series().to_numpy()
     low = df.select("low").to_series().to_numpy()
 
-    sma_short = _rolling_sma(close.astype(np.float64), detector_params.sma_short_period)
-    sma_long = _rolling_sma(close.astype(np.float64), detector_params.sma_long_period)
+    sma_short = _rolling_sma(close.astype(np.float64),
+                             detector_params.sma_short_period)
+    sma_long = _rolling_sma(close.astype(np.float64),
+                            detector_params.sma_long_period)
 
     atr, atr_base, vol_ratio = _compute_atr_and_baseline(
         high=high.astype(np.float64),
@@ -1001,10 +1055,12 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
         "vol_ratio",
     ]
     for h in horizons:
-        metrics.extend([f"mfe_up_pct_H{h}", f"mae_down_pct_H{h}", f"mfe_down_pct_H{h}", f"mae_up_pct_H{h}"])
+        metrics.extend(
+            [f"mfe_up_pct_H{h}", f"mae_down_pct_H{h}", f"mfe_down_pct_H{h}", f"mae_up_pct_H{h}"])
 
     summary_by_regime = _group_quantiles(df, metrics=metrics)
-    costs = _extract_costs_bps_rt(resolved_cfg, result, symbol=symbol, buffer_bps=buffer_bps)
+    costs = _extract_costs_bps_rt(
+        resolved_cfg, result, symbol=symbol, buffer_bps=buffer_bps)
 
     summary_out = {
         "run_id": str(run_dir.name),
@@ -1046,7 +1102,8 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
         run_id=str(run_dir.name),
         symbol=symbol,
         tf_str=tf_str,
-        period={"start_date": str(start_d), "end_date": str(end_d), "bars": int(df.height), "basis_tf_sec": int(basis_tf_sec)},
+        period={"start_date": str(start_d), "end_date": str(
+            end_d), "bars": int(df.height), "basis_tf_sec": int(basis_tf_sec)},
         detector_params=detector_params,
         costs=costs,
         summary_by_regime=summary_by_regime,
@@ -1058,20 +1115,28 @@ def build_bars_regime(run_dir: Path, *, symbol: str, data_root: Path, horizons: 
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bars_regime dataset + distributions + quantile TP/SL (fees-aware)")
-    ap.add_argument("--run-id", default=None, help="Run id under reports/backtests/<run_id>/ (default: latest)")
-    ap.add_argument("--symbol", default="BTCUSDT", help="Symbol (default: BTCUSDT)")
-    ap.add_argument("--data-root", default="data/processed", help="OHLCV root (default: data/processed)")
-    ap.add_argument("--buffer-bps", type=int, default=15, help="Extra safety buffer in bps (default: 15)")
-    ap.add_argument("--horizons", default="3,6,12", help="Comma-separated horizons in bars (default: 3,6,12)")
+    ap = argparse.ArgumentParser(
+        description="bars_regime dataset + distributions + quantile TP/SL (fees-aware)")
+    ap.add_argument("--run-id", default=None,
+                    help="Run id under reports/backtests/<run_id>/ (default: latest)")
+    ap.add_argument("--symbol", default="BTCUSDT",
+                    help="Symbol (default: BTCUSDT)")
+    ap.add_argument("--data-root", default="data/processed",
+                    help="OHLCV root (default: data/processed)")
+    ap.add_argument("--buffer-bps", type=int, default=15,
+                    help="Extra safety buffer in bps (default: 15)")
+    ap.add_argument("--horizons", default="3,6,12",
+                    help="Comma-separated horizons in bars (default: 3,6,12)")
     args = ap.parse_args()
 
     backtests_dir = Path("reports/backtests")
-    run_id = str(args.run_id) if args.run_id else _find_latest_run_id(backtests_dir)
+    run_id = str(args.run_id) if args.run_id else _find_latest_run_id(
+        backtests_dir)
     run_dir = backtests_dir / run_id
 
     try:
-        horizons = [int(x.strip()) for x in str(args.horizons).split(",") if x.strip()]
+        horizons = [int(x.strip())
+                    for x in str(args.horizons).split(",") if x.strip()]
     except Exception as e:
         raise SystemExit(f"Bad --horizons value: {args.horizons} ({e})") from e
     if not horizons:

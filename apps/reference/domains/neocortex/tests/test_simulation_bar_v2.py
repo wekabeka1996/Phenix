@@ -29,18 +29,17 @@ import tempfile
 
 # Ensure we can import from parent
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_models import (
+from apps.reference.domains.neocortex.config_models import (
     NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig,
     VAEConfig, PPOConfig, WorldModelConfig, ReplayConfig
 )
-from logic.ingest.parser import FeatureParser
-from logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
-from logic.amygdala.valuation import ValuationEngine
-from logic.memory.buffer import EpisodicBuffer
-from transport.adapter import NeocortexAdapter
-from logic.brain.bridge import BrainBridge
+from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
+from apps.reference.domains.neocortex.logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
+from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
 
 
 # =============================================================================
@@ -437,10 +436,13 @@ class TestSimulationBarV2:
         assert stats.get('total_train_steps', 0) >= 5, \
             f"Expected training steps, got {stats.get('total_train_steps', 0)}"
         
-        # 4. Check shadow intent events
-        shadow_events = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT"]
-        assert len(shadow_events) >= 50, \
-            f"Expected shadow intent events, got {len(shadow_events)}"
+        # 4. Check dual-emit shadow intent events (canonical + legacy)
+        shadow_events_legacy = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT"]
+        shadow_events_canonical = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED"]
+        assert len(shadow_events_legacy) >= 50, \
+            f"Expected legacy shadow intent events, got {len(shadow_events_legacy)}"
+        assert len(shadow_events_canonical) >= 50, \
+            f"Expected canonical shadow intent events, got {len(shadow_events_canonical)}"
         
         # =====================================================================
         # VERIFY CHECKPOINTS
@@ -500,7 +502,7 @@ class TestSimulationBarV2:
     
     def test_feature_log_format(self, temp_workspace):
         """Verify synthetic feature log format is parseable."""
-        from logic.ingest.parsers import parse_feature_log_line
+        from apps.reference.domains.neocortex.logic.ingest.parsers import parse_feature_log_line
         
         generator = SyntheticDataGenerator()
         features = generator.generate_bar_features("BTCUSDT", 0)
@@ -522,7 +524,7 @@ class TestSimulationBarV2:
     
     def test_order_log_format(self, temp_workspace):
         """Verify synthetic order log format is parseable."""
-        from logic.ingest.parsers import parse_order_log_line, OrderEventType
+        from apps.reference.domains.neocortex.logic.ingest.parsers import parse_order_log_line, OrderEventType
         
         generator = SyntheticDataGenerator()
         order = generator.generate_order_placed("BTCUSDT", 100)
@@ -543,7 +545,7 @@ class TestSimulationBarV2:
     
     def test_core_log_format(self, temp_workspace):
         """Verify synthetic core log format is parseable."""
-        from logic.ingest.parsers import parse_core_log_line, CoreEventType
+        from apps.reference.domains.neocortex.logic.ingest.parsers import parse_core_log_line, CoreEventType
         
         generator = SyntheticDataGenerator()
         lines = [
@@ -579,3 +581,6 @@ class TestSimulationBarV2:
 if __name__ == "__main__":
     # Run with: python test_simulation_bar_v2.py
     pytest.main([__file__, "-v", "-s"])
+
+
+

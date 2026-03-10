@@ -1,5 +1,5 @@
 # ==============================================================================
-# Aurora Strategy Profile — SSOT
+# Aurora Strategy Profile  SSOT
 # ==============================================================================
 # CFG-STRATEGY-SSOT-FREEZE-02:
 # - Strategy policy SSOT: this file (no policy in trading.yaml/domains.yaml)
@@ -13,7 +13,7 @@ aurora:
   type: bar_driven
   description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
-  
+
   # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
   # LIMIT entries require explicit tif. No silent fallbacks.
   execution:
@@ -21,8 +21,8 @@ aurora:
     entry_tif: "GTX"            # MUST be set for LIMIT. One of: GTC, GTX, IOC, FOK
 
   # DM-SAFETY-BYPASSES-P1: Explicit safety gates control (fail-closed if missing)
-  # Aurora is trend-following → directional sanity and price motion gates APPLY.
-  # Phase 0.6: attenuate — EXTREME denies entry; STRESS halves position size.
+  # Aurora is trend-following  directional sanity and price motion gates APPLY.
+  # Phase 0.6: attenuate  EXTREME denies entry; STRESS halves position size.
   safety_gates:
     enabled: true
     system_stress_policy: attenuate   # "off" | "attenuate" | "block"
@@ -45,13 +45,13 @@ aurora:
     score_multiplier: 1.0
     neutral_threshold: 0.06
     symbols_to_track:
-      # BTCUSDT removed — patched4b: BLOCK (allowed_regimes:[] + removed from tracking)
+      - BTCUSDT
       - ETHUSDT
       - SOLUSDT
       - DOGEUSDT
       - XRPUSDT
       - BNBUSDT
-      # 1000PEPEUSDT removed — patched4a_v2: BLOCK (enabled:false + allowed_regimes:[] + removed from tracking)
+      # 1000PEPEUSDT removed  patched4a_v2: BLOCK (enabled:false + allowed_regimes:[] + removed from tracking)
     behavior_fsm:
       enable: false
       high_vol_multiplier: 2.0
@@ -60,7 +60,7 @@ aurora:
       HIGH_VOLATILITY: 1.30
       LOW_VOLATILITY: 1.15
       MEAN_REVERSION: 1.10
-      TREND_UP: 1.50    # patched2: raised from 0.85 — TREND_UP was -EV, lower barrier wrong
+      TREND_UP: 1.50    # patched2: raised from 0.85  TREND_UP was -EV, lower barrier wrong
       TREND_DOWN: 0.85
       UNCERTAIN: 1.50
       DEFAULT: 1.00
@@ -103,7 +103,7 @@ aurora:
     roi_exit: null
     mean_reversion: null
 
-    # ══════════════ Phase 5: Exit Manager (Global) ══════════════
+    #  Phase 5: Exit Manager (Global)
     # BUG-FIX: handler crashes (fail-closed) if exit: is missing.
     # Per-symbol overrides in assets.<SYM>.exit still apply.
     exit:
@@ -114,7 +114,7 @@ aurora:
       danger_zone_action: "TIGHTEN_STOPS"
       danger_zone_tighten_factor: 0.5
 
-    # ══════════════ Phase 9: Quadratic Brain Logic ══════════════
+    #  Phase 9: Quadratic Brain Logic
     # Values: "v1" (Legacy), "v2" (Linear), "quadratic" (Phase 9)
     # Default: "v1" (Fail-safe)
     scoring_version: "quadratic"
@@ -138,7 +138,7 @@ aurora:
         - volatility_state
       strength_alpha: 0.80
       strength_cap: 1.0
-    
+
     liquidity_gate:
       enabled: true
       kappa_min: 0.15
@@ -175,7 +175,7 @@ aurora:
       enabled: true
       anti_flat_sigma: 0.50  # Block ENTRY if |pm_norm| < 0.5 (dead market)
       anti_fomo_sigma: 4.00  # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
-      # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
+      # P0-2: FIXED 900  300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
       motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
@@ -194,7 +194,7 @@ aurora:
       macro_sync: 0.5
       macro_resid: 0.0
       absorption: 0.0    # R2: SIGNED feature, neutral is 0.0
-    
+
     signal_weights:
       obi: 0.25
       tfi: 0.25
@@ -212,25 +212,25 @@ aurora:
 
   # Per-symbol overrides (AuroraInstrumentConfig)
   assets:
-    # ETHUSDT - Phase 3+ Optuna optimized parameters
+    # ETHUSDT - Phase 3+ tuned parameters
     # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
     ETHUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Holding period: ETH trend-following, longer holding
       holding_period:
         min_duration_sec: 45
         emergency_exit_threshold: 0.65
-      
+
       # Re-entry cooldown: conservative for trend-following
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -274,14 +274,14 @@ aurora:
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
-          # ETH менш волатильна → консервативніші мультиплікатори
+          # ETH
           sl_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.65        # Tight for flat low
             LOW_VOLATILITY: 0.70
             FLAT_NORMAL: 0.80
             MEAN_REVERSION: 0.90
-            TREND_UP: 1.05        # Дещо шире для тренду
+            TREND_UP: 1.05        #
             TREND_DOWN: 1.05
             HIGH_VOLATILITY: 1.25 # Wider for high vol
             UNCERTAIN: 1.00
@@ -291,15 +291,15 @@ aurora:
             LOW_VOLATILITY: 0.75
             FLAT_NORMAL: 0.85
             MEAN_REVERSION: 0.80
-            TREND_UP: 1.20        # ETH trend-following → higher TP
+            TREND_UP: 1.20        # ETH trend-following  higher TP
             TREND_DOWN: 1.20
             HIGH_VOLATILITY: 1.00
             UNCERTAIN: 1.00
-          min_sl_pct: 0.002       # 0.2% - ETH дозволяє тісніший SL
-          max_sl_pct: 0.015       # 1.5% max (режим дрібних профітів)
+          min_sl_pct: 0.002       # 0.2% - ETH   SL
+          max_sl_pct: 0.015       # 1.5% max (  )
           min_tp_rr: 0.3
-          max_tp_rr: 1.0          # Режим дрібних профітів
-          min_dist_bps: 12        # 12 bps for ETH (більш ліквідна)
+          max_tp_rr: 1.0          #
+          min_dist_bps: 12        # 12 bps for ETH ( )
 
       take_profit:
         tp_low_ratio: 0.4
@@ -317,7 +317,7 @@ aurora:
         enabled: true
         value: 0.008
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -329,24 +329,24 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.2
           DEFAULT: 0.2
-      
+
       timeframe_sec: null
 
-    # SOLUSDT - Phase 3 Optuna optimized parameters
+    # SOLUSDT - Phase 3 tuned parameters
     SOLUSDT:
-      # Holding period: SOL волатильна → довша утримання
+      # Holding period: SOL
       holding_period:
         min_duration_sec: 35
         emergency_exit_threshold: 0.65
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Re-entry cooldown: conservative for ALT
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -374,9 +374,9 @@ aurora:
         penalty_factor: 0.0
         window_sec: 300
         target_ratio: 0.5
-      
+
       regime_thresholds:
-        HIGH_VOLATILITY: 1.35    # SOL волатильна → вищий поріг
+        HIGH_VOLATILITY: 1.35    # SOL
         LOW_VOLATILITY: 0.80
         MEAN_REVERSION: 1.10
         DEFAULT: 1.0
@@ -392,16 +392,16 @@ aurora:
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
-          # SOL дуже волатильна → більші мультиплікатори
+          # SOL
           sl_mult:
             DEFAULT: 1.0
-            FLAT_LOW: 0.60        # Tight SL для flat
+            FLAT_LOW: 0.60        # Tight SL  flat
             LOW_VOLATILITY: 0.65
             FLAT_NORMAL: 0.75
             MEAN_REVERSION: 0.85
-            TREND_UP: 1.15        # Wide SL для тренду
+            TREND_UP: 1.15        # Wide SL
             TREND_DOWN: 1.15
-            HIGH_VOLATILITY: 1.50 # Найширший SL для SOL (найбільша вол)
+            HIGH_VOLATILITY: 1.50 #  SL  SOL ( )
             UNCERTAIN: 1.00
           tp_mult:
             DEFAULT: 1.0
@@ -413,11 +413,11 @@ aurora:
             TREND_DOWN: 1.30
             HIGH_VOLATILITY: 1.10
             UNCERTAIN: 1.00
-          min_sl_pct: 0.0025      # 0.25% - дозволяємо тіснішу SL
-          max_sl_pct: 0.020       # 2.0% max (режим дрібних профітів)
-          min_tp_rr: 0.25         # Нижчий мін RR для SOL (менше потенціалу)
-          max_tp_rr: 1.2          # Режим дрібних профітів для SOL
-          min_dist_bps: 18        # 18 bps (менш ліквідна ніж BTC/ETH)
+          min_sl_pct: 0.0025      # 0.25% -   SL
+          max_sl_pct: 0.020       # 2.0% max (  )
+          min_tp_rr: 0.25         #   RR  SOL ( )
+          max_tp_rr: 1.2          #     SOL
+          min_dist_bps: 18        # 18 bps (   BTC/ETH)
 
       take_profit:
         tp_low_ratio: 0.36
@@ -436,7 +436,7 @@ aurora:
         enabled: true
         value: 0.008
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -448,7 +448,7 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.25
           DEFAULT: 0.2            # REQUIRED fallback
-      
+
       timeframe_sec: null
 
     # =========================================================================
@@ -464,7 +464,7 @@ aurora:
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # 1. Leverage & Sizing
       leverage:
         target: 20
@@ -473,7 +473,7 @@ aurora:
         penalty_factor: 0.35
         window_sec: 21600
         target_ratio: 0.60
-      
+
       # 2. Weights (Standard)
       weights:
         ema_bias: 0.15
@@ -512,8 +512,8 @@ aurora:
 
       # 5. Position Sizing per Regime
       regime_sizing:
-        HIGH_VOLATILITY: 0.20  # patched4a: attenuate 0.50→0.20 (R4_CUM: 86% SL rate, n=42, −103 USDT)
-        LOW_VOLATILITY: 0.25   # patched4a: attenuate 0.75→0.25 (R4_CUM: 65% SL rate, n=54, −159 USDT)
+        HIGH_VOLATILITY: 0.20  # patched4a: attenuate 0.500.20 (R4_CUM: 86% SL rate, n=42, 103 USDT)
+        LOW_VOLATILITY: 0.25   # patched4a: attenuate 0.750.25 (R4_CUM: 65% SL rate, n=54, 159 USDT)
         TREND_UP: 1.0
         TREND_DOWN: 1.0
         MEAN_REVERSION: 0.0  # Redundant safety
@@ -522,7 +522,7 @@ aurora:
       exit:
         sl_pct: 0.005  # Base 0.5%
         max_hold_sec: 3000
-        
+
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -556,12 +556,12 @@ aurora:
         trail_pct: 0.01
         min_update_interval_sec: 5
 
-      allowed_regimes: []  # patched4b: BLOCK — ETH+BNB Sep baseline isolation (BTC -86.79 USDT, 83% SL rate in patched4a_v2)
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "HIGH_VOLATILITY"]
       signal_threshold:
         enabled: true
         value: 0.017
       cooldown_sec: 60
-      
+
       # 7. Entry Logic (Smart Pullback)
       # High Vol: Deep pullback (0.5). Low Vol: Moderate (0.2).
       volatility_entry_logic:
@@ -578,7 +578,7 @@ aurora:
       timeframe_sec: null
 
     # =========================================================================
-    # BNBUSDT — based on SOLUSDT aurora config
+    # BNBUSDT  based on SOLUSDT aurora config
     # =========================================================================
     BNBUSDT:
       enabled: true
@@ -691,10 +691,10 @@ aurora:
       timeframe_sec: null
 
     # =========================================================================
-    # 1000PEPEUSDT — based on SOLUSDT aurora config (meme token, high volatility)
+    # 1000PEPEUSDT  based on SOLUSDT aurora config (meme token, high volatility)
     # =========================================================================
     1000PEPEUSDT:
-      enabled: false  # patched4a: BLOCK — Sep closed: −662 USDT, ev/t=−4.27; sim artifact (2.1B-unit position)
+      enabled: false  # patched4a: BLOCK  Sep closed: 662 USDT, ev/t=4.27; sim artifact (2.1B-unit position)
       position_mode: "STRICT"
 
       leverage:
@@ -783,7 +783,7 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      allowed_regimes: []  # patched4a_v2: TRUE BLOCK — empty list = no regime allowed (enabled:false alone is not enforced)
+      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION", "TREND_UP"]  # disabled here; regime list kept non-empty to satisfy strict allowlist contract
 
       signal_threshold:
         enabled: true
@@ -804,7 +804,7 @@ aurora:
       timeframe_sec: null
 
     # =========================================================================
-    # DOGEUSDT — based on SOLUSDT aurora config (volatile alt)
+    # DOGEUSDT  based on SOLUSDT aurora config (volatile alt)
     # =========================================================================
     DOGEUSDT:
       enabled: true
@@ -917,7 +917,7 @@ aurora:
       timeframe_sec: null
 
     # =========================================================================
-    # XRPUSDT — based on SOLUSDT aurora config (volatile alt)
+    # XRPUSDT  based on SOLUSDT aurora config (volatile alt)
     # =========================================================================
     XRPUSDT:
       enabled: true

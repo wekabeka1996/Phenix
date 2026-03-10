@@ -91,6 +91,60 @@ class StrategyGateway:
     def _block(self, symbol: str) -> None:
         self._dm._record_blocked_intent(symbol)
 
+    def _validate_md_amr_trace(self, trace: Any) -> tuple[bool, dict[str, Any]]:
+        required = ["dir_score", "thr_buy", "thr_sell", "w_raw", "w_norm", "qty_base", "qty_new", "conf_ratio"]
+        if not isinstance(trace, dict):
+            return False, {"error": "trace_not_dict", "required": required}
+
+        missing = [key for key in required if key not in trace]
+        if missing:
+            return False, {"error": "missing_keys", "missing": missing}
+
+        def _num(value: Any) -> float | None:
+            try:
+                dec = decimal.Decimal(str(value))
+            except Exception:
+                return None
+            if not dec.is_finite():
+                return None
+            return float(dec)
+
+        normalized: dict[str, Any] = {}
+        weight_keys = ["d1", "h1", "m30", "m15"]
+        for trace_key in ("w_raw", "w_norm"):
+            weight_block = trace.get(trace_key)
+            if not isinstance(weight_block, dict):
+                return False, {"error": f"{trace_key}_not_dict"}
+            missing_weights = [key for key in weight_keys if key not in weight_block]
+            if missing_weights:
+                return False, {"error": f"{trace_key}_missing", "missing": missing_weights}
+            normalized[trace_key] = {}
+            for weight_key in weight_keys:
+                value = _num(weight_block.get(weight_key))
+                if value is None:
+                    return False, {"error": f"{trace_key}_{weight_key}_invalid"}
+                normalized[trace_key][weight_key] = value
+
+        for scalar_key in ("dir_score", "thr_buy", "thr_sell", "qty_base", "qty_new", "conf_ratio"):
+            value = _num(trace.get(scalar_key))
+            if value is None:
+                return False, {"error": f"{scalar_key}_invalid"}
+            normalized[scalar_key] = value
+
+        if not (-1.0 <= normalized["dir_score"] <= 1.0):
+            return False, {"error": "dir_score_out_of_range", "value": normalized["dir_score"]}
+        if normalized["thr_buy"] <= 0.0 or normalized["thr_sell"] <= 0.0:
+            return False, {"error": "threshold_non_positive"}
+        if normalized["qty_base"] < 0.0 or normalized["qty_new"] < 0.0:
+            return False, {"error": "qty_negative"}
+        if not (0.0 <= normalized["conf_ratio"] <= 2.0):
+            return False, {"error": "conf_ratio_out_of_range", "value": normalized["conf_ratio"]}
+
+        for optional_key in ("atr_zscore", "bias", "dir_components"):
+            if optional_key in trace:
+                normalized[optional_key] = trace.get(optional_key)
+        return True, {"normalized": normalized}
+
     def process_signal(self, event: Message) -> None:  # noqa: C901
         """Gate chain: EVT:STRATEGY_SIGNAL_PRODUCED -> TRADE_INTENT_PROPOSED."""
         try:
@@ -116,6 +170,38 @@ class StrategyGateway:
             if side not in ("BUY", "SELL"):
                 self.logger.warning(f"[{symbol}] GATEWAY: invalid side={side!r}")
                 return
+            strategy_id_s = str(strategy_id)
+            intent_kind = str(pld.get("intent_kind") or "ENTRY").upper()
+            md_amr_trace_norm: dict[str, Any] | None = None
+            if strategy_id_s == "md_amr":
+                valid_trace, trace_info = self._validate_md_amr_trace(pld.get("trace"))
+                if not valid_trace:
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=rid,
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_trace_invalid",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + ["wal_trace_invalid"],
+                        details=trace_info,
+                    )
+                    return
+                md_amr_trace_norm = trace_info.get("normalized")
+                if intent_kind not in ("ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE"):
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=rid,
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context=f"strategy_signal_gateway:md_amr_invalid_intent_kind:{intent_kind}",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + ["invalid_intent_kind"],
+                        details={"intent_kind": intent_kind},
+                    )
+                    return
             self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Processing {side} signal rid={rid} strategy_id={strategy_id}")
             dm = self._dm
 
@@ -148,6 +234,100 @@ class StrategyGateway:
                     context="strategy_signal_gateway:arbitration",
                     why_chain=why_chain,
                     details={"arbitration_reason": arb.get("reason")})
+                return
+
+            if strategy_id_s == "md_amr" and intent_kind in ("FULL_CLOSE", "PARTIAL_CLOSE"):
+                exit_reason = str(pld.get("exit_reason_code") or "MD_AMR_EXIT")
+                strategy_trace_payload = {"md_amr": md_amr_trace_norm} if md_amr_trace_norm else None
+                if intent_kind == "FULL_CLOSE":
+                    emitted = dm._emit_reduce_only_close(
+                        symbol=symbol,
+                        reason=exit_reason,
+                        rid=str(rid),
+                        strategy_id=str(strategy_id_s),
+                        strategy_trace=strategy_trace_payload,
+                    )
+                    if not emitted:
+                        self._reject(
+                            symbol=symbol,
+                            strategy_id=strategy_id_s,
+                            side=side,
+                            rid=rid,
+                            reason_code="NO_POSITION_FOR_CLOSE",
+                            reason="DECISION",
+                            context="strategy_signal_gateway:md_amr_full_close_no_position",
+                            why_chain=(why_chain if isinstance(why_chain, list) else []) + [exit_reason],
+                        )
+                    return
+
+                qty_signed, _curr = dm._get_portfolio_position_qty_signed(symbol)
+                if qty_signed is None or abs(qty_signed) < decimal.Decimal("1e-9"):
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=rid,
+                        reason_code="NO_POSITION_FOR_SCALEOUT",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_no_position",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + [exit_reason],
+                    )
+                    return
+
+                scaleout_fraction_raw = pld.get("scaleout_fraction")
+                try:
+                    scaleout_fraction = float(scaleout_fraction_raw)
+                except Exception:
+                    scaleout_fraction = 0.0
+                if not (0.0 < scaleout_fraction <= 1.0):
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=rid,
+                        reason_code="WAL_TRACE_INVALID",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_invalid_fraction",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + ["invalid_scaleout_fraction"],
+                        details={"scaleout_fraction": scaleout_fraction_raw},
+                    )
+                    return
+
+                close_side = "SELL" if qty_signed > 0 else "BUY"
+                close_qty = abs(qty_signed) * decimal.Decimal(str(scaleout_fraction))
+                if close_qty <= decimal.Decimal("1e-9"):
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id_s,
+                        side=side,
+                        rid=rid,
+                        reason_code="NO_POSITION_FOR_SCALEOUT",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:md_amr_partial_close_zero_qty",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + [exit_reason],
+                    )
+                    return
+
+                ts_ms = pld.get("ts_ms")
+                if ts_ms in (None, 0, "0", ""):
+                    timestamp_ms = self._clock.now_ms()
+                else:
+                    timestamp_ms = int(ts_ms)
+                    if 0 < timestamp_ms < 1_000_000_000_000:
+                        timestamp_ms *= 1000
+
+                dm._propose_trade_intent(
+                    symbol=symbol,
+                    side=close_side,
+                    qty=decimal.Decimal(str(close_qty)),
+                    price=decimal.Decimal("0"),
+                    why_chain=(why_chain if isinstance(why_chain, list) else []) + [exit_reason, "md_amr_partial_close"],
+                    rid=str(rid),
+                    reduce_only=True,
+                    strategy_id=str(strategy_id_s),
+                    decision_ts_ms=timestamp_ms,
+                    strategy_trace=strategy_trace_payload,
+                )
                 return
 
             # Risk-skew until_refresh guard
@@ -422,7 +602,8 @@ class StrategyGateway:
                 stop_price=stop_price, target_price=target_price,
                 entry_plan_trace=ep_trace, tf_sec=tf_sec,
                 max_slippage_bps=max_slip, max_latency_ms=max_lat,
-                risk_score=risk_val)
+                risk_score=risk_val,
+                strategy_trace={"md_amr": md_amr_trace_norm} if md_amr_trace_norm else None)
             if qos_enabled:
                 dm._update_qos_state(symbol, strategy_id)
 

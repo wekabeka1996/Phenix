@@ -12,17 +12,6 @@ binance_api:
 trading:
   # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
   mode: backtest
-  backtest:
-    start_date: "2023-06-01"
-    end_date: "2023-09-30"
-    initial_balance: 1000.0
-    profit_withdrawal_enabled: false
-    profit_withdrawal_roi_pct: 10
-    engine:
-      turbo_mode: "phase4"
-    parallelism:
-      n_workers: 4
-      worker_seed_base: 42
   tca_prefs:
     max_slippage_pct: 0.5
     max_slippage_bps: 10
@@ -177,9 +166,9 @@ trading:
     order_guardian:
       unified: true
       ledger_db_path: data/order_ledger.db
-  # ═══════════════════════════════════════════════════════════════════════
-  # HYBRID MODE CONFIGURATION (Live Data → Testnet Execution)
-  # ═══════════════════════════════════════════════════════════════════════
+  #
+  # HYBRID MODE CONFIGURATION (Live Data  Testnet Execution)
+  #
   # Data domains: LIVE (read real market data)
   # Execution domains: TESTNET (write orders to testnet)
   # This allows safe testing with real market conditions without risking capital
@@ -192,12 +181,28 @@ trading:
       trading_mode: live      # Generate signals from live features
     # PURGE-DIRTY-DOZEN: Removed risk_management, execution_position, audit_trail trading_modes
     # (dead legacy, global trading_mode is SSOT) - 2026-01-25
-  # ═══════════════════════════════════════════════════════════════════════
+  #
   # RISK MANAGEMENT DATA SOURCES (Hybrid Mode)
-  # ═══════════════════════════════════════════════════════════════════════
-  # portfolio_state: testnet → use testnet account balances/positions
-  # market_data: live → use live prices for risk calculations
+  #
+  # portfolio_state: testnet  use testnet account balances/positions
+  # market_data: live  use live prices for risk calculations
   risk_management:
     data_sources:
       portfolio_state: testnet  # Read positions/balance from TESTNET account
       market_data: live         # Use LIVE prices for mark-to-market valuations
+  llm_orchestration:
+    # Phase 2 owner for external-intent flow.
+    mode: hybrid_advisory
+    llm_role: advisory
+    require_telemetry: true
+    symbols_llm: ["1000PEPEUSDT"]
+    allowlist_symbols: ["1000PEPEUSDT"]
+    intent_policy:
+      max_open_intents: 3
+      cooldown_sec: 30
+      allow_limit_only: true
+      require_tp_sl: true
+      max_notional_usd: 100.0
+      max_qty: 2.0
+      max_price_deviation_bps: 20.0
+      allowed_tif: ["GTC"]

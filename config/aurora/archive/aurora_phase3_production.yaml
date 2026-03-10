@@ -1,7 +1,7 @@
 # Aurora Phase 3 Production Configuration
 # ==========================================
-# Оптимізовані параметри з Phase 3 ("Full Spectrum Optimization")
-# Включає: Side-Bias Penalty, Regime-Adaptive Thresholds/Sizing, 
+#    Phase 3 ("Full Spectrum Optimization")
+# : Side-Bias Penalty, Regime-Adaptive Thresholds/Sizing, 
 #          EMA Clamping, Risk Score Weights
 
 aurora_phase3:

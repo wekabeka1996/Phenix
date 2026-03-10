@@ -9,7 +9,7 @@ signals for bar-based strategies.
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict
 import math
 
 
@@ -58,6 +58,68 @@ def compute_sma(values: List[Decimal], window: int) -> Optional[Decimal]:
     
     window_values = values[-window:]
     return sum(window_values) / Decimal(window)
+
+
+def compute_winsorized_sma(values: List[Decimal], window: int, robust_pct: float) -> Optional[Decimal]:
+    """
+    Compute Winsorized SMA to clip tail outliers before averaging.
+    """
+    if len(values) < window:
+        return None
+
+    window_values = values[-window:]
+    if robust_pct <= 0 or robust_pct >= 0.5:
+        return sum(window_values) / Decimal(window)
+
+    clip_count = max(1, int(window * robust_pct))
+    sorted_vals = sorted(window_values)
+    lower_bound = sorted_vals[clip_count]
+    upper_bound = sorted_vals[-clip_count - 1]
+
+    winsorized: list[Decimal] = []
+    for value in window_values:
+        if value < lower_bound:
+            winsorized.append(lower_bound)
+        elif value > upper_bound:
+            winsorized.append(upper_bound)
+        else:
+            winsorized.append(value)
+
+    return sum(winsorized) / Decimal(window)
+
+
+def compute_avg_ohlc_channel(
+    *,
+    opens: List[Decimal],
+    highs: List[Decimal],
+    lows: List[Decimal],
+    closes: List[Decimal],
+    window: int = 12,
+    robust_pct: float = 0.0,
+) -> Optional[Dict[str, Decimal]]:
+    """
+    Compute a smoothed OHLC channel from independent moving averages.
+    """
+    if robust_pct > 0:
+        avg_open = compute_winsorized_sma(opens, window, robust_pct)
+        avg_high = compute_winsorized_sma(highs, window, robust_pct)
+        avg_low = compute_winsorized_sma(lows, window, robust_pct)
+        avg_close = compute_winsorized_sma(closes, window, robust_pct)
+    else:
+        avg_open = compute_sma(opens, window)
+        avg_high = compute_sma(highs, window)
+        avg_low = compute_sma(lows, window)
+        avg_close = compute_sma(closes, window)
+
+    if any(value is None for value in (avg_open, avg_high, avg_low, avg_close)):
+        return None
+
+    return {
+        "avg_open_12": avg_open if avg_open is not None else Decimal("0"),
+        "avg_high_12": avg_high if avg_high is not None else Decimal("0"),
+        "avg_low_12": avg_low if avg_low is not None else Decimal("0"),
+        "avg_close_12": avg_close if avg_close is not None else Decimal("0"),
+    }
 
 
 def compute_std(values: List[Decimal], window: int, mean: Optional[Decimal] = None) -> Optional[Decimal]:

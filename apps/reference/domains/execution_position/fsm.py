@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -141,6 +142,18 @@ def _in_quiet(quiet: list[str]) -> bool:
             continue
 
     return False
+
+
+@dataclass
+class PendingEntryMeta:
+    """Metadata for a pending LIMIT entry order used by runtime adapters."""
+
+    symbol: str
+    side: str
+    limit_price: str
+    placed_at_ms: int
+    tf_sec: int
+    cancelable_regimes: Optional[List[str]] = None
 
 
 class ExecPosFSM(
@@ -279,7 +292,7 @@ class ExecPosFSM(
         # REGIME-LOG: Track open-time regime per symbol for close-time forensics
         self._open_regime_by_symbol: Dict[str, Dict[str, Any]] = {}
 
-        # FIX-LIFECYCLE-01: Best-effort symbol→rid/last fill price cache
+        # FIX-LIFECYCLE-01: Best-effort symbolrid/last fill price cache
         # Used to flush trade_lifecycle on robust position-close detection (portfolio snapshot).
         self._last_lifecycle_rid_by_symbol: Dict[str, str] = {}
         self._last_lifecycle_fill_price_by_symbol: Dict[str, float] = {}
@@ -292,13 +305,13 @@ class ExecPosFSM(
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # SKIP IN BACKTEST: Do not restore live state into backtest
         if self.config.trading_mode == "backtest":
-            LOG.info("ℹ️ [PHASE4] WAL hydration skipped (backtest mode)")
+            LOG.info("i [PHASE4] WAL hydration skipped (backtest mode)")
         else:
             try:
                 restored = read_pending_brackets_from_wal()
                 if restored:
                     self._pending_brackets = restored
-                    LOG.info(f"📌 [PHASE4] Restored {len(restored)} pending brackets from WAL")
+                    LOG.info(f" [PHASE4] Restored {len(restored)} pending brackets from WAL")
             except Exception as e:
                 LOG.warning(f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
 
@@ -308,6 +321,11 @@ class ExecPosFSM(
         self._supersede_queue: Dict[str, Dict[str, Any]] = {}
         # Symbols currently waiting for cancel confirmation before executing queued open
         self._supersede_canceling: set = set()
+        self._last_features_cache: Dict[str, Dict[str, Any]] = {}
+        self._pending_entry_meta: Dict[str, PendingEntryMeta] = {}
+        self._open_strategy_by_symbol: Dict[str, str] = {}
+        self._last_regime_by_symbol: Dict[str, str] = {}
+        self._bracket_health_started: bool = False
 
         # Orphan-monitor configuration (Strict SSOT)
         # CFG-NO-DEFAULTS: All values must come from config.trading.execution.manage.orphan_monitor
@@ -369,6 +387,7 @@ class ExecPosFSM(
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+        self.bus.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
         # EP-01: Subscribe to regime changes for dynamic risk adaptation
         self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
         # BUGFIX: Connect DecisionMaking intent to ExecutionPosition logic
@@ -395,7 +414,7 @@ class ExecPosFSM(
 
         # Safe extraction of watchdog settings
         def get_watchdog_setting(key: str, default):
-            # Direct access only (fail-closed: missing field → AttributeError)
+            # Direct access only (fail-closed: missing field  AttributeError)
             if isinstance(watchdog_config, dict):
                 # Dict path for legacy compatibility, but NO defaults
                 if key not in watchdog_config:
@@ -487,7 +506,7 @@ class ExecPosFSM(
 
         if not self.shadow_mode:
             self._initialize_adapter()
-            # 🔧 POLLING FIX: Connect Watchdog hooks to adapter functions after initialization
+            #  POLLING FIX: Connect Watchdog hooks to adapter functions after initialization
             if hasattr(self.watchdog, 'set_hooks') and self.adapter:
                 async def emit_trade_executed(event_name, payload, why="polling_fill"):
                     """Emit TRADE_EXECUTED event via FSM event system."""
@@ -519,7 +538,7 @@ class ExecPosFSM(
                     emit_fn=emit_trade_executed
                 )
                 LOG.info(
-                    "✅ Watchdog REST polling hooks connected to adapter functions")
+                    " Watchdog REST polling hooks connected to adapter functions")
             # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
             # MAGIC-NUM-EXTRACTION: poll_interval_ms from SSOT domains.execution_position.guardian
             poll_interval_ms = self._guardian_poll_interval_ms
@@ -530,13 +549,13 @@ class ExecPosFSM(
             try:
                 self.order_guardian = OrderGuardian(
                     self.adapter, config=self.config, poll_interval_ms=poll_interval_ms, bus=self.bus)
-                LOG.info("✅ OrderGuardian initialized for ExecPosFSM")
+                LOG.info(" OrderGuardian initialized for ExecPosFSM")
 
-                # ✅ FIX: Defer OrderGuardian startup until after FSM initialization
+                #  FIX: Defer OrderGuardian startup until after FSM initialization
                 # Will be started via start_order_guardian() method when event loop is available
-                LOG.info("✅ OrderGuardian ready for startup")
+                LOG.info(" OrderGuardian ready for startup")
 
-                # ✅ FIX: Add startup re-linking to detect existing orphaned orders
+                #  FIX: Add startup re-linking to detect existing orphaned orders
                 # Will be called via start_order_guardian() method when event loop is available
                 guardian_symbols = self._collect_guardian_symbols()
                 if guardian_symbols:
@@ -565,7 +584,7 @@ class ExecPosFSM(
                 poll_interval_ms=poll_interval_ms,
                 bus=self.bus,
             )
-            LOG.info("✅ OrderGuardian initialized for ExecPosFSM (shadow mode)")
+            LOG.info(" OrderGuardian initialized for ExecPosFSM (shadow mode)")
             guardian_symbols = self._collect_guardian_symbols()
             if guardian_symbols:
                 try:
@@ -639,6 +658,173 @@ class ExecPosFSM(
 
         return None
 
+    def _evaluate_supersede_reprice_guard(
+        self,
+        symbol: str,
+        decision: Message,
+        pending_order_ids: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Evaluate whether a same-side LIMIT supersede materially improves price."""
+        try:
+            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+            guard_cfg = pe_ttl_cfg.supersede_reprice_guard
+        except AttributeError:
+            return None
+
+        if guard_cfg is None:
+            return None
+        try:
+            if not bool(guard_cfg.enabled):
+                return None
+        except AttributeError:
+            return None
+
+        pld = decision.pld or {}
+        if str(pld.get("order_type", "")).upper() != "LIMIT":
+            return None
+
+        new_side = str(pld.get("side", "")).upper()
+        new_price_raw = pld.get("price")
+        if not new_side or new_price_raw in (None, ""):
+            return None
+
+        try:
+            new_price = Decimal(str(new_price_raw))
+        except Exception:
+            return None
+        if new_price <= 0:
+            return None
+
+        features_snap = self._last_features_cache.get(symbol) or {}
+        feats = features_snap.get("features", {}) if isinstance(features_snap, dict) else {}
+        atr_14 = None
+        atr_raw = feats.get("atr_14")
+        if atr_raw not in (None, ""):
+            try:
+                atr_14 = Decimal(str(atr_raw))
+            except Exception:
+                atr_14 = None
+        if atr_14 is not None and atr_14 <= 0:
+            atr_14 = None
+
+        analyses: List[Dict[str, Any]] = []
+        for order_id in pending_order_ids:
+            meta = self._pending_entry_meta.get(order_id)
+            if meta is None or str(meta.side).upper() != new_side:
+                return None
+            old_price = Decimal(str(meta.limit_price))
+            bps_threshold_px = (
+                old_price
+                * Decimal(str(getattr(guard_cfg, "min_price_improvement_bps", 0.0)))
+                / Decimal("10000")
+            )
+            atr_threshold_px = Decimal("0")
+            atr_mult = Decimal(str(getattr(guard_cfg, "min_price_improvement_atr_mult", 0.0)))
+            if atr_14 is not None and atr_mult > 0:
+                atr_threshold_px = atr_14 * atr_mult
+            threshold_px = max(bps_threshold_px, atr_threshold_px)
+            improvement_px = new_price - old_price if new_side == "BUY" else old_price - new_price
+            analyses.append(
+                {
+                    "order_id": order_id,
+                    "old_price": str(old_price),
+                    "new_price": str(new_price),
+                    "improvement_px": float(improvement_px),
+                    "threshold_px": float(threshold_px),
+                    "allow_cancel": improvement_px >= threshold_px,
+                }
+            )
+
+        if not analyses:
+            return None
+        decision_summary = {
+            "symbol": symbol,
+            "side": new_side,
+            "analyses": analyses,
+            "enforce": bool(getattr(guard_cfg, "enforce", False)),
+            "allow_cancel": all(bool(item.get("allow_cancel")) for item in analyses),
+        }
+        if hasattr(self, "_emit_observability_event"):
+            try:
+                self._emit_observability_event("SUPERSEDE_REPRICE_GUARD", decision_summary)
+            except Exception:
+                pass
+        return decision_summary
+
+    def _evaluate_advanced_stale_cancel(self, symbol: str, new_regime: str) -> None:
+        """Cancel pending entries only when regime, age, and drift gates all pass."""
+        try:
+            pe_cfg = self.config.domains.execution_position.pending_entry_ttl
+            adv = pe_cfg.advanced_stale_cancel
+        except AttributeError:
+            return
+        if adv is None or not adv.enabled:
+            return
+
+        candidates: List[Tuple[str, Any]] = []
+        if self.watchdog:
+            for oid, dl in list(self.watchdog.pending_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+            for oid, dl in list(self.watchdog.acked_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+        if not candidates:
+            return
+
+        now_ms = get_clock().now_ms()
+        features_snap = self._last_features_cache.get(symbol)
+        approved_order_ids: Set[str] = set()
+
+        for order_id, _deadline in candidates:
+            meta = self._pending_entry_meta.get(order_id)
+            if meta is None:
+                continue
+
+            if meta.cancelable_regimes is not None:
+                if new_regime not in meta.cancelable_regimes:
+                    continue
+            else:
+                side_may = set(getattr(adv, "may_cancel_regimes", {}).get(meta.side, []))
+                never = set(getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
+                if new_regime not in (side_may - never):
+                    continue
+
+            age_ms = now_ms - meta.placed_at_ms
+            min_age_ms = adv.min_age_before_cancel_sec * 1000
+            if age_ms < min_age_ms:
+                continue
+
+            if features_snap is None:
+                continue
+            feats = features_snap.get("features", {})
+            price_raw = feats.get("price")
+            atr_raw = feats.get("atr_14")
+            if price_raw is None or atr_raw is None:
+                continue
+            try:
+                current_price = Decimal(str(price_raw))
+                atr_14 = Decimal(str(atr_raw))
+                limit_price = Decimal(str(meta.limit_price))
+            except Exception:
+                continue
+            if atr_14 <= 0:
+                continue
+
+            threshold = atr_14 * Decimal(str(adv.drift_away.atr_mult))
+            drift = current_price - limit_price if meta.side == "BUY" else limit_price - current_price
+            if drift < threshold:
+                continue
+            approved_order_ids.add(order_id)
+
+        if approved_order_ids:
+            self._entry_mgr.cancel_pending_entries_for_symbol(
+                symbol=symbol,
+                reason="CANCEL_STALE_REGIME_ADVANCED",
+                context=f"regime={new_regime} approved={sorted(approved_order_ids)}",
+                filter_order_ids=approved_order_ids,
+            )
+
     def _mark_processed_event(self, event_key: str) -> bool:
         """Idempotency helper with bounded memory."""
         if self._processed_events.seen(event_key):
@@ -649,11 +835,11 @@ class ExecPosFSM(
         return True
 
     # Phase 14.2: _get_config_value, _resolve_guardian_config, _collect_guardian_symbols
-    # → extracted to ConfigResolverMixin (config_resolver.py)
+    #  extracted to ConfigResolverMixin (config_resolver.py)
 
     # Phase 14.2: set_async_loop, _get_async_loop, _submit_async,
     # _schedule_guardian_start, _schedule_fsm_cleanup_loop
-    # → extracted to AsyncSchedulingMixin (async_scheduling.py)
+    #  extracted to AsyncSchedulingMixin (async_scheduling.py)
 
     @staticmethod
     def _is_cancel_success_response(result: Any) -> bool:
@@ -762,6 +948,10 @@ class ExecPosFSM(
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_order_fill(event)
 
+    def _on_features_calculated(self, event: Message) -> None:
+        """Phase 14A: Delegated to EPEventHandlers."""
+        self._evt_handlers.on_features_calculated(event)
+
     def shutdown(self):
         """Shutdown the FSM and cleanup resources."""
         if hasattr(self, 'watchdog') and self.watchdog:
@@ -780,11 +970,382 @@ class ExecPosFSM(
         try:
             self._schedule_guardian_start()
             self._schedule_fsm_cleanup_loop()
+            self._schedule_bracket_health_check()
         except Exception as e:
             LOG.error(f"Failed to start OrderGuardian: {e}")
 
+    def _schedule_bracket_health_check(self) -> None:
+        """Schedule the bracket health loop once the shared async runtime is ready."""
+        if self._bracket_health_started:
+            return
+
+        try:
+            cfg = self.config.domains.execution_position.bracket_health_check
+        except (AttributeError, TypeError):
+            cfg = None
+
+        if cfg is None:
+            return
+        try:
+            if not bool(cfg.enabled):
+                return
+        except AttributeError:
+            return
+
+        loop = self._get_async_loop()
+        if not loop:
+            LOG.debug("[BRACKET-HEALTH] deferred: no event loop active")
+            return
+
+        self._submit_async(self._bracket_health_loop(), loop)
+        self._bracket_health_started = True
+        LOG.info(
+            "[BRACKET-HEALTH] scheduled (interval=%ss, grace=%sms)",
+            int(cfg.interval_sec),
+            int(cfg.grace_period_ms),
+        )
+
+    async def _bracket_health_loop(self) -> None:
+        """Periodic safety net for missing SL/TP brackets."""
+        try:
+            cfg = self.config.domains.execution_position.bracket_health_check
+        except (AttributeError, TypeError):
+            return
+
+        if cfg is None:
+            return
+        try:
+            if not bool(cfg.enabled):
+                return
+        except AttributeError:
+            return
+
+        while True:
+            try:
+                await get_clock().sleep_sec(float(cfg.interval_sec))
+                await self._run_bracket_health_check(cfg)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                LOG.warning(f"[BRACKET-HEALTH] loop error: {e}")
+
+    async def _run_bracket_health_check(self, cfg: Any) -> None:
+        """Check live positions and re-arm missing SL/TP brackets when safe."""
+        if not self.adapter:
+            return
+
+        try:
+            positions = await self.adapter.get_open_positions()
+        except Exception as e:
+            LOG.warning(f"[BRACKET-HEALTH] failed to get positions: {e}")
+            return
+
+        if not positions:
+            return
+
+        current_time_ms = get_clock().now_ms()
+        placements_this_cycle = 0
+
+        for pos in positions:
+            if placements_this_cycle >= int(cfg.max_placements_per_cycle):
+                break
+
+            if hasattr(pos, "to_dict"):
+                pos_dict = pos.to_dict()
+            elif isinstance(pos, dict):
+                pos_dict = pos
+            else:
+                pos_dict = pos.__dict__ if hasattr(pos, "__dict__") else {}
+
+            symbol = str(pos_dict.get("symbol") or "")
+            if not symbol:
+                continue
+
+            try:
+                position_amt = float(
+                    pos_dict.get("positionAmt")
+                    or pos_dict.get("position_amount")
+                    or 0.0
+                )
+            except Exception:
+                position_amt = 0.0
+            if abs(position_amt) < 1e-10:
+                continue
+
+            entry_price_raw = pos_dict.get("entryPrice") or pos_dict.get("entry_price")
+            try:
+                entry_price = float(entry_price_raw or 0.0)
+            except Exception:
+                entry_price = 0.0
+            if entry_price <= 0.0:
+                continue
+
+            update_time_ms = int(
+                pos_dict.get("updateTime") or pos_dict.get("update_time_ms") or 0
+            )
+            if update_time_ms > 0 and (current_time_ms - update_time_ms) < int(cfg.grace_period_ms):
+                continue
+
+            has_sl, has_tp = await self._check_brackets_on_exchange(symbol)
+            if has_sl and has_tp:
+                continue
+
+            side = "BUY" if position_amt > 0 else "SELL"
+            sl_price, tp_price = self._compute_health_check_brackets(
+                symbol=symbol,
+                entry_price=entry_price,
+                side=side,
+            )
+            if sl_price is None or tp_price is None:
+                continue
+
+            placed = await self._place_health_check_brackets(
+                symbol=symbol,
+                side=side,
+                sl_price=sl_price,
+                tp_price=tp_price,
+                need_sl=not has_sl,
+                need_tp=not has_tp,
+            )
+            if placed:
+                placements_this_cycle += 1
+
+    async def _check_brackets_on_exchange(self, symbol: str) -> Tuple[bool, bool]:
+        """Inspect exchange open orders and detect existing SL/TP brackets."""
+        try:
+            if hasattr(self.adapter, "_request"):
+                raw_orders = await self.adapter._request(
+                    "GET", "/fapi/v1/openOrders", {"symbol": symbol}
+                )
+            else:
+                raw_orders = await self.adapter.get_open_orders(symbol)
+        except Exception as e:
+            LOG.warning(f"[BRACKET-HEALTH] failed to inspect open orders for {symbol}: {e}")
+            return True, True
+
+        has_sl = False
+        has_tp = False
+        for order in raw_orders or []:
+            if hasattr(order, "to_dict"):
+                order_dict = order.to_dict()
+            elif isinstance(order, dict):
+                order_dict = order
+            else:
+                order_dict = order.__dict__ if hasattr(order, "__dict__") else {}
+
+            order_type = str(order_dict.get("type") or "").upper()
+            reduce_only_raw = order_dict.get("reduceOnly", False)
+            close_position_raw = order_dict.get("closePosition", False)
+            reduce_only = (
+                str(reduce_only_raw).lower() == "true"
+                if isinstance(reduce_only_raw, str)
+                else bool(reduce_only_raw)
+            )
+            close_position = (
+                str(close_position_raw).lower() == "true"
+                if isinstance(close_position_raw, str)
+                else bool(close_position_raw)
+            )
+
+            if order_type == "STOP_MARKET" and (reduce_only or close_position):
+                has_sl = True
+            if order_type == "TAKE_PROFIT_MARKET" and (reduce_only or close_position):
+                has_tp = True
+
+        return has_sl, has_tp
+
+    def _compute_health_check_brackets(
+        self,
+        *,
+        symbol: str,
+        entry_price: float,
+        side: str,
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Compute recovery brackets from the active strategy SSOT for the symbol."""
+        try:
+            strategy_id = str(self._open_strategy_by_symbol.get(symbol) or "aurora")
+            regime = str(self._last_regime_by_symbol.get(symbol) or "DEFAULT")
+
+            sl_pct_eff: Optional[float] = None
+            tp_rr_eff: Optional[float] = None
+
+            if strategy_id == "md_amr" and getattr(self.config.strategies, "md_amr", None) is not None:
+                strategy_cfg = self.config.strategies.md_amr
+                asset_cfg = strategy_cfg.assets.get(symbol) if isinstance(strategy_cfg.assets, dict) else None
+                exit_cfg = getattr(asset_cfg, "exit", None) if asset_cfg is not None else None
+                if exit_cfg is not None and getattr(exit_cfg, "sl_pct", None) is not None and getattr(exit_cfg, "tp_rr", None) is not None:
+                    sl_pct_eff = float(exit_cfg.sl_pct)
+                    tp_rr_eff = float(exit_cfg.tp_rr)
+                    regime_tpsl = getattr(exit_cfg, "regime_tpsl", None)
+                    try:
+                        regime_tpsl_enabled = bool(regime_tpsl.enabled) if regime_tpsl is not None else False
+                    except AttributeError:
+                        regime_tpsl_enabled = False
+                    if regime_tpsl_enabled:
+                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        sl_pct_eff = sl_pct_eff * sl_mult
+                        tp_rr_eff = tp_rr_eff * tp_mult
+                        if getattr(regime_tpsl, "min_sl_pct", None) is not None:
+                            sl_pct_eff = max(float(regime_tpsl.min_sl_pct), sl_pct_eff)
+                        if getattr(regime_tpsl, "max_sl_pct", None) is not None:
+                            sl_pct_eff = min(float(regime_tpsl.max_sl_pct), sl_pct_eff)
+                        if getattr(regime_tpsl, "min_tp_rr", None) is not None:
+                            tp_rr_eff = max(float(regime_tpsl.min_tp_rr), tp_rr_eff)
+                        if getattr(regime_tpsl, "max_tp_rr", None) is not None:
+                            tp_rr_eff = min(float(regime_tpsl.max_tp_rr), tp_rr_eff)
+            else:
+                strategy_cfg = getattr(self.config.strategies, "aurora", None)
+                asset_cfg = strategy_cfg.assets.get(symbol) if strategy_cfg is not None else None
+                exit_cfg = getattr(asset_cfg, "exit", None) if asset_cfg is not None else None
+                tp_cfg = getattr(asset_cfg, "take_profit", None) if asset_cfg is not None else None
+                if exit_cfg is not None and getattr(exit_cfg, "sl_pct", None) is not None and tp_cfg is not None and getattr(tp_cfg, "tp_low_ratio", None) is not None:
+                    sl_pct_eff = float(exit_cfg.sl_pct)
+                    tp_rr_eff = float(tp_cfg.tp_low_ratio)
+                    regime_tpsl = getattr(exit_cfg, "regime_tpsl", None)
+                    try:
+                        regime_tpsl_enabled = bool(regime_tpsl.enabled) if regime_tpsl is not None else False
+                    except AttributeError:
+                        regime_tpsl_enabled = False
+                    regime_tpsl_mode = str(getattr(regime_tpsl, "mode", "")) if regime_tpsl is not None else ""
+                    if regime_tpsl_enabled and regime_tpsl_mode == "pct_mult":
+                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        sl_pct_eff = sl_pct_eff * sl_mult
+                        tp_rr_eff = tp_rr_eff * tp_mult
+                        if getattr(regime_tpsl, "min_sl_pct", None) is not None:
+                            sl_pct_eff = max(float(regime_tpsl.min_sl_pct), sl_pct_eff)
+                        if getattr(regime_tpsl, "max_sl_pct", None) is not None:
+                            sl_pct_eff = min(float(regime_tpsl.max_sl_pct), sl_pct_eff)
+                        if getattr(regime_tpsl, "min_tp_rr", None) is not None:
+                            tp_rr_eff = max(float(regime_tpsl.min_tp_rr), tp_rr_eff)
+                        if getattr(regime_tpsl, "max_tp_rr", None) is not None:
+                            tp_rr_eff = min(float(regime_tpsl.max_tp_rr), tp_rr_eff)
+
+            if sl_pct_eff is None or tp_rr_eff is None:
+                return None, None
+
+            tp_pct_eff = sl_pct_eff * tp_rr_eff
+            instrument_spec = self.config.instruments.get(symbol)
+            tick_size = Decimal(str(instrument_spec.tick_size)) if instrument_spec is not None else Decimal("0.01")
+
+            if side == "BUY":
+                sl_price = entry_price * (1.0 - sl_pct_eff)
+                tp_price = entry_price * (1.0 + tp_pct_eff)
+            else:
+                sl_price = entry_price * (1.0 + sl_pct_eff)
+                tp_price = entry_price * (1.0 - tp_pct_eff)
+
+            return (
+                float(quantize_stop_price(sl_price, float(tick_size), side="SELL" if side == "BUY" else "BUY")),
+                float(quantize_stop_price(tp_price, float(tick_size), side="BUY" if side == "BUY" else "SELL")),
+            )
+        except Exception as e:
+            LOG.warning(f"[BRACKET-HEALTH] failed to compute recovery brackets for {symbol}: {e}")
+            return None, None
+
+    async def _place_health_check_brackets(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        sl_price: float,
+        tp_price: float,
+        need_sl: bool,
+        need_tp: bool,
+    ) -> bool:
+        """Place only the missing recovery brackets and register them with current owners."""
+        if not self.adapter or not self.order_guardian:
+            return False
+
+        if not await self._preflight_position_check(symbol):
+            return False
+
+        bracket_side = opposite_side(side)
+        parent_order_id = f"health_check:{symbol}"
+        placed = False
+
+        if need_sl:
+            try:
+                sl_client_id = generate_client_order_id("BHSL", symbol)
+                sl_resp = await self.adapter.place_stop_market_close_position(
+                    symbol,
+                    bracket_side,
+                    str(sl_price),
+                    new_client_order_id=sl_client_id,
+                )
+                sl_order_id = str(
+                    sl_resp.get("orderId", "")
+                    if isinstance(sl_resp, dict)
+                    else getattr(sl_resp, "order_id", "")
+                )
+                if sl_order_id:
+                    self._symbol_brackets.setdefault(symbol, {})["sl_order_id"] = sl_order_id
+                    self.order_guardian.register_bracket(
+                        symbol=symbol,
+                        parent_order_id=parent_order_id,
+                        order_id=sl_order_id,
+                        client_order_id=sl_client_id,
+                        kind="SL",
+                        corr_id="bracket_health",
+                        rid="bracket_health",
+                    )
+                    placed = True
+            except Exception as e:
+                LOG.warning(f"[BRACKET-HEALTH] SL recovery failed for {symbol}: {e}")
+
+        if need_tp:
+            try:
+                tp_client_id = generate_client_order_id("BHTP", symbol)
+                tp_resp = await self.adapter.place_take_profit_market_close_position(
+                    symbol,
+                    bracket_side,
+                    str(tp_price),
+                    new_client_order_id=tp_client_id,
+                )
+                tp_order_id = str(
+                    tp_resp.get("orderId", "")
+                    if isinstance(tp_resp, dict)
+                    else getattr(tp_resp, "order_id", "")
+                )
+                if tp_order_id:
+                    self._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+                    self.order_guardian.register_bracket(
+                        symbol=symbol,
+                        parent_order_id=parent_order_id,
+                        order_id=tp_order_id,
+                        client_order_id=tp_client_id,
+                        kind="TP",
+                        corr_id="bracket_health",
+                        rid="bracket_health",
+                    )
+                    placed = True
+            except Exception as e:
+                LOG.warning(f"[BRACKET-HEALTH] TP recovery failed for {symbol}: {e}")
+
+        if placed:
+            manage_flow = self.manage_flows.get(symbol)
+            if manage_flow is not None:
+                brackets = self._symbol_brackets.get(symbol, {})
+                manage_flow.set_bracket_ids(
+                    brackets.get("sl_order_id"),
+                    brackets.get("tp_order_id"),
+                )
+            self._emit_observability_event(
+                "BRACKET_HEALTH_REARMED",
+                {
+                    "symbol": symbol,
+                    "need_sl": bool(need_sl),
+                    "need_tp": bool(need_tp),
+                    "sl_price": sl_price,
+                    "tp_price": tp_price,
+                },
+            )
+
+        return placed
+
     # Phase 14.2: _initialize_adapter
-    # → extracted to AdapterInitMixin (adapter_init.py)
+    #  extracted to AdapterInitMixin (adapter_init.py)
 
     def _get_or_create_flows(
         self, symbol: str
@@ -922,7 +1483,7 @@ class ExecPosFSM(
                 except Exception as e:
                     LOG.error(f"Failed to capture intent data: {e}")
         elif msg.verb == "TRADE_EXECUTED":
-            # 🔧 POLLING FIX: Watchdog emits EVT:TRADE_EXECUTED on REST-detected fills.
+            #  POLLING FIX: Watchdog emits EVT:TRADE_EXECUTED on REST-detected fills.
             # Treat it as a fill for OrderIndex terminalization to unblock the one-open-order guard.
             self._on_order_fill(msg)
             result = manage_flow.handle(msg)
@@ -935,7 +1496,7 @@ class ExecPosFSM(
             self._handle_cancel_event(msg)
 
         elif msg.verb == "CLOSE":
-            # ✅ FIX: Set closing flag immediately on CMD:CLOSE to prevent bracket race
+            #  FIX: Set closing flag immediately on CMD:CLOSE to prevent bracket race
             symbol = msg.pld.get("symbol") if msg.pld else None
             if symbol:
                 manage = self.manage_flows.get(symbol)
@@ -943,7 +1504,7 @@ class ExecPosFSM(
                     manage._closing_position = True
                     manage._closing_position_ts = get_clock().now_sec()
                     print(
-                        f"🔒 [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
+                        f" [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
             result = close_flow.handle(msg)
         else:
             result = manage_flow.handle(msg)
@@ -972,22 +1533,22 @@ class ExecPosFSM(
                             self._submit_async(self._execute_decision(sub_msg), loop)
             else:
                 wal.append(result.model_dump())
-                # ✅ FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
+                #  FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
                 if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                     # Asynchronously execute the trade decision
                     loop = self._get_async_loop()
-                    LOG.info(f"🔄 ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
+                    LOG.info(f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
                     if loop:
                         self._submit_async(self._execute_decision(result), loop)
                     else:
-                        LOG.error(f"❌ ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
+                        LOG.error(f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
                 else:
-                    LOG.info(f"⏭️ ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
+                    LOG.info(f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
 
         return result
 
     async def _execute_decision(self, decision: Message):
-        """Phase 14A: Thin dispatcher — delegates to sub-module executors."""
+        """Phase 14A: Thin dispatcher  delegates to sub-module executors."""
         if not self.adapter:
             return
 
@@ -1005,7 +1566,7 @@ class ExecPosFSM(
         if domain_mode == "testnet":
             if "testnet" not in self.adapter.base_url:
                 LOG.critical(
-                    "🚨 GUARDRAIL TRIGGERED: Domain mode is TESTNET, but adapter is configured for LIVE API! Order BLOCKED.")
+                    " GUARDRAIL TRIGGERED: Domain mode is TESTNET, but adapter is configured for LIVE API! Order BLOCKED.")
                 fatal_msg = Message(
                     op="ERR", verb="FATAL_CONFIG_MISMATCH", src="execution_position",
                     dst="monitoring", rid="config_check",
@@ -1014,7 +1575,7 @@ class ExecPosFSM(
                 await emit_compat(self.fsm, fatal_msg, logger=LOG)
                 return
         elif domain_mode == "live":
-            LOG.warning("⚠️ LIVE execution mode - ensure you know what you're doing!")
+            LOG.warning(" LIVE execution mode - ensure you know what you're doing!")
 
         # --- END GUARDRAIL ---
 
@@ -1037,7 +1598,7 @@ class ExecPosFSM(
 
         except Exception as e:
             LOG.error(
-                f"❌ Adapter failed to execute decision {decision.verb} for "
+                f" Adapter failed to execute decision {decision.verb} for "
                 f"{decision.pld.get('symbol') if decision.pld else 'unknown'}: {e}",
                 exc_info=True)
 
@@ -1090,7 +1651,7 @@ class ExecPosFSM(
             await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
 
     # Phase 14.2: get_metrics
-    # → extracted to HealthMetricsMixin (health_metrics.py)
+    #  extracted to HealthMetricsMixin (health_metrics.py)
 
     # ---- GATE: SYMBOL_TIDY entry gating ----
     def _on_symbol_tidy_event(self, payload: Dict[str, Any]) -> None:
@@ -1164,7 +1725,7 @@ class ExecPosFSM(
             "rid": self.current_decision.rid if hasattr(self, 'current_decision') and self.current_decision else "N/A",
             **data
         }
-        LOG.info(f"📊 [EVENT] {event_type}: {event}", extra={"event": event})
+        LOG.info(f" [EVENT] {event_type}: {event}", extra={"event": event})
 
     async def _preflight_position_check(self, symbol: str) -> bool:
         """Phase 14A: Delegated to BracketManager."""
@@ -1200,9 +1761,9 @@ class ExecPosFSM(
         after restart, enabling proper orphan detection and cleanup.
         """
         try:
-            LOG.info("🔄 Starting OrderGuardian startup reconciliation...")
+            LOG.info(" Starting OrderGuardian startup reconciliation...")
 
-            # ✅ FIX: First link existing orders from REST API for all symbols with positions
+            #  FIX: First link existing orders from REST API for all symbols with positions
             if self.adapter:
                 try:
                     positions = await self.adapter.get_open_positions()
@@ -1239,10 +1800,10 @@ class ExecPosFSM(
                     # Link existing orders for each symbol
                     for symbol in symbols_with_positions:
                         await self.order_guardian.link_existing_from_rest(symbol)
-                        LOG.debug(f"✅ Linked existing orders for {symbol}")
+                        LOG.debug(f" Linked existing orders for {symbol}")
 
                     LOG.info(
-                        f"✅ Linked existing orders for {len(symbols_with_positions)} symbols")
+                        f" Linked existing orders for {len(symbols_with_positions)} symbols")
 
                 except Exception as e:
                     LOG.warning(
@@ -1250,8 +1811,8 @@ class ExecPosFSM(
 
             # Then run cleanup to remove orphans
             await self.order_guardian.cleanup_orphans()
-            LOG.info("✅ OrderGuardian startup reconciliation completed")
+            LOG.info(" OrderGuardian startup reconciliation completed")
         except Exception as e:
-            LOG.error(f"❌ OrderGuardian startup reconciliation failed: {e}")
+            LOG.error(f" OrderGuardian startup reconciliation failed: {e}")
     # Phase 14.2: handle_tick_async, handle_tick, is_healthy
-    # → extracted to HealthMetricsMixin (health_metrics.py)
+    #  extracted to HealthMetricsMixin (health_metrics.py)

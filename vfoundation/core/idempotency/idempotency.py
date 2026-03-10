@@ -30,8 +30,9 @@ class IdempotencyStore:
 
         self._lock = threading.Lock()
         self._seen: Dict[str, Any] = {}  # RID -> result (legacy)
+        self._clock = time.perf_counter_ns
         self._cache = MonotonicTTLCache[str, Any](
-            max_entries=max_entries, default_ttl_ms=default_ttl_ms
+            max_entries=max_entries, default_ttl_ms=default_ttl_ms, clock=self._clock
         )
         self.default_ttl_ms = default_ttl_ms
         self.idem_pending_ttl_ms = idem_pending_ttl_ms or (
@@ -102,7 +103,7 @@ class IdempotencyStore:
             # Check if currently inflight
             if idempotent_key in self._inflight:
                 state, _, expire_monotonic_ns = self._inflight[idempotent_key]
-                current_monotonic_ns = time.monotonic_ns()
+                current_monotonic_ns = self._clock()
 
                 if current_monotonic_ns <= expire_monotonic_ns and state == InflightState.PENDING:
                     self._metrics["idem_inflight"] += 1
@@ -120,7 +121,7 @@ class IdempotencyStore:
                 return {"over_cap": True}  # Backpressure: too many concurrent requests
 
             # Acquire: mark as inflight PENDING
-            expire_monotonic_ns = time.monotonic_ns() + self.idem_pending_ttl_ms * 1_000_000
+            expire_monotonic_ns = self._clock() + self.idem_pending_ttl_ms * 1_000_000
             self._inflight[idempotent_key] = (InflightState.PENDING, None, expire_monotonic_ns)
 
             # Pin the key in cache to prevent LRU eviction during processing
@@ -153,7 +154,7 @@ class IdempotencyStore:
                 self._inflight[idempotent_key] = (
                     InflightState.DONE,
                     result,
-                    time.monotonic_ns() + done_ttl_ms * 1_000_000,
+                    self._clock() + done_ttl_ms * 1_000_000,
                 )
 
             # Update pinned cache entry with actual result (keep pinned=True)
@@ -175,7 +176,7 @@ class IdempotencyStore:
             # Check inflight (might be DONE but not yet in cache)
             if idempotent_key in self._inflight:
                 state, result, expire_monotonic_ns = self._inflight[idempotent_key]
-                current_monotonic_ns = time.monotonic_ns()
+                current_monotonic_ns = self._clock()
                 if current_monotonic_ns <= expire_monotonic_ns and state == InflightState.DONE:
                     return result
 
@@ -217,7 +218,7 @@ class IdempotencyStore:
 
         # Cleanup expired inflight entries
         with self._lock:
-            current_monotonic_ns = time.monotonic_ns()
+            current_monotonic_ns = self._clock()
             expired_keys = []
 
             for key, (state, result, expire_monotonic_ns) in self._inflight.items():

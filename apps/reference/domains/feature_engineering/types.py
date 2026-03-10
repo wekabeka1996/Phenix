@@ -877,6 +877,22 @@ class FeatureEngineeringConfig:
         return float(val)
 
     @property
+    def legacy_features_log_mode(self) -> str:
+        """Legacy feature sink mode: off | sample | full."""
+        try:
+            return str(self._cfg.legacy_features_log.mode)
+        except AttributeError:
+            return "full"
+
+    @property
+    def legacy_features_log_sample_every_n(self) -> int:
+        """Sampling interval for legacy feature sink when mode=sample."""
+        try:
+            return int(self._cfg.legacy_features_log.sample_every_n)
+        except AttributeError:
+            return 10
+
+    @property
     def macro_sync_enabled(self) -> bool:
         return self._cfg.macro_sync.enabled
 

@@ -3,12 +3,12 @@
 # ==============================================================================
 # Phase 0: Strategy assignments + arbitration (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
 #
-# CANONICAL SOURCE OF TRUTH для визначення:
-# 1. Які стратегії активні для кожного символу
-# 2. Як арбітрити конфлікти між стратегіями
+# CANONICAL SOURCE OF TRUTH  :
+# 1.      
+# 2.     
 #
-# ConfigLoader завантажує це в AuroraConfig.strategies_registry
-# Strict mode: missing file → ValueError
+# ConfigLoader    AuroraConfig.strategies_registry
+# Strict mode: missing file  ValueError
 # ==============================================================================
 
 version: "1.0.0"
@@ -16,7 +16,7 @@ version: "1.0.0"
 # ==============================================================================
 # STRATEGY ASSIGNMENTS (per-symbol)
 # ==============================================================================
-# Кожен символ має список активних стратегій (strategy_id)
+#       (strategy_id)
 # Valid strategy_id values:
 # - "aurora": Bar-driven multi-signal strategy (5m basis)
 # - "mean_reversion": Bar-based Bollinger Bands strategy (1m bars)
@@ -29,32 +29,33 @@ assignments:
     - aurora
 
   DOGEUSDT:
-    - aurora
+    - mean_reversion
 
   XRPUSDT:
-    - aurora
+    - mean_reversion
 
   BTCUSDT:
     - aurora
+    - mean_reversion
 
-  # New symbols — added with data 2023-06..2024-03
+  # New symbols  added with data 2023-06..2024-03
   BNBUSDT:
-    - aurora
+    - md_amr
 
   1000PEPEUSDT:
-    - aurora
+    - llm_microstructure
 
 
 # ==============================================================================
 # ARBITRATION (conflict resolution)
 # ==============================================================================
-# Коли symbol має >1 активну стратегію і обидві генерують intent у один
-# "decision window", система має детерміновано обрати одну.
+#  symbol  >1      intent  
+# "decision window",     .
 #
 # Modes:
-# - "priority": Використовувати фіксований пріоритет (strategy_id → rank)
-# - "regime": Обирати на основі поточного режиму (NOT IMPLEMENTED yet)
-# - "round_robin": Чергувати (NOT IMPLEMENTED yet)
+# - "priority":    (strategy_id  rank)
+# - "regime":      (NOT IMPLEMENTED yet)
+# - "round_robin":  (NOT IMPLEMENTED yet)
 # ==============================================================================
 arbitration:
   mode: priority
@@ -64,17 +65,19 @@ arbitration:
   window_ms: 1000
 
   # Priority ranks (lower = higher priority)
-  # Якщо Aurora і MR одночасно хочуть трейдити BTC:
-  # - Aurora має пріоритет 1 (вищий)
-  # - MR має пріоритет 2 (нижчий)
-  # Результат: Aurora intent проходить, MR intent відкидається
+  #  Aurora  MR    BTC:
+  # - Aurora   1 ()
+  # - MR   2 ()
+  # : Aurora intent , MR intent 
   priority:
     aurora: 1
     mean_reversion: 2
+    md_amr: 3
+    llm_microstructure: 4
 
-  # Logging policy: що логувати, коли intent відкинуто через арбітраж
-  # - rejected_strategy: ID стратегії, яка програла
-  # - reason: короткий why-код (≤80 символів)
+  # Logging policy:  ,  intent   
+  # - rejected_strategy: ID ,  
+  # - reason:  why- (80 )
   logging:
-    rejected_why_prefix: "ARBITRATION_REJECT"  # Prefix для why-кодів
-    log_level: "INFO"  # Рівень логування (INFO/WARNING)
+    rejected_why_prefix: "ARBITRATION_REJECT"  # Prefix  why-
+    log_level: "INFO"  #   (INFO/WARNING)

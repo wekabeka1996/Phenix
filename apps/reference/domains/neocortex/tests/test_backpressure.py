@@ -26,7 +26,7 @@ import pytest
 @pytest.fixture
 def mock_config(tmp_path):
     """Create minimal config for testing."""
-    from config_models import (
+    from apps.reference.domains.neocortex.config_models import (
         NeocortexConfig,
         SystemConfig,
         IngestConfig,
@@ -98,7 +98,7 @@ def mock_config(tmp_path):
 @pytest.fixture
 def mock_parser():
     """Create mock feature parser."""
-    from logic.ingest.observation import MarketObservation
+    from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
     
     parser = MagicMock()
     parser.parse.return_value = MarketObservation(
@@ -130,7 +130,7 @@ def mock_buffer():
         buffer._size += 1
     
     def get_batch(size):
-        from logic.ingest.observation import MarketObservation
+        from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
         return [(MarketObservation(
             ts=time.time(),
             mid_price=30000.0,
@@ -229,15 +229,15 @@ class TestBackpressure:
     async def test_backpressure_triggers_when_buffer_full(
         self, mock_config, mock_parser, mock_amygdala, tmp_path
     ):
-        """Verify ingestion pauses when buffer exceeds threshold."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        """Verify backpressure signal when buffer is high and training queue is saturated."""
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         # Create real buffer
         buffer = EpisodicBuffer(capacity=1000)
         
         # Fill buffer beyond backpressure threshold
-        from logic.ingest.observation import MarketObservation
+        from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
         threshold = mock_config.neuro.vae.batch_size * 2  # 32
         
         for i in range(threshold + 10):  # 42 items
@@ -271,6 +271,7 @@ class TestBackpressure:
         # Verify threshold is set
         assert adapter._backpressure_threshold == threshold
         assert len(buffer) > threshold
+        adapter._inflight_training_tasks = adapter._max_inflight_training_tasks
         
         # Start ingestion task
         start_time = time.time()
@@ -287,8 +288,7 @@ class TestBackpressure:
             }
             await adapter.handle_features(payload)
         
-        # This should trigger backpressure and wait
-        # Use a timeout to prevent infinite wait
+        # This should trigger backpressure signal without blocking ingestion.
         task = asyncio.create_task(ingest_one())
         
         # Let it run for a bit
@@ -306,14 +306,15 @@ class TestBackpressure:
         
         elapsed = time.time() - start_time
         print(f"Backpressure events: {adapter._backpressure_events}, elapsed: {elapsed:.3f}s")
+        await adapter.shutdown_async()
     
     @pytest.mark.asyncio
     async def test_no_backpressure_when_buffer_empty(
         self, mock_config, mock_parser, mock_amygdala, fast_brain_bridge
     ):
         """Verify ingestion proceeds normally with empty buffer."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
         
@@ -356,8 +357,8 @@ class TestAsyncShutdown:
         self, mock_config, mock_parser, mock_amygdala, fast_brain_bridge
     ):
         """Verify shutdown_async saves final checkpoint."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
         
@@ -384,8 +385,8 @@ class TestAsyncShutdown:
         self, mock_config, mock_parser, mock_amygdala, fast_brain_bridge
     ):
         """Verify shutdown trains any remaining buffered episodes."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
         
@@ -422,8 +423,8 @@ class TestDreamThreshold:
     @pytest.mark.asyncio
     async def test_dream_threshold_from_config(self, mock_config, mock_parser, mock_amygdala):
         """Verify dream_threshold is read from config."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
         
@@ -446,8 +447,8 @@ class TestCheckpointFrequency:
     @pytest.mark.asyncio
     async def test_checkpoint_interval_from_config(self, mock_config, mock_parser, mock_amygdala):
         """Verify checkpoint interval is read from config."""
-        from transport.adapter import NeocortexAdapter
-        from logic.memory.buffer import EpisodicBuffer
+        from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
+        from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
         
@@ -470,3 +471,4 @@ class TestCheckpointFrequency:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
+

@@ -13,7 +13,7 @@ aurora:
   type: bar_driven
   description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
-  
+
   # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
   # LIMIT entries require explicit tif. No silent fallbacks.
   execution:
@@ -138,7 +138,7 @@ aurora:
         - volatility_state
       strength_alpha: 0.80
       strength_cap: 1.0
-    
+
     liquidity_gate:
       enabled: true
       kappa_min: 0.15
@@ -194,7 +194,7 @@ aurora:
       macro_sync: 0.5
       macro_resid: 0.0
       absorption: 0.0    # R2: SIGNED feature, neutral is 0.0
-    
+
     signal_weights:
       obi: 0.25
       tfi: 0.25
@@ -212,25 +212,25 @@ aurora:
 
   # Per-symbol overrides (AuroraInstrumentConfig)
   assets:
-    # ETHUSDT - Phase 3+ Optuna optimized parameters
+    # ETHUSDT - Phase 3+ tuned parameters
     # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
     ETHUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Holding period: ETH trend-following, longer holding
       holding_period:
         min_duration_sec: 45
         emergency_exit_threshold: 0.65
-      
+
       # Re-entry cooldown: conservative for trend-following
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -317,7 +317,7 @@ aurora:
         enabled: true
         value: 0.008
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -329,24 +329,24 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.2
           DEFAULT: 0.2
-      
+
       timeframe_sec: null
 
-    # SOLUSDT - Phase 3 Optuna optimized parameters
+    # SOLUSDT - Phase 3 tuned parameters
     SOLUSDT:
       # Holding period: SOL волатильна → довша утримання
       holding_period:
         min_duration_sec: 35
         emergency_exit_threshold: 0.65
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 20
         mode: "ISOLATED"
-      
+
       # Re-entry cooldown: conservative for ALT
       reentry_cooldown_sec: 120
-      
+
       # Adjusted weights: Liquidity moved to Gate
       weights:
         ema_bias: 0.20
@@ -374,7 +374,7 @@ aurora:
         penalty_factor: 0.0
         window_sec: 300
         target_ratio: 0.5
-      
+
       regime_thresholds:
         HIGH_VOLATILITY: 1.35    # SOL волатильна → вищий поріг
         LOW_VOLATILITY: 0.80
@@ -436,7 +436,7 @@ aurora:
         enabled: true
         value: 0.008
       cooldown_sec: null
-      
+
       # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
       volatility_entry_logic:
         enabled: true
@@ -448,7 +448,7 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.25
           DEFAULT: 0.2            # REQUIRED fallback
-      
+
       timeframe_sec: null
 
     # =========================================================================
@@ -464,7 +464,7 @@ aurora:
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # 1. Leverage & Sizing
       leverage:
         target: 20
@@ -473,7 +473,7 @@ aurora:
         penalty_factor: 0.35
         window_sec: 21600
         target_ratio: 0.60
-      
+
       # 2. Weights (Standard)
       weights:
         ema_bias: 0.15
@@ -522,7 +522,7 @@ aurora:
       exit:
         sl_pct: 0.005  # Base 0.5%
         max_hold_sec: 3000
-        
+
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
@@ -561,7 +561,7 @@ aurora:
         enabled: true
         value: 0.017
       cooldown_sec: 60
-      
+
       # 7. Entry Logic (Smart Pullback)
       # High Vol: Deep pullback (0.5). Low Vol: Moderate (0.2).
       volatility_entry_logic:

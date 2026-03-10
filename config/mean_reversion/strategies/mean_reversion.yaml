@@ -8,14 +8,14 @@
 # - FLAT regime filtering
 # - ATR-based stops adjusted by regime type
 #
-# Source: Optuna R&D (500 trials per asset, January 2024)
+# Source: January 2024 research calibration
 # ==================================================================================
 
 mean_reversion:
   # Global enable/disable
   # CFG-STRATEGIES-SSOT-05: SSOT for MR config (no longer in trading.yaml)
   enabled: true
-  
+
   # Timeframe for bar aggregation
   # FIX-BACKTEST-TF: Changed from 180 (3m) to 300 (5m) to match BacktestEngine.
   # BacktestEngine emits 5m bars, so MR strategy receiving 3m bars was rejecting everything.
@@ -37,7 +37,7 @@ mean_reversion:
     enabled: false
     system_stress_policy: "off"       # "off" | "attenuate" | "block" (quoted: YAML parses bare 'off' as bool)
 
-  
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Strategy Parameters (global defaults)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -45,29 +45,29 @@ mean_reversion:
     # Bollinger Bands
     bb_window: 20
     bb_num_std: 2.0
-    
+
     # Other indicators
     atr_window: 14
     rsi_window: 14
-    
+
     # Entry thresholds
     entry_threshold: 0.05      # %B threshold (5% inside band)
     rsi_oversold: 30
     rsi_overbought: 70
-    
+
     # Minimum bars before generating signals
     min_bars: 25
-    
+
     # BB width filters (avoid too tight/wide ranges)
     min_bb_width: 0.001        # 0.1%
     max_bb_width: 0.15         # 15%
-    
+
     # Stop loss (ATR multiple)
     sl_atr_mult: 1.5
-    
+
     # Take profit: target mid BB
     tp_to_mid: true
-    
+
     # Cooldown between signals (seconds)
     cooldown_sec: 60
 
@@ -79,31 +79,31 @@ mean_reversion:
     confidence_base: 0.5        # Base confidence when BB threshold just touched (50%)
     confidence_bb_slope: 2.0    # Sensitivity: 0.1 extra distance → +0.2 confidence
     confidence_rsi_bonus: 0.2   # Bonus when RSI confirms oversold/overbought (+20%)
-  
+
   # ─────────────────────────────────────────────────────────────────────────────
   # FLAT Regime Thresholds (for regime classification)
   # ─────────────────────────────────────────────────────────────────────────────
   regime_thresholds:
     high_vol_pct: 0.003        # 0.3% ATR → FLAT_HIGH
     low_vol_pct: 0.001         # 0.1% ATR → FLAT_LOW
-  
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Per-Asset Configurations
   # ─────────────────────────────────────────────────────────────────────────────
   # Champion parameters from Phase 3 Track B production testing
   # Source: trading.yaml optimization (December 2025)
-  
+
   assets:
     # --- DOGE (CHAMPION 🥇) ---
     DOGEUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 10
         mode: "ISOLATED"
-      
+
       strategy:
         bb_window: 20
         bb_num_std: 2.1
@@ -120,12 +120,12 @@ mean_reversion:
     1000PEPEUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 25
         mode: "ISOLATED"
-      
+
       strategy:
         bb_window: 20
         bb_num_std: 2.1        # Same as DOGE (meme coin similarity)
@@ -140,12 +140,12 @@ mean_reversion:
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 15
         mode: "ISOLATED"
-      
+
       strategy:
         bb_window: 40
         bb_num_std: 1.5
@@ -156,17 +156,17 @@ mean_reversion:
         cooldown_sec: 0      # No cooldown
       # Regime Gating - BTC conservative (+$103) - include MEAN_REVERSION for backtest
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-    
+
     # --- XRP (SILVER 🥈) ---
     XRPUSDT:
       enabled: true
       position_mode: "STRICT"
-      
+
       # P1: Active Leverage Management
       leverage:
         target: 10
         mode: "ISOLATED"
-      
+
       strategy:
         bb_window: 40
         bb_num_std: 2.5
@@ -177,7 +177,7 @@ mean_reversion:
         cooldown_sec: 165
       # Regime Gating - XRP stable (+$121) - similar to DOGE
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-    
+
     # --- Optional assets (disabled) ---
     ETHUSDT:
       enabled: false
@@ -204,23 +204,23 @@ mean_reversion:
         sl_atr_mult: null
         cooldown_sec: null
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-  
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Regime Sizing Multipliers
   # ─────────────────────────────────────────────────────────────────────────────
   # Adjust position size based on FLAT regime type
-  
+
   regime_sizing:
     FLAT_LOW:
       sizing_mult: 0.8         # Smaller size in low vol
       stop_mult: 1.0           # Tighter stops -> Standard stops (prevent suffocation)
       target_mult: 0.8         # Smaller targets
-    
+
     FLAT_NORMAL:
       sizing_mult: 1.0         # Standard size
       stop_mult: 1.0           # Standard stops
       target_mult: 1.0         # Standard targets
-    
+
     FLAT_HIGH:
       sizing_mult: 0.7         # Smaller size in high vol
       stop_mult: 1.5           # Wider stops

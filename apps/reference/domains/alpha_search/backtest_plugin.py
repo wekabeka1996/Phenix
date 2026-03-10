@@ -321,7 +321,7 @@ class AlphaSearchBacktestPlugin:
         # Cache hit!
         self._cache_hits += 1
         features = cache_entry.features
-        
+
         # Run each enabled provider
         for provider_id, model in self.providers.items():
             cfg = self.provider_configs[provider_id]
@@ -329,16 +329,37 @@ class AlphaSearchBacktestPlugin:
             # Check symbol allowlist
             if not self._is_symbol_allowed(symbol, cfg):
                 continue
+
+            normalized_features = self._normalize_features_for_provider(
+                provider_id=provider_id,
+                model=model,
+                features=features,
+            )
+            missing_required = self._missing_required_features(
+                provider_id=provider_id,
+                model=model,
+                features=normalized_features,
+            )
+            if missing_required:
+                LOG.warning(
+                    "[%s] Provider %s skipped: missing required features: %s",
+                    symbol,
+                    provider_id,
+                    ",".join(missing_required[:8]),
+                )
+                if cfg.fail_closed:
+                    self._emit_fail_closed_score(provider_id, symbol, tf_sec, bar_close_ts)
+                continue
             
             # Get current price for virtual trader
-            current_price = self._get_price_from_features(features)
+            current_price = self._get_price_from_features(normalized_features)
             
             # Calculate score
             try:
                 score = model.calculate_alpha(
                     symbol=symbol,
                     market_data={"close": current_price},
-                    features=features,
+                    features=normalized_features,
                     context={"mode": "backtest", "shadow": self.shadow_mode}
                 )
                 
@@ -357,6 +378,77 @@ class AlphaSearchBacktestPlugin:
                 LOG.warning(f"[{symbol}] Provider {provider_id} error: {e}")
                 if cfg.fail_closed:
                     self._emit_fail_closed_score(provider_id, symbol, tf_sec, bar_close_ts)
+
+    def _normalize_features_for_provider(
+        self,
+        *,
+        provider_id: str,
+        model: AlphaModel,
+        features: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Apply additive feature aliases expected by legacy TA ensemble models."""
+        normalized = dict(features or {})
+
+        # Legacy/current FE naming bridge for ta_ensemble models.
+        if "bb_position" not in normalized and "bb_percent_b" in normalized:
+            normalized["bb_position"] = normalized["bb_percent_b"]
+        if "stoch_k" not in normalized and "stochastic_k" in normalized:
+            normalized["stoch_k"] = normalized["stochastic_k"]
+        if "stoch_d" not in normalized and "stochastic_d" in normalized:
+            normalized["stoch_d"] = normalized["stochastic_d"]
+
+        required_features = []
+        try:
+            required_features = self._get_required_features(model)
+        except Exception:
+            required_features = []
+
+        return normalized
+
+    def _get_required_features(self, model: AlphaModel) -> List[str]:
+        """Resolve required features for plain models and ensembles."""
+        if hasattr(model, "get_required_features"):
+            try:
+                required = list(model.get_required_features())
+                if required:
+                    return required
+            except Exception:
+                pass
+
+        nested_models = getattr(model, "models", None)
+        if isinstance(nested_models, dict):
+            merged: list[str] = []
+            for nested in nested_models.values():
+                for feature_name in self._get_required_features(nested):
+                    if feature_name not in merged:
+                        merged.append(feature_name)
+            return merged
+
+        return []
+
+    def _missing_required_features(
+        self,
+        *,
+        provider_id: str,
+        model: AlphaModel,
+        features: Dict[str, Any],
+    ) -> List[str]:
+        """Return missing required features for providers that declare strict inputs."""
+        required = self._get_required_features(model)
+        if not required:
+            return []
+
+        model_name = ""
+        try:
+            model_name = str(model.get_model_name())
+        except Exception:
+            model_name = ""
+
+        is_ensemble_provider = provider_id == "ta_ensemble" or "ensemble" in model_name
+        if not is_ensemble_provider:
+            return []
+
+        return [name for name in required if name not in features]
     
     def _find_best_cache_match(
         self, 

@@ -4,8 +4,8 @@ Amygdala (Valuation) Tests
 
 import pytest
 import numpy as np
-from logic.amygdala.valuation import ValuationEngine
-from logic.ingest.observation import MarketObservation
+from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 @pytest.fixture
 def dummy_obs():
@@ -41,3 +41,4 @@ def test_trace_buffer_growth(dummy_obs):
         
     # Should cap at 100
     assert len(amygdala.trace_buffer) == 100
+

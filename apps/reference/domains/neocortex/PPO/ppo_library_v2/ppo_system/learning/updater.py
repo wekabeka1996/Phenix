@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
+import logging
 import torch
 import torch.nn.functional as F
 from torch.distributions import Distribution
@@ -10,6 +11,8 @@ from torch.optim import Optimizer
 from ..core.dataclasses import AgentConfig
 from ..utils.safety import NumericalSafetyManager
 from ..models.base_model import BaseActorCritic
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,9 +65,23 @@ class PolicyUpdater:
         Виконує повний цикл оновлення PPO (епохи та мікробатчі).
         """
         cfg = self.config
-        # Нормалізуємо advantages один раз для всього батча
+        # Нормалізуємо advantages один раз для всього батча.
+        # CRITICAL: Use correction=0 (population std) to avoid NaN on single-element
+        # batches. Bessel's correction (default) divides by n-1, producing NaN when n=1.
         adv = batch_data["adv"]
-        batch_data["adv"] = (adv - adv.mean()) / (adv.std() + 1e-8)
+        adv_std = adv.std(correction=0)
+        if not torch.isfinite(adv_std) or adv_std < 1e-8:
+            # Zero-variance batch (e.g. all-zero rewards from cancelled episodes).
+            # Normalization is meaningless — set advantages to zero to avoid
+            # injecting noise into the policy gradient.
+            logger.warning(
+                "Advantage std is degenerate (%.6e, n=%d); skipping normalization",
+                adv_std.item() if torch.isfinite(adv_std) else float("nan"),
+                adv.numel(),
+            )
+            batch_data["adv"] = torch.zeros_like(adv)
+        else:
+            batch_data["adv"] = (adv - adv.mean()) / (adv_std + 1e-8)
 
         # Словник для агрегації метрик
         metrics_agg = {
@@ -84,37 +101,71 @@ class PolicyUpdater:
                 # --- PPO Loss Calculation ---
 
                 # 1. Importance Sampling Ratio (з захистом)
-                ratio = self.safety.safe_ratio(logp, logp_old) if self.safety else (logp - logp_old).exp()
+                ratio = self.safety.safe_ratio(
+                    logp, logp_old) if self.safety else (logp - logp_old).exp()
 
                 # 2. Policy (Surrogate) Loss
                 unclipped_loss = -adv * ratio
-                clipped_loss = -adv * torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range)
+                clipped_loss = -adv * \
+                    torch.clamp(ratio, 1.0 - cfg.clip_range,
+                                1.0 + cfg.clip_range)
                 policy_loss = torch.max(unclipped_loss, clipped_loss).mean()
 
                 # 3. Value Loss
                 value_loss = F.mse_loss(value.squeeze(-1), ret)
 
                 # 4. Total Loss
-                loss = policy_loss + cfg.value_loss_coef * value_loss - cfg.entropy_coef * entropy
+                loss = policy_loss + cfg.value_loss_coef * \
+                    value_loss - cfg.entropy_coef * entropy
 
                 # --- Optimization Step ---
                 optimizer.zero_grad()
                 loss.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm).item()
+
+                # --- Pre-step NaN firebreak (unconditional) ---
+                # If loss itself is non-finite, the backward pass has filled gradients
+                # with NaN/Inf.  Abort BEFORE optimizer.step() to prevent weight corruption.
+                if not torch.isfinite(loss):
+                    optimizer.zero_grad()
+                    logger.critical(
+                        "NaN/Inf loss detected (%.4e); ABORTING update step to prevent weight corruption",
+                        loss.item() if loss.numel() == 1 else float("nan"),
+                    )
+                    total_updates += 1
+                    continue
+
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), cfg.max_grad_norm).item()
 
                 # --- Gradient Safety Check ---
                 should_step = True
-                if self.safety:
+
+                # Unconditional NaN-in-gradients check (works even without safety manager)
+                _has_nan_grad = any(
+                    p.grad is not None and (torch.isnan(
+                        p.grad).any() or torch.isinf(p.grad).any())
+                    for p in model.parameters()
+                )
+                if _has_nan_grad:
+                    optimizer.zero_grad()
+                    should_step = False
+                    logger.critical(
+                        "NaN/Inf in gradients detected (grad_norm=%.4e); ABORTING step",
+                        grad_norm,
+                    )
+
+                if self.safety and should_step:
                     is_ok = self.safety.validate_gradients(model, grad_norm)
                     if not is_ok:
                         strategy = self.safety.config.on_invalid
                         if strategy == "zero_grads":
-                            optimizer.zero_grad() # Обнуляємо невалідні градієнти
+                            optimizer.zero_grad()  # Обнуляємо невалідні градієнти
                             self.safety.stats["zeroed_grads"] += 1
                         elif strategy == "sanitize":
                             for p in model.parameters():
                                 if p.grad is not None:
-                                    p.grad.data = torch.nan_to_num(p.grad.data, 0.0, 0.0, 0.0)
+                                    p.grad.data = torch.nan_to_num(
+                                        p.grad.data, 0.0, 0.0, 0.0)
                             self.safety.stats["sanitized_grads"] += 1
                         elif strategy == "skip_step":
                             should_step = False
@@ -125,7 +176,8 @@ class PolicyUpdater:
 
                 # --- Metrics Aggregation ---
                 with torch.no_grad():
-                    approx_kl = self.safety.safe_kl(logp, logp_old) if self.safety else 0.5 * ((logp - logp_old)**2).mean().item()
+                    approx_kl = self.safety.safe_kl(
+                        logp, logp_old) if self.safety else 0.5 * ((logp - logp_old)**2).mean().item()
 
                 metrics_agg["loss"] += loss.item()
                 metrics_agg["policy_loss"] += policy_loss.item()

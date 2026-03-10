@@ -35,6 +35,56 @@ from vfoundation.core.adapters.base import (
 
 LOG = logging.getLogger(__name__)
 
+_MAX_NEW_CLIENT_ORDER_ID_LEN = 35
+_DEFAULT_FALLBACK_BACKOFF_MS: List[int] = [200, 500, 1000]
+_INVALID_STOP_PRICE_LITERALS: frozenset[str] = frozenset(
+    {"", "none", "nan", "null", "inf", "+inf", "-inf"}
+)
+_MAX_ABS_STOP_PRICE_EXPONENT = 100
+
+
+def _assert_new_client_order_id_length(params: dict) -> None:
+    """Fail closed before any HTTP call if newClientOrderId exceeds Binance limits."""
+    if "newClientOrderId" not in params:
+        return
+    client_order_id = str(params.get("newClientOrderId") or "")
+    if len(client_order_id) <= _MAX_NEW_CLIENT_ORDER_ID_LEN:
+        return
+    symbol = str(params.get("symbol") or "?")
+    order_type = str(params.get("type") or "?")
+    raise ValueError(
+        f"EP-4015 clientOrderId too long {symbol} {order_type}"[:80])
+
+
+def _is_valid_stop_price(value: Any) -> bool:
+    if value is None:
+        return False
+
+    text = str(value).strip()
+    if text.lower() in _INVALID_STOP_PRICE_LITERALS:
+        return False
+
+    try:
+        parsed = Decimal(text)
+    except Exception:
+        return False
+
+    if not parsed.is_finite() or parsed <= 0:
+        return False
+
+    if abs(parsed.adjusted()) > _MAX_ABS_STOP_PRICE_EXPONENT:
+        return False
+
+    return True
+
+
+def _assert_valid_stop_price(stop_price: Any, symbol: str, order_type: str) -> None:
+    """Fail closed before any HTTP call if stopPrice is missing or malformed."""
+    if not _is_valid_stop_price(stop_price):
+        raise ValueError(
+            f"EP-1102 missing stopPrice {symbol} {order_type}"[:80])
+
+
 async def _coerce_json(obj):
     """
     Повертає dict із httpx.Response / str / bytes / dict.
@@ -85,11 +135,11 @@ class LeverageReductionError(BinanceAPIError):
     """
     -4161: Leverage reduction is not supported in Isolated Margin Mode
     with open positions.
-    
+
     This error occurs when trying to REDUCE leverage while:
     - Margin mode is ISOLATED
     - There is an open position
-    
+
     Recovery: Either close position first, or switch to CROSS margin mode.
     """
     pass
@@ -98,12 +148,12 @@ class LeverageReductionError(BinanceAPIError):
 class MaxLeverageExceededError(BinanceAPIError):
     """
     -2027: Exceeded the maximum allowable position at current leverage.
-    
+
     This error occurs when the position notional exceeds the bracket cap
     for the requested leverage level.
-    
+
     Example: Position $60k, requesting 125x → bracket cap for 125x is $50k.
-    
+
     Recovery: Use lower leverage or reduce position size.
     """
     pass
@@ -113,11 +163,11 @@ class MarginChangeError(BinanceAPIError):
     """
     -4047: Margin type cannot be changed if there exists open orders.
     -4048: Margin type cannot be changed if there exists position.
-    
+
     Margin mode (ISOLATED/CROSS) can ONLY be changed when:
     - No open orders exist
     - No open position exists (qty = 0)
-    
+
     Recovery: Close all orders and positions first, then change margin mode.
     """
     pass
@@ -162,7 +212,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         self._time_offset_ms = 0
         self._last_time_sync_monotonic = 0.0
         self._time_sync_lock = asyncio.Lock()
-        
+
         # recvWindow (ms). Max 60000 for Futures.
         try:
             if hasattr(self.config, 'recv_window_ms'):
@@ -193,7 +243,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # Fix 2: TTL cache for scan-all open orders (used by _find_symbol_by_order_id)
         # Prevents repeated REST calls during bulk cancellations
-        self._open_orders_scan_cache: Tuple[int, list] = (0, [])  # (timestamp_ms, orders)
+        self._open_orders_scan_cache: Tuple[int, list] = (
+            0, [])  # (timestamp_ms, orders)
         self._open_orders_scan_ttl_ms: int = 2000  # 2 second TTL
 
     # опційно: контекст-менеджер для акуратного закриття
@@ -248,7 +299,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             symbol: Trading symbol
         """
         async with self._ledger_lock:
-            self._register_clientorderid_unsafe(client_order_id, order_id, symbol)
+            self._register_clientorderid_unsafe(
+                client_order_id, order_id, symbol)
 
     async def _check_clientorderid_reuse_unsafe(self, symbol: str, client_order_id: str) -> Optional[str]:
         """Internal unsafe check (lock must be held by caller)."""
@@ -297,7 +349,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             raw = await self._request("GET", "/fapi/v1/openOrders", {}, signed=True)
             result = raw if isinstance(raw, list) else []
         except Exception as e:
-            LOG.warning("[_get_open_orders_cached] Failed to fetch openOrders: %s", e)
+            LOG.warning(
+                "[_get_open_orders_cached] Failed to fetch openOrders: %s", e)
             result = cached_data  # return stale on error
         self._open_orders_scan_cache = (now_ms, result)
         return result
@@ -316,7 +369,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns empty string when symbol can't be resolved.
         """
         order_id_str = str(order_id).strip() if order_id is not None else ""
-        client_order_id_str = str(client_order_id).strip() if client_order_id is not None else ""
+        client_order_id_str = str(client_order_id).strip(
+        ) if client_order_id is not None else ""
 
         if client_order_id_str:
             entry = self._clientorderid_ledger.get(client_order_id_str)
@@ -339,7 +393,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     if client_order_id_str and str(o.get("clientOrderId", "")).strip() == client_order_id_str:
                         return str(o.get("symbol", "")).strip()
         except Exception as e:
-            LOG.warning(f"[_find_symbol_by_order_id] openOrders scan failed: {e}")
+            LOG.warning(
+                f"[_find_symbol_by_order_id] openOrders scan failed: {e}")
 
         return ""
 
@@ -461,13 +516,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 LOG.warning(f"Timeout on {method} {path}, retrying once...")
                 await asyncio.sleep(0.5)
                 return await _do(method, base_params)
-            
+
             # Retry on timestamp error (-1021)
             msg = str(e)
             if "code': -1021" in msg or "-1021" in msg:
                 await self._sync_time(True)
                 return await _do(method, base_params)
-            
+
             # Retry on signature error (-1022)
             if (
                 "code': -1022" in msg
@@ -497,6 +552,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
         (STOP_MARKET/TAKE_PROFIT_MARKET/STOP/TAKE_PROFIT/TRAILING_STOP_MARKET)
         from `POST /fapi/v1/order` to `POST /fapi/v1/algoOrder`.
         """
+        _assert_new_client_order_id_length(params)
+        if "stopPrice" in params:
+            _assert_valid_stop_price(
+                params.get("stopPrice"),
+                str(params.get("symbol") or "?"),
+                str(params.get("type") or "?"),
+            )
         try:
             return await self._request("POST", "/fapi/v1/order", params)
         except BinanceAPIError as e:
@@ -555,6 +617,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if params.working_type:
             order_params["workingType"] = params.working_type
 
+        _assert_new_client_order_id_length(order_params)
+        if "stopPrice" in order_params:
+            _assert_valid_stop_price(
+                order_params["stopPrice"],
+                params.symbol,
+                params.order_type.upper(),
+            )
+
         result = await self._request("POST", path, order_params)
         return ExchangeOrderResponse(
             order_id=str(result.get("orderId", "")),
@@ -582,7 +652,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # ADPT-FIX-01: Remove unsafe fallback scan. Strict symbol requirement.
         if not symbol or symbol.strip() == "":
-             raise ValueError("Symbol is required for cancellation (Safety: NRR-CANCEL-STRICT)")
+            LOG.warning(
+                "[cancel_order] Missing symbol for cancellation request order_id=%s client_order_id=%s",
+                order_id,
+                client_order_id,
+            )
+            raise ValueError(
+                "Symbol is required for cancellation (Safety: NRR-CANCEL-STRICT)")
 
         params = {"symbol": symbol}
         if order_id:
@@ -683,7 +759,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                             f"API /fapi/v2/positionRisk recovered after {attempt+1} attempts, returned {len(raw)} total records")
 
                 positions: List[ExchangePosition] = []
-                
+
                 # ADPT-FIX-01: Hedge Mode Consistency Check
                 # Track leverage/margin type per symbol to detect split brain
                 symbol_consistency_map: Dict[str, Dict[str, Any]] = {}
@@ -696,10 +772,10 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
                     if abs(amt) <= 0.0:
                         continue  # Skip zero positions
-                    
+
                     lev = int(float(p.get("leverage", "0") or 0))
                     margin_type = p.get("marginType", "cross").upper()
-                    
+
                     # Check Consistency
                     if p_symbol in symbol_consistency_map:
                         prev = symbol_consistency_map[p_symbol]
@@ -711,8 +787,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                             )
                             self.logger.critical(err_msg)
                             raise BinanceAPIError(
-                                code=-1, 
-                                msg=err_msg, 
+                                code=-1,
+                                msg=err_msg,
                                 nrr_code="NRR-024"
                             )
                     else:
@@ -733,7 +809,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     pos_obj = ExchangePosition(
                         symbol=p_symbol,
                         position_side=pos_side,  # BOTH/LONG/SHORT
-                        side=side,  # LONG/SHORT (convenient for business logic)
+                        # LONG/SHORT (convenient for business logic)
+                        side=side,
                         position_amount=amt_str,
                         entry_price=entry_str,
                         mark_price=mark_str,
@@ -741,17 +818,18 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         leverage=lev,
                         margin_type=margin_type,
                         isolated_margin=float(
-                            p.get("isolated_margin", "0") or 0), # Corrected key likely isolatedMargin in raw but isolated_margin in obj? 
-                            # Raw dict key is "isolatedMargin" (camelCase).
-                            # Wait, in the original code (Step 26, line 689) it was:
-                            # p.get("isolatedMargin", "0")
-                            # I'll stick to that.
+                            p.get("isolated_margin", "0") or 0),  # Corrected key likely isolatedMargin in raw but isolated_margin in obj?
+                        # Raw dict key is "isolatedMargin" (camelCase).
+                        # Wait, in the original code (Step 26, line 689) it was:
+                        # p.get("isolatedMargin", "0")
+                        # I'll stick to that.
                         update_time_ms=int(p.get("updateTime", 0) or 0),
                     )
                     # Re-fix isolated margin key in object instantiation for correctness
                     # Note: ExchangePosition definition (Step 25) says isolated_margin: float.
                     # The value passed must be float.
-                    pos_obj.isolated_margin = float(p.get("isolatedMargin", "0") or 0)
+                    pos_obj.isolated_margin = float(
+                        p.get("isolatedMargin", "0") or 0)
                     positions.append(pos_obj)
 
                 # If we got empty positions after successful API call, enter fallback mode
@@ -790,7 +868,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 notional = abs(float(p.position_amount) * float(p.mark_price))
                 total_notional += notional
             except (ValueError, TypeError):
-                self.logger.warning(f"Could not calculate notional for position {p.symbol}: amt={p.position_amount}, price={p.mark_price}")
+                self.logger.warning(
+                    f"Could not calculate notional for position {p.symbol}: amt={p.position_amount}, price={p.mark_price}")
                 continue
         return total_notional
 
@@ -889,7 +968,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         qty_d = self._to_decimal(qty)
         q = self._round_step(qty_d, step_size, ROUND_DOWN)
-        
+
         # Check minQty if available
         min_qty = lot.get("minQty")
         if min_qty:
@@ -899,7 +978,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 q = min_qty_d
 
         if q <= 0:
-            raise ValueError(f"Quantity {qty_d} rounds to zero with stepSize {step_size}")
+            raise ValueError(
+                f"Quantity {qty_d} rounds to zero with stepSize {step_size}")
 
         # check min notional if available
         # try common key names
@@ -996,12 +1076,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
     # =========================================================================
     # TASK47c-B: Leverage and Margin Mode Methods
     # =========================================================================
-    # 
+    #
     # CRITICAL: Hedge Mode Handling (TASK47c-B-FIX-01)
-    # 
+    #
     # Binance positionRisk returns multiple entries per symbol in Hedge mode:
     # - positionSide: BOTH (One-way mode) or LONG/SHORT (Hedge mode)
-    # 
+    #
     # Strategy (fail-closed):
     # 1. Collect ALL entries for the symbol
     # 2. If ONE entry with positionSide=BOTH → use it (One-way mode)
@@ -1013,7 +1093,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     def _extract_position_entries(self, result: list, symbol: str) -> list:
         """Extract all position risk entries for a symbol.
-        
+
         Returns list of dicts with symbol, positionSide, leverage, marginType.
         Note: isolated is preserved as-is (None if missing) for fail-closed detection.
         """
@@ -1031,47 +1111,47 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def get_current_leverage(self, symbol: str) -> int:
         """Get current leverage for a symbol from exchange.
-        
+
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v2/positionRisk to get current leverage.
-        
+
         TASK47c-B-FIX-01: Hedge mode determinism (fail-closed)
         - One-way mode (BOTH): single entry, use directly
         - Hedge mode (LONG/SHORT): verify all entries have SAME leverage
         - Inconsistent leverage across sides → NRR-024 fail-closed
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
-            
+
         Returns:
             Current leverage as integer (1-125)
-            
+
         Raises:
             BinanceAPIError: On any ambiguity or error (fail-closed)
         """
         path = "/fapi/v2/positionRisk"
         params = {"symbol": symbol}
         result = await self._request("GET", path, params)
-        
+
         if not isinstance(result, list) or len(result) == 0:
             raise BinanceAPIError(
                 code=-1,
                 msg=f"No position risk data for {symbol}",
                 nrr_code="NRR-024"
             )
-        
+
         entries = self._extract_position_entries(result, symbol)
-        
+
         if len(entries) == 0:
             raise BinanceAPIError(
                 code=-1,
                 msg=f"Symbol {symbol} not found in position risk",
                 nrr_code="NRR-024"
             )
-        
+
         # Collect all unique leverage values
         leverage_values = set(e["leverage"] for e in entries)
-        
+
         if len(leverage_values) != 1:
             # FAIL-CLOSED: Inconsistent leverage across position sides (Hedge mode issue)
             sides = [f"{e['positionSide']}={e['leverage']}x" for e in entries]
@@ -1080,30 +1160,31 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 msg=f"Inconsistent leverage for {symbol} across sides: {', '.join(sides)}",
                 nrr_code="NRR-024"
             )
-        
+
         leverage = leverage_values.pop()
-        LOG.debug(f"LEVERAGE_GET: {symbol} = {leverage}x (entries: {len(entries)})")
+        LOG.debug(
+            f"LEVERAGE_GET: {symbol} = {leverage}x (entries: {len(entries)})")
         return leverage
 
     async def set_leverage(self, symbol: str, leverage: int) -> bool:
         """Set leverage for a symbol on exchange.
-        
+
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v1/leverage endpoint.
-        
+
         P0-HARDENING: Specific error handling for:
         - -4161: LeverageReductionError (ISOLATED + reduce + position)
         - -2027: MaxLeverageExceededError (notional > bracket cap)
-        
+
         Note: Binance sets leverage for ALL position sides with one call.
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
             leverage: Leverage to set (1-125)
-            
+
         Returns:
             True on success
-            
+
         Raises:
             LeverageReductionError: Cannot reduce leverage in ISOLATED mode with position
             MaxLeverageExceededError: Position notional exceeds bracket for this leverage
@@ -1114,7 +1195,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
             "symbol": symbol,
             "leverage": leverage,
         }
-        
+
         try:
             result = await self._request("POST", path, params)
         except BinanceAPIError as e:
@@ -1132,7 +1213,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     http_status=e.http_status,
                     payload=e.payload,
                 ) from e
-            
+
             # -2027: MAX_LEVERAGE_RATIO
             # "Exceeded the maximum allowable position at current leverage"
             if e.code == -2027:
@@ -1147,13 +1228,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     http_status=e.http_status,
                     payload=e.payload,
                 ) from e
-            
+
             # Unknown error - reraise as-is
             raise
-        
+
         actual = result.get("leverage")
         LOG.info(f"LEVERAGE_SET: {symbol} -> {leverage}x (response: {actual})")
-        
+
         # Verify the set took effect
         if actual is not None and int(actual) != leverage:
             raise BinanceAPIError(
@@ -1165,31 +1246,31 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     def _normalize_margin_type(self, entry: dict) -> str:
         """Normalize margin type from positionRisk entry.
-        
+
         TASK47c-B-FIX-02: Stable marginType mapping
-        
+
         Handles:
         - marginType: "isolated" | "cross" | "crossed" (string, case-insensitive)
         - isolated: true/false (boolean fallback)
-        
+
         Returns:
             "isolated" or "cross"
         """
         # Primary: marginType field (case-insensitive)
         margin_type = str(entry.get("marginType", "")).strip().lower()
-        
+
         if margin_type == "isolated":
             return "isolated"
         elif margin_type in ("cross", "crossed"):
             return "cross"
-        
+
         # Fallback: isolated boolean field
         isolated_flag = entry.get("isolated")
         if isinstance(isolated_flag, bool):
             return "isolated" if isolated_flag else "cross"
         if isinstance(isolated_flag, str):
             return "isolated" if isolated_flag.lower() == "true" else "cross"
-        
+
         # FAIL-CLOSED: Unknown margin type
         raise BinanceAPIError(
             code=-1,
@@ -1199,99 +1280,101 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def get_margin_mode(self, symbol: str) -> str:
         """Get current margin mode for a symbol from exchange.
-        
+
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v2/positionRisk to get marginType.
-        
+
         TASK47c-B-FIX-01: Hedge mode determinism (fail-closed)
         - One-way mode (BOTH): single entry, use directly
         - Hedge mode (LONG/SHORT): verify all entries have SAME marginType
         - Inconsistent margin mode across sides → NRR-024 fail-closed
-        
+
         TASK47c-B-FIX-02: Stable marginType mapping
         - Handles marginType string (cross/crossed/isolated)
         - Handles isolated boolean fallback
         - Unknown values → fail-closed
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
-            
+
         Returns:
             Margin mode: "isolated" or "cross"
-            
+
         Raises:
             BinanceAPIError: On any ambiguity or error (fail-closed)
         """
         path = "/fapi/v2/positionRisk"
         params = {"symbol": symbol}
         result = await self._request("GET", path, params)
-        
+
         if not isinstance(result, list) or len(result) == 0:
             raise BinanceAPIError(
                 code=-1,
                 msg=f"No position risk data for {symbol}",
                 nrr_code="NRR-024"
             )
-        
+
         entries = self._extract_position_entries(result, symbol)
-        
+
         if len(entries) == 0:
             raise BinanceAPIError(
                 code=-1,
                 msg=f"Symbol {symbol} not found in position risk",
                 nrr_code="NRR-024"
             )
-        
+
         # Normalize and collect all unique margin modes
         margin_modes = set()
         for entry in entries:
             mode = self._normalize_margin_type(entry)
             margin_modes.add(mode)
-        
+
         if len(margin_modes) != 1:
             # FAIL-CLOSED: Inconsistent margin mode across position sides
-            sides = [f"{e['positionSide']}={self._normalize_margin_type(e)}" for e in entries]
+            sides = [
+                f"{e['positionSide']}={self._normalize_margin_type(e)}" for e in entries]
             raise BinanceAPIError(
                 code=-1,
                 msg=f"Inconsistent margin mode for {symbol} across sides: {', '.join(sides)}",
                 nrr_code="NRR-024"
             )
-        
+
         margin_mode = margin_modes.pop()
-        LOG.debug(f"MARGIN_MODE_GET: {symbol} = {margin_mode} (entries: {len(entries)})")
+        LOG.debug(
+            f"MARGIN_MODE_GET: {symbol} = {margin_mode} (entries: {len(entries)})")
         return margin_mode
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
         """Set margin mode for a symbol on exchange.
-        
+
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v1/marginType endpoint.
-        
+
         P0-HARDENING: Specific error handling for:
         - -4046: Idempotent success (already set)
         - -4047: MarginChangeError (open orders exist)
         - -4048: MarginChangeError (position exists)
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
             mode: Margin mode ("isolated" or "cross")
-            
+
         Returns:
             True on success (including idempotent -4046)
-            
+
         Raises:
             MarginChangeError: Cannot change margin type with orders/position
             BinanceAPIError: Other API failures
         """
         # Binance uses ISOLATED and CROSSED for marginType values
         margin_type = "ISOLATED" if mode.lower() == "isolated" else "CROSSED"
-        
+
         path = "/fapi/v1/marginType"
         params = {
             "symbol": symbol,
             "marginType": margin_type,
         }
-        
+
         try:
             result = await self._request("POST", path, params)
             LOG.info(f"MARGIN_MODE_SET: {symbol} -> {mode} ({margin_type})")
@@ -1300,9 +1383,10 @@ class BinanceAdapter(AbstractExchangeAdapter):
             # -4046: No need to change margin type (already correct)
             # This is idempotent success, not an error
             if e.code == -4046:
-                LOG.debug(f"MARGIN_MODE_SET: {symbol} already {mode} (no change needed)")
+                LOG.debug(
+                    f"MARGIN_MODE_SET: {symbol} already {mode} (no change needed)")
                 return True
-            
+
             # -4047: THERE_EXISTS_OPEN_ORDERS
             # "Margin type cannot be changed if there exists open orders"
             if e.code == -4047:
@@ -1317,7 +1401,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     http_status=e.http_status,
                     payload=e.payload,
                 ) from e
-            
+
             # -4048: THERE_EXISTS_QUANTITY
             # "Margin type cannot be changed if there exists position"
             if e.code == -4048:
@@ -1332,10 +1416,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     http_status=e.http_status,
                     payload=e.payload,
                 ) from e
-            
+
             # Unknown error - reraise as-is
             raise
-
 
     async def create_stop_market_order(self, order_params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1347,6 +1430,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns:
             Order response.
         """
+        _assert_new_client_order_id_length(order_params)
+        _assert_valid_stop_price(
+            order_params.get("stopPrice"),
+            str(order_params.get("symbol") or "?"),
+            str(order_params.get("type") or "STOP_MARKET"),
+        )
         return await self._post_order_with_algo_fallback(order_params)
 
     async def place_market_entry(
@@ -1363,7 +1452,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         Returns:
             Order response.
-        
+
         TASK50: Removed quantize_quantity call - qty normalization is now done
         at dispatch boundary (fsm.py) with fail-closed semantics. No double rounding.
         """
@@ -1376,6 +1465,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         }
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
+        _assert_new_client_order_id_length(params)
         return await self._request("POST", "/fapi/v1/order", params)
 
     async def place_limit_entry(
@@ -1416,6 +1506,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         }
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
+        _assert_new_client_order_id_length(params)
         return await self._request("POST", "/fapi/v1/order", params)
 
     async def place_stop_market_close_position(
@@ -1453,11 +1544,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
 
+        _assert_new_client_order_id_length(params)
+        _assert_valid_stop_price(stop_price, symbol, "STOP_MARKET")
+
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
             resp = await self._post_order_with_algo_fallback(params)
             if new_client_order_id and "orderId" in resp:
-                self.register_clientorderid(
+                await self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
             return resp
         except BinanceAPIError as e:
@@ -1465,7 +1559,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # Duplicate ClientOrderId: try to reuse from ledger
                 LOG.warning(
                     f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
-                existing_order_id = self.check_clientorderid_reuse(
+                existing_order_id = await self.check_clientorderid_reuse(
                     symbol, new_client_order_id)
                 if existing_order_id:
                     LOG.info(
@@ -1520,11 +1614,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
 
+        _assert_new_client_order_id_length(params)
+        _assert_valid_stop_price(stop_price, symbol, "TAKE_PROFIT_MARKET")
+
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
             resp = await self._post_order_with_algo_fallback(params)
             if new_client_order_id and "orderId" in resp:
-                self.register_clientorderid(
+                await self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
             return resp
         except BinanceAPIError as e:
@@ -1532,7 +1629,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # Duplicate ClientOrderId: try to reuse from ledger
                 LOG.warning(
                     f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
-                existing_order_id = self.check_clientorderid_reuse(
+                existing_order_id = await self.check_clientorderid_reuse(
                     symbol, new_client_order_id)
                 if existing_order_id:
                     LOG.info(
@@ -1591,11 +1688,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
 
+        _assert_new_client_order_id_length(params)
+
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
             resp = await self._request("POST", "/fapi/v1/order", params)
             if new_client_order_id and "orderId" in resp:
-                self.register_clientorderid(
+                await self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
             return resp
         except BinanceAPIError as e:
@@ -1603,7 +1702,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # Duplicate ClientOrderId: try to reuse from ledger
                 LOG.warning(
                     f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
-                existing_order_id = self.check_clientorderid_reuse(
+                existing_order_id = await self.check_clientorderid_reuse(
                     symbol, new_client_order_id)
                 if existing_order_id:
                     LOG.info(
@@ -1655,11 +1754,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
 
+        _assert_new_client_order_id_length(params)
+
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
             resp = await self._request("POST", "/fapi/v1/order", params)
             if new_client_order_id and "orderId" in resp:
-                self.register_clientorderid(
+                await self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
             return resp
         except BinanceAPIError as e:
@@ -1667,7 +1768,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # Duplicate ClientOrderId: try to reuse from ledger
                 LOG.warning(
                     f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
-                existing_order_id = self.check_clientorderid_reuse(
+                existing_order_id = await self.check_clientorderid_reuse(
                     symbol, new_client_order_id)
                 if existing_order_id:
                     LOG.info(
@@ -1735,13 +1836,39 @@ class BinanceAdapter(AbstractExchangeAdapter):
             fallback_config = {}
 
         # Get backoff_ms with defaults
-        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(
-            fallback_config, dict) else getattr(fallback_config, "backoff_ms", [200, 500, 1000])
+        backoff_ms = fallback_config.get("backoff_ms", _DEFAULT_FALLBACK_BACKOFF_MS) if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "backoff_ms", _DEFAULT_FALLBACK_BACKOFF_MS)
 
-        if not isinstance(backoff_ms, list):
-            backoff_ms = [200, 500, 1000]
+        if not isinstance(backoff_ms, list) or not backoff_ms:
+            self.logger.warning(
+                "Invalid fallback backoff config %r; using defaults %s",
+                backoff_ms,
+                _DEFAULT_FALLBACK_BACKOFF_MS,
+            )
+            return list(_DEFAULT_FALLBACK_BACKOFF_MS)
 
-        return backoff_ms
+        normalized: List[int] = []
+        for delay in backoff_ms:
+            try:
+                delay_int = int(delay)
+            except (TypeError, ValueError):
+                self.logger.warning(
+                    "Invalid fallback backoff value %r; using defaults %s",
+                    delay,
+                    _DEFAULT_FALLBACK_BACKOFF_MS,
+                )
+                return list(_DEFAULT_FALLBACK_BACKOFF_MS)
+            if delay_int <= 0:
+                self.logger.warning(
+                    "Non-positive fallback backoff value %r; using defaults %s",
+                    delay,
+                    _DEFAULT_FALLBACK_BACKOFF_MS,
+                )
+                return list(_DEFAULT_FALLBACK_BACKOFF_MS)
+            normalized.append(delay_int)
+
+        return normalized
+
 
 async def _safe_read_err(resp):
     try:
@@ -1752,6 +1879,7 @@ async def _safe_read_err(resp):
             return {"code": resp.status_code, "msg": resp.text}
         except Exception:
             return {"code": resp.status_code, "msg": "unknown"}
+
 
 def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPIError:
     # support both call styles: (_resp, err) and (code, msg)

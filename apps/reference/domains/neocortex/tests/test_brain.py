@@ -11,10 +11,10 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-from config_models import NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
-from logic.brain.vae import VariationalAutoencoder
-from logic.brain.world_model import WorldModel
-from logic.brain.core import BrainCore
+from apps.reference.domains.neocortex.config_models import NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
+from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
+from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
+from apps.reference.domains.neocortex.logic.brain.core import BrainCore
 
 # =============================================================================
 # FIXTURES
@@ -86,6 +86,99 @@ def test_vae_loss(neuro_config):
     assert "kld" in losses
     assert not torch.isnan(losses["loss"])
 
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_auxiliary_regime_head_loss():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=3,
+        learning_rate=0.001,
+        beta=1.0,
+        batch_size=8,
+        use_mean=True,
+        regime_aux={"enabled": True, "alpha": 0.2, "num_classes": 5},
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    x = torch.randn(8, cfg.input_dim)
+    recon, mu, logvar = vae(x)
+    logits = vae.predict_regime_logits(mu)
+    targets = torch.randint(0, 5, (8,), dtype=torch.long)
+    losses = vae.loss_function(
+        recon,
+        x,
+        mu,
+        logvar,
+        beta=cfg.beta,
+        regime_logits=logits,
+        regime_targets=targets,
+        aux_alpha=cfg.regime_aux.alpha,
+    )
+
+    assert logits is not None
+    assert logits.shape == (8, 5)
+    assert "regime_ce" in losses
+    assert float(losses["regime_ce"]) >= 0.0
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_per_dim_free_bits_floor():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=4,
+        learning_rate=0.001,
+        beta=1.0,
+        free_bits_per_dim=0.2,
+        batch_size=8,
+        use_mean=True,
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    x = torch.randn(8, cfg.input_dim)
+    recon, mu, logvar = vae(x)
+
+    # Force near-zero KL so free-bits floor is the dominant KL term.
+    mu_zeros = torch.zeros_like(mu)
+    logvar_zeros = torch.zeros_like(logvar)
+    losses = vae.loss_function(
+        recon,
+        x,
+        mu_zeros,
+        logvar_zeros,
+        beta=cfg.beta,
+        free_bits_per_dim=cfg.free_bits_per_dim,
+    )
+
+    expected_floor = cfg.free_bits_per_dim * cfg.latent_dim
+    assert float(losses["kld"]) == pytest.approx(0.0, abs=1e-6)
+    assert float(losses["kld_loss"]) == pytest.approx(expected_floor, rel=1e-5)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_vae_regime_class_ema_weights_update():
+    cfg = VAEConfig(
+        input_dim=6,
+        hidden_dims=[8, 4],
+        latent_dim=3,
+        learning_rate=0.001,
+        beta=1.0,
+        batch_size=8,
+        use_mean=True,
+        regime_aux={"enabled": True, "alpha": 0.2, "num_classes": 5, "ema_decay": 0.99},
+    )
+    vae = VariationalAutoencoder(cfg)
+
+    before = vae.regime_class_ema.detach().clone()
+    targets = torch.tensor([2, 2, 2, 2, 2, 2, 2, 2], dtype=torch.long)
+    weights = vae.update_regime_class_ema(targets, ema_decay=0.5)
+    after = vae.regime_class_ema.detach().clone()
+
+    assert not torch.allclose(before, after)
+    assert weights.shape[0] == 5
+    assert float(weights[2]) < float(weights[0])
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_world_model_step(neuro_config):
     """Test World Model single step prediction."""
@@ -135,3 +228,40 @@ def test_brain_core_encode(neuro_config):
     z_batch = core.encode(obs_batch)
     
     assert z_batch.shape == (5, neuro_config.vae.latent_dim)
+
+
+def test_get_action_fallback_when_ppo_raises(neuro_config):
+    """BrainCore should fail-safe to FLAT when PPO.act raises."""
+
+    class _BrokenPPO:
+        def act(self, _z, deterministic=False):
+            raise ValueError("invalid logits")
+
+    core = BrainCore(neuro_config, device="cpu")
+    core.ppo_agent = _BrokenPPO()
+
+    result = core.get_action(np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32))
+    assert result["action_name"] == "FLAT"
+    assert result["action"] == 2
+    assert result["value"] == 0.0
+    assert result["confidence"] == 0.0
+
+
+def test_get_action_sanitizes_non_finite_latent_and_outputs(neuro_config):
+    """Non-finite latent/output values should not propagate to runtime actions."""
+
+    captured = {}
+
+    class _NaNOutputPPO:
+        def act(self, z, deterministic=False):
+            captured["z"] = np.asarray(z)
+            return np.array([0.0]), np.array([np.nan]), np.array([np.inf])
+
+    core = BrainCore(neuro_config, device="cpu")
+    core.ppo_agent = _NaNOutputPPO()
+
+    result = core.get_action(np.array([np.nan, np.inf, -np.inf, 1.0], dtype=np.float32))
+    assert np.isfinite(captured["z"]).all()
+    assert result["action_name"] == "FLAT"
+    assert result["action"] == 2
+

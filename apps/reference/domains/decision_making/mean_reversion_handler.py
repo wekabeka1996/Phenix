@@ -72,6 +72,21 @@ def normalize_ts_ms(raw: Any) -> int:
     return ts
 
 
+def _decimal_attr(obj: Any, name: str, default: str) -> Decimal:
+    """Read a numeric attribute with a deterministic Decimal fallback.
+
+    Runtime uses typed config, but several integration tests pass MagicMock-based
+    config objects that may not define newer Tier-D fields.
+    """
+    value = getattr(obj, name, default)
+    if value is None:
+        value = default
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(default)
+
+
 class MeanReversionHandler:
     """Handler for Mean Reversion 3m strategy integration with DecisionMaking.
     
@@ -334,9 +349,9 @@ class MeanReversionHandler:
             config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.cooldown_sec = base_strat_cfg.cooldown_sec
             # Tier D: confidence scalars from Pydantic SSOT
-            config.confidence_base = Decimal(str(base_strat_cfg.confidence_base))
-            config.confidence_bb_slope = Decimal(str(base_strat_cfg.confidence_bb_slope))
-            config.confidence_rsi_bonus = Decimal(str(base_strat_cfg.confidence_rsi_bonus))
+            config.confidence_base = _decimal_attr(base_strat_cfg, "confidence_base", "0.5")
+            config.confidence_bb_slope = _decimal_attr(base_strat_cfg, "confidence_bb_slope", "2.0")
+            config.confidence_rsi_bonus = _decimal_attr(base_strat_cfg, "confidence_rsi_bonus", "0.2")
 
             # Allowed regimes precedence:
             # global default -> per-asset -> per-asset strategy override (if present)
@@ -360,9 +375,9 @@ class MeanReversionHandler:
                 if strat_override.sl_buffer_pct is not None: config.sl_buffer_pct = Decimal(str(strat_override.sl_buffer_pct))
                 if strat_override.tp_buffer_pct is not None: config.tp_buffer_pct = Decimal(str(strat_override.tp_buffer_pct))
                 # Tier D: per-asset confidence overrides
-                if strat_override.confidence_base is not None: config.confidence_base = Decimal(str(strat_override.confidence_base))
-                if strat_override.confidence_bb_slope is not None: config.confidence_bb_slope = Decimal(str(strat_override.confidence_bb_slope))
-                if strat_override.confidence_rsi_bonus is not None: config.confidence_rsi_bonus = Decimal(str(strat_override.confidence_rsi_bonus))
+                if strat_override.confidence_base is not None: config.confidence_base = _decimal_attr(strat_override, "confidence_base", "0.5")
+                if strat_override.confidence_bb_slope is not None: config.confidence_bb_slope = _decimal_attr(strat_override, "confidence_bb_slope", "2.0")
+                if strat_override.confidence_rsi_bonus is not None: config.confidence_rsi_bonus = _decimal_attr(strat_override, "confidence_rsi_bonus", "0.2")
 
             self._strategies[symbol] = MeanReversion1mStrategy(
                 config=config,

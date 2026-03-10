@@ -22,7 +22,7 @@ try:
 except ImportError:
     HAS_AIOFILES = False
 
-from config_models import ReplayConfig
+from apps.reference.domains.neocortex.config_models import ReplayConfig
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class WALReplayer:
         
         try:
             if HAS_AIOFILES:
-                async with aiofiles.open(file_path, 'r') as f:
+                async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     async for line in f:
                         await self._process_line(line)
                         line_count += 1
@@ -141,7 +141,7 @@ class WALReplayer:
                             logger.info(f"  {file_path.name}: {line_count} lines processed")
             else:
                 # Fallback to sync reading with async yields
-                with open(file_path, 'r') as f:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     for line in f:
                         await self._process_line(line)
                         line_count += 1
@@ -204,3 +204,4 @@ class WALReplayer:
             "running": self._running,
             "completed": self._completed
         }
+

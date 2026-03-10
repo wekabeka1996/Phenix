@@ -16,9 +16,8 @@ import yaml
 from pydantic import ValidationError
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_models import (
+from apps.reference.domains.neocortex.config_models import (
     load_config,
     NeocortexConfig,
     SystemConfig,
@@ -143,6 +142,62 @@ def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neur
     assert len(config.ingest.feature_list) == 3
     assert config.neuro.vae.latent_dim == 8
     assert config.neuro.ppo.state_dim == 10
+    assert config.ingest.normalization_scope in {"global", "per_symbol"}
+    assert config.ingest.price_feature_mode in {"raw", "log", "drop"}
+    assert config.ingest.delta_price_mode in {"raw", "pct"}
+
+
+def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """feature_clip_abs must be positive finite values."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+
+    invalid_ingest = valid_ingest_config.copy()
+    invalid_ingest["feature_clip_abs"] = {"delta_price": -1.0}
+
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(invalid_ingest, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+
+    with pytest.raises(ValidationError):
+        load_config(config_dir)
+
+
+def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Regime aux schedule/EMA fields should parse and enforce bounds."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+
+    neuro = valid_neuro_config.copy()
+    neuro["vae"] = dict(neuro["vae"])
+    neuro["vae"]["free_bits_per_dim"] = 0.2
+    neuro["vae"]["regime_aux"] = {
+        "enabled": True,
+        "alpha": 2.0,
+        "num_classes": 5,
+        "ema_decay": 0.99,
+        "alpha_schedule": {
+            "start": 0.5,
+            "end": 2.0,
+            "steps": 1000,
+        },
+    }
+
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(neuro, f)
+
+    loaded = load_config(config_dir)
+    assert loaded.neuro.vae.free_bits_per_dim == pytest.approx(0.2)
+    assert loaded.neuro.vae.regime_aux.ema_decay == pytest.approx(0.99)
+    assert loaded.neuro.vae.regime_aux.alpha_schedule is not None
+    assert loaded.neuro.vae.regime_aux.alpha_schedule.start == pytest.approx(0.5)
 
 
 # =============================================================================
@@ -360,3 +415,5 @@ def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

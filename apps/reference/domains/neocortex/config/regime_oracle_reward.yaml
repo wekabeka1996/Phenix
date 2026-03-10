@@ -1,0 +1,75 @@
+# Regime Oracle Reward Configuration
+# REGIME_PIVOT_PLAN.md Section 7: Self-supervised reward for PPO regime prediction
+
+# Look-ahead window: 5 bars x 5min = 25 minutes
+horizon_bars: 5
+
+# Ground-truth labeling thresholds
+# Calibrated from percentile analysis of 250k bars across 5 symbols.
+# Features in logs: delta_price (raw USD), ema_bias ([0,1]@0.5), volatility_state ([0,1])
+# Labeler normalizes internally: delta_pct = delta_price/price, ema_centered = ema_bias - 0.5
+
+# Rule 1: HIGH_VOLATILITY — volatility_state(t+H) > threshold
+# Data: vol_state p90=1.0, p75=0.36, ~25% of bars have vol_state > 0.33
+# Target: ~10-15% → threshold slightly above p85
+high_vol_threshold: 0.8
+
+# Rule 2: EXHAUSTION — vol was high (now) but collapsed (future)
+# Target: ~5-10%
+exhaustion_vol_now_threshold: 0.5    # vol_state(t) was elevated
+exhaustion_vol_future_threshold: 0.1 # vol_state(t+H) collapsed to calm
+
+# Rule 3-4: TREND — |delta_price/price| > threshold + EMA confirmation
+# Data: delta_pct p75=+0.012%, p90=+0.031%, std=0.05%
+# ema_centered: std=0.0027, p75=+0.001, p90=+0.0026
+# Target: ~15-20% each direction
+trend_delta_pct_threshold: 0.0002   # 0.02% price move (~p70)
+trend_ema_threshold: 0.0008         # ema_bias deviation from 0.5 (~p70)
+
+# Rule 5: MEAN_REVERSION — |delta_price/price| < threshold
+# Target: ~35-50% (explicit MR + default fallback)
+mr_delta_pct_threshold: 0.0001      # 0.01% price move (~p40)
+
+# Reward scaling (Formula A: exact match)
+reward_correct: 1.0
+reward_wrong: -0.5
+
+# Formula B: confusion-weighted matrix
+# Activated after Formula A demonstrated mode collapse (83% MR predictions).
+reward_matrix_enabled: true
+
+# Confusion reward matrix  C[predicted][realized]
+# Rows = Predicted action, Cols = Realized regime
+# Actions: 0=T_UP, 1=T_DOWN, 2=MR, 3=H_VOL, 4=EXHAUST
+#
+# Design rationale:
+# - MR correct reward is very low (0.2) — MR is 50-70% of bars, higher reward = collapse attractor
+# - MR-missing-H_VOL penalty is harsh (-1.5) -> forces network to look for volatility
+# - Trend correct rewards are high (2.0) to incentivize minority class discovery
+# - Vol-family regimes (H_VOL, EXHAUST) get small partial credit (+0.3) for each other
+# - H_VOL/EXHAUST predicting MR gets -1.0 penalty (prevents vol-class collapse)
+#
+# Anti-collapse verification at MR=53%:
+#   E[always T_UP]=-0.41  E[always T_DOWN]=-0.40  E[always MR]=-0.33
+#   E[always H_VOL]=-0.20  E[always EXHAUST]=-0.30  E[perfect]=+0.95
+# Anti-collapse verification at MR=68%:
+#   E[always T_UP]=-0.49  E[always T_DOWN]=-0.47  E[always MR]=-0.17
+#   E[always H_VOL]=-0.37  E[always EXHAUST]=-0.44  E[perfect]=+0.95
+# All single-action strategies yield negative expected reward up to MR~80%.
+reward_matrix:
+  #              T_UP   T_DOWN    MR    H_VOL  EXHAUST
+  - [ 2.0,  -1.5,  -0.5,  -1.0,  -0.5]   # Predicted TREND_UP
+  - [-1.5,   2.0,  -0.5,  -1.0,  -0.5]   # Predicted TREND_DOWN
+  - [-0.8,  -0.8,   0.2,  -1.5,  -0.5]   # Predicted MR (low reward: 0.2, miss-vol: -1.5)
+  - [-0.5,  -0.5,  -1.0,   3.0,   0.3]   # Predicted HIGH_VOLATILITY (miss-MR: -1.0)
+  - [-0.5,  -0.5,  -1.0,   0.3,   2.5]   # Predicted EXHAUSTION (miss-MR: -1.0, vol partial: +0.3)
+
+# Class weights to counteract label imbalance
+# MR dominates (~60-70% of bars), so it gets lower weight;
+# rare but valuable regimes (HIGH_VOL, EXHAUSTION) are upweighted
+class_weights:
+  PREDICT_TREND_UP: 1.5
+  PREDICT_TREND_DOWN: 1.5
+  PREDICT_MEAN_REVERSION: 0.7
+  PREDICT_HIGH_VOLATILITY: 2.0
+  PREDICT_EXHAUSTION: 2.5

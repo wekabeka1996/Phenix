@@ -100,7 +100,15 @@ class FlipOrchestrator:
 
     # -- Reduce-Only Close --------------------------------------------------
 
-    def emit_reduce_only_close(self, symbol: str, reason: str, rid: str, *, strategy_id: str) -> bool:
+    def emit_reduce_only_close(
+        self,
+        symbol: str,
+        reason: str,
+        rid: str,
+        *,
+        strategy_id: str,
+        strategy_trace: dict | None = None,
+    ) -> bool:
         """Emit immediate reduce-only close intent for Flip Orchestration.
 
         IMPORTANT: Use the originating strategy_id for registry arbitration.
@@ -141,6 +149,7 @@ class FlipOrchestrator:
             rid=rid,
             reduce_only=True,
             strategy_id=str(strategy_id),
+            strategy_trace=strategy_trace,
         )
         return True
 

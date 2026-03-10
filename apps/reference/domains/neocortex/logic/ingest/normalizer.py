@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 import threading
 
 import numpy as np
@@ -145,3 +145,75 @@ class WelfordNormalizer:
             self._m2 = m2
 
         return True
+
+
+def sanitize_symbol(symbol: str) -> str:
+    """Normalize symbol key for filenames and dict keys."""
+    if symbol is None:
+        return "UNKNOWN"
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in str(symbol).upper())
+    return cleaned or "UNKNOWN"
+
+
+class MultiSymbolWelfordNormalizer:
+    """
+    Per-symbol normalizer registry backed by WelfordNormalizer instances.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-8):
+        self._dim = int(dim)
+        self._eps = float(eps)
+        self._normalizers: Dict[str, WelfordNormalizer] = {}
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def symbols(self) -> list[str]:
+        return sorted(self._normalizers.keys())
+
+    def get(self, symbol: str) -> WelfordNormalizer:
+        key = sanitize_symbol(symbol)
+        normalizer = self._normalizers.get(key)
+        if normalizer is None:
+            normalizer = WelfordNormalizer(dim=self._dim, eps=self._eps)
+            self._normalizers[key] = normalizer
+        return normalizer
+
+    def update(self, symbol: str, x: np.ndarray) -> None:
+        self.get(symbol).update(x)
+
+    def normalize(self, symbol: str, x: np.ndarray) -> np.ndarray:
+        return self.get(symbol).normalize(x)
+
+    def save_states(self, states_dir: Path) -> int:
+        """
+        Save per-symbol states into `states_dir/normalizer_<SYMBOL>.npz`.
+        Returns number of saved state files.
+        """
+        states_dir = Path(states_dir)
+        states_dir.mkdir(parents=True, exist_ok=True)
+        saved = 0
+        for symbol, normalizer in self._normalizers.items():
+            state_path = states_dir / f"normalizer_{symbol}.npz"
+            normalizer.save_state(state_path)
+            saved += 1
+        return saved
+
+    def load_states(self, states_dir: Path) -> int:
+        """
+        Load all states from `states_dir/normalizer_*.npz`.
+        Returns number of loaded state files.
+        """
+        states_dir = Path(states_dir)
+        if not states_dir.exists():
+            return 0
+        loaded = 0
+        for state_path in sorted(states_dir.glob("normalizer_*.npz")):
+            symbol = state_path.stem.replace("normalizer_", "", 1) or "UNKNOWN"
+            normalizer = WelfordNormalizer(dim=self._dim, eps=self._eps)
+            if normalizer.load_state(state_path):
+                self._normalizers[symbol] = normalizer
+                loaded += 1
+        return loaded

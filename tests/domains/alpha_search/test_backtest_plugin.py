@@ -10,6 +10,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import Mock, MagicMock
 
+from apps.reference.domains.alpha_search.alpha_model import AlphaModel, AlphaScore
 from apps.reference.domains.alpha_search.backtest_plugin import (
     AlphaSearchBacktestPlugin,
     FeatureCacheEntry,
@@ -45,6 +46,22 @@ class MockEventBus:
         event.pld = payload
         for handler in self.listeners.get(event_name, []):
             handler(event)
+
+
+class _DummyTAEnsembleModel(AlphaModel):
+    def get_model_name(self) -> str:
+        return "ta_ensemble_dummy"
+
+    def calculate_alpha(self, symbol, market_data, features, context=None) -> AlphaScore:
+        return AlphaScore(
+            model_name=self.get_model_name(),
+            symbol=symbol,
+            score=Decimal("0"),
+            confidence=Decimal("0"),
+        )
+
+    def get_required_features(self):
+        return ["bb_position", "stoch_k", "stoch_d"]
 
 
 class TestEventBridgeCache:
@@ -406,6 +423,58 @@ class TestPluginSummary:
         assert summary["enabled"] == True
         assert "aurora" in summary["providers"]
         assert "aurora" in summary["provider_stats"]
+
+
+class TestTAEnsembleCompatibility:
+    def test_ta_ensemble_aliases_are_normalized(self):
+        bus = MockEventBus()
+        config = AlphaSearchConfig(
+            enabled=True,
+            providers={
+                "aurora": ProviderConfig(
+                    enabled=True,
+                    adapter=AuroraAdapterConfig()
+                )
+            }
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
+        model = _DummyTAEnsembleModel()
+
+        normalized = plugin._normalize_features_for_provider(
+            provider_id="ta_ensemble",
+            model=model,
+            features={
+                "bb_percent_b": 0.25,
+                "stochastic_k": 42.0,
+                "stochastic_d": 39.0,
+            },
+        )
+
+        assert normalized["bb_position"] == 0.25
+        assert normalized["stoch_k"] == 42.0
+        assert normalized["stoch_d"] == 39.0
+
+    def test_ta_ensemble_missing_required_features_detected(self):
+        bus = MockEventBus()
+        config = AlphaSearchConfig(
+            enabled=True,
+            providers={
+                "aurora": ProviderConfig(
+                    enabled=True,
+                    adapter=AuroraAdapterConfig()
+                )
+            }
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=config)
+        model = _DummyTAEnsembleModel()
+
+        missing = plugin._missing_required_features(
+            provider_id="ta_ensemble",
+            model=model,
+            features={"bb_position": 0.2},
+        )
+
+        assert missing == ["stoch_k", "stoch_d"]
 
 
 if __name__ == "__main__":

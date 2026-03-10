@@ -1,7 +1,7 @@
 # path: ppo_library/ppo_system/models/actor_critic_lstm.py
 from __future__ import annotations
 import math
-from typing import Tuple, Dict, AnyOptional
+from typing import Tuple, Union, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -81,6 +81,8 @@ class ActorCriticLSTM(BaseActorCritic):
             return base_dist
         else:
             logits = self.logits_head(latent_features) / max(1e-8, self.temperature)
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=0.0, neginf=0.0)
+            logits = torch.clamp(logits, min=-20.0, max=20.0)
             return Categorical(logits=logits)
 
     def forward(

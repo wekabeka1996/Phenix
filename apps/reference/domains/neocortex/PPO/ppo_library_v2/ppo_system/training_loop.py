@@ -28,10 +28,11 @@ def _is_batched(obs: np.ndarray) -> bool:
     """Перевіряє, чи є спостереження батчем (для векторизованих середовищ)."""
     return hasattr(obs, "shape") and len(obs.shape) > 1
 
-def run_training_loop(
+def train(
     agent: PPOAgent,
     env: Any,
     train_config: TrainConfig,
+    eval_env: Optional[Any] = None,
     logger: Optional[logging.Logger] = None,
 ) -> Dict[str, float]:
     """

@@ -10,31 +10,31 @@
 config_version: "1.0.0"
 
 logging:
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Global Defaults
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   default_level: INFO      # DEBUG | INFO | WARNING | ERROR
   default_format: text     # text | json
   
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Rotation Settings (applied to all file handlers unless overridden)
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   rotation:
     max_bytes: 10485760    # 10 MB
     backup_count: 5
   
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Console Sink
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   console:
     enabled: true
     level: INFO
     format: text
     colorize: false        # Future: ANSI color support
   
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Core File Sink (aurora_core.log)
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   core:
     enabled: true
     path: logs/aurora_core.log
@@ -43,10 +43,10 @@ logging:
     max_bytes: 10485760    # 10 MB
     backup_count: 5
   
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Domain-Specific Sinks
   # Each domain gets its own log file for easier debugging.
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   domains:
     feature_engineering:
       enabled: true
@@ -84,9 +84,9 @@ logging:
       max_bytes: 5242880
       backup_count: 3
   
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   # Structured Event Chain (JSON format for forensics)
-  # ─────────────────────────────────────────────────────────────────────────
+  # 
   event_chain:
     enabled: true
     path: logs/event_chain.log
