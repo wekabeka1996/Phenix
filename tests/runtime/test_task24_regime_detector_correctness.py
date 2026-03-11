@@ -69,6 +69,9 @@ def test_atr_requires_ohlc_or_explicit_opt_in(monkeypatch):
     assert evt == "EVT:REGIME_DETECTED"
     assert "atr_missing_ohlc" in (payload.get("data_quality", {}) or {}).get("drops", [])
     assert payload.get("regime") == "UNCERTAIN"
+    assert payload.get("regime_layer") == "structural"
+    assert payload.get("regime_scope") == "per_symbol"
+    assert payload.get("regime_clock") == "bar"
 
 
 def test_stale_data_sets_regime_uncertain(monkeypatch):
@@ -107,6 +110,9 @@ def test_stale_data_sets_regime_uncertain(monkeypatch):
     assert evt == "EVT:REGIME_DETECTED"
     assert payload.get("regime") == "UNCERTAIN"
     assert "stale_features" in (payload.get("data_quality", {}) or {}).get("drops", [])
+    assert payload.get("regime_layer") == "structural"
+    assert payload.get("regime_scope") == "per_symbol"
+    assert payload.get("regime_clock") == "bar"
 
 
 # ============================================================
@@ -270,6 +276,9 @@ def test_stale_features_do_not_update_buffers(monkeypatch):
     assert last_evt == "EVT:REGIME_DETECTED"
     assert last_payload.get("regime") == "UNCERTAIN"
     assert last_payload.get("source_model") == "data_quality_gate"
+    assert last_payload.get("regime_layer") == "structural"
+    assert last_payload.get("regime_scope") == "per_symbol"
+    assert last_payload.get("regime_clock") == "bar"
 
 
 def test_mean_reversion_missing_config_raises_validation_error():

@@ -34,6 +34,163 @@ md_amr:
     m30: 0.20
     m15: 0.15
 
+  objective:
+    enabled: true
+    regimes:
+      HIGH_VOLATILITY:
+        weights:
+          cost: 1.0
+          risk: 1.5
+          edge: 1.0
+          execution: 0.5
+          information: 1.0
+          behavior: 1.2
+        multiplier:
+          m_min: 0.1
+          m_max: 1.5
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "GATE"
+      LOW_VOLATILITY:
+        weights:
+          cost: 1.0
+          risk: 0.5
+          edge: 1.2
+          execution: 1.0
+          information: 1.0
+          behavior: 0.6
+        multiplier:
+          m_min: 0.1
+          m_max: 1.5
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.05
+          enforcement_mode: "GATE"
+      TREND_UP:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.5
+          execution: 1.0
+          information: 1.0
+          behavior: 0.8
+        multiplier:
+          m_min: 0.1
+          m_max: 2.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "GATE"
+      TREND_DOWN:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.5
+          execution: 1.0
+          information: 1.0
+          behavior: 0.8
+        multiplier:
+          m_min: 0.1
+          m_max: 2.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "GATE"
+      MEAN_REVERSION:
+        weights:
+          cost: 1.5
+          risk: 1.0
+          edge: 1.0
+          execution: 1.5
+          information: 1.0
+          behavior: 1.0
+        multiplier:
+          m_min: 0.1
+          m_max: 1.2
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.08
+          enforcement_mode: "GATE"
+      UNCERTAIN:
+        weights:
+          cost: 2.0
+          risk: 2.0
+          edge: 1.0
+          execution: 1.0
+          information: 2.0
+          behavior: 1.5
+        multiplier:
+          m_min: 0.1
+          m_max: 1.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.15
+          enforcement_mode: "GATE"
+      FLAT_LOW:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.0
+          execution: 1.0
+          information: 1.0
+          behavior: 0.7
+        multiplier:
+          m_min: 0.1
+          m_max: 1.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "OBSERVE"
+      FLAT_NORMAL:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.0
+          execution: 1.0
+          information: 1.0
+          behavior: 0.7
+        multiplier:
+          m_min: 0.1
+          m_max: 1.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "OBSERVE"
+      FLAT_HIGH:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.0
+          execution: 1.0
+          information: 1.0
+          behavior: 0.7
+        multiplier:
+          m_min: 0.1
+          m_max: 1.0
+          lambda_scale: 1.0
+          penalty_center: -5.0
+          penalty_scale: 2.5
+        gate:
+          min_objective_score: 0.1
+          enforcement_mode: "OBSERVE"
+
   execution:
     entry_order_type: "LIMIT"
     entry_tif: "GTX"

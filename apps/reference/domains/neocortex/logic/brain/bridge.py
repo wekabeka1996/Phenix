@@ -197,6 +197,20 @@ class BrainBridge:
             logger.error(f"train_ppo_async failed: {e}")
             return {"error": str(e)}
 
+    async def train_policy_async(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        try:
+            return await self._submit("TRAIN_POLICY", samples)
+        except Exception as e:
+            logger.error(f"train_policy_async failed: {e}")
+            return {"error": str(e)}
+
+    async def train_regime_supervision_async(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        try:
+            return await self._submit("TRAIN_REGIME_SUPERVISION", samples)
+        except Exception as e:
+            logger.error(f"train_regime_supervision_async failed: {e}")
+            return {"error": str(e)}
+
     async def encode_async(self, obs: MarketObservation) -> np.ndarray:
         try:
             return await self._submit("ENCODE", obs.features_vector)
@@ -210,6 +224,13 @@ class BrainBridge:
         except Exception as e:
             logger.error(f"act_async failed: {e}")
             return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0, "error": str(e)}
+
+    async def reset_sequence_state_async(self, reason: str = "manual") -> Dict[str, Any]:
+        try:
+            return await self._submit("RESET_SEQUENCE_STATE", {"reason": str(reason)})
+        except Exception as e:
+            logger.error(f"reset_sequence_state_async failed: {e}")
+            return {"status": "error", "reason": str(reason), "error": str(e)}
 
     async def save_async(self, path: str) -> bool:
         try:

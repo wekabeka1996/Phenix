@@ -19,6 +19,8 @@ max_feature_lines_total_per_cycle: 1000
 max_feature_lines_per_symbol_per_cycle: 200
 max_order_lines_per_cycle: 500
 max_core_lines_per_cycle: 500
+feature_missing_timestamp_policy: "legacy_non_causal_file_offset"
+legacy_feature_base_ts_ms: 1767950000000
 
 # Symbols to monitor
 symbols:

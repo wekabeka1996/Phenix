@@ -14,6 +14,7 @@ from apps.reference.domains.feature_engineering.feature_engineering import Featu
 from apps.reference.domains.market_data.bar_aggregator import BarAggregator
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
 from apps.reference.domains.market_data.proxy import MarketDataProxy
+from apps.reference.domains.objective_engine.runtime import ObjectiveEngineRuntime
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.risk_management.risk_management import RiskManagement
@@ -34,6 +35,7 @@ class LiveDomainBundle:
     csv_recorder: CsvRecorder
     bar_aggregator: Optional[BarAggregator]
     system_stress_overlay: Optional[SystemStressOverlay] = None
+    objective_engine_runtime: Optional[ObjectiveEngineRuntime] = None
 
 
 _DEBUG_EVENTS = [
@@ -115,6 +117,7 @@ def build_live_domains(
 
     # Phase 0.5: System Stress Overlay (no-op when system_stress.enabled=false)
     system_stress_overlay = SystemStressOverlay(config=config, fsm=fsm)
+    objective_engine_runtime = ObjectiveEngineRuntime(config=config, fsm=fsm)
 
     return LiveDomainBundle(
         account_balance=account_balance,
@@ -128,4 +131,5 @@ def build_live_domains(
         csv_recorder=csv_recorder,
         bar_aggregator=bar_aggregator,
         system_stress_overlay=system_stress_overlay,
+        objective_engine_runtime=objective_engine_runtime,
     )

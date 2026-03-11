@@ -1,0 +1,145 @@
+﻿    All config access must use typed attributes directly (e.g., config.strategies.aurora.decision.signal_threshold).
+                    meta[dst_key] = system_config.pop(src_key)
+            meta["regime_config_version"] = regime_config.pop("config_version")
+        if 'trading' in merged_config and 'domains' in (merged_config.get('trading', {}) or {}):
+        if not merged_config.get('domains'):
+        if not merged_config.get("instruments"):
+        trading_block = merged_config.get("trading")
+            config = ObservabilityConfig.model_validate(obs_raw)
+                f"✅ Loaded observability.yaml (version: {config.config_version})")
+        return config.model_copy(
+                "system_meta": config.system_meta.model_copy(update={"runtime": runtime})
+        mode = config.get("trading_mode", "production")
+        trading = config.get("trading", {})
+        strategies = config.get("strategies", {})
+        3) keys(config.instruments)
+        sr = resolved_config.get("strategies_registry")
+        trading = resolved_config.get("trading")
+        instruments = resolved_config.get("instruments")
+        trading = resolved_config.get("trading")
+        sr = resolved_config.get("strategies_registry", {})
+        - domains.yaml → config.domains (SSOT)
+        - instruments.yaml → config.instruments (SSOT)
+        canonical_domains = resolved_config.get("domains", {})
+        trading_block = resolved_config.get("trading", {})
+        instruments = resolved_config.get("instruments")
+        instruments = resolved_config.get("instruments")
+                f"LIVE execution fail-closed: Missing required execution config. "
+        instruments = resolved_config.get("instruments")
+                "LIVE sizing fail-closed: Missing/invalid sizing config. "
+            mr_section = trading_config.get("mean_reversion")
+            t = trading_config.get("trading")
+                fe_section = trading_config.get("feature_engineering")
+            nested_trading = trading_config.get("trading", {})
+        merged_config["observability"] = observability_config.model_dump()
+            root_mode = merged_config.get("trading_mode")
+            trading_block = merged_config.get("trading")
+        for key in list(merged_config.keys()):
+        guardian_block = merged_config.pop("guardian", None)
+            root_exec = merged_config.get("execution")
+                trading_block = merged_config.get("trading")
+                f"✅ Configuration validated for trading_mode: '{config.trading_mode}'"
+                debug_cfg = getattr(config.domains, "debug", None)
+                if debug_cfg is not None and str(config.trading.mode).lower() in ("live", "production"):
+                    domains_cfg = resolved_config.get("domains")
+        domains = resolved_config.get("domains")
+        domains = resolved_config.get("domains")
+        domains = resolved_config.get("domains")
+        strategies = resolved_config.get("strategies")
+        sr = resolved_config.get("strategies_registry")
+        strategies = resolved_config.get("strategies")
+    - AuroraInstrumentConfig.leverage (aurora.yaml → aurora.assets.<SYMBOL>.leverage)
+    - MRAssetConfig.leverage (mean_reversion.yaml → mean_reversion.assets.<SYMBOL>.leverage)
+            "No other value is valid in production config. "
+            "bypassing this config. 'legacy_v1' + 'off' removed from YAML boundary."
+    Config is provided via config.strategies.mean_reversion (loaded from strategy profile SSOT).
+    STRICT SSOT: No defaults. Every active symbol MUST have explicit flip config.
+    # Liquidity gate uses DecisionConfig.liquidity_gate.
+    """Regime-aware attenuation shield config.
+    """Volatility circuit breaker shield config."""
+    Used when DecisionConfig.scoring_version == 'quadratic'.
+        description='P0-2: Spread health gate config. Required when spread_bps used.'
+    """Top-level Shadow Telemetry domain config."""
+        description="MD-AMR TP/SL config. None = no brackets emitted.",
+MDAMRAssetConfig.model_rebuild()
+    # NOTE (TASK23.FIX.B): Forbidden SSOT mirrors are intentionally NOT part of TradingConfig.
+    # - aurora per-symbol SSOT: strategies/aurora.yaml::aurora.assets (canonical: config.strategies.aurora.assets)
+    return AuroraConfig.model_construct(**config_data)
+        # CFG-STRATEGIES-SSOT-03: ONE SOURCE OF TRUTH - canonical config.instruments (SSOT)
+        instruments = config.instruments if hasattr(config, 'instruments') else {}
+            raise ValueError("config.instruments is empty")
+        # CFG-STRATEGIES-SSOT-03: ONE SOURCE OF TRUTH - canonical config.instruments (SSOT)
+        instruments = config.instruments if hasattr(config, 'instruments') else {}
+        Initialize resolver with validated AuroraConfig.
+        Resolve DomainsConfig from AuroraConfig.
+        1. config.domains (root level) — CANONICAL
+            ValueError: If config.domains is None or missing
+        if self._config.domains is not None:
+            return self._config.domains
+            "DomainConfigResolver requires config.domains (canonical). "
+            "Ensure domains.yaml is loaded and config.domains is populated. "
+            if (self._config.trading and 
+                self._config.trading.execution and 
+                self._config.trading.execution.manage and
+                self._config.trading.execution.manage.brackets):
+                brackets = self._config.trading.execution.manage.brackets
+                        "BracketsConfig.sl.fixed_bps is required (got None). "
+                        "BracketsConfig.tp.fixed_bps is required (got None). "
+        Get legacy trading.execution.exposure config.
+            if (self._config.trading and 
+                self._config.trading.execution and 
+                self._config.trading.execution.exposure):
+                return self._config.trading.execution.exposure
+            if (self._config.trading and 
+                self._config.trading.execution and 
+                self._config.trading.execution.manage and
+                self._config.trading.execution.manage.brackets):
+                return self._config.trading.execution.manage.brackets
+            if (self._config.trading and 
+                self._config.trading.execution and 
+                self._config.trading.execution.manage):
+                return self._config.trading.execution.manage
+        return self._config.trading_mode
+    Create a DomainConfigResolver from AuroraConfig.
+All logging settings are read from config.observability (SSOT: observability.yaml).
+    CFG-OBS-001: All logging settings are read from config.observability.logging.
+    obs_logging: "ObservabilityLoggingConfig" = config.observability.logging
+        ttl_raw = config.domains.execution_position.order_index.ttl_sec
+        domains = config.get("domains")
+    sys_ver = getattr(config.system_meta,
+    regime_ver = getattr(config.system_meta,
+    LOG.info(f" Trading Mode: {config.trading_mode}")
+    if config.system.validate_instruments_on_startup:
+                config.trading_mode == "testnet" or
+                config.trading_mode == "hybrid_live_data_testnet_exec"
+            warn_only = config.system.warn_only_filters
+            if config.trading_mode in ("live", "production") and warn_only:
+            api_cfg = config.binance_api.testnet if is_testnet else config.binance_api.live
+                k: v.model_dump() for k, v in config.instruments.items()
+            if getattr(config, "domains", None) is not None and hasattr(config.domains, "model_dump"):
+                domains_dict = config.domains.model_dump()
+        inflight_cfg = InFlightConfig.from_ssot(domains_dict)
+            arming_cfg = config.domains.decision_making.arming
+            f" AlphaSearch Plugin registered (shadow={_as_config.shadow_mode}, "
+This adapter is instantiated by domain services with specific environment config.
+                self._recv_window_ms = int(self.config.recv_window_ms)
+                    self.config.get("recv_window_ms", 20000))
+                ttl_sec = int(self.config.time_sync_ttl_sec)
+                ttl_sec = int(self.config.get("time_sync_ttl_sec", 120))
+            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'execution') and hasattr(self.config.trading.execution, 'fallback'):
+                fallback_config = self.config.trading.execution.fallback or {}
+                fallback_config = self.config.get("trading", {}).get(
+        backoff_ms = fallback_config.get("backoff_ms", _DEFAULT_FALLBACK_BACKOFF_MS) if isinstance(
+        self._latency_ms = self.config.get("latency_ms", 10) # Default 10ms latency
+    root_mode = resolved_config.get("trading_mode")
+    trading = resolved_config.get("trading")
+    strategies_registry = resolved_config.get("strategies_registry")
+    if bool(getattr(config.system, "debug_event_listener_enabled", False)):
+            logger.info("Debug event listener ENABLED via config.system.debug_event_listener_enabled")
+    if config.trading.market_data is None:
+    use_multiprocessing = bool(config.trading.market_data.use_multiprocessing)
+    bar_config = getattr(config.trading.market_data, "bar_aggregator", None)
+            extra={"why": "bar_agg_disabled_missing_config", "reason": "config.trading.market_data.bar_aggregator not defined"},
+    elif not bar_config.enabled:
+        timeframes = bar_config.timeframes_sec
+        # Alert configuration (SSOT: AuroraConfig.observability.alerts)

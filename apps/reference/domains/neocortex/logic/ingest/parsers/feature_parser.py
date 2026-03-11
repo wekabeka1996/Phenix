@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from datetime import datetime
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,13 @@ logger = logging.getLogger(__name__)
 class FeatureLogEntry:
     """Parsed feature log entry."""
     timestamp: float
+    event_ts_ms: int
     timestamp_str: str
     symbol: str
     features: Dict[str, float]
     raw_line: str
+    time_source: str = "event_ts_ms"
+    time_is_causal: bool = True
 
 
 # Pattern: YYYY-MM-DD HH:MM:SS,mmm - MODULE - LEVEL - Calculated features for SYMBOL: {JSON}
@@ -37,6 +41,52 @@ FEATURE_LOG_PATTERN = re.compile(
     r'Calculated features for ([A-Z0-9]+): '  # Symbol
     r'(\{.+\})$'  # JSON payload
 )
+
+_TIME_FIELD_PRIORITY = (
+    "event_ts_ms",
+    "timestamp_ms",
+    "timestamp",
+    "ts",
+)
+
+
+def _normalize_epoch_to_ms(value: Any) -> Optional[int]:
+    """Normalize epoch-like timestamp to integer milliseconds."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(numeric) or numeric <= 0.0:
+        return None
+
+    # >= ~1973 in milliseconds.
+    if numeric >= 1e11:
+        return int(round(numeric))
+
+    # >= ~2001 in seconds.
+    if numeric >= 1e9:
+        return int(round(numeric * 1000.0))
+
+    return None
+
+
+def _extract_feature_event_ts_ms(raw_features: Dict[str, Any]) -> tuple[Optional[int], Dict[str, Any], Optional[str]]:
+    """
+    Extract canonical event_ts_ms from a pure JSON feature payload.
+
+    Returns a sanitized copy with timestamp-like fields removed from the feature map.
+    """
+    sanitized = dict(raw_features)
+    for key in _TIME_FIELD_PRIORITY:
+        if key not in sanitized:
+            continue
+        event_ts_ms = _normalize_epoch_to_ms(sanitized.pop(key))
+        if event_ts_ms is not None:
+            return event_ts_ms, sanitized, key
+    return None, sanitized, None
 
 def _flatten_and_coerce_features(raw: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -77,7 +127,13 @@ def _flatten_and_coerce_features(raw: Dict[str, Any]) -> Dict[str, float]:
     return out
 
 
-def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLogEntry]:
+def parse_feature_log_line(
+    line: str,
+    symbol: str = None,
+    *,
+    missing_timestamp_policy: str = "fail_closed",
+    synthetic_event_ts_ms: Optional[int] = None,
+) -> Optional[FeatureLogEntry]:
     """
     Parse a single feature log line.
     
@@ -99,19 +155,43 @@ def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLog
     # Try pure JSON format first (new format in logs/features/*.log)
     if line.startswith('{'):
         try:
-            import time
             raw_features = json.loads(line)
             if not isinstance(raw_features, dict):
                 return None
 
-            features = _flatten_and_coerce_features(raw_features)
+            event_ts_ms, sanitized_features, time_source = _extract_feature_event_ts_ms(
+                raw_features
+            )
+            time_is_causal = True
+            if event_ts_ms is None:
+                if missing_timestamp_policy == "legacy_non_causal_file_offset":
+                    event_ts_ms = _normalize_epoch_to_ms(synthetic_event_ts_ms)
+                    time_source = "legacy_non_causal_file_offset"
+                    time_is_causal = False
+                elif missing_timestamp_policy != "fail_closed":
+                    raise ValueError(
+                        f"Unsupported missing_timestamp_policy={missing_timestamp_policy!r}"
+                    )
+
+            if event_ts_ms is None:
+                logger.warning(
+                    "Rejecting feature row without causal timestamp: symbol=%s policy=%s",
+                    symbol or "UNKNOWN",
+                    missing_timestamp_policy,
+                )
+                return None
+
+            features = _flatten_and_coerce_features(sanitized_features)
             
             return FeatureLogEntry(
-                timestamp=time.time(),  # Use current time for pure JSON
+                timestamp=event_ts_ms / 1000.0,
+                event_ts_ms=event_ts_ms,
                 timestamp_str="",
                 symbol=symbol or "UNKNOWN",
                 features=features,
-                raw_line=line
+                raw_line=line,
+                time_source=time_source or "event_ts_ms",
+                time_is_causal=time_is_causal,
             )
         except json.JSONDecodeError:
             pass
@@ -126,7 +206,8 @@ def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLog
         try:
             # Parse timestamp
             dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S,%f")
-            timestamp = dt.timestamp()
+            event_ts_ms = int(round(dt.timestamp() * 1000.0))
+            timestamp = event_ts_ms / 1000.0
             
             # Parse JSON features
             raw_features = json.loads(json_str)
@@ -137,10 +218,13 @@ def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLog
                     
             return FeatureLogEntry(
                 timestamp=timestamp,
+                event_ts_ms=event_ts_ms,
                 timestamp_str=timestamp_str,
                 symbol=parsed_symbol,
                 features=features,
-                raw_line=line
+                raw_line=line,
+                time_source="log_timestamp",
+                time_is_causal=True,
             )
             
         except (json.JSONDecodeError, ValueError) as e:

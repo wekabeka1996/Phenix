@@ -11,11 +11,11 @@ binance_api:
     # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in connectors)
 trading:
   # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
-  mode: backtest
+  mode: hybrid_live_data_testnet_exec
   tca_prefs:
     max_slippage_pct: 0.5
-    max_slippage_bps: 10
-    max_latency_ms: 500
+    max_slippage_bps: 25
+    max_latency_ms: 3000
     maker_preference: neutral
     preferred_venue: binance
     execution_priority: speed
@@ -41,7 +41,7 @@ trading:
     daily:
       enabled: false
       max_realized_loss_usd: 250.0
-      max_drawdown_pct: 8.0
+      max_drawdown_pct: 10.0
       reset_time_utc: 00:00
     profile: balanced
     soft_limits:
@@ -149,7 +149,7 @@ trading:
         callbackRate: '0.5'
     watchdog:
       ack_ttl_ms: 8000
-      fill_ttl_ms: 60000
+      fill_ttl_ms: 300000
       check_interval_ms: 1000
       rps_limit: 10
     orders:

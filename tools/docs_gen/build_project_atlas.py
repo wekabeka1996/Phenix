@@ -85,9 +85,11 @@ def scan_json_schemas() -> List[Dict[str, Any]]:
                 j = json.load(f)
         except Exception:
             j = None
-        item = {"path": str(p.relative_to(ROOT)), "$id": None, "$schema": None, "required": None, "defaults": {}}
+        item = {"path": str(p.relative_to(ROOT)), "$id": None,
+                "$schema": None, "required": None, "defaults": {}}
         if isinstance(j, dict):
-            item.update({"$id": j.get("$id"), "$schema": j.get("$schema"), "required": j.get("required")})
+            item.update({"$id": j.get("$id"), "$schema": j.get(
+                "$schema"), "required": j.get("required")})
             # collect property defaults when present
             props = j.get("properties", {})
             for k, v in props.items():
@@ -102,7 +104,7 @@ def extract_from_dict_literal(node: ast.Dict) -> List[str]:
     for k in node.keys:
         if isinstance(k, ast.Constant) and isinstance(k.value, str):
             keys.append(k.value)
-        elif isinstance(k, ast.Str):
+        elif isinstance(k, getattr(ast, "Str", ())):
             keys.append(k.s)
         else:
             keys.append("<computed_key>")
@@ -125,17 +127,17 @@ class EventVisitor(ast.NodeVisitor):
                         "literal": node.value,
                         "lineno": getattr(node, "lineno", None),
                     })
-        self.generic_visit(node)
 
     def visit_Str(self, node: ast.Str) -> None:  # older nodes
         for tag in EVENT_TAGS:
             if node.s.startswith(tag):
-                self.events.append({"file": str(self.path), "literal": node.s, "lineno": getattr(node, "lineno", None)})
-        self.generic_visit(node)
+                self.events.append({"file": str(
+                    self.path), "literal": node.s, "lineno": getattr(node, "lineno", None)})
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         if node.name.startswith("on_"):
-            self.handlers.append({"file": str(self.path), "name": node.name, "lineno": node.lineno})
+            self.handlers.append(
+                {"file": str(self.path), "name": node.name, "lineno": node.lineno})
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -147,13 +149,14 @@ class EventVisitor(ast.NodeVisitor):
         elif isinstance(fn, ast.Attribute):
             fname = fn.attr
         if fname in ("emit", "emit_compat"):
-            ev: Dict[str, Any] = {"file": str(self.path), "lineno": getattr(node, "lineno", None), "fn": fname, "event": None, "payload_keys": [], "why": None}
+            ev: Dict[str, Any] = {"file": str(self.path), "lineno": getattr(
+                node, "lineno", None), "fn": fname, "event": None, "payload_keys": [], "why": None}
             # first arg might be event name
             if node.args:
                 first = node.args[0]
                 if isinstance(first, ast.Constant) and isinstance(first.value, str):
                     ev["event"] = first.value
-                elif isinstance(first, ast.Str):
+                elif isinstance(first, getattr(ast, "Str", ())):
                     ev["event"] = first.s
             # payload often a dict literal in second arg or keyword
             # inspect args for dict
@@ -179,14 +182,66 @@ def scan_python_events() -> Dict[str, Any]:
             continue
         # skip generated directories often
         try:
-            src = p.read_text(encoding="utf-8")
+            src = p.read_text(encoding="utf-8-sig")
             tree = ast.parse(src)
         except Exception:
             continue
-        v = EventVisitor(p.relative_to(ROOT))
-        v.visit(tree)
-        out_events.extend(v.events)
-        out_handlers.extend(v.handlers)
+
+        rel_path = str(p.relative_to(ROOT))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("on_"):
+                out_handlers.append(
+                    {"file": rel_path, "name": node.name, "lineno": node.lineno})
+                continue
+
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for tag in EVENT_TAGS:
+                    if node.value.startswith(tag):
+                        out_events.append({
+                            "file": rel_path,
+                            "literal": node.value,
+                            "lineno": getattr(node, "lineno", None),
+                        })
+                continue
+
+            if not isinstance(node, ast.Call):
+                continue
+
+            fn = node.func
+            fname = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(
+                fn, ast.Attribute) else None
+            if fname not in ("emit", "emit_compat"):
+                continue
+
+            ev: Dict[str, Any] = {
+                "file": rel_path,
+                "lineno": getattr(node, "lineno", None),
+                "fn": fname,
+                "event": None,
+                "payload_keys": [],
+                "why": None,
+            }
+
+            if node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    ev["event"] = first.value
+                elif isinstance(first, getattr(ast, "Str", ())):
+                    ev["event"] = first.s
+
+            for arg in node.args[1:]:
+                if isinstance(arg, ast.Dict):
+                    ev["payload_keys"] = extract_from_dict_literal(arg)
+
+            for kw in node.keywords:
+                if isinstance(kw.value, ast.Dict):
+                    ev["payload_keys"] = extract_from_dict_literal(kw.value)
+                if kw.arg in ("event", "name") and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    ev["event"] = kw.value.value
+                if kw.arg == "why" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    ev["why"] = kw.value.value
+
+            out_events.append(ev)
     return {"events": out_events, "handlers": out_handlers}
 
 
@@ -237,7 +292,8 @@ def scan_gates_policies_from_configs(configs: Dict[str, Any]) -> Dict[str, Any]:
             if k in raw:
                 gates["files"][path][k] = raw[k]
     # also compute merged defaults / current by scanning top-level master config if present
-    master = configs.get("configs\\master_config_v1.yaml") or configs.get("configs/master_config_v1.yaml")
+    master = configs.get("configs\\master_config_v1.yaml") or configs.get(
+        "configs/master_config_v1.yaml")
     merged: Dict[str, Any] = {}
     if master and isinstance(master.get("raw"), dict):
         raw = master["raw"]
@@ -333,7 +389,8 @@ def generate_docs(configs: Dict[str, Any], schemas: List[Dict[str, Any]], events
         lines.append("No JSON schemas found under `config/_schemas/`\n")
     else:
         for s in schemas:
-            lines.append(f"- `{s.get('path')}` — $id: {s.get('$id')} required: {s.get('required')}\n")
+            lines.append(
+                f"- `{s.get('path')}` — $id: {s.get('$id')} required: {s.get('required')}\n")
 
     lines.append("## Events and Contracts\n")
     if not events:
@@ -361,10 +418,12 @@ def generate_docs(configs: Dict[str, Any], schemas: List[Dict[str, Any]], events
         except Exception:
             instr = None
         if instr:
-            lines.append("| symbol | step_size | tick_size | min_qty | min_notional | quote | source |\n")
+            lines.append(
+                "| symbol | step_size | tick_size | min_qty | min_notional | quote | source |\n")
             lines.append("|---|---|---|---|---|---|---|")
             for it in instr:
-                lines.append(f"| {it.get('symbol')} | {it.get('step_size','-')} | {it.get('tick_size','-')} | {it.get('min_qty','-')} | {it.get('min_notional','-')} | {it.get('quote','-')} | {it.get('source_config')} |")
+                lines.append(
+                    f"| {it.get('symbol')} | {it.get('step_size', '-')} | {it.get('tick_size', '-')} | {it.get('min_qty', '-')} | {it.get('min_notional', '-')} | {it.get('quote', '-')} | {it.get('source_config')} |")
         else:
             lines.append("No instruments discovered.\n")
     else:
@@ -379,10 +438,12 @@ def generate_docs(configs: Dict[str, Any], schemas: List[Dict[str, Any]], events
         except Exception:
             gp = None
         if gp:
-            lines.append("Merged master values (if master_config_v1.yaml present):\n")
+            lines.append(
+                "Merged master values (if master_config_v1.yaml present):\n")
             lines.append("```")
             try:
-                md = json.dumps(gp.get('merged_master', {}), indent=2, ensure_ascii=False)
+                md = json.dumps(gp.get('merged_master', {}),
+                                indent=2, ensure_ascii=False)
             except Exception:
                 md = "{}"
             lines.append(md)

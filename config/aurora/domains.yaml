@@ -5,7 +5,7 @@ debug:
   disable_positions_stale_gate: false
 
   # DEV/SHADOW ONLY: disables daily drawdown/loss limit gate. Never enable in live.
-  disable_daily_loss_limit: false
+  disable_daily_loss_limit: true
 
 decision_making:
   # TASK-ZOMBIE-FIX: Removed dead fields (kappa_mode, liquidity_kappa, risk_fraction_q, liquidity_kappa_mode)
@@ -20,7 +20,7 @@ decision_making:
     entry_k_atr: 0.3  # Entry offset = 0.3 * ATR from ref price
     sl_k_atr: 1.5  # Stop-loss = 1.5 * ATR distance
     tp_k_atr: 2.0  # Take-profit = 2.0 * ATR distance
-    obi_weight: 0.1       # <--- :   (0.3  0.1)
+    obi_weight: 0.18      # <--- :   (0.3  0.1)
     obi_mod_clamp_min: 0.8  # Anti-taker drift: min multiplier
     obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
     require_atr: true     # Fail-closed
@@ -42,11 +42,11 @@ decision_making:
     mode: enforce
     enforce: true
     # Apply QoS only for Aurora strategy; MeanReversion uses its own cadence and should not be blocked here.
-    apply_to_strategies: ["aurora"]
+    apply_to_strategies: ["aurora", "md_amr"]
 
   # Flip-orchestration smoothing (reduce churn on marginal reversals)
   flip:
-    enabled: true  # GLOBAL KILLSWITCH: must be true for ANY flip to work. Per-symbol config controls specifics.
+    enabled: false  # GLOBAL KILLSWITCH: must be true for ANY flip to work. Per-symbol config controls specifics.
 
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
@@ -178,7 +178,7 @@ feature_engineering:
   macro_sync:
     enabled: true
     time_diff_threshold_ms: 60000
-    ttl_ms: 600000  # 10min - supports 5m bar backtest (1000PEPEUSDT sorts before BTCUSDT anchor)
+    ttl_ms: 60000   # 10min - supports 5m bar backtest (1000PEPEUSDT sorts before BTCUSDT anchor)
     min_buffer_size: 2 # was 3 (min allowed: 2)
     window: 12
     bin_ms: 5000
@@ -365,7 +365,7 @@ feature_engineering:
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
-  use_absorption_penalty: false
+  use_absorption_penalty: true
   # P3-SSOT: Toxicity normalization cap. Required when use_absorption_penalty=true (fail-closed validator).
   # Preset for readiness  enable without re-editing YAML.
   absorption_dp_cap_pct: 0.02
@@ -473,9 +473,9 @@ execution_position:
     # Map: timeframe_seconds -> entry_ttl_seconds
     # 3m bar = 45s TTL, 5m = 60s, 15m = 180s
     ttl_by_tf_sec:
-      180: 45     # 3m bars: 45 sec TTL
-      300: 60     # 5m bars: 60 sec TTL
-      900: 180    # 15m bars: 180 sec (3 min) TTL
+      180: 600    # 3m bars: 45 sec TTL
+      300: 1200   # 5m bars: 60 sec TTL
+      900: 1800   # 15m bars: 180 sec (3 min) TTL
     reject_unknown_tf: true   # fail-closed: reject if tf not in map
     cancel_on_regime_change: true
     # FIX-SOFT-CANCEL-01: 'immediate' = old behaviour (cancel at once).
@@ -488,13 +488,13 @@ execution_position:
     supersede_cancel_timeout_sec: 5.0
     supersede_reprice_guard:
       # Phase 1 adapter is implemented but rollout stays explicit.
-      enabled: false
-      enforce: false
+      enabled: true
+      enforce: true
       min_price_improvement_bps: 5.0
       min_price_improvement_atr_mult: 0.10
     advanced_stale_cancel:
       # Current-native stale-cancel adapter; keep disabled until hybrid validation.
-      enabled: false
+      enabled: true
       min_age_before_cancel_sec: 300
       drift_away:
         mode: atr
@@ -532,7 +532,7 @@ execution_position:
   bracket_health_check:
     # Current adapter is wired through BracketManager / OrderGuardian.
     # Default off until live-like validation confirms no duplicate placement.
-    enabled: false
+    enabled: true
     interval_sec: 45
     grace_period_ms: 15000
     max_placements_per_cycle: 2
@@ -590,7 +590,7 @@ execution_position:
 shadow_telemetry:
   # Phase 2 subsystem: tracked in runtime and enabled for llm_microstructure shadow flow.
   enabled: true
-  required_for_mode: true
+  required_for_mode: false
   ingest:
     source: ipc_tap
     ipc_endpoint: "tcp://127.0.0.1:7101"
@@ -617,7 +617,7 @@ shadow_telemetry:
     overflow_policy: fail_closed
   api:
     enabled: true
-    host: "0.0.0.0"
+    host: "127.0.0.1"
     port: 8443
     tls: false
     auth_mode: bearer
@@ -643,3 +643,56 @@ shadow_telemetry:
       tick_sample_every_n: 20
       min_tf_sec_for_full: 60
     output_dir: "data/shadow_telemetry/snapshots"
+
+objective_engine:
+  enabled: true
+  data_requirements:
+    require_arce: true
+    require_portfolio: true
+    require_execution: false
+    strict_fail_closed: true
+  explainability:
+    enabled: true
+    emit_subcomponents: true
+    emit_normalization_stats: false
+  components:
+    cost:
+      enabled: true
+      parameters:
+        alpha_fee: 1.0
+        alpha_slippage: 1.0
+        alpha_spread: 0.5
+        base_fee_bps: 4.0
+        slippage_from_spread_ratio: 0.5
+    risk:
+      enabled: true
+      parameters:
+        phi_inventory: 1.0
+        phi_overflow: 3.0
+        phi_volatility: 0.6
+    edge:
+      enabled: true
+      parameters:
+        omega_rr: 0.9
+        omega_threshold_margin: 0.8
+        phi_stop_distance: 0.15
+        phi_rr_consistency: 0.2
+    execution:
+      enabled: true
+      parameters:
+        omega_liquidity: 1.0
+        phi_spread_drag: 0.35
+        phi_notional_pressure: 0.25
+    information:
+      enabled: true
+      parameters:
+        phi_staleness: 0.1
+        omega_regime_confidence: 0.6
+        omega_readiness: 0.5
+    behavior:
+      enabled: true
+      parameters:
+        phi_cancel_replace: 0.1
+        phi_blocked_intents: 0.08
+        phi_reentry: 0.12
+        window_sec: 3600

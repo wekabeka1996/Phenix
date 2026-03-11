@@ -18,7 +18,18 @@ import decimal
 import logging
 # DET-BT-11: Import for deterministic backtest
 from apps.reference.core.time import get_clock
-from collections import defaultdict
+from apps.reference.contracts.runtime_analytics_restore import (
+    StrategyAnalyticsRestoreSnapshot,
+)
+from apps.reference.contracts.runtime_regime_layers import (
+    is_structural_regime_payload,
+    normalize_structural_regime_label,
+)
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    extract_canonical_bar_identity,
+)
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable
 
@@ -59,9 +70,33 @@ from apps.reference.domains.decision_making.instrument_quantizer import (
     quantize_exposure,
     InstrumentSpec as QuantizerSpec,
 )
+from apps.reference.domains.decision_making.position_queries import PositionQueries
 
 
 logger = logging.getLogger("aurora_handler")
+
+
+def _maybe_build_position_queries(
+    *,
+    config: Any,
+    portfolio_getter: Callable[[], Dict[str, Any] | None],
+    logger_: logging.Logger,
+) -> PositionQueries | None:
+    """Build PositionQueries only when sizing SSOT is available and numeric."""
+    try:
+        dm_sizing_cfg = config.domains.decision_making.position_sizing
+        min_position_size_usd = decimal.Decimal(str(dm_sizing_cfg.min_position_size_usd))
+        liquidity_cap_usd = decimal.Decimal(str(dm_sizing_cfg.liquidity_based_cap_usd))
+    except Exception as exc:
+        logger_.debug("PositionQueries unavailable during handler init: %s", exc)
+        return None
+    return PositionQueries(
+        config,
+        portfolio_getter,
+        min_position_size_usd,
+        liquidity_cap_usd,
+        logger_,
+    )
 
 
 @dataclass
@@ -108,6 +143,11 @@ class SymbolState:
         
         # P0-3: Cached price_motion
         self.cached_price_motion = None
+
+        # Objective behavior counters (event-fed, windowed later by config)
+        self.objective_blocked_ts_ms = deque()
+        self.objective_cancel_replace_ts_ms = deque()
+        self.objective_reentry_ts_ms = deque()
 
 
 class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMixin, AuroraConfigLoaderMixin, AuroraHoldingPeriodMixin):
@@ -160,15 +200,44 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         self.scoring_kernel_cls = AuroraScoringKernel
         self._shield_fn = None  # Phase 9: set during _load_config if quadratic
         self._scoring_engine_cfg = None  # Phase 9: ScoringEngineConfig
-        
+        self._aurora_requested_scoring_version = "v2"
+        self._aurora_effective_scoring_version = "v2"
+        self._quadratic_shadow_requested = False
+        self._quadratic_shadow_shield_fn = None
+        self._quadratic_rollback_armed = False
+        self._quadratic_rollback_reason_chain: tuple[str, ...] = ()
+
         # Per-symbol state
         self._symbol_states: Dict[str, SymbolState] = defaultdict(SymbolState)
+        self._latest_portfolio: Dict[str, Any] | None = None
+        self._latest_exposure_summary: Dict[str, Any] | None = None
+        self._analytics_restore_snapshots: Dict[str, StrategyAnalyticsRestoreSnapshot] = {}
+
+        self._position_queries = _maybe_build_position_queries(
+            config=self.config,
+            portfolio_getter=lambda: self._latest_portfolio,
+            logger_=self.logger,
+        )
         
         # T2B-01: Tick-path rejection counter for observability
         self._tick_path_rejections: int = 0
         
         # Config extraction
         self._load_config()
+
+    def apply_runtime_analytics_restore_snapshot(
+        self,
+        snapshot: StrategyAnalyticsRestoreSnapshot,
+    ) -> None:
+        if str(snapshot.strategy_id) != str(self.strategy_id):
+            return
+        self._analytics_restore_snapshots[str(snapshot.symbol)] = snapshot
+
+    def get_runtime_analytics_restore_snapshot(
+        self,
+        symbol: str,
+    ) -> StrategyAnalyticsRestoreSnapshot | None:
+        return self._analytics_restore_snapshots.get(str(symbol))
     
     # _load_config → moved to AuroraConfigLoaderMixin (see aurora_config_loader.py)
 
@@ -319,6 +388,8 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         }
         if details:
             payload["details"] = details
+        state = self._symbol_states[symbol]
+        state.objective_blocked_ts_ms.append(ts_ms)
         self.emit_fn("EVT:STRATEGY_DECISION_BLOCKED", payload)
         
         # P1-OBSERVABILITY: Write to WAL for audit trail (post-mortem analysis)
@@ -343,14 +414,16 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         Updates cached regime state for symbol.
         DM-CRITICAL-PATCHES-02: Always updates heartbeat timestamp (even if changed=False).
         """
+        if not is_structural_regime_payload(event):
+            return
         symbol = event.get("symbol")
         if not symbol:
             return
         state = self._symbol_states[symbol]
-        state.regime = event.get("regime")
-        state.regime_raw_event = event.get("raw_regime")
+        state.regime = normalize_structural_regime_label(event.get("regime"))
+        state.regime_raw_event = normalize_structural_regime_label(event.get("raw_regime"))
         state.regime_confidence = float(event.get("confidence", 0.0))
-        state.regime_ts_ms = int(event.get("ts_ms", int(self.wall_time_fn() * 1000)))
+        state.regime_ts_ms = int(event.get("ts_ms") or event.get("ts") or int(self.wall_time_fn() * 1000))
 
         # DM-CRITICAL-PATCHES-02: Update heartbeat on EVERY regime event (liveness tracking)
         # Use last_update_ts_ms from payload if available, else use monotonic clock
@@ -369,6 +442,41 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         changed = event.get("changed", True)  # Default True for backward compat
         self.logger.debug(
             f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f}, changed={changed})"
+        )
+
+    def on_portfolio_state(self, event: Dict[str, Any]) -> None:
+        if isinstance(event, dict):
+            self._latest_portfolio = event
+
+    def on_exposure_summary(self, event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        payload = event.get("exposure_summary")
+        if isinstance(payload, dict):
+            self._latest_exposure_summary = payload
+
+    def on_order_state_changed(self, event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        symbol = event.get("symbol")
+        if not symbol:
+            return
+        status = str(event.get("status") or event.get("state") or "").upper()
+        if status in ("CANCELED", "EXPIRED", "REJECTED"):
+            self._symbol_states[str(symbol)].objective_cancel_replace_ts_ms.append(
+                int(event.get("ts_ms") or int(self.wall_time_fn() * 1000))
+            )
+
+    def on_trade_intent_rejected(self, event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        if str(event.get("strategy_id") or "") != self.strategy_id:
+            return
+        symbol = event.get("symbol")
+        if not symbol:
+            return
+        self._symbol_states[str(symbol)].objective_blocked_ts_ms.append(
+            int(event.get("ts_ms") or int(self.wall_time_fn() * 1000))
         )
         
     def on_system_stress(self, event: Dict[str, Any]) -> None:
@@ -446,7 +554,17 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             return
         
         # Gate 4: Missing bar_close_ts → REJECT
-        bar_close_ts = cmd.get("bar_close_ts")
+        bar_identity = extract_canonical_bar_identity(
+            cmd,
+            default_symbol=symbol,
+            default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
+        bar_close_ts = (
+            int(bar_identity.bar_end_ts_ms)
+            if bar_identity is not None
+            else cmd.get("bar_close_ts")
+        )
         if not bar_close_ts:
             self._tick_path_rejections += 1
             self.logger.warning(

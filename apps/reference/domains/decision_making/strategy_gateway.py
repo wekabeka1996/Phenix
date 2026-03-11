@@ -140,10 +140,67 @@ class StrategyGateway:
         if not (0.0 <= normalized["conf_ratio"] <= 2.0):
             return False, {"error": "conf_ratio_out_of_range", "value": normalized["conf_ratio"]}
 
+        if "objective" in trace:
+            valid_objective, objective_info = self._validate_objective_trace(trace.get("objective"))
+            if not valid_objective:
+                return False, {"error": "objective_invalid", "details": objective_info}
+            normalized["objective"] = objective_info["normalized"]
+
         for optional_key in ("atr_zscore", "bias", "dir_components"):
             if optional_key in trace:
                 normalized[optional_key] = trace.get(optional_key)
         return True, {"normalized": normalized}
+
+    def _validate_objective_trace(self, trace: Any) -> tuple[bool, dict[str, Any]]:
+        required = ["trace_id", "multiplier", "objective_score", "components", "raw_metrics"]
+        if not isinstance(trace, dict):
+            return False, {"error": "objective_not_dict", "required": required}
+        missing = [key for key in required if key not in trace]
+        if missing:
+            return False, {"error": "objective_missing_keys", "missing": missing}
+
+        def _num(value: Any) -> float | None:
+            try:
+                dec = decimal.Decimal(str(value))
+            except Exception:
+                return None
+            if not dec.is_finite():
+                return None
+            return float(dec)
+
+        trace_id = str(trace.get("trace_id") or "").strip()
+        if not trace_id:
+            return False, {"error": "objective_trace_id_invalid"}
+        multiplier = _num(trace.get("multiplier"))
+        objective_score = _num(trace.get("objective_score"))
+        if multiplier is None or objective_score is None:
+            return False, {"error": "objective_scalar_invalid"}
+        components = trace.get("components")
+        raw_metrics = trace.get("raw_metrics")
+        if not isinstance(components, dict) or not isinstance(raw_metrics, dict):
+            return False, {"error": "objective_maps_invalid"}
+
+        normalized_components: dict[str, float] = {}
+        for key, value in components.items():
+            value_num = _num(value)
+            if value_num is None:
+                return False, {"error": "objective_component_invalid", "key": key}
+            normalized_components[str(key)] = value_num
+        normalized_raw_metrics: dict[str, float] = {}
+        for key, value in raw_metrics.items():
+            value_num = _num(value)
+            if value_num is None:
+                return False, {"error": "objective_raw_metric_invalid", "key": key}
+            normalized_raw_metrics[str(key)] = value_num
+        return True, {
+            "normalized": {
+                "trace_id": trace_id,
+                "multiplier": multiplier,
+                "objective_score": objective_score,
+                "components": normalized_components,
+                "raw_metrics": normalized_raw_metrics,
+            }
+        }
 
     def process_signal(self, event: Message) -> None:  # noqa: C901
         """Gate chain: EVT:STRATEGY_SIGNAL_PRODUCED -> TRADE_INTENT_PROPOSED."""
@@ -173,6 +230,7 @@ class StrategyGateway:
             strategy_id_s = str(strategy_id)
             intent_kind = str(pld.get("intent_kind") or "ENTRY").upper()
             md_amr_trace_norm: dict[str, Any] | None = None
+            objective_trace_norm: dict[str, Any] | None = None
             if strategy_id_s == "md_amr":
                 valid_trace, trace_info = self._validate_md_amr_trace(pld.get("trace"))
                 if not valid_trace:
@@ -189,6 +247,7 @@ class StrategyGateway:
                     )
                     return
                 md_amr_trace_norm = trace_info.get("normalized")
+                objective_trace_norm = md_amr_trace_norm.get("objective") if isinstance(md_amr_trace_norm, dict) else None
                 if intent_kind not in ("ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE"):
                     self._reject(
                         symbol=symbol,
@@ -202,11 +261,31 @@ class StrategyGateway:
                         details={"intent_kind": intent_kind},
                     )
                     return
+            elif strategy_id_s == "aurora":
+                scoring = pld.get("scoring")
+                if isinstance(scoring, dict) and scoring.get("objective") is not None:
+                    valid_objective, objective_info = self._validate_objective_trace(scoring.get("objective"))
+                    if not valid_objective:
+                        self._reject(
+                            symbol=symbol,
+                            strategy_id=strategy_id_s,
+                            side=side,
+                            rid=rid,
+                            reason_code="WAL_TRACE_INVALID",
+                            reason="DECISION",
+                            context="strategy_signal_gateway:aurora_objective_invalid",
+                            why_chain=(why_chain if isinstance(why_chain, list) else []) + ["objective_invalid"],
+                            details=objective_info,
+                        )
+                        return
+                    objective_trace_norm = objective_info.get("normalized")
             self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Processing {side} signal rid={rid} strategy_id={strategy_id}")
             dm = self._dm
 
             # === READINESS CONTRACT (v7) ===
             readiness = pld.get("readiness")
+            runtime_permissions = pld.get("runtime_permissions")
+            is_reduce_path = strategy_id_s == "md_amr" and intent_kind in ("FULL_CLOSE", "PARTIAL_CLOSE")
             if not isinstance(readiness, dict):
                 self._reject(
                     symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
@@ -214,13 +293,46 @@ class StrategyGateway:
                     context="strategy_signal_gateway:readiness_missing",
                     why_chain=why_chain, details={"required": "readiness.warmup_ok"})
                 return
-            if readiness.get("warmup_ok") is not True:
+            allow_manage_existing_without_warmup = (
+                is_reduce_path
+                and isinstance(runtime_permissions, dict)
+                and runtime_permissions.get("can_manage_existing_risk") is True
+                and runtime_permissions.get("can_open_new_risk") is False
+            )
+            if readiness.get("warmup_ok") is not True and not allow_manage_existing_without_warmup:
                 self._reject(
                     symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                     reason_code="READINESS_WARMUP_NOT_OK", reason="READINESS",
                     context="strategy_signal_gateway:readiness_warmup_not_ok",
                     why_chain=why_chain, details={"warmup_ok": readiness.get("warmup_ok")})
                 return
+            if isinstance(runtime_permissions, dict):
+                if is_reduce_path and runtime_permissions.get("can_manage_existing_risk") is False:
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id,
+                        side=side,
+                        rid=rid,
+                        reason_code="READINESS_MANAGE_EXISTING_RISK_NOT_ALLOWED",
+                        reason="READINESS",
+                        context="strategy_signal_gateway:manage_existing_risk_not_allowed",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + ["manage_existing_risk_not_allowed"],
+                        details={"runtime_permissions": runtime_permissions},
+                    )
+                    return
+                if (not is_reduce_path) and runtime_permissions.get("can_open_new_risk") is False:
+                    self._reject(
+                        symbol=symbol,
+                        strategy_id=strategy_id,
+                        side=side,
+                        rid=rid,
+                        reason_code="READINESS_OPEN_NEW_RISK_NOT_ALLOWED",
+                        reason="READINESS",
+                        context="strategy_signal_gateway:open_new_risk_not_allowed",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + ["open_new_risk_not_allowed"],
+                        details={"runtime_permissions": runtime_permissions},
+                    )
+                    return
 
             # === GATE 0: STRATEGY ARBITRATION ===
             arb = dm._check_strategy_arbitration(
@@ -238,7 +350,13 @@ class StrategyGateway:
 
             if strategy_id_s == "md_amr" and intent_kind in ("FULL_CLOSE", "PARTIAL_CLOSE"):
                 exit_reason = str(pld.get("exit_reason_code") or "MD_AMR_EXIT")
-                strategy_trace_payload = {"md_amr": md_amr_trace_norm} if md_amr_trace_norm else None
+                strategy_trace_payload = None
+                if md_amr_trace_norm or objective_trace_norm:
+                    strategy_trace_payload = {}
+                    if md_amr_trace_norm:
+                        strategy_trace_payload["md_amr"] = md_amr_trace_norm
+                    if objective_trace_norm:
+                        strategy_trace_payload["objective"] = objective_trace_norm
                 if intent_kind == "FULL_CLOSE":
                     emitted = dm._emit_reduce_only_close(
                         symbol=symbol,
@@ -603,7 +721,12 @@ class StrategyGateway:
                 entry_plan_trace=ep_trace, tf_sec=tf_sec,
                 max_slippage_bps=max_slip, max_latency_ms=max_lat,
                 risk_score=risk_val,
-                strategy_trace={"md_amr": md_amr_trace_norm} if md_amr_trace_norm else None)
+                strategy_trace=(
+                    {
+                        **({"md_amr": md_amr_trace_norm} if md_amr_trace_norm else {}),
+                        **({"objective": objective_trace_norm} if objective_trace_norm else {}),
+                    } or None
+                ))
             if qos_enabled:
                 dm._update_qos_state(symbol, strategy_id)
 

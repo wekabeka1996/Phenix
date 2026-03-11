@@ -21,6 +21,12 @@ from vfoundation.core.protocol import Message
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
 from apps.reference.core.time.clock import Clock, LiveClock
+from apps.reference.contracts.runtime_regime_layers import (
+    RuntimeRegimeClock,
+    RuntimeRegimeLayer,
+    RuntimeRegimeScope,
+    structural_regime_ref,
+)
 from apps.reference.telemetry.metrics import inc_data_quality_drop
 
 
@@ -301,10 +307,16 @@ class RegimeDetector:
             }
             payload = {
                 "ts": ts_ms,
+                "ts_ms": ts_ms,
                 "symbol": symbol,
                 "regime": "UNCERTAIN",
                 "confidence": str(conf_min),
                 "source_model": "data_quality_gate",
+                "regime_layer": RuntimeRegimeLayer.STRUCTURAL.value,
+                "regime_scope": RuntimeRegimeScope.PER_SYMBOL.value,
+                "regime_clock": RuntimeRegimeClock.BAR.value,
+                "regime_owner": "regime_detector",
+                "structural_regime_ref": structural_regime_ref(symbol, ts_ms),
                 "warmup": warmup,
                 "data_quality": {"drops": data_drops, "notes": data_notes},
             }
@@ -578,10 +590,16 @@ class RegimeDetector:
 
         payload: Dict[str, Any] = {
             "ts": ts_ms,
+            "ts_ms": ts_ms,
             "symbol": symbol,
             "regime": stable_regime,  # HYSTERESIS: emit stable_regime
             "confidence": str(stable_confidence),
             "source_model": source_model,
+            "regime_layer": RuntimeRegimeLayer.STRUCTURAL.value,
+            "regime_scope": RuntimeRegimeScope.PER_SYMBOL.value,
+            "regime_clock": RuntimeRegimeClock.BAR.value,
+            "regime_owner": "regime_detector",
+            "structural_regime_ref": structural_regime_ref(symbol, ts_ms),
             "warmup": warmup,
             "data_quality": {"drops": data_drops, "notes": data_notes},
             # DM-CRITICAL-PATCHES-02: Heartbeat fields

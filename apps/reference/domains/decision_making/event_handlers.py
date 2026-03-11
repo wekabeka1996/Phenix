@@ -19,6 +19,11 @@ from apps.reference.telemetry.metrics import (
     inc_decision_blocked,
 )
 from apps.reference.contracts.reject_reasons import normalize_config_error
+from apps.reference.contracts.runtime_regime_layers import (
+    is_structural_regime_payload,
+    normalize_structural_regime_label,
+    structural_regime_ref,
+)
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
 
@@ -380,21 +385,48 @@ class DMEventHandlers:
     # -- on_regime ----------------------------------------------------------
 
     def on_regime(self, event: Message) -> None:
-        self._shared["latest_regime"] = event.pld
+        pld = event.pld if isinstance(event.pld, dict) else {}
+        if not is_structural_regime_payload(pld):
+            return
+        self._shared["latest_regime"] = {
+            "deprecated_last_writer_wins": True,
+            "layer": pld.get("regime_layer", "structural"),
+            "scope": pld.get("regime_scope", "per_symbol"),
+            "symbol": pld.get("symbol"),
+            "structural_regime_ref": pld.get("structural_regime_ref"),
+        }
 
         if isinstance(event.pld, dict):
             warmup = event.pld["warmup"] if "warmup" in event.pld else {}
-            self._shared["latest_warmup"] = warmup
+            self._shared["latest_warmup"] = {
+                "deprecated_last_writer_wins": True,
+                "symbol": event.pld.get("symbol"),
+                "warmup": warmup,
+            }
             symbol = event.pld.get("symbol")
 
             if symbol:
-                regime_val = event.pld.get("regime") or event.pld.get("overall_regime")
+                regime_val = normalize_structural_regime_label(
+                    event.pld.get("regime") or event.pld.get("overall_regime")
+                )
+                latest_structural_regimes = self._shared.setdefault("latest_structural_regime_by_symbol", {})
+                if isinstance(latest_structural_regimes, dict):
+                    latest_structural_regimes[symbol] = dict(event.pld)
+                latest_structural_warmup = self._shared.setdefault("latest_structural_warmup_by_symbol", {})
+                if isinstance(latest_structural_warmup, dict):
+                    latest_structural_warmup[symbol] = warmup
+                ts_ms = event.pld.get("ts_ms") or event.pld.get("ts")
                 self._per_symbol_regimes[symbol] = {
                     "symbol": symbol,
                     "regime": regime_val,
                     "warmup": warmup,
                     "confidence": event.pld.get("confidence"),
                     "axes": event.pld.get("axes"),
+                    "layer": event.pld.get("regime_layer", "structural"),
+                    "scope": event.pld.get("regime_scope", "per_symbol"),
+                    "clock": event.pld.get("regime_clock", "bar"),
+                    "ts_ms": ts_ms,
+                    "structural_regime_ref": event.pld.get("structural_regime_ref") or structural_regime_ref(symbol, ts_ms),
                 }
                 self.logger.debug(
                     f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"

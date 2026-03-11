@@ -21,6 +21,41 @@ import json
 from decimal import Decimal
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from apps.reference.contracts.runtime_analytics_restore import (
+    RuntimeAnalyticsRestoreScope,
+    StrategyAnalyticsRestoreSnapshot,
+    combine_restore_permissions,
+    lookup_restore_status,
+    restore_blocking_tokens,
+    restore_status_to_readiness_status,
+)
+from apps.reference.contracts.runtime_bar_identity import (
+    CanonicalBarIdentity,
+    CanonicalReplayIdentity,
+    RuntimeBarSourceMode,
+    extract_canonical_bar_identity,
+    extract_canonical_replay_identity,
+)
+from apps.reference.contracts.runtime_gap_policy import (
+    RuntimeGapStatus,
+    attach_gap_status_payload,
+    build_basis_bar_status_from_gap,
+    build_trading_status_from_gap,
+    extract_gap_status,
+    gap_blocking_tokens,
+    gap_blocks_open_new_risk,
+)
+from apps.reference.contracts.runtime_regime_layers import (
+    is_structural_regime_payload,
+    normalize_structural_regime_label,
+)
+from apps.reference.contracts.runtime_readiness import (
+    RuntimeReadinessScope,
+    make_permissions,
+    make_snapshot,
+    partial_status,
+    ready_status,
+)
 from vfoundation.core.protocol import Message
 from apps.reference.utils.accessors import aget
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
@@ -148,6 +183,7 @@ class MeanReversionHandler:
         # Signal tracking for logging
         self._signal_counts: Dict[str, int] = {}
         self._last_signal_time: Dict[str, float] = {}
+        self._analytics_restore_snapshots: Dict[str, StrategyAnalyticsRestoreSnapshot] = {}
         
         # Cache for liquidity kappa (from FeatureEngineering)
         self._liquidity_kappa_map: Dict[str, Decimal] = {}
@@ -182,6 +218,20 @@ class MeanReversionHandler:
         self.bar_logger: Optional[MeanReversionBarLogger] = None
         if self._mr_config and self._mr_config.timeframe_sec > 0:
             self.bar_logger = MeanReversionBarLogger(self._mr_config.timeframe_sec)
+
+    def apply_runtime_analytics_restore_snapshot(
+        self,
+        snapshot: StrategyAnalyticsRestoreSnapshot,
+    ) -> None:
+        if str(snapshot.strategy_id) != "mean_reversion":
+            return
+        self._analytics_restore_snapshots[str(snapshot.symbol)] = snapshot
+
+    def get_runtime_analytics_restore_snapshot(
+        self,
+        symbol: str,
+    ) -> StrategyAnalyticsRestoreSnapshot | None:
+        return self._analytics_restore_snapshots.get(str(symbol))
 
     def register(self) -> None:
         """Attach FSM listeners.
@@ -483,7 +533,14 @@ class MeanReversionHandler:
             if self._stats["bar_logging_errors"] <= 5:
                 self.logger.warning(f"Failed to log bar for {signal.symbol}: {e}")
 
-    def _emit_signal(self, signal: MRSignal) -> None:
+    def _emit_signal(
+        self,
+        signal: MRSignal,
+        *,
+        bar_identity: CanonicalBarIdentity | None = None,
+        replay_identity: CanonicalReplayIdentity | None = None,
+        gap_status: RuntimeGapStatus | None = None,
+    ) -> None:
         symbol = signal.symbol
         
         # Track signal
@@ -510,6 +567,129 @@ class MeanReversionHandler:
 
         # P0-1: Get cached features for this symbol (from last CMD:PROCESS_STRATEGY)
         cached_features = self._last_cmd_features.get(symbol, {})
+        restore_snapshot = self.get_runtime_analytics_restore_snapshot(symbol)
+        base_runtime_permissions = make_permissions(
+            can_manage_existing_risk=True,
+            can_open_new_risk=not gap_blocks_open_new_risk(gap_status),
+        )
+        runtime_permissions = combine_restore_permissions(
+            base_runtime_permissions,
+            restore_snapshot,
+        )
+        blocking_reason_chain = list(gap_blocking_tokens(gap_status)) + list(
+            restore_blocking_tokens(restore_snapshot)
+        )
+        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
+        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
+            blocking_reason_chain.append("protect_only")
+            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
+        runtime_scopes = {
+            RuntimeReadinessScope.BASIS_BAR_READY.value: build_basis_bar_status_from_gap(
+                gap_status,
+                updated_at=int(signal.timestamp_ms),
+                source="market_data:payload_bridge",
+                evidence_ref=(bar_identity.to_ref() if bar_identity is not None else None),
+            ),
+            RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value: ready_status(
+                why=["signal_emitted"],
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=rid,
+            ),
+            RuntimeReadinessScope.TRADING_READY.value: build_trading_status_from_gap(
+                gap_status,
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=rid,
+                allow_open_new_risk=runtime_permissions.can_open_new_risk,
+                open_ready_why=["open_new_risk_allowed"],
+                blocked_why=blocking_reason_chain,
+            ),
+        }
+        runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = (
+            ready_status(
+                why=["flat_regime_present"],
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=f"flat_regime:{symbol}:{int(signal.timestamp_ms)}",
+            )
+            if signal.flat_regime is not None
+            else partial_status(
+                why=["flat_regime_missing"],
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=f"flat_regime:{symbol}:{int(signal.timestamp_ms)}",
+            )
+        )
+        if restore_snapshot is not None:
+            runtime_scopes[RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+                ),
+                updated_at=int(signal.timestamp_ms),
+                source="execution_position:startup_restore",
+                evidence_ref=rid,
+            )
+            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                ),
+                updated_at=int(signal.timestamp_ms),
+                source="feature_engineering:startup_restore",
+                evidence_ref=rid,
+                default_status=runtime_scopes.get(RuntimeReadinessScope.MICROSTRUCTURE_READY.value),
+            )
+            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                ),
+                updated_at=int(signal.timestamp_ms),
+                source="regime_detector:startup_restore",
+                evidence_ref=rid,
+                default_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE,
+                ),
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=rid,
+                restored_why=["signal_emitted"],
+                default_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.DECISION_CACHE,
+                ),
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:startup_restore",
+                evidence_ref=rid,
+                default_status=runtime_scopes[RuntimeReadinessScope.TRADING_READY.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
+                gap_status,
+                updated_at=int(signal.timestamp_ms),
+                source="decision_making:mean_reversion",
+                evidence_ref=rid,
+                allow_open_new_risk=runtime_permissions.can_open_new_risk,
+                open_ready_why=["open_new_risk_allowed"],
+                blocked_why=blocking_reason_chain,
+            )
+        runtime_snapshot = make_snapshot(
+            strategy_id="mean_reversion",
+            symbol=symbol,
+            updated_at=int(signal.timestamp_ms),
+            scopes=runtime_scopes,
+            source="decision_making:mean_reversion",
+            permissions=runtime_permissions,
+            blocking_reason_chain=blocking_reason_chain,
+        )
         
         pld = {
             "schema_version": 1,
@@ -517,12 +697,24 @@ class MeanReversionHandler:
             "symbol": symbol,
             "tf_sec": self.timeframe_sec,
             "side": side,
+            "bar_close_ts": (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else int(signal.bar.end_ts_ms if signal.bar else 0)
+            ),
             "readiness": {"warmup_ok": True},
+            "runtime_permissions": runtime_permissions.to_payload(),
+            "runtime_readiness": runtime_snapshot.to_payload(),
             "score": float(signal.confidence),
             "why": signal.why,
             "ts_ms": int(signal.timestamp_ms),
             "rid": rid,
             "why_chain": [signal.why],
+            "source_mode": (
+                bar_identity.source_mode.value
+                if bar_identity is not None
+                else RuntimeBarSourceMode.LIVE.value
+            ),
             "price_ctx": {
                 "entry_price": str(signal.entry_price),
                 "stop_price": str(signal.stop_price) if signal.stop_price else None,
@@ -538,6 +730,16 @@ class MeanReversionHandler:
                 "target_mult": float(signal.mr_params.target_mult) if signal.mr_params else 1.0,
             },
         }
+        if bar_identity is not None:
+            pld["bar_identity"] = bar_identity.to_payload()
+            pld["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+        if replay_identity is not None:
+            pld["replay_identity"] = replay_identity.to_payload()
+            pld["replay_generation"] = int(replay_identity.replay_generation)
+        if gap_status is not None:
+            attach_gap_status_payload(pld, gap=gap_status, attach_nested_bar=False)
+        if restore_snapshot is not None:
+            pld["analytics_restore"] = restore_snapshot.to_payload()
 
         self.fsm.emit(
             "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -594,12 +796,14 @@ class MeanReversionHandler:
     def _on_regime_detected(self, event: Message) -> None:
         try:
             pld = event.pld or {}
+            if not is_structural_regime_payload(pld):
+                return
             if isinstance(pld, dict):
                 symbol = str(pld.get("symbol") or "")
-                regime = str(pld.get("regime") or pld.get("overall_regime") or "")
+                regime = normalize_structural_regime_label(pld.get("regime") or pld.get("overall_regime") or "")
             else:
                 symbol = str(getattr(pld, "symbol", "") or "")
-                regime = str(aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
+                regime = normalize_structural_regime_label(aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
 
             if not symbol or symbol not in self._enabled_symbols:
                 return
@@ -742,6 +946,23 @@ class MeanReversionHandler:
         try:
             symbol = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", None)
             tf_sec = pld.get("tf_sec") if isinstance(pld, dict) else getattr(pld, "tf_sec", None)
+            bar_identity = extract_canonical_bar_identity(
+                pld if isinstance(pld, dict) else None,
+                default_symbol=str(symbol or "") or None,
+                default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+            replay_identity = extract_canonical_replay_identity(
+                pld if isinstance(pld, dict) else None,
+                default_symbol=str(symbol or "") or None,
+                default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+            gap_status = extract_gap_status(
+                pld if isinstance(pld, dict) else None,
+                default_source="market_data:payload_bridge",
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
             
             # T2B-03 GATE 1: Missing tf_sec -> REJECT
             if tf_sec is None:
@@ -766,7 +987,11 @@ class MeanReversionHandler:
                 return
             
             # T2B-03 GATE 3: Missing bar_close_ts -> REJECT
-            bar_close_ts = pld.get("bar_close_ts") if isinstance(pld, dict) else getattr(pld, "bar_close_ts", None)
+            bar_close_ts = (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else pld.get("bar_close_ts") if isinstance(pld, dict) else getattr(pld, "bar_close_ts", None)
+            )
             if not bar_close_ts:
                 self._stats["bars_rejected_missing_tf"] += 1
                 self.logger.warning(f"REJECTED: MR CMD missing bar_close_ts for {symbol}")
@@ -819,7 +1044,11 @@ class MeanReversionHandler:
                 close=Decimal(str(bar_data.get("close", 0) if isinstance(bar_data, dict) else getattr(bar_data, "close", 0))),
                 volume=Decimal(str(bar_data.get("volume", 0) if isinstance(bar_data, dict) else getattr(bar_data, "volume", 0))),
                 start_ts_ms=int(bar_data.get("start_ts_ms", 0) if isinstance(bar_data, dict) else getattr(bar_data, "start_ts_ms", 0)),
-                end_ts_ms=int(bar_close_ts),
+                end_ts_ms=(
+                    int(bar_identity.bar_end_ts_ms)
+                    if bar_identity is not None
+                    else int(bar_close_ts)
+                ),
                 trade_count=int(bar_data.get("trade_count", 0) if isinstance(bar_data, dict) else getattr(bar_data, "trade_count", 0)),
             )
             
@@ -872,7 +1101,12 @@ class MeanReversionHandler:
             
                 if signal.is_signal:
                     if self._check_liquidity_gate(symbol):
-                        self._emit_signal(signal)
+                        self._emit_signal(
+                            signal,
+                            bar_identity=bar_identity,
+                            replay_identity=replay_identity,
+                            gap_status=gap_status,
+                        )
                     else:
                         self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
                         write_trade_intent_rejected(

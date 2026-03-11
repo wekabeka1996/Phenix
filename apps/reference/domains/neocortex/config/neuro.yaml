@@ -43,6 +43,63 @@ world_model:
   sequence_length: 50  # BPTT length
 
 # ============================================================================
+# Sequence Contract (P5)
+# ============================================================================
+sequence:
+  inference_mode: "stateless_per_event"
+  representation_training_mode: "independent_rows"
+  reset_on_replay_start: true
+  reset_on_symbol_switch: true
+  reset_on_objective_family_switch: true
+  reset_on_episode_boundary: true
+
+# ============================================================================
+# Dataset Hygiene / Provenance (P6)
+# ============================================================================
+dataset:
+  manifest_version: 1
+  split:
+    train_ratio: 0.70
+    val_ratio: 0.15
+    test_ratio: 0.15
+
+# ============================================================================
+# Evaluator / Calibration / Disagreement (P9)
+# ============================================================================
+evaluation:
+  report_version: 1
+  calibration_bins: 5
+  confidence_bucket_edges: [0.25, 0.50, 0.75, 0.90]
+  missing_confidence_policy: "not_available"
+  advisory_status: "forbidden"
+
+# ============================================================================
+# Performance / Replay Engineering (P7)
+# ============================================================================
+performance:
+  operating_mode: "offline_replay"
+  shadow_intent_emit_policy: "decimate_observational"
+  shadow_intent_decimation_stride: 10
+  shadow_jsonl_write_policy: "buffered"
+  telemetry_write_policy: "buffered"
+  non_critical_queue_limit: 2048
+  shadow_log_flush_threshold: 64
+  telemetry_flush_threshold: 64
+  flush_interval_ms: 1000
+  non_critical_overflow_policy: "drop_oldest"
+
+# ============================================================================
+# Production Shadow Gates (P8)
+# ============================================================================
+shadow_gates:
+  gate_set_version: 1
+  startup_enforcement: "strict"
+  allow_advisory_influence: false
+  allow_live_authority: false
+  allow_policy_training_reenable: false
+  require_domain_manifest_contracts: true
+
+# ============================================================================
 # PPO (Proximal Policy Optimization)
 # ============================================================================
 ppo:
@@ -53,6 +110,8 @@ ppo:
 
   # Reward mode: "pnl" (legacy trade-based) or "regime_oracle" (self-supervised regime prediction)
   reward_mode: "regime_oracle"
+  objective_split_enforced: true
+  policy_training_mode: "disabled"
 
   # Training
   learning_rate: 0.0003

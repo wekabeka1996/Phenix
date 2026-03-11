@@ -18,7 +18,108 @@
     "bar_close_ts": {
       "type": "integer",
       "minimum": 1,
-      "description": "Bar close timestamp in milliseconds epoch"
+      "description": "Legacy compatibility alias for bar_identity.bar_end_ts_ms"
+    },
+    "close_boundary_ts_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Canonical close boundary timestamp in milliseconds epoch"
+    },
+    "source_mode": {
+      "type": "string",
+      "enum": [
+        "live",
+        "replay",
+        "warmup_import",
+        "synthetic_repair"
+      ]
+    },
+    "replay_generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bar_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "bar_start_ts_ms",
+        "bar_end_ts_ms",
+        "close_boundary_ts_ms",
+        "source_mode"
+      ],
+      "properties": {
+        "symbol": {"type": "string"},
+        "timeframe_sec": {"type": "integer", "minimum": 1},
+        "bar_start_ts_ms": {"type": "integer"},
+        "bar_end_ts_ms": {"type": "integer"},
+        "close_boundary_ts_ms": {"type": "integer"},
+        "source_mode": {
+          "type": "string",
+          "enum": [
+            "live",
+            "replay",
+            "warmup_import",
+            "synthetic_repair"
+          ]
+        }
+      }
+    },
+    "replay_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "close_boundary_ts_ms",
+        "source_mode",
+        "replay_generation"
+      ],
+      "properties": {
+        "symbol": {"type": "string"},
+        "timeframe_sec": {"type": "integer", "minimum": 1},
+        "close_boundary_ts_ms": {"type": "integer"},
+        "source_mode": {
+          "type": "string",
+          "enum": [
+            "live",
+            "replay",
+            "warmup_import",
+            "synthetic_repair"
+          ]
+        },
+        "replay_generation": {"type": "integer", "minimum": 0}
+      }
+    },
+    "gap_state": {
+      "type": "string",
+      "enum": [
+        "CLEAR",
+        "GAP_DETECTED",
+        "REPAIRED",
+        "INVALIDATED"
+      ]
+    },
+    "gap_policy_action": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "REPAIR",
+        "INVALIDATE",
+        "DEGRADE_TO_NON_TRADING"
+      ]
+    },
+    "gap_bars_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "is_gap_bar": {
+      "type": "boolean"
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": true
     },
     "bar": {
       "description": "Full OHLCV bar (SSOT) if available; may be null when upstream bar cache is missing.",
@@ -55,6 +156,52 @@
             },
             "end_ts_ms": {
               "type": "integer"
+            },
+            "close_boundary_ts_ms": {
+              "type": "integer"
+            },
+            "source_mode": {
+              "type": "string",
+              "enum": [
+                "live",
+                "replay",
+                "warmup_import",
+                "synthetic_repair"
+              ]
+            },
+            "bar_identity": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "replay_identity": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "replay_generation": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gap_state": {
+              "type": "string",
+              "enum": [
+                "CLEAR",
+                "GAP_DETECTED",
+                "REPAIRED",
+                "INVALIDATED"
+              ]
+            },
+            "gap_policy_action": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "REPAIR",
+                "INVALIDATE",
+                "DEGRADE_TO_NON_TRADING"
+              ]
+            },
+            "gap": {
+              "type": "object",
+              "additionalProperties": true
             }
           },
           "required": [

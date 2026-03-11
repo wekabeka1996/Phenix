@@ -1,5 +1,501 @@
 # Engineering Journal
 
+## 2026-03-11: NEO-INTEGRATION-DATA-CONTRACT-AUDIT
+
+**Task:** Integration audit and research to establish whether the new Aurora execution/data surface is compatible with neocortex's post-P1-P9 input contracts, and what must be resolved before any form of shadow launch.
+
+**What was audited:**
+- Neocortex required input contracts (time, lifecycle, reward, objective, sequence, dataset, gates) from `domain.yaml`, parsers, adapter, gates, dataset hygiene, evaluation layer
+- Aurora actual data/event surface (20 events across 7 domains, 4 log streams, 3 parsers)
+- Log-mediated integration surface: `order_log_v1.jsonl`, `aurora_core.log`, `features/*.log`, `trade_lifecycle.jsonl`
+- Compatibility across 34 contract items
+
+**Key findings:**
+- 18/34 items COMPATIBLE, 11 PARTIALLY_COMPATIBLE, 5 MISSING
+- 4 hard blockers identified:
+  1. `lifecycle_id` never written to `order_log_v1.jsonl` (primary neocortex identity key absent from producer)
+  2. `trade_id` missing from POSITION_CLOSED log entries (close resolution impossible by canonical key)
+  3. No structured `fees`/`net_pnl` in close path (reward completeness always False)
+  4. Core log parser depends on unstructured text regex (fragile, 0 `realized_pnl_net` occurrences confirmed)
+- 10 soft blockers / quality risks identified
+
+**Verdict:** Partial offline launch ONLY.
+- Offline replay for representation + regime_supervision: READY NOW
+- Offline replay with execution quality: BLOCKED by 4 producer-side fixes
+- Limited shadow runtime: BLOCKED by above + feature timestamp requirement + decision reference log
+- Full acceptance campaign: BLOCKED by all above + P0 freeze + follow-ups + URS Phase A
+
+**What was NOT done (by design):**
+- No code changes to neocortex or Aurora
+- No advisory influence reopened
+- No policy training re-enabled
+- No acceptance campaign started
+- No live/testnet trading
+
+**Artifacts created:**
+- `docs/audits/neocortex_integration_data_contract_audit.md` — full audit with matrix, blockers, launch prerequisites
+- `docs/audits/neocortex_aurora_event_compatibility_matrix.md` — detailed 34-item table
+- `docs/roadmaps/neocortex_shadow_launch_prereqs.md` — phased launch readiness with explicit fix list
+
+**Recommended next package:** `NEO-PRODUCER-CONTRACT-ALIGNMENT` — 3-4 targeted changes in Aurora execution domain telemetry (add `lifecycle_id`, `trade_id`, `fees`/`net_pnl` to order log entries). No neocortex code changes. No broad refactor.
+
+---
+
+## 2026-03-11: NEO-P9-EVALUATOR-CALIBRATION-AND-ADVISORY-HARDENING
+
+**Task:** Add a canonical offline evaluator / calibration / disagreement layer for `apps/reference/domains/neocortex` after P1-P8, without reopening advisory influence, live authority, or policy training.
+
+**What was missing before P9:**
+- There was no first-class evaluator layer in `apps/reference/domains/neocortex/logic/*`.
+- P1-P8 gave clean contracts and production-shadow gates, but there was no canonical answer to:
+  - how regime-supervision quality is measured
+  - how execution-quality coverage/diagnostic quality is measured
+  - how disagreement with Aurora is counted deterministically
+  - whether confidence is calibrated or simply unavailable
+  - why advisory remains forbidden even after production-shadow cleanup
+- Shadow confidence existed in runtime shadow payloads, but there was no explicit calibration contract and no honesty layer for missing/insufficient confidence support.
+
+**What was implemented:**
+- Added canonical `EvaluationConfig` to:
+  - `apps/reference/domains/neocortex/config_models.py`
+  - `apps/reference/domains/neocortex/config/neuro.yaml`
+- Added manifest contract section `contracts.evaluation` to:
+  - `apps/reference/domains/neocortex/domain.yaml`
+- Added new evaluator layer:
+  - `apps/reference/domains/neocortex/logic/evaluation/contracts.py`
+  - `apps/reference/domains/neocortex/logic/evaluation/evaluator.py`
+  - `apps/reference/domains/neocortex/logic/evaluation/__init__.py`
+- Added reports/contracts:
+  - `ShadowEvaluationReport`
+  - `CalibrationReport`
+  - `DisagreementReport`
+  - `AdvisoryReadinessPrereqReport`
+- Added disagreement input contract:
+  - `ShadowDisagreementSample`
+- Added a minimal runtime enrichment in `apps/reference/domains/neocortex/transport/adapter.py` so regime-supervision samples carry already-available shadow `confidence` into the evaluation corpus.
+
+**Evaluation / trust semantics:**
+- Regime supervision:
+  - separate report with label coverage, confusion summary, accuracy, abstain count, symbol coverage, realized-regime coverage
+- Execution quality:
+  - separate report with reward completeness coverage, unresolved counts, diagnostics-only counts, close-event distribution, lifecycle-state distribution, fill summaries
+- Disagreement:
+  - deterministic counts only; no claim that disagreement is alpha
+  - reported by symbol / regime / confidence bucket / severity bucket
+- Calibration:
+  - explicit `available` vs `not_available`
+  - no fake calibration when confidence signal is missing
+- Advisory hardening:
+  - separate machine-readable prereq report
+  - remains `forbidden`
+  - explicitly lists unsatisfied prerequisites and future package needs
+
+**Non-goals preserved:**
+- P9 did not reopen advisory influence.
+- P9 did not reopen policy training.
+- P9 did not change P1-P8 semantic contracts.
+- P9 did not add planner/world-model runtime integration.
+- P9 did not claim disagreement is alpha.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_evaluator_reports.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_calibration.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_disagreement.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_shadow_gates.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_dataset_hygiene.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_objective_split.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_sequence_semantics.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_performance_contract.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_provenance.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_replay_engineering.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_episode_identity.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+
+## 2026-03-11: NEO-P8-PRODUCTION-SHADOW-GATES
+
+**Task:** Add centralized production-shadow readiness gating for `apps/reference/domains/neocortex` after P1-P7 remediation, without reopening policy training, advisory influence, or any broader semantic/runtime redesign.
+
+**What was missing before P8:**
+- `apps/reference/domains/neocortex/main.py` had no centralized startup/readiness gate evaluation.
+- P1-P7 invariants existed as config/runtime contracts, but startup could still proceed without a deterministic machine-readable gate report.
+- There was no single production-shadow safety posture check ensuring:
+  - policy training stayed disabled
+  - advisory/live authority stayed forbidden
+  - dataset admission remained fail-closed
+  - sequence narrowing remained active
+  - `live_shadow` / `offline_replay` mode constraints were enforced as startup readiness, not just as scattered validators
+
+**What was implemented:**
+- Added canonical `ShadowGateConfig` to `apps/reference/domains/neocortex/config_models.py` and `apps/reference/domains/neocortex/config/neuro.yaml`.
+- Added centralized gate evaluator layer in:
+  - `apps/reference/domains/neocortex/logic/gates/shadow.py`
+  - `apps/reference/domains/neocortex/logic/gates/__init__.py`
+- Added startup integration in `apps/reference/domains/neocortex/main.py` via `evaluate_startup_shadow_gates(...)`.
+- Added manifest contract section `contracts.production_shadow_gates` to `apps/reference/domains/neocortex/domain.yaml`.
+
+**Gate taxonomy and enforcement posture:**
+- Semantic integrity gates:
+  - domain manifest exposes required contract sections
+  - objective split remains enforced
+  - narrowed sequence contract remains active
+  - canonical time mode remains valid for the selected operating mode
+- Shadow safety posture gates:
+  - policy training stays disabled
+  - advisory influence stays forbidden
+  - live authority stays forbidden
+- Admission/provenance gates:
+  - dataset manifest contract remains valid
+  - dataset self-tests prove policy samples and unresolved execution samples are not trainable
+- Operational readiness gates:
+  - performance mode contract remains self-consistent
+  - budget/flush thresholds remain sane
+- Startup behavior:
+  - `startup_enforcement=strict` now hard-fails startup on any blocking gate
+  - readiness report is machine-readable and deterministic for the same config + evaluator timestamp
+
+**Non-goals preserved:**
+- P8 did not change P1 canonical time semantics.
+- P8 did not rewrite P2 lifecycle identity.
+- P8 did not redesign P3 reward semantics.
+- P8 did not reopen policy training or advisory/live influence.
+- P8 did not introduce a new evaluator/ML stack; it only hardened release/startup gating.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_shadow_gates.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_performance_contract.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_dataset_hygiene.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_objective_split.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_sequence_semantics.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_provenance.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_replay_engineering.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_episode_identity.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+
+## 2026-03-02: READINESS-CONTRACTS-AUDIT
+
+**Task:** Perform a deep READ-ONLY audit and synthesize all readiness states, startup hydration states, and restart recovery semantics across the Aurora/Phenix codebase.
+**Goal:** Formalize existing readiness layers and identify missing contracts, false-ready conditions, and restart asymmetries.
+
+**What was audited:**
+- FeatureEngineering `warmup` / `full_ready` logic.
+- `RegimeDetector` internal state readiness.
+- Phase 9 `pillar_backfill.py` HTF readiness dependencies.
+- `md_amr` mandatory live warmup mechanisms (`_MANDATORY_LIVE_WARMUP_SEC`).
+- `execution_position` Leverage Bootstrap and `InFlightReconciler` bindings on startup.
+- `position_tracking` DR (WAL + snapshot) and execution FSM hydration.
+- `readiness_gates.py` in `decision_making`.
+
+**Key Findings:**
+1. **[CONFIRMED] False-Ready Condition in Execution:** `run_leverage_bootstrap()` returns a set of `blocked_symbols` due to exchange API failures, but `main.py` only logs this. It is never passed to `decision_making` to block intents, creating a critical false-ready state.
+2. **[CONFIRMED] Restart Asymmetry:** `position_tracking` mathematically replays WAL, while `execution_position` merely remaps FSM instances via `hydrate()` and relies on an async `InFlightReconciler` without blocking initial trading loops.
+3. **[CONFIRMED] Hidden-Ready Assumption:** `md_amr_handler` silently relies on a REST hydration attempt (`_REST_HYDRATION_LIMIT`) before falling back to a mandatory 2-hour live warmup clock.
+
+**Artifacts added:**
+- `docs/architectural_audits/READINESS_CONTRACTS_AUDIT.md` - Full contract-oriented synthesis defining canonical readiness scopes (`execution_context_ready`, `quadratic_htf_ready`, `basis_bar_ready`, etc.) and the exact path from startup to the first valid trade cycle.
+
+## 2026-03-11: NEO-P7-PERFORMANCE-AND-REPLAY-ENGINEERING
+
+**Task:** Harden neocortex hot-path execution for production-grade shadow and replay research without rewriting P1 time, P2 lifecycle identity, P3 reward, P4 objective split, P5 sequence semantics, or P6 dataset hygiene.
+
+**What was expensive / uncontrolled:**
+- `apps/reference/domains/neocortex/transport/adapter.py` executed non-critical side effects synchronously per feature row:
+  - dual shadow event emission
+  - per-row shadow JSONL open/write/flush
+  - per-row telemetry CSV open/write/flush
+- There was no explicit operating-mode contract separating `live_shadow` from `offline_replay`.
+- Observational side effects had no explicit budget or overflow policy, so replay throughput could degrade under disk-heavy side effects.
+- Observational shadow emission had no deterministic decimation contract for offline replay.
+
+**What was implemented:**
+- Added canonical `PerformanceConfig` in `apps/reference/domains/neocortex/config_models.py` and `apps/reference/domains/neocortex/config/neuro.yaml`.
+- Added `contracts.performance` to `apps/reference/domains/neocortex/domain.yaml`.
+- Introduced explicit operating modes:
+  - `live_shadow`
+  - `offline_replay`
+- Added explicit performance knobs:
+  - `shadow_intent_emit_policy`
+  - `shadow_intent_decimation_stride`
+  - `shadow_jsonl_write_policy`
+  - `telemetry_write_policy`
+  - `non_critical_queue_limit`
+  - `shadow_log_flush_threshold`
+  - `telemetry_flush_threshold`
+  - `flush_interval_ms`
+  - `non_critical_overflow_policy`
+- Chosen P7 narrowing:
+  - semantic-critical path remains lossless and unbatched
+  - only observational side effects are buffered/decimated
+  - no encode/act batching was introduced because it would risk semantic drift without explicit equivalence tests
+- `TelemetryLogger` now supports buffered ordered flushes, explicit overflow handling, and counters for dropped/flushed rows.
+- Adapter now supports:
+  - deterministic stride-based observational shadow decimation in `offline_replay`
+  - buffered shadow JSONL writes with explicit overflow accounting
+  - buffered telemetry writes
+  - explicit counters for generated/emitted/decimated shadow outputs and non-critical overload
+  - shutdown flush of buffered non-critical outputs
+
+**Determinism / safety posture:**
+- P1 causal time remains canonical; offline replay decimation is deterministic and depends on explicit event order/stride, not wallclock.
+- P2/P3 lifecycle and reward assembly still run on every event; only observational shadow outputs may be decimated.
+- P4 objective routing, P5 sequence narrowing, and P6 provenance/admission remain intact.
+- Policy training remains disabled.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_performance_contract.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_replay_engineering.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_dataset_hygiene.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_sequence_semantics.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_objective_split.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_provenance.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_episode_identity.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+- Result: targeted P7 tests are green and checked P1-P6 regression surface remains green.
+
+**Explicit non-goals preserved:**
+- Did not batch encode/act across semantic-critical streams.
+- Did not change lifecycle/reward/objective/provenance semantics.
+- Did not re-enable policy training.
+- Did not start P8 production shadow gates or evaluator/advisory hardening.
+
+## 2026-03-10: Aurora Current Warmup / Quadratic / Decision Lifecycle Audit
+
+**Task:** Produce a code-first current-state audit of Aurora startup/bootstrap, warmups, bar-only vs microstructure dependencies, Quadratic runtime activation, decision lifecycle, and backfill/recovery wiring under the active `config/aurora` runtime.
+
+**Confirmed findings:**
+- Active Aurora strategy config is still `decision.scoring_version: "v2"`; Quadratic kernel exists but is not active by current config.
+- Regime detector is currently a 5m-only runtime and needs about 301 x 5m bars plus hysteresis, or about 25.33h, for full natural readiness from cold start.
+- Phase 9 pillars require M15/H4/D1 histories up to 200 D1 bars, and a dedicated Binance-based pillar backfill service exists.
+- FeatureEngineering listens for `EVT:HTF_BARS_IMPORTED`, but no confirmed startup call path was found that runs pillar backfill and emits that event before live trading starts.
+- FE `warmup.full_ready` is driven by declared microstructure readiness keys and does not include pillar readiness, so FE-ready and Quadratic-ready are currently different contracts.
+- If `scoring_version` is flipped to `quadratic` without HTF hydration, FE can still emit `CMD:PROCESS_STRATEGY`, but `QuadraticScoringKernel` will defer on `PILLAR_WARMUP` until `pillar_sum` becomes available.
+- Market-data startup is live WebSocket driven; no confirmed historical seed or delta-sync bootstrap was found for bars/HTF state.
+- Disaster recovery currently restores execution/position state better than analytics warm state; no equivalent restore path was confirmed for FE/regime/pillars.
+
+**Artifacts added:**
+- `docs/audits/current_warmup_quadratic_scoring_decision_lifecycle_audit_2026-03-10.md`
+
+**Operational conclusion:**
+- Current branch is operationally closer to a bar-driven Aurora v2 runtime with Phase 9 pieces present than to a fully bootstrapped active Quadratic runtime.
+- The main risk before any Quadratic activation is readiness-contract drift: startup hydration, FE warmup, Quadratic readiness, and restart recovery are not yet aligned.
+
+## 2026-03-11: NEO-P6-DATASET-HYGIENE-AND-PROVENANCE
+
+**Task:** Add a canonical dataset hygiene and provenance layer to neocortex without rewriting P1 time, P2 lifecycle identity, P3 reward contract, P4 objective split, or P5 sequence semantics.
+
+**What was broken:**
+- Dataset admission was still implicit in `apps/reference/domains/neocortex/transport/adapter.py`: representation rows entered the training buffer without provenance, oracle settlements entered supervision buffers without eligibility checks, and execution-quality samples had no formal quarantine or exclusion path.
+- The domain had no canonical dataset provenance contract, so a sample could not answer where it came from, why it was trainable, or why it was excluded.
+- There was no first-class manifest contract for deterministic split-by-time inventory and no formal reason counters for contamination, incomplete reward, unresolved lifecycle, or legacy non-causal replay rows.
+- Policy family remained disabled after P4, but there was still no dataset-layer admission rule preventing accidental trainable policy samples under a dirty or incomplete contract.
+
+**What was implemented:**
+- Added canonical dataset contracts in `apps/reference/domains/neocortex/logic/datasets/contracts.py`:
+  - `DatasetSampleProvenance`
+  - `DatasetEvaluatedSample`
+  - `DatasetSplitManifest`
+  - `DatasetManifest`
+- Added `DatasetPolicyEngine` in `apps/reference/domains/neocortex/logic/datasets/hygiene.py` with explicit eligibility statuses:
+  - `trainable`
+  - `eval_only`
+  - `diagnostics_only`
+  - `quarantined`
+  - `rejected`
+- Added fail-closed quarantine/rejection rules for:
+  - `MagicMock` contamination
+  - contaminated identifiers
+  - missing source provenance
+  - missing canonical `event_ts_ms`
+  - unresolved lifecycle / unresolved close
+  - reward-incomplete execution/policy samples
+  - legacy non-causal rows in causal-sensitive families
+  - unknown objective family
+  - unsupported sequence contract
+  - policy family when `policy_training_mode=disabled`
+- Added `dataset` config SSOT to `apps/reference/domains/neocortex/config_models.py` and `apps/reference/domains/neocortex/config/neuro.yaml`.
+- Added `contracts.dataset` to `apps/reference/domains/neocortex/domain.yaml`.
+- Wired the adapter to evaluate every dataset candidate before admission:
+  - `handle_features()` admits representation rows to the train buffer only when explicitly `trainable`
+  - `_handle_oracle_settlement()` routes only trainable regime-supervision samples
+  - `add_completed_episode()` keeps explicit `trainable/eval_only/diagnostics_only` execution samples with provenance and rejects/quarantines the rest
+  - `add_policy_sample()` now fails closed under dataset admission before any policy route is considered
+- Added adapter-side provenance sidecars, dataset counters, and `build_dataset_manifest(objective_family)` for deterministic manifest generation over evaluated samples.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_dataset_hygiene.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_provenance.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_objective_split.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_sequence_semantics.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_episode_identity.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+- Result: targeted P6 tests are green and the checked P1/P2/P3/P4/P5 regression surface remains green.
+
+**Explicit non-goals preserved:**
+- Did not re-enable policy training.
+- Did not redesign runtime live-shadow decision semantics.
+- Did not start P7 performance/replay engineering or any post-remediation advisory contour.
+
+## 2026-03-11: NEO-P5-SEQUENCE-SEMANTICS-REPAIR
+
+**Task:** Repair neocortex sequence semantics without rewriting P1 time, P2 lifecycle identity, P3 reward contract, or P4 objective split.
+
+**What was broken:**
+- The PPO inference path reused one worker-level LSTM hidden state across unrelated inference calls, so hidden memory could leak between unrelated causal streams.
+- `BrainCore.train_batch()` treated arbitrary recent batches as one sequence even though the batch carried no canonical stream owner metadata.
+- Replay start had no explicit bridge-level sequence reset, so sequence state was not contractually reset at the start of a new replay session.
+- The runtime therefore implied recurrent/sequence semantics that were not actually supported honestly by the training path.
+
+**What was implemented:**
+- Added a canonical `sequence` config contract in `apps/reference/domains/neocortex/config_models.py` and `apps/reference/domains/neocortex/config/neuro.yaml`:
+  - `inference_mode: stateless_per_event`
+  - `representation_training_mode: independent_rows`
+  - `reset_on_replay_start: true`
+  - `reset_on_symbol_switch: true`
+  - `reset_on_objective_family_switch: true`
+  - `reset_on_episode_boundary: true`
+- Added `contracts.sequence` to `apps/reference/domains/neocortex/domain.yaml`.
+- Added `BrainCore.reset_sequence_state()` and explicit representation-batch validation.
+- `BrainCore.get_action()` now resets recurrent state before every inference call, eliminating cross-call hidden reuse on the current branch.
+- `BrainCore.train_batch()` no longer fabricates a temporal sequence out of arbitrary recent rows; the active representation-training mode is now explicit independent rows, and misleading world-model temporal training is skipped.
+- Added `BrainBridge.reset_sequence_state_async()` and worker task `RESET_SEQUENCE_STATE`.
+- `NeocortexAdapter.start()` now performs an explicit replay-start sequence reset once the bridge is ready.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_sequence_semantics.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_objective_split.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_episode_identity.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+- `python -m pytest tests/apps/reference/domains/neocortex/tests/test_brain.py -q`
+- Result: targeted P5 tests are green and P1/P2/P3/P4 regression surface remains green.
+
+**Explicit non-goals preserved:**
+- Did not introduce stateful per-symbol recurrent training; that remains blocked on future explicit sequence-owner datasets.
+- Did not enter P6 dataset hygiene/provenance.
+- Did not re-enable policy training or live advisory influence.
+
+## 2026-03-10: NEO-P1-CANONICAL-TIME-CONTRACT
+
+**Task:** Introduce one canonical causal time contract for neocortex ingestion/replay without entering P2 lifecycle identity, P3 reward-contract redesign, or P4 objective split.
+
+**What was broken:**
+- Feature replay accepted pure JSON rows with no causal timestamp and silently substituted replay wallclock via `time.time()`.
+- Order logs arrived in mixed seconds/milliseconds and were not normalized to one unit.
+- Core logs were parsed into seconds floats while order logs already carried epoch milliseconds.
+- Pending-episode stale cleanup compared mixed units and used replay wallclock instead of event time.
+- Shadow-intent idempotency depended on replay-time derived timestamps and model-train timing, not canonical event time.
+
+**What was implemented:**
+- Canonical time field introduced: `event_ts_ms: int`.
+- Canonical unit introduced: epoch milliseconds.
+- Feature, order, and core parsers now normalize supported timestamps to canonical `event_ts_ms`.
+- Feature rows without causal timestamps are now **fail-closed by default**.
+- Explicit temporary compatibility mode added:
+  - `feature_missing_timestamp_policy: legacy_non_causal_file_offset`
+  - requires `legacy_feature_base_ts_ms`
+  - derives deterministic synthetic timestamps from `legacy_feature_base_ts_ms + file_offset`
+  - marks rows as `time_is_causal=False` / `time_source=legacy_non_causal_file_offset`
+- `MultiTailer` stale cleanup now uses canonical milliseconds only.
+- `handle_position_closed_event()` no longer falls back to `time.time()`; missing causal time now fails closed.
+- Shadow intent idempotency now uses canonical source event time/identity, not replay wallclock.
+
+**Migration impact:**
+- Legacy pure-JSON feature rows without embedded timestamp no longer pass as normal causal events.
+- The repository replay config now opts into the explicit non-causal compatibility path in `apps/reference/domains/neocortex/config/replay.yaml`.
+- This compatibility path is diagnostic-only and should not be treated as training-quality causal data.
+
+**Verification:**
+- `python -m pytest apps/reference/domains/neocortex/tests/test_time_contract.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_multi_ingest.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_reward_parsing.py -q`
+- `python -m pytest apps/reference/domains/neocortex/tests/test_replay.py -q`
+- Result: all targeted P1 tests green.
+
+**Explicit non-goals preserved:**
+- Did not start P2 canonical episode identity / fill-aware lifecycle.
+- Did not redesign P3 reward semantics beyond time normalization touchpoints.
+- Did not touch P4 objective split, PPO semantics, sequence repair, dataset hygiene, or performance engineering.
+
+## 2026-03-10: NEO-UNBLOCK-PYTEST-COLLECT-TUPLE-IMPORT
+
+**Task:** Close the minimal repo-level unblocker package for neocortex pytest collection without touching neocortex runtime or starting `NEO-P1-CANONICAL-TIME-CONTRACT`.
+
+**Why:** The remediation plan and audit package recorded a repo-level blocker claiming `apps/reference/config_models.py:3572` used `Tuple` without import, which would stop `pytest apps/reference/domains/neocortex/tests -q` during collection.
+
+**Verification on current branch:**
+- Confirmed the current branch no longer matches the recorded blocker condition.
+- `apps/reference/config_models.py` already imports `Tuple` from `typing`, and the annotation at `ObjectiveNormalizationConfig.target_range` remains valid.
+- `C:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest apps/reference/domains/neocortex/tests --collect-only -q` completed collection successfully: 254 items collected, 1 skipped.
+- `C:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest apps/reference/domains/neocortex/tests -q` progressed beyond collection and executed the suite, proving the repo-level `Tuple` import blocker is not active on this branch.
+
+**Package outcome:**
+- `NEO-UNBLOCK-PYTEST-COLLECT-TUPLE-IMPORT` is effectively already resolved on the current branch.
+- No code change was required in `apps/reference/config_models.py`.
+- This package remains strictly pre-`NEO-P1-CANONICAL-TIME-CONTRACT`; no neocortex runtime, ingest, PPO, parser, reward, or time-contract code was touched.
+
+**Newly exposed non-collection failures:**
+- `apps/reference/domains/neocortex/tests/test_integration.py` fails under Python 3.14 because `asyncio.get_event_loop()` no longer provides an implicit loop in the main thread.
+- `apps/reference/domains/neocortex/tests/test_simulation_bar_v2.py` fails because `torch` is unavailable, the brain bridge degrades, and expected shadow intents are not emitted.
+
+**Next package readiness:**
+- Yes. Pytest collection is unblocked on the current branch, so `NEO-P1-CANONICAL-TIME-CONTRACT` can proceed as the next implementation package.
+
+## 2026-03-10: Neocortex Production Shadow Remediation Planning Package
+
+**Task:** Build a full remediation-design package for `apps/reference/domains/neocortex` that converts the domain from a research-grade hybrid observer into a production-grade shadow domain, with an explicit forward path to a 9.5/10 advisory architecture.
+
+**Why:** The current implementation has foundational contract failures that sit below any PPO or model-tuning discussion:
+- no canonical time contract,
+- no lifecycle-safe episode identity,
+- broken reward extraction against actual `aurora_core.log`,
+- mixed regime-oracle and execution semantics in one PPO path,
+- broken recurrent sequence semantics,
+- contaminated datasets,
+- hot-path cost too high for replay-scale shadowing.
+
+**Baseline verification completed:**
+- Reviewed `apps/reference/domains/neocortex/*`, `domain.yaml`, config YAMLs, and test suite layout.
+- Verified the baseline audit against current code and local runtime logs.
+- Confirmed all 13 requested findings on the current branch.
+- Confirmed repo-level test collection blocker: `apps/reference/config_models.py:3572` uses `Tuple` without import, so `pytest apps/reference/domains/neocortex/tests -q` fails before domain tests run.
+
+**Artifacts added:**
+- `docs/audits/neocortex_gap_matrix.md`
+- `docs/audits/neocortex_remediation_plan.md`
+- `docs/roadmaps/neocortex_prod_shadow_roadmap.md`
+- `docs/architecture/neocortex_target_state_95.md`
+- `docs/architecture/neocortex_acceptance_gates.md`
+
+**Chosen rollout order:**
+1. External unblocker: `NEO-UNBLOCK-PYTEST-COLLECT-TUPLE-IMPORT`
+2. P0 Context Freeze / Baseline Verification
+3. P1 Canonical Time Contract
+4. P2 Canonical Episode Identity + Fill-Aware Lifecycle
+5. P3 Reward Contract / Structured Close Feed
+6. P4 Objective Split
+7. P5 Sequence Semantics Repair
+8. P6 Dataset Hygiene Layer
+9. P7 Performance / Replay Engineering
+10. P8 Production Shadow Gates
+11. P9 Path to 9.5/10 advisory architecture
+
+**Why production shadow first:**
+- The current domain is already useful as an observer, latent-research surface, disagreement reporter, and diagnostics subsystem.
+- It is not safe to let it influence live decisions until data correctness, lifecycle integrity, reward semantics, and uncertainty gates are repaired.
+- The shortest path to long-term value is to harden the data plane first, then layer modeling and advisory capability on top.
+
+**Immediate next implementation package:**
+- `NEO-P1-CANONICAL-TIME-CONTRACT`
+- Note: run after or alongside the minimal repo-level unblocker for pytest collection.
+
 
 ## 2026-03-04: Phase 0.7 — Backtest Engine OHLCV DataContract Integration
 

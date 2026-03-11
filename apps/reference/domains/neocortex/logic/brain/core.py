@@ -75,6 +75,8 @@ class BrainCore:
         self._nonfinite_action_events = 0
         self._last_nonfinite_warn_ts = 0.0
         self._model_corrupted = False
+        self._sequence_resets = 0
+        self._last_sequence_reset_reason: Optional[str] = None
 
         logger.info(f"Initializing BrainCore on device: {self.device}")
 
@@ -267,6 +269,39 @@ class BrainCore:
             logger.warning(f"PPO initialization failed: {e}")
             self.ppo_agent = None
 
+    @staticmethod
+    def _objective_family(sample: Dict[str, Any]) -> Optional[str]:
+        raw = sample.get("objective_family")
+        if raw is None:
+            return None
+        family = str(raw).strip().lower()
+        return family or None
+
+    @classmethod
+    def _validate_objective_batch(
+        cls,
+        samples: list[Dict[str, Any]],
+        *,
+        expected_family: str,
+    ) -> tuple[bool, Optional[str]]:
+        if not samples:
+            return False, "empty_batch"
+
+        expected = str(expected_family).strip().lower()
+        families = set()
+        for sample in samples:
+            family = cls._objective_family(sample)
+            if family is None:
+                return False, "missing_objective_family"
+            families.add(family)
+
+        if len(families) != 1:
+            return False, "mixed_objective_family"
+        family = next(iter(families))
+        if family != expected:
+            return False, f"unexpected_objective_family:{family}"
+        return True, None
+
     def _current_regime_aux_alpha(self) -> float:
         """Resolve auxiliary alpha with optional linear schedule."""
         aux_cfg = getattr(self.config.vae, "regime_aux", None)
@@ -284,16 +319,97 @@ class BrainCore:
         t = min(max(float(self._train_steps), 0.0) / float(steps), 1.0)
         return max(0.0, start + (end - start) * t)
 
+    def _inference_sequence_mode(self) -> str:
+        seq_cfg = getattr(self.config, "sequence", None)
+        raw = getattr(seq_cfg, "inference_mode", "stateless_per_event")
+        return str(raw).strip().lower() or "stateless_per_event"
+
+    def _representation_training_mode(self) -> str:
+        seq_cfg = getattr(self.config, "sequence", None)
+        raw = getattr(seq_cfg, "representation_training_mode", "independent_rows")
+        return str(raw).strip().lower() or "independent_rows"
+
+    @staticmethod
+    def _validate_representation_batch_ndim(
+        ndim: int,
+        *,
+        training_mode: str,
+    ) -> tuple[bool, Optional[str]]:
+        mode = str(training_mode).strip().lower()
+        if mode == "independent_rows":
+            if int(ndim) != 2:
+                return False, "sequence_batch_unsupported:independent_rows"
+            return True, None
+        return False, f"unsupported_representation_training_mode:{mode}"
+
+    def reset_sequence_state(self, reason: str = "manual") -> Dict[str, Any]:
+        """
+        Reset recurrent state according to the active sequence contract.
+
+        P5 narrowed contract: inference is stateless_per_event, so any reusable
+        hidden state must be zeroed explicitly whenever a reset-worthy boundary
+        occurs (including every inference request).
+        """
+        sequence_mode = self._inference_sequence_mode()
+        result: Dict[str, Any] = {
+            "reason": str(reason),
+            "sequence_inference_mode": sequence_mode,
+            "sequence_resets": self._sequence_resets,
+        }
+        if self.ppo_agent is None:
+            result["status"] = "noop_no_agent"
+            return result
+
+        num_envs = max(1, int(getattr(self.ppo_agent, "num_envs", 1)))
+        done_mask = np.ones(num_envs, dtype=bool)
+
+        if hasattr(self.ppo_agent, "reset_hidden"):
+            self.ppo_agent.reset_hidden(done_mask)
+        else:
+            model = getattr(self.ppo_agent, "model", None)
+            if model is None or not hasattr(model, "init_hidden"):
+                result["status"] = "unavailable"
+                return result
+            device = getattr(self.ppo_agent, "device", self.device)
+            self.ppo_agent._hidden = model.init_hidden(num_envs, device)
+
+        self._sequence_resets += 1
+        self._last_sequence_reset_reason = str(reason)
+        result["status"] = "reset"
+        result["sequence_resets"] = self._sequence_resets
+        return result
+
     def train_batch(
         self,
         batch_obs: torch.Tensor,
         regime_targets: Optional[torch.Tensor] = None,
     ) -> Dict[str, float]:
         """
-        Perform one training step on a sequential batch of observations.
+        Perform one representation-learning update on an independent-row batch.
         """
+        training_mode = self._representation_training_mode()
+
         if not self._torch_available:
-            return {"error": "torch_missing", "vae_loss": float('nan'), "wm_loss": float('nan')}
+            return {
+                "error": "torch_missing",
+                "vae_loss": float('nan'),
+                "wm_loss": float('nan'),
+                "sequence_training_mode": training_mode,
+            }
+
+        batch_ndim = int(batch_obs.dim())
+        ok, error = self._validate_representation_batch_ndim(
+            batch_ndim,
+            training_mode=training_mode,
+        )
+        if not ok:
+            logger.warning("Representation batch rejected: %s", error)
+            return {
+                "error": error,
+                "vae_loss": float('nan'),
+                "wm_loss": float('nan'),
+                "sequence_training_mode": training_mode,
+            }
 
         if batch_obs.device != self.device:
             batch_obs = batch_obs.to(self.device)
@@ -340,40 +456,6 @@ class BrainCore:
         torch.nn.utils.clip_grad_norm_(self.vae.parameters(), max_norm=1.0)
         self.vae_opt.step()
 
-        # B. WORLD MODEL TRAINING
-        with torch.no_grad():
-            mu_enc, logvar_enc = self.vae.encode(batch_obs)
-            z = mu_enc if self.config.vae.use_mean else self.vae.reparameterize(
-                mu_enc, logvar_enc)
-
-        if z.shape[0] < 2:
-            return {
-                "vae_loss": vae_loss.item(),
-                "vae_mse": vae_losses['mse'].item(),
-                "vae_kld": vae_losses['kld'].item(),
-                "vae_kld_loss": vae_losses['kld_loss'].item(),
-                "vae_regime_ce": vae_losses['regime_ce'].item(),
-                "vae_aux_alpha": float(aux_alpha),
-                "wm_loss": 0.0
-            }
-
-        self.wm_opt.zero_grad()
-
-        # Treat the batch as a single sequence: (B, D) -> (1, Seq=B, D)
-        z_seq = z.unsqueeze(0)
-        z_in_seq = z_seq[:, :-1, :]
-        z_target_seq = z_seq[:, 1:, :]
-
-        z_pred_seq, _ = self.world_model(z_in_seq)
-
-        wm_loss = torch.nn.functional.mse_loss(
-            z_pred_seq, z_target_seq, reduction="mean")
-
-        wm_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self.world_model.parameters(), max_norm=1.0)
-        self.wm_opt.step()
-
         self._train_steps += 1
 
         return {
@@ -383,7 +465,9 @@ class BrainCore:
             "vae_kld_loss": vae_losses['kld_loss'].item(),
             "vae_regime_ce": vae_losses['regime_ce'].item(),
             "vae_aux_alpha": float(aux_alpha),
-            "wm_loss": wm_loss.item()
+            "wm_loss": 0.0,
+            "wm_training_skipped": 1.0,
+            "sequence_training_mode": training_mode,
         }
 
     def _train_vae_aux_from_episodes(self, episodes: list[Dict[str, Any]]) -> Dict[str, float]:
@@ -495,11 +579,13 @@ class BrainCore:
         Returns:
             dict with 'action', 'value', 'confidence' (log_prob)
         """
+        sequence_mode = self._inference_sequence_mode()
         _FLAT_FALLBACK = {
             "action": 2,
             "action_name": "MEAN_REVERSION" if self.config.ppo.action_dim == 5 else "FLAT",
             "value": 0.0,
             "confidence": 0.0,
+            "sequence_inference_mode": sequence_mode,
         }
 
         if self.ppo_agent is None or self._model_corrupted:
@@ -512,6 +598,23 @@ class BrainCore:
                 self._warn_nonfinite_action("latent_non_finite")
                 z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0).astype(
                     np.float32, copy=False)
+
+            if sequence_mode != "stateless_per_event":
+                logger.error(
+                    "Unsupported inference sequence mode on current branch: %s",
+                    sequence_mode,
+                )
+                return {
+                    **_FLAT_FALLBACK,
+                    "corrupted": self._model_corrupted,
+                    "error": f"unsupported_sequence_inference_mode:{sequence_mode}",
+                }
+
+            reset_result = self.reset_sequence_state(reason="inference_event")
+            if reset_result.get("status") == "unavailable":
+                logger.warning(
+                    "Sequence reset unavailable in stateless_per_event mode; continuing without explicit reset"
+                )
 
             action, value, logp = self.ppo_agent.act(z, deterministic=False)
 
@@ -557,19 +660,47 @@ class BrainCore:
                 "value": float(value_arr.reshape(-1)[0]),
                 "confidence": float(logp_arr.reshape(-1)[0]),
                 "corrupted": False,
+                "sequence_inference_mode": sequence_mode,
+                "sequence_reset_status": reset_result.get("status"),
             }
 
         except Exception as e:
             self._warn_nonfinite_action(f"exception:{type(e).__name__}")
             return {**_FLAT_FALLBACK, "corrupted": self._model_corrupted}
 
-    def train_ppo(self, episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
+    def train_regime_supervision(self, samples: list[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Train PPO on a batch of completed episodes (offline update).
+        Train regime supervision only. No PPO policy update is allowed here.
+        """
+        ok, error = self._validate_objective_batch(
+            samples,
+            expected_family="regime_supervision",
+        )
+        if not ok:
+            logger.warning("Regime supervision batch rejected: %s", error)
+            return {"error": error}
 
-        Episodes are expected to be dict-like and include at least:
+        aux_metrics = self._train_vae_aux_from_episodes(samples)
+        self._train_steps += 1
+        return {
+            "objective_family": "regime_supervision",
+            "episodes_processed": int(aux_metrics.get("samples", 0.0)),
+            "episodes_skipped": max(0, len(samples) - int(aux_metrics.get("samples", 0.0))),
+            "train_step": self._train_steps,
+            "vae_aux_samples": float(aux_metrics.get("samples", 0.0)),
+            "vae_aux_loss": float(aux_metrics.get("loss", 0.0)),
+            "vae_aux_ce": float(aux_metrics.get("ce", 0.0)),
+            "vae_aux_alpha": float(aux_metrics.get("alpha", self._current_regime_aux_alpha())),
+        }
+
+    def train_policy(self, episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Train PPO on explicit policy samples only.
+
+        Samples are expected to be dict-like and include at least:
+          - objective_family: "policy"
           - features_vector: List[float] (VAE input space)
-          - side: str ("LONG"/"SHORT"/"FLAT" or "BUY"/"SELL")
+          - action or policy_action_name / side
           - reward: float
         """
         if not self._torch_available or self.ppo_agent is None:
@@ -581,25 +712,17 @@ class BrainCore:
                 "PPO model is CORRUPTED; refusing to train. Load a clean checkpoint first.")
             return {"error": "model_corrupted"}
 
-        if not episodes:
-            return {}
+        ok, error = self._validate_objective_batch(
+            episodes,
+            expected_family="policy",
+        )
+        if not ok:
+            logger.warning("Policy batch rejected: %s", error)
+            return {"error": error}
 
         import torch
 
-        aux_metrics = {"samples": 0.0, "loss": 0.0, "ce": 0.0}
-        try:
-            aux_metrics = self._train_vae_aux_from_episodes(episodes)
-        except Exception as e:
-            logger.warning("Auxiliary VAE supervision step failed: %s", e)
-
-        # Action mapping depends on mode (pnl vs regime_oracle)
         action_map = {"LONG": 0, "SHORT": 1, "FLAT": 2, "BUY": 0, "SELL": 1}
-        # Oracle mode also accepts string names for robustness
-        if self.config.ppo.action_dim == 5:
-            action_map.update({
-                "TREND_UP": 0, "TREND_DOWN": 1, "MEAN_REVERSION": 2,
-                "HIGH_VOLATILITY": 3, "EXHAUSTION": 4,
-            })
         device = self.ppo_agent.device
 
         episodes_processed = 0
@@ -617,11 +740,14 @@ class BrainCore:
             obs_np = np.asarray(features_vector, dtype=np.float32)
             z = self.encode(obs_np).astype(np.float32)
 
-            side = str(ep.get("side") or "FLAT").upper()
-            # Oracle episodes pass action index directly; PnL episodes pass string side
             if "action" in ep and isinstance(ep.get("action"), int):
                 action_idx = ep["action"]
             else:
+                side = str(
+                    ep.get("policy_action_name")
+                    or ep.get("side")
+                    or "FLAT"
+                ).upper()
                 action_idx = action_map.get(side, 2)
 
             reward = ep.get("reward", 0.0)
@@ -679,13 +805,17 @@ class BrainCore:
         metrics["episodes_processed"] = episodes_processed
         metrics["episodes_skipped"] = episodes_skipped
         metrics["train_step"] = self._train_steps
-        metrics["vae_aux_samples"] = float(aux_metrics.get("samples", 0.0))
-        metrics["vae_aux_loss"] = float(aux_metrics.get("loss", 0.0))
-        metrics["vae_aux_ce"] = float(aux_metrics.get("ce", 0.0))
-        metrics["vae_aux_alpha"] = float(aux_metrics.get("alpha", self._current_regime_aux_alpha()))
+        metrics["objective_family"] = "policy"
         if current_coef is not None:
             metrics["entropy_coef"] = float(current_coef)
         return metrics
+
+    def train_ppo(self, episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Legacy entrypoint kept for compatibility.
+        Fail-closed on any non-policy or mixed-objective batch.
+        """
+        return self.train_policy(episodes)
 
     def save_checkpoint(self, path: Path) -> bool:
         """

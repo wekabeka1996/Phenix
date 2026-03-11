@@ -359,3 +359,34 @@
 * **Mathematical Role:**
     > Кількість барів для лінійного переходу від старого множника до нового.
 * **Invariant/Constraints:** `1 <= value <= 20` (Pydantic).
+
+---
+
+## Strategy Objective Engine (`objective`)
+
+Об'єкт `objective` в конфігурації стратегії (наприклад, `aurora` або `md_amr`) задає профілі якості сигналів для кожного ринкового режиму.
+
+### `objective.enabled`
+* **Type:** `bool`
+* **Logic Owner:** `objective_engine`
+* **Mathematical Role:**
+    > Визначає, чи застосовується об'єктивна оцінка до сигналів цієї стратегії. Якщо вимкнено, Objective Engine поверне `multiplier=1.0`.
+
+### `objective.regimes.<REGIME_NAME>.weights`
+* **Type:** `dict[str, float]`
+* **Logic Owner:** `objective_engine`
+* **Mathematical Role:**
+    > Ваги компонентів (`cost`, `risk`, `edge`, `execution`, `information`) для конкретного режиму. Вони визначають, який із компонентів має найбільший вплив на фінальний штраф/винагороду в цьому режимі.
+* **Invariant/Constraints:** Усі увімкнені в домені компоненти повинні мати відповідну вагу в профілі стратегії (strict matching).
+
+### `objective.regimes.<REGIME_NAME>.multiplier`
+* **Type:** `StrategyObjectiveMultiplierConfig`
+* **Logic Owner:** `objective_engine`
+* **Mathematical Role:**
+    > Параметри `m_min` (мінімальний множник), `m_max` (максимальний множник) та `lambda_scale` (чутливість), які використовуються для перетворення загальної суми штрафів та винагород у `multiplier` через сигмоїдальну функцію.
+
+### `objective.regimes.<REGIME_NAME>.gate`
+* **Type:** `StrategyObjectiveGateConfig`
+* **Logic Owner:** `objective_engine`
+* **Mathematical Role:**
+    > Налаштування жорсткого блокування (gating). Якщо `enforcement_mode="GATE"` і підсумковий об'єктивний скор (`objective_score`) падає нижче `min_objective_score`, сигнал повністю блокується (перетворюється на нейтральний/відхиляється) замість простої атенюації.

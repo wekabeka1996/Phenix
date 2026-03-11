@@ -2,11 +2,6 @@ import pytest
 import time
 from types import SimpleNamespace
 
-# FIX-MOCK-CONFIG: AccountConnector now requires config.trading_mode
-pytestmark = pytest.mark.skip(
-    reason="FIX-MOCK-CONFIG: AccountConnector requires config.trading_mode. Mock incomplete."
-)
-
 from unittest.mock import patch, MagicMock
 from apps.reference.domains.account_balance.account_connector import AccountConnector
 
@@ -37,9 +32,17 @@ class _AdapterStub:
 
 
 def test_account_connector_clamps_poll_interval_and_sleeps(monkeypatch):
-    # Config only needs account_observer.poll_interval when adapter injected.
     cfg = SimpleNamespace(
-        account_observer=SimpleNamespace(poll_interval=0),
+        trading=SimpleNamespace(
+            market_data=SimpleNamespace(poll_interval_sec=0),
+        ),
+        trading_mode="testnet",
+        binance_api=SimpleNamespace(
+            testnet=SimpleNamespace(
+                api_key="key", api_secret="secret", rest_url="https://example.test"),
+            live=SimpleNamespace(
+                api_key="live-key", api_secret="live-secret", rest_url="https://example.live"),
+        ),
     )
 
     fsm = _FSMStub()

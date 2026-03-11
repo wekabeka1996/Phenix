@@ -12,10 +12,12 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
         "apps/reference/main.py",
         "apps/reference/domains/account_observer/account_observer.py",
         "apps/reference/domains/decision_making/aurora_config_loader.py",  # Phase 14A refactor
-        "apps/reference/domains/decision_making/aurora_handler.py",  # FIX-FROZEN-LIST: added during T2B refactor
+        # FIX-FROZEN-LIST: added during T2B refactor
+        "apps/reference/domains/decision_making/aurora_handler.py",
         "apps/reference/domains/decision_making/decision_making.py",
         "apps/reference/domains/execution_position/exposure_guard.py",
-        "apps/reference/domains/execution_position/fsm.py",  # SSOT: fail-closed brackets loading
+        # SSOT: fail-closed brackets loading
+        "apps/reference/domains/execution_position/fsm.py",
         "apps/reference/domains/feature_engineering/feature_engineering.py",
         "apps/reference/domains/feature_engineering/types.py",
         "apps/reference/domains/position_tracking/position_tracking.py",
@@ -25,7 +27,7 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
     offenders: list[str] = []
     for py in apps_reference.rglob("*.py"):
         rel = py.relative_to(repo_root).as_posix()
-        src = py.read_text(encoding="utf-8")
+        src = py.read_text(encoding="utf-8-sig")
         tree = ast.parse(src)
 
         uses_resolver = False
@@ -37,5 +39,5 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
         if uses_resolver and rel not in allowed:
             offenders.append(rel)
 
-    assert offenders == [], f"New DomainConfigResolver usage is forbidden; found in: {offenders}"
-
+    assert offenders == [
+    ], f"New DomainConfigResolver usage is forbidden; found in: {offenders}"

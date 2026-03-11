@@ -29,6 +29,21 @@ import os
 
 from vfoundation.core.protocol import Message
 
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    attach_canonical_bar_payload,
+    build_canonical_bar_identity,
+    extract_canonical_bar_identity,
+    extract_canonical_replay_identity,
+)
+from apps.reference.contracts.runtime_gap_policy import (
+    attach_gap_status_payload,
+    extract_gap_status,
+)
+from apps.reference.contracts.runtime_regime_layers import (
+    is_structural_regime_payload,
+)
+
 # FTR-04: Import types from types.py
 from apps.reference.domains.feature_engineering.types import (
     HotState,
@@ -546,6 +561,8 @@ class FeatureEngineering:
         """
         try:
             pld = event.pld if hasattr(event, 'pld') else event
+            if not isinstance(pld, dict) or not is_structural_regime_payload(pld):
+                return
             symbol = pld.get("symbol")
             if symbol:
                 self.last_regime[symbol] = pld
@@ -646,18 +663,32 @@ class FeatureEngineering:
             return
         emit_timeframes = getattr(self, "_emit_timeframes_sec", None)
         emit_events = True if not emit_timeframes else (tf_sec in emit_timeframes)
+        bar_identity = extract_canonical_bar_identity(
+            pld if isinstance(pld, dict) else {"bar": bar_data, "symbol": symbol, "tf_sec": tf_sec},
+            default_symbol=symbol,
+            default_timeframe_sec=tf_sec,
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
         
         # Store bar for reference
         self.last_bar[(symbol, tf_sec)] = bar_data
 
         if isinstance(bar_data, dict):
             close_price = bar_data.get("close")
-            bar_ts = bar_data.get("end_ts_ms")
+            bar_ts = (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else bar_data.get("end_ts_ms")
+            )
             bar_open = bar_data.get("open")
             bar_get = bar_data.get
         else:
             close_price = getattr(bar_data, "close", None)
-            bar_ts = getattr(bar_data, "end_ts_ms", None)
+            bar_ts = (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else getattr(bar_data, "end_ts_ms", None)
+            )
             bar_open = getattr(bar_data, "open", None)
             bar_get = lambda key, default=None: getattr(bar_data, key, default)
 
@@ -771,9 +802,28 @@ class FeatureEngineering:
         processed = 0
         for bar in bars:
             try:
-                # Binance endpoints give "open_ts". We calculate close_ts which most indicators use.
-                open_ts = int(bar["open_ts"])
-                close_ts = open_ts + (tf_sec * 1000) - 1
+                if not isinstance(bar, dict):
+                    continue
+                identity = extract_canonical_bar_identity(
+                    {"symbol": symbol, "tf_sec": tf_sec, "bar": bar, "source_mode": "warmup_import"},
+                    default_symbol=symbol,
+                    default_timeframe_sec=tf_sec,
+                    default_source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
+                )
+                if identity is None:
+                    open_ts = int(bar["open_ts"])
+                    identity = build_canonical_bar_identity(
+                        symbol=symbol,
+                        timeframe_sec=int(tf_sec),
+                        bar_start_ts_ms=int(open_ts),
+                        close_boundary_ts_ms=int(open_ts) + int(tf_sec) * 1000,
+                        source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
+                    )
+                attach_canonical_bar_payload(
+                    {"bar": bar, "symbol": symbol, "tf_sec": tf_sec},
+                    identity=identity,
+                    replay_generation=int(bar.get("replay_generation", 0) or 0),
+                )
                 
                 calc_engine.update_pillar_candle(
                     state,
@@ -781,7 +831,7 @@ class FeatureEngineering:
                     close=float(bar["c"]),
                     high=float(bar["h"]),
                     low=float(bar["l"]),
-                    bar_ts_ms=close_ts,
+                    bar_ts_ms=int(identity.bar_end_ts_ms),
                 )
                 processed += 1
             except Exception as e:
@@ -1473,6 +1523,39 @@ class FeatureEngineering:
                 )
                 return True
 
+            bar_identity = extract_canonical_bar_identity(
+                {"symbol": symbol, "tf_sec": tf_sec, "bar": bar_data},
+                default_symbol=symbol,
+                default_timeframe_sec=tf_sec,
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+            replay_identity = extract_canonical_replay_identity(
+                {"symbol": symbol, "tf_sec": tf_sec, "bar": bar_data},
+                default_symbol=symbol,
+                default_timeframe_sec=tf_sec,
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+            source_mode = (
+                bar_identity.source_mode.value
+                if bar_identity is not None
+                else RuntimeBarSourceMode.LIVE.value
+            )
+            gap_status = extract_gap_status(
+                {
+                    "symbol": symbol,
+                    "tf_sec": tf_sec,
+                    "bar": bar_data,
+                    "source_mode": source_mode,
+                    "bar_identity": (
+                        bar_identity.to_payload()
+                        if bar_identity is not None
+                        else None
+                    ),
+                },
+                default_source="market_data:payload_bridge",
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+
             # Build payload
             features_payload = {
                 "ts": current_tick["ts"],
@@ -1482,7 +1565,16 @@ class FeatureEngineering:
                 "warmup": warmup,
                 "price_motion": pm_block,
                 "bar": bar_data,  # DATA-RECORDER-01: Inject raw bar (OHLCV) for recording
+                "source_mode": source_mode,
             }
+            if bar_identity is not None:
+                features_payload["bar_identity"] = bar_identity.to_payload()
+                features_payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+            if replay_identity is not None:
+                features_payload["replay_identity"] = replay_identity.to_payload()
+                features_payload["replay_generation"] = int(replay_identity.replay_generation)
+            if gap_status is not None:
+                attach_gap_status_payload(features_payload, gap=gap_status)
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)
             self.logger.info(f"Calculated features for {symbol}: {json.dumps(features, default=str)}")
@@ -1556,8 +1648,13 @@ class FeatureEngineering:
                     # warn_only / disabled: allow strategy processing to proceed
                     self.logger.warning(f"{msg} -> allowed")
 
-                # Gate 4: Extract bar_close_ts from bar_data (SSOT)
-                bar_close_ts = bar_data.get("end_ts_ms") or bar_data.get("close_ts") or bar_data.get("kline_close_time")
+                # Gate 4: Extract bar_close_ts from canonical bar identity.
+                # Legacy bridge keeps bar_close_ts mapped to bar_end_ts_ms.
+                bar_close_ts = (
+                    int(bar_identity.bar_end_ts_ms)
+                    if bar_identity is not None
+                    else bar_data.get("end_ts_ms") or bar_data.get("close_ts") or bar_data.get("kline_close_time")
+                )
                 
                 if not bar_close_ts:
                     self.logger.warning(
@@ -1655,7 +1752,16 @@ class FeatureEngineering:
                         "features": features,                    # Calculated features + EP-01.1
                         "warmup": warmup,                        # T2B-03: Readiness snapshot
                         "regime": self.last_regime.get(symbol),  # REG-FIX-01: Injected regime
+                        "source_mode": source_mode,
                     }
+                    if bar_identity is not None:
+                        cmd_payload["bar_identity"] = bar_identity.to_payload()
+                        cmd_payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+                    if replay_identity is not None:
+                        cmd_payload["replay_identity"] = replay_identity.to_payload()
+                        cmd_payload["replay_generation"] = int(replay_identity.replay_generation)
+                    if gap_status is not None:
+                        attach_gap_status_payload(cmd_payload, gap=gap_status)
                     self.fsm.emit("CMD:PROCESS_STRATEGY", payload=cmd_payload, why="bar_closed_trigger")
                     self.logger.debug(f"[{symbol}] Emitted CMD:PROCESS_STRATEGY (tf={tf_sec}s, bar_close_ts={bar_close_ts}, atr_ready={vol_state.atr_ready})")
 

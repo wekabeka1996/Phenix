@@ -29,21 +29,6 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\backtest.schema.json",
-    "$id": "https://schemas.trading-system.local/shared/backtest/backtest.schema.json",
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "required": [
-      "symbol",
-      "hmm",
-      "hawkes",
-      "maker",
-      "routing",
-      "risk",
-      "tca"
-    ],
-    "defaults": {}
-  },
-  {
     "path": "config\\_schemas\\obs_jobs.schema.json",
     "$id": null,
     "$schema": "http://json-schema.org/draft-07/schema#",

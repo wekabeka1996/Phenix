@@ -15,8 +15,20 @@ Run with: python apps/reference/main.py
 from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
 from apps.reference.bootstrap.async_runtime import AsyncLoopRuntime
 from apps.reference.bootstrap.domain_builder import build_live_domains
+from apps.reference.bootstrap.runtime_analytics_restore import (
+    build_startup_analytics_restore_report,
+)
+from apps.reference.bootstrap.startup_hydration_planner import (
+    build_startup_hydration_plan,
+)
 from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_contract import ConfigContractError
+from apps.reference.contracts.strategy_compatibility_matrix import (
+    build_active_strategy_compatibility_profiles,
+)
+from apps.reference.contracts.quadratic_rollout import (
+    build_startup_quadratic_rollout_report,
+)
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
@@ -50,7 +62,7 @@ from apps.reference.domains.shadow_telemetry.main_bridge import (
     register_llm_command_mapper,
 )
 from vfoundation.dr.wal_gc import WALGarbageCollector
-from apps.reference.telemetry.alerts import AlertManager
+from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
 from vfoundation.core import FSMCore
 from vfoundation.core.schema_registry import init_global_registry
 from vfoundation.core.protocol import Message
@@ -123,10 +135,12 @@ def _perform_alert_checks(
         if em is not None:
             spike_detected, reason = em.detect_spike()
             if spike_detected:
-                alert_manager.trigger_alert(
-                    severity="CRITICAL",
+                alert_manager.raise_alert(
+                    level=AlertLevel.CRITICAL,
+                    alert_type=AlertType.SYSTEM_HEALTH,
+                    title="Entropy Spike Detected",
                     message=f"System anomaly detected: {reason}",
-                    context=em.get_metrics()
+                    details=em.get_metrics(),
                 )
                 LOG.critical(f" ENTROPY SPIKE: {reason}")
     except Exception as e:
@@ -137,6 +151,11 @@ def _perform_alert_checks(
     # alert_manager.check_risk_gate(current_risk_percent)
 
     LOG.debug(f"Alert checks completed: {alert_stats}")
+
+
+def initialize_domains(*args: Any, **kwargs: Any) -> None:
+    """Compatibility seam for startup tests and legacy composition-root hooks."""
+    return None
 
 
 # Global FSM instance
@@ -341,13 +360,15 @@ def main() -> None:
                 # Cleanup adapter resources if possible
                 adapter_aclose = getattr(adapter, "aclose", None)
                 if callable(adapter_aclose):
-                    await adapter_aclose()
-                else:
-                    adapter_close = getattr(adapter, "close", None)
-                    if callable(adapter_close):
-                        maybe_coro = adapter_close()
-                        if asyncio.iscoroutine(maybe_coro):
-                            await maybe_coro
+                    maybe_coro = adapter_aclose()
+                    if asyncio.iscoroutine(maybe_coro):
+                        await maybe_coro
+
+                adapter_close = getattr(adapter, "close", None)
+                if callable(adapter_close):
+                    maybe_coro = adapter_close()
+                    if asyncio.iscoroutine(maybe_coro):
+                        await maybe_coro
 
         # Run validation in temporary loop
         try:
@@ -407,22 +428,40 @@ def main() -> None:
     # Wrap FSMCore.emit to track events with EntropyMonitor
     original_emit = fsm.emit
 
-    def emit_with_monitoring(event_name: str, payload: dict, why: str, data_ref=None):
+    def emit_with_monitoring(
+        event_name: str,
+        payload: dict | None = None,
+        why: str = "",
+        data_ref=None,
+        **emit_kwargs,
+    ):
         """Emit with entropy monitoring"""
         # Track event for anomaly detection
         from vfoundation.core.protocol import Message
+        rid = emit_kwargs.get("rid")
+        tracking_msg_kwargs = {
+            "op": event_name.split(":")[0] if ":" in event_name else "EVT",
+            "verb": event_name.split(":")[1] if ":" in event_name else event_name,
+            "src": "fsm_core",
+            "dst": "any",
+            "pld": payload,
+            "why": why,
+        }
+        if isinstance(rid, str) and rid:
+            tracking_msg_kwargs["rid"] = rid
         tracking_msg = Message(
-            op=event_name.split(":")[0] if ":" in event_name else "EVT",
-            verb=event_name.split(":")[1] if ":" in event_name else event_name,
-            src="fsm_core",
-            dst="any",
-            pld=payload,
-            why=why
+            **tracking_msg_kwargs,
         )
         entropy_monitor.track_event(tracking_msg)
 
         # Call original emit
-        result = original_emit(event_name, payload, why, data_ref)
+        result = original_emit(
+            event_name,
+            payload,
+            why,
+            data_ref=data_ref,
+            **emit_kwargs,
+        )
         if shadow_event_tap_publisher is not None:
             try:
                 shadow_event_tap_publisher.publish(
@@ -470,6 +509,8 @@ def main() -> None:
     # DR: DISASTER RECOVERY STATE RESTORATION
     # ==========================================
     LOG.info("--- Starting Disaster Recovery Check ---")
+    snapshot_data: dict[str, Any] | None = None
+    snapshot_loaded_successfully = False
 
     # Initialize components needed for DR (execution_position already initialized in initialize_domains)
     from vfoundation.dr.dr_loader import find_latest_snapshot, replay_wal_after
@@ -489,6 +530,7 @@ def main() -> None:
 
             # Restore state from snapshot
             if position_tracking.load_snapshot(snapshot_data):
+                snapshot_loaded_successfully = True
                 LOG.info(" Successfully loaded state from snapshot")
                 LOG.info(
                     f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}"
@@ -747,8 +789,71 @@ def main() -> None:
     strategy_plugins.register(MeanReversionPlugin())
     strategy_plugins.register(MDAMRPlugin())
     strategy_plugins.register(LlmMicrostructurePlugin())
-    StrategyRuntime(fsm=fsm, config=config, registry=strategy_plugins).start()
+    started_strategy_handlers = StrategyRuntime(
+        fsm=fsm,
+        config=config,
+        registry=strategy_plugins,
+    ).start()
     LOG.info(" RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
+    try:
+        restore_report = build_startup_analytics_restore_report(
+            config=config,
+            snapshot_data=snapshot_data,
+            positions=position_tracking.get_positions(),
+            strategy_handlers=started_strategy_handlers,
+            snapshot_loaded=snapshot_loaded_successfully,
+            updated_at=int(time.time() * 1000),
+            source="main:startup_analytics_restore",
+        )
+        for snapshot in restore_report.snapshots.values():
+            handler = started_strategy_handlers.get(snapshot.strategy_id)
+            apply_fn = getattr(handler, "apply_runtime_analytics_restore_snapshot", None)
+            if callable(apply_fn):
+                apply_fn(snapshot)
+        LOG.info(
+            " RUNTIME_ANALYTICS_RESTORE %s",
+            json.dumps(restore_report.to_payload(), ensure_ascii=False, default=str),
+        )
+        hydration_plan = build_startup_hydration_plan(
+            config=config,
+            analytics_restore_report=restore_report,
+            updated_at=int(time.time() * 1000),
+            source="main:startup_hydration_planner",
+        )
+        LOG.info(
+            " STARTUP_HYDRATION_PLAN %s",
+            json.dumps(hydration_plan.to_payload(), ensure_ascii=False, default=str),
+        )
+        strategy_profiles = build_active_strategy_compatibility_profiles(config)
+        LOG.info(
+            " STRATEGY_COMPATIBILITY_MATRIX %s",
+            json.dumps(
+                {
+                    "updated_at": int(time.time() * 1000),
+                    "source": "main:startup_strategy_compatibility",
+                    "profiles": {
+                        strategy_id: profile.to_payload()
+                        for strategy_id, profile in strategy_profiles.items()
+                    },
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+        LOG.info(
+            " QUADRATIC_ROLLOUT_STATE %s",
+            json.dumps(
+                build_startup_quadratic_rollout_report(
+                    config=config,
+                    updated_at=int(time.time() * 1000),
+                    source="main:startup_quadratic_rollout",
+                ),
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+    except Exception as e:
+        LOG.warning(" Startup analytics restore/planner evaluation failed: %s", e)
 
     # ==========================================
     # ALPHA-SEARCH: Shadow Alpha Plugin (always-on, all trading modes)

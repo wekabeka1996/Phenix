@@ -102,8 +102,15 @@ def test_exposure_guard_wiring(mock_config):
         # Verify initial state matches our mocks
         assert ep_fsm.exposure_guard.max_directional_ratio == Decimal("3.0")
         
-        # Scenario: Regime detected as MEAN_REVERSION
-        payload = {"regime": "MEAN_REVERSION", "confidence": 0.9}
+        # Scenario: structural regime event should NOT mutate global exposure ratio
+        payload = {
+            "symbol": "BTCUSDT",
+            "regime": "MEAN_REVERSION",
+            "confidence": 0.9,
+            "regime_layer": "structural",
+            "regime_scope": "per_symbol",
+            "regime_clock": "bar",
+        }
         msg = Message(op="EVT", verb="REGIME_DETECTED", pld=payload, src="rd", dst="ep")
         
         # Trigger Listener manually (simulating bus)
@@ -112,19 +119,21 @@ def test_exposure_guard_wiring(mock_config):
         
         listener(msg)
         
-        # Assert Wiring
-        ep_fsm.exposure_guard.on_regime_changed.assert_called_with(ExecutionRegimeBucket.FLAT)
-        
-        # Assert Logic Calculation
-        # Base 3.0 + Flat Delta (-0.5) = 2.5
-        assert ep_fsm.exposure_guard.max_directional_ratio == Decimal("2.5")
-        
-        # Scenario: Regime detected as TREND_UP
-        payload_trend = {"regime": "TREND_UP", "confidence": 0.9}
+        ep_fsm.exposure_guard.on_regime_changed.assert_not_called()
+        assert ep_fsm.exposure_guard.max_directional_ratio == Decimal("3.0")
+
+        # Scenario: explicit global execution-micro regime may adapt exposure
+        payload_trend = {
+            "symbol": "BTCUSDT",
+            "regime": "TREND_UP",
+            "confidence": 0.9,
+            "regime_layer": "execution_micro",
+            "regime_scope": "global",
+            "regime_clock": "event_driven",
+        }
         msg_trend = Message(op="EVT", verb="REGIME_DETECTED", pld=payload_trend, src="rd", dst="ep")
         listener(msg_trend)
         
-        # Base (Persistent 3.0) + Trend Delta (0.5) = 3.5
         ep_fsm.exposure_guard.on_regime_changed.assert_called_with(ExecutionRegimeBucket.TREND_UP)
         assert ep_fsm.exposure_guard.max_directional_ratio == Decimal("3.5")
 

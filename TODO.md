@@ -1,5 +1,152 @@
 # TODO
 
+## Aurora runtime audit follow-ups (added 2026-03-10)
+
+### Must-fix before next live/testnet run with Quadratic ambitions
+- [ ] Wire startup HTF pillar backfill into live bootstrap and emit `EVT:HTF_BARS_IMPORTED` before Aurora signal generation
+- [ ] Add explicit Quadratic readiness gate so FE/DM readiness cannot be `true` while `pillar_sum` is still absent
+- [ ] Make runtime intent explicit: keep Aurora on `v2` or switch to `quadratic`; do not leave activation implicit in repo state
+- [ ] Add startup/restart policy for regime and pillar state: historical seed, snapshot restore, or explicit cold-start deny window
+- [ ] Add one end-to-end integration test from runtime startup to first Quadratic-ready `CMD:PROCESS_STRATEGY`
+- [ ] Reconcile `market_data_connector.py` runtime behavior with its REST/klines docstring, or remove the stale contract claim
+- [ ] Decide whether current 5m regime cold-start requirement must be satisfied by startup history load instead of natural live accumulation
+
+## Neocortex production-shadow remediation (planned 2026-03-10)
+
+### External unblocker
+- [x] `NEO-UNBLOCK-PYTEST-COLLECT-TUPLE-IMPORT`: verified on current branch as already resolved; `apps/reference/config_models.py` already imports `Tuple`, and `pytest apps/reference/domains/neocortex/tests --collect-only -q` collects successfully
+
+### Newly exposed non-collection follow-ups
+- [ ] Python 3.14 asyncio compatibility: replace legacy `asyncio.get_event_loop()` test helper usage in `apps/reference/domains/neocortex/tests/test_integration.py`
+- [ ] Shadow-learning dependency/runtime follow-up: `apps/reference/domains/neocortex/tests/test_simulation_bar_v2.py` expects neural path activity, but current environment lacks `torch` and the brain bridge degrades
+
+### P0 Context Freeze / Baseline Verification
+- [ ] Freeze current neocortex baseline against `reports/neocortex_deep_domain_audit_2026-03-10.md`
+- [ ] Add baseline replay fixtures for features, order logs, and core close logs under `apps/reference/domains/neocortex/tests/fixtures/`
+- [ ] Add contract-manifest consistency test for `apps/reference/domains/neocortex/domain.yaml`
+- [ ] Document and test path-resolution behavior for replay config paths
+
+### P1 Canonical Time Contract
+- [x] Add canonical `event_ts_ms` contract to neocortex ingest path
+- [x] Remove replay wallclock from causal ordering / idempotency logic
+- [x] Normalize feature, order, and core log timestamps to one unit
+- [x] Update stale cleanup and replay ordering to use canonical ms only
+- [x] Add `test_time_contract.py` and extend ingest / replay tests
+- [x] Make missing feature timestamp policy explicit and fail-closed by default
+- [ ] P1 follow-up: remove `legacy_non_causal_file_offset` compatibility once feature producers emit real causal timestamps
+- [ ] P1 follow-up: decide whether aurora text-log timestamp parsing needs an explicit timezone contract for cross-host replay portability
+
+### P2 Canonical Episode Identity + Fill-Aware Lifecycle
+- [x] Add lifecycle identity contract: `lifecycle_id`, `trade_id`, `order_id`, `client_order_id`
+- [x] Move episode entry anchor from `ORDER_PLACED` to `ORDER_FILLED` or canonical open event
+- [x] Support partial fills and overlapping same-symbol lifecycles
+- [x] Fail closed on ambiguous close mapping
+- [x] Add lifecycle-focused episode identity tests
+- [ ] P2 follow-up: retire the temporary `legacy_rid` fill-resolution bridge after canonical fill IDs are emitted upstream
+
+### P3 Reward Contract / Structured Close Feed
+- [x] Define canonical close / reward payload with completeness status
+- [x] Prefer structured close feed; keep parser only as transitional shim
+- [x] Add reward completeness and coverage tests
+- [x] Extend `test_reward_parsing.py` and add close-feed fixtures
+- [ ] P3 follow-up: producer-side close plane must emit canonical `close_price` / `fees` / `trade_id` consistently
+- [ ] P3 follow-up: retire the transitional parser shim once authoritative structured close events exist
+
+### P4 Objective Split
+- [x] Split representation, regime supervision, execution-quality prediction, and policy learning buffers
+- [x] Remove regime-oracle / execution semantic mixing from one PPO head
+- [x] Disable polluted policy training by default until a clean `PolicySample` producer exists
+- [x] Add `test_objective_split.py`
+- [ ] P4 follow-up: wire `ppo.state_dim` to an explicit policy-state contract or remove it
+- [ ] P4 follow-up: add `test_state_vector_contract.py`
+
+### P5 Sequence Semantics Repair
+- [x] Add explicit sequence contract: `stateless_per_event` inference + `independent_rows` representation training
+- [x] Eliminate global hidden reuse by resetting recurrent state before every inference call
+- [x] Add deterministic replay-start sequence reset through BrainBridge
+- [x] Reject sequence-shaped representation batches fail-closed under the narrowed contract
+- [x] Add `test_sequence_semantics.py`
+- [ ] P5 follow-up: add canonical sequence-owner metadata before any future per-stream stateful mode is enabled
+- [ ] P5 follow-up: re-enable temporal world-model training only after explicit sequence dataset assembly exists
+- [ ] P5 follow-up: if policy training is ever re-enabled, require the same sequence-owner contract in policy samples
+
+### P6 Dataset Hygiene Layer
+- [x] Add contamination quarantine for `MagicMock` and malformed identity rows
+- [x] Build canonical dataset manifests with provenance and hash
+- [x] Enforce time-based train / validation / test splits
+- [x] Add `test_dataset_hygiene.py`
+- [x] Add `test_provenance.py`
+- [ ] P6 follow-up: persist dataset manifests to an explicit artifact path when offline dataset builds become a first-class workflow
+- [ ] P6 follow-up: extend provenance source inventory from adapter-local refs to canonical upstream source identifiers where available
+- [ ] P6 follow-up: keep policy dataset admission blocked until a future post-remediation policy contour is explicitly re-opened
+
+### P7 Performance / Replay Engineering
+- [x] Split live-shadow mode from offline-replay mode
+- [x] Buffer non-critical shadow/telemetry writes and remove per-row synchronous flush from hot path
+- [x] Add deterministic decimation policy for shadow-intent observational outputs
+- [x] Define queue/flush/overflow budgets for non-critical side effects
+- [x] Add `test_performance_contract.py`
+- [x] Add `test_replay_engineering.py`
+- [ ] P7 follow-up: add explicit throughput/CPU/disk benchmark test (`test_shadow_hot_path_budget.py`)
+- [ ] P7 follow-up: consider any encode/act batching only after semantic-equivalence fixtures exist for replay determinism and objective/provenance preservation
+
+### P8 Production Shadow Gates
+- [x] Add gate runner for production shadow acceptance criteria
+- [x] Block production-shadow startup on hard gate failures
+- [x] Block any production-shadow label until gates are green
+- [ ] P8 follow-up: persist startup gate reports as first-class artifacts when release packaging/evaluator harness is added
+- [ ] P8 follow-up: add explicit acceptance-gate suite for deterministic replay equality and manifest consistency as release artifacts, not only startup config gating
+
+### P9 Path to 9.5/10 advisory architecture
+- [x] Add uncertainty estimation and calibration reporting
+- [ ] Add OOD / drift detector contracts
+- [ ] Add agent-state-aware inputs
+- [x] Add offline evaluator with calibration, disagreement, and reward-coverage metrics
+- [x] Keep advisory read-only until dedicated advisory gates are green
+- [ ] P9 follow-up: build canonical shadow-vs-Aurora comparison corpus from persisted artifacts instead of synthetic comparator inputs
+- [ ] P9 follow-up: harden confidence-source lineage beyond `sample.confidence` and define confidence provenance per report
+- [ ] P9 follow-up: add OOD/drift evaluator package before any advisory-only gate discussion
+- [ ] P9 follow-up: add agent-state-aware evaluator inputs before any usefulness claim on contextual execution advice
+
+### Acceptance gate checklist
+- [ ] 100% canonical timestamp normalization on valid inputs
+- [ ] 0 mixed-unit time defects on fixtures
+- [ ] 0 hidden-state leakage across symbols
+- [x] 0 contaminated rows in canonical train dataset
+- [ ] Reward extraction coverage meets target threshold on valid close fixtures
+- [ ] Deterministic replay equality with fixed seed
+- [ ] Contract-manifest consistency green
+- [ ] Throughput and memory stay within configured budgets
+- [ ] Ambiguous lifecycle mapping fails closed
+
+### Next recommended package
+- [x] `NEO-P1-CANONICAL-TIME-CONTRACT`
+- [x] Prerequisite note: repo-level pytest collection blocker is cleared on the current branch
+- [x] `NEO-P2-CANONICAL-EPISODE-IDENTITY-FILL-AWARE-LIFECYCLE`
+- [x] `NEO-P3-REWARD-CONTRACT-STRUCTURED-CLOSE-FEED`
+- [x] `NEO-P4-OBJECTIVE-SPLIT`
+- [x] `NEO-P5-SEQUENCE-SEMANTICS-REPAIR`
+- [x] `NEO-P6-DATASET-HYGIENE-AND-PROVENANCE`
+- [x] `NEO-P7-PERFORMANCE-AND-REPLAY-ENGINEERING`
+- [x] `NEO-P8-PRODUCTION-SHADOW-GATES`
+- [x] `NEO-P9-EVALUATOR-CALIBRATION-AND-ADVISORY-HARDENING`
+- [x] `NEO-INTEGRATION-DATA-CONTRACT-AUDIT` (audit/research only, no code changes)
+- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT` (4 hard blockers to fix)
+- [ ] Post-remediation milestone: `NEO-ACCEPTANCE-CAMPAIGN-SHADOW-ANALYTICS`
+
+## NEO-PRODUCER-CONTRACT-ALIGNMENT — Aurora-side telemetry fixes for neocortex integration (identified 2026-03-11)
+
+### Hard blockers (must fix before execution quality family works)
+- [ ] HB-1: Add `lifecycle_id` to ORDER_INTENT, ORDER_FILLED, POSITION_CLOSED in `order_log_v1.jsonl` — `intent_builder.py:357-364`, `event_handlers.py:403-420`, `event_handlers.py:236-250`
+- [ ] HB-2: Add `trade_id` to POSITION_CLOSED log entries — `event_handlers.py:236-250` (cache from last fill `tradeId`)
+- [ ] HB-3: Emit structured `fees` and `realized_pnl_net` in POSITION_CLOSED — `event_handlers.py:236-250` (accumulate `commission` per lifecycle)
+- [ ] HB-4: Replace core log regex parser dependency — either (a) structured JSON close events in `aurora_core.log`, or (b) new `lifecycle_parser.py` for `trade_lifecycle.jsonl`
+
+### Soft prerequisites (for live shadow)
+- [ ] SP-1: Feature engineering must embed `event_ts_ms` in every feature log line (required for `fail_closed` timestamp policy)
+- [ ] SP-2: Persist Aurora decision reference for disagreement analysis (minimal JSONL with strategy_id, symbol, side, score, regime, ts_ms)
+- [ ] SP-3: Add restart-gap detection in neocortex ingest (quarantine samples during cold-start window)
+
 ## EP-SSOT-NORMALIZE-SIGNEDV2 — normalize_mode SSOT Enforcement (completed 2026-03-01)
 - [x] P1: Wire `normalize_signals_mode` YAML → `AuroraConfigLoaderMixin` → `AuroraScoringKernel` (block non-`signed_v2` in kernel)
 - [x] P1: `intent_builder.py` — pass `normalize_mode` + write `normalize_mode_effective` to WAL ORDER_INTENT metadata

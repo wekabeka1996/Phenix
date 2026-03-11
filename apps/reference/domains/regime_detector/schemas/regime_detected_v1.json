@@ -17,6 +17,11 @@
       "minLength": 2,
       "maxLength": 20
     },
+    "ts_ms": {
+      "type": "integer",
+      "description": "Legacy/additive millisecond alias for ts.",
+      "minimum": 0
+    },
     "regime": {
       "type": "string",
       "enum": [
@@ -39,6 +44,34 @@
       "description": "The name of the model used for detection, e.g., 'HMM_v1'.",
       "minLength": 1,
       "maxLength": 50
+    },
+    "regime_layer": {
+      "type": "string",
+      "enum": [
+        "structural",
+        "execution_micro",
+        "global_backdrop"
+      ]
+    },
+    "regime_scope": {
+      "type": "string",
+      "enum": [
+        "per_symbol",
+        "global"
+      ]
+    },
+    "regime_clock": {
+      "type": "string",
+      "enum": [
+        "bar",
+        "event_driven"
+      ]
+    },
+    "regime_owner": {
+      "type": "string"
+    },
+    "structural_regime_ref": {
+      "type": "string"
     },
     "warmup": {
       "type": "object",

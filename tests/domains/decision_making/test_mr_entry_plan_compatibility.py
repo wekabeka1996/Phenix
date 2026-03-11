@@ -250,6 +250,32 @@ class TestMRSignalPayloadContract:
             "tf_sec": 180,
             "side": "BUY",
             "readiness": {"warmup_ok": True},
+            "runtime_permissions": {
+                "can_manage_existing_risk": True,
+                "can_open_new_risk": True,
+                "mode": "OPEN_AND_MANAGE",
+            },
+            "runtime_readiness": {
+                "strategy_id": "mean_reversion",
+                "symbol": "DOGEUSDT",
+                "updated_at": 1704067200000,
+                "source": "decision_making:mean_reversion",
+                "blocking_reason_chain": [],
+                "permissions": {
+                    "can_manage_existing_risk": True,
+                    "can_open_new_risk": True,
+                    "mode": "OPEN_AND_MANAGE",
+                },
+                "scopes": {
+                    "strategy_ready_per_symbol": {
+                        "state": "READY",
+                        "why": ["signal_emitted"],
+                        "updated_at": 1704067200000,
+                        "source": "decision_making:mean_reversion",
+                        "evidence_ref": "rid-1",
+                    }
+                },
+            },
             "score": 0.85,
             "why": "bb_lower_touch",
             "ts_ms": 1704067200000,
@@ -273,9 +299,15 @@ class TestMRSignalPayloadContract:
         """
         mr_payload = {
             "readiness": {"warmup_ok": True},
+            "runtime_permissions": {
+                "can_manage_existing_risk": True,
+                "can_open_new_risk": True,
+                "mode": "OPEN_AND_MANAGE",
+            },
         }
 
         assert mr_payload["readiness"]["warmup_ok"] is True
+        assert mr_payload["runtime_permissions"]["can_open_new_risk"] is True
 
     def test_mr_signal_price_ctx_entry_price_valid(self):
         """

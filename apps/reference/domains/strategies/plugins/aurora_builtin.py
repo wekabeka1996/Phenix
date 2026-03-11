@@ -46,6 +46,21 @@ class _AuroraHandlerWrapper:
         self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_data_only)
         # P0-3-FIX: Position state sync via canonical execution event
         self.fsm.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self._on_portfolio_state)
+        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED", self._on_exposure_summary)
+        self.fsm.listen("EVT:ORDER_STATE_CHANGED", self._on_order_state_changed)
+        self.fsm.listen("EVT:TRADE_INTENT_REJECTED", self._on_trade_intent_rejected)
+
+    def apply_runtime_analytics_restore_snapshot(self, snapshot: Any) -> None:
+        apply_fn = getattr(self.handler, "apply_runtime_analytics_restore_snapshot", None)
+        if callable(apply_fn):
+            apply_fn(snapshot)
+
+    def get_runtime_analytics_restore_snapshot(self, symbol: str) -> Any:
+        getter = getattr(self.handler, "get_runtime_analytics_restore_snapshot", None)
+        if callable(getter):
+            return getter(symbol)
+        return None
     
     def _on_process_strategy(self, event: Any) -> None:
         """T2B-03: Primary entry point - forward CMD:PROCESS_STRATEGY to handler."""
@@ -71,6 +86,22 @@ class _AuroraHandlerWrapper:
         """P0-3-FIX: Forward execution events to handler."""
         pld = event.pld if hasattr(event, "pld") else event
         self.handler.on_trade_executed(pld)
+
+    def _on_portfolio_state(self, event: Any) -> None:
+        pld = event.pld if hasattr(event, "pld") else event
+        self.handler.on_portfolio_state(pld)
+
+    def _on_exposure_summary(self, event: Any) -> None:
+        pld = event.pld if hasattr(event, "pld") else event
+        self.handler.on_exposure_summary(pld)
+
+    def _on_order_state_changed(self, event: Any) -> None:
+        pld = event.pld if hasattr(event, "pld") else event
+        self.handler.on_order_state_changed(pld)
+
+    def _on_trade_intent_rejected(self, event: Any) -> None:
+        pld = event.pld if hasattr(event, "pld") else event
+        self.handler.on_trade_intent_rejected(pld)
 
 
 @dataclass(frozen=True)

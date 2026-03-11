@@ -41,6 +41,24 @@ def test_strategy_signal_mean_reversion_payload_is_valid(strategy_signal_schema)
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "side": "BUY",
+            "bar_close_ts": 1702500299999,
+            "close_boundary_ts_ms": 1702500300000,
+            "source_mode": "live",
+            "bar_identity": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 300,
+                "bar_start_ts_ms": 1702500000000,
+                "bar_end_ts_ms": 1702500299999,
+                "close_boundary_ts_ms": 1702500300000,
+                "source_mode": "live",
+            },
+            "replay_identity": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 300,
+                "close_boundary_ts_ms": 1702500300000,
+                "source_mode": "live",
+                "replay_generation": 0,
+            },
             "readiness": {"warmup_ok": True},
             "score": 0.82,
             "why": "long_entry",
@@ -74,11 +92,170 @@ def test_strategy_signal_aurora_payload_is_valid(strategy_signal_schema):
             "side": "BUY",
             "ts_ms": 1702500000000,
             "rid": "aurora_BTCUSDT_1702500000000",
+            "bar_close_ts": 1702500299999,
+            "close_boundary_ts_ms": 1702500300000,
+            "source_mode": "live",
+            "bar_identity": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 300,
+                "bar_start_ts_ms": 1702500000000,
+                "bar_end_ts_ms": 1702500299999,
+                "close_boundary_ts_ms": 1702500300000,
+                "source_mode": "live",
+            },
+            "replay_identity": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 300,
+                "close_boundary_ts_ms": 1702500300000,
+                "source_mode": "live",
+                "replay_generation": 0,
+            },
+            "gap_state": "GAP_DETECTED",
+            "gap_policy_action": "DEGRADE_TO_NON_TRADING",
+            "gap_bars_skipped": 2,
+            "is_gap_bar": True,
+            "gap": {
+                "state": "GAP_DETECTED",
+                "policy_action": "DEGRADE_TO_NON_TRADING",
+                "gap_bars_skipped": 2,
+                "is_gap_bar": True,
+                "why": ["gap_detected", "gap_bars_skipped:2"],
+                "detected_at": 1702500299999,
+                "source": "market_data:payload_bridge",
+                "evidence_ref": "bar:BTCUSDT:300:1702500300000:live",
+            },
             "why_chain": [
                 "enter:buy:score=0.0069>=thr_buy=0.0021",
                 "tpsl:regime=TREND_DOWN mode=pct_mult sl_pct_post=0.0050 tp_rr_pre=2.00 rr_post=2.00",
             ],
             "readiness": {"warmup_ok": True},
+            "runtime_permissions": {
+                "can_manage_existing_risk": True,
+                "can_open_new_risk": False,
+                "mode": "PROTECT_ONLY",
+            },
+            "runtime_readiness": {
+                "strategy_id": "aurora",
+                "symbol": "BTCUSDT",
+                "updated_at": 1702500000000,
+                "source": "decision_making:aurora",
+                "blocking_reason_chain": [
+                    "basis_bar_gap",
+                    "gap_detected",
+                    "degrade_to_non_trading",
+                    "gap_bars_skipped:2",
+                    "protect_only"
+                ],
+                "permissions": {
+                    "can_manage_existing_risk": True,
+                    "can_open_new_risk": False,
+                    "mode": "PROTECT_ONLY",
+                },
+                "scopes": {
+                    "basis_bar_ready": {
+                        "state": "INVALIDATED_GAP",
+                        "why": [
+                            "basis_bar_gap",
+                            "gap_detected",
+                            "degrade_to_non_trading",
+                            "gap_bars_skipped:2"
+                        ],
+                        "updated_at": 1702500000000,
+                        "source": "market_data:payload_bridge",
+                        "evidence_ref": "bar:BTCUSDT:300:1702500300000:live"
+                    },
+                    "strategy_ready_per_symbol": {
+                        "state": "READY",
+                        "why": ["signal_emitted"],
+                        "updated_at": 1702500000000,
+                        "source": "decision_making:aurora",
+                        "evidence_ref": "signal:BTCUSDT:1702500000000",
+                    },
+                    "trading_ready": {
+                        "state": "BLOCKED",
+                        "why": [
+                            "basis_bar_gap",
+                            "gap_detected",
+                            "degrade_to_non_trading",
+                            "gap_bars_skipped:2",
+                            "protect_only"
+                        ],
+                        "updated_at": 1702500000000,
+                        "source": "decision_making:aurora",
+                        "evidence_ref": "signal:BTCUSDT:1702500000000"
+                    }
+                },
+            },
+            "rollout_mode": "quadratic_shadow",
+            "rollback_armed_status": "DISARMED",
+            "quadratic_rollout": {
+                "mode": "quadratic_shadow",
+                "requested_scoring_version": "v2",
+                "effective_live_scoring_version": "v2",
+                "live_profile_id": "aurora_v2",
+                "shadow_requested": True,
+                "quadratic_readiness_state": "COLD",
+                "quadratic_can_open_new_risk": False,
+                "protect_existing_risk_allowed": True,
+                "rollback_armed": False,
+                "rollback_armed_status": "DISARMED",
+                "rollback_reason_chain": [],
+                "quadratic_blocking_reason_chain": [
+                    "quadratic_htf_not_ready",
+                    "quadratic_htf_state:COLD",
+                    "runtime_open_new_risk_blocked"
+                ],
+                "shadow_evaluation": {
+                    "state": "DEFERRED",
+                    "score": None,
+                    "side": None,
+                    "thr_buy": None,
+                    "thr_sell": None,
+                    "defer_reason": "PILLAR_WARMUP",
+                    "why_chain": [],
+                    "error": None,
+                    "psi_vector": {}
+                }
+            },
+            "analytics_restore": {
+                "strategy_id": "aurora",
+                "symbol": "BTCUSDT",
+                "updated_at": 1702500000000,
+                "source": "startup:test",
+                "rollup_state": "PARTIAL",
+                "counts": {
+                    "RESTORED": 1,
+                    "COLD": 3,
+                    "PARTIAL": 0,
+                    "INVALIDATED_DUE_TO_GAP": 0
+                },
+                "blocking_reason_chain": [
+                    "analytics_restore_partial",
+                    "analytics_open_new_risk_blocked",
+                    "protect_only"
+                ],
+                "permissions": {
+                    "can_manage_existing_risk": True,
+                    "can_open_new_risk": False,
+                    "mode": "PROTECT_ONLY"
+                },
+                "scopes": {
+                    "execution_state": {
+                        "state": "RESTORED",
+                        "why": ["execution_snapshot_loaded"],
+                        "updated_at": 1702500000000,
+                        "source": "execution_position:startup_restore",
+                        "evidence_ref": "execution:BTCUSDT:1702500000000"
+                    },
+                    "feature_engineering_cache": {
+                        "state": "COLD",
+                        "why": ["fe_cache_restore_missing"],
+                        "updated_at": 1702500000000,
+                        "source": "feature_engineering:startup_restore",
+                        "evidence_ref": "fe_cache:BTCUSDT:1702500000000"
+                    }
+                }
+            },
             "price_ctx": {
                 "entry_price": "25668.8464",
                 "stop_price": "25540.5021",

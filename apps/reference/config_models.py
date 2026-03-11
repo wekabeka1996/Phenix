@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Pydantic V2 configuration models for AuroraTrader.
 
@@ -7,7 +9,7 @@ All models are designed to fail fast (startup validation) rather than silently a
 
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Tuple
 from pydantic import BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
 
 
@@ -786,6 +788,24 @@ class RegimeSmoothingConfig(BaseModel):
         default=6, ge=1, le=20, description='Linear ramp duration in bars (used when method=linear_ramp)')
 
 
+class QuadraticRolloutConfig(BaseModel):
+    """Explicit rollout/rollback controls for Quadratic scoring."""
+    model_config = ConfigDict(extra="forbid")
+
+    shadow_enabled: bool = Field(
+        default=False,
+        description="Evaluate Quadratic in shadow while keeping the live engine unchanged.",
+    )
+    rollback_armed: bool = Field(
+        default=False,
+        description="Explicit one-step rollback arm. When true and Quadratic was requested live, runtime falls back to v2 semantics.",
+    )
+    rollback_reason_chain: List[str] = Field(
+        default_factory=list,
+        description="Operator-visible rollback reasons that are surfaced in runtime payloads.",
+    )
+
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
 
@@ -874,6 +894,10 @@ class DecisionConfig(BaseModel):
     scoring_engine: Optional["ScoringEngineConfig"] = Field(
         default=None,
         description="Phase 9: Quadratic scoring engine parameters (used when scoring_version='quadratic')",
+    )
+    quadratic_rollout: Optional["QuadraticRolloutConfig"] = Field(
+        default=None,
+        description="URS-E1: additive shadow rollout and explicit rollback controls for Quadratic activation.",
     )
 
     # Anti-Churn Gate: Minimum Holding Period
@@ -3561,6 +3585,90 @@ class ShadowTelemetryDomainConfig(BaseModel):
         default_factory=ShadowTelemetrySnapshotConfig)
 
 
+class ObjectiveNormalizationConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=True)
+    method: str = Field(default="adaptive_z_score")
+    window_size: int = Field(default=1000, ge=10)
+    min_samples: int = Field(default=100, ge=2)
+    target_range: Tuple[float, float] = Field(default=(-1.0, 1.0))
+    epsilon: float = Field(default=1e-8)
+    smoothing_factor: float = Field(default=0.1)
+    outlier_threshold: float = Field(default=3.0)
+
+
+class ObjectiveComponentConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field()
+    normalization: Optional[ObjectiveNormalizationConfig] = Field(default=None)
+    parameters: Dict[str, Any] = Field()
+
+    @model_validator(mode="after")
+    def _validate_enabled_component(self) -> "ObjectiveComponentConfig":
+        if self.enabled and not self.parameters:
+            raise ValueError(
+                "objective component parameters are required when component is enabled")
+        return self
+
+
+class ObjectiveDataRequirementsConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    require_arce: bool = Field(default=True)
+    require_portfolio: bool = Field(default=True)
+    require_execution: bool = Field(default=False)
+    strict_fail_closed: bool = Field(default=True)
+
+
+class ObjectiveExplainabilityConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=True)
+    emit_subcomponents: bool = Field(default=True)
+    emit_normalization_stats: bool = Field(default=False)
+
+
+class ObjectiveEngineDomainConfig(BaseModel):
+    """Domain config for Objective Engine."""
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=False)
+    data_requirements: ObjectiveDataRequirementsConfig = Field(
+        default_factory=ObjectiveDataRequirementsConfig)
+    explainability: ObjectiveExplainabilityConfig = Field(
+        default_factory=ObjectiveExplainabilityConfig)
+    components: Dict[str, ObjectiveComponentConfig] = Field(
+        default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_enabled_domain(self) -> "ObjectiveEngineDomainConfig":
+        if not self.enabled:
+            return self
+        allowed = {"cost", "risk", "edge", "execution", "information", "behavior"}
+        unknown = sorted(set(self.components.keys()) - allowed)
+        if unknown:
+            raise ValueError(
+                f"objective_engine.components has unsupported keys: {','.join(unknown)}")
+        enabled_components = [name for name,
+                              cfg in self.components.items() if cfg.enabled]
+        if not enabled_components:
+            raise ValueError(
+                "objective_engine.components must contain at least one enabled component when objective_engine.enabled=true")
+        required_params = {
+            "cost": {"alpha_fee", "alpha_slippage", "alpha_spread", "base_fee_bps", "slippage_from_spread_ratio"},
+            "risk": {"phi_inventory", "phi_overflow", "phi_volatility"},
+            "edge": {"omega_rr", "omega_threshold_margin", "phi_stop_distance", "phi_rr_consistency"},
+            "execution": {"omega_liquidity", "phi_spread_drag", "phi_notional_pressure"},
+            "information": {"phi_staleness", "omega_regime_confidence", "omega_readiness"},
+            "behavior": {"phi_cancel_replace", "phi_blocked_intents", "phi_reentry", "window_sec"},
+        }
+        for name in enabled_components:
+            cfg = self.components[name]
+            missing_params = sorted(
+                required_params[name] - set(cfg.parameters.keys()))
+            if missing_params:
+                raise ValueError(
+                    f"objective_engine.components.{name}.parameters missing required keys: {','.join(missing_params)}")
+        return self
+
+
 # Top-Level Domains Configuration
 class DomainsConfig(BaseModel):
     """Top-level domains configuration container (CANONICAL)."""
@@ -3577,6 +3685,10 @@ class DomainsConfig(BaseModel):
     shadow_telemetry: ShadowTelemetryDomainConfig = Field(
         default_factory=ShadowTelemetryDomainConfig,
         description="Shadow telemetry domain (read/write LLM telemetry ingress)",
+    )
+    objective_engine: ObjectiveEngineDomainConfig = Field(
+        default_factory=ObjectiveEngineDomainConfig,
+        description="Objective Engine domain configuration",
     )
 
 
@@ -4123,6 +4235,10 @@ class MDAMRStrategyConfig(BaseModel):
         default_factory=MDAMRConcentrationGuardConfig)
     optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
     assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
+    objective: Optional[StrategyObjectiveConfig] = Field(
+        default=None,
+        description="Strategy objective configuration"
+    )
 
 
 class LLMMicrostructureStrategyConfig(BaseModel):
@@ -4137,6 +4253,58 @@ class LLMMicrostructureStrategyConfig(BaseModel):
     execution: StrategyExecutionConfig = Field(
         description="Execution policy (SSOT)")
     safety_gates: SafetyGatesConfig = Field(description="Safety gates control")
+
+
+class StrategyObjectiveMultiplierConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    m_min: float = Field(ge=0.0, le=1.0)
+    m_max: float = Field(ge=1.0)
+    lambda_scale: float = Field(ge=0.0)
+    penalty_center: float = Field()
+    penalty_scale: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> "StrategyObjectiveMultiplierConfig":
+        if self.m_min > self.m_max:
+            raise ValueError("objective multiplier requires m_min <= m_max")
+        return self
+
+
+class StrategyObjectiveGateConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    min_objective_score: float = Field(ge=0.0, le=1.0)
+    enforcement_mode: Literal["OBSERVE", "GATE", "MULTIPLY"] = Field()
+
+
+class StrategyObjectiveRegimeProfile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    weights: Dict[str, float] = Field()
+    multiplier: StrategyObjectiveMultiplierConfig = Field()
+    gate: StrategyObjectiveGateConfig = Field()
+
+    @model_validator(mode="after")
+    def _validate_weights(self) -> "StrategyObjectiveRegimeProfile":
+        if not self.weights:
+            raise ValueError(
+                "objective regime profile requires non-empty weights")
+        if sum(abs(float(v)) for v in self.weights.values()) <= 0.0:
+            raise ValueError(
+                "objective regime profile requires non-zero weight mass")
+        return self
+
+
+class StrategyObjectiveConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool = Field(default=False)
+    regimes: Dict[str, StrategyObjectiveRegimeProfile] = Field(
+        default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_enabled_config(self) -> "StrategyObjectiveConfig":
+        if self.enabled and not self.regimes:
+            raise ValueError(
+                "strategy objective requires at least one regime profile when enabled")
+        return self
 
 
 class AuroraStrategyConfig(BaseModel):
@@ -4172,6 +4340,11 @@ class AuroraStrategyConfig(BaseModel):
     shadow_mode_enabled: bool = Field(
         default=False,
         description="Enable shadow mode: compare legacy scoring with kernel and log divergences",
+    )
+
+    objective: Optional[StrategyObjectiveConfig] = Field(
+        default=None,
+        description="Strategy objective configuration"
     )
 
     # Global defaults / policy for Aurora decision-making.

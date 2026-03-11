@@ -13,6 +13,41 @@ import decimal
 import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from apps.reference.contracts.runtime_analytics_restore import (
+    RuntimeAnalyticsRestoreScope,
+    combine_restore_permissions,
+    lookup_restore_status,
+    restore_blocking_tokens,
+    restore_status_to_readiness_status,
+)
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    extract_canonical_bar_identity,
+    extract_canonical_replay_identity,
+)
+from apps.reference.contracts.runtime_gap_policy import (
+    attach_gap_status_payload,
+    build_basis_bar_status_from_gap,
+    build_trading_status_from_gap,
+    extract_gap_status,
+    gap_blocking_tokens,
+    gap_blocks_open_new_risk,
+)
+from apps.reference.contracts.runtime_readiness import (
+    RuntimeReadinessScope,
+    cold_status,
+    make_permissions,
+    make_snapshot,
+    partial_status,
+    ready_status,
+)
+from apps.reference.contracts.quadratic_rollout import (
+    apply_live_quadratic_permission_gate,
+    build_quadratic_rollout_snapshot,
+    evaluate_quadratic_shadow,
+    not_requested_shadow_evaluation,
+    resolve_requested_quadratic_rollout,
+)
 from apps.reference.domains.decision_making.aurora_scoring_kernel import (
     AuroraScoringKernel,
     ScoringResult,
@@ -78,9 +113,11 @@ class AuroraDecisionMixin:
 
         # Check warmup readiness (fail-closed)
         if not state.warmup_full_ready:
-            mode = str(getattr(self, "_fe_warmup_enforcement_mode", "fail_fast"))
+            mode = str(
+                getattr(self, "_fe_warmup_enforcement_mode", "fail_fast"))
             if mode == "fail_fast":
-                self.logger.debug(f"[{symbol}] Warmup not ready, skipping (mode=fail_fast)")
+                self.logger.debug(
+                    f"[{symbol}] Warmup not ready, skipping (mode=fail_fast)")
                 write_trade_intent_rejected(
                     symbol=symbol,
                     tf_sec=int(cmd.get("tf_sec") or 0),
@@ -97,8 +134,10 @@ class AuroraDecisionMixin:
                     reason_code="READINESS_FE_WARMUP_NOT_READY",
                     reason="READINESS",
                     context="aurora_handler:_process_decision",
-                    details={"warmup_full_ready": False, "enforcement_mode": mode},
-                    why_chain=["READINESS", "warmup_full_ready:false", f"enforcement_mode:{mode}"],
+                    details={"warmup_full_ready": False,
+                             "enforcement_mode": mode},
+                    why_chain=["READINESS", "warmup_full_ready:false",
+                               f"enforcement_mode:{mode}"],
                 )
                 return
 
@@ -153,7 +192,8 @@ class AuroraDecisionMixin:
         if not liq_ok:
             self._emit_strategy_blocked(
                 symbol=symbol,
-                reason_code=str(liq_ctx.get("reason_code") or "LIQUIDITY_GATE_FAIL"),
+                reason_code=str(liq_ctx.get("reason_code")
+                                or "LIQUIDITY_GATE_FAIL"),
                 reason="LIQUIDITY",
                 context="aurora_handler:liquidity_gate",
                 details=liq_ctx,
@@ -175,10 +215,13 @@ class AuroraDecisionMixin:
         veto_macro_resid: float | None = None
         veto_applicable = False
         try:
-            decision_cfg = getattr(self.config.strategies.aurora, "decision", None)
-            veto_cfg = getattr(decision_cfg, "anchor_shock_veto", None) if decision_cfg else None
+            decision_cfg = getattr(
+                self.config.strategies.aurora, "decision", None)
+            veto_cfg = getattr(decision_cfg, "anchor_shock_veto",
+                               None) if decision_cfg else None
             if veto_cfg and getattr(veto_cfg, "enabled", False):
-                veto_anchor_symbol = getattr(veto_cfg, "anchor_symbol", "BTCUSDT")
+                veto_anchor_symbol = getattr(
+                    veto_cfg, "anchor_symbol", "BTCUSDT")
                 veto_threshold = float(getattr(veto_cfg, "threshold", -2.0))
                 veto_applicable = symbol != veto_anchor_symbol
                 if veto_applicable:
@@ -202,17 +245,21 @@ class AuroraDecisionMixin:
             if st_cfg is not None:
                 if isinstance(st_cfg, (int, float)):
                     effective_threshold = decimal.Decimal(str(st_cfg))
-                    self.logger.debug(f"[{symbol}] Using per-symbol threshold (direct): {effective_threshold}")
+                    self.logger.debug(
+                        f"[{symbol}] Using per-symbol threshold (direct): {effective_threshold}")
                 elif hasattr(st_cfg, "enabled") and st_cfg.enabled:
                     if hasattr(st_cfg, "value") and st_cfg.value is not None:
-                        effective_threshold = decimal.Decimal(str(st_cfg.value))
-                        self.logger.debug(f"[{symbol}] Using per-symbol threshold (enabled): {effective_threshold}")
+                        effective_threshold = decimal.Decimal(
+                            str(st_cfg.value))
+                        self.logger.debug(
+                            f"[{symbol}] Using per-symbol threshold (enabled): {effective_threshold}")
 
             nt_cfg = getattr(instr_cfg, "neutral_threshold", None)
             if nt_cfg is not None:
                 if isinstance(nt_cfg, (int, float)):
                     effective_neutral = decimal.Decimal(str(nt_cfg))
-                    self.logger.debug(f"[{symbol}] Using per-symbol neutral_threshold: {effective_neutral}")
+                    self.logger.debug(
+                        f"[{symbol}] Using per-symbol neutral_threshold: {effective_neutral}")
                 elif hasattr(nt_cfg, "value") and nt_cfg.value is not None:
                     effective_neutral = decimal.Decimal(str(nt_cfg.value))
 
@@ -220,22 +267,35 @@ class AuroraDecisionMixin:
         current_side = state.last_signal_side
 
         # Call scoring kernel
-        effective_regime_thresholds = self._get_regime_thresholds(symbol=symbol, instr_cfg=instr_cfg)
+        effective_regime_thresholds = self._get_regime_thresholds(
+            symbol=symbol, instr_cfg=instr_cfg)
 
         extra_kwargs = {
             "regime_smoother": getattr(self, "_regime_smoother", None),
         }
         if self.scoring_kernel_cls is QuadraticScoringKernel:
             extra_kwargs["shield_fn"] = self._shield_fn
-            extra_kwargs["pillar_contribs"] = features.get("pillar_contribs", {})
-            extra_kwargs["score_multiplier"] = getattr(self, "score_multiplier", 1.0)
+            extra_kwargs["pillar_contribs"] = features.get(
+                "pillar_contribs", {})
+            extra_kwargs["score_multiplier"] = getattr(
+                self, "score_multiplier", 1.0)
 
+        bar_identity = extract_canonical_bar_identity(
+            cmd,
+            default_symbol=symbol,
+            default_timeframe_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
         if "regime" not in features:
             features["regime"] = state.regime
         if "regime_ts_ms" not in features:
             features["regime_ts_ms"] = state.regime_ts_ms
         if "bar_close_ts" not in features:
-            bar_close_ts_raw = cmd.get("bar_close_ts")
+            bar_close_ts_raw = (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else cmd.get("bar_close_ts")
+            )
             if bar_close_ts_raw is not None:
                 features["bar_close_ts"] = int(bar_close_ts_raw)
 
@@ -257,6 +317,20 @@ class AuroraDecisionMixin:
             neutral_threshold=effective_neutral,
             current_side=current_side,
         )
+        decision_cfg = getattr(
+            getattr(getattr(self.config, "strategies", None), "aurora", None),
+            "decision",
+            None,
+        )
+        requested_rollout = resolve_requested_quadratic_rollout(decision_cfg)
+        quadratic_shadow_evaluation = evaluate_quadratic_shadow(
+            requested_rollout=requested_rollout,
+            compute_kwargs=_compute_kwargs,
+            shield_fn=getattr(self, "_quadratic_shadow_shield_fn", None),
+            pillar_contribs=features.get("pillar_contribs", {}),
+            score_multiplier=getattr(self, "score_multiplier", 1.0),
+            regime_smoother=getattr(self, "_regime_smoother", None),
+        )
         try:
             result = self.scoring_kernel_cls.compute(
                 **_compute_kwargs,
@@ -271,7 +345,8 @@ class AuroraDecisionMixin:
                 try:
                     result = AuroraScoringKernel.compute(**_compute_kwargs)
                 except Exception as _fallback_exc:
-                    self.logger.error("[%s] FALLBACK ALSO FAILED: %s", symbol, _fallback_exc)
+                    self.logger.error(
+                        "[%s] FALLBACK ALSO FAILED: %s", symbol, _fallback_exc)
                     raise _fallback_exc from _kernel_exc
             else:
                 raise
@@ -297,7 +372,8 @@ class AuroraDecisionMixin:
         )
 
         if result.deferred:
-            self.logger.debug(f"[{symbol}] Kernel deferred: {result.defer_reason}")
+            self.logger.debug(
+                f"[{symbol}] Kernel deferred: {result.defer_reason}")
             defer_reason = str(result.defer_reason or "UNKNOWN")
             reason_code = "AURORA_KERNEL_DEFERRED"
             reason = "READINESS"
@@ -320,7 +396,7 @@ class AuroraDecisionMixin:
         # PKG-3: Regime-Shift Inception Check
         inception_cfg = getattr(self.config, "regime_shift_inception", None)
         micro_fraction = 1.0
-        
+
         allowed_regimes = None
         try:
             allowed_regimes = getattr(instr_cfg, "allowed_regimes", None)
@@ -329,11 +405,13 @@ class AuroraDecisionMixin:
 
         state_regime_for_gate = str(state.regime)
         if inception_cfg and getattr(inception_cfg, "enabled", False) and allowed_regimes:
-            raw_regime = str(state.regime_raw_event) if state.regime_raw_event else ""
+            raw_regime = str(
+                state.regime_raw_event) if state.regime_raw_event else ""
             if raw_regime and raw_regime != str(state.regime):
                 raw_factor = effective_regime_thresholds.get(raw_regime, 1.0)
-                raw_threshold = effective_threshold * decimal.Decimal(str(raw_factor))
-                
+                raw_threshold = effective_threshold * \
+                    decimal.Decimal(str(raw_factor))
+
                 from apps.reference.domains.decision_making.inception_filter import check_inception_eligibility
                 inc_res = check_inception_eligibility(
                     raw_regime=raw_regime,
@@ -344,9 +422,10 @@ class AuroraDecisionMixin:
                     stress_state=state.system_stress_state,
                     config=inception_cfg
                 )
-                
+
                 # Telemetry
-                action_taken = getattr(inception_cfg, "action", "none") if inc_res.eligible else "none"
+                action_taken = getattr(
+                    inception_cfg, "action", "none") if inc_res.eligible else "none"
                 self.emit_fn("EVT:REGIME_SHIFT_SUSPECTED", {
                     "symbol": symbol,
                     "ts_ms": int(self.wall_time_fn() * 1000),
@@ -363,15 +442,18 @@ class AuroraDecisionMixin:
                     micro_fraction = inc_res.micro_fraction
                     _compute_kwargs["regime_name"] = raw_regime
                     try:
-                        new_result = self.scoring_kernel_cls.compute(**_compute_kwargs, **extra_kwargs)
+                        new_result = self.scoring_kernel_cls.compute(
+                            **_compute_kwargs, **extra_kwargs)
                         if new_result.side:
                             result = new_result
                             effective_side = result.side
-                            result.why_chain.append(f"INCEPTION_RESCUE:{raw_regime}")
+                            result.why_chain.append(
+                                f"INCEPTION_RESCUE:{raw_regime}")
                             result.why_chain.append(inc_res.why)
                             state_regime_for_gate = raw_regime
                     except Exception as e:
-                        self.logger.error(f"[{symbol}] Inception fallback failed: {e}")
+                        self.logger.error(
+                            f"[{symbol}] Inception fallback failed: {e}")
 
         # === STRICT REGIME ALLOWLIST GATE ===
         if not RegimeAllowlistContract.is_regime_allowed(current_regime=state_regime_for_gate, allowed_regimes=allowed_regimes):
@@ -389,17 +471,21 @@ class AuroraDecisionMixin:
                     "explain": RegimeAllowlistContract.explain_blocking(
                         symbol=symbol,
                         current_regime=state_regime_for_gate,
-                        allowed_regimes=list(allowed_regimes) if allowed_regimes else None,
+                        allowed_regimes=list(
+                            allowed_regimes) if allowed_regimes else None,
                     ),
                 },
-                why_chain=["REGIME_ALLOWLIST", f"REGIME={state_regime_for_gate}", "STRICT"],
+                why_chain=["REGIME_ALLOWLIST",
+                           f"REGIME={state_regime_for_gate}", "STRICT"],
             )
             return
 
         # === PHASE 5: EXIT MANAGER ===
         shield_breakdown = getattr(result, "shield_breakdown", {}) or {}
-        shield_reasons = shield_breakdown.get("reasons", []) if isinstance(shield_breakdown, dict) else []
-        danger_zone_active = any("DANGER_ZONE" in str(r) for r in shield_reasons)
+        shield_reasons = shield_breakdown.get(
+            "reasons", []) if isinstance(shield_breakdown, dict) else []
+        danger_zone_active = any("DANGER_ZONE" in str(r)
+                                 for r in shield_reasons)
         should_exit = False
         stop_loss_override = None
 
@@ -413,23 +499,27 @@ class AuroraDecisionMixin:
             elif current_position_side.upper() == "LONG":
                 bar_high = features.get("high")
                 if bar_high is not None:
-                    state.mfe_price = max(state.mfe_price, decimal.Decimal(str(bar_high)))
+                    state.mfe_price = max(
+                        state.mfe_price, decimal.Decimal(str(bar_high)))
                 else:
                     state.mfe_price = max(state.mfe_price, price_dec)
             else:
                 bar_low = features.get("low")
                 if bar_low is not None:
-                    state.mfe_price = min(state.mfe_price, decimal.Decimal(str(bar_low)))
+                    state.mfe_price = min(
+                        state.mfe_price, decimal.Decimal(str(bar_low)))
                 else:
                     state.mfe_price = min(state.mfe_price, price_dec)
 
             atr_raw = features.get("atr")
-            atr_dec = decimal.Decimal(str(atr_raw)) if atr_raw is not None else None
+            atr_dec = decimal.Decimal(
+                str(atr_raw)) if atr_raw is not None else None
 
             should_exit, exit_reason, new_sl = self.exit_manager.check_exit(
                 symbol=symbol,
                 current_position_side=current_position_side,
-                entry_price=decimal.Decimal(str(features.get("entry_price", "0"))),
+                entry_price=decimal.Decimal(
+                    str(features.get("entry_price", "0"))),
                 current_price=price_dec,
                 hold_time_sec=hold_time_sec,
                 final_score=float(result.score),
@@ -442,12 +532,14 @@ class AuroraDecisionMixin:
             if should_exit:
                 target_side = "SELL" if current_position_side.lower() in ("buy", "long") else "BUY"
                 if effective_side != target_side:
-                    self.logger.info(f"[{symbol}] EXIT MANAGER: Forcing exit ({exit_reason})")
+                    self.logger.info(
+                        f"[{symbol}] EXIT MANAGER: Forcing exit ({exit_reason})")
                     effective_side = target_side
 
             elif new_sl is not None:
                 stop_loss_override = new_sl
-                self.logger.info(f"[{symbol}] EXIT MANAGER: Tightening stops ({exit_reason}) to {new_sl}")
+                self.logger.info(
+                    f"[{symbol}] EXIT MANAGER: Tightening stops ({exit_reason}) to {new_sl}")
 
         # === HOLDING PERIOD CHECK ===
         is_exit_signal = (not effective_side) and (current_position_side != "")
@@ -487,15 +579,18 @@ class AuroraDecisionMixin:
                 state.last_exit_timestamp = float(self.monotonic_fn())
                 state.position_side = ""
                 self._clear_entry(symbol)
-                self.logger.info(f"[{symbol}] Position closed (neutral). Starting re-entry cooldown.")
-            self.logger.debug(f"[{symbol}] Neutral signal (score={float(result.score):.4f})")
+                self.logger.info(
+                    f"[{symbol}] Position closed (neutral). Starting re-entry cooldown.")
+            self.logger.debug(
+                f"[{symbol}] Neutral signal (score={float(result.score):.4f})")
             return
 
         # === RE-ENTRY COOLDOWN ===
         if state.position_side == "" and effective_side:
             if state.last_exit_timestamp:
                 reentry_cooldown = self._get_reentry_cooldown_sec(symbol)
-                time_since_exit = float(self.monotonic_fn()) - state.last_exit_timestamp
+                time_since_exit = float(
+                    self.monotonic_fn()) - state.last_exit_timestamp
                 if time_since_exit < reentry_cooldown:
                     self.logger.info(
                         f"[{symbol}] REENTRY_COOLDOWN: Blocking entry {time_since_exit:.1f}s < {reentry_cooldown}s"
@@ -505,8 +600,10 @@ class AuroraDecisionMixin:
                         reason_code="REENTRY_COOLDOWN",
                         reason="COOLDOWN",
                         context="aurora_handler:reentry_cooldown",
-                        details={"time_since_exit": time_since_exit, "cooldown": reentry_cooldown},
-                        why_chain=["REENTRY_COOLDOWN", f"wait:{reentry_cooldown - time_since_exit:.1f}s"],
+                        details={"time_since_exit": time_since_exit,
+                                 "cooldown": reentry_cooldown},
+                        why_chain=[
+                            "REENTRY_COOLDOWN", f"wait:{reentry_cooldown - time_since_exit:.1f}s"],
                     )
                     return
 
@@ -545,7 +642,8 @@ class AuroraDecisionMixin:
 
         # === PHASE 5: EXECUTION GATES & ENTRY PLAN ===
         if self.execution_gate is not None:
-            shield_mult = float(getattr(result, "shield_multiplier", 1.0) or 1.0)
+            shield_mult = float(
+                getattr(result, "shield_multiplier", 1.0) or 1.0)
 
             entry_plan_res = None
             entry_plan_calc = getattr(self, "entry_plan_calculator", None)
@@ -568,7 +666,8 @@ class AuroraDecisionMixin:
             try:
                 factor = float(getattr(result, "threshold_factor", 1.0) or 1.0)
                 score_for_conf = float(getattr(result, "score", 0.0) or 0.0)
-                confidence = min(1.0, abs(score_for_conf) / factor) if factor > 0 else 0.5
+                confidence = min(1.0, abs(score_for_conf) /
+                                 factor) if factor > 0 else 0.5
 
                 entry_plan_res = entry_plan_calc.compute(
                     side=result.side,
@@ -576,10 +675,12 @@ class AuroraDecisionMixin:
                     atr=features.get("atr"),
                     obi=features.get("obi"),
                     pillar_confidence=confidence,
-                    tick_size=getattr(instr_cfg, "tick_size", None) if instr_cfg else None,
+                    tick_size=getattr(instr_cfg, "tick_size",
+                                      None) if instr_cfg else None,
                 )
             except Exception as e:
-                self.logger.warning(f"[{symbol}] EntryPlan computation failed: {e}")
+                self.logger.warning(
+                    f"[{symbol}] EntryPlan computation failed: {e}")
                 self._emit_strategy_blocked(
                     symbol=symbol,
                     reason_code="ENTRY_PLAN_COMPUTE_FAILED",
@@ -590,7 +691,138 @@ class AuroraDecisionMixin:
                 )
                 return
 
-            active_threshold = float(result.thr_buy if result.side.lower() == "buy" else result.thr_sell)
+            active_threshold = float(
+                result.thr_buy if result.side.lower() == "buy" else result.thr_sell)
+
+            # Objective Engine Integration (post-EntryPlan / pre-ExecutionGate seam)
+            domain_cfg = getattr(getattr(self.config, "domains", None),
+                                 "objective_engine", None)
+            strategy_cfg = getattr(getattr(self.config.strategies, "aurora", None),
+                                   "objective", None)
+            objective_domain_enabled = getattr(
+                domain_cfg, "enabled", False) is True
+            objective_strategy_enabled = getattr(
+                strategy_cfg, "enabled", False) is True
+            if domain_cfg and strategy_cfg and objective_domain_enabled and objective_strategy_enabled:
+                try:
+                    from apps.reference.domains.objective_engine.adapters import (
+                        build_behavior_input,
+                        build_execution_input,
+                        build_exposure_input,
+                        build_market_input,
+                        build_objective_input,
+                        build_signal_input,
+                        build_structure_input,
+                        compute_projected_order_notional,
+                        compute_readiness_completeness,
+                    )
+                    from apps.reference.domains.objective_engine.engine import evaluate_objective
+
+                    cost_cfg = domain_cfg.components.get("cost")
+                    behavior_cfg = domain_cfg.components.get("behavior")
+
+                    if cost_cfg is None or not cost_cfg.enabled:
+                        raise ValueError("OBJECTIVE_COMPONENT_MISSING:cost")
+                    if behavior_cfg is None or not behavior_cfg.enabled:
+                        raise ValueError("OBJECTIVE_COMPONENT_MISSING:behavior")
+                    if not isinstance(self._latest_portfolio, dict):
+                        raise ValueError("OBJECTIVE_PORTFOLIO_MISSING")
+                    if not isinstance(self._latest_exposure_summary, dict):
+                        raise ValueError("OBJECTIVE_EXPOSURE_SUMMARY_MISSING")
+                    if not state.regime:
+                        raise ValueError("OBJECTIVE_REGIME_MISSING")
+                    if not state.regime_ts_ms:
+                        raise ValueError("OBJECTIVE_REGIME_TS_MISSING")
+                    if entry_plan_res is None:
+                        raise ValueError("OBJECTIVE_ENTRY_PLAN_MISSING")
+
+                    objective_market = build_market_input(features=features)
+                    readiness_completeness = compute_readiness_completeness(
+                        warmup_readiness)
+                    signal_input = build_signal_input(
+                        strategy_id=self.strategy_id,
+                        symbol=symbol,
+                        signal_score=float(result.score),
+                        signal_direction=1 if result.side == "buy" else -1,
+                        regime=str(state.regime),
+                        regime_age_sec=float((int(self.wall_time_fn() * 1000) - int(state.regime_ts_ms)) / 1000.0),
+                        regime_confidence=float(state.regime_confidence),
+                        readiness_completeness=readiness_completeness,
+                    )
+                    structure_input = build_structure_input(
+                        signal_score=float(result.score),
+                        active_threshold=active_threshold,
+                        entry_plan=entry_plan_res,
+                    )
+                    projected_notional_usd = compute_projected_order_notional(
+                        symbol=symbol,
+                        side=result.side.upper(),
+                        entry_price=decimal.Decimal(str(entry_plan_res.entry_price)),
+                        position_queries=self._position_queries,
+                        portfolio=self._latest_portfolio,
+                        features_payload=cmd.get("features") if isinstance(cmd.get("features"), dict) else {},
+                        margin_pct_mult=decimal.Decimal(str(micro_fraction)),
+                    )
+                    exposure_input = build_exposure_input(
+                        config=self.config,
+                        portfolio=self._latest_portfolio,
+                        exposure_summary=self._latest_exposure_summary,
+                        projected_order_notional_usd=projected_notional_usd,
+                    )
+                    behavior_input = build_behavior_input(
+                        now_ms=int(self.wall_time_fn() * 1000),
+                        window_sec=float(behavior_cfg.parameters["window_sec"]),
+                        cancel_replace_ts_ms=state.objective_cancel_replace_ts_ms,
+                        blocked_intent_ts_ms=state.objective_blocked_ts_ms,
+                        reentry_ts_ms=state.objective_reentry_ts_ms,
+                    )
+                    execution_input = build_execution_input(
+                        expected_fee_bps=float(cost_cfg.parameters["base_fee_bps"]),
+                        expected_slippage_bps=objective_market.spread_bps * float(cost_cfg.parameters["slippage_from_spread_ratio"]),
+                    )
+                    obj_input = build_objective_input(
+                        signal=signal_input,
+                        market=objective_market,
+                        structure=structure_input,
+                        exposure=exposure_input,
+                        behavior=behavior_input,
+                        execution=execution_input,
+                    )
+                    obj_score = evaluate_objective(obj_input, domain_cfg, strategy_cfg)
+
+                    if obj_score.is_blocked:
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code="OBJECTIVE_GATE_BLOCKED",
+                            reason="DECISION",
+                            context="aurora_handler:objective_engine",
+                            details={
+                                "objective_score": obj_score.objective_score,
+                                "objective_multiplier": obj_score.multiplier,
+                                "objective_components": obj_score.components,
+                                "objective_raw_metrics": obj_score.raw_metrics,
+                                "block_reason": obj_score.block_reason,
+                            },
+                            why_chain=["OBJECTIVE_ENGINE", str(
+                                obj_score.block_reason or "GATE_BLOCKED")],
+                        )
+                        return
+
+                    result.score = decimal.Decimal(
+                        str(obj_score.objective_score))
+                    if not result.psi_vector:
+                        result.psi_vector = {}
+                    result.psi_vector["objective"] = obj_score.trace.model_dump()
+                except Exception as e:
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                        reason="DECISION",
+                        context="aurora_handler:objective_engine",
+                        details={"error": str(e)},
+                        why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED", str(e)],
+                    )
+                    return
 
             gate_ok, gate_reason = self.execution_gate.check_entry(
                 symbol=symbol,
@@ -629,9 +861,18 @@ class AuroraDecisionMixin:
                 entry_plan=entry_plan_res,
                 stop_loss_override=stop_loss_override,
                 micro_fraction=micro_fraction,
+                quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
         else:
-            self._emit_signal(symbol, result, features, cmd, effective_side=effective_side, micro_fraction=micro_fraction)
+            self._emit_signal(
+                symbol,
+                result,
+                features,
+                cmd,
+                effective_side=effective_side,
+                micro_fraction=micro_fraction,
+                quadratic_shadow_evaluation=quadratic_shadow_evaluation,
+            )
 
         # Update side bias history
         self._update_side_bias(symbol, effective_side)
@@ -647,11 +888,29 @@ class AuroraDecisionMixin:
         entry_plan: Optional[EntryPlanResult] = None,
         stop_loss_override: Optional[decimal.Decimal] = None,
         micro_fraction: float = 1.0,
+        quadratic_shadow_evaluation: Any | None = None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with readiness contract."""
         state = self._symbol_states[symbol]
         side = effective_side if effective_side is not None else result.side
         now_ms = int(self.wall_time_fn() * 1000)
+        bar_identity = extract_canonical_bar_identity(
+            source_event,
+            default_symbol=symbol,
+            default_timeframe_sec=int(source_event.get("tf_sec") or self.timeframe_sec or 0),
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
+        replay_identity = extract_canonical_replay_identity(
+            source_event,
+            default_symbol=symbol,
+            default_timeframe_sec=int(source_event.get("tf_sec") or self.timeframe_sec or 0),
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
+        gap_status = extract_gap_status(
+            source_event,
+            default_source="market_data:payload_bridge",
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
 
         # Get anchor price and default entry price
         anchor_price = decimal.Decimal(str(features.get("price", "0")))
@@ -677,7 +936,8 @@ class AuroraDecisionMixin:
         else:
             # Fallback to Legacy Regime TPSL
             instr_cfg = self._get_instrument_config(symbol)
-            vel_cfg = getattr(instr_cfg, "volatility_entry_logic", None) if instr_cfg else None
+            vel_cfg = getattr(instr_cfg, "volatility_entry_logic",
+                              None) if instr_cfg else None
 
             if vel_cfg and getattr(vel_cfg, "enabled", False):
                 volatility = self._get_volatility_strict(symbol, features)
@@ -688,7 +948,8 @@ class AuroraDecisionMixin:
                         reason="DATA_NOT_READY",
                         context="aurora_handler:volatility_entry",
                         details={"required_feature": "atr"},
-                        why_chain=["VOLATILITY_ENTRY", "ATR_MISSING", "FAIL_CLOSED"],
+                        why_chain=["VOLATILITY_ENTRY",
+                                   "ATR_MISSING", "FAIL_CLOSED"],
                     )
                     return
 
@@ -696,7 +957,8 @@ class AuroraDecisionMixin:
                 multipliers = getattr(vel_cfg, "regime_multipliers", {})
                 mult_raw = multipliers.get(regime, multipliers.get("DEFAULT"))
                 if mult_raw is None:
-                    self.logger.error(f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
+                    self.logger.error(
+                        f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
                     return
                 mult = decimal.Decimal(str(mult_raw))
 
@@ -727,14 +989,193 @@ class AuroraDecisionMixin:
             tpsl_result["tpsl_ctx"]["mode"] = "EXIT_MANAGER_OVERRIDE"
 
         # Build payload per v7 contract
+        restore_snapshot = self.get_runtime_analytics_restore_snapshot(symbol)
+        decision_cfg = getattr(
+            getattr(getattr(self.config, "strategies", None), "aurora", None),
+            "decision",
+            None,
+        )
+        requested_rollout = resolve_requested_quadratic_rollout(decision_cfg)
+        base_runtime_permissions = make_permissions(
+            can_manage_existing_risk=True,
+            can_open_new_risk=not gap_blocks_open_new_risk(gap_status),
+        )
+        runtime_permissions = combine_restore_permissions(
+            base_runtime_permissions,
+            restore_snapshot,
+        )
+        gap_reason_chain = list(gap_blocking_tokens(gap_status)) + list(
+            restore_blocking_tokens(restore_snapshot)
+        )
+        gap_reason_chain = list(dict.fromkeys(gap_reason_chain))
+        quadratic_htf_status = (
+            ready_status(
+                why=["pillar_sum_present"],
+                updated_at=now_ms,
+                source="feature_engineering:payload_bridge",
+                evidence_ref=f"pillar:{symbol}:{self.timeframe_sec}:{now_ms}",
+            )
+            if features.get("pillar_sum") is not None
+            else cold_status(
+                why=["pillar_sum_missing"],
+                updated_at=now_ms,
+                source="feature_engineering:payload_bridge",
+                evidence_ref=f"pillar:{symbol}:{self.timeframe_sec}:{now_ms}",
+            )
+        )
+        runtime_scopes = {
+            RuntimeReadinessScope.BASIS_BAR_READY.value: build_basis_bar_status_from_gap(
+                gap_status,
+                updated_at=now_ms,
+                source="market_data:payload_bridge",
+                evidence_ref=(bar_identity.to_ref() if bar_identity is not None else None),
+            ),
+            RuntimeReadinessScope.MICROSTRUCTURE_READY.value: (
+                ready_status(
+                    why=["fe_warmup_full_ready"],
+                    updated_at=now_ms,
+                    source="feature_engineering:payload_bridge",
+                    evidence_ref=f"warmup:{symbol}:{now_ms}",
+                )
+                if state.warmup_full_ready
+                else cold_status(
+                    why=["fe_warmup_not_ready"],
+                    updated_at=now_ms,
+                    source="feature_engineering:payload_bridge",
+                    evidence_ref=f"warmup:{symbol}:{now_ms}",
+                )
+            ),
+            RuntimeReadinessScope.QUADRATIC_HTF_READY.value: quadratic_htf_status,
+            RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value: ready_status(
+                why=["signal_emitted"],
+                updated_at=now_ms,
+                source="decision_making:aurora",
+                evidence_ref=f"signal:{symbol}:{now_ms}",
+            ),
+        }
+        runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = (
+            ready_status(
+                why=["regime_heartbeat_present"],
+                updated_at=state.regime_ts_ms or now_ms,
+                source="regime_detector:payload_bridge",
+                evidence_ref=f"regime:{symbol}:{state.regime_ts_ms or now_ms}",
+            )
+            if state.regime and state.regime_ts_ms
+            else partial_status(
+                why=["regime_heartbeat_missing"],
+                updated_at=now_ms,
+                source="regime_detector:payload_bridge",
+                evidence_ref=f"regime:{symbol}:{now_ms}",
+            )
+        )
+        if restore_snapshot is not None:
+            runtime_scopes[RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+                ),
+                updated_at=now_ms,
+                source="execution_position:startup_restore",
+                evidence_ref=f"execution:{symbol}:{now_ms}",
+            )
+            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                ),
+                updated_at=now_ms,
+                source="feature_engineering:startup_restore",
+                evidence_ref=f"fe_cache:{symbol}:{now_ms}",
+                default_status=runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.PILLAR_STATE,
+                ),
+                updated_at=now_ms,
+                source="feature_engineering:startup_restore",
+                evidence_ref=f"pillars:{symbol}:{now_ms}",
+                default_status=runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                ),
+                updated_at=now_ms,
+                source="regime_detector:startup_restore",
+                evidence_ref=f"regime:{symbol}:{now_ms}",
+                default_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
+            )
+            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = restore_status_to_readiness_status(
+                lookup_restore_status(
+                    restore_snapshot,
+                    RuntimeAnalyticsRestoreScope.DECISION_CACHE,
+                ),
+                updated_at=now_ms,
+                source="decision_making:startup_restore",
+                evidence_ref=f"decision_cache:{symbol}:{now_ms}",
+                restored_why=["signal_emitted"],
+                default_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
+            )
+        quadratic_rollout = build_quadratic_rollout_snapshot(
+            requested_rollout=requested_rollout,
+            quadratic_readiness=runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value],
+            runtime_permissions=runtime_permissions,
+            shadow_evaluation=(
+                quadratic_shadow_evaluation
+                if quadratic_shadow_evaluation is not None
+                else not_requested_shadow_evaluation()
+            ),
+        )
+        runtime_permissions = apply_live_quadratic_permission_gate(
+            runtime_permissions,
+            quadratic_rollout,
+        )
+        blocking_reason_chain = list(gap_reason_chain) + list(
+            quadratic_rollout.quadratic_blocking_reason_chain
+        )
+        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
+        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
+            blocking_reason_chain.append("protect_only")
+            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
+        runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
+            gap_status,
+            updated_at=now_ms,
+            source="decision_making:aurora",
+            evidence_ref=f"signal:{symbol}:{now_ms}",
+            allow_open_new_risk=runtime_permissions.can_open_new_risk,
+            open_ready_why=["open_new_risk_allowed"],
+            blocked_why=blocking_reason_chain,
+        )
+        runtime_snapshot = make_snapshot(
+            strategy_id=self.strategy_id,
+            symbol=symbol,
+            updated_at=now_ms,
+            scopes=runtime_scopes,
+            source="decision_making:aurora",
+            permissions=runtime_permissions,
+            blocking_reason_chain=blocking_reason_chain,
+        )
         payload = {
             "strategy_id": self.strategy_id,
             "symbol": symbol,
             "side": side.upper(),
             "ts_ms": now_ms,
             "rid": f"aurora_{symbol}_{now_ms}",
+            "bar_close_ts": (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else int(source_event.get("bar_close_ts") or 0)
+            ),
             "why_chain": result.why_chain,
             "readiness": {"warmup_ok": state.warmup_full_ready},
+            "runtime_permissions": runtime_permissions.to_payload(),
+            "runtime_readiness": runtime_snapshot.to_payload(),
+            "rollout_mode": quadratic_rollout.mode.value,
+            "rollback_armed_status": quadratic_rollout.rollback_armed_status.value,
+            "quadratic_rollout": quadratic_rollout.to_payload(),
             "price_ctx": {
                 "entry_price": str(entry_price),
             },
@@ -744,6 +1185,7 @@ class AuroraDecisionMixin:
                 "thr_sell": float(result.thr_sell),
                 "regime": result.regime,
                 "psi_vector": result.psi_vector,
+                "objective": (result.psi_vector or {}).get("objective"),
             },
             "sizing": {
                 "margin_pct_mult": float(micro_fraction),
@@ -751,6 +1193,11 @@ class AuroraDecisionMixin:
             "volatility": features.get("volatility"),
             "liquidity": features.get("liquidity"),
             "tf_sec": self.timeframe_sec,
+            "source_mode": (
+                bar_identity.source_mode.value
+                if bar_identity is not None
+                else str(source_event.get("source_mode") or RuntimeBarSourceMode.LIVE.value)
+            ),
             "regime_ctx": {
                 "confidence": state.regime_confidence,
                 "regime_ts_ms": state.regime_ts_ms,
@@ -758,10 +1205,21 @@ class AuroraDecisionMixin:
                 "regime": state.regime,
             },
         }
+        if bar_identity is not None:
+            payload["bar_identity"] = bar_identity.to_payload()
+            payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+        if replay_identity is not None:
+            payload["replay_identity"] = replay_identity.to_payload()
+            payload["replay_generation"] = int(replay_identity.replay_generation)
+        if gap_status is not None:
+            attach_gap_status_payload(payload, gap=gap_status, attach_nested_bar=False)
+        if restore_snapshot is not None:
+            payload["analytics_restore"] = restore_snapshot.to_payload()
 
         # BUG-5: Instrument Quantization (Phase 9)
         instruments_cfg = getattr(self.config, "instruments", None)
-        precision = instruments_cfg.get(symbol) if isinstance(instruments_cfg, dict) else None
+        precision = instruments_cfg.get(symbol) if isinstance(
+            instruments_cfg, dict) else None
 
         if precision:
             try:
@@ -775,7 +1233,8 @@ class AuroraDecisionMixin:
                 instr_cfg = self._get_instrument_config(symbol)
                 leverage_cfg = getattr(instr_cfg, "leverage", None)
                 target_leverage = getattr(leverage_cfg, "target", 20)
-                max_notional_cap = getattr(leverage_cfg, "max_notional_value", None) or decimal.Decimal("1000000")
+                max_notional_cap = getattr(
+                    leverage_cfg, "max_notional_value", None) or decimal.Decimal("1000000")
 
                 q_pos = quantize_exposure(
                     exposure=float(result.score),
@@ -786,14 +1245,17 @@ class AuroraDecisionMixin:
                 )
 
                 if q_pos.reject_reason:
-                    self.logger.warning(f"[{symbol}] QUANTIZER_REJECT: {q_pos.reject_reason}")
+                    self.logger.warning(
+                        f"[{symbol}] QUANTIZER_REJECT: {q_pos.reject_reason}")
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code="QUANTIZER_REJECT",
                         reason=q_pos.reject_reason,
                         context="aurora_handler:quantizer",
-                        details={"exposure": result.score, "price": str(entry_price)},
-                        why_chain=result.why_chain + [f"QUANTIZER:{q_pos.reject_reason}"],
+                        details={"exposure": result.score,
+                                 "price": str(entry_price)},
+                        why_chain=result.why_chain +
+                        [f"QUANTIZER:{q_pos.reject_reason}"],
                     )
                     return
 
@@ -821,12 +1283,14 @@ class AuroraDecisionMixin:
             sh_details = getattr(result, "details", {}) or {}
             state_hash = sh_details.get("memory_state_hash")
             if state_hash:
-                ms.record_visit(symbol, features, bar_close_ts=int(now_ms/1000), state_hash=state_hash)
+                ms.record_visit(symbol, features, bar_close_ts=int(
+                    now_ms/1000), state_hash=state_hash)
 
         # === INJECT REGIME-BASED TP/SL INTO PAYLOAD ===
         if tpsl_result is not None:
             payload["price_ctx"]["stop_price"] = str(tpsl_result["stop_price"])
-            payload["price_ctx"]["target_price"] = str(tpsl_result["target_price"])
+            payload["price_ctx"]["target_price"] = str(
+                tpsl_result["target_price"])
 
             payload["tpsl_ctx"] = tpsl_result["tpsl_ctx"]
 

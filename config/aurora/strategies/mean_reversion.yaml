@@ -51,7 +51,7 @@ mean_reversion:
     rsi_window: 14
 
     # Entry thresholds
-    entry_threshold: 0.05      # %B threshold (5% inside band)
+    entry_threshold: 0.115     # %B threshold (5% inside band)
     rsi_oversold: 30
     rsi_overbought: 70
 
@@ -105,41 +105,41 @@ mean_reversion:
         mode: "ISOLATED"
 
       strategy:
-        bb_window: 20
-        bb_num_std: 2.1
+        bb_window: 40
+        bb_num_std: 2.5
         min_bb_width: 0.005  # (min_vol_atr from report)
         entry_threshold: 0.05
         # Exit parameters
         sl_atr_mult: 1.5     # Base, overridden below
         tp_to_mid: false     # False for outer band target
-        cooldown_sec: 210
+        cooldown_sec: 660
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for ""
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     # --- BTC (BRONZE ) ---
     BTCUSDT:
-      enabled: true
+      enabled: false
       position_mode: "STRICT"
 
       # P1: Active Leverage Management
       leverage:
-        target: 15
+        target: 12
         mode: "ISOLATED"
 
       strategy:
         bb_window: 40
-        bb_num_std: 1.5
+        bb_num_std: 1.6
         min_bb_width: 0.004
-        entry_threshold: 0.20
+        entry_threshold: 0.24
         tp_to_mid: true      # Default behavior
         sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
-        cooldown_sec: 0      # No cooldown
+        cooldown_sec: 360    # No cooldown
       # Regime Gating - BTC conservative (+$103) - include MEAN_REVERSION for backtest
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     # --- XRP (SILVER ) ---
     XRPUSDT:
-      enabled: true
+      enabled: false
       position_mode: "STRICT"
 
       # P1: Active Leverage Management
@@ -176,13 +176,13 @@ mean_reversion:
       enabled: false
       position_mode: "STRICT"
       strategy:
-        bb_window: null
-        bb_num_std: null
-        min_bb_width: null
-        entry_threshold: null
-        tp_to_mid: null
-        sl_atr_mult: null
-        cooldown_sec: null
+        bb_window: 24
+        bb_num_std: 1.8
+        min_bb_width: 0.025
+        entry_threshold: 0.12
+        tp_to_mid: true
+        sl_atr_mult: 2.0
+        cooldown_sec: 210
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
   #

@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+import math
 
 logger = logging.getLogger(__name__)
 
 
 class CoreEventType(Enum):
     POSITION_CLOSED = "position_closed"
+    TRADE_CLOSED = "trade_closed"
     PORTFOLIO_UPDATE = "portfolio_update"
     EQUITY_UPDATE = "equity_update"
 
@@ -29,6 +31,7 @@ class CoreEventType(Enum):
 class CoreLogEntry:
     """Parsed core log entry."""
     timestamp: float
+    event_ts_ms: int
     timestamp_str: str
     event_type: CoreEventType
     symbol: Optional[str] = None
@@ -37,6 +40,9 @@ class CoreLogEntry:
     realized_pnl_net: Optional[float] = None
     trade_id: Optional[str] = None
     close_ts_ms: Optional[int] = None
+    entry_price: Optional[float] = None
+    close_price: Optional[float] = None
+    quantity: Optional[float] = None
     fees: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     reason: Optional[str] = None
@@ -92,11 +98,37 @@ def _extract_field(line: str, key: str) -> Optional[str]:
 
 def parse_timestamp(ts_str: str) -> float:
     """Parse timestamp string to epoch float."""
+    ts_ms = parse_timestamp_ms(ts_str)
+    if ts_ms is None:
+        return 0.0
+    return ts_ms / 1000.0
+
+
+def parse_timestamp_ms(ts_str: str) -> Optional[int]:
+    """Parse timestamp string to canonical epoch milliseconds."""
     try:
         dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
-        return dt.timestamp()
+        return int(round(dt.timestamp() * 1000.0))
     except ValueError:
-        return 0.0
+        return None
+
+
+def _normalize_epoch_to_ms(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(numeric) or numeric <= 0.0:
+        return None
+
+    if numeric >= 1e11:
+        return int(round(numeric))
+    if numeric >= 1e9:
+        return int(round(numeric * 1000.0))
+    return None
 
 
 def parse_scientific_notation(value: str) -> float:
@@ -121,38 +153,63 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     if not line:
         return None
 
-    # Try structured POSITION_CLOSED payload first.
-    if "POSITION_CLOSED" in line:
+    # Try structured close payload first.
+    if "POSITION_CLOSED" in line or "TRADE_CLOSED" in line:
         ts_match = TIMESTAMP_PATTERN.match(line)
         ts_str = ts_match.group(1) if ts_match else ""
+        log_event_ts_ms = parse_timestamp_ms(ts_str) if ts_str else None
+        event_type = (
+            CoreEventType.TRADE_CLOSED
+            if "TRADE_CLOSED" in line
+            else CoreEventType.POSITION_CLOSED
+        )
         symbol = _extract_field(line, "symbol")
+        realized_pnl_raw = _extract_field(line, "realized_pnl")
         realized_pnl_net_raw = _extract_field(line, "realized_pnl_net")
         trade_id = _extract_field(line, "trade_id")
         close_ts_ms_raw = _extract_field(line, "close_ts_ms")
+        entry_price_raw = _extract_field(line, "entry_price")
+        close_price_raw = _extract_field(line, "close_price")
+        quantity_raw = _extract_field(line, "quantity")
         fees_raw = _extract_field(line, "fees")
 
         # Accept as structured only when at least one structured reward field is present.
         if symbol and (
-            realized_pnl_net_raw is not None
+            realized_pnl_raw is not None
+            or realized_pnl_net_raw is not None
             or trade_id is not None
             or close_ts_ms_raw is not None
+            or close_price_raw is not None
             or fees_raw is not None
         ):
-            try:
-                close_ts_ms = int(close_ts_ms_raw) if close_ts_ms_raw is not None else None
-            except (TypeError, ValueError):
-                close_ts_ms = None
+            close_ts_ms = _normalize_epoch_to_ms(close_ts_ms_raw)
+            event_ts_ms = close_ts_ms or log_event_ts_ms
+            if event_ts_ms is None:
+                return None
 
             return CoreLogEntry(
-                timestamp=parse_timestamp(ts_str) if ts_str else 0.0,
+                timestamp=event_ts_ms / 1000.0,
+                event_ts_ms=event_ts_ms,
                 timestamp_str=ts_str,
-                event_type=CoreEventType.POSITION_CLOSED,
+                event_type=event_type,
                 symbol=symbol,
+                realized_pnl=parse_scientific_notation(realized_pnl_raw)
+                if realized_pnl_raw is not None
+                else None,
                 realized_pnl_net=parse_scientific_notation(realized_pnl_net_raw)
                 if realized_pnl_net_raw is not None
                 else None,
                 trade_id=trade_id,
                 close_ts_ms=close_ts_ms,
+                entry_price=parse_scientific_notation(entry_price_raw)
+                if entry_price_raw is not None
+                else None,
+                close_price=parse_scientific_notation(close_price_raw)
+                if close_price_raw is not None
+                else None,
+                quantity=parse_scientific_notation(quantity_raw)
+                if quantity_raw is not None
+                else None,
                 fees=parse_scientific_notation(fees_raw) if fees_raw is not None else None,
                 raw_line=line,
             )
@@ -160,8 +217,12 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     # Try Position Closed pattern
     match = POSITION_CLOSED_PATTERN.match(line)
     if match:
+        event_ts_ms = parse_timestamp_ms(match.group(1))
+        if event_ts_ms is None:
+            return None
         return CoreLogEntry(
-            timestamp=parse_timestamp(match.group(1)),
+            timestamp=event_ts_ms / 1000.0,
+            event_ts_ms=event_ts_ms,
             timestamp_str=match.group(1),
             event_type=CoreEventType.POSITION_CLOSED,
             symbol=match.group(2),
@@ -172,8 +233,12 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     # Try Equity pattern
     match = EQUITY_PATTERN.match(line)
     if match:
+        event_ts_ms = parse_timestamp_ms(match.group(1))
+        if event_ts_ms is None:
+            return None
         return CoreLogEntry(
-            timestamp=parse_timestamp(match.group(1)),
+            timestamp=event_ts_ms / 1000.0,
+            event_ts_ms=event_ts_ms,
             timestamp_str=match.group(1),
             event_type=CoreEventType.EQUITY_UPDATE,
             equity=parse_scientific_notation(match.group(2)),
@@ -184,8 +249,12 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     # Try Portfolio pattern
     match = PORTFOLIO_PATTERN.match(line)
     if match:
+        event_ts_ms = parse_timestamp_ms(match.group(1))
+        if event_ts_ms is None:
+            return None
         return CoreLogEntry(
-            timestamp=parse_timestamp(match.group(1)),
+            timestamp=event_ts_ms / 1000.0,
+            event_ts_ms=event_ts_ms,
             timestamp_str=match.group(1),
             event_type=CoreEventType.PORTFOLIO_UPDATE,
             equity=float(match.group(2)),

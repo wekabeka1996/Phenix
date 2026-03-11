@@ -6,7 +6,8 @@ def test_retry_scheduler_uses_emit_compat_only():
     """
     TASK24.E4: In RetryScheduler, all emissions must go through emit_compat (no direct self.fsm.emit).
     """
-    src = Path("vfoundation/core/retry_scheduler.py").read_text(encoding="utf-8", errors="replace")
+    src = Path(
+        "vfoundation/core/retry_scheduler.py").read_text(encoding="utf-8-sig", errors="replace")
     tree = ast.parse(src)
 
     retry_class = None
@@ -23,30 +24,35 @@ def test_retry_scheduler_uses_emit_compat_only():
             continue
         recv = func.value
         if isinstance(recv, ast.Attribute) and recv.attr == "fsm":
-            raise AssertionError("Direct self.fsm.emit call found inside RetryScheduler (emit_compat-only contract)")
+            raise AssertionError(
+                "Direct self.fsm.emit call found inside RetryScheduler (emit_compat-only contract)")
 
 
 def test_no_import_feature_engineering_phase1():
     """
     TASK24.F: feature_engineering_phase1.py is zombie/forbidden; ensure it is not present or imported.
     """
-    zombie = Path("apps/reference/domains/feature_engineering/feature_engineering_phase1.py")
+    zombie = Path(
+        "apps/reference/domains/feature_engineering/feature_engineering_phase1.py")
     assert zombie.exists() is False
 
     repo_root = Path("apps/reference")
     for py in repo_root.rglob("*.py"):
         if py.name.endswith(".bak"):
             continue
-        tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"), filename=str(py))
+        tree = ast.parse(py.read_text(encoding="utf-8-sig",
+                         errors="replace"), filename=str(py))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name.endswith("feature_engineering_phase1") or alias.name == "feature_engineering_phase1":
-                        raise AssertionError(f"Forbidden import in {py}: {alias.name}")
+                        raise AssertionError(
+                            f"Forbidden import in {py}: {alias.name}")
             if isinstance(node, ast.ImportFrom):
                 mod = node.module or ""
                 if mod.endswith("feature_engineering_phase1") or mod == "feature_engineering_phase1":
-                    raise AssertionError(f"Forbidden import in {py}: from {mod} import ...")
+                    raise AssertionError(
+                        f"Forbidden import in {py}: from {mod} import ...")
 
 
 # ============================================================
@@ -56,35 +62,38 @@ def test_no_import_feature_engineering_phase1():
 def test_no_config_to_dict_in_domains():
     """
     TASK26.PG.1: AST gate - no config.to_dict() in domains directory.
-    
+
     Prevents legacy pattern of converting typed config to dict.
     """
     domains_root = Path("apps/reference/domains")
-    
+
     for py in domains_root.rglob("*.py"):
         if py.name.endswith(".bak") or "__pycache__" in str(py):
             continue
-        
+
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"), filename=str(py))
+            tree = ast.parse(py.read_text(encoding="utf-8-sig",
+                             errors="replace"), filename=str(py))
         except SyntaxError:
             continue
-        
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 func = node.func
                 if isinstance(func, ast.Attribute) and func.attr == "to_dict":
                     # Check if receiver might be "config"
                     if isinstance(func.value, ast.Name) and func.value.id in ("config", "cfg", "self._config"):
-                        raise AssertionError(f"config.to_dict() found in {py} at line {node.lineno}")
+                        raise AssertionError(
+                            f"config.to_dict() found in {py} at line {node.lineno}")
                     if isinstance(func.value, ast.Attribute) and func.value.attr in ("config", "_config"):
-                        raise AssertionError(f"config.to_dict() found in {py} at line {node.lineno}")
+                        raise AssertionError(
+                            f"config.to_dict() found in {py} at line {node.lineno}")
 
 
 def test_no_get_with_default_in_domains():
     """
     TASK26.PG.2: AST gate - no .get(..., default) in critical domain config paths.
-    
+
     Prevents silent fallback on missing config keys.
     """
     # Check specific critical files
@@ -93,18 +102,19 @@ def test_no_get_with_default_in_domains():
         Path("apps/reference/domains/feature_engineering/feature_engineering.py"),
         Path("apps/reference/domains/regime_detector/regime_detector.py"),
     ]
-    
+
     violations = []
-    
+
     for py in critical_files:
         if not py.exists():
             continue
-        
+
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"), filename=str(py))
+            tree = ast.parse(py.read_text(encoding="utf-8-sig",
+                             errors="replace"), filename=str(py))
         except SyntaxError:
             continue
-        
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 func = node.func
@@ -114,8 +124,9 @@ def test_no_get_with_default_in_domains():
                         # This is .get(key, default) - could be problematic
                         # Only flag if it's on config-like objects
                         if isinstance(func.value, ast.Name) and func.value.id in ("config", "cfg"):
-                            violations.append(f"{py}:{node.lineno} - config.get() with default")
-    
+                            violations.append(
+                                f"{py}:{node.lineno} - config.get() with default")
+
     # We allow some .get() patterns but want to track them
     # For now, just verify the check runs without error
     # In strict mode, uncomment: assert not violations, f"Found .get() with defaults: {violations}"
@@ -124,7 +135,7 @@ def test_no_get_with_default_in_domains():
 def test_macro_sync_insufficient_emits_why():
     """
     TASK26.PG.3: Behavioral gate - macro_sync insufficient data emits explicit why.
-    
+
     Inject insufficient anchor data → verify EVT fields contain reason.
     """
     import decimal
@@ -149,7 +160,8 @@ def test_macro_sync_insufficient_emits_why():
     # Only 5 samples (way less than 50 required)
     state = HotState(returns_buffer=deque(maxlen=cfg.macro_sync_window))
     for i in range(5):
-        engine.update_macro_sync_buffer(state, decimal.Decimal("100") + decimal.Decimal(str(i)), 100)
+        engine.update_macro_sync_buffer(
+            state, decimal.Decimal("100") + decimal.Decimal(str(i)), 100)
 
     now_ms = 1_000_000
     phi = engine.compute_macro_sync(
@@ -161,15 +173,17 @@ def test_macro_sync_insufficient_emits_why():
 
     # Behavioral assertion: must have explicit why
     assert state.macro_sync_ready is False, "Must be not ready"
-    assert hasattr(state, "macro_sync_not_ready_reason"), "Must have reason attribute"
+    assert hasattr(
+        state, "macro_sync_not_ready_reason"), "Must have reason attribute"
     assert state.macro_sync_not_ready_reason is not None, "Reason must be set (not None)"
-    assert len(state.macro_sync_not_ready_reason) > 0, "Reason must not be empty string"
+    assert len(
+        state.macro_sync_not_ready_reason) > 0, "Reason must not be empty string"
 
 
 def test_volume_spike_bad_dt_emits_why(monkeypatch):
     """
     TASK26.PG.4: Behavioral gate - bad dt triggers metric with why.
-    
+
     Inject dt=0 → verify inc_data_quality_bad_dt is called.
     """
     import decimal
@@ -202,7 +216,8 @@ def test_volume_spike_bad_dt_emits_why(monkeypatch):
     )
 
     # Inject dt=0 - this should trigger bad_dt metric or safe handling
-    engine.update_volume_spike(state, volume=decimal.Decimal("100"), time_diff_ms=0)
+    engine.update_volume_spike(
+        state, volume=decimal.Decimal("100"), time_diff_ms=0)
 
     # Either metric was called OR update didn't crash (both acceptable)
     # The key is no ZeroDivisionError

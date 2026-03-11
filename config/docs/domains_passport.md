@@ -3043,3 +3043,84 @@
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
+
+## Domain: `shadow_telemetry`
+Цей домен задає параметри інфраструктури відслідковування тіньових інцидентів (LLM microstructure).
+
+### `domains.shadow_telemetry.enabled`
+- **Type:** `bool`
+- **Logic Owner:** `shadow_telemetry`
+- **Mathematical/Architectural Role:**
+    > Master toggle для shadow_telemetry системи.
+
+### `domains.shadow_telemetry.api.write.enabled`
+- **Type:** `bool`
+- **Logic Owner:** `shadow_telemetry`
+- **Mathematical/Architectural Role:**
+    > Дозволяє API записувати intents від LLM, що перетворює тіньовий режим з read-only на інтерактивний/write.
+
+## Domain: `objective_engine`
+Цей домен задає глобальні налаштування для Objective Engine, математичного апарату оцінки якості сигналів.
+
+### `domains.objective_engine.enabled`
+- **Type:** `bool`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Master toggle для Objective Engine. Якщо `false`, движок повертає `multiplier=1.0` (пропуск).
+- **Invariant/Constraints:** Pydantic `extra='forbid'`.
+
+### `domains.objective_engine.data_requirements.strict_fail_closed`
+- **Type:** `bool`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Встановлює політику fail-closed для рушія. Якщо не вистачає даних для оцінки (наприклад, volatility або spread), система блокуватиме сигнал, а не пропускатиме його.
+
+### `domains.objective_engine.components.cost`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Увімкнення (`enabled: true`) та налаштування штрафів за Cost (spread, fee, slippage).
+    > - `alpha_fee`: Чутливість штрафу до `base_fee_bps`.
+    > - `alpha_slippage`: Чутливість до очікуваного сліпеджу.
+    > - `alpha_spread`: Експоненційна або лінійна чутливість до поточного спреду.
+    > - `base_fee_bps` та `slippage_from_spread_ratio`: Базові параметри калькуляції витрат.
+
+### `domains.objective_engine.components.risk`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Увімкнення квадратичних штрафів за Risk (inventory utilization, volatility state).
+    > - `phi_inventory`: Множник квадратичного штрафу при наближенні до максимального розміру позиції.
+    > - `phi_volatility`: Чутливість до аномальної волатильності.
+    > - `phi_overflow`: Штраф за перевищення лімітів (якщо застосовно).
+
+### `domains.objective_engine.components.edge`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Увімкнення винагороди за математичний Edge (силу початкового сигналу).
+    > - `omega_rr`, `omega_threshold_margin`, `phi_stop_distance`, `phi_rr_consistency`: Параметри оцінки якості setup-у, відстані до стопа та Risk/Reward.
+
+### `domains.objective_engine.components.execution`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Увімкнення винагороди за якість Execution (ліквідність стакану).
+    > - `omega_liquidity`: Винагорода за достатню ліквідність у стакані.
+    > - `phi_spread_drag`, `phi_notional_pressure`: Штрафи за тиск об'єму на стакан та розширення спреду під час виконання.
+
+### `domains.objective_engine.components.information`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Увімкнення штрафів за старіння інформації (regime staleness).
+    > - `phi_staleness`: Лінійний штраф за кожну годину з моменту останньої зміни режиму (decaying confidence).
+    > - `omega_regime_confidence`, `omega_readiness`: Оцінка впевненості у поточному ринковому режимі.
+
+### `domains.objective_engine.components.behavior`
+- **Type:** `ObjectiveComponentConfig`
+- **Logic Owner:** `objective_engine`
+- **Mathematical/Architectural Role:**
+    > Оцінка поведінки агента (churn, rate limits).
+    > - `phi_cancel_replace`, `phi_blocked_intents`, `phi_reentry`: Штрафи за надмірні скасування, заблоковані наміри або швидкі перезаходи у вікні `window_sec`.
+

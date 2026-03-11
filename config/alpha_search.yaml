@@ -134,6 +134,18 @@ alpha_search:
       max_drawdown_exit: 1.2
       cooldown_bars_after_close: 3    # v6b: block re-entry for 3 bars after close (address 91% reversal-exit rate)
 
+  objective_feedback:
+    enabled: true
+    window_trades: 50
+    min_trades_before_reweight: 10
+    rebalance_every_closed_trades: 5
+    quality_metric_weights:
+      realized_quality_score: 0.40
+      realized_pnl: 0.35
+      duration_efficiency: 0.25
+    min_provider_weight: 0.15
+    max_provider_weight: 0.70
+
   # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation
   # These fields are ignored by new code but kept for migration/reference

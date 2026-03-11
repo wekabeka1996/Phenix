@@ -230,6 +230,8 @@ class AuroraHoldingPeriodMixin:
         if state.position_side == "":
             state.entry_timestamp = float(self.monotonic_fn())
             state.position_side = side
+            if state.last_exit_timestamp is not None:
+                state.objective_reentry_ts_ms.append(int(self.monotonic_fn() * 1000))
             self.logger.info(
                 f"[{symbol}] TRADE_EXECUTED: entry confirmed (side={side}, qty={qty})"
             )

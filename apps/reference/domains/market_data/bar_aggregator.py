@@ -33,6 +33,15 @@ from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    attach_canonical_bar_payload,
+    build_canonical_bar_identity,
+)
+from apps.reference.contracts.runtime_gap_policy import (
+    attach_gap_status_payload,
+    extract_gap_status,
+)
 
 # Re-use existing Bar model from FE (single source of truth for Bar structure)
 from apps.reference.domains.feature_engineering.bar_resampler import Bar
@@ -251,6 +260,15 @@ class BarAggregator:
     
     def _emit_bar_closed(self, bar: Bar, event_ts_ms: int) -> None:
         """Emit EVT:BAR_CLOSED event."""
+        identity = build_canonical_bar_identity(
+            symbol=bar.symbol,
+            timeframe_sec=int(bar.timeframe_sec),
+            bar_start_ts_ms=int(bar.start_ts_ms),
+            bar_end_ts_ms=int(bar.end_ts_ms),
+            close_boundary_ts_ms=int(bar.start_ts_ms) + int(bar.timeframe_sec) * 1000,
+            source_mode=RuntimeBarSourceMode.LIVE,
+        )
+
         # Serialize bar to dict with string decimals (JSON-safe)
         bar_dict = {
             "symbol": bar.symbol,
@@ -281,6 +299,18 @@ class BarAggregator:
                 "ticks_in_bar": int(bar.trade_count),
             },
         }
+        attach_canonical_bar_payload(
+            wal_payload,
+            identity=identity,
+            replay_generation=0,
+        )
+        gap_status = extract_gap_status(
+            wal_payload,
+            default_source="market_data:bar_aggregator",
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
+        if gap_status is not None:
+            attach_gap_status_payload(wal_payload, gap=gap_status)
 
         try:
             msg = Message(
@@ -311,6 +341,13 @@ class BarAggregator:
             "bar_close_ts": int(bar.end_ts_ms),
             "bar": bar_dict,
         }
+        attach_canonical_bar_payload(
+            payload,
+            identity=identity,
+            replay_generation=0,
+        )
+        if gap_status is not None:
+            attach_gap_status_payload(payload, gap=gap_status)
 
         why = f"Bar {bar.timeframe_sec}s closed for {bar.symbol}"
 

@@ -71,6 +71,10 @@ class TestBarAggregator180s:
         
         payload = call_args[0][1]
         assert payload["symbol"] == "BTCUSDT"
+        assert payload["source_mode"] == "live"
+        assert payload["bar_close_ts"] == payload["bar_identity"]["bar_end_ts_ms"]
+        assert payload["close_boundary_ts_ms"] == payload["bar_identity"]["close_boundary_ts_ms"]
+        assert payload["replay_identity"]["replay_generation"] == 0
         assert payload["bar"]["timeframe_sec"] == 300
         assert payload["bar"]["open"] == "100.00"
         assert payload["bar"]["high"] == "105.00"
@@ -269,6 +273,25 @@ class TestGapDetection:
         new_bar = agg.get_current_bar("BTCUSDT", 180)
         assert new_bar.is_gap_bar is True
         assert new_bar.gap_bars_skipped >= 1
+
+    def test_emitted_gap_bar_carries_canonical_gap_policy(self):
+        emit_spy = MagicMock()
+        agg = BarAggregator(timeframes_sec=[180], emit_fn=emit_spy)
+
+        base_ts = 180_000
+
+        agg.on_tick("BTCUSDT", Decimal("100"), Decimal("1"), base_ts + 1_000)
+        agg.on_tick("BTCUSDT", Decimal("110"), Decimal("1"), base_ts + 540_000)
+        agg.on_tick("BTCUSDT", Decimal("120"), Decimal("1"), base_ts + 720_000)
+
+        assert emit_spy.call_count == 2
+        gap_payload = emit_spy.call_args_list[1][0][1]
+
+        assert gap_payload["bar"]["is_gap_bar"] is True
+        assert gap_payload["gap_state"] == "GAP_DETECTED"
+        assert gap_payload["gap_policy_action"] == "DEGRADE_TO_NON_TRADING"
+        assert gap_payload["gap_bars_skipped"] >= 1
+        assert gap_payload["gap"]["evidence_ref"].startswith("bar:BTCUSDT:180:")
 
 
 class TestEdgeCases:

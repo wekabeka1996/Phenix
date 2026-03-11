@@ -18,7 +18,7 @@ logger = logging.getLogger("brain_worker")
 @dataclass
 class BridgeTask:
     id: str
-    type: str  # TRAIN, TRAIN_PPO, ENCODE, ACT, SAVE, LOAD, SHUTDOWN
+    type: str  # TRAIN, TRAIN_POLICY, TRAIN_REGIME_SUPERVISION, TRAIN_PPO, ENCODE, ACT, RESET_SEQUENCE_STATE, SAVE, LOAD, SHUTDOWN
     payload: Any
 
 @dataclass
@@ -90,8 +90,13 @@ def brain_service_worker(
                     result_data = brain_core.train_batch(tensor)
                     
                 elif task.type == "TRAIN_PPO":
-                    # payload: list of episodes
                     result_data = brain_core.train_ppo(task.payload)
+
+                elif task.type == "TRAIN_POLICY":
+                    result_data = brain_core.train_policy(task.payload)
+
+                elif task.type == "TRAIN_REGIME_SUPERVISION":
+                    result_data = brain_core.train_regime_supervision(task.payload)
                     
                 elif task.type == "ENCODE":
                     # payload: numpy array
@@ -102,6 +107,12 @@ def brain_service_worker(
                 elif task.type == "ACT":
                     # payload: latent z (numpy)
                     result_data = brain_core.get_action(task.payload)
+
+                elif task.type == "RESET_SEQUENCE_STATE":
+                    reason = "manual"
+                    if isinstance(task.payload, dict):
+                        reason = str(task.payload.get("reason") or "manual")
+                    result_data = brain_core.reset_sequence_state(reason=reason)
                     
                 elif task.type == "SAVE":
                     from pathlib import Path

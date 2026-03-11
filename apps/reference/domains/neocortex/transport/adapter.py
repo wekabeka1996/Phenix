@@ -9,14 +9,18 @@ Phase 4: Added Shadow Intent emission and checkpointing.
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import time
+from collections import Counter, deque
+from dataclasses import asdict, is_dataclass
 from typing import Dict, Any, Optional, Callable, List, Awaitable
 from pathlib import Path
 import numpy as np
 
 from apps.reference.domains.neocortex.config_models import NeocortexConfig
+from apps.reference.domains.neocortex.logic.datasets.hygiene import DatasetPolicyEngine
 from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
 from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 from apps.reference.domains.neocortex.logic.ingest.normalizer import (
@@ -33,6 +37,34 @@ from apps.reference.domains.neocortex.logic.reward.regime_labeler import RegimeL
 from apps.reference.domains.neocortex.logic.reward.reward_calculator import RegimeRewardCalculator
 
 logger = logging.getLogger(__name__)
+
+
+OBJECTIVE_FAMILY_REPRESENTATION = "representation"
+OBJECTIVE_FAMILY_REGIME_SUPERVISION = "regime_supervision"
+OBJECTIVE_FAMILY_EXECUTION_QUALITY = "execution_quality"
+OBJECTIVE_FAMILY_POLICY = "policy"
+OBJECTIVE_FAMILY_ALLOWED = {
+    OBJECTIVE_FAMILY_REPRESENTATION,
+    OBJECTIVE_FAMILY_REGIME_SUPERVISION,
+    OBJECTIVE_FAMILY_EXECUTION_QUALITY,
+    OBJECTIVE_FAMILY_POLICY,
+}
+
+
+def _normalize_epoch_to_ms(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(numeric) or numeric <= 0.0:
+        return None
+    if numeric >= 1e11:
+        return int(round(numeric))
+    if numeric >= 1e9:
+        return int(round(numeric * 1000.0))
+    return None
 
 
 class NeocortexAdapter:
@@ -108,10 +140,84 @@ class NeocortexAdapter:
                 self.dream_threshold,
             )
             self.dream_threshold = 5
-        self._completed_episodes: List[Dict[str, Any]] = []
+        self._objective_split_enforced = bool(
+            getattr(config.neuro.ppo, "objective_split_enforced", True)
+        )
+        self._policy_training_mode = str(
+            getattr(config.neuro.ppo, "policy_training_mode", "disabled")
+        ).lower()
+        self._sequence_inference_mode = str(
+            getattr(config.neuro.sequence, "inference_mode", "stateless_per_event")
+        ).lower()
+        self._representation_training_mode = str(
+            getattr(config.neuro.sequence, "representation_training_mode", "independent_rows")
+        ).lower()
+        self._reset_sequence_on_replay_start = bool(
+            getattr(config.neuro.sequence, "reset_on_replay_start", True)
+        )
+        self._dataset_policy = DatasetPolicyEngine(
+            config.neuro.dataset,
+            policy_training_mode=self._policy_training_mode,
+            representation_training_mode=self._representation_training_mode,
+            sequence_inference_mode=self._sequence_inference_mode,
+        )
+        self._representation_samples = deque(maxlen=4096)
+        self._regime_supervision_samples = deque(maxlen=4096)
+        self._execution_quality_samples = deque(maxlen=4096)
+        self._policy_samples: List[Dict[str, Any]] = []
+        self._evaluated_samples_by_family = {
+            OBJECTIVE_FAMILY_REPRESENTATION: deque(maxlen=4096),
+            OBJECTIVE_FAMILY_REGIME_SUPERVISION: deque(maxlen=4096),
+            OBJECTIVE_FAMILY_EXECUTION_QUALITY: deque(maxlen=4096),
+            OBJECTIVE_FAMILY_POLICY: deque(maxlen=4096),
+        }
+        self._dataset_status_counts = Counter()
+        self._dataset_exclusion_counts = Counter()
+        self._dataset_quarantine_counts = Counter()
+        performance_cfg = config.neuro.performance
+        self._operating_mode = str(
+            getattr(performance_cfg, "operating_mode", "offline_replay")
+        ).lower()
+        self._shadow_intent_emit_policy = str(
+            getattr(performance_cfg, "shadow_intent_emit_policy", "emit_all")
+        ).lower()
+        self._shadow_intent_decimation_stride = int(
+            getattr(performance_cfg, "shadow_intent_decimation_stride", 1)
+        )
+        self._shadow_jsonl_write_policy = str(
+            getattr(performance_cfg, "shadow_jsonl_write_policy", "immediate")
+        ).lower()
+        self._telemetry_write_policy = str(
+            getattr(performance_cfg, "telemetry_write_policy", "immediate")
+        ).lower()
+        self._shadow_log_flush_threshold = int(
+            getattr(performance_cfg, "shadow_log_flush_threshold", 1)
+        )
+        self._telemetry_flush_threshold = int(
+            getattr(performance_cfg, "telemetry_flush_threshold", 1)
+        )
+        self._non_critical_queue_limit = int(
+            getattr(performance_cfg, "non_critical_queue_limit", 1024)
+        )
+        self._flush_interval_ms = int(
+            getattr(performance_cfg, "flush_interval_ms", 1000)
+        )
+        self._non_critical_overflow_policy = str(
+            getattr(performance_cfg, "non_critical_overflow_policy", "drop_oldest")
+        ).lower()
+        self._shadow_intent_log_buffer: List[str] = []
+        self._shadow_intents_generated = 0
+        self._shadow_intents_decimated = 0
+        self._shadow_intent_log_rows_buffered = 0
+        self._shadow_intent_log_rows_dropped = 0
+        self._shadow_intent_log_flushes = 0
+        self._non_critical_overload_events = 0
+        self._last_non_critical_flush_ts_ms = int(time.time() * 1000.0)
         self._dream_in_progress = False
         self._dreams_triggered = 0
         self._ppo_trains_triggered = 0
+        self._objective_rejections = 0
+        self._policy_training_rejections = 0
 
         # Backpressure control
         self._backpressure_threshold = self._train_batch_size * 2
@@ -123,7 +229,13 @@ class NeocortexAdapter:
 
         # Telemetry logging
         self.telemetry = TelemetryLogger(
-            log_dir=self.config.system.data_dir.parent / "logs")
+            log_dir=self.config.system.data_dir.parent / "logs",
+            write_policy=self._telemetry_write_policy,
+            flush_threshold=self._telemetry_flush_threshold,
+            flush_interval_ms=self._flush_interval_ms,
+            pending_limit=self._non_critical_queue_limit,
+            overflow_policy=self._non_critical_overflow_policy,
+        )
         logger.info(f"Telemetry CSV: {self.telemetry.filepath_str}")
 
         # Regime Oracle infrastructure (REGIME_PIVOT_PLAN Phase 2)
@@ -314,6 +426,21 @@ class NeocortexAdapter:
             logger.warning(
                 "Failed to read checkpoint metadata: %s", e, exc_info=True)
 
+    def _extract_event_ts_ms(self, payload: Dict[str, Any]) -> int:
+        for key in ("event_ts_ms", "timestamp", "ts"):
+            event_ts_ms = _normalize_epoch_to_ms(payload.get(key))
+            if event_ts_ms is not None:
+                return event_ts_ms
+        raise ValueError("Feature payload missing canonical causal timestamp")
+
+    def _normalize_feature_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        event_ts_ms = self._extract_event_ts_ms(payload)
+        normalized = dict(payload)
+        normalized["event_ts_ms"] = event_ts_ms
+        normalized["timestamp"] = event_ts_ms / 1000.0
+        normalized.setdefault("ts", normalized["timestamp"])
+        return normalized
+
     async def handle_features(self, payload: Dict[str, Any]):
         """
         Callback for EVT:FEATURES_CALCULATED.
@@ -328,6 +455,8 @@ class NeocortexAdapter:
         6. Train -> Background
         """
         try:
+            normalized_payload = self._normalize_feature_payload(payload)
+
             # 0. Non-blocking backpressure signal (never block ingestion loop)
             if (
                 len(self.buffer) > self._backpressure_threshold
@@ -355,9 +484,9 @@ class NeocortexAdapter:
                     )
 
             # 1. Parse (String -> Float32 Typed Observation)
-            obs = self.parser.parse(payload)
-            symbol = str(payload.get("symbol") or "UNKNOWN")
-            raw_feature_map = self._extract_raw_feature_map(payload)
+            obs = self.parser.parse(normalized_payload)
+            symbol = str(normalized_payload.get("symbol") or "UNKNOWN")
+            raw_feature_map = self._extract_raw_feature_map(normalized_payload)
 
             # 1.5 Normalize features online for stable ML training
             # Capture raw features BEFORE normalization for Oracle labeler
@@ -374,12 +503,40 @@ class NeocortexAdapter:
             )
 
             # 2. Value (Calculate Importance)
-            reward = float(payload.get('reward_signal', 0.0))
+            reward = float(normalized_payload.get('reward_signal', 0.0))
             importance = self.amygdala.update(obs, reward)
 
-            # 3. Memorize (Store in Buffer)
-            self.buffer.add(obs, importance)
-            self._samples_since_last_train += 1
+            representation_sample = {
+                "event_ts_ms": int(normalized_payload["event_ts_ms"]),
+                "symbol": symbol,
+                "features_vector": norm_vec.tolist(),
+                "time_is_causal": normalized_payload.get("time_is_causal", True),
+                "time_source": normalized_payload.get("time_source", "event_ts_ms"),
+                "sequence_contract_mode": self._representation_training_mode,
+            }
+            evaluated = self._evaluate_dataset_candidate(
+                representation_sample,
+                objective_family=OBJECTIVE_FAMILY_REPRESENTATION,
+                source_type="features_event",
+                source_ref=str(
+                    normalized_payload.get("event_id")
+                    or f"features:{symbol}:{normalized_payload['event_ts_ms']}"
+                ),
+                source_event_type=str(
+                    normalized_payload.get("event_type") or "EVT:FEATURES_CALCULATED"
+                ),
+            )
+
+            # 3. Memorize (Store in Buffer only when explicitly trainable)
+            if evaluated.is_trainable:
+                self.buffer.add(obs, importance)
+                self._representation_samples.append(
+                    self._attach_dataset_provenance(
+                        representation_sample,
+                        evaluated=evaluated,
+                    )
+                )
+                self._samples_since_last_train += 1
 
             # 4. Log Debug
             logger.debug(
@@ -390,7 +547,7 @@ class NeocortexAdapter:
             # 5. Generate Shadow Intent (if bridge available)
             await self._generate_shadow_intent(
                 obs,
-                payload,
+                normalized_payload,
                 raw_features_for_labeler=raw_feature_map,
             )
 
@@ -400,35 +557,316 @@ class NeocortexAdapter:
         except Exception as e:
             logger.error(f"Failed to ingest feature event: {e}", exc_info=True)
 
+    def _coerce_objective_family(self, sample: Dict[str, Any]) -> Optional[str]:
+        raw = sample.get("objective_family")
+        if raw is None:
+            return None
+        family = str(raw).strip().lower()
+        return family or None
+
+    def _register_objective_rejection(self, reason: str, sample: Optional[Dict[str, Any]] = None) -> None:
+        self._objective_rejections += 1
+        logger.warning("Objective sample rejected: reason=%s sample=%s", reason, sample or {})
+
+    def _validate_sample_family(
+        self,
+        sample: Dict[str, Any],
+        *,
+        expected_family: str,
+    ) -> bool:
+        family = self._coerce_objective_family(sample)
+        if family is None:
+            self._register_objective_rejection("missing_objective_family", sample)
+            return False
+        if family not in OBJECTIVE_FAMILY_ALLOWED:
+            self._register_objective_rejection("unknown_objective_family", sample)
+            return False
+        if family != expected_family:
+            self._register_objective_rejection(
+                f"unexpected_objective_family:{family}",
+                sample,
+            )
+            return False
+        return True
+
+    def _build_execution_quality_sample(self, episode_dict: Dict[str, Any]) -> Dict[str, Any]:
+        sample = dict(episode_dict)
+        sample["objective_family"] = OBJECTIVE_FAMILY_EXECUTION_QUALITY
+        sample["objective_route"] = "execution_quality_buffer"
+        sample["policy_eligible"] = False
+        sample["unresolved_lifecycle"] = bool(
+            sample.get("unresolved_lifecycle") or sample.get("unresolved_reason")
+        )
+        return sample
+
+    def _record_dataset_decision(self, evaluated) -> None:
+        self._dataset_status_counts[evaluated.eligibility_status] += 1
+        self._dataset_exclusion_counts.update(
+            evaluated.provenance.exclusion_reasons
+        )
+        self._dataset_quarantine_counts.update(
+            evaluated.provenance.quarantine_reasons
+        )
+        family_buffer = self._evaluated_samples_by_family.get(
+            evaluated.objective_family
+        )
+        if family_buffer is not None:
+            family_buffer.append(evaluated)
+
+    def _evaluate_dataset_candidate(
+        self,
+        sample: Dict[str, Any],
+        *,
+        objective_family: str,
+        source_type: str,
+        source_ref: str,
+        source_event_type: str,
+    ):
+        evaluated = self._dataset_policy.evaluate_sample(
+            sample,
+            objective_family=objective_family,
+            source_type=source_type,
+            source_ref=source_ref,
+            source_event_type=source_event_type,
+            ingestion_mode=str(self.config.system.run_mode),
+        )
+        self._record_dataset_decision(evaluated)
+        return evaluated
+
+    def _attach_dataset_provenance(
+        self,
+        sample: Dict[str, Any],
+        *,
+        evaluated,
+    ) -> Dict[str, Any]:
+        routed = dict(sample)
+        routed["dataset_provenance"] = evaluated.provenance.model_dump(mode="python")
+        routed["eligibility_status"] = evaluated.eligibility_status
+        routed["is_trainable"] = evaluated.is_trainable
+        return routed
+
+    def _register_non_critical_overload(self, reason: str) -> None:
+        self._non_critical_overload_events += 1
+        if self._non_critical_overload_events % 100 == 1:
+            logger.warning(
+                "Non-critical overload: reason=%s events=%s",
+                reason,
+                self._non_critical_overload_events,
+            )
+
+    def _should_emit_observational_shadow_output(self) -> bool:
+        if self._shadow_intent_emit_policy == "emit_all":
+            return True
+        if self._operating_mode != "offline_replay":
+            return True
+        stride = max(1, int(self._shadow_intent_decimation_stride))
+        return ((self._shadow_intents_generated - 1) % stride) == 0
+
+    def _enqueue_shadow_intent_log(self, shadow_intent: Dict[str, Any]) -> None:
+        line = json.dumps(shadow_intent, ensure_ascii=True) + "\n"
+        if self._shadow_jsonl_write_policy == "immediate":
+            self._rotate_shadow_intent_log_if_needed()
+            with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
+                shadow_log.write(line)
+                shadow_log.flush()
+            self._shadow_intent_log_flushes += 1
+            return
+
+        if len(self._shadow_intent_log_buffer) >= self._non_critical_queue_limit:
+            self._shadow_intent_log_rows_dropped += 1
+            self._register_non_critical_overload("shadow_intent_log_buffer_full")
+            if self._non_critical_overflow_policy == "drop_oldest":
+                self._shadow_intent_log_buffer.pop(0)
+            else:
+                return
+
+        self._shadow_intent_log_buffer.append(line)
+        self._shadow_intent_log_rows_buffered += 1
+        self._flush_shadow_intent_buffer(force=False)
+
+    def _flush_shadow_intent_buffer(self, *, force: bool) -> None:
+        if not self._shadow_intent_log_buffer:
+            return
+
+        now_ms = int(time.time() * 1000.0)
+        should_flush = force
+        if self._shadow_jsonl_write_policy == "immediate":
+            should_flush = True
+        elif len(self._shadow_intent_log_buffer) >= self._shadow_log_flush_threshold:
+            should_flush = True
+        elif now_ms - self._last_non_critical_flush_ts_ms >= self._flush_interval_ms:
+            should_flush = True
+
+        if not should_flush:
+            return
+
+        self._rotate_shadow_intent_log_if_needed()
+        with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
+            shadow_log.writelines(self._shadow_intent_log_buffer)
+            shadow_log.flush()
+        self._shadow_intent_log_flushes += 1
+        self._shadow_intent_log_buffer.clear()
+        self._last_non_critical_flush_ts_ms = now_ms
+
+    def _flush_non_critical_outputs(self, *, force: bool) -> None:
+        self._flush_shadow_intent_buffer(force=force)
+        self.telemetry.flush()
+
+    def _validate_batch_family(
+        self,
+        samples: List[Dict[str, Any]],
+        *,
+        expected_family: str,
+    ) -> bool:
+        if not samples:
+            return False
+        families = {self._coerce_objective_family(sample) for sample in samples}
+        if None in families or len(families) != 1 or expected_family not in families:
+            self._register_objective_rejection(
+                "mixed_or_invalid_batch_family",
+                {
+                    "expected_family": expected_family,
+                    "families": sorted([fam for fam in families if fam is not None]),
+                    "samples": len(samples),
+                },
+            )
+            return False
+        return True
+
+    def _build_regime_supervision_sample(
+        self,
+        *,
+        symbol: str,
+        settled,
+        realized_regime: int,
+        reward: float,
+        confidence: Optional[float],
+        model_features: List[float],
+    ) -> Dict[str, Any]:
+        event_ts_ms = _normalize_epoch_to_ms(settled.timestamp_t)
+        return {
+            "objective_family": OBJECTIVE_FAMILY_REGIME_SUPERVISION,
+            "objective_route": "train_regime_supervision",
+            "policy_eligible": False,
+            "symbol": symbol,
+            "timestamp": settled.timestamp_t,
+            "event_ts_ms": event_ts_ms,
+            "predicted_regime": int(settled.predicted_action),
+            "realized_regime": int(realized_regime),
+            "confidence": (
+                float(confidence)
+                if confidence is not None else None
+            ),
+            "reward": float(reward),
+            "pnl": None,
+            "features_vector": model_features,
+        }
+
+    async def add_policy_sample(self, sample: Dict[str, Any]) -> bool:
+        if not self._validate_sample_family(
+            sample,
+            expected_family=OBJECTIVE_FAMILY_POLICY,
+        ):
+            return False
+
+        evaluated = self._evaluate_dataset_candidate(
+            sample,
+            objective_family=OBJECTIVE_FAMILY_POLICY,
+            source_type="policy_candidate",
+            source_ref=str(
+                sample.get("trade_id")
+                or sample.get("lifecycle_id")
+                or sample.get("episode_id")
+                or f"policy:{sample.get('symbol', 'UNKNOWN')}:{sample.get('event_ts_ms', 0)}"
+            ),
+            source_event_type=str(
+                sample.get("entry_anchor_event")
+                or sample.get("source_event_type")
+                or "POLICY_SAMPLE"
+            ),
+        )
+        if not evaluated.is_trainable:
+            if evaluated.eligibility_status == "rejected":
+                self._policy_training_rejections += 1
+            logger.warning(
+                "Policy sample rejected by dataset contract: status=%s reasons=%s/%s",
+                evaluated.eligibility_status,
+                evaluated.provenance.exclusion_reasons,
+                evaluated.provenance.quarantine_reasons,
+            )
+            return False
+
+        if self._policy_training_mode == "disabled":
+            self._policy_training_rejections += 1
+            logger.warning(
+                "Policy sample rejected because policy_training_mode=disabled"
+            )
+            return False
+
+        routed = self._attach_dataset_provenance(
+            sample,
+            evaluated=evaluated,
+        )
+        routed["objective_family"] = OBJECTIVE_FAMILY_POLICY
+        routed["objective_route"] = "train_policy"
+        self._policy_samples.append(routed)
+        await self._maybe_dream()
+        return True
+
     async def add_completed_episode(self, episode: Any) -> None:
         """
-        Called when an RL episode completes (typically on trade close).
+        Called when an execution/lifecycle episode completes.
 
-        Intentionally lightweight: append + log + condition check.
+        In P4, completed trade episodes route to execution-quality diagnostics,
+        not directly into policy PPO training.
         """
         try:
             episode_dict = self._episode_to_dict(episode)
+            sample = self._build_execution_quality_sample(episode_dict)
+            close_event = None
+            episode_reward = sample.get("episode_reward")
+            if isinstance(episode_reward, dict):
+                close_event = episode_reward.get("close_event")
+            evaluated = self._evaluate_dataset_candidate(
+                sample,
+                objective_family=OBJECTIVE_FAMILY_EXECUTION_QUALITY,
+                source_type="episode_close",
+                source_ref=str(
+                    sample.get("trade_id")
+                    or sample.get("lifecycle_id")
+                    or sample.get("episode_id")
+                    or f"episode:{sample.get('symbol', 'UNKNOWN')}:{sample.get('close_event_ts_ms', sample.get('event_ts_ms', 0))}"
+                ),
+                source_event_type=str(
+                    close_event
+                    or sample.get("close_event")
+                    or "POSITION_CLOSED"
+                ),
+            )
 
-            self._completed_episodes.append(episode_dict)
-            if not bool(episode_dict.get("reward_missing", False)):
-                self.telemetry.log_episode(
-                    reward=float(episode_dict.get("reward", 0.0)),
-                    pnl=episode_dict.get("pnl"),
+            if evaluated.eligibility_status in {"trainable", "eval_only", "diagnostics_only"}:
+                routed_sample = self._attach_dataset_provenance(
+                    sample,
+                    evaluated=evaluated,
                 )
+                self._execution_quality_samples.append(routed_sample)
+                if not bool(routed_sample.get("reward_missing", False)):
+                    self.telemetry.log_episode(
+                        reward=float(routed_sample.get("reward", 0.0)),
+                        pnl=routed_sample.get("pnl"),
+                    )
 
             self.telemetry.log_buffer_stats(
                 buffer_size=len(self.buffer),
-                episodes_collected=len(self._completed_episodes),
+                episodes_collected=len(self._execution_quality_samples),
                 episodes_processed=0,
                 samples_since_train=self._samples_since_last_train,
             )
             logger.info(
-                "Episode added. Buffer size: %s / Threshold: %s",
-                len(self._completed_episodes),
+                "Execution-quality sample added. Buffer size: %s / Threshold: %s",
+                len(self._execution_quality_samples),
                 self.dream_threshold,
             )
-
-            await self._maybe_dream()
         except Exception as e:
             logger.error(
                 f"Failed to add completed episode: {e}", exc_info=True)
@@ -436,16 +874,22 @@ class NeocortexAdapter:
     async def train_ppo_now(self) -> None:
         """Manual debug hook to force PPO training on whatever is buffered."""
         try:
-            episodes_to_process = list(self._completed_episodes)
-            self._completed_episodes.clear()
-
-            if not episodes_to_process:
-                logger.info("train_ppo_now: no episodes buffered; skipping")
+            if self._policy_training_mode == "disabled":
+                logger.warning(
+                    "train_ppo_now skipped: policy_training_mode=disabled after objective split"
+                )
                 return
 
-            logger.info("train_ppo_now: forcing PPO train on %d episodes", len(
+            episodes_to_process = list(self._policy_samples)
+            self._policy_samples.clear()
+
+            if not episodes_to_process:
+                logger.info("train_ppo_now: no policy samples buffered; skipping")
+                return
+
+            logger.info("train_ppo_now: forcing PPO train on %d policy samples", len(
                 episodes_to_process))
-            await self._trigger_ppo_training(episodes_to_process)
+            await self._trigger_policy_training(episodes_to_process)
         except Exception as e:
             logger.error(f"train_ppo_now failed: {e}", exc_info=True)
 
@@ -459,14 +903,41 @@ class NeocortexAdapter:
             raw = {
                 "symbol": getattr(episode, "symbol", None),
                 "timestamp": getattr(episode, "timestamp", None),
+                "event_ts_ms": getattr(episode, "event_ts_ms", None),
+                "episode_id": getattr(episode, "episode_id", None),
+                "lifecycle_id": getattr(episode, "lifecycle_id", None),
+                "trade_id": getattr(episode, "trade_id", None),
+                "order_id": getattr(episode, "order_id", None),
+                "client_order_id": getattr(episode, "client_order_id", None),
+                "lifecycle_state": getattr(episode, "lifecycle_state", None),
+                "entry_anchor_event": getattr(episode, "entry_anchor_event", None),
+                "executed_entry": getattr(episode, "executed_entry", None),
+                "fill_count": getattr(episode, "fill_count", None),
+                "filled_quantity": getattr(episode, "filled_quantity", None),
+                "close_event_ts_ms": getattr(episode, "close_event_ts_ms", None),
+                "unresolved_reason": getattr(episode, "unresolved_reason", None),
                 "features": getattr(episode, "features", None),
                 "side": getattr(episode, "side", None),
+                "entry_price": getattr(episode, "entry_price", None),
+                "reward_complete": getattr(episode, "reward_complete", None),
+                "episode_reward": getattr(episode, "episode_reward", None),
                 "reward": getattr(episode, "reward", None),
                 "pnl": getattr(episode, "pnl", None),
+                "objective_family": getattr(episode, "objective_family", None),
+                "objective_route": getattr(episode, "objective_route", None),
+                "policy_eligible": getattr(episode, "policy_eligible", None),
             }
 
         reward = raw.get("reward", 0.0)
-        reward_missing = reward is None
+        episode_reward = raw.get("episode_reward")
+        if episode_reward is not None and is_dataclass(episode_reward):
+            episode_reward = asdict(episode_reward)
+        reward_complete = raw.get("reward_complete")
+        if reward_complete is None and isinstance(episode_reward, dict):
+            reward_complete = bool(episode_reward.get("reward_complete", False))
+        if reward_complete is None:
+            reward_complete = reward is not None and episode_reward is None
+        reward_missing = reward is None or not bool(reward_complete)
         if reward is None:
             logger.warning(
                 "No structured reward for episode %s; moving training to waiting_for_reward_source",
@@ -487,72 +958,124 @@ class NeocortexAdapter:
         features_vector = [
             float(features.get(name, 0.0) or 0.0) for name in self.config.ingest.feature_list
         ]
+        event_ts_ms = raw.get("event_ts_ms")
+        if event_ts_ms is None:
+            event_ts_ms = _normalize_epoch_to_ms(raw.get("timestamp"))
 
         return {
             "symbol": raw.get("symbol"),
             "timestamp": raw.get("timestamp"),
+            "event_ts_ms": event_ts_ms,
+            "episode_id": raw.get("episode_id"),
+            "lifecycle_id": raw.get("lifecycle_id"),
+            "trade_id": raw.get("trade_id"),
+            "order_id": raw.get("order_id"),
+            "client_order_id": raw.get("client_order_id"),
+            "lifecycle_state": raw.get("lifecycle_state"),
+            "entry_anchor_event": raw.get("entry_anchor_event"),
+            "executed_entry": bool(raw.get("executed_entry", False)),
+            "fill_count": int(raw.get("fill_count") or 0),
+            "filled_quantity": float(raw.get("filled_quantity") or 0.0),
+            "close_event_ts_ms": raw.get("close_event_ts_ms"),
+            "unresolved_reason": raw.get("unresolved_reason"),
             "side": raw.get("side") or "FLAT",
+            "entry_price": raw.get("entry_price"),
             "reward": float(reward),
+            "reward_complete": bool(reward_complete),
+            "episode_reward": episode_reward,
             "reward_missing": reward_missing,
             "pnl": raw.get("pnl"),
+            "objective_family": raw.get("objective_family"),
+            "objective_route": raw.get("objective_route"),
+            "policy_eligible": bool(raw.get("policy_eligible", False)),
             "features_vector": features_vector,
         }
 
     async def _maybe_dream(self) -> None:
         """
-        Decide whether to trigger dream consolidation / PPO training.
+        Decide whether to trigger objective-specific training.
         """
         logger.debug("Checking dream condition...")
 
         if self._dream_in_progress:
             return
 
-        if len(self._completed_episodes) < self.dream_threshold:
-            return
-
-        logger.info("TRIGGERING DREAM SEQUENCE NOW!")
-
-        episodes_to_process = [
-            ep for ep in self._completed_episodes if not bool(ep.get("reward_missing", False))
-        ]
-        self._completed_episodes.clear()
-
-        if not episodes_to_process:
-            self._waiting_for_reward_source = True
-            logger.warning(
-                "No trainable episodes in buffer (structured reward missing). "
-                "State=waiting_for_reward_source"
-            )
-            self._emit_alert(
-                severity="WARN",
-                code="NO_STRUCTURED_REWARD_RECEIVED",
-                message=(
-                    "No fallback policy active: training is waiting for structured reward source "
-                    "while ingestion remains active"
-                ),
-                details={
-                    "state": "waiting_for_reward_source",
-                    "dream_threshold": self.dream_threshold,
-                },
+        if len(self._regime_supervision_samples) >= self.dream_threshold:
+            samples_to_process = list(self._regime_supervision_samples)
+            self._regime_supervision_samples.clear()
+            self._waiting_for_reward_source = False
+            self._dream_in_progress = True
+            self._dreams_triggered += 1
+            self._track_task(
+                self._run_regime_supervision_sequence(samples_to_process),
+                "regime_supervision_sequence",
             )
             return
 
-        self._waiting_for_reward_source = False
+        if self._policy_training_mode == "disabled":
+            return
+
+        if len(self._policy_samples) < self.dream_threshold:
+            return
+
+        logger.info("TRIGGERING POLICY TRAINING SEQUENCE NOW!")
+        samples_to_process = list(self._policy_samples)
+        self._policy_samples.clear()
         self._dream_in_progress = True
         self._dreams_triggered += 1
+        self._track_task(
+            self._run_policy_sequence(samples_to_process),
+            "policy_sequence",
+        )
 
-        self._track_task(self._run_dream_sequence(
-            episodes_to_process), "dream_sequence")
-
-    async def _run_dream_sequence(self, episodes_to_process: List[Dict[str, Any]]) -> None:
+    async def _run_regime_supervision_sequence(self, samples_to_process: List[Dict[str, Any]]) -> None:
         try:
-            await self._trigger_ppo_training(episodes_to_process)
+            await self._trigger_regime_supervision_training(samples_to_process)
         except Exception as e:
-            logger.error(f"Dream sequence failed: {e}", exc_info=True)
+            logger.error(f"Regime supervision sequence failed: {e}", exc_info=True)
         finally:
             self._dream_in_progress = False
 
-    async def _trigger_ppo_training(self, episodes_to_process: List[Dict[str, Any]]) -> None:
+    async def _run_policy_sequence(self, samples_to_process: List[Dict[str, Any]]) -> None:
+        try:
+            await self._trigger_policy_training(samples_to_process)
+        except Exception as e:
+            logger.error(f"Policy sequence failed: {e}", exc_info=True)
+        finally:
+            self._dream_in_progress = False
+
+    async def _trigger_regime_supervision_training(self, samples_to_process: List[Dict[str, Any]]) -> None:
+        if self.brain_bridge is None:
+            logger.warning("Regime supervision training skipped: BrainBridge not available")
+            return
+        if not self._validate_batch_family(
+            samples_to_process,
+            expected_family=OBJECTIVE_FAMILY_REGIME_SUPERVISION,
+        ):
+            logger.warning("Regime supervision batch rejected before bridge submit")
+            return
+
+        logger.info(
+            "Regime supervision training triggered on %d samples",
+            len(samples_to_process),
+        )
+        result = await self.brain_bridge.train_regime_supervision_async(samples_to_process)
+        if not result:
+            logger.warning("Regime supervision returned empty result; skipping")
+            return
+        if "error" in result:
+            logger.warning("Regime supervision error: %s", result.get("error"))
+            return
+
+        self.telemetry.log_buffer_stats(
+            buffer_size=len(self.buffer),
+            episodes_collected=len(self._regime_supervision_samples),
+            episodes_processed=int(result.get("episodes_processed", 0)),
+            samples_since_train=self._samples_since_last_train,
+        )
+        logger.info("Regime supervision update complete: %s", result)
+
+    async def _trigger_policy_training(self, samples_to_process: List[Dict[str, Any]]) -> None:
         if self.brain_bridge is None:
             logger.warning("PPO training skipped: BrainBridge not available")
             self._emit_alert(
@@ -561,17 +1084,23 @@ class NeocortexAdapter:
                 message="BrainBridge not available; training skipped in degraded mode",
             )
             return
+        if not self._validate_batch_family(
+            samples_to_process,
+            expected_family=OBJECTIVE_FAMILY_POLICY,
+        ):
+            logger.warning("Policy batch rejected before bridge submit")
+            return
 
         self._ppo_trains_triggered += 1
-        logger.info("PPO training triggered on %d episodes",
-                    len(episodes_to_process))
+        logger.info("Policy training triggered on %d policy samples",
+                    len(samples_to_process))
 
-        result = await self.brain_bridge.train_ppo_async(episodes_to_process)
+        result = await self.brain_bridge.train_policy_async(samples_to_process)
         if not result:
             logger.warning(
-                "PPO training returned empty result (likely PPO disabled); skipping")
+                "Policy training returned empty result (likely disabled); skipping")
         elif "error" in result:
-            logger.warning("PPO training error: %s", result.get("error"))
+            logger.warning("Policy training error: %s", result.get("error"))
         else:
             def _get_float(*keys: str) -> Optional[float]:
                 for key in keys:
@@ -595,14 +1124,14 @@ class NeocortexAdapter:
                 episodes_processed = (
                     int(episodes_processed_raw)
                     if episodes_processed_raw is not None
-                    else len(episodes_to_process)
+                    else len(samples_to_process)
                 )
             except (TypeError, ValueError):
                 logger.warning(
-                    "Invalid episodes_processed value in PPO result: %r",
+                    "Invalid episodes_processed value in policy result: %r",
                     episodes_processed_raw,
                 )
-                episodes_processed = len(episodes_to_process)
+                episodes_processed = len(samples_to_process)
             train_step_raw = result.get("train_step")
             try:
                 train_step = (
@@ -632,11 +1161,11 @@ class NeocortexAdapter:
 
             self.telemetry.log_buffer_stats(
                 buffer_size=len(self.buffer),
-                episodes_collected=len(self._completed_episodes),
+                episodes_collected=len(self._policy_samples),
                 episodes_processed=episodes_processed,
                 samples_since_train=self._samples_since_last_train,
             )
-            logger.info("PPO update complete: %s", result)
+            logger.info("Policy update complete: %s", result)
 
     async def _generate_shadow_intent(
         self,
@@ -659,16 +1188,20 @@ class NeocortexAdapter:
 
             # Get action from PPO
             action_result = await self.brain_bridge.act_async(z)
+            self._shadow_intents_generated += 1
 
-            intent_ts = time.time()
             symbol = str(original_payload.get("symbol", "UNKNOWN"))
             action_name = str(action_result.get("action_name", "FLAT"))
-            source_ts = float(obs.ts)
-            idempotent_seed = f"{symbol}|{action_name}|{source_ts:.6f}|{self._total_train_steps}"
+            event_ts_ms = self._extract_event_ts_ms(original_payload)
+            source_ts = event_ts_ms / 1000.0
+            source_event_id = str(
+                original_payload.get("event_id") or f"{symbol}:{event_ts_ms}"
+            )
+            idempotent_seed = f"{source_event_id}|{action_name}|{event_ts_ms}"
             idempotent_hash = hashlib.sha256(
                 idempotent_seed.encode("utf-8")).hexdigest()[:16]
             idempotent_key = (
-                f"neocortex:r2:{symbol}:{action_name}:{int(source_ts * 1000)}:{idempotent_hash}"
+                f"neocortex:r2:{symbol}:{action_name}:{event_ts_ms}:{idempotent_hash}"
             )
 
             # Build canonical shadow intent payload (dual emit with legacy event name).
@@ -680,7 +1213,8 @@ class NeocortexAdapter:
             shadow_intent = {
                 "event_type": event_type,
                 "schema_version": "1.0.0",
-                "timestamp": intent_ts,
+                "timestamp": source_ts,
+                "event_ts_ms": event_ts_ms,
                 "symbol": symbol,
                 "action": action_result["action"],
                 "action_name": action_name,
@@ -688,6 +1222,7 @@ class NeocortexAdapter:
                 "confidence": action_result["confidence"],
                 "latent_state": z.tolist() if hasattr(z, 'tolist') else list(z),
                 "source_ts": source_ts,
+                "source_event_id": source_event_id,
                 "train_steps": self._total_train_steps,
                 "idempotent_key": idempotent_key,
                 "why": [
@@ -695,35 +1230,6 @@ class NeocortexAdapter:
                     f"value={float(action_result.get('value', 0.0)):.6f}",
                 ],
             }
-
-            # Emit canonical + legacy events during migration window.
-            if self.event_emitter is not None:
-                canonical_payload = dict(shadow_intent)
-                legacy_payload = dict(shadow_intent)
-                legacy_payload["event_type"] = "EVT:NEOCORTEX_SHADOW_INTENT"
-                self.event_emitter(event_type, canonical_payload)
-                self.event_emitter(
-                    "EVT:NEOCORTEX_SHADOW_INTENT", legacy_payload)
-
-            self._shadow_intents_emitted += 1
-
-            # Persist to JSONL file
-            try:
-                self._rotate_shadow_intent_log_if_needed()
-                with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
-                    shadow_log.write(json.dumps(shadow_intent) + "\n")
-                    shadow_log.flush()
-            except Exception as log_err:
-                logger.warning(
-                    f"Failed to write shadow intent to JSONL: {log_err}")
-
-            # Log to telemetry CSV
-            self.telemetry.log_shadow_intent(
-                action=action_result["action"],
-                action_name=action_result["action_name"],
-                confidence=action_result["confidence"],
-                value=action_result["value"]
-            )
 
             # --- Regime Oracle: settlement and episode creation ---
             if self._reward_mode == "regime_oracle" and self._oracle_ring_buffer is not None:
@@ -736,11 +1242,40 @@ class NeocortexAdapter:
                     model_features_vector=obs.features_vector,
                 )
 
-            # Log shadow intent
-            logger.info(
-                f"Shadow Intent: {action_result['action_name']} "
-                f"(conf={action_result['confidence']:.3f}, val={action_result['value']:.3f})"
-            )
+            if self._should_emit_observational_shadow_output():
+                # Emit canonical + legacy events during migration window.
+                if self.event_emitter is not None:
+                    canonical_payload = dict(shadow_intent)
+                    legacy_payload = dict(shadow_intent)
+                    legacy_payload["event_type"] = "EVT:NEOCORTEX_SHADOW_INTENT"
+                    self.event_emitter(event_type, canonical_payload)
+                    self.event_emitter(
+                        "EVT:NEOCORTEX_SHADOW_INTENT", legacy_payload)
+
+                self._shadow_intents_emitted += 1
+
+                # Persist to JSONL file
+                try:
+                    self._enqueue_shadow_intent_log(shadow_intent)
+                except Exception as log_err:
+                    logger.warning(
+                        f"Failed to queue shadow intent JSONL write: {log_err}")
+
+                # Log to telemetry CSV
+                self.telemetry.log_shadow_intent(
+                    action=action_result["action"],
+                    action_name=action_result["action_name"],
+                    confidence=action_result["confidence"],
+                    value=action_result["value"]
+                )
+
+                # Log shadow intent
+                logger.info(
+                    f"Shadow Intent: {action_result['action_name']} "
+                    f"(conf={action_result['confidence']:.3f}, val={action_result['value']:.3f})"
+                )
+            else:
+                self._shadow_intents_decimated += 1
 
         except Exception as e:
             logger.error(
@@ -817,7 +1352,6 @@ class NeocortexAdapter:
             correct,
         )
 
-        # Create episode dict compatible with PPO training pipeline
         if settled.model_features_t is not None:
             model_features = settled.model_features_t.astype(
                 np.float32, copy=False).tolist()
@@ -827,22 +1361,31 @@ class NeocortexAdapter:
                 for name in feature_names
             ]
 
-        episode = {
-            "symbol": symbol,
-            "timestamp": settled.timestamp_t,
-            "side": REGIME_NAMES.get(settled.predicted_action, "FLAT"),
-            "action": settled.predicted_action,
-            "realized_regime": int(realized_regime),
-            "reward": reward,
-            "pnl": None,
-            "features_vector": model_features,
-        }
-
-        # Feed into dream/PPO pipeline
-        self._completed_episodes.append(episode)
+        sample = self._build_regime_supervision_sample(
+            symbol=symbol,
+            settled=settled,
+            realized_regime=realized_regime,
+            reward=reward,
+            confidence=action_result.get("confidence"),
+            model_features=model_features,
+        )
+        evaluated = self._evaluate_dataset_candidate(
+            sample,
+            objective_family=OBJECTIVE_FAMILY_REGIME_SUPERVISION,
+            source_type="oracle_settlement",
+            source_ref=f"oracle:{symbol}:{sample['event_ts_ms']}",
+            source_event_type="EVT:NEOCORTEX_REGIME_PREDICTION",
+        )
+        if evaluated.is_trainable:
+            self._regime_supervision_samples.append(
+                self._attach_dataset_provenance(
+                    sample,
+                    evaluated=evaluated,
+                )
+            )
         self.telemetry.log_buffer_stats(
             buffer_size=len(self.buffer),
-            episodes_collected=len(self._completed_episodes),
+            episodes_collected=len(self._regime_supervision_samples),
             episodes_processed=0,
             samples_since_train=self._samples_since_last_train,
         )
@@ -1068,6 +1611,26 @@ class NeocortexAdapter:
                     if loaded:
                         logger.info("Restored from checkpoint")
                         self._validate_checkpoint_metadata()
+                reset_on_replay_start = bool(
+                    getattr(
+                        self,
+                        "_reset_sequence_on_replay_start",
+                        getattr(self.config.neuro.sequence, "reset_on_replay_start", True),
+                    )
+                )
+                if (
+                    reset_on_replay_start
+                    and hasattr(self.brain_bridge, "reset_sequence_state_async")
+                ):
+                    reset_call = self.brain_bridge.reset_sequence_state_async(
+                        reason="adapter_start"
+                    )
+                    reset_result = (
+                        await reset_call
+                        if inspect.isawaitable(reset_call)
+                        else reset_call
+                    )
+                    logger.info("Sequence state reset at adapter start: %s", reset_result)
 
     async def shutdown_async(self):
         """
@@ -1091,17 +1654,33 @@ class NeocortexAdapter:
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for pending tasks")
 
-        # 2. Force final PPO training if episodes are buffered
-        if self._completed_episodes and self.brain_bridge is not None:
+        # 2. Flush remaining regime-supervision samples
+        if self._regime_supervision_samples and self.brain_bridge is not None:
             logger.info(
-                f"Final PPO training on {len(self._completed_episodes)} buffered episodes...")
+                f"Final regime supervision training on {len(self._regime_supervision_samples)} buffered samples..."
+            )
             try:
-                await self._trigger_ppo_training(list(self._completed_episodes))
-                self._completed_episodes.clear()
+                await self._trigger_regime_supervision_training(list(self._regime_supervision_samples))
+                self._regime_supervision_samples.clear()
             except Exception as e:
-                logger.warning(f"Final PPO training failed: {e}")
+                logger.warning(f"Final regime supervision training failed: {e}")
 
-        # 3. Save final checkpoint (CRITICAL)
+        # 3. Flush remaining policy samples only when explicitly enabled
+        if (
+            self._policy_samples
+            and self.brain_bridge is not None
+            and self._policy_training_mode != "disabled"
+        ):
+            logger.info(
+                f"Final policy training on {len(self._policy_samples)} buffered policy samples..."
+            )
+            try:
+                await self._trigger_policy_training(list(self._policy_samples))
+                self._policy_samples.clear()
+            except Exception as e:
+                logger.warning(f"Final policy training failed: {e}")
+
+        # 4. Save final checkpoint (CRITICAL)
         if self.brain_bridge is not None:
             checkpoint_dir = self.config.system.checkpoint_dir
             logger.info(
@@ -1116,11 +1695,14 @@ class NeocortexAdapter:
             except Exception as e:
                 logger.error(f"Final checkpoint save failed: {e}")
 
-        # 4. Save normalizer state
+        # 5. Flush non-critical observational buffers
+        self._flush_non_critical_outputs(force=True)
+
+        # 6. Save normalizer state
         self._save_normalizer_state()
         self._save_checkpoint_metadata()
 
-        # 5. Shutdown brain bridge
+        # 7. Shutdown brain bridge
         if self.brain_bridge is not None:
             self.brain_bridge.shutdown()
 
@@ -1137,6 +1719,7 @@ class NeocortexAdapter:
         Sync shutdown fallback (prefer shutdown_async when possible).
         """
         logger.warning("Using sync shutdown - checkpoint may not be saved!")
+        self._flush_non_critical_outputs(force=True)
         self._save_normalizer_state()
         self._save_checkpoint_metadata()
         if self.brain_bridge is not None:
@@ -1147,9 +1730,23 @@ class NeocortexAdapter:
             f"ShadowIntents={self._shadow_intents_emitted}"
         )
 
+    def build_dataset_manifest(self, objective_family: str):
+        family = str(objective_family).strip().lower()
+        if family not in self._evaluated_samples_by_family:
+            raise ValueError(f"Unknown objective family: {objective_family}")
+        return self._dataset_policy.build_manifest(
+            list(self._evaluated_samples_by_family[family]),
+            objective_family=family,
+        )
+
     @property
     def stats(self) -> Dict[str, Any]:
         """Get adapter statistics."""
+        telemetry_stats = {}
+        try:
+            telemetry_stats = dict(getattr(self.telemetry, "stats", {}) or {})
+        except Exception:
+            telemetry_stats = {}
         base = {
             "total_train_steps": self._total_train_steps,
             "shadow_intents_emitted": self._shadow_intents_emitted,
@@ -1157,12 +1754,41 @@ class NeocortexAdapter:
             "samples_since_train": self._samples_since_last_train,
             "inflight_tasks": self._inflight_training_tasks,
             "backpressure_events": self._backpressure_events,
-            "episodes_buffered": len(self._completed_episodes),
+            "regime_supervision_buffered": len(self._regime_supervision_samples),
+            "execution_quality_buffered": len(self._execution_quality_samples),
+            "policy_samples_buffered": len(self._policy_samples),
+            "representation_dataset_buffered": len(self._representation_samples),
             "dream_threshold": self.dream_threshold,
             "dreams_triggered": self._dreams_triggered,
             "ppo_trains_triggered": self._ppo_trains_triggered,
             "waiting_for_reward_source": self._waiting_for_reward_source,
             "reward_mode": self._reward_mode,
+            "objective_split_enforced": self._objective_split_enforced,
+            "policy_training_mode": self._policy_training_mode,
+            "sequence_inference_mode": self._sequence_inference_mode,
+            "representation_training_mode": self._representation_training_mode,
+            "reset_sequence_on_replay_start": self._reset_sequence_on_replay_start,
+            "operating_mode": self._operating_mode,
+            "shadow_intent_emit_policy": self._shadow_intent_emit_policy,
+            "shadow_intent_decimation_stride": self._shadow_intent_decimation_stride,
+            "shadow_jsonl_write_policy": self._shadow_jsonl_write_policy,
+            "telemetry_write_policy": self._telemetry_write_policy,
+            "non_critical_queue_limit": self._non_critical_queue_limit,
+            "non_critical_overflow_policy": self._non_critical_overflow_policy,
+            "flush_interval_ms": self._flush_interval_ms,
+            "shadow_intents_generated": self._shadow_intents_generated,
+            "shadow_intents_decimated": self._shadow_intents_decimated,
+            "shadow_intent_log_rows_buffered": self._shadow_intent_log_rows_buffered,
+            "shadow_intent_log_rows_dropped": self._shadow_intent_log_rows_dropped,
+            "shadow_intent_log_flushes": self._shadow_intent_log_flushes,
+            "non_critical_overload_events": self._non_critical_overload_events,
+            "objective_rejections": self._objective_rejections,
+            "policy_training_rejections": self._policy_training_rejections,
+            "dataset_manifest_version": int(self.config.neuro.dataset.manifest_version),
+            "dataset_status_counts": dict(sorted(self._dataset_status_counts.items())),
+            "dataset_exclusion_counts": dict(sorted(self._dataset_exclusion_counts.items())),
+            "dataset_quarantine_counts": dict(sorted(self._dataset_quarantine_counts.items())),
+            "telemetry_stats": telemetry_stats,
         }
         if self._reward_mode == "regime_oracle":
             base["oracle_settlements"] = self._oracle_settlements

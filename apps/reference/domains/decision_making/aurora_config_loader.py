@@ -24,6 +24,9 @@ from apps.reference.config_models import (
     OperationalMode,
     DashboardConfig,
 )
+from apps.reference.contracts.quadratic_rollout import (
+    resolve_requested_quadratic_rollout,
+)
 from apps.reference.domains.decision_making.operational_mode import ModeManager
 from apps.reference.domains.decision_making.dashboard import DashboardMetrics
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
@@ -176,13 +179,37 @@ class AuroraConfigLoaderMixin:
                 self.normalize_signals_mode = str(signals.normalize_signals_mode)
 
             # ═══════════════ Phase 9: Quadratic Kernel Routing ═══════════════
-            scoring_ver = getattr(decision, "scoring_version", "v1")
-            if scoring_ver == "quadratic":
+            requested_rollout = resolve_requested_quadratic_rollout(decision)
+            self._aurora_requested_scoring_version = requested_rollout.requested_scoring_version
+            self._aurora_effective_scoring_version = requested_rollout.effective_live_scoring_version
+            self._quadratic_shadow_requested = requested_rollout.shadow_requested
+            self._quadratic_rollback_armed = requested_rollout.rollback_armed
+            self._quadratic_rollback_reason_chain = requested_rollout.rollback_reason_chain
+
+            shadow_scoring_engine_cfg = getattr(decision, "scoring_engine", None)
+            if self._quadratic_shadow_requested and shadow_scoring_engine_cfg is not None:
+                self._quadratic_shadow_shield_fn = self._build_shield_cascade(
+                    cfg=shadow_scoring_engine_cfg,
+                    record_memory_shield=False,
+                )
+            else:
+                self._quadratic_shadow_shield_fn = None
+
+            if requested_rollout.effective_live_scoring_version == "quadratic":
                 self.scoring_kernel_cls = QuadraticScoringKernel
-                self._scoring_engine_cfg = getattr(decision, "scoring_engine", None)
+                self._scoring_engine_cfg = shadow_scoring_engine_cfg
                 self._shield_fn = self._build_shield_cascade()
                 shield_name = repr(self._shield_fn) if hasattr(self._shield_fn, '__repr__') else "NullShield"
                 self.logger.info(f"Phase 9: QuadraticScoringKernel activated with {shield_name}")
+            else:
+                self.logger.info(
+                    "Quadratic rollout resolved: requested=%s effective_live=%s mode=%s rollback_armed=%s shadow_requested=%s",
+                    requested_rollout.requested_scoring_version,
+                    requested_rollout.effective_live_scoring_version,
+                    requested_rollout.mode.value,
+                    requested_rollout.rollback_armed,
+                    requested_rollout.shadow_requested,
+                )
             # ═════════════════════════════════════════════════════════════════
 
             # Neutral threshold for hysteresis (global default)

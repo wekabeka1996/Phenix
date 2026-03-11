@@ -21,6 +21,10 @@ from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
 from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
 from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
 from apps.reference.domains.neocortex.logic.brain.bridge import BrainBridge
+from apps.reference.domains.neocortex.logic.gates import (
+    ShadowGateEvaluator,
+    ShadowGateViolationError,
+)
 from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 
@@ -62,6 +66,25 @@ def setup_logging(config: NeocortexConfig):
 # =============================================================================
 # MAIN REACTOR (AsyncIO Event Loop)
 # =============================================================================
+
+
+def evaluate_startup_shadow_gates(
+    config: NeocortexConfig,
+    *,
+    logger: logging.Logger | None = None,
+    evaluated_at_ms: int | None = None,
+):
+    """Evaluate and enforce production-shadow startup gates."""
+    evaluator = ShadowGateEvaluator()
+    report = evaluator.evaluate(config, evaluated_at_ms=evaluated_at_ms)
+    if logger is not None:
+        logger.info("Neocortex shadow gate report: %s", report.model_dump_json())
+    if (
+        config.neuro.shadow_gates.startup_enforcement == "strict"
+        and report.overall_status != "ready"
+    ):
+        raise ShadowGateViolationError(report)
+    return report
 
 async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
     """
@@ -148,6 +171,8 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
                     max_feature_lines_per_symbol_per_cycle=config.replay.max_feature_lines_per_symbol_per_cycle,
                     max_order_lines_per_cycle=config.replay.max_order_lines_per_cycle,
                     max_core_lines_per_cycle=config.replay.max_core_lines_per_cycle,
+                    feature_missing_timestamp_policy=config.replay.feature_missing_timestamp_policy,
+                    legacy_feature_base_ts_ms=config.replay.legacy_feature_base_ts_ms,
                 )
 
                 tailer = MultiTailer(
@@ -253,11 +278,30 @@ async def main():
         # 2. Setup logging
         logger = setup_logging(config)
 
-        # 3. Enter reactor
+        # 3. Enforce production-shadow startup gates
+        report = evaluate_startup_shadow_gates(config, logger=logger)
+        logger.info(
+            "Neocortex production-shadow readiness: status=%s mode=%s blocking=%s",
+            report.overall_status,
+            report.mode,
+            report.blocking_gate_ids,
+        )
+
+        # 4. Enter reactor
         await main_reactor(config, logger)
 
     except FileNotFoundError as e:
         print(f"❌ Configuration Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    except ShadowGateViolationError as e:
+        if logger:
+            logger.error(
+                "Production-shadow startup blocked: %s",
+                e.report.model_dump_json(),
+            )
+        else:
+            print(f"Production-Shadow Gate Failure: {e}", file=sys.stderr)
         sys.exit(1)
 
     except Exception as e:

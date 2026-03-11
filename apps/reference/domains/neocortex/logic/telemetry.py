@@ -17,7 +17,7 @@ import time
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Literal, List
 from datetime import datetime
 from collections import deque
 
@@ -78,6 +78,11 @@ class TelemetryLogger:
         max_memory_buffer: int = 1000,
         max_file_bytes: int = 10 * 1024 * 1024,
         backup_count: int = 5,
+        write_policy: Literal["immediate", "buffered"] = "immediate",
+        flush_threshold: int = 1,
+        flush_interval_ms: int = 1000,
+        pending_limit: int = 1000,
+        overflow_policy: Literal["drop_oldest", "drop_newest"] = "drop_oldest",
     ):
         """
         Initialize the telemetry logger.
@@ -96,6 +101,16 @@ class TelemetryLogger:
         self._lock = threading.Lock()
         self._step = 0
         self._cumulative_reward = 0.0
+        self._write_policy = str(write_policy)
+        self._flush_threshold = max(1, int(flush_threshold))
+        self._flush_interval_ms = max(1, int(flush_interval_ms))
+        self._pending_limit = max(1, int(pending_limit))
+        self._overflow_policy = str(overflow_policy)
+        self._pending_rows: List[Dict[str, Any]] = []
+        self._flush_count = 0
+        self._rows_flushed = 0
+        self._rows_dropped = 0
+        self._last_flush_ts_ms = int(time.time() * 1000.0)
 
         # Memory buffer for rolling statistics
         self._memory_buffer: deque = deque(maxlen=max_memory_buffer)
@@ -171,14 +186,51 @@ class TelemetryLogger:
 
         # Write to CSV
         with self._lock:
-            self._rotate_if_needed()
-            with open(self.filepath, 'a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
-                writer.writerow(row)
-                f.flush()  # Immediate flush for real-time visibility
+            self._queue_row_locked(row)
+            self._flush_locked(force=False)
 
         # Store in memory buffer
         self._memory_buffer.append(row)
+
+    def _queue_row_locked(self, row: Dict[str, Any]) -> None:
+        if len(self._pending_rows) >= self._pending_limit:
+            self._rows_dropped += 1
+            if self._overflow_policy == "drop_oldest":
+                self._pending_rows.pop(0)
+            else:
+                return
+        self._pending_rows.append(row)
+
+    def _flush_locked(self, *, force: bool) -> None:
+        if not self._pending_rows:
+            return
+
+        now_ms = int(time.time() * 1000.0)
+        should_flush = force
+        if self._write_policy == "immediate":
+            should_flush = True
+        elif len(self._pending_rows) >= self._flush_threshold:
+            should_flush = True
+        elif now_ms - self._last_flush_ts_ms >= self._flush_interval_ms:
+            should_flush = True
+
+        if not should_flush:
+            return
+
+        rows = list(self._pending_rows)
+        self._pending_rows.clear()
+        self._rotate_if_needed()
+        with open(self.filepath, 'a', newline='', encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
+            writer.writerows(rows)
+            f.flush()
+        self._flush_count += 1
+        self._rows_flushed += len(rows)
+        self._last_flush_ts_ms = now_ms
+
+    def flush(self) -> None:
+        with self._lock:
+            self._flush_locked(force=True)
 
     def _format_value(self, value: Any) -> str:
         """Format value for CSV output."""
@@ -413,6 +465,20 @@ class TelemetryLogger:
     def step_count(self) -> int:
         """Get total logged steps."""
         return self._step
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        return {
+            "write_policy": self._write_policy,
+            "pending_rows": len(self._pending_rows),
+            "flush_count": self._flush_count,
+            "rows_flushed": self._rows_flushed,
+            "rows_dropped": self._rows_dropped,
+            "flush_threshold": self._flush_threshold,
+            "flush_interval_ms": self._flush_interval_ms,
+            "pending_limit": self._pending_limit,
+            "overflow_policy": self._overflow_policy,
+        }
 
 
 # Singleton instance for global access

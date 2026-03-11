@@ -2,11 +2,11 @@
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 74,
+    "runtime_tokens": 75,
     "registry_tokens": 62,
-    "runtime_not_in_registry": 20,
+    "runtime_not_in_registry": 21,
     "registry_not_in_runtime": 8,
-    "coverage": 0.72973
+    "coverage": 0.72
   },
   "runtime_not_in_registry": [
     "CMD:CANCEL",
@@ -24,6 +24,7 @@
     "EVT:LLM_INTENT_REJECTED_V1",
     "EVT:NEOCORTEX_REGIME_PREDICTION",
     "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED",
+    "EVT:OBJECTIVE_REALIZED_V1",
     "EVT:PROCESS_STRATEGY",
     "EVT:RECOVERY_SIGNAL",
     "EVT:STABILIZED",

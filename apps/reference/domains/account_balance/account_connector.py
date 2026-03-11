@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
+_MIN_UPDATE_INTERVAL_SEC = 5
+
 
 def _dget(d: Dict[str, Any], key: str, default: Any) -> Any:
     """Defaulting dict access without using the default-arg form of `dict.get` (TASK25 policy)."""
@@ -47,8 +49,7 @@ class AccountConnector:
         self.thread: Optional[threading.Thread] = None
         self.running = False
 
-        # Extract account_observer config for polling interval
-        self.update_interval = int(self.config.account_observer.poll_interval)
+        self.update_interval = self._resolve_update_interval_sec(config)
 
         # Initialize the BinanceAdapter based on the trading_mode
         mode = str(self.config.trading_mode)
@@ -82,6 +83,52 @@ class AccountConnector:
 
         # Store latest balance data from /fapi/v2/balance endpoint
         self._latest_balance_data: Optional[List[Dict[str, Any]]] = None
+
+    @staticmethod
+    def _clamp_update_interval(value: Any) -> int:
+        try:
+            interval = int(float(value))
+        except Exception as exc:
+            raise ConfigContractError(
+                path="trading.market_data.poll_interval_sec",
+                why=f"Invalid account polling interval: {value!r}",
+            ) from exc
+        return max(_MIN_UPDATE_INTERVAL_SEC, interval)
+
+    @classmethod
+    def _resolve_update_interval_sec(cls, config: Any) -> int:
+        trading = getattr(config, "trading", None)
+        market_data = getattr(trading, "market_data",
+                              None) if trading is not None else None
+        poll_interval_sec = getattr(
+            market_data, "poll_interval_sec", None) if market_data is not None else None
+        if poll_interval_sec is not None:
+            return cls._clamp_update_interval(poll_interval_sec)
+
+        if isinstance(config, AuroraConfig):
+            raise ConfigContractError(
+                path="trading.market_data.poll_interval_sec",
+                why="Missing required poll interval for account_balance polling.",
+            )
+
+        account_balance_cfg = getattr(config, "account_balance", None)
+        if isinstance(account_balance_cfg, dict) and "poll_interval_seconds" in account_balance_cfg:
+            return cls._clamp_update_interval(account_balance_cfg["poll_interval_seconds"])
+        poll_interval_seconds = getattr(
+            account_balance_cfg, "poll_interval_seconds", None)
+        if poll_interval_seconds is not None:
+            return cls._clamp_update_interval(poll_interval_seconds)
+
+        legacy_observer_cfg = getattr(config, "account_observer", None)
+        legacy_poll_interval = getattr(
+            legacy_observer_cfg, "poll_interval", None)
+        if legacy_poll_interval is not None:
+            return cls._clamp_update_interval(legacy_poll_interval)
+
+        raise ConfigContractError(
+            path="trading.market_data.poll_interval_sec",
+            why="Missing required poll interval for account_balance polling.",
+        )
 
     def start(self) -> None:
         """Start account monitoring in a background thread."""
@@ -169,7 +216,8 @@ class AccountConnector:
                         f"✅ Fetched positions: {non_zero} non-zero out of {len(positions_list)} total")
                     # Log each non-zero position
                     for pos in positions_list:
-                        amt = float(_dget(pos, "position_amount", _dget(pos, "positionAmt", 0)))
+                        amt = float(_dget(pos, "position_amount",
+                                    _dget(pos, "positionAmt", 0)))
                         if abs(amt) > 0.0001:
                             LOG.info(
                                 f"   📊 {pos.get('symbol')}: {amt} @ "
@@ -312,7 +360,8 @@ class AccountConnector:
                 )
                 # crossWalletBalance = balance - unrealizedProfit (approximately)
                 cross_wallet_balance = str(
-                    decimal.Decimal(_dget(usdt_asset, "crossWalletBalance", "0"))
+                    decimal.Decimal(
+                        _dget(usdt_asset, "crossWalletBalance", "0"))
                 )
 
                 LOG.info(

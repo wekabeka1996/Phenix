@@ -65,6 +65,7 @@ class DecisionMaking:
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"features": None, "risk": None})
         self._shared: Dict[str, Any] = {
             "latest_portfolio": None, "latest_regime": None, "latest_warmup": None,
+            "latest_structural_regime_by_symbol": {}, "latest_structural_warmup_by_symbol": {},
             "cached_equity_free_usdt": None, "cached_equity_cross_usdt": None,
             "exposure_cache": None, "exposure_cache_timestamp": 0.0,
         }

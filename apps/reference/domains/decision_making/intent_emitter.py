@@ -12,6 +12,10 @@ import logging
 from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
+from apps.reference.contracts.runtime_regime_layers import (
+    is_structural_regime_payload,
+    normalize_structural_regime_label,
+)
 from .trade_intent_reject_wal import write_trade_intent_rejected
 
 if TYPE_CHECKING:
@@ -264,7 +268,11 @@ class IntentEmitter:
         Enforces 'Immediate Closure' on regime flips.
         """
         try:
-            regime = regime_data.get("regime") if isinstance(regime_data, dict) else str(regime_data)
+            if isinstance(regime_data, dict) and not is_structural_regime_payload(regime_data):
+                return
+            regime = normalize_structural_regime_label(
+                regime_data.get("regime") if isinstance(regime_data, dict) else regime_data
+            )
 
             portfolio = self._get_portfolio()
             if not portfolio:
@@ -285,15 +293,15 @@ class IntentEmitter:
             should_close = False
             reason = ""
 
-            if regime == "BULL_TREND" and not is_long:
+            if regime == "TREND_UP" and not is_long:
                 should_close = True
-                reason = f"Short position in BULL_TREND"
-            elif regime == "BEAR_TREND" and is_long:
+                reason = "Short position in TREND_UP"
+            elif regime == "TREND_DOWN" and is_long:
                 should_close = True
-                reason = f"Long position in BEAR_TREND"
+                reason = "Long position in TREND_DOWN"
             elif regime == "UNCERTAIN":
                 should_close = True
-                reason = f"Position in UNCERTAIN regime"
+                reason = "Position in UNCERTAIN regime"
 
             if should_close:
                 self.logger.warning(f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")

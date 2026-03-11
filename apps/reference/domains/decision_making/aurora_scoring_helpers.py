@@ -170,13 +170,13 @@ class AuroraScoringHelpersMixin:
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return dict(getattr(decision, "signal_weights", {})) if decision else {}
 
-    def _build_shield_cascade(self):
+    def _build_shield_cascade(self, *, cfg: Any | None = None, record_memory_shield: bool = True):
         """Build shield function from ScoringEngineConfig.
 
         If shield_enabled=True, returns ShieldCascade with enabled shields.
         Otherwise returns NullShield (transparent pass-through).
         """
-        cfg = self._scoring_engine_cfg
+        cfg = self._scoring_engine_cfg if cfg is None else cfg
         if not cfg or not getattr(cfg, "shield_enabled", False):
             return NullShield()
 
@@ -222,7 +222,8 @@ class AuroraScoringHelpersMixin:
                 flush_interval_sec=getattr(mem_cfg, "flush_interval_sec", 60.0),
             )
             shields.append(ms)
-            self._memory_shield = ms  # BUG-2: Store reference for manual recording
+            if record_memory_shield:
+                self._memory_shield = ms  # BUG-2: Store reference for manual recording
 
         if not shields:
             return NullShield()

@@ -48,6 +48,9 @@ class EnsembleConfig:
     max_weight: float = 1.0  # Maximum weight per model
     performance_window_days: int = 30  # Lookback for performance calculation
     risk_adjustment: bool = True  # Adjust weights based on risk metrics
+    objective_feedback_enabled: bool = False
+    objective_feedback_window_trades: Optional[int] = None
+    objective_feedback_rebalance_every_closed_trades: Optional[int] = None
 
 
 class EnsembleModel(AlphaModel):
@@ -92,6 +95,7 @@ class EnsembleModel(AlphaModel):
         # Maps signal_id -> (model_name, score, symbol, timestamp)
         self._pending_signals: Dict[str, Tuple[str, float, str, float]] = {}
         self._signal_counter: int = 0
+        self._feedback_trade_count: int = 0
 
     def get_model_name(self) -> str:
         """Return unique model name for identification."""
@@ -354,36 +358,83 @@ class EnsembleModel(AlphaModel):
         signal_id: str,
         pnl: float,
         model_name: Optional[str] = None,
+        *,
+        feedback_score: Optional[float] = None,
+        pnl_scale: Optional[float] = None,
+        feedback_trace: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Callback for trade PnL feedback - enables online learning.
+        Callback for trade-result feedback.
         
         ALPHA-SEARCH: Called by BacktestPlugin after trade closes.
-        Updates model performance based on actual PnL, not just confidence.
+        Updates model performance based on an explicit composite feedback score
+        or a normalized realized PnL when composite feedback is unavailable.
         
         Args:
             signal_id: ID from signal's why field (e.g. "signal_id=sig_123")
             pnl: Profit/loss in USD
             model_name: Optional specific model to attribute (else uses ensemble)
+            feedback_score: Optional normalized feedback score in [-1, 1]
+            pnl_scale: Explicit PnL normalization scale when feedback_score is absent
+            feedback_trace: Optional realized-objective payload for observability
         """
-        # Normalize PnL to -1..1 range for performance tracking
-        # Assume typical trade PnL is -100 to +100 USD
-        normalized_pnl = max(-1.0, min(1.0, pnl / 100.0))
-        
+        if feedback_score is None:
+            if pnl_scale is None or float(pnl_scale) <= 0.0:
+                raise ValueError("pnl_scale is required when feedback_score is not provided")
+            composite_feedback = max(-1.0, min(1.0, float(pnl) / float(pnl_scale)))
+        else:
+            composite_feedback = max(-1.0, min(1.0, float(feedback_score)))
+
         if signal_id in self._pending_signals:
             source_model, score, symbol, ts = self._pending_signals.pop(signal_id)
             # Attribute to all models that contributed (if ensemble) or specific model
             if model_name and model_name in self.model_performance:
-                self.model_performance[model_name].append(normalized_pnl)
-                self.logger.debug(f"Trade result: {model_name} pnl={pnl:.2f} -> perf={normalized_pnl:.4f}")
+                self.model_performance[model_name].append(composite_feedback)
+                self._trim_performance_history(model_name)
+                self.logger.debug(
+                    "Trade result: %s pnl=%.2f feedback=%.4f trace=%s",
+                    model_name,
+                    pnl,
+                    composite_feedback,
+                    bool(feedback_trace),
+                )
             else:
                 # Distribute to all models by weight
                 for m_name, m_weight in self.weights.model_weights.items():
-                    weighted_pnl = normalized_pnl * m_weight
-                    self.model_performance[m_name].append(weighted_pnl)
-                self.logger.debug(f"Trade result (ensemble): pnl={pnl:.2f} distributed to {len(self.weights.model_weights)} models")
+                    weighted_feedback = composite_feedback * m_weight
+                    self.model_performance[m_name].append(weighted_feedback)
+                    self._trim_performance_history(m_name)
+                self.logger.debug(
+                    "Trade result (ensemble): pnl=%.2f feedback=%.4f models=%d trace=%s",
+                    pnl,
+                    composite_feedback,
+                    len(self.weights.model_weights),
+                    bool(feedback_trace),
+                )
+            self._feedback_trade_count += 1
+            self._maybe_rebalance_from_feedback()
         else:
             self.logger.warning(f"Unknown signal_id: {signal_id}")
+
+    def _trim_performance_history(self, model_name: str) -> None:
+        """Trim objective-feedback performance history to explicit config window."""
+        window = self._ensemble_config.objective_feedback_window_trades
+        if window is None or window <= 0:
+            return
+        history = self.model_performance.get(model_name)
+        if history is None or len(history) <= window:
+            return
+        self.model_performance[model_name] = history[-window:]
+
+    def _maybe_rebalance_from_feedback(self) -> None:
+        """Rebalance on explicit closed-trade cadence when objective feedback is enabled."""
+        if not self._ensemble_config.objective_feedback_enabled:
+            return
+        cadence = self._ensemble_config.objective_feedback_rebalance_every_closed_trades
+        if cadence is None or cadence <= 0:
+            return
+        if self._feedback_trade_count % int(cadence) == 0:
+            self._rebalance_weights()
 
     def get_model_contributions(self) -> Dict[str, Any]:
         """Get current model contributions and weights."""

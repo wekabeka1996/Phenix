@@ -4,8 +4,8 @@
 # Phase 0: Strategy assignments + arbitration (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
 #
 # CANONICAL SOURCE OF TRUTH  :
-# 1.      
-# 2.     
+# 1.
+# 2.
 #
 # ConfigLoader    AuroraConfig.strategies_registry
 # Strict mode: missing file  ValueError
@@ -32,11 +32,10 @@ assignments:
     - mean_reversion
 
   XRPUSDT:
-    - mean_reversion
+    - md_amr
 
   BTCUSDT:
     - aurora
-    - mean_reversion
 
   # New symbols  added with data 2023-06..2024-03
   BNBUSDT:
@@ -49,7 +48,7 @@ assignments:
 # ==============================================================================
 # ARBITRATION (conflict resolution)
 # ==============================================================================
-#  symbol  >1      intent  
+#  symbol  >1      intent
 # "decision window",     .
 #
 # Modes:
@@ -68,15 +67,15 @@ arbitration:
   #  Aurora  MR    BTC:
   # - Aurora   1 ()
   # - MR   2 ()
-  # : Aurora intent , MR intent 
+  # : Aurora intent , MR intent
   priority:
     aurora: 1
     mean_reversion: 2
     md_amr: 3
     llm_microstructure: 4
 
-  # Logging policy:  ,  intent   
-  # - rejected_strategy: ID ,  
+  # Logging policy:  ,  intent
+  # - rejected_strategy: ID ,
   # - reason:  why- (80 )
   logging:
     rejected_why_prefix: "ARBITRATION_REJECT"  # Prefix  why-

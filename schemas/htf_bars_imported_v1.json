@@ -16,6 +16,19 @@
             "type": "integer",
             "description": "The anchor timestamp (ms) marking the exact end boundary of the imported history."
         },
+        "source_mode": {
+            "type": "string",
+            "enum": [
+                "live",
+                "replay",
+                "warmup_import",
+                "synthetic_repair"
+            ]
+        },
+        "replay_generation": {
+            "type": "integer",
+            "minimum": 0
+        },
         "bars": {
             "type": "array",
             "description": "List of historical candle bars ordered chronologically.",
@@ -25,6 +38,35 @@
                     "open_ts": {
                         "type": "integer",
                         "description": "Opening timestamp of the bar in milliseconds"
+                    },
+                    "end_ts_ms": {
+                        "type": "integer",
+                        "description": "Legacy compatibility alias for the inclusive end-of-bar timestamp."
+                    },
+                    "close_boundary_ts_ms": {
+                        "type": "integer",
+                        "description": "Canonical close boundary timestamp in milliseconds."
+                    },
+                    "source_mode": {
+                        "type": "string",
+                        "enum": [
+                            "live",
+                            "replay",
+                            "warmup_import",
+                            "synthetic_repair"
+                        ]
+                    },
+                    "bar_identity": {
+                        "type": "object",
+                        "additionalProperties": true
+                    },
+                    "replay_identity": {
+                        "type": "object",
+                        "additionalProperties": true
+                    },
+                    "replay_generation": {
+                        "type": "integer",
+                        "minimum": 0
                     },
                     "o": {
                         "type": "number",

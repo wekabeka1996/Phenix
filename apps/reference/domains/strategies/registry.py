@@ -59,16 +59,16 @@ class StrategyRuntime:
     config: AuroraConfig
     registry: StrategyPluginRegistry
 
-    def start(self) -> None:
+    def start(self) -> Dict[str, StrategyHandler]:
         sr = getattr(self.config, "strategies_registry", None)
         if sr is None:
             LOG.warning("StrategyRuntime: config.strategies_registry missing; no plugins started")
-            return
+            return {}
 
         assignments = getattr(sr, "assignments", None)
         if not isinstance(assignments, dict) or not assignments:
             LOG.warning("StrategyRuntime: strategies_registry.assignments missing/empty; no plugins started")
-            return
+            return {}
 
         assigned_ids: set[str] = set()
         for _, ids in assignments.items():
@@ -80,7 +80,7 @@ class StrategyRuntime:
 
         if not assigned_ids:
             LOG.warning("StrategyRuntime: no assigned strategy_ids; no plugins started")
-            return
+            return {}
 
         missing = sorted([sid for sid in assigned_ids if self.registry.get(sid) is None])
         if missing:
@@ -89,10 +89,13 @@ class StrategyRuntime:
                 why=f"Assigned strategy_ids missing allowlisted plugins: {missing}",
             )
 
+        started_handlers: Dict[str, StrategyHandler] = {}
         for strategy_id in sorted(assigned_ids):
             plugin = self.registry.get(strategy_id)
             if plugin is None:
                 continue
             handler = plugin.create_handler(fsm=self.fsm, config=self.config)
             handler.register()
+            started_handlers[strategy_id] = handler
             LOG.info("StrategyRuntime: started strategy_id=%s (handler=%s)", strategy_id, handler.__class__.__name__)
+        return started_handlers

@@ -11,6 +11,10 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict
 
 from apps.reference.core.time import get_clock
+from apps.reference.contracts.runtime_regime_layers import (
+    normalize_structural_regime_label,
+    should_apply_global_execution_regime,
+)
 from apps.reference.utils.accessors import aget, dget
 
 if TYPE_CHECKING:
@@ -53,7 +57,7 @@ class EPEventHandlers:
         from apps.reference.core.types.regime_types import map_regime_to_bucket
 
         pld = event.pld or {}
-        regime_str = pld.get("regime")
+        regime_str = normalize_structural_regime_label(pld.get("regime"))
         symbol = pld.get("symbol")
         if not regime_str:
             LOG.warning("EP-01: EVT:REGIME_DETECTED missing 'regime' field, skipping")
@@ -62,13 +66,20 @@ class EPEventHandlers:
         if symbol:
             self._fsm._last_regime_by_symbol[str(symbol)] = str(regime_str)
 
-        bucket = map_regime_to_bucket(regime_str)
-        self._fsm.exposure_guard.on_regime_changed(bucket)
+        if should_apply_global_execution_regime(pld):
+            bucket = map_regime_to_bucket(regime_str)
+            self._fsm.exposure_guard.on_regime_changed(bucket)
 
-        LOG.info(
-            f"EP-01: Regime adaptation triggered: label={regime_str} → bucket={bucket.value}, "
-            f"new_ratio={float(self._fsm.exposure_guard.max_directional_ratio):.2f}"
-        )
+        if should_apply_global_execution_regime(pld):
+            LOG.info(
+                f"EP-01: Global execution regime adaptation triggered: label={regime_str} -> bucket={bucket.value}, "
+                f"new_ratio={float(self._fsm.exposure_guard.max_directional_ratio):.2f}"
+            )
+        else:
+            LOG.info(
+                f"EP-01: Structural regime cached for {symbol or 'unknown'} without global exposure adaptation "
+                f"(layer={pld.get('regime_layer', 'structural')}, scope={pld.get('regime_scope', 'per_symbol')})"
+            )
 
         # EP-01.3-INT: Cancel pending entry orders on regime change
         try:

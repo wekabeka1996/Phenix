@@ -263,6 +263,25 @@ class TestEnsembleModel:
             assert weight >= ensemble_config.min_weight
             assert weight <= ensemble_config.max_weight
 
+    def test_on_trade_result_requires_explicit_pnl_scale_without_feedback(self, ensemble_model):
+        ensemble_model._pending_signals["sig_1"] = ("ensemble", 0.5, "BTCUSDT", 1.0)
+
+        with pytest.raises(ValueError):
+            ensemble_model.on_trade_result(signal_id="sig_1", pnl=25.0)
+
+    def test_on_trade_result_uses_objective_feedback_score(self, ensemble_model):
+        ensemble_model._pending_signals["sig_2"] = ("ensemble", 0.5, "BTCUSDT", 1.0)
+
+        ensemble_model.on_trade_result(
+            signal_id="sig_2",
+            pnl=25.0,
+            feedback_score=0.8,
+            pnl_scale=1000.0,
+            feedback_trace={"realized_quality_score": 0.8},
+        )
+
+        assert any(history for history in ensemble_model.model_performance.values())
+
     def test_empty_performance_data(self, ensemble_model):
         """Test handling of empty performance data."""
         # Clear performance data

@@ -11,7 +11,7 @@ PHILOSOPHY:
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 import yaml
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 DEFAULT_RNG_SEED = 42
 
@@ -358,6 +358,18 @@ class PPOConfig(BaseModel):
         default="pnl",
         description="Reward source: 'pnl' (trade PnL) or 'regime_oracle' (self-supervised regime prediction)"
     )
+    objective_split_enforced: bool = Field(
+        default=True,
+        description="Reject mixed objective families and enforce explicit routing for regime, execution, and policy samples"
+    )
+    policy_training_mode: Literal["disabled", "execution_only"] = Field(
+        default="disabled",
+        description=(
+            "Policy training contour after objective split. "
+            "'disabled' fail-closes policy training until a clean PolicySample producer exists. "
+            "'execution_only' allows only explicit policy-family samples."
+        )
+    )
 
     # Training
     learning_rate: float = Field(
@@ -412,6 +424,247 @@ class PPOConfig(BaseModel):
     )
 
 
+class SequenceConfig(BaseModel):
+    """Canonical sequence semantics contract for runtime inference/training."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    inference_mode: Literal["stateless_per_event"] = Field(
+        default="stateless_per_event",
+        description=(
+            "Inference-time recurrent contract. "
+            "'stateless_per_event' resets hidden state before every event to forbid cross-symbol "
+            "and cross-objective leakage until a clean per-stream sequence owner exists."
+        ),
+    )
+    representation_training_mode: Literal["independent_rows"] = Field(
+        default="independent_rows",
+        description=(
+            "Representation training contract. "
+            "'independent_rows' forbids treating arbitrary recent batches as one temporal sequence "
+            "until explicit sequence-owner metadata exists."
+        ),
+    )
+    reset_on_replay_start: bool = Field(
+        default=True,
+        description="Reset sequence state deterministically at replay/adapter start."
+    )
+    reset_on_symbol_switch: bool = Field(
+        default=True,
+        description="Symbol switches are reset-worthy boundaries under the canonical sequence contract."
+    )
+    reset_on_objective_family_switch: bool = Field(
+        default=True,
+        description="Objective-family switches are reset-worthy boundaries under the canonical sequence contract."
+    )
+    reset_on_episode_boundary: bool = Field(
+        default=True,
+        description="Episode/lifecycle terminal boundaries are reset-worthy under the canonical sequence contract."
+    )
+
+
+class DatasetSplitConfig(BaseModel):
+    """Deterministic split-by-time configuration for dataset manifests."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    train_ratio: float = Field(
+        default=0.7,
+        gt=0.0, lt=1.0,
+        description="Fraction of trainable samples assigned to the train split."
+    )
+    val_ratio: float = Field(
+        default=0.15,
+        ge=0.0, lt=1.0,
+        description="Fraction of trainable samples assigned to the validation split."
+    )
+    test_ratio: float = Field(
+        default=0.15,
+        ge=0.0, lt=1.0,
+        description="Fraction of trainable samples assigned to the test split."
+    )
+
+    @model_validator(mode="after")
+    def validate_sum_to_one(self):
+        total = float(self.train_ratio + self.val_ratio + self.test_ratio)
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError("dataset.split ratios must sum to 1.0")
+        return self
+
+
+class DatasetConfig(BaseModel):
+    """Canonical dataset hygiene / provenance settings."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    manifest_version: int = Field(
+        default=1,
+        ge=1,
+        description="Dataset manifest schema version."
+    )
+    split: DatasetSplitConfig = Field(
+        default_factory=DatasetSplitConfig,
+        description="Deterministic split-by-time configuration."
+    )
+
+
+class PerformanceConfig(BaseModel):
+    """Operating/performance contract for live shadow and offline replay."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    operating_mode: Literal["live_shadow", "offline_replay"] = Field(
+        default="offline_replay",
+        description=(
+            "Operating shape for hot-path behavior. "
+            "'live_shadow' prioritizes low-latency observational fidelity with no decimation. "
+            "'offline_replay' allows bounded buffering and observational decimation."
+        ),
+    )
+    shadow_intent_emit_policy: Literal["emit_all", "decimate_observational"] = Field(
+        default="decimate_observational",
+        description=(
+            "Policy for non-critical shadow observational outputs. "
+            "'emit_all' keeps every shadow output. "
+            "'decimate_observational' allows deterministic stride-based decimation in offline replay."
+        ),
+    )
+    shadow_intent_decimation_stride: int = Field(
+        default=10,
+        ge=1, le=100000,
+        description="Deterministic stride for observational shadow decimation in offline replay."
+    )
+    shadow_jsonl_write_policy: Literal["immediate", "buffered"] = Field(
+        default="buffered",
+        description="Write policy for non-critical shadow JSONL observational logs."
+    )
+    telemetry_write_policy: Literal["immediate", "buffered"] = Field(
+        default="buffered",
+        description="Write policy for non-critical telemetry CSV rows."
+    )
+    non_critical_queue_limit: int = Field(
+        default=2048,
+        ge=1, le=100000,
+        description="Max buffered non-critical rows before explicit overflow policy applies."
+    )
+    shadow_log_flush_threshold: int = Field(
+        default=64,
+        ge=1, le=100000,
+        description="Buffered shadow JSONL rows before flush."
+    )
+    telemetry_flush_threshold: int = Field(
+        default=64,
+        ge=1, le=100000,
+        description="Buffered telemetry rows before flush."
+    )
+    flush_interval_ms: int = Field(
+        default=1000,
+        ge=1, le=600000,
+        description="Time-based flush cadence for buffered non-critical outputs."
+    )
+    non_critical_overflow_policy: Literal["drop_oldest", "drop_newest"] = Field(
+        default="drop_oldest",
+        description="Explicit overflow policy for non-critical observational buffers."
+    )
+
+    @model_validator(mode="after")
+    def validate_mode_specific_rules(self):
+        if self.operating_mode == "live_shadow":
+            if self.shadow_intent_emit_policy != "emit_all":
+                raise ValueError(
+                    "live_shadow requires shadow_intent_emit_policy='emit_all'"
+                )
+            if self.shadow_intent_decimation_stride != 1:
+                raise ValueError(
+                    "live_shadow requires shadow_intent_decimation_stride=1"
+                )
+        return self
+
+
+class EvaluationConfig(BaseModel):
+    """Offline evaluator / calibration / disagreement contract."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    report_version: int = Field(
+        default=1,
+        ge=1,
+        description="Machine-readable evaluator report version."
+    )
+    calibration_bins: int = Field(
+        default=5,
+        ge=1, le=100,
+        description="Number of equal-width confidence bins for calibration reports."
+    )
+    confidence_bucket_edges: List[float] = Field(
+        default_factory=lambda: [0.25, 0.50, 0.75, 0.90],
+        description="Strictly increasing confidence bucket edges used by disagreement reporting."
+    )
+    missing_confidence_policy: Literal["not_available"] = Field(
+        default="not_available",
+        description="Missing or unsupported confidence signals must produce an explicit not_available calibration report."
+    )
+    advisory_status: Literal["forbidden"] = Field(
+        default="forbidden",
+        description="P9 is evaluation-only; advisory remains forbidden."
+    )
+
+    @field_validator("confidence_bucket_edges")
+    @classmethod
+    def validate_confidence_bucket_edges(cls, v):
+        if not v:
+            raise ValueError("confidence_bucket_edges must not be empty")
+        cleaned = [float(item) for item in v]
+        prev = 0.0
+        for item in cleaned:
+            if item <= 0.0 or item >= 1.0:
+                raise ValueError(
+                    "confidence_bucket_edges must be strictly between 0 and 1"
+                )
+            if item <= prev:
+                raise ValueError(
+                    "confidence_bucket_edges must be strictly increasing"
+                )
+            prev = item
+        return cleaned
+
+
+class ShadowGateConfig(BaseModel):
+    """Production-shadow startup/runtime gate configuration."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    gate_set_version: int = Field(
+        default=1,
+        ge=1,
+        description="Machine-readable production-shadow gate set version."
+    )
+    startup_enforcement: Literal["strict", "report_only"] = Field(
+        default="strict",
+        description=(
+            "Startup gate enforcement mode. "
+            "'strict' blocks startup on any blocking gate failure. "
+            "'report_only' emits readiness report without blocking."
+        ),
+    )
+    allow_advisory_influence: bool = Field(
+        default=False,
+        description="Forbidden in production shadow. Must remain false until a future advisory-hardening package."
+    )
+    allow_live_authority: bool = Field(
+        default=False,
+        description="Forbidden in production shadow. Must remain false."
+    )
+    allow_policy_training_reenable: bool = Field(
+        default=False,
+        description="Forbidden in production shadow. Policy training stays blocked until a future package re-opens it."
+    )
+    require_domain_manifest_contracts: bool = Field(
+        default=True,
+        description="Require domain.yaml to expose the canonical contract sections needed for production shadow."
+    )
+
+
 class NeuroConfig(BaseModel):
     """Combined ML configuration."""
 
@@ -420,6 +673,26 @@ class NeuroConfig(BaseModel):
     vae: VAEConfig
     world_model: WorldModelConfig
     ppo: PPOConfig
+    sequence: SequenceConfig = Field(
+        default_factory=SequenceConfig,
+        description="Canonical sequence semantics configuration."
+    )
+    dataset: DatasetConfig = Field(
+        default_factory=DatasetConfig,
+        description="Canonical dataset hygiene / provenance configuration."
+    )
+    evaluation: EvaluationConfig = Field(
+        default_factory=EvaluationConfig,
+        description="Offline evaluator / calibration / disagreement configuration."
+    )
+    performance: PerformanceConfig = Field(
+        default_factory=PerformanceConfig,
+        description="Performance/replay operating contract."
+    )
+    shadow_gates: ShadowGateConfig = Field(
+        default_factory=ShadowGateConfig,
+        description="Production-shadow startup/runtime gate configuration."
+    )
 
     # Checkpointing (NO DEFAULTS)
     checkpoint_every_n_steps: int = Field(
@@ -521,6 +794,26 @@ class ReplayConfig(BaseModel):
         ge=1, le=100000,
         description="Hard cap of core log lines processed per run-loop cycle"
     )
+    feature_missing_timestamp_policy: Literal[
+        "fail_closed", "legacy_non_causal_file_offset"
+    ] = Field(
+        default="fail_closed",
+        description=(
+            "Policy for feature rows without causal timestamps. "
+            "'fail_closed' rejects the row. "
+            "'legacy_non_causal_file_offset' synthesizes deterministic non-causal "
+            "event_ts_ms from explicit replay config for compatibility only."
+        ),
+    )
+    legacy_feature_base_ts_ms: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Required only when feature_missing_timestamp_policy="
+            "'legacy_non_causal_file_offset'. Base epoch-millisecond used to "
+            "derive deterministic synthetic timestamps for legacy feature rows."
+        ),
+    )
 
     @field_validator('wal_dir', mode='before')
     @classmethod
@@ -535,6 +828,18 @@ class ReplayConfig(BaseModel):
         if v is None:
             return None
         return Path(v).resolve()
+
+    @model_validator(mode='after')
+    def validate_legacy_feature_timestamp_policy(self):
+        if (
+            self.feature_missing_timestamp_policy == "legacy_non_causal_file_offset"
+            and self.legacy_feature_base_ts_ms is None
+        ):
+            raise ValueError(
+                "legacy_feature_base_ts_ms is required when "
+                "feature_missing_timestamp_policy='legacy_non_causal_file_offset'"
+            )
+        return self
 
     @property
     def is_phase7(self) -> bool:
@@ -665,6 +970,24 @@ class NeocortexConfig(BaseModel):
             )
 
         return v
+
+    @model_validator(mode='after')
+    def validate_operating_mode(self):
+        if (
+            self.system.run_mode == "live"
+            and self.neuro.performance.operating_mode != "live_shadow"
+        ):
+            raise ValueError(
+                "system.run_mode='live' requires neuro.performance.operating_mode='live_shadow'"
+            )
+        if (
+            self.system.run_mode == "live"
+            and self.neuro.shadow_gates.startup_enforcement != "strict"
+        ):
+            raise ValueError(
+                "system.run_mode='live' requires neuro.shadow_gates.startup_enforcement='strict'"
+            )
+        return self
 
 
 # =============================================================================
