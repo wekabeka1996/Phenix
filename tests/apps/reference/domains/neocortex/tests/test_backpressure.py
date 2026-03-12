@@ -179,6 +179,8 @@ def slow_brain_bridge():
     bridge.encode_async = AsyncMock(side_effect=slow_encode)
     bridge.act_async = AsyncMock(side_effect=slow_act)
     bridge.train_async = AsyncMock(side_effect=slow_train)
+    bridge.train_policy_async = AsyncMock(return_value={"loss_pi": 0.1, "loss_v": 0.05, "episodes_processed": 1})
+    bridge.train_ppo_async = bridge.train_policy_async
     bridge.save_async = AsyncMock(side_effect=save_checkpoint)
     bridge.start = AsyncMock(return_value=True)
     bridge.shutdown = MagicMock()
@@ -211,6 +213,8 @@ def fast_brain_bridge():
     bridge.encode_async = AsyncMock(side_effect=fast_encode)
     bridge.act_async = AsyncMock(side_effect=fast_act)
     bridge.train_async = AsyncMock(side_effect=fast_train)
+    bridge.train_policy_async = AsyncMock(return_value={"loss_pi": 0.1, "loss_v": 0.05, "episodes_processed": 1})
+    bridge.train_ppo_async = bridge.train_policy_async
     bridge.save_async = AsyncMock(side_effect=save_checkpoint)
     bridge.start = AsyncMock(return_value=True)
     bridge.shutdown = MagicMock()
@@ -384,15 +388,12 @@ class TestAsyncShutdown:
     async def test_shutdown_trains_buffered_episodes(
         self, mock_config, mock_parser, mock_amygdala, fast_brain_bridge
     ):
-        """Verify shutdown trains any remaining buffered episodes."""
+        """Verify shutdown trains any remaining buffered policy samples."""
         from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
         from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
         
         buffer = EpisodicBuffer(capacity=1000)
-        
-        # Add train_ppo_async mock
-        fast_brain_bridge.train_ppo_async = AsyncMock(return_value={"loss": 0.1})
-        
+
         adapter = NeocortexAdapter(
             config=mock_config,
             parser=mock_parser,
@@ -400,21 +401,21 @@ class TestAsyncShutdown:
             buffer=buffer,
             brain_bridge=fast_brain_bridge
         )
-        
-        # Add some buffered episodes
-        adapter._completed_episodes = [
-            {"symbol": "BTCUSDT", "reward": 0.1, "side": "LONG", "features_vector": [0.0] * 5},
-            {"symbol": "BTCUSDT", "reward": -0.05, "side": "SHORT", "features_vector": [0.0] * 5},
+
+        adapter._policy_training_mode = "execution_only"
+        adapter._policy_samples = [
+            {"objective_family": "policy", "symbol": "BTCUSDT", "event_ts_ms": 1},
+            {"objective_family": "policy", "symbol": "BTCUSDT", "event_ts_ms": 2},
         ]
         
         # Call async shutdown
         await adapter.shutdown_async()
         
-        # Verify PPO training was triggered
-        fast_brain_bridge.train_ppo_async.assert_called_once()
+        # Verify policy training was triggered
+        fast_brain_bridge.train_policy_async.assert_called_once()
         
-        # Episodes should be cleared
-        assert len(adapter._completed_episodes) == 0
+        # Buffered policy samples should be cleared
+        assert len(adapter._policy_samples) == 0
 
 
 class TestDreamThreshold:

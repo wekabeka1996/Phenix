@@ -54,6 +54,16 @@ def _assign_mean_reversion(config_dir: Path) -> None:
             payload["assignments"]["BTCUSDT"].append("mean_reversion")
         _yaml_dump(strategies_path, payload)
 
+    # Current config contract requires assigned MR assets to be enabled explicitly.
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    if mr_profile_path.exists():
+        mr_payload = _yaml_load(mr_profile_path)
+        mr_root = mr_payload.setdefault("mean_reversion", {})
+        assets = mr_root.setdefault("assets", {})
+        btc = assets.setdefault("BTCUSDT", {})
+        btc["enabled"] = True
+        _yaml_dump(mr_profile_path, mr_payload)
+
 
 class TestStrategySSOTFreezeFailClosed:
     def test_missing_mean_reversion_profile_fails_closed(self, tmp_path: Path) -> None:
@@ -184,10 +194,10 @@ class TestStrategySSOTFreezeReaderCompatibility:
     def test_aurora_reader_paths_exist(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
         assert cfg.strategies.aurora is not None
-        assert cfg.strategies.aurora.decision.signal_threshold == 0.005
+        assert cfg.strategies.aurora.decision.signal_threshold == 0.162
         btc = cfg.strategies.aurora.assets["BTCUSDT"]
         assert btc.weights is not None
-        assert btc.weights["ema_bias"] == 0.15
+        assert btc.weights["ema_bias"] == -0.119873
 
     def test_legacy_runtime_paths_are_absent(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()

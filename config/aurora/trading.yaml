@@ -41,7 +41,7 @@ trading:
     daily:
       enabled: false
       max_realized_loss_usd: 250.0
-      max_drawdown_pct: 10.0
+      max_drawdown_pct: 8.0
       reset_time_utc: 00:00
     profile: balanced
     soft_limits:

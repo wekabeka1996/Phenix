@@ -130,9 +130,9 @@ def _mk_cfg(*, symbol: str, stale_ttl_sec: int = 15):
     )
 
 
-def test_regime_flip_short_in_bull_trend_emits_reduce_only_close():
+def test_regime_flip_short_in_trend_up_emits_reduce_only_close():
     """
-    REGIME FLIP: Short position in BULL_TREND regime should trigger reduce-only close.
+    REGIME FLIP: Short position in TREND_UP regime should trigger reduce-only close.
     """
     bus = _Bus()
     symbol = "BTCUSDT"
@@ -164,8 +164,8 @@ def test_regime_flip_short_in_bull_trend_emits_reduce_only_close():
 
     dm._propose_trade_intent = _mock_propose  # type: ignore[method-assign]
 
-    # Trigger regime flip: BULL_TREND conflicts with SHORT
-    regime_data = {"regime": "BULL_TREND"}
+    # Trigger regime flip: TREND_UP conflicts with SHORT
+    regime_data = {"regime": "TREND_UP"}
     dm._handle_regime_flip(symbol, regime_data)
 
     assert len(captured) == 1, "Expected one reduce-only close intent"
@@ -175,12 +175,12 @@ def test_regime_flip_short_in_bull_trend_emits_reduce_only_close():
     assert intent["reduce_only"] is True
     assert intent["qty"] == "0.5"
     assert "regime_flip_enforcement" in intent["why_chain"]
-    assert "BULL_TREND" in intent["why_chain"]
+    assert "TREND_UP" in intent["why_chain"]
 
 
-def test_regime_flip_long_in_bear_trend_emits_reduce_only_close():
+def test_regime_flip_long_in_trend_down_emits_reduce_only_close():
     """
-    REGIME FLIP: Long position in BEAR_TREND regime should trigger reduce-only close.
+    REGIME FLIP: Long position in TREND_DOWN regime should trigger reduce-only close.
     """
     bus = _Bus()
     symbol = "ETHUSDT"
@@ -211,8 +211,8 @@ def test_regime_flip_long_in_bear_trend_emits_reduce_only_close():
 
     dm._propose_trade_intent = _mock_propose  # type: ignore[method-assign]
 
-    # Trigger regime flip: BEAR_TREND conflicts with LONG
-    regime_data = {"regime": "BEAR_TREND"}
+    # Trigger regime flip: TREND_DOWN conflicts with LONG
+    regime_data = {"regime": "TREND_DOWN"}
     dm._handle_regime_flip(symbol, regime_data)
 
     assert len(captured) == 1
@@ -221,7 +221,7 @@ def test_regime_flip_long_in_bear_trend_emits_reduce_only_close():
     assert intent["reduce_only"] is True
     assert intent["qty"] == "2.5"
     assert "regime_flip_enforcement" in intent["why_chain"]
-    assert "BEAR_TREND" in intent["why_chain"]
+    assert "TREND_DOWN" in intent["why_chain"]
 
 
 def test_regime_flip_uncertain_closes_any_position():

@@ -1173,7 +1173,7 @@ class FeatureCalculationEngine:
         high: float = 0.0,
         low: float = 0.0,
         bar_ts_ms: int = 0,
-    ) -> None:
+    ) -> bool:
         """
         Append a new candle bar to the appropriate pillar buffer.
 
@@ -1187,17 +1187,35 @@ class FeatureCalculationEngine:
             low: Bar low price (needed for H4/ADX).
             bar_ts_ms: Bar open timestamp (ms).
         """
+        try:
+            normalized_bar_ts_ms = int(bar_ts_ms)
+        except Exception:
+            normalized_bar_ts_ms = 0
+
         if timeframe == 'm15':
+            last_ts_ms = int(state.tactician_last_bar_ts_ms or 0)
+            if normalized_bar_ts_ms > 0 and last_ts_ms > 0 and normalized_bar_ts_ms <= last_ts_ms:
+                return False
             state.m15_closes.append(close)
-            state.tactician_last_bar_ts_ms = bar_ts_ms
+            state.tactician_last_bar_ts_ms = normalized_bar_ts_ms
+            return True
         elif timeframe == 'h4':
+            last_ts_ms = int(state.operator_last_bar_ts_ms or 0)
+            if normalized_bar_ts_ms > 0 and last_ts_ms > 0 and normalized_bar_ts_ms <= last_ts_ms:
+                return False
             state.h4_closes.append(close)
             state.h4_highs.append(high)
             state.h4_lows.append(low)
-            state.operator_last_bar_ts_ms = bar_ts_ms
+            state.operator_last_bar_ts_ms = normalized_bar_ts_ms
+            return True
         elif timeframe == 'd1':
+            last_ts_ms = int(state.strategist_last_bar_ts_ms or 0)
+            if normalized_bar_ts_ms > 0 and last_ts_ms > 0 and normalized_bar_ts_ms <= last_ts_ms:
+                return False
             state.d1_closes.append(close)
-            state.strategist_last_bar_ts_ms = bar_ts_ms
+            state.strategist_last_bar_ts_ms = normalized_bar_ts_ms
+            return True
+        return False
 
     def compute_pillars(
         self,

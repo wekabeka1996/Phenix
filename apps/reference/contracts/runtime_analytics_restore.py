@@ -323,6 +323,48 @@ def restore_status_to_readiness_status(
     )
 
 
+def merge_restore_readiness_live_first(
+    restore_status: RuntimeAnalyticsRestoreStatus | None,
+    *,
+    live_status: RuntimeReadinessStatus | None,
+    updated_at: int | None,
+    source: str,
+    evidence_ref: str | None = None,
+    restored_why: str | Iterable[str] | None = None,
+    live_evidence_present: bool = True,
+) -> RuntimeReadinessStatus:
+    if live_status is not None:
+        live_state = live_status.state
+        if live_state in (
+            RuntimeReadinessState.INVALIDATED_GAP,
+            RuntimeReadinessState.BLOCKED,
+            RuntimeReadinessState.READY,
+            RuntimeReadinessState.PARTIAL,
+        ):
+            return live_status
+        if live_state == RuntimeReadinessState.COLD and live_evidence_present:
+            return live_status
+
+    if restore_status is None:
+        if live_status is not None:
+            return live_status
+        return cold_status(
+            why=["analytics_restore_missing"],
+            updated_at=updated_at,
+            source=source,
+            evidence_ref=evidence_ref,
+        )
+
+    return restore_status_to_readiness_status(
+        restore_status,
+        updated_at=updated_at,
+        source=source,
+        evidence_ref=evidence_ref,
+        restored_why=restored_why,
+        default_status=live_status,
+    )
+
+
 def combine_restore_permissions(
     base_permissions: RuntimePermissions,
     snapshot: StrategyAnalyticsRestoreSnapshot | None,
@@ -341,6 +383,24 @@ def combine_restore_permissions(
     )
 
 
+def combine_restore_permissions_live_first(
+    base_permissions: RuntimePermissions,
+    snapshot: StrategyAnalyticsRestoreSnapshot | None,
+) -> RuntimePermissions:
+    if snapshot is None:
+        return base_permissions
+    execution_status = lookup_restore_status(
+        snapshot,
+        RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+    )
+    if execution_status is None or execution_status.state == RuntimeAnalyticsRestoreState.RESTORED:
+        return base_permissions
+    return make_permissions(
+        can_manage_existing_risk=bool(base_permissions.can_manage_existing_risk),
+        can_open_new_risk=False,
+    )
+
+
 def restore_blocking_tokens(
     snapshot: StrategyAnalyticsRestoreSnapshot | None,
 ) -> tuple[str, ...]:
@@ -352,6 +412,24 @@ def restore_blocking_tokens(
         rollup_state=snapshot.rollup_state,
         has_open_position=snapshot.permissions.can_manage_existing_risk,
     )
+
+
+def restore_execution_blocking_tokens(
+    snapshot: StrategyAnalyticsRestoreSnapshot | None,
+) -> tuple[str, ...]:
+    if snapshot is None:
+        return ()
+    execution_status = lookup_restore_status(
+        snapshot,
+        RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+    )
+    if execution_status is None or execution_status.state == RuntimeAnalyticsRestoreState.RESTORED:
+        return ()
+    if execution_status.state == RuntimeAnalyticsRestoreState.INVALIDATED_DUE_TO_GAP:
+        return ("execution_context_restore_invalidated_gap",)
+    if execution_status.state == RuntimeAnalyticsRestoreState.PARTIAL:
+        return ("execution_context_restore_partial",)
+    return ("execution_context_restore_cold",)
 
 
 def extract_strategy_restore_snapshot(

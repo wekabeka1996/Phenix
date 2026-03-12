@@ -137,8 +137,8 @@ class TestAdapterPPOIntegration:
         try:
             from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
             
-            # Check that the class has the attribute
-            assert hasattr(NeocortexAdapter, '_trigger_ppo_training')
+            # Current adapter keeps the debug hook, but the internal trigger was renamed.
+            assert hasattr(NeocortexAdapter, '_trigger_policy_training')
             assert hasattr(NeocortexAdapter, 'train_ppo_now')
         except ImportError:
             pytest.skip("Adapter import failed")
@@ -147,7 +147,7 @@ class TestAdapterPPOIntegration:
         """Adapter should have PPO training trigger method."""
         from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
         
-        assert hasattr(NeocortexAdapter, '_trigger_ppo_training')
+        assert hasattr(NeocortexAdapter, '_trigger_policy_training')
         assert hasattr(NeocortexAdapter, 'train_ppo_now')
 
 

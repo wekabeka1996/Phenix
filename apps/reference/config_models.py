@@ -597,6 +597,10 @@ class MeanReversion1mStrategyConfig(BaseModel):
     safety_gates: SafetyGatesConfig = Field(
         description="Safety gates control (directional/price motion gates)"
     )
+    objective: Optional["StrategyObjectiveConfig"] = Field(
+        default=None,
+        description="Strategy objective configuration"
+    )
 
 
 # ==============================================================================
@@ -5108,6 +5112,109 @@ class AuroraConfig(BaseModel):
         if invalid:
             raise ValueError(
                 "md_amr contract invalid for assigned symbols: " + ", ".join(sorted(invalid)))
+        return self
+
+    @model_validator(mode="after")
+    def _validate_mean_reversion_assignments(self) -> "AuroraConfig":
+        sr = getattr(self, "strategies_registry", None)
+        assignments = getattr(sr, "assignments", {}) if sr is not None else {}
+        assigned = sorted(
+            str(symbol)
+            for symbol, strategy_ids in (assignments.items() if isinstance(assignments, dict) else [])
+            if isinstance(strategy_ids, list) and "mean_reversion" in strategy_ids
+        )
+        if not assigned:
+            return self
+
+        cfg = getattr(self.strategies, "mean_reversion", None)
+        if cfg is None:
+            raise ValueError("strategy_config_missing(mean_reversion)")
+        if not bool(cfg.enabled):
+            raise ValueError("mean_reversion enabled=false for assigned symbols")
+
+        invalid: list[str] = []
+        for symbol in assigned:
+            if symbol not in self.instruments:
+                invalid.append(f"{symbol}:instrument_missing")
+                continue
+            asset_cfg = cfg.assets.get(symbol) if isinstance(cfg.assets, dict) else None
+            if asset_cfg is None:
+                invalid.append(f"{symbol}:asset_missing")
+                continue
+            if not bool(asset_cfg.enabled):
+                invalid.append(f"{symbol}:enabled=false")
+            allowed_regimes = getattr(asset_cfg, "allowed_regimes", None)
+            if not isinstance(allowed_regimes, list) or not any(str(x).strip() for x in allowed_regimes):
+                invalid.append(f"{symbol}:allowed_regimes_missing")
+        if invalid:
+            raise ValueError(
+                "mean_reversion contract invalid for assigned symbols: " + ", ".join(sorted(invalid)))
+        return self
+
+    @model_validator(mode="after")
+    def _validate_strategy_objective_regime_coverage(self) -> "AuroraConfig":
+        sr = getattr(self, "strategies_registry", None)
+        assignments = getattr(sr, "assignments", {}) if sr is not None else {}
+        if not isinstance(assignments, dict) or not assignments:
+            return self
+
+        def _assigned_symbols(strategy_id: str) -> list[str]:
+            return sorted(
+                str(symbol)
+                for symbol, strategy_ids in assignments.items()
+                if isinstance(strategy_ids, list) and strategy_id in strategy_ids
+            )
+
+        def _non_empty_regimes(raw: Any) -> set[str]:
+            if not isinstance(raw, list):
+                return set()
+            return {str(value).strip().upper() for value in raw if str(value).strip()}
+
+        coverage_errors: list[str] = []
+
+        aurora_cfg = getattr(self.strategies, "aurora", None)
+        aurora_objective = getattr(aurora_cfg, "objective", None) if aurora_cfg is not None else None
+        if aurora_cfg is not None and aurora_objective is not None and bool(aurora_objective.enabled):
+            expected_regimes: set[str] = set()
+            for symbol in _assigned_symbols("aurora"):
+                asset_cfg = aurora_cfg.assets.get(symbol) if isinstance(aurora_cfg.assets, dict) else None
+                if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
+                    continue
+                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes - set(aurora_objective.regimes.keys()))
+            if missing:
+                coverage_errors.append(f"aurora:missing_objective_regimes={','.join(missing)}")
+
+        md_cfg = getattr(self.strategies, "md_amr", None)
+        md_objective = getattr(md_cfg, "objective", None) if md_cfg is not None else None
+        if md_cfg is not None and md_objective is not None and bool(md_objective.enabled):
+            expected_regimes = set()
+            for symbol in _assigned_symbols("md_amr"):
+                asset_cfg = md_cfg.assets.get(symbol) if isinstance(md_cfg.assets, dict) else None
+                if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
+                    continue
+                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes - set(md_objective.regimes.keys()))
+            if missing:
+                coverage_errors.append(f"md_amr:missing_objective_regimes={','.join(missing)}")
+
+        mr_cfg = getattr(self.strategies, "mean_reversion", None)
+        mr_objective = getattr(mr_cfg, "objective", None) if mr_cfg is not None else None
+        if mr_cfg is not None and mr_objective is not None and bool(mr_objective.enabled):
+            expected_regimes = set()
+            for symbol in _assigned_symbols("mean_reversion"):
+                asset_cfg = mr_cfg.assets.get(symbol) if isinstance(mr_cfg.assets, dict) else None
+                if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
+                    continue
+                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes - set(mr_objective.regimes.keys()))
+            if missing:
+                coverage_errors.append(f"mean_reversion:missing_objective_regimes={','.join(missing)}")
+
+        if coverage_errors:
+            raise ValueError(
+                "objective regime coverage invalid for assigned symbols: " + "; ".join(coverage_errors)
+            )
         return self
 
     @model_validator(mode="after")

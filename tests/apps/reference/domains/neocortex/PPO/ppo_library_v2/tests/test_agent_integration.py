@@ -1,9 +1,14 @@
 # path: ppo_library/tests/test_agent_integration.py
+import sys
+from pathlib import Path
+
 import pytest
-try:
-    import gymnasium as gym
-except ImportError:
-    import gym
+
+PPO_ROOT = Path(__file__).resolve().parents[8] / "apps" / "reference" / "domains" / "neocortex" / "PPO" / "ppo_library_v2"
+if str(PPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(PPO_ROOT))
+
+gym = pytest.importorskip("gymnasium", reason="gymnasium is optional for PPO integration tests")
 
 from ppo_system import PPOAgent, train, AgentConfig, TrainConfig
 

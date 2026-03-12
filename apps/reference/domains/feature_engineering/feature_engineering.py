@@ -820,20 +820,21 @@ class FeatureEngineering:
                         source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
                     )
                 attach_canonical_bar_payload(
-                    {"bar": bar, "symbol": symbol, "tf_sec": tf_sec},
+                    bar,
                     identity=identity,
                     replay_generation=int(bar.get("replay_generation", 0) or 0),
+                    attach_nested_bar=False,
                 )
-                
-                calc_engine.update_pillar_candle(
+                updated = calc_engine.update_pillar_candle(
                     state,
                     timeframe=tf_label,
                     close=float(bar["c"]),
                     high=float(bar["h"]),
                     low=float(bar["l"]),
-                    bar_ts_ms=int(identity.bar_end_ts_ms),
+                    bar_ts_ms=int(identity.close_boundary_ts_ms),
                 )
-                processed += 1
+                if updated:
+                    processed += 1
             except Exception as e:
                 self.logger.debug(f"[{symbol}] Malformed imported bar skipped: {e}")
 
@@ -939,16 +940,41 @@ class FeatureEngineering:
 
             if bars is not None and hasattr(calc_engine, "update_pillar_candle"):
                 if isinstance(bars, dict):
+                    bar_identity = extract_canonical_bar_identity(
+                        {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
+                        default_symbol=symbol,
+                        default_timeframe_sec=int(tf_sec),
+                        default_source_mode=RuntimeBarSourceMode.LIVE,
+                    )
                     bar_close = bars.get("close")
                     bar_high = bars.get("high", bar_close)
                     bar_low = bars.get("low", bar_close)
-                    bar_ts_ms = bars.get("end_ts_ms") or bars.get("close_ts") or bars.get("kline_close_time")
+                    bar_ts_ms = (
+                        int(bar_identity.close_boundary_ts_ms)
+                        if bar_identity is not None
+                        else bars.get("close_boundary_ts_ms")
+                        or bars.get("end_ts_ms")
+                        or bars.get("close_ts")
+                        or bars.get("kline_close_time")
+                    )
                 else:
+                    bar_identity = extract_canonical_bar_identity(
+                        {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
+                        default_symbol=symbol,
+                        default_timeframe_sec=int(tf_sec),
+                        default_source_mode=RuntimeBarSourceMode.LIVE,
+                    )
                     bar_close = getattr(bars, "close", None)
                     bar_high = getattr(bars, "high", bar_close)
                     bar_low = getattr(bars, "low", bar_close)
                     bar_ts_ms = (
-                        getattr(bars, "end_ts_ms", None)
+                        (
+                            int(bar_identity.close_boundary_ts_ms)
+                            if bar_identity is not None
+                            else None
+                        )
+                        or getattr(bars, "close_boundary_ts_ms", None)
+                        or getattr(bars, "end_ts_ms", None)
                         or getattr(bars, "close_ts", None)
                         or getattr(bars, "kline_close_time", None)
                     )

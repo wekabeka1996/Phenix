@@ -323,7 +323,7 @@ class TestPPOTelemetryIntegration:
         buffer.__len__ = lambda _self: 0
 
         bridge = MagicMock()
-        bridge.train_ppo_async = AsyncMock(
+        bridge.train_policy_async = AsyncMock(
             return_value={
                 "policy_loss": 0.12,
                 "value_loss": 0.34,
@@ -346,8 +346,23 @@ class TestPPOTelemetryIntegration:
         adapter.telemetry.log_training = lambda **kwargs: logged_training.append(kwargs)
         adapter.telemetry.log_buffer_stats = lambda **kwargs: logged_buffer.append(kwargs)
 
-        await adapter._trigger_ppo_training(
-            [{"symbol": "BTCUSDT", "reward": 0.1}, {"symbol": "ETHUSDT", "reward": -0.1}]
+        await adapter._trigger_policy_training(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "reward": 0.1,
+                    "event_ts_ms": 1_700_000_000_000,
+                    "objective_family": "policy",
+                    "policy_eligible": True,
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "reward": -0.1,
+                    "event_ts_ms": 1_700_000_001_000,
+                    "objective_family": "policy",
+                    "policy_eligible": True,
+                },
+            ]
         )
 
         assert len(logged_training) == 1
@@ -383,6 +398,10 @@ class TestPPOTelemetryIntegration:
             {
                 "symbol": "BTCUSDT",
                 "timestamp": 1_700_000_000.0,
+                "event_ts_ms": 1_700_000_000_000,
+                "close_event_ts_ms": 1_700_000_000_000,
+                "trade_id": "trade-1",
+                "lifecycle_id": "lc-1",
                 "features": {"price": 100.0, "obi": 0.1, "rsi": 50.0},
                 "side": "LONG",
                 "reward": 0.25,
@@ -393,6 +412,10 @@ class TestPPOTelemetryIntegration:
             {
                 "symbol": "BTCUSDT",
                 "timestamp": 1_700_000_001.0,
+                "event_ts_ms": 1_700_000_001_000,
+                "close_event_ts_ms": 1_700_000_001_000,
+                "trade_id": "trade-2",
+                "lifecycle_id": "lc-2",
                 "features": {"price": 100.2, "obi": 0.0, "rsi": 49.0},
                 "side": "LONG",
                 "reward": None,

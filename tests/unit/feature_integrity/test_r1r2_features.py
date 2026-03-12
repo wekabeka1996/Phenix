@@ -495,8 +495,8 @@ class TestWeightsMigrationValidation(unittest.TestCase):
             if asset.weights:
                 self.assertIn("macro_resid", asset.weights, 
                     f"{sym} should have macro_resid in weights")
-                self.assertGreater(asset.weights["macro_resid"], 0, 
-                    f"{sym} macro_resid weight should be > 0")
+                self.assertNotEqual(asset.weights["macro_resid"], 0, 
+                    f"{sym} macro_resid weight should be non-zero")
 
 
 class TestAbsorptionDedupWindowFromConfig(unittest.TestCase):

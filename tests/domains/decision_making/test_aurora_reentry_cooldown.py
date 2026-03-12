@@ -67,6 +67,7 @@ def handler(mock_config, mock_emit, manual_clock):
     h._symbol_states["BTCUSDT"] = state
     # Explicitly disable holding period to prevent interference in other tests
     h.holding_period_enabled = False
+    h._basis_required_bars_override = 0
     return h
 
 class TestReentryCooldown:

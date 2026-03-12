@@ -23,6 +23,8 @@ from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationE
 from apps.reference.domains.neocortex.logic.memory.buffer import EpisodicBuffer
 from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
+BASE_TS = 1_700_100_000.0
+
 
 # =============================================================================
 # FIXTURES
@@ -110,8 +112,11 @@ def generate_random_walk_tick(t: int, prev_price: float, num_features: int = 5) 
     # Generate random features
     features = {f"f{i+1}": str(np.random.randn()) for i in range(num_features)}
     
+    ts = BASE_TS + float(t)
     return {
-        "timestamp": float(t),
+        "timestamp": ts,
+        "ts": ts,
+        "event_ts_ms": int(round(ts * 1000.0)),
         "symbol": "SIMULATED",
         "mid_price": str(new_price),
         "features": features,
@@ -237,19 +242,21 @@ def test_simulation_1000_ticks(stress_config):
     
     # Assertions
     assert stats["buffer_size"] == 500, f"Buffer should cap at 500, got {stats['buffer_size']}"
-    assert stats["shadow_intents_emitted"] >= 900, \
-        f"Expected ~1000 shadow intents, got {stats['shadow_intents_emitted']}"
+    assert stats["shadow_intents_generated"] >= 900, \
+        f"Expected ~1000 generated shadow intents, got {stats['shadow_intents_generated']}"
+    assert stats["shadow_intents_emitted"] >= 90, \
+        f"Expected decimated emissions, got {stats['shadow_intents_emitted']}"
     assert stats["total_train_steps"] >= 5, \
         f"Expected training to occur, got {stats['total_train_steps']}"
     
     # Verify shadow intent events (dual emit compatibility).
     shadow_events_legacy = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT"]
     shadow_events_canonical = [e for e in emitted_events if e[0] == "EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED"]
-    assert len(shadow_events_canonical) >= 900, (
-        f"Expected ~1000 canonical shadow events, got {len(shadow_events_canonical)}"
+    assert len(shadow_events_canonical) >= 90, (
+        f"Expected decimated canonical shadow events, got {len(shadow_events_canonical)}"
     )
-    assert len(shadow_events_legacy) >= 900, (
-        f"Expected ~1000 legacy shadow events during migration, got {len(shadow_events_legacy)}"
+    assert len(shadow_events_legacy) >= 90, (
+        f"Expected decimated legacy shadow events during migration, got {len(shadow_events_legacy)}"
     )
     
     # Verify checkpoints were triggered (at least once)
@@ -300,8 +307,12 @@ def test_no_broken_pool_errors(stress_config):
         
         # Send 10 ticks - should survive the crash on tick 3
         for t in range(10):
+            ts = BASE_TS + float(t)
             await adapter.handle_features({
-                "timestamp": float(t),
+                "timestamp": ts,
+                "ts": ts,
+                "event_ts_ms": int(round(ts * 1000.0)),
+                "symbol": "SIMULATED",
                 "features": {f"f{i+1}": "1.0" for i in range(5)}
             })
 

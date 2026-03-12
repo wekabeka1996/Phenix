@@ -163,7 +163,8 @@ class IntentBuilder:
                         self._record_blocked(symbol)
                         return
             except Exception as e:
-                self.logger.error(f"[{symbol}] OrderIndex access failed: {e}", exc_info=True)
+                self.logger.error(
+                    f"[{symbol}] OrderIndex access failed: {e}", exc_info=True)
                 self._fsm.emit("EVT:INTENT_DEFERRED", {
                     "symbol": symbol, "rid": rid,
                     "reason": "NRR-ORDER-INDEX-FAIL",
@@ -178,7 +179,8 @@ class IntentBuilder:
             qty = decimal.Decimal(str(qty))
             price = decimal.Decimal(str(price))
         except Exception as _e:
-            self.logger.error(f"[{symbol}] Invalid qty/price: qty={qty!r} price={price!r}: {_e}")
+            self.logger.error(
+                f"[{symbol}] Invalid qty/price: qty={qty!r} price={price!r}: {_e}")
             self._record_blocked(symbol)
             return
 
@@ -187,20 +189,25 @@ class IntentBuilder:
             if max_slippage_bps is not None:
                 max_slippage = str(max_slippage_bps)
             else:
-                max_slippage = str(self._get_strict(self._tca_prefs, 'max_slippage_bps', "Missing max_slippage_bps"))
+                max_slippage = str(self._get_strict(
+                    self._tca_prefs, 'max_slippage_bps', "Missing max_slippage_bps"))
             if max_latency_ms is not None:
                 max_latency = max_latency_ms
             else:
-                max_latency = self._get_strict(self._tca_prefs, 'max_latency_ms', "Missing max_latency_ms")
-            maker_pref = self._get_strict(self._tca_prefs, 'maker_preference', "Missing maker_preference")
+                max_latency = self._get_strict(
+                    self._tca_prefs, 'max_latency_ms', "Missing max_latency_ms")
+            maker_pref = self._get_strict(
+                self._tca_prefs, 'maker_preference', "Missing maker_preference")
         except ValueError as e:
             self.logger.error(f"TCA Config Block: {e}")
             return
 
         # ── Risk budgets ───────────────────────────────────────
         try:
-            trade_cvar = str(self._get_strict(self._risk_budgets, 'trade_cvar95_max_bps', "Missing trade_cvar95_max_bps"))
-            session_cvar = str(self._get_strict(self._risk_budgets, 'session_cvar95_max_bps', "Missing session_cvar95_max_bps"))
+            trade_cvar = str(self._get_strict(
+                self._risk_budgets, 'trade_cvar95_max_bps', "Missing trade_cvar95_max_bps"))
+            session_cvar = str(self._get_strict(
+                self._risk_budgets, 'session_cvar95_max_bps', "Missing session_cvar95_max_bps"))
         except ValueError as e:
             self.logger.error(f"RiskBudget Config Block: {e}")
             return
@@ -224,8 +231,10 @@ class IntentBuilder:
             target_price_payload = str(td) if td is not None else None
 
         try:
-            strat_cfg = getattr(self.config.strategies, str(strategy_id), getattr(self.config.strategies, "aurora", None))
-            kelly_frac = str(getattr(getattr(strat_cfg.decision, "kelly", None), "fraction", "0.1"))
+            strat_cfg = getattr(self.config.strategies, str(
+                strategy_id), getattr(self.config.strategies, "aurora", None))
+            kelly_frac = str(
+                getattr(getattr(strat_cfg.decision, "kelly", None), "fraction", "0.1"))
         except Exception:
             kelly_frac = "0.1"
 
@@ -263,9 +272,11 @@ class IntentBuilder:
             trade_intent["trace"] = strategy_trace
 
         # ── Arbitration commit ─────────────────────────────────
-        commit = self._check_strategy_arbitration(symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
+        commit = self._check_strategy_arbitration(
+            symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
         if not commit["allowed"]:
-            self.logger.info(f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {commit['reason']}")
+            self.logger.info(
+                f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {commit['reason']}")
             self._record_blocked(symbol)
             return
 
@@ -292,7 +303,8 @@ class IntentBuilder:
         try:
             self._record_accepted(symbol)
         except Exception as e:
-            self.logger.warning(f"Failed to record accepted intent metrics: {e}")
+            self.logger.warning(
+                f"Failed to record accepted intent metrics: {e}")
 
         # ── WAL + FSM emit ─────────────────────────────────────
         try:
@@ -300,17 +312,20 @@ class IntentBuilder:
                 op="EVT", verb="TRADE_INTENT_PROPOSED", src="decision_making",
                 dst="bridge", rid=str(rid), pld=trade_intent,
                 why=truncate_why("trade_intent") or "trade_intent",
-                data_ref=[str(x) for x in why_chain] if isinstance(why_chain, list) else [],
+                data_ref=[str(x) for x in why_chain] if isinstance(
+                    why_chain, list) else [],
                 intent="PROPOSAL",
             )
             res = wal.append(intent_evt.model_dump())
             if res is None:
-                self.logger.error(f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}")
+                self.logger.error(
+                    f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}")
         except Exception as wal_e:
-            self.logger.warning(f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
+            self.logger.warning(
+                f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
 
         self._fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=trade_intent,
-                        why="trade_intent", data_ref=why_chain)
+                       why="trade_intent", data_ref=why_chain)
 
         # ── Lifecycle logger ───────────────────────────────────
         if _trade_lifecycle is not None:
@@ -318,8 +333,10 @@ class IntentBuilder:
                 _trade_lifecycle.on_intent(
                     rid=str(rid), symbol=symbol, side=intent_side,
                     regime=str(sg.regime) if sg.regime else "",
-                    confidence=float(sg.regime_confidence) if sg.regime_confidence is not None else None,
-                    signal_score=float(sg.signal_score) if sg.signal_score is not None else None,
+                    confidence=float(
+                        sg.regime_confidence) if sg.regime_confidence is not None else None,
+                    signal_score=float(
+                        sg.signal_score) if sg.signal_score is not None else None,
                     strategy_id=str(strategy_id), entry_type=order_type,
                 )
             except Exception:
@@ -340,12 +357,15 @@ class IntentBuilder:
         try:
             if not reduce_only:
                 if symbol not in self._side_intent_window:
-                    self._side_intent_window[symbol] = {"buys": [], "sells": []}
+                    self._side_intent_window[symbol] = {
+                        "buys": [], "sells": []}
                 window_data = self._side_intent_window[symbol]
                 now_sec = self._clock.now_sec()
                 _, bias_window_sec, _, _ = self._get_side_bias_params(symbol)
-                window_data["buys"] = [ts for ts in window_data["buys"] if now_sec - ts < bias_window_sec]
-                window_data["sells"] = [ts for ts in window_data["sells"] if now_sec - ts < bias_window_sec]
+                window_data["buys"] = [
+                    ts for ts in window_data["buys"] if now_sec - ts < bias_window_sec]
+                window_data["sells"] = [
+                    ts for ts in window_data["sells"] if now_sec - ts < bias_window_sec]
                 if intent_side == "LONG":
                     window_data["buys"].append(now_sec)
                 elif intent_side == "SHORT":
@@ -356,6 +376,8 @@ class IntentBuilder:
         # ── OrderLogger ────────────────────────────────────────
         order_logger.write({
             "rid": rid, "event_type": "ORDER_INTENT",
+            # PHASE 1: top-level lifecycle identity
+            "lifecycle_id": trade_intent["idempotent_key"],
             "symbol": symbol, "side": side.upper(),
             "quantity": float(qty), "price": float(price),
             "source_fsm": "DecisionMaking",
@@ -381,8 +403,10 @@ class IntentBuilder:
         tif: Optional[str] = None
         try:
             strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
-            exec_cfg = getattr(strat_cfg, "execution", None) if strat_cfg else None
-            order_type = getattr(exec_cfg, "entry_order_type", None) if exec_cfg else None
+            exec_cfg = getattr(strat_cfg, "execution",
+                               None) if strat_cfg else None
+            order_type = getattr(exec_cfg, "entry_order_type",
+                                 None) if exec_cfg else None
             tif = getattr(exec_cfg, "entry_tif", None) if exec_cfg else None
         except Exception:
             pass
@@ -397,8 +421,10 @@ class IntentBuilder:
 
         try:
             caps = self.config.domains.execution_position.order_capabilities
-            supported_types = set(str(x).upper() for x in (caps.supported_order_types or []))
-            supported_tifs = set(str(x).upper() for x in (caps.supported_tif or []))
+            supported_types = set(str(x).upper()
+                                  for x in (caps.supported_order_types or []))
+            supported_tifs = set(str(x).upper()
+                                 for x in (caps.supported_tif or []))
         except Exception:
             supported_types, supported_tifs = set(), set()
 

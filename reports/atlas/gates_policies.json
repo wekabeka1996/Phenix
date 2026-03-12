@@ -138,8 +138,7 @@
     "apps\\reference\\domains\\neocortex\\config\\neuro.yaml": {},
     "apps\\reference\\domains\\neocortex\\config\\regime_oracle_reward.yaml": {},
     "apps\\reference\\domains\\neocortex\\config\\replay.yaml": {},
-    "apps\\reference\\domains\\neocortex\\config\\system.yaml": {},
-    ".venv-py311-backup-20260310\\Lib\\site-packages\\torch\\_export\\serde\\schema.yaml": {}
+    "apps\\reference\\domains\\neocortex\\config\\system.yaml": {}
   },
   "merged_master": {}
 }

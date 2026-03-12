@@ -38,6 +38,18 @@ def _assign_mean_reversion(config_dir: Path) -> None:
         assigned.append("mean_reversion")
     strategies_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    mr_payload = yaml.safe_load(mr_profile_path.read_text(encoding="utf-8"))
+    assert isinstance(mr_payload, dict)
+    mr_root = mr_payload.setdefault("mean_reversion", {})
+    assert isinstance(mr_root, dict)
+    assets = mr_root.setdefault("assets", {})
+    assert isinstance(assets, dict)
+    btc = assets.setdefault("BTCUSDT", {})
+    assert isinstance(btc, dict)
+    btc["enabled"] = True
+    mr_profile_path.write_text(yaml.safe_dump(mr_payload, sort_keys=False), encoding="utf-8")
+
 
 def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
     # Arrange: load canonical config via ConfigLoader (SSOT)
@@ -51,8 +63,7 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
     assert mr is not None
 
     # Arrange: parse the canonical YAML as ground-truth text
-    repo_root = Path(__file__).resolve().parents[2]
-    mr_yaml_path = repo_root / "config" / "aurora" / "strategies" / "mean_reversion.yaml"
+    mr_yaml_path = config_dir / "strategies" / "mean_reversion.yaml"
     raw = yaml.safe_load(mr_yaml_path.read_text(encoding="utf-8"))
     assert isinstance(raw, dict)
     raw_mr = raw["mean_reversion"]

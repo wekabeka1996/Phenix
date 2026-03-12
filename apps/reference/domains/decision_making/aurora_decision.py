@@ -15,10 +15,15 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from apps.reference.contracts.runtime_analytics_restore import (
     RuntimeAnalyticsRestoreScope,
-    combine_restore_permissions,
+    combine_restore_permissions_live_first,
     lookup_restore_status,
-    restore_blocking_tokens,
+    merge_restore_readiness_live_first,
+    restore_execution_blocking_tokens,
     restore_status_to_readiness_status,
+)
+from apps.reference.bootstrap.startup_warmup import (
+    apply_startup_warmup_permission_overlay,
+    startup_warmup_gate_tokens,
 )
 from apps.reference.contracts.runtime_bar_identity import (
     RuntimeBarSourceMode,
@@ -170,6 +175,57 @@ class AuroraDecisionMixin:
             )
             return
 
+        # FIX:N-2 — Cold-start bars_required gate: block signals until handler has
+        # accumulated enough real-time bars to produce meaningful features/regime.
+        # Uses basis_required_bars from StrategyCompatibilityProfile as threshold.
+        _bars_seen = getattr(
+            self, "_bars_seen_since_restart", {}).get(symbol, 0)
+        _basis_required = getattr(self, "_basis_required_bars_override", None)
+        if _basis_required is None:
+            try:
+                from apps.reference.contracts.strategy_compatibility_matrix import (
+                    get_active_strategy_profile,
+                )
+                _profile = get_active_strategy_profile(
+                    self.config, self.strategy_id)
+                _basis_required = int(
+                    _profile.basis_required_bars) if _profile else 0
+            except Exception:
+                _basis_required = 0
+        if _basis_required and _bars_seen < _basis_required:
+            self.logger.debug(
+                "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal",
+                symbol, _bars_seen, _basis_required,
+            )
+            write_trade_intent_rejected(
+                symbol=symbol,
+                tf_sec=int(cmd.get("tf_sec") or 0),
+                bar_close_ts=cmd.get("bar_close_ts"),
+                reason_code="BARS_REQUIRED_COLD_START",
+                stage="STRATEGY",
+                why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
+                src="aurora_handler",
+                ts_ms=cmd.get("bar_close_ts"),
+                rid=cmd.get("rid"),
+            )
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="BARS_REQUIRED_COLD_START",
+                reason="READINESS",
+                context="aurora_handler:bars_required_gate",
+                details={
+                    "bars_seen": _bars_seen,
+                    "basis_required_bars": _basis_required,
+                },
+                why_chain=[
+                    "READINESS",
+                    "BARS_REQUIRED",
+                    f"bars_seen:{_bars_seen}",
+                    f"basis_required:{_basis_required}",
+                ],
+            )
+            return
+
         # Get price
         price = features.get("price")
         if price is None:
@@ -283,7 +339,8 @@ class AuroraDecisionMixin:
         bar_identity = extract_canonical_bar_identity(
             cmd,
             default_symbol=symbol,
-            default_timeframe_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+            default_timeframe_sec=int(
+                cmd.get("tf_sec") or self.timeframe_sec or 0),
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
         if "regime" not in features:
@@ -721,20 +778,40 @@ class AuroraDecisionMixin:
                     cost_cfg = domain_cfg.components.get("cost")
                     behavior_cfg = domain_cfg.components.get("behavior")
 
+                    # FIX:N-7 — Soft-block on missing preconditions instead of
+                    # raising ValueError. These are normal during startup warmup.
+                    _objective_precondition_fail = None
                     if cost_cfg is None or not cost_cfg.enabled:
-                        raise ValueError("OBJECTIVE_COMPONENT_MISSING:cost")
-                    if behavior_cfg is None or not behavior_cfg.enabled:
-                        raise ValueError("OBJECTIVE_COMPONENT_MISSING:behavior")
-                    if not isinstance(self._latest_portfolio, dict):
-                        raise ValueError("OBJECTIVE_PORTFOLIO_MISSING")
-                    if not isinstance(self._latest_exposure_summary, dict):
-                        raise ValueError("OBJECTIVE_EXPOSURE_SUMMARY_MISSING")
-                    if not state.regime:
-                        raise ValueError("OBJECTIVE_REGIME_MISSING")
-                    if not state.regime_ts_ms:
-                        raise ValueError("OBJECTIVE_REGIME_TS_MISSING")
-                    if entry_plan_res is None:
-                        raise ValueError("OBJECTIVE_ENTRY_PLAN_MISSING")
+                        _objective_precondition_fail = "OBJECTIVE_COMPONENT_MISSING:cost"
+                    elif behavior_cfg is None or not behavior_cfg.enabled:
+                        _objective_precondition_fail = "OBJECTIVE_COMPONENT_MISSING:behavior"
+                    elif not isinstance(self._latest_portfolio, dict):
+                        _objective_precondition_fail = "OBJECTIVE_PORTFOLIO_MISSING"
+                    elif not isinstance(self._latest_exposure_summary, dict):
+                        _objective_precondition_fail = "OBJECTIVE_EXPOSURE_SUMMARY_MISSING"
+                    elif not state.regime:
+                        _objective_precondition_fail = "OBJECTIVE_REGIME_MISSING"
+                    elif not state.regime_ts_ms:
+                        _objective_precondition_fail = "OBJECTIVE_REGIME_TS_MISSING"
+                    elif entry_plan_res is None:
+                        _objective_precondition_fail = "OBJECTIVE_ENTRY_PLAN_MISSING"
+                    if _objective_precondition_fail is not None:
+                        self.logger.debug(
+                            "[%s] Objective precondition not met: %s",
+                            symbol, _objective_precondition_fail,
+                        )
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code="OBJECTIVE_PRECONDITION_NOT_MET",
+                            reason="DECISION",
+                            context="aurora_handler:objective_engine",
+                            details={
+                                "precondition": _objective_precondition_fail},
+                            why_chain=["OBJECTIVE_ENGINE",
+                                       "PRECONDITION_NOT_MET",
+                                       _objective_precondition_fail],
+                        )
+                        return
 
                     objective_market = build_market_input(features=features)
                     readiness_completeness = compute_readiness_completeness(
@@ -745,7 +822,8 @@ class AuroraDecisionMixin:
                         signal_score=float(result.score),
                         signal_direction=1 if result.side == "buy" else -1,
                         regime=str(state.regime),
-                        regime_age_sec=float((int(self.wall_time_fn() * 1000) - int(state.regime_ts_ms)) / 1000.0),
+                        regime_age_sec=float(
+                            (int(self.wall_time_fn() * 1000) - int(state.regime_ts_ms)) / 1000.0),
                         regime_confidence=float(state.regime_confidence),
                         readiness_completeness=readiness_completeness,
                     )
@@ -757,10 +835,12 @@ class AuroraDecisionMixin:
                     projected_notional_usd = compute_projected_order_notional(
                         symbol=symbol,
                         side=result.side.upper(),
-                        entry_price=decimal.Decimal(str(entry_plan_res.entry_price)),
+                        entry_price=decimal.Decimal(
+                            str(entry_plan_res.entry_price)),
                         position_queries=self._position_queries,
                         portfolio=self._latest_portfolio,
-                        features_payload=cmd.get("features") if isinstance(cmd.get("features"), dict) else {},
+                        features_payload=cmd.get("features") if isinstance(
+                            cmd.get("features"), dict) else {},
                         margin_pct_mult=decimal.Decimal(str(micro_fraction)),
                     )
                     exposure_input = build_exposure_input(
@@ -771,14 +851,18 @@ class AuroraDecisionMixin:
                     )
                     behavior_input = build_behavior_input(
                         now_ms=int(self.wall_time_fn() * 1000),
-                        window_sec=float(behavior_cfg.parameters["window_sec"]),
+                        window_sec=float(
+                            behavior_cfg.parameters["window_sec"]),
                         cancel_replace_ts_ms=state.objective_cancel_replace_ts_ms,
                         blocked_intent_ts_ms=state.objective_blocked_ts_ms,
                         reentry_ts_ms=state.objective_reentry_ts_ms,
                     )
                     execution_input = build_execution_input(
-                        expected_fee_bps=float(cost_cfg.parameters["base_fee_bps"]),
-                        expected_slippage_bps=objective_market.spread_bps * float(cost_cfg.parameters["slippage_from_spread_ratio"]),
+                        expected_fee_bps=float(
+                            cost_cfg.parameters["base_fee_bps"]),
+                        expected_slippage_bps=objective_market.spread_bps *
+                        float(
+                            cost_cfg.parameters["slippage_from_spread_ratio"]),
                     )
                     obj_input = build_objective_input(
                         signal=signal_input,
@@ -788,7 +872,8 @@ class AuroraDecisionMixin:
                         behavior=behavior_input,
                         execution=execution_input,
                     )
-                    obj_score = evaluate_objective(obj_input, domain_cfg, strategy_cfg)
+                    obj_score = evaluate_objective(
+                        obj_input, domain_cfg, strategy_cfg)
 
                     if obj_score.is_blocked:
                         self._emit_strategy_blocked(
@@ -812,7 +897,8 @@ class AuroraDecisionMixin:
                         str(obj_score.objective_score))
                     if not result.psi_vector:
                         result.psi_vector = {}
-                    result.psi_vector["objective"] = obj_score.trace.model_dump()
+                    result.psi_vector["objective"] = obj_score.trace.model_dump(
+                    )
                 except Exception as e:
                     self._emit_strategy_blocked(
                         symbol=symbol,
@@ -897,13 +983,15 @@ class AuroraDecisionMixin:
         bar_identity = extract_canonical_bar_identity(
             source_event,
             default_symbol=symbol,
-            default_timeframe_sec=int(source_event.get("tf_sec") or self.timeframe_sec or 0),
+            default_timeframe_sec=int(source_event.get(
+                "tf_sec") or self.timeframe_sec or 0),
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
         replay_identity = extract_canonical_replay_identity(
             source_event,
             default_symbol=symbol,
-            default_timeframe_sec=int(source_event.get("tf_sec") or self.timeframe_sec or 0),
+            default_timeframe_sec=int(source_event.get(
+                "tf_sec") or self.timeframe_sec or 0),
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
         gap_status = extract_gap_status(
@@ -1000,12 +1088,12 @@ class AuroraDecisionMixin:
             can_manage_existing_risk=True,
             can_open_new_risk=not gap_blocks_open_new_risk(gap_status),
         )
-        runtime_permissions = combine_restore_permissions(
+        runtime_permissions = combine_restore_permissions_live_first(
             base_runtime_permissions,
             restore_snapshot,
         )
         gap_reason_chain = list(gap_blocking_tokens(gap_status)) + list(
-            restore_blocking_tokens(restore_snapshot)
+            restore_execution_blocking_tokens(restore_snapshot)
         )
         gap_reason_chain = list(dict.fromkeys(gap_reason_chain))
         quadratic_htf_status = (
@@ -1028,7 +1116,8 @@ class AuroraDecisionMixin:
                 gap_status,
                 updated_at=now_ms,
                 source="market_data:payload_bridge",
-                evidence_ref=(bar_identity.to_ref() if bar_identity is not None else None),
+                evidence_ref=(bar_identity.to_ref()
+                              if bar_identity is not None else None),
             ),
             RuntimeReadinessScope.MICROSTRUCTURE_READY.value: (
                 ready_status(
@@ -1078,46 +1167,50 @@ class AuroraDecisionMixin:
                 source="execution_position:startup_restore",
                 evidence_ref=f"execution:{symbol}:{now_ms}",
             )
-            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = restore_status_to_readiness_status(
+            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = merge_restore_readiness_live_first(
                 lookup_restore_status(
                     restore_snapshot,
                     RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
                 ),
+                live_status=runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value],
                 updated_at=now_ms,
                 source="feature_engineering:startup_restore",
                 evidence_ref=f"fe_cache:{symbol}:{now_ms}",
-                default_status=runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value],
+                live_evidence_present=True,
             )
-            runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value] = restore_status_to_readiness_status(
+            runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value] = merge_restore_readiness_live_first(
                 lookup_restore_status(
                     restore_snapshot,
                     RuntimeAnalyticsRestoreScope.PILLAR_STATE,
                 ),
+                live_status=runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value],
                 updated_at=now_ms,
                 source="feature_engineering:startup_restore",
                 evidence_ref=f"pillars:{symbol}:{now_ms}",
-                default_status=runtime_scopes[RuntimeReadinessScope.QUADRATIC_HTF_READY.value],
+                live_evidence_present=True,
             )
-            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = restore_status_to_readiness_status(
+            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = merge_restore_readiness_live_first(
                 lookup_restore_status(
                     restore_snapshot,
                     RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
                 ),
+                live_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
                 updated_at=now_ms,
                 source="regime_detector:startup_restore",
                 evidence_ref=f"regime:{symbol}:{now_ms}",
-                default_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
+                live_evidence_present=True,
             )
-            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = restore_status_to_readiness_status(
+            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = merge_restore_readiness_live_first(
                 lookup_restore_status(
                     restore_snapshot,
                     RuntimeAnalyticsRestoreScope.DECISION_CACHE,
                 ),
+                live_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
                 updated_at=now_ms,
                 source="decision_making:startup_restore",
                 evidence_ref=f"decision_cache:{symbol}:{now_ms}",
                 restored_why=["signal_emitted"],
-                default_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
+                live_evidence_present=True,
             )
         quadratic_rollout = build_quadratic_rollout_snapshot(
             requested_rollout=requested_rollout,
@@ -1133,9 +1226,13 @@ class AuroraDecisionMixin:
             runtime_permissions,
             quadratic_rollout,
         )
+        runtime_permissions = apply_startup_warmup_permission_overlay(
+            runtime_permissions,
+        )
         blocking_reason_chain = list(gap_reason_chain) + list(
             quadratic_rollout.quadratic_blocking_reason_chain
         )
+        blocking_reason_chain.extend(startup_warmup_gate_tokens())
         blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
         if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
             blocking_reason_chain.append("protect_only")
@@ -1207,12 +1304,15 @@ class AuroraDecisionMixin:
         }
         if bar_identity is not None:
             payload["bar_identity"] = bar_identity.to_payload()
-            payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+            payload["close_boundary_ts_ms"] = int(
+                bar_identity.close_boundary_ts_ms)
         if replay_identity is not None:
             payload["replay_identity"] = replay_identity.to_payload()
-            payload["replay_generation"] = int(replay_identity.replay_generation)
+            payload["replay_generation"] = int(
+                replay_identity.replay_generation)
         if gap_status is not None:
-            attach_gap_status_payload(payload, gap=gap_status, attach_nested_bar=False)
+            attach_gap_status_payload(
+                payload, gap=gap_status, attach_nested_bar=False)
         if restore_snapshot is not None:
             payload["analytics_restore"] = restore_snapshot.to_payload()
 

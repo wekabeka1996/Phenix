@@ -277,7 +277,7 @@ class TestBridgeNoFallback:
         from pathlib import Path
         
         main_path = Path("apps/reference/main.py")
-        content = main_path.read_text()
+        content = main_path.read_text(encoding="utf-8")
         
         # Should NOT find the old fallback pattern
         assert 'order_type_raw or "LIMIT"' not in content

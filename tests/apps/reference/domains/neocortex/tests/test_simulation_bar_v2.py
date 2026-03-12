@@ -224,8 +224,12 @@ class SyntheticDataGenerator:
 def write_feature_log(path: Path, symbol: str, features: Dict[str, Any]):
     """Write features to log file in correct JSON format."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "event_ts_ms": int(round(time.time() * 1000.0)),
+        **features,
+    }
     with open(path, "a") as f:
-        f.write(json.dumps(features) + "\n")
+        f.write(json.dumps(payload) + "\n")
 
 
 def write_order_log(path: Path, order: Dict[str, Any]):

@@ -92,6 +92,7 @@ try:
     ALERT_MANAGER_AVAILABLE = True
 except ImportError:
     ALERT_MANAGER_AVAILABLE = False
+
     class AlertManager:  # type: ignore[no-redef]
         pass
 
@@ -194,7 +195,7 @@ class ExecPosFSM(
         self.shadow_mode = shadow_mode
         # BinanceExecutionAdapter or similar
         self.adapter: Optional[Any] = None
-        
+
         # TASK47c-P3: LeverageService for OpenFlowFSM
         self.leverage_service = leverage_service
         self.is_live_execution = is_live_execution
@@ -205,7 +206,7 @@ class ExecPosFSM(
         self._flows_lock = threading.Lock()  # EXP-FIX: Thread-safe flows access
 
         self.log_adapter = AuroraLogAdapter()
-        
+
         # TASK-ZOMBIE-FIX: Wire MetricsCollector to config (was hardcoded defaults)
         try:
             mc_cfg = self.config.domains.execution_position.metrics_collector
@@ -213,7 +214,8 @@ class ExecPosFSM(
                 raise ValueError("metrics_collector config is required")
             self.metrics_collector = MetricsCollector(
                 window_size_minutes=int(mc_cfg.window_size_minutes),
-                recent_rejections_minutes=int(mc_cfg.recent_rejections_minutes),
+                recent_rejections_minutes=int(
+                    mc_cfg.recent_rejections_minutes),
                 config=mc_cfg,
             )
         except (AttributeError, TypeError) as e:
@@ -229,8 +231,10 @@ class ExecPosFSM(
             idempotent_cfg = self.config.domains.execution_position.idempotent_cancel
             if idempotent_cfg is None or idempotent_cfg.max_retries is None:
                 raise ValueError("idempotent_cancel.max_retries is required")
-            self._idempotent_cancel_max_retries = int(idempotent_cfg.max_retries)
-            self._idempotent_cancel_helper = IdempotentCancelHelper(logger_inst=LOG)
+            self._idempotent_cancel_max_retries = int(
+                idempotent_cfg.max_retries)
+            self._idempotent_cancel_helper = IdempotentCancelHelper(
+                logger_inst=LOG)
         except (AttributeError, TypeError) as e:
             raise ValueError(
                 f"Failed to load idempotent_cancel config from domains.execution_position: {e}. "
@@ -259,7 +263,8 @@ class ExecPosFSM(
             raise ValueError(
                 "Missing required config: trading.execution.cooldown_after_close_ms."
             )
-        self._cooldown_after_close_sec = float(exec_cfg.cooldown_after_close_ms) / 1000.0
+        self._cooldown_after_close_sec = float(
+            exec_cfg.cooldown_after_close_ms) / 1000.0
         # EXP-FIX: Shadow check counter
         self._shadow_check_counter: int = 0
         # ALERT-FIX: Execution error tracking for circuit breaker
@@ -280,7 +285,7 @@ class ExecPosFSM(
             "gate_entry_blocked_tidy": 0,
             "gate_entry_allowed_tidy": 0,
         }
-        
+
         # TP/SL Intent Data Cache (PHASE A2 fix)
         # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
         self._pending_intent_data: Dict[str, Dict[str, Any]] = {}
@@ -300,7 +305,23 @@ class ExecPosFSM(
         # PnL + close_reason cache: populated on ORDER_FILLED, consumed on POSITION_CLOSED.
         self._last_realized_pnl_by_symbol: Dict[str, float] = {}
         self._last_close_reason_by_symbol: Dict[str, str] = {}
-        
+
+        # PHASE 1: Stable lifecycle identity per symbol for downstream neocortex correlation.
+        # Populated from OrderIndex.ref.idempotent_key at fill time (TASK40 block).
+        # Emitted as top-level 'lifecycle_id' in ORDER_FILLED and POSITION_CLOSED.
+        # Safety: Binance futures enforces net-position semantics (one positionAmt per symbol).
+        # Overwrite is safe because concurrent open positions per symbol are impossible
+        # under normal operation. Same safety profile as _last_lifecycle_rid_by_symbol above.
+        self._last_lifecycle_ikey_by_symbol: Dict[str, str] = {}
+
+        # PHASE 2: Cache exchange tradeId (updated every fill) and entry side (ENTRY fills only).
+        # tradeId is emitted as top-level 'trade_id' in POSITION_CLOSED for neocortex correlation.
+        # Entry side is cached only from ENTRY fills to prevent SL/TP fill sides from overwriting
+        # the original entry direction. Emitted as 'side' in POSITION_CLOSED (replaces "N/A").
+        # Safety: Same per-symbol overwrite profile as _last_lifecycle_ikey_by_symbol above.
+        self._last_trade_id_by_symbol: Dict[str, str] = {}
+        self._last_entry_side_by_symbol: Dict[str, str] = {}
+
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # SKIP IN BACKTEST: Do not restore live state into backtest
@@ -311,9 +332,11 @@ class ExecPosFSM(
                 restored = read_pending_brackets_from_wal()
                 if restored:
                     self._pending_brackets = restored
-                    LOG.info(f" [PHASE4] Restored {len(restored)} pending brackets from WAL")
+                    LOG.info(
+                        f" [PHASE4] Restored {len(restored)} pending brackets from WAL")
             except Exception as e:
-                LOG.warning(f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
+                LOG.warning(
+                    f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
 
         # EP-01.3-SUPERSEDE-ACK: Queued supersede state
         # When supersede cancels old entry, new open is queued until cancel confirmed
@@ -329,24 +352,26 @@ class ExecPosFSM(
 
         # Orphan-monitor configuration (Strict SSOT)
         # CFG-NO-DEFAULTS: All values must come from config.trading.execution.manage.orphan_monitor
-        self._orphan_monitor_cfg = getattr(self.config.trading.execution.manage, "orphan_monitor", None)
-        
+        self._orphan_monitor_cfg = getattr(
+            self.config.trading.execution.manage, "orphan_monitor", None)
+
         # If config is missing entirely, disable functionality (safe fallback for optional section)
         # But if section exists, it MUST have all fields (Pydantic enforced)
         self._orphan_cfg: Dict[str, Any] = {}
         if self._orphan_monitor_cfg:
-             self._orphan_cfg = {
+            self._orphan_cfg = {
                 "enabled": self._orphan_monitor_cfg.enabled,
                 "run_on_startup": self._orphan_monitor_cfg.run_on_startup,
                 "periodic_interval_sec": self._orphan_monitor_cfg.periodic_interval_sec,
                 "min_order_age_sec": self._orphan_monitor_cfg.min_order_age_sec,
                 "batch_cancel_limit": self._orphan_monitor_cfg.batch_cancel_limit,
                 "rate_limit_per_min": self._orphan_monitor_cfg.rate_limit_per_min,
-             }
-             LOG.info(f"OrphanMonitor configured: interval={self._orphan_cfg['periodic_interval_sec']}s")
+            }
+            LOG.info(
+                f"OrphanMonitor configured: interval={self._orphan_cfg['periodic_interval_sec']}s")
         else:
-             self._orphan_cfg = {"enabled": False}
-             LOG.info("OrphanMonitor disabled (no config)")
+            self._orphan_cfg = {"enabled": False}
+            LOG.info("OrphanMonitor disabled (no config)")
         # Orphan-monitor runtime counters/metrics
         self._orphan_metrics: Dict[str, int] = {
             "loops": 0,
@@ -363,11 +388,13 @@ class ExecPosFSM(
         self._orphan_rate_window_start: float = 0.0
         self._orphan_rate_count: int = 0
 
-
         self._guardian_cfg: Dict[str, Any] = self._resolve_guardian_config()
-        self._guardian_unified: bool = bool(dget(self._guardian_cfg, "unified", True))
-        self._guardian_emit_tidy_event: bool = bool(dget(self._guardian_cfg, "emit_tidy_event", True))
-        self._guardian_poll_interval_ms: int = int(dget(self._guardian_cfg, "poll_interval_ms", 500))
+        self._guardian_unified: bool = bool(
+            dget(self._guardian_cfg, "unified", True))
+        self._guardian_emit_tidy_event: bool = bool(
+            dget(self._guardian_cfg, "emit_tidy_event", True))
+        self._guardian_poll_interval_ms: int = int(
+            dget(self._guardian_cfg, "poll_interval_ms", 500))
         self._fsm_cleanup_enabled: bool = bool(
             self._get_config_value(
                 ["execution", "fsm_periodic_cleanup_enabled"], default=True)
@@ -387,12 +414,15 @@ class ExecPosFSM(
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
-        self.bus.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
+        self.bus.listen("EVT:FEATURES_CALCULATED",
+                        self._on_features_calculated)
         # EP-01: Subscribe to regime changes for dynamic risk adaptation
         self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
         # BUGFIX: Connect DecisionMaking intent to ExecutionPosition logic
-        self.bus.listen("EVT:TRADE_INTENT_PROPOSED", self._on_trade_intent_proposed)
-        self.bus.listen("EVT:TRADE_INTENT_REJECTED", self._on_trade_intent_rejected)
+        self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
+                        self._on_trade_intent_proposed)
+        self.bus.listen("EVT:TRADE_INTENT_REJECTED",
+                        self._on_trade_intent_rejected)
 
         # Phase 14D: DomainBridge for orphan domains
         self._domain_bridge = DomainBridge("execution_position", bus=self.bus)
@@ -405,10 +435,11 @@ class ExecPosFSM(
         # Initialize order timeout watchdog
         watchdog_config = self._get_config_value(["execution", "watchdog"])
         if not watchdog_config:
-            watchdog_config = self._get_config_value(["trading", "execution", "watchdog"])
+            watchdog_config = self._get_config_value(
+                ["trading", "execution", "watchdog"])
         if not watchdog_config:
             watchdog_config = self._get_config_value(["trading", "watchdog"])
-        
+
         if watchdog_config is None:
             watchdog_config = {}
 
@@ -438,7 +469,8 @@ class ExecPosFSM(
             # Check if override was applied
             try:
                 orders_cfg = self.config.trading.orders if self.config.trading else None
-                default_ttl_seconds = aget(orders_cfg, "default_ttl_seconds", None) if orders_cfg else None
+                default_ttl_seconds = aget(
+                    orders_cfg, "default_ttl_seconds", None) if orders_cfg else None
                 if default_ttl_seconds is not None:
                     ttl_source = "trading.orders.default_ttl_seconds"
             except Exception:
@@ -479,7 +511,8 @@ class ExecPosFSM(
         try:
             event_dedup_cfg = self.config.domains.execution_position.event_dedup
             if event_dedup_cfg is None:
-                raise ValueError("event_dedup config is required in domains.execution_position")
+                raise ValueError(
+                    "event_dedup config is required in domains.execution_position")
             dedup_max = event_dedup_cfg.max_size
             dedup_ttl = event_dedup_cfg.ttl_ms
         except (AttributeError, TypeError) as e:
@@ -488,7 +521,8 @@ class ExecPosFSM(
                 "Check domains.yaml has execution_position.event_dedup section."
             ) from e
 
-        self._processed_events = BoundedEventDeduper(max_size=dedup_max, ttl_ms=dedup_ttl)
+        self._processed_events = BoundedEventDeduper(
+            max_size=dedup_max, ttl_ms=dedup_ttl)
 
         # Initialize AlertManager for circuit breaker alerts
         self.alert_manager: Optional[AlertManager] = None
@@ -628,12 +662,12 @@ class ExecPosFSM(
     def _resolve_price(self, pld: Dict[str, Any], key: str) -> Optional[str]:
         """
         Smart extraction to handle flat (DecisionMaking) vs nested (Strategy) payloads.
-        
+
         Priority:
         1. Root level (normalized by DM)
         2. price_ctx (raw strategy output, e.g., MeanReversion)
         3. order nested object (legacy/alternative structure)
-        
+
         CFG-SMART-EXTRACT-01: Ensures stop_price/target_price are found regardless
         of where Strategy places them in the payload hierarchy.
         """
@@ -696,7 +730,8 @@ class ExecPosFSM(
             return None
 
         features_snap = self._last_features_cache.get(symbol) or {}
-        feats = features_snap.get("features", {}) if isinstance(features_snap, dict) else {}
+        feats = features_snap.get("features", {}) if isinstance(
+            features_snap, dict) else {}
         atr_14 = None
         atr_raw = feats.get("atr_14")
         if atr_raw not in (None, ""):
@@ -719,7 +754,8 @@ class ExecPosFSM(
                 / Decimal("10000")
             )
             atr_threshold_px = Decimal("0")
-            atr_mult = Decimal(str(getattr(guard_cfg, "min_price_improvement_atr_mult", 0.0)))
+            atr_mult = Decimal(
+                str(getattr(guard_cfg, "min_price_improvement_atr_mult", 0.0)))
             if atr_14 is not None and atr_mult > 0:
                 atr_threshold_px = atr_14 * atr_mult
             threshold_px = max(bps_threshold_px, atr_threshold_px)
@@ -746,7 +782,8 @@ class ExecPosFSM(
         }
         if hasattr(self, "_emit_observability_event"):
             try:
-                self._emit_observability_event("SUPERSEDE_REPRICE_GUARD", decision_summary)
+                self._emit_observability_event(
+                    "SUPERSEDE_REPRICE_GUARD", decision_summary)
             except Exception:
                 pass
         return decision_summary
@@ -785,8 +822,10 @@ class ExecPosFSM(
                 if new_regime not in meta.cancelable_regimes:
                     continue
             else:
-                side_may = set(getattr(adv, "may_cancel_regimes", {}).get(meta.side, []))
-                never = set(getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
+                side_may = set(
+                    getattr(adv, "may_cancel_regimes", {}).get(meta.side, []))
+                never = set(
+                    getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
                 if new_regime not in (side_may - never):
                     continue
 
@@ -829,7 +868,7 @@ class ExecPosFSM(
         """Idempotency helper with bounded memory."""
         if self._processed_events.seen(event_key):
             return False
-        
+
         now_ms = get_clock().now_ms()
         self._processed_events.add(event_key, now_ms)
         return True
@@ -851,7 +890,8 @@ class ExecPosFSM(
             if status in ("CANCELED", "CANCELLED"):
                 return True
         if isinstance(result, dict):
-            status = str(result["status"] if "status" in result else "").upper()
+            status = str(result["status"]
+                         if "status" in result else "").upper()
             if status == "CANCELED":
                 return True
             code = result.get("code")
@@ -891,7 +931,8 @@ class ExecPosFSM(
                 helper.log_cancel_result(res, str(order_id))
                 return res
             except Exception as e:
-                LOG.debug(f"IDEMPOTENT_CANCEL: helper failed, fallback to direct cancel: {e}")
+                LOG.debug(
+                    f"IDEMPOTENT_CANCEL: helper failed, fallback to direct cancel: {e}")
 
         return await self.adapter.cancel_order(symbol, order_id)
 
@@ -910,7 +951,8 @@ class ExecPosFSM(
         context: str = "",
     ) -> None:
         """Phase 14A: Delegated to EntryManager."""
-        self._entry_mgr.cancel_pending_entries_for_symbol(symbol, reason, context)
+        self._entry_mgr.cancel_pending_entries_for_symbol(
+            symbol, reason, context)
 
     def _cancel_all_pending_entries(self, reason: str = "CANCEL_PANIC_KILL") -> None:
         """Phase 14A: Delegated to EntryManager."""
@@ -1072,7 +1114,8 @@ class ExecPosFSM(
             if abs(position_amt) < 1e-10:
                 continue
 
-            entry_price_raw = pos_dict.get("entryPrice") or pos_dict.get("entry_price")
+            entry_price_raw = pos_dict.get(
+                "entryPrice") or pos_dict.get("entry_price")
             try:
                 entry_price = float(entry_price_raw or 0.0)
             except Exception:
@@ -1081,7 +1124,8 @@ class ExecPosFSM(
                 continue
 
             update_time_ms = int(
-                pos_dict.get("updateTime") or pos_dict.get("update_time_ms") or 0
+                pos_dict.get("updateTime") or pos_dict.get(
+                    "update_time_ms") or 0
             )
             if update_time_ms > 0 and (current_time_ms - update_time_ms) < int(cfg.grace_period_ms):
                 continue
@@ -1120,7 +1164,8 @@ class ExecPosFSM(
             else:
                 raw_orders = await self.adapter.get_open_orders(symbol)
         except Exception as e:
-            LOG.warning(f"[BRACKET-HEALTH] failed to inspect open orders for {symbol}: {e}")
+            LOG.warning(
+                f"[BRACKET-HEALTH] failed to inspect open orders for {symbol}: {e}")
             return True, True
 
         has_sl = False
@@ -1131,7 +1176,8 @@ class ExecPosFSM(
             elif isinstance(order, dict):
                 order_dict = order
             else:
-                order_dict = order.__dict__ if hasattr(order, "__dict__") else {}
+                order_dict = order.__dict__ if hasattr(
+                    order, "__dict__") else {}
 
             order_type = str(order_dict.get("type") or "").upper()
             reduce_only_raw = order_dict.get("reduceOnly", False)
@@ -1163,7 +1209,8 @@ class ExecPosFSM(
     ) -> Tuple[Optional[float], Optional[float]]:
         """Compute recovery brackets from the active strategy SSOT for the symbol."""
         try:
-            strategy_id = str(self._open_strategy_by_symbol.get(symbol) or "aurora")
+            strategy_id = str(
+                self._open_strategy_by_symbol.get(symbol) or "aurora")
             regime = str(self._last_regime_by_symbol.get(symbol) or "DEFAULT")
 
             sl_pct_eff: Optional[float] = None
@@ -1171,63 +1218,84 @@ class ExecPosFSM(
 
             if strategy_id == "md_amr" and getattr(self.config.strategies, "md_amr", None) is not None:
                 strategy_cfg = self.config.strategies.md_amr
-                asset_cfg = strategy_cfg.assets.get(symbol) if isinstance(strategy_cfg.assets, dict) else None
-                exit_cfg = getattr(asset_cfg, "exit", None) if asset_cfg is not None else None
+                asset_cfg = strategy_cfg.assets.get(symbol) if isinstance(
+                    strategy_cfg.assets, dict) else None
+                exit_cfg = getattr(asset_cfg, "exit",
+                                   None) if asset_cfg is not None else None
                 if exit_cfg is not None and getattr(exit_cfg, "sl_pct", None) is not None and getattr(exit_cfg, "tp_rr", None) is not None:
                     sl_pct_eff = float(exit_cfg.sl_pct)
                     tp_rr_eff = float(exit_cfg.tp_rr)
                     regime_tpsl = getattr(exit_cfg, "regime_tpsl", None)
                     try:
-                        regime_tpsl_enabled = bool(regime_tpsl.enabled) if regime_tpsl is not None else False
+                        regime_tpsl_enabled = bool(
+                            regime_tpsl.enabled) if regime_tpsl is not None else False
                     except AttributeError:
                         regime_tpsl_enabled = False
                     if regime_tpsl_enabled:
-                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
-                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(
+                            regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(
+                            regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
                         sl_pct_eff = sl_pct_eff * sl_mult
                         tp_rr_eff = tp_rr_eff * tp_mult
                         if getattr(regime_tpsl, "min_sl_pct", None) is not None:
-                            sl_pct_eff = max(float(regime_tpsl.min_sl_pct), sl_pct_eff)
+                            sl_pct_eff = max(
+                                float(regime_tpsl.min_sl_pct), sl_pct_eff)
                         if getattr(regime_tpsl, "max_sl_pct", None) is not None:
-                            sl_pct_eff = min(float(regime_tpsl.max_sl_pct), sl_pct_eff)
+                            sl_pct_eff = min(
+                                float(regime_tpsl.max_sl_pct), sl_pct_eff)
                         if getattr(regime_tpsl, "min_tp_rr", None) is not None:
-                            tp_rr_eff = max(float(regime_tpsl.min_tp_rr), tp_rr_eff)
+                            tp_rr_eff = max(
+                                float(regime_tpsl.min_tp_rr), tp_rr_eff)
                         if getattr(regime_tpsl, "max_tp_rr", None) is not None:
-                            tp_rr_eff = min(float(regime_tpsl.max_tp_rr), tp_rr_eff)
+                            tp_rr_eff = min(
+                                float(regime_tpsl.max_tp_rr), tp_rr_eff)
             else:
                 strategy_cfg = getattr(self.config.strategies, "aurora", None)
-                asset_cfg = strategy_cfg.assets.get(symbol) if strategy_cfg is not None else None
-                exit_cfg = getattr(asset_cfg, "exit", None) if asset_cfg is not None else None
-                tp_cfg = getattr(asset_cfg, "take_profit", None) if asset_cfg is not None else None
+                asset_cfg = strategy_cfg.assets.get(
+                    symbol) if strategy_cfg is not None else None
+                exit_cfg = getattr(asset_cfg, "exit",
+                                   None) if asset_cfg is not None else None
+                tp_cfg = getattr(asset_cfg, "take_profit",
+                                 None) if asset_cfg is not None else None
                 if exit_cfg is not None and getattr(exit_cfg, "sl_pct", None) is not None and tp_cfg is not None and getattr(tp_cfg, "tp_low_ratio", None) is not None:
                     sl_pct_eff = float(exit_cfg.sl_pct)
                     tp_rr_eff = float(tp_cfg.tp_low_ratio)
                     regime_tpsl = getattr(exit_cfg, "regime_tpsl", None)
                     try:
-                        regime_tpsl_enabled = bool(regime_tpsl.enabled) if regime_tpsl is not None else False
+                        regime_tpsl_enabled = bool(
+                            regime_tpsl.enabled) if regime_tpsl is not None else False
                     except AttributeError:
                         regime_tpsl_enabled = False
-                    regime_tpsl_mode = str(getattr(regime_tpsl, "mode", "")) if regime_tpsl is not None else ""
+                    regime_tpsl_mode = str(
+                        getattr(regime_tpsl, "mode", "")) if regime_tpsl is not None else ""
                     if regime_tpsl_enabled and regime_tpsl_mode == "pct_mult":
-                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
-                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        sl_mult = float((getattr(regime_tpsl, "sl_mult", {}) or {}).get(
+                            regime, (getattr(regime_tpsl, "sl_mult", {}) or {}).get("DEFAULT", 1.0)))
+                        tp_mult = float((getattr(regime_tpsl, "tp_mult", {}) or {}).get(
+                            regime, (getattr(regime_tpsl, "tp_mult", {}) or {}).get("DEFAULT", 1.0)))
                         sl_pct_eff = sl_pct_eff * sl_mult
                         tp_rr_eff = tp_rr_eff * tp_mult
                         if getattr(regime_tpsl, "min_sl_pct", None) is not None:
-                            sl_pct_eff = max(float(regime_tpsl.min_sl_pct), sl_pct_eff)
+                            sl_pct_eff = max(
+                                float(regime_tpsl.min_sl_pct), sl_pct_eff)
                         if getattr(regime_tpsl, "max_sl_pct", None) is not None:
-                            sl_pct_eff = min(float(regime_tpsl.max_sl_pct), sl_pct_eff)
+                            sl_pct_eff = min(
+                                float(regime_tpsl.max_sl_pct), sl_pct_eff)
                         if getattr(regime_tpsl, "min_tp_rr", None) is not None:
-                            tp_rr_eff = max(float(regime_tpsl.min_tp_rr), tp_rr_eff)
+                            tp_rr_eff = max(
+                                float(regime_tpsl.min_tp_rr), tp_rr_eff)
                         if getattr(regime_tpsl, "max_tp_rr", None) is not None:
-                            tp_rr_eff = min(float(regime_tpsl.max_tp_rr), tp_rr_eff)
+                            tp_rr_eff = min(
+                                float(regime_tpsl.max_tp_rr), tp_rr_eff)
 
             if sl_pct_eff is None or tp_rr_eff is None:
                 return None, None
 
             tp_pct_eff = sl_pct_eff * tp_rr_eff
             instrument_spec = self.config.instruments.get(symbol)
-            tick_size = Decimal(str(instrument_spec.tick_size)) if instrument_spec is not None else Decimal("0.01")
+            tick_size = Decimal(str(instrument_spec.tick_size)
+                                ) if instrument_spec is not None else Decimal("0.01")
 
             if side == "BUY":
                 sl_price = entry_price * (1.0 - sl_pct_eff)
@@ -1237,11 +1305,14 @@ class ExecPosFSM(
                 tp_price = entry_price * (1.0 - tp_pct_eff)
 
             return (
-                float(quantize_stop_price(sl_price, float(tick_size), side="SELL" if side == "BUY" else "BUY")),
-                float(quantize_stop_price(tp_price, float(tick_size), side="BUY" if side == "BUY" else "SELL")),
+                float(quantize_stop_price(sl_price, float(tick_size),
+                      side="SELL" if side == "BUY" else "BUY")),
+                float(quantize_stop_price(tp_price, float(tick_size),
+                      side="BUY" if side == "BUY" else "SELL")),
             )
         except Exception as e:
-            LOG.warning(f"[BRACKET-HEALTH] failed to compute recovery brackets for {symbol}: {e}")
+            LOG.warning(
+                f"[BRACKET-HEALTH] failed to compute recovery brackets for {symbol}: {e}")
             return None, None
 
     async def _place_health_check_brackets(
@@ -1280,7 +1351,8 @@ class ExecPosFSM(
                     else getattr(sl_resp, "order_id", "")
                 )
                 if sl_order_id:
-                    self._symbol_brackets.setdefault(symbol, {})["sl_order_id"] = sl_order_id
+                    self._symbol_brackets.setdefault(
+                        symbol, {})["sl_order_id"] = sl_order_id
                     self.order_guardian.register_bracket(
                         symbol=symbol,
                         parent_order_id=parent_order_id,
@@ -1292,7 +1364,8 @@ class ExecPosFSM(
                     )
                     placed = True
             except Exception as e:
-                LOG.warning(f"[BRACKET-HEALTH] SL recovery failed for {symbol}: {e}")
+                LOG.warning(
+                    f"[BRACKET-HEALTH] SL recovery failed for {symbol}: {e}")
 
         if need_tp:
             try:
@@ -1309,7 +1382,8 @@ class ExecPosFSM(
                     else getattr(tp_resp, "order_id", "")
                 )
                 if tp_order_id:
-                    self._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+                    self._symbol_brackets.setdefault(
+                        symbol, {})["tp_order_id"] = tp_order_id
                     self.order_guardian.register_bracket(
                         symbol=symbol,
                         parent_order_id=parent_order_id,
@@ -1321,7 +1395,8 @@ class ExecPosFSM(
                     )
                     placed = True
             except Exception as e:
-                LOG.warning(f"[BRACKET-HEALTH] TP recovery failed for {symbol}: {e}")
+                LOG.warning(
+                    f"[BRACKET-HEALTH] TP recovery failed for {symbol}: {e}")
 
         if placed:
             manage_flow = self.manage_flows.get(symbol)
@@ -1419,7 +1494,8 @@ class ExecPosFSM(
             now = get_clock().now_sec()
             last_close = float(self._last_any_position_closed_ts or 0.0)
             if last_close > 0 and self._cooldown_after_close_sec > 0 and (now - last_close) < self._cooldown_after_close_sec:
-                remaining = max(0.0, self._cooldown_after_close_sec - (now - last_close))
+                remaining = max(
+                    0.0, self._cooldown_after_close_sec - (now - last_close))
                 return Message(
                     op="ERR",
                     verb="OPEN",
@@ -1439,8 +1515,10 @@ class ExecPosFSM(
                 # TASK49/TASK40: If DecisionMaking reserved ENTRY_INTENT in OrderIndex,
                 # ensure we clear it when OPEN is blocked fail-closed (no order will be placed).
                 try:
-                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
-                        self.fsm.order_index.cancel_reservation(str(msg.rid))  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:
+                        self.fsm.order_index.cancel_reservation(
+                            str(msg.rid))  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 return exposure_err
@@ -1450,24 +1528,27 @@ class ExecPosFSM(
             # deferring with NRR-ORDER-IN-FLIGHT.
             if result is not None and getattr(result, "op", None) == "ERR":
                 try:
-                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
-                        self.fsm.order_index.cancel_reservation(str(msg.rid))  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:
+                        self.fsm.order_index.cancel_reservation(
+                            str(msg.rid))  # type: ignore[attr-defined]
                 except Exception:
                     pass
-            
+
             # PHASE A2 FIX: Capture TP/SL intent data if present
             if result and result.op == "DEC" and result.verb == "OPEN":
                 try:
                     pld = result.pld or {}
                     # Helper to check for real values (not None, not "None" string)
+
                     def _is_real_value(v) -> bool:
                         return v is not None and str(v).strip().lower() != "none"
-                    
+
                     # Extract values
                     raw_stop = pld.get("stop_price")
                     raw_target = pld.get("target_price")
                     raw_sl_pct = pld.get("sl_pct")
-                    
+
                     # Only cache if at least one value is real (not None/"None")
                     if _is_real_value(raw_stop) or _is_real_value(raw_target) or _is_real_value(raw_sl_pct):
                         intent_data = {
@@ -1477,9 +1558,11 @@ class ExecPosFSM(
                             "timestamp": get_clock().now_sec()
                         }
                         self._pending_intent_data[result.rid] = intent_data
-                        LOG.info(f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
+                        LOG.info(
+                            f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
                     else:
-                        LOG.debug(f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
+                        LOG.debug(
+                            f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
                 except Exception as e:
                     LOG.error(f"Failed to capture intent data: {e}")
         elif msg.verb == "TRADE_EXECUTED":
@@ -1514,36 +1597,43 @@ class ExecPosFSM(
             if result.verb == "BATCH":
                 # Handle batch decisions (e.g. OCO brackets)
                 batch_pld = result.pld or {}
-                messages = batch_pld["messages"] if "messages" in batch_pld else []
+                messages = batch_pld["messages"] if "messages" in batch_pld else [
+                ]
                 for msg_data in messages:
                     if isinstance(msg_data, dict):
                         # Reconstruct Message from dict
                         try:
                             sub_msg = Message(**msg_data)
                         except Exception as e:
-                            LOG.error(f"Failed to reconstruct BATCH message: {e}")
+                            LOG.error(
+                                f"Failed to reconstruct BATCH message: {e}")
                             continue
                     else:
                         sub_msg = msg_data
-                    
+
                     wal.append(sub_msg.model_dump())
                     if (not self.shadow_mode and self.adapter) or (sub_msg.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                         loop = self._get_async_loop()
                         if loop:
-                            self._submit_async(self._execute_decision(sub_msg), loop)
+                            self._submit_async(
+                                self._execute_decision(sub_msg), loop)
             else:
                 wal.append(result.model_dump())
                 #  FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
                 if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                     # Asynchronously execute the trade decision
                     loop = self._get_async_loop()
-                    LOG.info(f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
+                    LOG.info(
+                        f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
                     if loop:
-                        self._submit_async(self._execute_decision(result), loop)
+                        self._submit_async(
+                            self._execute_decision(result), loop)
                     else:
-                        LOG.error(f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
+                        LOG.error(
+                            f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
                 else:
-                    LOG.info(f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
+                    LOG.info(
+                        f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
 
         return result
 
@@ -1575,7 +1665,8 @@ class ExecPosFSM(
                 await emit_compat(self.fsm, fatal_msg, logger=LOG)
                 return
         elif domain_mode == "live":
-            LOG.warning(" LIVE execution mode - ensure you know what you're doing!")
+            LOG.warning(
+                " LIVE execution mode - ensure you know what you're doing!")
 
         # --- END GUARDRAIL ---
 
@@ -1613,7 +1704,8 @@ class ExecPosFSM(
                     if self._exec_error_counts[error_key] >= 2:
                         self.alert_manager.check_circuit_breaker(True, 600)
                 except Exception as alert_e:
-                    LOG.error(f"Error triggering execution error alert: {alert_e}")
+                    LOG.error(
+                        f"Error triggering execution error alert: {alert_e}")
 
             decision_pld = decision.pld or {}
             order_logger.write({
@@ -1641,12 +1733,14 @@ class ExecPosFSM(
                     why="adapter_execution_failed")
                 wal.append(order_rejected_msg.model_dump())
             except Exception as wal_e:
-                LOG.warning(f"Failed to write EVT:ORDER_REJECTED to WAL: {wal_e}")
+                LOG.warning(
+                    f"Failed to write EVT:ORDER_REJECTED to WAL: {wal_e}")
 
             exec_failed_msg = Message(
                 op="ERR", verb="EXECUTION_FAILED", src="execution_position",
                 dst="monitoring", rid=decision.rid,
-                pld={"error": str(e), "original_decision": decision.model_dump()},
+                pld={"error": str(
+                    e), "original_decision": decision.model_dump()},
                 why="Execution failed due to adapter error")
             await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
 

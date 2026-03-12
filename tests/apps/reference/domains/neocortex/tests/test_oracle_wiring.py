@@ -58,6 +58,7 @@ FEATURE_LIST = [
     "price",
     "volatility_state",
 ]
+BASE_TS = 1_700_000_000.0
 
 
 def _make_system_config(tmp_path: Path) -> dict:
@@ -194,6 +195,7 @@ class MockBrainBridge:
         self.confidence = confidence
         self.value = value
         self._train_ppo_calls: List[Any] = []
+        self._train_regime_supervision_calls: List[Any] = []
         self.action_names_5 = [
             "TREND_UP", "TREND_DOWN", "MEAN_REVERSION",
             "HIGH_VOLATILITY", "EXHAUSTION",
@@ -222,6 +224,13 @@ class MockBrainBridge:
     async def train_ppo_async(self, episodes):
         self._train_ppo_calls.append(episodes)
         return {"loss_pi": 0.1, "loss_v": 0.2, "entropy": 0.5, "episodes_processed": len(episodes)}
+
+    async def train_policy_async(self, episodes):
+        return await self.train_ppo_async(episodes)
+
+    async def train_regime_supervision_async(self, episodes):
+        self._train_regime_supervision_calls.append(episodes)
+        return {"loss": 0.1, "episodes_processed": len(episodes)}
 
     async def save_async(self, path):
         return True
@@ -270,9 +279,14 @@ def _make_features_payload(
     volatility_state: float = 0.0,
 ) -> Dict[str, Any]:
     """Build a minimal features payload for handle_features."""
+    ts = float(timestamp)
+    if ts < 1e9:
+        ts = BASE_TS + ts
     return {
         "symbol": symbol,
-        "timestamp": timestamp,
+        "timestamp": ts,
+        "ts": ts,
+        "event_ts_ms": int(round(ts * 1000.0)),
         "reward_signal": 0.0,
         "features": {
             "volatility_atr_pct": atr_pct,
@@ -382,7 +396,7 @@ class TestOracleSettlement:
             )
             await adapter.handle_features(payload)
 
-        assert len(adapter._completed_episodes) == 0
+        assert len(adapter._regime_supervision_samples) == 0
         assert adapter._oracle_settlements == 0
 
     @pytest.mark.asyncio
@@ -427,7 +441,7 @@ class TestOracleSettlement:
         original_maybe_dream = adapter._maybe_dream
 
         async def capture_dream():
-            captured_episodes.extend(list(adapter._completed_episodes))
+            captured_episodes.extend(list(adapter._regime_supervision_samples))
             await original_maybe_dream()
 
         adapter._maybe_dream = capture_dream
@@ -444,7 +458,7 @@ class TestOracleSettlement:
 
         assert len(captured_episodes) >= 1
         ep = captured_episodes[0]
-        assert ep["action"] == HIGH_VOLATILITY
+        assert ep["predicted_regime"] == HIGH_VOLATILITY
         # Correct prediction gets positive reward (1.0 * 2.0 = 2.0)
         assert ep["reward"] > 0
 
@@ -467,7 +481,7 @@ class TestOracleSettlement:
         original_maybe_dream = adapter._maybe_dream
 
         async def capture_dream():
-            captured_episodes.extend(list(adapter._completed_episodes))
+            captured_episodes.extend(list(adapter._regime_supervision_samples))
             await original_maybe_dream()
 
         adapter._maybe_dream = capture_dream
@@ -485,7 +499,7 @@ class TestOracleSettlement:
 
         assert len(captured_episodes) >= 1
         ep = captured_episodes[0]
-        assert ep["action"] == TREND_UP
+        assert ep["predicted_regime"] == TREND_UP
         assert ep["reward"] < 0  # Wrong prediction: -0.5
 
     @pytest.mark.asyncio
@@ -495,7 +509,7 @@ class TestOracleSettlement:
         # Patch _maybe_dream to just clear episodes (no actual PPO training)
 
         async def noop_dream():
-            adapter._completed_episodes.clear()
+            adapter._regime_supervision_samples.clear()
 
         adapter._maybe_dream = noop_dream
 
@@ -574,8 +588,10 @@ class TestPnlModeUnchanged:
         # Oracle should not have been touched
         assert adapter._oracle_settlements == 0
         assert adapter._oracle_ring_buffer is None
-        # Shadow intents should still work
-        assert adapter._shadow_intents_emitted == 10
+        # Shadow intents still work, but offline replay decimates observational emissions.
+        assert adapter._shadow_intents_generated == 10
+        assert adapter._shadow_intents_emitted == 1
+        assert adapter._shadow_intents_decimated == 9
 
     @pytest.mark.asyncio
     async def test_pnl_mode_add_episode_still_works(self, tmp_dir):
@@ -589,15 +605,20 @@ class TestPnlModeUnchanged:
         )
         episode = {
             "symbol": "BTCUSDT",
-            "timestamp": 1.0,
+            "timestamp": BASE_TS + 1.0,
+            "event_ts_ms": int(round((BASE_TS + 1.0) * 1000.0)),
+            "close_event_ts_ms": int(round((BASE_TS + 1.0) * 1000.0)),
+            "trade_id": "trade-1",
+            "lifecycle_id": "lc-1",
             "side": "LONG",
             "reward": 0.5,
             "pnl": 10.0,
             "features": {"mid_price": 100.0},
         }
         await adapter.add_completed_episode(episode)
-        # dream_threshold is 1, so it should have triggered dream
-        assert adapter._dreams_triggered >= 1
+        # P4 routes completed episodes into execution-quality diagnostics, not dream/PPO.
+        assert adapter._dreams_triggered == 0
+        assert len(adapter._execution_quality_samples) == 1
 
 
 # =============================================================================

@@ -49,6 +49,20 @@ def _assign_mr_to_btc(config_dir: Path) -> None:
     payload.setdefault("version", "1.0.0")
     _yaml_dump(strategies_path, payload)
 
+    mr_path = config_dir / "strategies" / "mean_reversion.yaml"
+    mr_payload = _yaml_load(mr_path)
+    mr_payload.setdefault("mean_reversion", {})
+    mr_root = mr_payload["mean_reversion"]
+    assert isinstance(mr_root, dict)
+    mr_root.setdefault("assets", {})
+    assets = mr_root["assets"]
+    assert isinstance(assets, dict)
+    assets.setdefault("BTCUSDT", {})
+    btc = assets["BTCUSDT"]
+    assert isinstance(btc, dict)
+    btc["enabled"] = True
+    _yaml_dump(mr_path, mr_payload)
+
 
 class TestTimeframeSecSSOTPrecedence:
     @pytest.mark.skip(reason="Test logic flawed: aurora.assets.timeframe_sec doesn't override mean_reversion.timeframe_sec - different config scopes")

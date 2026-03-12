@@ -19,13 +19,17 @@ from unittest.mock import MagicMock, patch
 from apps.reference.domains.neocortex.config_models import load_config, NeuroConfig
 
 
+def _neocortex_config_dir() -> Path:
+    repo_root = Path(__file__).resolve().parents[6]
+    return repo_root / "apps" / "reference" / "domains" / "neocortex" / "config"
+
+
 class TestCheckpointFrequency:
     """Test 1: Verify checkpoint configuration and creation."""
     
     @pytest.fixture
     def config(self):
-        config_dir = Path(__file__).parent.parent / "config"
-        return load_config(config_dir)
+        return load_config(_neocortex_config_dir())
     
     def test_checkpoint_frequency_configured(self, config):
         """Verify checkpoint_every_n_steps is set and reasonable."""
@@ -61,9 +65,8 @@ class TestPPOWeightUpdate:
             import torch
         except ImportError:
             pytest.skip("PyTorch not available")
-        
-        config_dir = Path(__file__).parent.parent / "config"
-        config = load_config(config_dir)
+
+        config = load_config(_neocortex_config_dir())
         
         from apps.reference.domains.neocortex.logic.brain.core import BrainCore
         brain = BrainCore(config.neuro, device="cpu", rng_seed=42)
@@ -99,6 +102,7 @@ class TestPPOWeightUpdate:
         episodes = []
         for i in range(50):
             episodes.append({
+                "objective_family": "policy",
                 "features_vector": np.random.randn(brain_core.config.vae.input_dim).tolist(),
                 "side": "LONG" if i % 2 == 0 else "SHORT",
                 "reward": 1.0 if i % 2 == 0 else -1.0,  # Clear positive/negative signal
@@ -179,9 +183,8 @@ class TestVAETraining:
             import torch
         except ImportError:
             pytest.skip("PyTorch not available")
-        
-        config_dir = Path(__file__).parent.parent / "config"
-        config = load_config(config_dir)
+
+        config = load_config(_neocortex_config_dir())
         
         from apps.reference.domains.neocortex.logic.brain.core import BrainCore
         return BrainCore(config.neuro, device="cpu", rng_seed=42)

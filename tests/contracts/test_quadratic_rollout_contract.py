@@ -184,3 +184,21 @@ def test_startup_quadratic_rollout_report_is_operator_visible() -> None:
     assert report["mode"] == "v2_rollback"
     assert report["rollback_armed_status"] == "ARMED"
     assert report["effective_live_scoring_version"] == "v2"
+
+
+def test_untyped_invalid_scoring_version_falls_back_to_v2(caplog) -> None:
+    decision_cfg = SimpleNamespace(
+        scoring_version="typo",
+        quadratic_rollout=SimpleNamespace(
+            shadow_enabled=False,
+            rollback_armed=False,
+            rollback_reason_chain=[],
+        ),
+    )
+
+    with caplog.at_level("CRITICAL", logger="quadratic_rollout"):
+        requested = resolve_requested_quadratic_rollout(decision_cfg)
+
+    assert requested.requested_scoring_version == "v2"
+    assert requested.effective_live_scoring_version == "v2"
+    assert "falling back to 'v2'" in caplog.text

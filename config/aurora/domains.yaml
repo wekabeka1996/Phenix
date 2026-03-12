@@ -5,7 +5,7 @@ debug:
   disable_positions_stale_gate: false
 
   # DEV/SHADOW ONLY: disables daily drawdown/loss limit gate. Never enable in live.
-  disable_daily_loss_limit: true
+  disable_daily_loss_limit: false
 
 decision_making:
   # TASK-ZOMBIE-FIX: Removed dead fields (kappa_mode, liquidity_kappa, risk_fraction_q, liquidity_kappa_mode)

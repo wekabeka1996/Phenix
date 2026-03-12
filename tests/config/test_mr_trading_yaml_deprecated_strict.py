@@ -39,6 +39,24 @@ def _set_mean_reversion_in_trading_yaml(config_dir: Path, mr_config: dict | None
     trading_path.write_text(yaml.dump(data), encoding="utf-8")
 
 
+def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    payload = yaml.safe_load(mr_profile_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise AssertionError("mean_reversion.yaml did not parse to a dict")
+    mr_root = payload.setdefault("mean_reversion", {})
+    if not isinstance(mr_root, dict):
+        raise AssertionError("mean_reversion root is not a dict")
+    assets = mr_root.setdefault("assets", {})
+    if not isinstance(assets, dict):
+        raise AssertionError("mean_reversion.assets is not a dict")
+    asset_cfg = assets.setdefault(symbol, {})
+    if not isinstance(asset_cfg, dict):
+        raise AssertionError(f"mean_reversion.assets.{symbol} is not a dict")
+    asset_cfg["enabled"] = True
+    mr_profile_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 class TestMeanReversionTradingYamlDeprecated:
     """Test that mean_reversion in trading.yaml is detected as deprecated."""
     
@@ -144,6 +162,7 @@ class TestMeanReversionTradingYamlDeprecated:
         (strategies_dir / "mean_reversion.yaml").write_text(
             _read_canonical_strategy_profile("mean_reversion.yaml"), encoding="utf-8"
         )
+        _enable_mean_reversion_asset(config_dir, "BTCUSDT")
         
         # Assign MR in strategies.yaml
         strategies_yaml = {

@@ -87,6 +87,7 @@ def test_basis_bar_flows_into_quadratic_with_pillar_sum() -> None:
     }
 
     handler = AuroraHandler(config=cfg, emit_fn=fsm.emit, strategy_id="aurora")
+    handler._basis_required_bars_override = 0
     symbol = "BTCUSDT"
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(time.time() * 1000)
 

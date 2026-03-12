@@ -6,6 +6,15 @@ from unittest.mock import MagicMock
 from apps.reference.config_models import AuroraConfig, DomainsConfig
 from apps.reference.config_loader import ConfigLoader
 
+
+# Legacy standalone harnesses with global sys.modules shims pollute collection
+# and break the real vfoundation package imports used by the core suite.
+collect_ignore = [
+    "apps/reference/tests/gauntlet_unit.py",
+    "apps/reference/tests/test_phase9_wiring.py",
+    "verify_fsm_sl_fix.py",
+]
+
 def pytest_pyfunc_call(pyfuncitem):  # type: ignore[override]
     """Minimal async test runner (no pytest-asyncio dependency).
 

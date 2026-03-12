@@ -42,6 +42,20 @@ def _write_strategies_yaml(config_dir: Path, *, assignments: dict[str, list[str]
     (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml), encoding="utf-8")
 
 
+def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    payload = yaml.safe_load(mr_profile_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    mr_root = payload.setdefault("mean_reversion", {})
+    assert isinstance(mr_root, dict)
+    assets = mr_root.setdefault("assets", {})
+    assert isinstance(assets, dict)
+    asset_cfg = assets.setdefault(symbol, {})
+    assert isinstance(asset_cfg, dict)
+    asset_cfg["enabled"] = True
+    mr_profile_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profile=True, with_aurora=True):
     """Create config based on canonical SSOT, then toggle assignments/profile presence."""
     config_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +74,9 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
 
     strategies_dir = config_dir / "strategies"
     strategies_dir.mkdir(parents=True, exist_ok=True)
+
+    if with_mr_assignment and with_mr_profile:
+        _enable_mean_reversion_asset(config_dir, "BTCUSDT")
 
     if not with_mr_profile:
         mr_path = strategies_dir / "mean_reversion.yaml"

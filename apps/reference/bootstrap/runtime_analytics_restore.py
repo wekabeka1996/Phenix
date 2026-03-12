@@ -156,6 +156,8 @@ def _build_default_snapshot(
     has_open_position: bool,
     strategy_local_hint: Mapping[str, Any] | None = None,
 ) -> StrategyAnalyticsRestoreSnapshot:
+    # FIX:N-1 — Startup restore truth must come from live boot evidence.
+    # Strategy-published analytics payloads do not prove owner-domain restore.
     execution_status = (
         restored_restore_status(
             why=["execution_snapshot_loaded"],
@@ -257,16 +259,19 @@ def _build_snapshot_from_explicit_payload(
     symbol: str,
     updated_at: int | None,
     source: str,
+    snapshot_loaded: bool,
     has_open_position: bool,
     payload: Mapping[str, Any],
+    strategy_local_hint: Mapping[str, Any] | None = None,
 ) -> StrategyAnalyticsRestoreSnapshot:
     scopes_payload = payload.get("scopes")
-    scopes: dict[str, Any] = {}
     if isinstance(scopes_payload, Mapping):
-        for scope_name, raw_status in scopes_payload.items():
+        for raw_status in scopes_payload.values():
             if not isinstance(raw_status, Mapping):
                 continue
-            scopes[str(scope_name)] = _normalize_scope_status(
+            # FIX:N-1 — Validate explicit scope shape defensively, but rebuild
+            # truthful startup scopes from live boot evidence below.
+            _normalize_scope_status(
                 state=str(raw_status.get("state") or "COLD"),
                 why=raw_status.get("why"),
                 updated_at=(
@@ -282,17 +287,15 @@ def _build_snapshot_from_explicit_payload(
                 ),
             )
 
-    for required_scope in RuntimeAnalyticsRestoreScope:
-        scopes.setdefault(
-            required_scope.value,
-            cold_restore_status(
-                why=[f"{required_scope.value}_restore_missing"],
-                updated_at=updated_at,
-                source=str(payload.get("source") or source),
-                evidence_ref=f"{required_scope.value}:{strategy_id}:{symbol}:{updated_at}",
-            ),
-        )
-
+    truthful_snapshot = _build_default_snapshot(
+        strategy_id=strategy_id,
+        symbol=symbol,
+        updated_at=updated_at,
+        source=source,
+        snapshot_loaded=snapshot_loaded,
+        has_open_position=has_open_position,
+        strategy_local_hint=strategy_local_hint,
+    )
     return make_strategy_restore_snapshot(
         strategy_id=strategy_id,
         symbol=symbol,
@@ -301,10 +304,9 @@ def _build_snapshot_from_explicit_payload(
             if payload.get("updated_at") is not None
             else updated_at
         ),
-        scopes=scopes,
+        scopes=truthful_snapshot.scopes,
         source=str(payload.get("source") or source),
         has_open_position=has_open_position,
-        blocking_reason_chain=payload.get("blocking_reason_chain"),
     )
 
 
@@ -330,16 +332,6 @@ def build_startup_analytics_restore_report(
         for strategy_id in strategy_ids:
             key = _snapshot_key(strategy_id, symbol)
             explicit_payload = explicit.get(key)
-            if isinstance(explicit_payload, Mapping):
-                snapshots[key] = _build_snapshot_from_explicit_payload(
-                    strategy_id=strategy_id,
-                    symbol=symbol,
-                    updated_at=updated_at,
-                    source=source,
-                    has_open_position=has_open_position,
-                    payload=explicit_payload,
-                )
-                continue
 
             strategy_local_hint = None
             handler = strategy_handlers.get(str(strategy_id))
@@ -354,6 +346,19 @@ def build_startup_analytics_restore_report(
                         RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE.value,
                         raw_hint,
                     )
+
+            if isinstance(explicit_payload, Mapping):
+                snapshots[key] = _build_snapshot_from_explicit_payload(
+                    strategy_id=strategy_id,
+                    symbol=symbol,
+                    updated_at=updated_at,
+                    source=source,
+                    snapshot_loaded=snapshot_loaded,
+                    has_open_position=has_open_position,
+                    payload=explicit_payload,
+                    strategy_local_hint=strategy_local_hint,
+                )
+                continue
 
             snapshots[key] = _build_default_snapshot(
                 strategy_id=strategy_id,

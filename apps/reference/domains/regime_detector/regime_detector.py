@@ -14,12 +14,16 @@ REG-FIX-01: BAR-ONLY SSOT
 
 import logging
 from collections import deque, defaultdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Optional
 
 from vfoundation.core.protocol import Message
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    extract_canonical_bar_identity,
+)
 from apps.reference.core.time.clock import Clock, LiveClock
 from apps.reference.contracts.runtime_regime_layers import (
     RuntimeRegimeClock,
@@ -41,15 +45,15 @@ class RegimeDetector:
     - Mean-reversion detection (planned)
 
     Emits EVT:REGIME_DETECTED events with confidence scores.
-    
+
     REG-FIX-01: BAR-ONLY mode
     - Only processes events where tf_sec == basis_tf_sec (default: 300 for 5m bars)
     - Clock injection for deterministic testing
     """
 
     def __init__(
-        self, 
-        config: AuroraConfig, 
+        self,
+        config: AuroraConfig,
         fsm,
         *,
         clock: Optional[Clock] = None,
@@ -67,17 +71,17 @@ class RegimeDetector:
             raise TypeError("RegimeDetector requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         # REG-FIX-01: Clock abstraction (T2B-08 pattern)
         self._clock: Clock = clock or LiveClock()
-        
+
         # REG-FIX-01: BAR-ONLY SSOT - required fields (fail-closed)
         self._basis_tf_sec: int = config.basis_tf_sec
         self._uncertain_cutoff: float = config.uncertain_cutoff
         self.logger.info(
             f"RegimeDetector: basis_tf_sec={self._basis_tf_sec}, uncertain_cutoff={self._uncertain_cutoff}"
         )
-        
+
         self._subscribed = False
         self._last_emitted_regime: Dict[str, str] = {}
         self._last_full_ready: Dict[str, bool] = {}
@@ -133,13 +137,18 @@ class RegimeDetector:
             lambda: deque(maxlen=self.atr_sma_length))
         self._atr_last: Dict[str, Decimal] = {}
         self._ticks_seen: Dict[str, int] = defaultdict(int)
-        
+        self._last_basis_close_boundary_ts_ms: Dict[str, int] = defaultdict(int)
+
         # HYSTERESIS-SLOPE-GATE-01: State storage
         self._hysteresis_stable: Dict[str, str] = {}  # symbol -> stable_regime
-        self._hysteresis_pending: Dict[str, str] = {}  # symbol -> pending_regime
-        self._hysteresis_count: Dict[str, int] = defaultdict(int)  # confirm count
-        self._stable_confidence: Dict[str, Decimal] = {}  # symbol -> stable confidence
-        self._vol_ratio_buf: Dict[str, deque] = defaultdict(lambda: deque(maxlen=6))
+        # symbol -> pending_regime
+        self._hysteresis_pending: Dict[str, str] = {}
+        self._hysteresis_count: Dict[str, int] = defaultdict(
+            int)  # confirm count
+        # symbol -> stable confidence
+        self._stable_confidence: Dict[str, Decimal] = {}
+        self._vol_ratio_buf: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=6))
         self._slope_reject_count: Dict[str, int] = defaultdict(int)
 
         self.logger.info(
@@ -152,7 +161,8 @@ class RegimeDetector:
             return
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.handle_event)
         self._subscribed = True
-        self.logger.info("RegimeDetector subscribed to EVT:FEATURES_CALCULATED")
+        self.logger.info(
+            "RegimeDetector subscribed to EVT:FEATURES_CALCULATED")
 
     def start(self) -> None:
         self._subscribe_once()
@@ -180,7 +190,8 @@ class RegimeDetector:
 
         # Heuristic formula: spread / base * multiplier
         # Multiplier of 20.0 empirically tuned for realistic signals
-        confidence_multiplier = Decimal(str(self.model_config.confidence_multiplier))
+        confidence_multiplier = Decimal(
+            str(self.model_config.confidence_multiplier))
 
         # For test case: (4050-3900)/3900 = 0.0385 * 20 = 0.77
         spread_ratio = (sma_short - sma_long) / sma_long
@@ -228,16 +239,18 @@ class RegimeDetector:
         pld = event.pld or {}
         symbol = pld.get("symbol")
         ts = pld.get("ts")
-        features: Dict[str, Any] = (pld.get("features") or {}) if isinstance(pld, dict) else {}
+        features: Dict[str, Any] = (
+            pld.get("features") or {}) if isinstance(pld, dict) else {}
 
         # REG-FIX-01: BAR-ONLY filter - ignore non-basis timeframes
         tf_sec = pld.get("tf_sec")
-        
+
         # Silent ignore tick-level events (tf_sec=0) - NOT a data quality issue
         if tf_sec == 0:
-            self.logger.debug(f"[{symbol}] RegimeDetector: ignoring tick-level features (tf_sec=0)")
+            self.logger.debug(
+                f"[{symbol}] RegimeDetector: ignoring tick-level features (tf_sec=0)")
             return
-            
+
         if tf_sec != self._basis_tf_sec:
             self.logger.debug(
                 f"[{symbol}] RegimeDetector: ignoring tf_sec={tf_sec} (basis={self._basis_tf_sec})"
@@ -245,10 +258,12 @@ class RegimeDetector:
             return
 
         if not symbol or ts is None:
-            inc_data_quality_drop(domain="regime_detector", reason="missing_symbol_or_ts")
+            inc_data_quality_drop(domain="regime_detector",
+                                  reason="missing_symbol_or_ts")
             return
         if not isinstance(features, dict) or not features:
-            inc_data_quality_drop(domain="regime_detector", reason="missing_features_dict")
+            inc_data_quality_drop(domain="regime_detector",
+                                  reason="missing_features_dict")
             return
 
         try:
@@ -257,23 +272,47 @@ class RegimeDetector:
             inc_data_quality_drop(domain="regime_detector", reason="bad_ts")
             return
 
+        bar_identity = extract_canonical_bar_identity(
+            pld,
+            default_symbol=str(symbol),
+            default_timeframe_sec=int(self._basis_tf_sec),
+            default_source_mode=RuntimeBarSourceMode.LIVE,
+        )
+        close_boundary_ts_ms = (
+            int(bar_identity.close_boundary_ts_ms)
+            if bar_identity is not None
+            else int(pld.get("close_boundary_ts_ms") or (ts_ms + 1))
+        )
+        last_boundary_ts_ms = int(
+            self._last_basis_close_boundary_ts_ms.get(symbol, 0) or 0
+        )
+        if close_boundary_ts_ms > 0 and last_boundary_ts_ms > 0 and close_boundary_ts_ms <= last_boundary_ts_ms:
+            self.logger.debug(
+                "[%s] RegimeDetector: duplicate basis bar ignored boundary=%s last=%s",
+                symbol,
+                close_boundary_ts_ms,
+                last_boundary_ts_ms,
+            )
+            return
+
         self._ticks_seen[symbol] += 1
 
         # REG-FIX-01: Clock abstraction for deterministic testing
         # Wall-clock for freshness/latency, monotonic for liveness heartbeat.
         now_wall_ms = self._clock.now_ms()
         now_monotonic_ms = int(self._clock.monotonic() * 1000)
-        
+
         # BAR-TTL-REFORM-02: Use bar_ttl_ms for bar events, tick_ttl_ms for ticks
         # This mirrors the fix in decision_making.py Gate 5
         sys_md = self.config.system.market_data if self.config.system else None
         if tf_sec and tf_sec > 0:
             # Bar event - use lenient bar TTL
-            ttl_ms = int(getattr(sys_md, "bar_ttl_ms", 10000)) if sys_md else 10000
+            ttl_ms = int(getattr(sys_md, "bar_ttl_ms", 10000)
+                         ) if sys_md else 10000
         else:
             # Tick event - use strict tick TTL
             ttl_ms = int(sys_md.tick_ttl_ms) if sys_md else 0
-        
+
         data_drops: list[str] = []
         data_notes: list[str] = []
 
@@ -281,11 +320,13 @@ class RegimeDetector:
         is_stale = False
         if ttl_ms > 0 and (now_wall_ms - ts_ms) > ttl_ms:
             data_drops.append("stale_features")
-            inc_data_quality_drop(domain="regime_detector", reason="stale_features")
+            inc_data_quality_drop(domain="regime_detector",
+                                  reason="stale_features")
             is_stale = True
 
         if "price" not in features:
-            inc_data_quality_drop(domain="regime_detector", reason="missing_price")
+            inc_data_quality_drop(domain="regime_detector",
+                                  reason="missing_price")
             return
         try:
             price = Decimal(str(features["price"]))
@@ -328,23 +369,30 @@ class RegimeDetector:
             self._last_emitted_regime[symbol] = "UNCERTAIN"
             return
 
+        if close_boundary_ts_ms > 0:
+            self._last_basis_close_boundary_ts_ms[symbol] = close_boundary_ts_ms
+
         # Feed price buffer (only with fresh, valid data)
         self._price_buf[symbol].append(price)
 
         # Compute SMA if not provided (strict: no fallbacks to magic, only buffer-derived)
         sma_short_raw = features.get("sma_short")
         sma_long_raw = features.get("sma_long")
-        sma_short = Decimal(str(sma_short_raw)) if sma_short_raw is not None else Decimal("0")
-        sma_long = Decimal(str(sma_long_raw)) if sma_long_raw is not None else Decimal("0")
+        sma_short = Decimal(
+            str(sma_short_raw)) if sma_short_raw is not None else Decimal("0")
+        sma_long = Decimal(
+            str(sma_long_raw)) if sma_long_raw is not None else Decimal("0")
 
         sma_short_ready = sma_short > 0
         sma_long_ready = sma_long > 0
 
         if (not sma_short_ready) and len(self._price_buf[symbol]) >= self.sma_short_period:
-            sma_short = sum(list(self._price_buf[symbol])[-self.sma_short_period:]) / Decimal(str(self.sma_short_period))
+            sma_short = sum(list(
+                self._price_buf[symbol])[-self.sma_short_period:]) / Decimal(str(self.sma_short_period))
             sma_short_ready = True
         if (not sma_long_ready) and len(self._price_buf[symbol]) >= self.sma_long_period:
-            sma_long = sum(list(self._price_buf[symbol])[-self.sma_long_period:]) / Decimal(str(self.sma_long_period))
+            sma_long = sum(list(
+                self._price_buf[symbol])[-self.sma_long_period:]) / Decimal(str(self.sma_long_period))
             sma_long_ready = True
 
         # ATR / volatility pipeline (Wilder). Prefer OHLC TR; close-to-close only with explicit opt-in.
@@ -359,7 +407,8 @@ class RegimeDetector:
             low_raw = features.get("low")
             close = price
 
-            prev_close = self._price_buf[symbol][-2] if len(self._price_buf[symbol]) >= 2 else None
+            prev_close = self._price_buf[symbol][-2] if len(
+                self._price_buf[symbol]) >= 2 else None
             tr: Decimal | None = None
 
             if high_raw is not None and low_raw is not None and prev_close is not None:
@@ -376,7 +425,8 @@ class RegimeDetector:
                 data_notes.append("atr_close_to_close")
             elif prev_close is not None and (not self._allow_close_to_close_atr):
                 data_drops.append("atr_missing_ohlc")
-                inc_data_quality_drop(domain="regime_detector", reason="atr_missing_ohlc")
+                inc_data_quality_drop(
+                    domain="regime_detector", reason="atr_missing_ohlc")
 
             if tr is not None:
                 self._tr_buf[symbol].append(tr)
@@ -384,7 +434,8 @@ class RegimeDetector:
                 last_atr = self._atr_last.get(symbol)
                 if last_atr is None:
                     if len(self._tr_buf[symbol]) >= self.atr_period:
-                        init_atr = sum(list(self._tr_buf[symbol])[-self.atr_period:]) / Decimal(str(self.atr_period))
+                        init_atr = sum(
+                            list(self._tr_buf[symbol])[-self.atr_period:]) / Decimal(str(self.atr_period))
                         self._atr_last[symbol] = init_atr
                         atr_val = init_atr
                         atr_ready = True
@@ -397,7 +448,8 @@ class RegimeDetector:
                 if atr_ready and atr_val is not None:
                     self._atr_buf[symbol].append(atr_val)
                     if len(self._atr_buf[symbol]) >= self.atr_sma_length:
-                        atr_baseline = sum(list(self._atr_buf[symbol])[-self.atr_sma_length:]) / Decimal(str(self.atr_sma_length))
+                        atr_baseline = sum(list(
+                            self._atr_buf[symbol])[-self.atr_sma_length:]) / Decimal(str(self.atr_sma_length))
                         atr_baseline_ready = True
                     else:
                         data_notes.append("atr_baseline_insufficient")
@@ -428,7 +480,8 @@ class RegimeDetector:
                 regime = "HIGH_VOLATILITY"
                 source_model = "volatility_v2"
                 excess = vol_ratio - threshold_multiplier
-                conf_mult = Decimal(str(vol_cfg.high_vol_confidence_multiplier))
+                conf_mult = Decimal(
+                    str(vol_cfg.high_vol_confidence_multiplier))
                 confidence = min(conf_max, conf_min + excess * conf_mult)
             elif vol_ratio < low_vol_multiplier:
                 regime = "LOW_VOLATILITY"
@@ -436,16 +489,16 @@ class RegimeDetector:
                 calm = low_vol_multiplier - vol_ratio
                 conf_mult = Decimal(str(vol_cfg.low_vol_confidence_multiplier))
                 confidence = min(conf_max, conf_min + calm * conf_mult)
-        
+
         # HYSTERESIS-SLOPE-GATE-01: Volatility Slope Gate
         storm_rejected = False
         vol_ratio_slope = 0.0
         vol_ratio_val = None
-        
+
         if atr_baseline_ready and atr_val is not None and atr_baseline is not None and atr_baseline > 0:
             vol_ratio_val = float(atr_val / atr_baseline)
             self._vol_ratio_buf[symbol].append(vol_ratio_val)
-            
+
             # Slope gate for HIGH_VOLATILITY
             if self.config.vol_slope_gate_enabled and regime == "HIGH_VOLATILITY":
                 buf = list(self._vol_ratio_buf[symbol])
@@ -453,11 +506,12 @@ class RegimeDetector:
                     ema3 = self._ema(buf, 3)
                     ema6 = self._ema(buf, 6)
                     vol_ratio_slope = ema3 - ema6
-                    
+
                     if vol_ratio_slope <= self.config.vol_slope_gate_eps:
                         self._slope_reject_count[symbol] += 1
                         if self._slope_reject_count[symbol] >= self.config.vol_slope_gate_confirm_bars:
-                            data_notes.append(f"slope_gate_reject:slope={vol_ratio_slope:.4f}")
+                            data_notes.append(
+                                f"slope_gate_reject:slope={vol_ratio_slope:.4f}")
                             self.logger.debug(
                                 f"[{symbol}] Slope Gate: HIGH_VOL rejected (dying storm) "
                                 f"slope={vol_ratio_slope:.4f} <= eps={self.config.vol_slope_gate_eps}"
@@ -468,7 +522,7 @@ class RegimeDetector:
                             storm_rejected = True
                     else:
                         self._slope_reject_count[symbol] = 0
-        
+
         # Lock: if storm_rejected, block TREND_*/MEAN_REVERSION re-classification
         # (This should not happen logically since regime is already UNCERTAIN, but defensive)
 
@@ -494,7 +548,7 @@ class RegimeDetector:
         if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short < sma_long and price < sma_short:
             regime = "TREND_DOWN"
             confidence = self._calculate_confidence(sma_short, sma_long)
-        
+
         # HYSTERESIS-SLOPE-GATE-01: Explicit lock - if storm_rejected, block MR/TREND
         if storm_rejected and regime in ("TREND_UP", "TREND_DOWN", "MEAN_REVERSION"):
             data_notes.append(f"slope_gate_lock:blocked_{regime}")
@@ -514,7 +568,8 @@ class RegimeDetector:
         # REG-FIX-01: uncertain_cutoff - demote low-confidence regimes to UNCERTAIN
         # This prevents weak regime claims from triggering strategy decisions
         if regime != "UNCERTAIN" and float(confidence) < self._uncertain_cutoff:
-            data_notes.append(f"confidence_below_cutoff:{float(confidence):.3f}<{self._uncertain_cutoff}")
+            data_notes.append(
+                f"confidence_below_cutoff:{float(confidence):.3f}<{self._uncertain_cutoff}")
             self.logger.debug(
                 f"[{symbol}] Regime {regime} demoted to UNCERTAIN: "
                 f"confidence {float(confidence):.3f} < cutoff {self._uncertain_cutoff}"
@@ -553,25 +608,25 @@ class RegimeDetector:
         # DM-CRITICAL-PATCHES-02: Heartbeat emission with changed flag
         # EVT:REGIME_DETECTED is emitted on EVERY basis bar close (heartbeat).
         # 'changed' indicates if regime actually transitioned.
-        
+
         # HYSTERESIS-SLOPE-GATE-01: Apply hysteresis
         raw_regime = regime
         raw_confidence = confidence
         hysteresis_bars = self.config.hysteresis_bars
-        
+
         # Initialize hysteresis state if needed
         if symbol not in self._hysteresis_stable:
             self._hysteresis_stable[symbol] = "UNCERTAIN"
             self._hysteresis_pending[symbol] = "UNCERTAIN"
             self._stable_confidence[symbol] = conf_min
-        
+
         # Update hysteresis counters
         if raw_regime == self._hysteresis_pending[symbol]:
             self._hysteresis_count[symbol] += 1
         else:
             self._hysteresis_pending[symbol] = raw_regime
             self._hysteresis_count[symbol] = 1
-        
+
         # Transition stable regime if confirmed
         if self._hysteresis_count[symbol] >= hysteresis_bars:
             if self._hysteresis_stable[symbol] != raw_regime:
@@ -581,12 +636,13 @@ class RegimeDetector:
                 )
             self._hysteresis_stable[symbol] = raw_regime
             self._stable_confidence[symbol] = raw_confidence
-        
+
         stable_regime = self._hysteresis_stable[symbol]
         stable_confidence = self._stable_confidence[symbol]
-        
+
         last_regime = self._last_emitted_regime.get(symbol)
-        changed = (last_regime is None) or (last_regime != stable_regime)  # Use stable_regime
+        changed = (last_regime is None) or (
+            last_regime != stable_regime)  # Use stable_regime
 
         payload: Dict[str, Any] = {
             "ts": ts_ms,
@@ -604,8 +660,9 @@ class RegimeDetector:
             "data_quality": {"drops": data_drops, "notes": data_notes},
             # DM-CRITICAL-PATCHES-02: Heartbeat fields
             "changed": changed,
-            "last_update_ts_ms": now_monotonic_ms,  # Heartbeat timestamp (monotonic)
-            "calc_lag_ms": now_wall_ms - ts_ms, # Latency for audit
+            # Heartbeat timestamp (monotonic)
+            "last_update_ts_ms": now_monotonic_ms,
+            "calc_lag_ms": now_wall_ms - ts_ms,  # Latency for audit
             # HYSTERESIS-SLOPE-GATE-01: Telemetry metrics
             "raw_regime": raw_regime,
             "raw_confidence": str(raw_confidence),
@@ -634,3 +691,103 @@ class RegimeDetector:
                 f"(raw={raw_regime}, confidence={stable_confidence}, model={source_model})"
             )
         self._last_emitted_regime[symbol] = stable_regime
+
+    def feed_warmup_bar(self, symbol: str, bar: Dict[str, Any]) -> None:
+        """
+        Directly seeds internal regime buffers from a historical bar without
+        TTL validation or event emission.
+
+        Used exclusively for startup backfill — bypasses the stale-data gate
+        that would reject any bar older than bar_ttl_ms (10 s). Mirrors the
+        same fail-safe pattern used by FeatureEngineering._on_htf_bars_imported
+        for pillar warmup.
+
+        Args:
+            symbol: Trading pair, e.g. "BTCUSDT".
+            bar:    Dict with at least {"close": float, "high": float,
+                    "low": float}.  "open_ts" is optional (not used for
+                    buffer updates, only for logging).
+        """
+        try:
+            close_raw = bar["close"]
+            high_raw = bar.get("high")
+            low_raw = bar.get("low")
+            identity = extract_canonical_bar_identity(
+                {
+                    "symbol": symbol,
+                    "tf_sec": int(self._basis_tf_sec),
+                    "bar": bar,
+                    "source_mode": RuntimeBarSourceMode.WARMUP_IMPORT.value,
+                },
+                default_symbol=symbol,
+                default_timeframe_sec=int(self._basis_tf_sec),
+                default_source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
+            )
+
+            close = Decimal(str(close_raw))
+            high = Decimal(str(close_raw if high_raw is None else high_raw))
+            low = Decimal(str(close_raw if low_raw is None else low_raw))
+        except (InvalidOperation, ValueError, TypeError, KeyError) as exc:
+            self.logger.warning(
+                "feed_warmup_bar: bad bar for %s: %s", symbol, exc)
+            return
+
+        if close <= 0:
+            return
+
+        close_boundary_ts_ms = 0
+        if identity is not None:
+            close_boundary_ts_ms = int(identity.close_boundary_ts_ms)
+        else:
+            try:
+                open_ts_ms = int(bar.get("open_ts") or 0)
+            except Exception:
+                open_ts_ms = 0
+            if open_ts_ms > 0:
+                close_boundary_ts_ms = open_ts_ms + int(self._basis_tf_sec) * 1000
+
+        last_boundary_ts_ms = int(
+            self._last_basis_close_boundary_ts_ms.get(symbol, 0) or 0
+        )
+        if close_boundary_ts_ms > 0 and last_boundary_ts_ms > 0 and close_boundary_ts_ms <= last_boundary_ts_ms:
+            return
+
+        # ── price buffer ──────────────────────────────────────────────────────
+        prev_close: Optional[Decimal] = (
+            self._price_buf[symbol][-1] if self._price_buf[symbol] else None
+        )
+        self._price_buf[symbol].append(close)
+        self._ticks_seen[symbol] += 1
+        if close_boundary_ts_ms > 0:
+            self._last_basis_close_boundary_ts_ms[symbol] = close_boundary_ts_ms
+
+        # ── ATR pipeline (Wilder) ─────────────────────────────────────────────
+        vol_cfg = self.config.models.volatility
+        if not vol_cfg.enabled:
+            return
+
+        tr: Optional[Decimal] = None
+        if prev_close is not None and high > 0 and low > 0:
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        elif prev_close is not None and self._allow_close_to_close_atr:
+            tr = abs(close - prev_close)
+
+        if tr is None:
+            return
+
+        self._tr_buf[symbol].append(tr)
+
+        last_atr = self._atr_last.get(symbol)
+        if last_atr is None:
+            if len(self._tr_buf[symbol]) >= self.atr_period:
+                init_atr = (
+                    sum(list(self._tr_buf[symbol])[-self.atr_period:])
+                    / Decimal(str(self.atr_period))
+                )
+                self._atr_last[symbol] = init_atr
+                self._atr_buf[symbol].append(init_atr)
+        else:
+            n = Decimal(str(self.atr_period))
+            atr_val = (last_atr * (n - 1) + tr) / n
+            self._atr_last[symbol] = atr_val
+            self._atr_buf[symbol].append(atr_val)

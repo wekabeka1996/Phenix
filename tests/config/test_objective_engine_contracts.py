@@ -19,6 +19,8 @@ def test_current_aurora_config_loads_objective_engine_contract() -> None:
     assert "max_position_qty" not in cfg.domains.objective_engine.components["risk"].parameters
     assert cfg.strategies.aurora.objective.enabled is True
     assert cfg.strategies.md_amr.objective.enabled is True
+    assert cfg.strategies.mean_reversion.objective.enabled is True
+    assert cfg.strategies.mean_reversion.objective.regimes
 
 
 def test_alpha_search_objective_feedback_requires_explicit_fields_when_enabled() -> None:

@@ -16,7 +16,18 @@ from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMP
 from apps.reference.bootstrap.async_runtime import AsyncLoopRuntime
 from apps.reference.bootstrap.domain_builder import build_live_domains
 from apps.reference.bootstrap.runtime_analytics_restore import (
+    StartupAnalyticsRestoreReport,
     build_startup_analytics_restore_report,
+)
+from apps.reference.bootstrap.startup_warmup import (
+    activate_startup_warmup_gate,
+    build_startup_warmup_report,
+    failed_warmup_status,
+    partial_warmup_status,
+    release_startup_warmup_gate,
+    resolve_feature_engineering_backfill_plan,
+    skipped_warmup_status,
+    warmed_warmup_status,
 )
 from apps.reference.bootstrap.startup_hydration_planner import (
     build_startup_hydration_plan,
@@ -44,12 +55,18 @@ from apps.reference.core.time.clock import MockClock, set_clock, reset_clock
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
+from apps.reference.domains.feature_engineering.pillar_backfill import PillarBackfillService
 from apps.reference.domains.data_recorder.recorder import CsvRecorder
 # FSMP-ARCH-01: Import both MarketDataConnector and MarketDataProxy
 # The actual class used is determined by feature flag at runtime
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
 from apps.reference.domains.market_data.proxy import MarketDataProxy
 from apps.reference.domains.market_data.bar_aggregator import BarAggregator  # BAR-SSOT-002
+from apps.reference.contracts.runtime_bar_identity import (
+    RuntimeBarSourceMode,
+    attach_canonical_bar_payload,
+    build_canonical_bar_identity,
+)
 # TASK32: Strategy plugin allowlist (no dynamic imports)
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
@@ -795,6 +812,7 @@ def main() -> None:
         registry=strategy_plugins,
     ).start()
     LOG.info(" RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
+    restore_report = None
     try:
         restore_report = build_startup_analytics_restore_report(
             config=config,
@@ -807,12 +825,14 @@ def main() -> None:
         )
         for snapshot in restore_report.snapshots.values():
             handler = started_strategy_handlers.get(snapshot.strategy_id)
-            apply_fn = getattr(handler, "apply_runtime_analytics_restore_snapshot", None)
+            apply_fn = getattr(
+                handler, "apply_runtime_analytics_restore_snapshot", None)
             if callable(apply_fn):
                 apply_fn(snapshot)
         LOG.info(
             " RUNTIME_ANALYTICS_RESTORE %s",
-            json.dumps(restore_report.to_payload(), ensure_ascii=False, default=str),
+            json.dumps(restore_report.to_payload(),
+                       ensure_ascii=False, default=str),
         )
         hydration_plan = build_startup_hydration_plan(
             config=config,
@@ -822,9 +842,11 @@ def main() -> None:
         )
         LOG.info(
             " STARTUP_HYDRATION_PLAN %s",
-            json.dumps(hydration_plan.to_payload(), ensure_ascii=False, default=str),
+            json.dumps(hydration_plan.to_payload(),
+                       ensure_ascii=False, default=str),
         )
-        strategy_profiles = build_active_strategy_compatibility_profiles(config)
+        strategy_profiles = build_active_strategy_compatibility_profiles(
+            config)
         LOG.info(
             " STRATEGY_COMPATIBILITY_MATRIX %s",
             json.dumps(
@@ -853,7 +875,8 @@ def main() -> None:
             ),
         )
     except Exception as e:
-        LOG.warning(" Startup analytics restore/planner evaluation failed: %s", e)
+        LOG.warning(
+            " Startup analytics restore/planner evaluation failed: %s", e)
 
     # ==========================================
     # ALPHA-SEARCH: Shadow Alpha Plugin (always-on, all trading modes)
@@ -901,18 +924,25 @@ def main() -> None:
     LOG.info("Starting account observer - SKIPPED (Deleted)")
     # account_observer.start()
 
-    LOG.info("Starting market data connector...")
-    # MarketDataConnector requires async loop - use guardian_loop
-    if guardian_runtime is not None and guardian_loop is not None and guardian_loop.is_running():
-        try:
-            # Wait up to 10s for startup
-            guardian_runtime.run(market_data.start_async(), timeout=10)
-            LOG.info(" MarketDataConnector started via async loop")
-        except Exception as e:
-            LOG.error(f"Failed to start MarketDataConnector: {e}")
-    else:
-        LOG.warning(
-            " No async loop available for MarketDataConnector - market data will not be available")
+    backfill_plan = resolve_feature_engineering_backfill_plan(config)
+    backfill_adapter = (
+        getattr(execution_position, "adapter", None)
+        if execution_position is not None
+        else None
+    )
+    LOG.info(
+        " STARTUP_BACKFILL_CONFIG %s",
+        json.dumps(backfill_plan.to_payload(), ensure_ascii=False, default=str),
+    )
+    warmup_statuses: dict[str, dict[str, object]] = {
+        str(symbol).upper(): {}
+        for symbol in backfill_plan.symbols
+    }
+    activate_startup_warmup_gate(
+        updated_at=int(time.time() * 1000),
+        source="main:startup_warmup_gate",
+    )
+    LOG.info(" STARTUP_WARMUP_GATE activated")
 
     LOG.info("Starting feature engineering...")
     feature_engineering.start()
@@ -927,6 +957,408 @@ def main() -> None:
     decision_making.start()
 
     LOG.info("Starting regime detector...")
+    LOG.debug("Regime detector already started before startup warmup")
+
+    LOG.info("Starting market data connector...")
+    if guardian_runtime is not None and guardian_loop is not None and guardian_loop.is_running():
+        try:
+            guardian_runtime.run(market_data.start_async(), timeout=10)
+            LOG.info(" MarketDataConnector started via async loop")
+        except Exception as e:
+            LOG.error(f"Failed to start MarketDataConnector: {e}")
+    else:
+        LOG.warning(
+            " No async loop available for MarketDataConnector - market data will not be available")
+
+    try:
+        _warmup_updated_at = int(time.time() * 1000)
+        _warmup_prereqs = {
+            "enabled": bool(backfill_plan.enabled),
+            "runtime_available": guardian_runtime is not None,
+            "adapter_available": backfill_adapter is not None,
+        }
+        if not backfill_plan.enabled:
+            for _symbol in backfill_plan.symbols:
+                warmup_statuses.setdefault(_symbol, {})
+                warmup_statuses[_symbol]["feature_engineering"] = skipped_warmup_status(
+                    why=["startup_backfill_disabled"],
+                    updated_at=_warmup_updated_at,
+                    source="main:startup_warmup",
+                    evidence_ref=f"feature_engineering:{_symbol}:{_warmup_updated_at}",
+                    details=dict(_warmup_prereqs),
+                )
+                warmup_statuses[_symbol]["regime_detector"] = skipped_warmup_status(
+                    why=["startup_backfill_disabled"],
+                    updated_at=_warmup_updated_at,
+                    source="main:startup_warmup",
+                    evidence_ref=f"regime_detector:{_symbol}:{_warmup_updated_at}",
+                    details=dict(_warmup_prereqs),
+                )
+            LOG.info("STARTUP_WARMUP: Backfill disabled by effective config")
+        elif guardian_runtime is None or backfill_adapter is None:
+            for _symbol in backfill_plan.symbols:
+                warmup_statuses.setdefault(_symbol, {})
+                warmup_statuses[_symbol]["feature_engineering"] = failed_warmup_status(
+                    why=["startup_backfill_runtime_unavailable"],
+                    updated_at=_warmup_updated_at,
+                    source="main:startup_warmup",
+                    evidence_ref=f"feature_engineering:{_symbol}:{_warmup_updated_at}",
+                    details=dict(_warmup_prereqs),
+                )
+                warmup_statuses[_symbol]["regime_detector"] = failed_warmup_status(
+                    why=["startup_backfill_runtime_unavailable"],
+                    updated_at=_warmup_updated_at,
+                    source="main:startup_warmup",
+                    evidence_ref=f"regime_detector:{_symbol}:{_warmup_updated_at}",
+                    details=dict(_warmup_prereqs),
+                )
+            LOG.warning(
+                "STARTUP_WARMUP: Backfill runtime unavailable (runtime=%s, adapter=%s)",
+                guardian_runtime is not None,
+                backfill_adapter is not None,
+            )
+        else:
+            _backfill_svc = PillarBackfillService(backfill_adapter)
+            _pillar_tf_counts = {
+                "d1": (86400, int(backfill_plan.d1_candles)),
+                "h4": (14400, int(backfill_plan.h4_candles)),
+                "m15": (900, int(backfill_plan.m15_candles)),
+            }
+            LOG.info("PILLAR_BACKFILL: Starting HTF pillar warmup from Binance...")
+            for _sym in backfill_plan.symbols:
+                warmup_statuses.setdefault(_sym, {})
+                try:
+                    _results = guardian_runtime.run(
+                        _backfill_svc.warmup_pillars(
+                            _sym,
+                            d1_candles=backfill_plan.d1_candles,
+                            h4_candles=backfill_plan.h4_candles,
+                            m15_candles=backfill_plan.m15_candles,
+                        ),
+                        timeout=90.0,
+                    )
+                    _pillar_imported = 0
+                    _pillar_failures: list[str] = []
+                    for _label, (_tf_sec, _expected_count) in _pillar_tf_counts.items():
+                        _res = _results.get(_label)
+                        if _res and _res.success:
+                            _bars_payload = []
+                            for _bar in _res.candles:
+                                _identity = build_canonical_bar_identity(
+                                    symbol=_sym,
+                                    timeframe_sec=_tf_sec,
+                                    bar_start_ts_ms=int(_bar.open_time_ms),
+                                    close_boundary_ts_ms=int(_bar.open_time_ms) + int(_tf_sec) * 1000,
+                                    source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
+                                )
+                                _payload = {
+                                    "c": _bar.close,
+                                    "h": _bar.high,
+                                    "l": _bar.low,
+                                    "open_ts": int(_bar.open_time_ms),
+                                }
+                                attach_canonical_bar_payload(
+                                    _payload,
+                                    identity=_identity,
+                                    replay_generation=0,
+                                    attach_nested_bar=False,
+                                )
+                                _bars_payload.append(_payload)
+                            fsm.emit(
+                                "EVT:HTF_BARS_IMPORTED",
+                                payload={
+                                    "symbol": _sym,
+                                    "tf_sec": _tf_sec,
+                                    "bars": _bars_payload,
+                                    "as_of_ms": int(time.time() * 1000),
+                                    "source_mode": RuntimeBarSourceMode.WARMUP_IMPORT.value,
+                                },
+                                why="pillar_backfill_startup",
+                            )
+                            _pillar_imported += len(_bars_payload)
+                            LOG.info(
+                                "PILLAR_BACKFILL: %s %s warmup_import=%d/%d",
+                                _sym,
+                                _label.upper(),
+                                len(_bars_payload),
+                                _expected_count,
+                            )
+                        else:
+                            _pillar_failures.append(
+                                f"{_label}:{getattr(_res, 'error', 'no_result')}"
+                            )
+                            LOG.warning(
+                                "PILLAR_BACKFILL: %s %s fetch failed: %s",
+                                _sym,
+                                _label.upper(),
+                                getattr(_res, "error", "no result"),
+                            )
+                    _pillar_details = {
+                        "imported_bars": int(_pillar_imported),
+                        "counts": {
+                            "d1": int(backfill_plan.d1_candles),
+                            "h4": int(backfill_plan.h4_candles),
+                            "m15": int(backfill_plan.m15_candles),
+                        },
+                        "failures": list(_pillar_failures),
+                        "source_mode": RuntimeBarSourceMode.WARMUP_IMPORT.value,
+                    }
+                    if not _pillar_failures:
+                        warmup_statuses[_sym]["feature_engineering"] = warmed_warmup_status(
+                            why=["pillar_backfill_complete"],
+                            updated_at=int(time.time() * 1000),
+                            source="main:startup_warmup",
+                            evidence_ref=f"feature_engineering:{_sym}:{_warmup_updated_at}",
+                            details=_pillar_details,
+                        )
+                    elif _pillar_imported > 0:
+                        warmup_statuses[_sym]["feature_engineering"] = partial_warmup_status(
+                            why=["pillar_backfill_partial"],
+                            updated_at=int(time.time() * 1000),
+                            source="main:startup_warmup",
+                            evidence_ref=f"feature_engineering:{_sym}:{_warmup_updated_at}",
+                            details=_pillar_details,
+                        )
+                    else:
+                        warmup_statuses[_sym]["feature_engineering"] = failed_warmup_status(
+                            why=["pillar_backfill_failed"],
+                            updated_at=int(time.time() * 1000),
+                            source="main:startup_warmup",
+                            evidence_ref=f"feature_engineering:{_sym}:{_warmup_updated_at}",
+                            details=_pillar_details,
+                        )
+                except Exception as _warmup_exc:
+                    LOG.error(
+                        "PILLAR_BACKFILL: Failed for symbol %s: %s",
+                        _sym,
+                        _warmup_exc,
+                    )
+                    warmup_statuses[_sym]["feature_engineering"] = failed_warmup_status(
+                        why=["pillar_backfill_exception"],
+                        updated_at=int(time.time() * 1000),
+                        source="main:startup_warmup",
+                        evidence_ref=f"feature_engineering:{_sym}:{_warmup_updated_at}",
+                        details={"error": str(_warmup_exc)},
+                    )
+
+            LOG.info("REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
+            for _sym in backfill_plan.symbols:
+                warmup_statuses.setdefault(_sym, {})
+                try:
+                    _rd_result = guardian_runtime.run(
+                        _backfill_svc.fetch_candles(
+                            _sym,
+                            300,
+                            backfill_plan.regime_basis_candles,
+                        ),
+                        timeout=60.0,
+                    )
+                    if _rd_result and _rd_result.success:
+                        for _rd_bar in _rd_result.candles:
+                            _rd_identity = build_canonical_bar_identity(
+                                symbol=_sym,
+                                timeframe_sec=300,
+                                bar_start_ts_ms=int(_rd_bar.open_time_ms),
+                                close_boundary_ts_ms=int(_rd_bar.open_time_ms) + 300000,
+                                source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
+                            )
+                            _rd_payload = {
+                                "close": _rd_bar.close,
+                                "high": _rd_bar.high,
+                                "low": _rd_bar.low,
+                                "open_ts": int(_rd_bar.open_time_ms),
+                            }
+                            attach_canonical_bar_payload(
+                                _rd_payload,
+                                identity=_rd_identity,
+                                replay_generation=0,
+                                attach_nested_bar=False,
+                            )
+                            regime_detector.feed_warmup_bar(_sym, _rd_payload)
+                        warmup_statuses[_sym]["regime_detector"] = warmed_warmup_status(
+                            why=["regime_backfill_complete"],
+                            updated_at=int(time.time() * 1000),
+                            source="main:startup_warmup",
+                            evidence_ref=f"regime_detector:{_sym}:{_warmup_updated_at}",
+                            details={
+                                "imported_bars": int(_rd_result.fetched_count),
+                                "expected_bars": int(backfill_plan.regime_basis_candles),
+                                "source_mode": RuntimeBarSourceMode.WARMUP_IMPORT.value,
+                            },
+                        )
+                        LOG.info(
+                            "REGIME_BACKFILL: %s warmup_import=%d/%d",
+                            _sym,
+                            _rd_result.fetched_count,
+                            backfill_plan.regime_basis_candles,
+                        )
+                    else:
+                        LOG.warning(
+                            "REGIME_BACKFILL: %s fetch failed: %s",
+                            _sym,
+                            getattr(_rd_result, "error", "no result"),
+                        )
+                        warmup_statuses[_sym]["regime_detector"] = failed_warmup_status(
+                            why=["regime_backfill_failed"],
+                            updated_at=int(time.time() * 1000),
+                            source="main:startup_warmup",
+                            evidence_ref=f"regime_detector:{_sym}:{_warmup_updated_at}",
+                            details={
+                                "expected_bars": int(backfill_plan.regime_basis_candles),
+                                "error": getattr(_rd_result, "error", "no result"),
+                            },
+                        )
+                except Exception as _rd_exc:
+                    LOG.error("REGIME_BACKFILL: Failed for %s: %s", _sym, _rd_exc)
+                    warmup_statuses[_sym]["regime_detector"] = failed_warmup_status(
+                        why=["regime_backfill_exception"],
+                        updated_at=int(time.time() * 1000),
+                        source="main:startup_warmup",
+                        evidence_ref=f"regime_detector:{_sym}:{_warmup_updated_at}",
+                        details={"error": str(_rd_exc)},
+                    )
+
+        if restore_report is None:
+            restore_report = StartupAnalyticsRestoreReport(
+                updated_at=int(time.time() * 1000),
+                source="main:startup_analytics_restore_missing",
+                snapshots={},
+            )
+        warmup_report = build_startup_warmup_report(
+            config=config,
+            analytics_restore_report=restore_report,
+            warmup_statuses=warmup_statuses,
+            updated_at=int(time.time() * 1000),
+            source="main:startup_warmup_report",
+            gate_active=True,
+        )
+        LOG.info(
+            " STARTUP_WARMUP_REPORT %s",
+            json.dumps(warmup_report.to_payload(), ensure_ascii=False, default=str),
+        )
+    finally:
+        release_startup_warmup_gate()
+        LOG.info(" STARTUP_WARMUP_GATE released")
+
+    # ── PILLAR BACKFILL (КР-1 fix) ────────────────────────────────────────────
+    # PillarBackfillService та EVT:HTF_BARS_IMPORTED listener в FeatureEngineering
+    # існують давно, але виклик при старті був відсутній — пілли запускались холодними.
+    # Без backfill SMA(200) на D1 потребував би 200 днів live-даних.
+    _bf_cfg = None
+    _bf_enabled = False
+
+    if _bf_enabled and guardian_runtime is not None and execution_position is not None:
+        LOG.info("PILLAR_BACKFILL: Starting HTF pillar warmup from Binance...")
+        try:
+            _backfill_svc = PillarBackfillService(execution_position.adapter)
+            _symbols = list(config.instruments.keys())
+            _d1_count = getattr(_bf_cfg, "d1_candles", 200)
+            _h4_count = getattr(_bf_cfg, "h4_candles", 100)
+            _m15_count = getattr(_bf_cfg, "m15_candles", 50)
+            _tf_map = {"d1": 86400, "h4": 14400, "m15": 900}
+
+            for _sym in _symbols:
+                try:
+                    _results = guardian_runtime.run(
+                        _backfill_svc.warmup_pillars(
+                            _sym,
+                            d1_candles=_d1_count,
+                            h4_candles=_h4_count,
+                            m15_candles=_m15_count,
+                        ),
+                        timeout=90.0,
+                    )
+                    for _label, _tf_sec in _tf_map.items():
+                        _res = _results.get(_label)
+                        if _res and _res.success:
+                            _bars_payload = [
+                                {
+                                    "c": bar.close,
+                                    "h": bar.high,
+                                    "l": bar.low,
+                                    "open_ts": bar.open_time_ms,
+                                    "replay_generation": 0,
+                                }
+                                for bar in _res.candles
+                            ]
+                            fsm.emit(
+                                "EVT:HTF_BARS_IMPORTED",
+                                payload={
+                                    "symbol": _sym,
+                                    "tf_sec": _tf_sec,
+                                    "bars": _bars_payload,
+                                    "as_of_ms": int(time.time() * 1000),
+                                },
+                                why="pillar_backfill_startup",
+                            )
+                            LOG.info(
+                                "PILLAR_BACKFILL: %s %s — %d bars emitted",
+                                _sym, _label.upper(), len(_bars_payload),
+                            )
+                        else:
+                            LOG.warning(
+                                "PILLAR_BACKFILL: %s %s fetch failed: %s",
+                                _sym, _label.upper(),
+                                getattr(_res, "error", "no result"),
+                            )
+                except Exception as _e:
+                    LOG.error(
+                        "PILLAR_BACKFILL: Failed for symbol %s: %s", _sym, _e)
+        except Exception as _e:
+            LOG.error("PILLAR_BACKFILL: Startup warmup failed: %s", _e)
+    else:
+        LOG.debug("PILLAR_BACKFILL_LEGACY_PATH disabled")
+    # ─────────────────────────────────────────────────────────────────────────
+
+    LOG.debug("Risk management already started before startup warmup")
+
+    LOG.debug("Position tracking already started before startup warmup")
+
+    LOG.debug("Decision making already started before startup warmup")
+
+    LOG.info("Starting regime detector...")
+    # ── REGIME BACKFILL (КР-2 fix) ────────────────────────────────────────────
+    # RegimeDetector має TTL=10s на кожен бар → без backfill потрібно 24 год
+    # live-даних для atr_sma_length=288 × 5m. Завантажуємо 300+ × 5m барів з
+    # Binance і сідаємо буфери через feed_warmup_bar() (без TTL-перевірки).
+    if _bf_enabled and guardian_runtime is not None and execution_position is not None:
+        LOG.info("REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
+        try:
+            _rd_svc = PillarBackfillService(execution_position.adapter)
+            _rd_bars_count = 320  # 288 atr_sma_length + 32 buffer
+            for _rd_sym in list(config.instruments.keys()):
+                try:
+                    _rd_result = guardian_runtime.run(
+                        _rd_svc.fetch_candles(_rd_sym, 300, _rd_bars_count),
+                        timeout=60.0,
+                    )
+                    if _rd_result and _rd_result.success:
+                        for _rd_bar in _rd_result.candles:
+                            regime_detector.feed_warmup_bar(
+                                _rd_sym,
+                                {
+                                    "close": _rd_bar.close,
+                                    "high": _rd_bar.high,
+                                    "low": _rd_bar.low,
+                                    "open_ts": _rd_bar.open_time_ms,
+                                },
+                            )
+                        LOG.info(
+                            "REGIME_BACKFILL: %s — %d × 5m bars seeded",
+                            _rd_sym, _rd_result.fetched_count,
+                        )
+                    else:
+                        LOG.warning(
+                            "REGIME_BACKFILL: %s fetch failed: %s",
+                            _rd_sym, getattr(_rd_result, "error", "no result"),
+                        )
+                except Exception as _rd_e:
+                    LOG.error("REGIME_BACKFILL: Failed for %s: %s", _rd_sym, _rd_e)
+        except Exception as _rd_e:
+            LOG.error("REGIME_BACKFILL: Startup failed: %s", _rd_e)
+    else:
+        LOG.debug("REGIME_BACKFILL_LEGACY_PATH disabled")
+    # ─────────────────────────────────────────────────────────────────────────
     try:
         if hasattr(regime_detector, "start"):
             regime_detector.start()

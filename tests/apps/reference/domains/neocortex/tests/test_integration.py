@@ -100,7 +100,11 @@ def amygdala():
 
 def run_async(coro):
     """Run async coroutine synchronously."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # =============================================================================
@@ -120,9 +124,11 @@ def test_adapter_buffer_integration(full_config, parser, amygdala, buffer):
     
     async def run_test():
         # Simulate 10 feature events
+        base_ts = 1_700_000_000.0
         for i in range(10):
             payload = {
-                "timestamp": 1000.0 + i,
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {
                     "rsi": str(50 + i),
                     "obi": "0.1",
@@ -141,7 +147,7 @@ def test_adapter_buffer_integration(full_config, parser, amygdala, buffer):
     # Verify order preserved
     batch = buffer.get_batch(10)
     timestamps = [item[0].ts for item in batch]
-    assert timestamps == [1000.0 + i for i in range(10)]
+    assert timestamps == [1_700_000_000.0 + i for i in range(10)]
 
 
 def test_training_trigger_without_bridge(full_config, parser, amygdala, buffer):
@@ -157,9 +163,11 @@ def test_training_trigger_without_bridge(full_config, parser, amygdala, buffer):
     
     async def run_test():
         # Simulate enough events to trigger training
+        base_ts = 1_700_000_100.0
         for i in range(20):
             payload = {
-                "timestamp": 1000.0 + i,
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             }
             await adapter.handle_features(payload)
@@ -184,9 +192,11 @@ def test_batch_extraction_correct_shape(full_config, parser, amygdala, buffer):
     
     async def run_test():
         # Add observations
+        base_ts = 1_700_000_200.0
         for i in range(10):
             payload = {
-                "timestamp": float(i),
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             }
             await adapter.handle_features(payload)
@@ -283,11 +293,13 @@ def test_mock_bridge_training():
     async def run_test():
         # Start adapter (initializes bridge)
         await adapter.start()
+        base_ts = 1_700_000_300.0
         
         # Simulate events to trigger training
         for i in range(6):
             await adapter.handle_features({
-                "timestamp": float(i),
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {"a": "1.0", "b": "2.0"}
             })
         

@@ -144,6 +144,7 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
         monotonic_fn=clock.now,
         wall_time_fn=clock.now,
     )
+    handler._basis_required_bars_override = 0
     # DM-CRITICAL-PATCHES-02: Inject heartbeat
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     handler._symbol_states[symbol].regime = "FLAT_NORMAL"
@@ -215,6 +216,7 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
         monotonic_fn=clock.now,
         wall_time_fn=clock.now,
     )
+    handler._basis_required_bars_override = 0
     # DM-CRITICAL-PATCHES-02: Inject heartbeat
     handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     handler._symbol_states[symbol].regime = "FLAT_NORMAL"
@@ -292,6 +294,7 @@ def test_timer_integration_time_multipliers_and_regime_inertia_do_not_break_time
         monotonic_fn=clock.now,
         wall_time_fn=clock.now,
     )
+    handler._basis_required_bars_override = 0
 
     # Risk-off (higher severity) should switch immediately
     handler._update_effective_regime(symbol, "HIGH_VOLATILITY")

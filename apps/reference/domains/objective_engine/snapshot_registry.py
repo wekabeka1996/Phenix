@@ -22,7 +22,7 @@ class ObjectiveSnapshotRegistry:
         if not isinstance(payload, dict):
             return
         strategy_id = str(payload.get("strategy") or "")
-        if strategy_id not in {"aurora", "md_amr"}:
+        if strategy_id not in {"aurora", "md_amr", "mean_reversion"}:
             return
         symbol = str(payload.get("instrument") or "")
         trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}

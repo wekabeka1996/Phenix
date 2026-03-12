@@ -21,6 +21,7 @@ def _build_handler():
         monotonic_fn=lambda: 1_700_000_000.0,
         wall_time_fn=lambda: 1_700_000_000.0,
     )
+    handler._basis_required_bars_override = 0
     # This test validates CMD -> kernel -> signal wiring, not entry gate behavior.
     handler.execution_gate = None
     handler.on_regime_detected(

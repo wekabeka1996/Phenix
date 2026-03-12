@@ -76,6 +76,7 @@ def aurora_handler(mock_config):
     # DM-CRITICAL-PATCHES-02: Inject heartbeat
     for symbol in ["BTCUSDT"]:
         handler._symbol_states[symbol].last_regime_heartbeat_ms = int(time.time() * 1000)
+    handler._basis_required_bars_override = 0
     
     return handler
 

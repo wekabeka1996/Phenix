@@ -231,6 +231,7 @@ class StrategyGateway:
             intent_kind = str(pld.get("intent_kind") or "ENTRY").upper()
             md_amr_trace_norm: dict[str, Any] | None = None
             objective_trace_norm: dict[str, Any] | None = None
+            scoring = pld.get("scoring") if isinstance(pld.get("scoring"), dict) else None
             if strategy_id_s == "md_amr":
                 valid_trace, trace_info = self._validate_md_amr_trace(pld.get("trace"))
                 if not valid_trace:
@@ -248,6 +249,22 @@ class StrategyGateway:
                     return
                 md_amr_trace_norm = trace_info.get("normalized")
                 objective_trace_norm = md_amr_trace_norm.get("objective") if isinstance(md_amr_trace_norm, dict) else None
+                if isinstance(scoring, dict) and scoring.get("objective") is not None:
+                    valid_objective, objective_info = self._validate_objective_trace(scoring.get("objective"))
+                    if not valid_objective:
+                        self._reject(
+                            symbol=symbol,
+                            strategy_id=strategy_id_s,
+                            side=side,
+                            rid=rid,
+                            reason_code="WAL_TRACE_INVALID",
+                            reason="DECISION",
+                            context="strategy_signal_gateway:md_amr_objective_invalid",
+                            why_chain=(why_chain if isinstance(why_chain, list) else []) + ["objective_invalid"],
+                            details=objective_info,
+                        )
+                        return
+                    objective_trace_norm = objective_info.get("normalized")
                 if intent_kind not in ("ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE"):
                     self._reject(
                         symbol=symbol,
@@ -261,8 +278,7 @@ class StrategyGateway:
                         details={"intent_kind": intent_kind},
                     )
                     return
-            elif strategy_id_s == "aurora":
-                scoring = pld.get("scoring")
+            elif strategy_id_s in {"aurora", "mean_reversion"}:
                 if isinstance(scoring, dict) and scoring.get("objective") is not None:
                     valid_objective, objective_info = self._validate_objective_trace(scoring.get("objective"))
                     if not valid_objective:
@@ -273,7 +289,7 @@ class StrategyGateway:
                             rid=rid,
                             reason_code="WAL_TRACE_INVALID",
                             reason="DECISION",
-                            context="strategy_signal_gateway:aurora_objective_invalid",
+                            context=f"strategy_signal_gateway:{strategy_id_s}_objective_invalid",
                             why_chain=(why_chain if isinstance(why_chain, list) else []) + ["objective_invalid"],
                             details=objective_info,
                         )

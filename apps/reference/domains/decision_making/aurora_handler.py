@@ -85,10 +85,13 @@ def _maybe_build_position_queries(
     """Build PositionQueries only when sizing SSOT is available and numeric."""
     try:
         dm_sizing_cfg = config.domains.decision_making.position_sizing
-        min_position_size_usd = decimal.Decimal(str(dm_sizing_cfg.min_position_size_usd))
-        liquidity_cap_usd = decimal.Decimal(str(dm_sizing_cfg.liquidity_based_cap_usd))
+        min_position_size_usd = decimal.Decimal(
+            str(dm_sizing_cfg.min_position_size_usd))
+        liquidity_cap_usd = decimal.Decimal(
+            str(dm_sizing_cfg.liquidity_based_cap_usd))
     except Exception as exc:
-        logger_.debug("PositionQueries unavailable during handler init: %s", exc)
+        logger_.debug(
+            "PositionQueries unavailable during handler init: %s", exc)
         return None
     return PositionQueries(
         config,
@@ -102,45 +105,46 @@ def _maybe_build_position_queries(
 @dataclass
 class SymbolState:
     """Per-symbol state for Aurora handler."""
+
     def __init__(self):
         # Regime cache (from EVT:REGIME_DETECTED)
         self.regime = None
         self.regime_raw_event = None
         self.regime_confidence = 0.0
         self.regime_ts_ms = 0
-        
+
         self.system_stress_state = "NORMAL"
 
         # Anti-churn regime inertia (monotonic timebase)
         self.regime_raw = None
         self.regime_effective = None
         self.regime_raw_change_ts = None
-        
+
         # DM-CRITICAL-PATCHES-02: Liveness heartbeat tracking
         self.last_regime_heartbeat_ms = None
-        
+
         # Warmup state
         self.warmup_full_ready = False
         self.warmup_ticks_seen = 0
-        
+
         # Side bias history (timestamps)
         self.buy_timestamps = []
         self.sell_timestamps = []
-        
+
         # Last signal state
         self.last_signal_ts_ms = 0
         self.last_signal_side = ""
-        
+
         # Holding period state (Anti-Churn)
         self.entry_timestamp = None
         self.position_side = ""
-        
+
         # S2-TRAILING: MFE (Max Favorable Excursion) tracking
         self.mfe_price = None  # Decimal: highest price for LONG, lowest for SHORT
-        
+
         # Re-entry cooldown state (Anti-Ping-Pong)
         self.last_exit_timestamp = None
-        
+
         # P0-3: Cached price_motion
         self.cached_price_motion = None
 
@@ -153,12 +157,12 @@ class SymbolState:
 class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMixin, AuroraConfigLoaderMixin, AuroraHoldingPeriodMixin):
     """
     Stateful Aurora strategy handler.
-    
+
     Lifecycle:
     1. Initialize with config
     2. Listen to EVT:REGIME_DETECTED, EVT:FEATURES_CALCULATED
     3. On features: call kernel, emit signal if actionable
-    
+
     The handler is responsible for:
     - Caching regime state
     - Tracking warmup
@@ -166,7 +170,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
     - Calling pure scoring kernel
     - Emitting signals with readiness contract
     """
-    
+
     def __init__(
         self,
         *,
@@ -178,7 +182,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
     ):
         """
         Initialize Aurora handler.
-        
+
         Args:
             config: Strategy configuration object
             emit_fn: Function to emit events (from FSM)
@@ -193,9 +197,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         # - monotonic_fn(): durations / cooldowns / holding windows
         # - wall_time_fn(): epoch-based timestamps (ts_ms)
         # DET-BT-FIX-01: Deterministic monotonic fallback via get_clock()
-        self.monotonic_fn: Callable[[], float] = monotonic_fn or (lambda: get_clock().monotonic())
-        self.wall_time_fn: Callable[[], float] = wall_time_fn or (lambda: get_clock().now_sec())
-        
+        self.monotonic_fn: Callable[[], float] = monotonic_fn or (
+            lambda: get_clock().monotonic())
+        self.wall_time_fn: Callable[[], float] = wall_time_fn or (
+            lambda: get_clock().now_sec())
+
         # Dependency Injection / Testability
         self.scoring_kernel_cls = AuroraScoringKernel
         self._shield_fn = None  # Phase 9: set during _load_config if quadratic
@@ -211,17 +217,20 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         self._symbol_states: Dict[str, SymbolState] = defaultdict(SymbolState)
         self._latest_portfolio: Dict[str, Any] | None = None
         self._latest_exposure_summary: Dict[str, Any] | None = None
-        self._analytics_restore_snapshots: Dict[str, StrategyAnalyticsRestoreSnapshot] = {}
+        self._analytics_restore_snapshots: Dict[str,
+                                                StrategyAnalyticsRestoreSnapshot] = {}
+        # FIX:N-2 — Track bars seen per symbol since restart for cold-start gate
+        self._bars_seen_since_restart: Dict[str, int] = defaultdict(int)
 
         self._position_queries = _maybe_build_position_queries(
             config=self.config,
             portfolio_getter=lambda: self._latest_portfolio,
             logger_=self.logger,
         )
-        
+
         # T2B-01: Tick-path rejection counter for observability
         self._tick_path_rejections: int = 0
-        
+
         # Config extraction
         self._load_config()
 
@@ -238,7 +247,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         symbol: str,
     ) -> StrategyAnalyticsRestoreSnapshot | None:
         return self._analytics_restore_snapshots.get(str(symbol))
-    
+
     # _load_config → moved to AuroraConfigLoaderMixin (see aurora_config_loader.py)
 
     def _get_time_multiplier(self, regime: Optional[str]) -> float:
@@ -313,11 +322,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
     ) -> Optional[Dict[str, Any]]:
         """
         DM-CRITICAL-PATCHES-02: Check if RegimeDetector is still alive (heartbeat-based).
-        
+
         Block trading if:
         1. No heartbeat ever received (last_regime_heartbeat_ms is None)
         2. Heartbeat is stale (> basis_tf_sec * liveness_factor)
-        
+
         Returns:
             None if liveness OK
             Dict with reason_code/why/details if blocked
@@ -329,7 +338,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 "why": "Regime detector heartbeat never received (fail-closed)",
                 "details": {"last_regime_heartbeat_ms": None},
             }
-        
+
         # Get liveness config from SSOT
         try:
             basis_tf_sec = int(self.config.basis_tf_sec)
@@ -341,11 +350,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             self.logger.warning(
                 f"[{symbol}] Liveness guard using fallback: basis_tf_sec={basis_tf_sec}, factor={liveness_factor}"
             )
-        
+
         max_delay_ms = basis_tf_sec * 1000 * liveness_factor
         now_ms = int(self.monotonic_fn() * 1000)
         delta_ms = now_ms - state.last_regime_heartbeat_ms
-        
+
         if delta_ms > max_delay_ms:
             self.logger.warning(
                 f"[{symbol}] LIVENESS BLOCK: Regime heartbeat stale - "
@@ -362,7 +371,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                     "liveness_factor": liveness_factor,
                 },
             }
-        
+
         return None  # Liveness OK
 
     def _emit_strategy_blocked(
@@ -391,7 +400,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state = self._symbol_states[symbol]
         state.objective_blocked_ts_ms.append(ts_ms)
         self.emit_fn("EVT:STRATEGY_DECISION_BLOCKED", payload)
-        
+
         # P1-OBSERVABILITY: Write to WAL for audit trail (post-mortem analysis)
         try:
             write_trade_intent_rejected(
@@ -406,11 +415,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             )
         except Exception:
             pass  # Best-effort WAL write, don't fail on observability
-    
+
     def on_regime_detected(self, event: Dict[str, Any]) -> None:
         """
         Handle EVT:REGIME_DETECTED event.
-        
+
         Updates cached regime state for symbol.
         DM-CRITICAL-PATCHES-02: Always updates heartbeat timestamp (even if changed=False).
         """
@@ -421,9 +430,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             return
         state = self._symbol_states[symbol]
         state.regime = normalize_structural_regime_label(event.get("regime"))
-        state.regime_raw_event = normalize_structural_regime_label(event.get("raw_regime"))
+        state.regime_raw_event = normalize_structural_regime_label(
+            event.get("raw_regime"))
         state.regime_confidence = float(event.get("confidence", 0.0))
-        state.regime_ts_ms = int(event.get("ts_ms") or event.get("ts") or int(self.wall_time_fn() * 1000))
+        state.regime_ts_ms = int(event.get("ts_ms") or event.get(
+            "ts") or int(self.wall_time_fn() * 1000))
 
         # DM-CRITICAL-PATCHES-02: Update heartbeat on EVERY regime event (liveness tracking)
         # Use last_update_ts_ms from payload if available, else use monotonic clock
@@ -435,11 +446,12 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         if getattr(self, "anti_churn_enabled", False):
             self._update_effective_regime(symbol, state.regime)
-        
+
         # P1-1-FIX: DO NOT update warmup from REGIME_DETECTED
         # SSOT: warmup comes from CMD:PROCESS_STRATEGY only
-        
-        changed = event.get("changed", True)  # Default True for backward compat
+
+        # Default True for backward compat
+        changed = event.get("changed", True)
         self.logger.debug(
             f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f}, changed={changed})"
         )
@@ -478,25 +490,25 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         self._symbol_states[str(symbol)].objective_blocked_ts_ms.append(
             int(event.get("ts_ms") or int(self.wall_time_fn() * 1000))
         )
-        
+
     def on_system_stress(self, event: Dict[str, Any]) -> None:
         symbol = event.get("symbol")
         state_str = event.get("state")
         if symbol and state_str:
             self._symbol_states[symbol].system_stress_state = state_str
             self.logger.debug(f"[{symbol}] System stress cached: {state_str}")
-    
+
     # =========================================================================
     # T2B-03: CMD:PROCESS_STRATEGY - Primary Entry Point
     # =========================================================================
-    
+
     def on_process_strategy(self, cmd: Dict[str, Any]) -> None:
         """
         T2B-03: Handle CMD:PROCESS_STRATEGY command.
-        
+
         This is the PRIMARY entry point for Aurora decision making.
         Strategies are triggered ONLY by this command (orchestrated by FE).
-        
+
         Payload contract (from cmd_process_strategy_v1.json):
         - symbol: str
         - tf_sec: int (required, must match self.timeframe_sec)
@@ -509,10 +521,10 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         symbol = cmd.get("symbol")
         if not symbol:
             return
-        
+
         # T2B-03: STRICT FAIL-CLOSED TF GATE
         tf_sec = cmd.get("tf_sec")
-        
+
         # Gate 1: Missing tf_sec → REJECT
         if tf_sec is None:
             self._tick_path_rejections += 1
@@ -531,7 +543,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 rid=cmd.get("rid"),
             )
             return
-        
+
         # Gate 2: tf_sec=0 → REJECT (should never happen in CMD, but fail-closed)
         if tf_sec == 0:
             self._tick_path_rejections += 1
@@ -547,12 +559,12 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 rid=cmd.get("rid"),
             )
             return
-        
+
         # Gate 3: Wrong timeframe → REJECT
         if tf_sec != self.timeframe_sec:
             # Not our timeframe, silently skip (other strategies may handle it)
             return
-        
+
         # Gate 4: Missing bar_close_ts → REJECT
         bar_identity = extract_canonical_bar_identity(
             cmd,
@@ -581,51 +593,53 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 rid=cmd.get("rid"),
             )
             return
-        
+
         # Delegate to internal processing
+        # FIX:N-2 — Increment bars-seen counter per symbol for cold-start gate
+        self._bars_seen_since_restart[symbol] += 1
         self._process_decision(symbol, cmd)
-    
+
     def on_features_data_only(self, event: Dict[str, Any]) -> None:
         """
         T2B-03: Data-only handler for EVT:FEATURES_CALCULATED.
 
         Does NOT update warmup; warmup is SSOT from CMD:PROCESS_STRATEGY.
         Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
-        
+
         P0-3: Also caches price_motion since CMD:PROCESS_STRATEGY doesn't include it.
         """
         symbol = event.get("symbol")
         if not symbol:
             return
-        
+
         # P1-1-FIX: DO NOT update warmup from FEATURES_CALCULATED
         state = self._symbol_states[symbol]
-        
+
         # P0-3: Cache price_motion for vol-adj gates
         # CMD:PROCESS_STRATEGY does not include price_motion, only EVT:FEATURES_CALCULATED
         price_motion = event.get("price_motion")
         if price_motion:
             state.cached_price_motion = price_motion
-    
+
     def on_features_calculated(self, event: Dict[str, Any]) -> None:
         """
         DEPRECATED: Handle EVT:FEATURES_CALCULATED event.
-        
+
         T2B-03: This method is DEPRECATED. Decision is now triggered by
         CMD:PROCESS_STRATEGY. This method is kept for backwards compatibility
         but will be removed in future versions.
-        
+
         Use on_process_strategy() instead.
         """
         # T2B-03: Delegate to data-only handler (no decision trigger)
         self.on_features_data_only(event)
-    
+
     # _process_decision → moved to AuroraDecisionMixin (see aurora_decision.py)
-    
+
     def _is_symbol_enabled(self, symbol: str) -> bool:
         """
         Check if symbol is enabled for Aurora strategy.
-        
+
         P1-1: Registry SSOT takes precedence.
         1. Check strategies_registry.assignments first
         2. Fall back to aurora.assets.enabled
@@ -638,7 +652,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             if symbol_strategies:
                 # Registry has explicit assignment - use it
                 return "aurora" in symbol_strategies
-        
+
         # Fallback: legacy aurora.assets.enabled check
         aurora = getattr(self.config.strategies, "aurora", None)
         if not aurora:
@@ -648,7 +662,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             return False
         asset_cfg = assets[symbol]
         return bool(getattr(asset_cfg, "enabled", True))
-    
+
     def _get_instrument_config(self, symbol: str) -> Any:
         """Get instrument config for symbol."""
         aurora = getattr(self.config.strategies, "aurora", None)
@@ -659,7 +673,6 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
     # Holding period methods → moved to AuroraHoldingPeriodMixin (see aurora_holding_period.py)
 
-    
     # =========================================================================
     # VOL-ADJ GATES METHODS (Anti-Flat / Anti-FOMO)
     # =========================================================================
@@ -668,5 +681,5 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
     # _get_feature_neutrals, _get_essential_features, _get_side_bias_state,
     # _update_side_bias → moved to AuroraScoringHelpersMixin
     # (see aurora_scoring_helpers.py)
-    
+
     # _emit_signal → moved to AuroraDecisionMixin (see aurora_decision.py)

@@ -24,7 +24,7 @@
 | EVT:ORCHESTRATOR_ERROR | 0 | unknown | - | - |
 | EVT:ORDER_EXECUTED | 0 | unknown | - | - |
 | EVT:ORDER_REJECTED | 6 | unknown | decision_making:16.67%(1), execution_position:16.67%(1), shadow_telemetry:16.67%(1) | apps/reference/adapters/binance_ws_client.py:2, apps/reference/config_models.py:1, apps/reference/domains/decision_making/md_amr_handler.py:1 |
-| EVT:ORDER_STATE_CHANGED | 7 | unknown | decision_making:14.29%(1), execution_position:14.29%(1), shadow_telemetry:14.29%(1) | apps/reference/adapters/binance_ws_client.py:2, apps/reference/config_models.py:1, apps/reference/domains/decision_making/md_amr_handler.py:1 |
+| EVT:ORDER_STATE_CHANGED | 9 | unknown | decision_making:33.33%(3), execution_position:11.11%(1), shadow_telemetry:11.11%(1) | apps/reference/adapters/binance_ws_client.py:2, apps/reference/domains/decision_making/mean_reversion_handler.py:2, apps/reference/config_models.py:1 |
 | EVT:ORDER_TIMEOUT | 0 | unknown | - | - |
 | EVT:PARTIAL_FILL | 3 | unknown | execution_position:66.67%(2) | apps/reference/domains/execution_position/fsm_manage.py:2, vfoundation/core/adapters/execution_adapter.py:1 |
 | EVT:POSITION_CLOSED | 6 | unknown | neocortex:66.67%(4), shadow_telemetry:16.67%(1) | apps/reference/domains/neocortex/logic/ingest/multi_tailer.py:4, apps/reference/config_models.py:1, apps/reference/domains/shadow_telemetry/snapshot_store.py:1 |

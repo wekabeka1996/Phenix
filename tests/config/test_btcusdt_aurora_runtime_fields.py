@@ -166,6 +166,7 @@ class TestBtcusdtAuroraRuntimeFields:
             monotonic_fn=lambda: now,
             wall_time_fn=lambda: now,
         )
+        handler._basis_required_bars_override = 0
 
         symbol = "BTCUSDT"
         state = handler._symbol_states[symbol]
@@ -284,6 +285,7 @@ class TestBtcusdtAuroraRuntimeFields:
             monotonic_fn=lambda: now,
             wall_time_fn=lambda: now,
         )
+        handler._basis_required_bars_override = 0
 
         symbol = "BTCUSDT"
         state = handler._symbol_states[symbol]

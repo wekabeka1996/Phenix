@@ -53,7 +53,7 @@ def test_startup_report_marks_execution_restored_but_analytics_cold_as_protect_o
     assert "analytics_restore_partial" in snapshot.blocking_reason_chain
 
 
-def test_startup_report_accepts_explicit_analytics_restore_payload() -> None:
+def test_startup_report_does_not_trust_explicit_analytics_restore_for_owner_domains() -> None:
     explicit_snapshot = {
         "strategy_id": "aurora",
         "symbol": "BTCUSDT",
@@ -82,9 +82,10 @@ def test_startup_report_accepts_explicit_analytics_restore_payload() -> None:
 
     snapshot = report.get_snapshot("aurora", "BTCUSDT")
     assert snapshot is not None
-    assert snapshot.rollup_state.value == "RESTORED"
-    assert snapshot.permissions.can_open_new_risk is True
-    assert snapshot.scopes["pillar_state"].state.value == "RESTORED"
+    assert snapshot.rollup_state.value == "PARTIAL"
+    assert snapshot.permissions.can_open_new_risk is False
+    assert snapshot.scopes["execution_state"].state.value == "RESTORED"
+    assert snapshot.scopes["pillar_state"].state.value == "COLD"
 
 
 def test_startup_report_keeps_md_amr_local_restore_visible_but_partial() -> None:

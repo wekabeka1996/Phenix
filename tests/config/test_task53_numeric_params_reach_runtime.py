@@ -54,6 +54,25 @@ def _assign_strategy_ids(cfg_dir: Path, symbol_to_ids: Dict[str, list[str]]) -> 
 
     _write_yaml(strategies_path, strategies)
 
+    mr_symbols = sorted(
+        symbol
+        for symbol, strategy_ids in symbol_to_ids.items()
+        if "mean_reversion" in strategy_ids
+    )
+    if mr_symbols:
+        mr_path = cfg_dir / "strategies" / "mean_reversion.yaml"
+        mr_payload = yaml.safe_load(mr_path.read_text(encoding="utf-8"))
+        assert isinstance(mr_payload, dict)
+        mr_root = mr_payload.setdefault("mean_reversion", {})
+        assert isinstance(mr_root, dict)
+        assets = mr_root.setdefault("assets", {})
+        assert isinstance(assets, dict)
+        for symbol in mr_symbols:
+            asset_cfg = assets.setdefault(symbol, {})
+            assert isinstance(asset_cfg, dict)
+            asset_cfg["enabled"] = True
+        _write_yaml(mr_path, mr_payload)
+
 
 class TestWatchdogAckTtlMsReachesRuntime:
     """Prove that trading.execution.watchdog.ack_ttl_ms affects watchdog behavior.
@@ -375,9 +394,9 @@ class TestMeanReversionConfigsReachRuntime:
         doge = mr.assets.get("DOGEUSDT")
         assert doge is not None
         assert doge.enabled is True
-        assert doge.strategy.bb_num_std == 2.1
+        assert doge.strategy.bb_num_std == 2.5
         assert doge.strategy.tp_to_mid is False  # DOGE targets outer band
-        assert doge.strategy.cooldown_sec == 210
+        assert doge.strategy.cooldown_sec == 660
         # NOTE: risk.position_size_usd removed from MRAssetConfig (TASK-ZOMBIE-FIX), sizing now via instruments
         
         # XRP specific overrides
@@ -422,8 +441,8 @@ class TestMeanReversionConfigsReachRuntime:
         doge_strat = handler._strategies.get("DOGEUSDT")
         if doge_strat:  # Only if DOGE is assigned in strategies_registry
             assert doge_strat.config.tp_to_mid is False
-            assert doge_strat.config.bb_num_std == 2.1
-            assert doge_strat.config.cooldown_sec == 210
+            assert doge_strat.config.bb_num_std == 2.5
+            assert doge_strat.config.cooldown_sec == 660
             # sl_atr_mult should be 1.5 (from DOGE config or global fallback)
             assert doge_strat.config.sl_atr_mult == Decimal("1.5")
         

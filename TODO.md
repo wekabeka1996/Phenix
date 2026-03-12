@@ -10,6 +10,8 @@
 - [ ] Add one end-to-end integration test from runtime startup to first Quadratic-ready `CMD:PROCESS_STRATEGY`
 - [ ] Reconcile `market_data_connector.py` runtime behavior with its REST/klines docstring, or remove the stale contract claim
 - [ ] Decide whether current 5m regime cold-start requirement must be satisfied by startup history load instead of natural live accumulation
+- [ ] Evaluate explicitly setting `scoring_version: "quadratic"` in `config/aurora/strategies/aurora.yaml` when Phase 9 pillars are globally ready.
+- [ ] Periodically sync `regime_passport.md` with upcoming Phase R3-A Grid calibrations, specifically monitoring shifts in `sma_short_period`, `sma_long_period`, and `atr_sma_length`.
 
 ## Neocortex production-shadow remediation (planned 2026-03-10)
 
@@ -131,18 +133,58 @@
 - [x] `NEO-P8-PRODUCTION-SHADOW-GATES`
 - [x] `NEO-P9-EVALUATOR-CALIBRATION-AND-ADVISORY-HARDENING`
 - [x] `NEO-INTEGRATION-DATA-CONTRACT-AUDIT` (audit/research only, no code changes)
-- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT` (4 hard blockers to fix)
+- [x] `NEO-PRODUCER-CONTRACT-ALIGNMENT-AUDIT-AND-IMPLEMENTATION-PLAN` (audit only, 2026-03-12)
+- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-1` (lifecycle_id propagation)
+- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-2` (trade_id + side)
+- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-3` (fees + net_pnl)
+- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-4` (structured close validation)
 - [ ] Post-remediation milestone: `NEO-ACCEPTANCE-CAMPAIGN-SHADOW-ANALYTICS`
 
-## NEO-PRODUCER-CONTRACT-ALIGNMENT — Aurora-side telemetry fixes for neocortex integration (identified 2026-03-11)
+## NEO-PRODUCER-CONTRACT-ALIGNMENT — Aurora-side telemetry fixes for neocortex integration
 
-### Hard blockers (must fix before execution quality family works)
-- [ ] HB-1: Add `lifecycle_id` to ORDER_INTENT, ORDER_FILLED, POSITION_CLOSED in `order_log_v1.jsonl` — `intent_builder.py:357-364`, `event_handlers.py:403-420`, `event_handlers.py:236-250`
-- [ ] HB-2: Add `trade_id` to POSITION_CLOSED log entries — `event_handlers.py:236-250` (cache from last fill `tradeId`)
-- [ ] HB-3: Emit structured `fees` and `realized_pnl_net` in POSITION_CLOSED — `event_handlers.py:236-250` (accumulate `commission` per lifecycle)
-- [ ] HB-4: Replace core log regex parser dependency — either (a) structured JSON close events in `aurora_core.log`, or (b) new `lifecycle_parser.py` for `trade_lifecycle.jsonl`
+### Audit completed 2026-03-12 — all 4 HBs confirmed, implementation plan ready
+- See `docs/audits/aurora_producer_contract_alignment_audit.md`
+- See `docs/audits/aurora_neocortex_integration_gap_deep_dive.md`
+- See `docs/roadmaps/aurora_producer_contract_alignment_plan.md`
 
-### Soft prerequisites (for live shadow)
+### PKG-1: lifecycle_id propagation (write tests first)
+- [ ] Test: `tests/domains/decision_making/test_lifecycle_id_propagation.py` — ORDER_INTENT has top-level `lifecycle_id`
+- [ ] Test: `tests/integration/test_lifecycle_id_end_to_end.py` — same `lifecycle_id` across all 3 log events
+- [ ] Test: `tests/contracts/test_order_log_lifecycle_id_contract.py`
+- [ ] Impl: `intent_builder.py:357-364` — add `"lifecycle_id": trade_intent["idempotent_key"]` to ORDER_INTENT log
+- [ ] Impl: `fsm.py` — add `_last_lifecycle_ikey_by_symbol: Dict[str, str] = {}` to `__init__`
+- [ ] Impl: `event_handlers.py:on_order_fill` — cache `idempotent_key` from order_index for symbol
+- [ ] Impl: `event_handlers.py:245-261` — add `"lifecycle_id"` to POSITION_CLOSED log dict
+
+### PKG-2: trade_id + side in POSITION_CLOSED (write tests first)
+- [ ] Test: `tests/domains/decision_making/test_position_closed_identity_fields.py` — trade_id not empty, side not "N/A"
+- [ ] Test: `tests/contracts/test_order_log_position_closed_contract.py`
+- [ ] Impl: `fsm.py` — add `_last_trade_id_by_symbol` and `_last_entry_side_by_symbol` caches
+- [ ] Impl: `event_handlers.py:on_order_fill` — cache `tradeId` and `side` from fill payload
+- [ ] Impl: `event_handlers.py:245-261` — emit `trade_id` and correct `side`
+
+### PKG-3: fees accumulation + net_pnl (write tests first)
+- [ ] Test: `tests/domains/decision_making/test_position_closed_reward_fields.py` — fees=sum, net_pnl=realized_pnl-fees
+- [ ] Test: `tests/integration/test_fees_accumulation_multiclosure.py` — partial fill accumulation
+- [ ] Test: `tests/contracts/test_reward_completeness_contract.py`
+- [ ] Impl: `fsm.py` — add `_accumulated_fees_by_symbol: Dict[str, float] = {}` to `__init__`
+- [ ] Impl: `event_handlers.py:on_order_fill` — accumulate commission for close fills (SL/TP/CLOSE)
+- [ ] Impl: `event_handlers.py:245-261` — emit `fees` and `net_pnl` in POSITION_CLOSED metadata; reset accumulator
+
+### PKG-4: structured close validation + regex deprecation (write tests first)
+- [ ] Test: `tests/contracts/test_order_log_producer_contract_v2.py` — full lifecycle fixture, all fields present
+- [ ] Test: `tests/contracts/test_core_parser_structured_path.py` — structured path fires, not regex
+- [ ] Test: `tests/integration/test_execution_quality_reward_complete.py` — reward_complete=True e2e
+- [ ] Impl: `core_parser.py` — add deprecation comment to POSITION_CLOSED_PATTERN: "DEPRECATED — should never fire after PKG-4"
+- [ ] Optional: `trade_lifecycle_logger.py` — add `trade_id` field; compute `net_pnl` in `_flush()`
+
+### Hard blocker status (post-audit)
+- [ ] HB-1: `lifecycle_id` absent → PKG-1 (`intent_builder.py`, `event_handlers.py`, `fsm.py`)
+- [ ] HB-2: `trade_id` absent from POSITION_CLOSED → PKG-2 (`event_handlers.py`, `fsm.py`)
+- [ ] HB-3: `fees`/`net_pnl` absent → PKG-3 (`event_handlers.py`, `fsm.py`)
+- [ ] HB-4: regex-only reward path → PKG-4 (`core_parser.py` deprecation comment)
+
+### Soft prerequisites (for live shadow, unchanged from 2026-03-11)
 - [ ] SP-1: Feature engineering must embed `event_ts_ms` in every feature log line (required for `fail_closed` timestamp policy)
 - [ ] SP-2: Persist Aurora decision reference for disagreement analysis (minimal JSONL with strategy_id, symbol, side, score, regime, ts_ms)
 - [ ] SP-3: Add restart-gap detection in neocortex ingest (quarantine samples during cold-start window)

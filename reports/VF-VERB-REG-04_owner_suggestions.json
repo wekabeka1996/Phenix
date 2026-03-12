@@ -224,28 +224,32 @@
       "op": "EVT",
       "verb": "ORDER_STATE_CHANGED",
       "token": "EVT:ORDER_STATE_CHANGED",
-      "total_occurrences": 7,
+      "total_occurrences": 9,
       "suggested_owner": "unknown",
       "candidates": [
         {
           "owner": "decision_making",
-          "count": 1,
-          "pct": 14.29
+          "count": 3,
+          "pct": 33.33
         },
         {
           "owner": "execution_position",
           "count": 1,
-          "pct": 14.29
+          "pct": 11.11
         },
         {
           "owner": "shadow_telemetry",
           "count": 1,
-          "pct": 14.29
+          "pct": 11.11
         }
       ],
       "top_files": [
         {
           "path": "apps/reference/adapters/binance_ws_client.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/decision_making/mean_reversion_handler.py",
           "count": 2
         },
         {

@@ -1,5 +1,107 @@
 # Engineering Journal
 
+## 2026-03-12: REGIME-PASSPORT-AUDIT-AND-SYNC
+
+**Task:** Deep code-trace audit and synchronization of `config/docs/regime_passport.md` against current runtime reality.
+
+**What was audited:**
+- Detector parameters (`basis_tf_sec`, `uncertain_cutoff`, `liveness_factor`, `hysteresis_bars`).
+- Model parameters (`sma_trend`, `volatility`, `mean_reversion`).
+- System Stress Guard parameters (`system_stress.enabled`, `thresholds`, `aggregation`, `state_mapping`).
+- Pydantic models in `apps/reference/config_models.py`.
+- Runtime FSM implementation in `regime_detector.py` and `system_stress_overlay.py`.
+
+**Key findings & fixes:**
+- **SMA/ATR Tunings:** Updated `sma_short_period` (48), `sma_long_period` (192), and `atr_sma_length` (288) to reflect Phase R2 winner parameters.
+- **System Stress:** Added missing documentation for the entire `system_stress` block, describing `NORMAL`/`STRESS`/`EXTREME` FSM mapping and aggregations.
+- **Legacy Cleanup:** Removed mentions of completely deleted blocks (`hmm`, `features`).
+- **Result:** Fully synchronized `regime_passport.md` with active configuration limits, Pydantic structures, and current detector/overlay execution order.
+
+**Artifacts created:**
+- `config/docs/regime_passport.md` (updated)
+- `reports/docs_audit/regime_passport_audit_report.md` (new)
+
+## 2026-03-12: SCORING-PASSPORT-AUDIT-AND-SYNC
+
+**Task:** Deep code-trace audit and synchronization of `config/docs/scoring_passport.md` against Phase 9 runtime reality.
+
+**What was audited:**
+- L1 Daily Risk Gates and L2 Instrument Risk score (`risk_management.py` and configs).
+- L3 Signal Scoring routing (`aurora_config_loader.py`, `aurora_decision.py`, `quadratic_scoring_kernel.py`).
+- Feature weights, neutrals, thresholds, hysteresis, and Mean Reversion parameters.
+
+**Key findings & fixes:**
+- **Phase 9 Integration:** L3 is now split between `v2` (linear fallback) and `quadratic` (Phase 9 `QuadraticScoringKernel` utilizing `Exposure = sign(Σ) × Σ² × shield_multiplier`).
+- **Shield Cascade:** Added documentation for `MemoryShield` and `DangerZone` attenuators.
+- **Risk Score Math:** L2 absorption logic split into directionless proxy (`toxicity`) and feature terms based on `absorption_penalty_source`.
+- **Legacy Cleanup:** Documented `macro_sync` deprecation and actual `mean_reversion.yaml` active parameters.
+- **Result:** Rewrote `scoring_passport.md` to be the actual SSOT for the Phase 9 logic.
+
+**Artifacts created:**
+- `config/docs/scoring_passport.md` (updated)
+- `reports/docs_audit/scoring_passport_audit_report.md` (new)
+
+## 2026-03-12: NEO-PRODUCER-CONTRACT-ALIGNMENT-AUDIT-AND-IMPLEMENTATION-PLAN
+
+**Task:** Deep audit and implementation planning for the 4 hard blockers that
+prevent execution-aware neocortex integration with Aurora. This package is audit
+and plan only — no code implementation.
+
+**What was audited:**
+- All 4 hard blockers (HB-1 through HB-4) re-validated against active codebase on Phenix_v2
+- Complete data lineage per field: `lifecycle_id`, `trade_id`, `fees`, `net_pnl`, `side`, `close_ts_ms`
+- All producer-side files: `intent_builder.py`, `event_handlers.py`, `fsm.py`, `open_executor.py`,
+  `trade_lifecycle_logger.py`, `order_logger.py`, `core_parser.py`, `order_parser.py`,
+  `transport/adapter.py`, `datasets/contracts.py`
+- Soft blockers SR-1 through SR-8 assessed for current blocking status
+- Alternative solutions enumerated for all 4 hard blockers
+
+**Key findings — all 4 HBs CONFIRMED:**
+1. **HB-1 `lifecycle_id`:** Architecturally absent. `idempotent_key` (UUID4 per intent) exists
+   and is indexed but never surfaced as top-level `lifecycle_id`. `rid` changes semantic identity
+   across ORDER_INTENT → ORDER_FILLED → POSITION_CLOSED (decision UUID → clientOrderId → fill-rid).
+2. **HB-2 `trade_id`:** Exchange `tradeId` present in ORDER_FILLED `metadata.fill_trade_id`
+   but NOT cached per-symbol. POSITION_CLOSED lacks `trade_id`. `side` hardcoded to "N/A".
+3. **HB-3 `fees`/`net_pnl`:** `commission` present in ORDER_FILLED metadata but NOT accumulated.
+   No per-symbol fee accumulator exists. POSITION_CLOSED has only `realized_pnl` (gross).
+4. **HB-4 regex path:** `core_parser.py` structured path theoretically fires for POSITION_CLOSED
+   but yields at most `symbol` + `realized_pnl`. `trade_id`, `fees`, `realized_pnl_net` are
+   never in Aurora's log text. `trade_lifecycle.jsonl` is richest structured SSOT but not wired
+   as neocortex primary source.
+
+**Root cause unifying all 4 HBs:**
+The POSITION_CLOSED write in `event_handlers.py:246-261` is a thin dict write that does not
+assemble the data available from per-symbol caches. The pattern for enriching it is identical
+to what already exists for `_last_realized_pnl_by_symbol` and `_last_close_reason_by_symbol`.
+
+**Planned fix — 4 additive packages (no neocortex changes, no broad refactor):**
+- PKG-1: Add `lifecycle_id` (= `idempotent_key`) to ORDER_INTENT + POSITION_CLOSED
+- PKG-2: Cache `tradeId` per-symbol → add `trade_id` + correct `side` to POSITION_CLOSED
+- PKG-3: Accumulate `commission` per-symbol → add `fees` + `net_pnl` to POSITION_CLOSED
+- PKG-4: Verify structured path fires; deprecate regex fallback comment; validate `reward_complete=True`
+- PKG-5 (optional): POSITION_OPENED event + decision trace persistence
+
+**What was NOT done (by design):**
+- No implementation of any fix
+- No neocortex code changes
+- No advisory influence reopened
+- No policy training re-enabled
+- No broad refactor
+- No live/testnet trading
+
+**Artifacts created:**
+- `docs/audits/aurora_producer_contract_alignment_audit.md` — full re-validation of all 4 HBs
+  with root cause, code anchors, alternatives, recommendations
+- `docs/audits/aurora_neocortex_integration_gap_deep_dive.md` — field-by-field data lineage,
+  implementation map, gap matrix, why neocortex cannot trust current surface
+- `docs/roadmaps/aurora_producer_contract_alignment_plan.md` — dependency-ordered PKG-1 to PKG-5
+  with TDD-first test plan, acceptance criteria, rollback posture
+
+**Recommended next package:** `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-1` — `lifecycle_id` propagation.
+3 files, ≤10 additive lines. No deletions. Write tests first.
+
+---
+
 ## 2026-03-11: NEO-INTEGRATION-DATA-CONTRACT-AUDIT
 
 **Task:** Integration audit and research to establish whether the new Aurora execution/data surface is compatible with neocortex's post-P1-P9 input contracts, and what must be resolved before any form of shadow launch.

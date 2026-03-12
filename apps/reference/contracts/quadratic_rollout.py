@@ -14,6 +14,9 @@ from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     QuadraticScoringKernel,
 )
 
+# FIX:N-6 — Canonical set of recognized scoring_version values
+_VALID_SCORING_VERSIONS = {"v2", "quadratic"}
+
 
 def _normalize_tokens(tokens: str | Iterable[str] | None) -> tuple[str, ...]:
     if tokens is None:
@@ -118,7 +121,8 @@ class QuadraticShadowEvaluation:
     psi_vector: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "why_chain", _normalize_tokens(self.why_chain))
+        object.__setattr__(self, "why_chain",
+                           _normalize_tokens(self.why_chain))
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -148,7 +152,8 @@ class QuadraticRolloutSnapshot:
     rollback_armed: bool
     rollback_armed_status: QuadraticRollbackArmedStatus
     rollback_reason_chain: tuple[str, ...] = field(default_factory=tuple)
-    quadratic_blocking_reason_chain: tuple[str, ...] = field(default_factory=tuple)
+    quadratic_blocking_reason_chain: tuple[str, ...] = field(
+        default_factory=tuple)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -184,15 +189,27 @@ def resolve_requested_quadratic_rollout(decision_cfg: Any) -> RequestedQuadratic
     requested_scoring_version = str(
         getattr(decision_cfg, "scoring_version", "v2") or "v2"
     ).strip().lower()
+    # FIX:N-6 — Reject unrecognized scoring_version to prevent silent fallback
+    if requested_scoring_version not in _VALID_SCORING_VERSIONS:
+        import logging as _logging
+        _logging.getLogger("quadratic_rollout").critical(
+            "scoring_version=%r is not in %s — falling back to 'v2' (potential config typo)",
+            requested_scoring_version,
+            _VALID_SCORING_VERSIONS,
+        )
+        requested_scoring_version = "v2"
     rollout_cfg = getattr(decision_cfg, "quadratic_rollout", None)
 
     shadow_enabled_raw = getattr(rollout_cfg, "shadow_enabled", False)
-    shadow_enabled = shadow_enabled_raw if isinstance(shadow_enabled_raw, bool) else False
+    shadow_enabled = shadow_enabled_raw if isinstance(
+        shadow_enabled_raw, bool) else False
 
     rollback_armed_raw = getattr(rollout_cfg, "rollback_armed", False)
-    rollback_armed = rollback_armed_raw if isinstance(rollback_armed_raw, bool) else False
+    rollback_armed = rollback_armed_raw if isinstance(
+        rollback_armed_raw, bool) else False
 
-    rollback_reason_chain_raw = getattr(rollout_cfg, "rollback_reason_chain", ())
+    rollback_reason_chain_raw = getattr(
+        rollout_cfg, "rollback_reason_chain", ())
     if not isinstance(rollback_reason_chain_raw, (list, tuple, set)):
         rollback_reason_chain_raw = ()
 
@@ -278,10 +295,12 @@ def build_quadratic_rollout_snapshot(
         blocking_reason_chain.extend(requested_rollout.rollback_reason_chain)
     if quadratic_readiness.state != RuntimeReadinessState.READY:
         blocking_reason_chain.append("quadratic_htf_not_ready")
-        blocking_reason_chain.append(f"quadratic_htf_state:{quadratic_readiness.state.value}")
+        blocking_reason_chain.append(
+            f"quadratic_htf_state:{quadratic_readiness.state.value}")
     if not runtime_permissions.can_open_new_risk:
         blocking_reason_chain.append("runtime_open_new_risk_blocked")
-    blocking_reason_chain = list(dict.fromkeys(_normalize_tokens(blocking_reason_chain)))
+    blocking_reason_chain = list(dict.fromkeys(
+        _normalize_tokens(blocking_reason_chain)))
 
     quadratic_can_open_new_risk = (
         (not requested_rollout.rollback_armed)

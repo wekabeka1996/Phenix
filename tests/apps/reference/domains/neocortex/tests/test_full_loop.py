@@ -142,11 +142,12 @@ def test_shadow_intent_emission(full_config):
     
     async def run_test():
         await adapter.start()
+        base_ts = 1_700_000_000.0
         
         # Send features
         for i in range(5):
             await adapter.handle_features({
-                "timestamp": float(i),
+                "timestamp": base_ts + float(i),
                 "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
@@ -207,12 +208,14 @@ def test_training_triggers_checkpoint(full_config):
     
     async def run_test():
         await adapter.start()
+        base_ts = 1_700_000_100.0
         
         # Send enough features to trigger multiple training steps
         # batch_size=2, checkpoint_every=2
         for i in range(10):
             await adapter.handle_features({
-                "timestamp": float(i),
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
             await asyncio.sleep(0.01)  # Give training time to complete
@@ -247,9 +250,11 @@ def test_adapter_stats(full_config):
     )
     
     async def run_test():
+        base_ts = 1_700_000_200.0
         for i in range(5):
             await adapter.handle_features({
-                "timestamp": float(i),
+                "timestamp": base_ts + float(i),
+                "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
         return adapter.stats
@@ -261,8 +266,8 @@ def test_adapter_stats(full_config):
     assert stats["shadow_intents_emitted"] == 0  # No bridge, no intents
 
 
-def test_waiting_for_reward_source_state_when_structured_reward_missing(full_config):
-    """If only reward-missing episodes are received, training must wait for source."""
+def test_reward_missing_episode_emits_alert_and_routes_to_execution_quality(full_config):
+    """Reward-missing episodes should alert and stay in execution-quality diagnostics."""
 
     emitted_events = []
 
@@ -296,7 +301,8 @@ def test_waiting_for_reward_source_state_when_structured_reward_missing(full_con
         return adapter.stats
 
     stats = run_async(run_test())
-    assert stats["waiting_for_reward_source"] is True
+    assert stats["waiting_for_reward_source"] is False
+    assert stats["execution_quality_buffered"] == 1
     alert_payloads = [payload for event, payload in emitted_events if event == "EVT:NEOCORTEX_ALERT"]
     assert any(payload.get("code") == "NO_STRUCTURED_REWARD_RECEIVED" for payload in alert_payloads)
 

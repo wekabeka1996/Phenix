@@ -10,6 +10,7 @@ Tests verify:
 import os
 import tempfile
 import pytest
+import yaml
 from pathlib import Path
 from apps.reference.config_loader import ConfigLoader
 from pydantic import ValidationError
@@ -99,6 +100,20 @@ def create_strategy_profiles(temp_config_dir):
     (strategies_dir / "mean_reversion.yaml").write_text(
         _read_canonical_yaml("strategies/mean_reversion.yaml"), encoding="utf-8"
     )
+
+
+def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    payload = yaml.safe_load(mr_profile_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    mr_root = payload.setdefault("mean_reversion", {})
+    assert isinstance(mr_root, dict)
+    assets = mr_root.setdefault("assets", {})
+    assert isinstance(assets, dict)
+    asset_cfg = assets.setdefault(symbol, {})
+    assert isinstance(asset_cfg, dict)
+    asset_cfg["enabled"] = True
+    mr_profile_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_strict_mode_fails_on_missing_strategies_yaml(
@@ -197,6 +212,7 @@ def test_strategies_yaml_loads_successfully(
     base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test C: Valid strategies.yaml loads successfully with correct structure."""
+    _enable_mean_reversion_asset(temp_config_dir, "BTCUSDT")
     (temp_config_dir / "strategies.yaml").write_text(base_strategies_yaml, encoding="utf-8")
     (temp_config_dir / "trading.yaml").write_text(base_trading_yaml, encoding="utf-8")
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
@@ -271,6 +287,7 @@ def test_missing_priority_for_hybrid_symbol_fails(
     base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test E: Missing priority for hybrid symbol strategy causes ValidationError."""
+    _enable_mean_reversion_asset(temp_config_dir, "BTCUSDT")
     strategies_missing_priority = """
 version: "1.0.0"
 

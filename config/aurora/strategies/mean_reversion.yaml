@@ -37,6 +37,78 @@ mean_reversion:
     enabled: false
     system_stress_policy: "off"       # "off" | "attenuate" | "block" (quoted: YAML parses bare 'off' as bool)
 
+  objective:
+    enabled: true
+    regimes:
+      FLAT_LOW:
+        weights:
+          cost: 1.1
+          risk: 1.0
+          edge: 1.2
+          execution: 1.1
+          information: 1.0
+          behavior: 0.9
+        multiplier:
+          m_min: 0.2
+          m_max: 1.2
+          lambda_scale: 1.0
+          penalty_center: -4.5
+          penalty_scale: 2.0
+        gate:
+          min_objective_score: 0.05
+          enforcement_mode: "OBSERVE"
+      FLAT_NORMAL:
+        weights:
+          cost: 1.0
+          risk: 1.0
+          edge: 1.4
+          execution: 1.0
+          information: 1.0
+          behavior: 0.8
+        multiplier:
+          m_min: 0.2
+          m_max: 1.3
+          lambda_scale: 1.0
+          penalty_center: -4.5
+          penalty_scale: 2.0
+        gate:
+          min_objective_score: 0.06
+          enforcement_mode: "OBSERVE"
+      FLAT_HIGH:
+        weights:
+          cost: 1.2
+          risk: 1.3
+          edge: 1.0
+          execution: 1.2
+          information: 1.0
+          behavior: 1.0
+        multiplier:
+          m_min: 0.15
+          m_max: 1.1
+          lambda_scale: 1.0
+          penalty_center: -4.0
+          penalty_scale: 2.0
+        gate:
+          min_objective_score: 0.08
+          enforcement_mode: "OBSERVE"
+      MEAN_REVERSION:
+        weights:
+          cost: 1.3
+          risk: 1.0
+          edge: 1.3
+          execution: 1.1
+          information: 1.0
+          behavior: 0.9
+        multiplier:
+          m_min: 0.2
+          m_max: 1.25
+          lambda_scale: 1.0
+          penalty_center: -4.5
+          penalty_scale: 2.0
+        gate:
+          min_objective_score: 0.06
+          enforcement_mode: "OBSERVE"
+
 
   #
   # Strategy Parameters (global defaults)
