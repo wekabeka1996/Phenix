@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "exit_match_failed_v1.json",
+  "title": "EVT:EXIT_MATCH_FAILED payload schema",
+  "description": "Structured forensic telemetry for unmatched execution exit events.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "event_type",
+    "normalized_client_order_id",
+    "inferred_role",
+    "mismatch_reason",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "event_type": { "type": "string", "minLength": 1 },
+    "incoming_order_id": { "type": ["string", "null"] },
+    "incoming_client_order_id": { "type": "string" },
+    "normalized_client_order_id": { "type": "string" },
+    "inferred_role": { "type": "string", "minLength": 1 },
+    "local_expected_ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entry_order_id": { "type": ["string", "null"] },
+        "entry_client_order_id": { "type": ["string", "null"] },
+        "sl_order_id": { "type": ["string", "null"] },
+        "tp_order_id": { "type": ["string", "null"] },
+        "tp1_order_id": { "type": ["string", "null"] },
+        "tp2_order_id": { "type": ["string", "null"] }
+      }
+    },
+    "local_state_before": { "type": "string" },
+    "local_state_after": { "type": "string" },
+    "mismatch_reason": { "type": "string", "minLength": 1 },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

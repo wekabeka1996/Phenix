@@ -144,6 +144,10 @@ class FeatureEngineering:
             anchor: deque(maxlen=self.cfg.macro_sync_window)
             for anchor in self.cfg.macro_sync_anchors
         }
+        self.anchor_price_points: Dict[str, deque] = {
+            anchor: deque(maxlen=self.cfg.macro_sync_window)
+            for anchor in self.cfg.macro_sync_anchors
+        }
         self._anchor_last_ts_ms: Dict[str, int] = {anchor: 0 for anchor in self.cfg.macro_sync_anchors}
         self._macro_sync_runtime_bin_ms: int = int(self.cfg.macro_sync_bin_ms)
         self._macro_sync_gap_bins_override: Optional[int] = None
@@ -297,16 +301,41 @@ class FeatureEngineering:
                 why="Missing exchange-derived ts_ms for EVT:ANCHOR_UPDATED (wallclock fallback forbidden)",
             )
         if anchor in self.anchor_prices:
-            self.anchor_prices[anchor].append(decimal.Decimal(price))
+            price_dec = decimal.Decimal(price)
+            self.anchor_prices[anchor].append(price_dec)
+            self.anchor_price_points[anchor].append((int(ts_ms), price_dec))
             self._anchor_last_ts_ms[anchor] = int(ts_ms)
             self._macro_sync_resampler.update_anchor(
                 anchor,
                 ts_ms=int(ts_ms),
-                price=float(decimal.Decimal(price)),
+                price=float(price_dec),
                 max_gap_bins=self._macro_sync_effective_max_gap_bins(),
             )
             self._macro_sync_anchor_ts_missing = False
             self.logger.debug(f"Updated anchor {anchor} price: {price}")
+
+    def _latest_anchor_price_pair_before(
+        self,
+        anchor: str,
+        *,
+        current_ts_ms: int,
+    ) -> Optional[tuple[decimal.Decimal, decimal.Decimal]]:
+        points = self.anchor_price_points.get(anchor)
+        if not points:
+            return None
+
+        causal_points: list[decimal.Decimal] = []
+        for point_ts_ms, point_price in reversed(points):
+            if int(point_ts_ms) > int(current_ts_ms):
+                continue
+            if point_price <= 0:
+                continue
+            causal_points.append(point_price)
+            if len(causal_points) == 2:
+                break
+        if len(causal_points) < 2:
+            return None
+        return causal_points[1], causal_points[0]
 
     def _macro_sync_effective_max_gap_bins(self, tf_sec: Optional[int] = None) -> int:
         """Compute runtime max_gap_bins for macro_sync (live default, bar-only backtest override)."""
@@ -456,15 +485,6 @@ class FeatureEngineering:
             state.macro_sync_not_ready_reason = "anchor_ts_missing"
             return self.cfg.neutral_value
 
-        # FIX 2 (P0): Causality guard.
-        # Never mix anchor updates from the future (relative to this tick) into macro features.
-        for anchor in self.cfg.macro_sync_anchors:
-            anchor_ts = int((self._anchor_last_ts_ms.get(anchor, 0) or 0))
-            if anchor_ts > 0 and anchor_ts > int(current_ts_ms):
-                state.macro_sync_ready = False
-                state.macro_sync_not_ready_reason = f"anchor_from_future:{anchor}"
-                inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
-                return self.cfg.neutral_value
         return self._engine.compute_macro_sync_v2(
             state,
             self._macro_sync_resampler,
@@ -593,6 +613,7 @@ class FeatureEngineering:
             if self.cfg.macro_sync_anchor_update_from_ticks and symbol in self.cfg.macro_sync_anchors:
                 price = decimal.Decimal(str(current_tick.get("price", 0)))
                 self.anchor_prices[symbol].append(price)
+                self.anchor_price_points[symbol].append((int(ts_pld), price))
                 self._anchor_last_ts_ms[symbol] = int(ts_pld)
                 if price > 0:
                     self._macro_sync_resampler.update_anchor(
@@ -616,6 +637,7 @@ class FeatureEngineering:
         if self.cfg.macro_sync_anchor_update_from_ticks and symbol in self.cfg.macro_sync_anchors:
             price = decimal.Decimal(str(current_tick.get("price", 0)))
             self.anchor_prices[symbol].append(price)
+            self.anchor_price_points[symbol].append((int(ts_pld), price))
             self._anchor_last_ts_ms[symbol] = int(ts_pld)
             if price > 0:
                 self._macro_sync_resampler.update_anchor(
@@ -698,9 +720,12 @@ class FeatureEngineering:
 
         # Bar-only mode: derive feature seed directly from bar payload.
         seed_tick = self.last_tick_data.get(symbol, {})
+        processing_wall_ts_ms = int(time.time() * 1000)
         bar_tick = {
             "symbol": symbol,
             "ts": int(bar_ts),
+            # FIX:BAR-TS-CAUSALITY-GUARD keep bar ts for feature math, but track processing time for causality checks.
+            "wall_ts_ms": processing_wall_ts_ms,
             "price": str(close_price),
             "bid_size": str(bar_get("bid_size", seed_tick.get("bid_size", "0"))),
             "ask_size": str(bar_get("ask_size", seed_tick.get("ask_size", "0"))),
@@ -927,76 +952,74 @@ class FeatureEngineering:
 
         bars = bar_data if bar_data is not None else self.last_bar.get((symbol, tf_sec))
         raw = None
-        try:
-            raw = calc_engine.compute_pillars(bars, symbol, tf_sec)
-        except TypeError as sig_err:
-            self.logger.debug(
-                f"[{symbol}] compute_pillars signature fallback engaged (tf_sec={tf_sec}): {sig_err}"
-            )
-            state = self._pillar_states.get(symbol)
-            if state is None:
-                state = PillarState()
-                self._pillar_states[symbol] = state
+        # PHASE-9: calc_engine.compute_pillars canonical signature is compute_pillars(state: PillarState).
+        # The old (bars, symbol, tf_sec) signature no longer exists. Using canonical path directly.
+        state = self._pillar_states.get(symbol)
+        if state is None:
+            state = PillarState()
+            self._pillar_states[symbol] = state
 
-            if bars is not None and hasattr(calc_engine, "update_pillar_candle"):
-                if isinstance(bars, dict):
-                    bar_identity = extract_canonical_bar_identity(
-                        {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
-                        default_symbol=symbol,
-                        default_timeframe_sec=int(tf_sec),
-                        default_source_mode=RuntimeBarSourceMode.LIVE,
-                    )
-                    bar_close = bars.get("close")
-                    bar_high = bars.get("high", bar_close)
-                    bar_low = bars.get("low", bar_close)
-                    bar_ts_ms = (
+        # PHASE-9: Update pillar candle state from bar data (runs every bar, not just on init).
+        # calc_engine.compute_pillars canonical signature: compute_pillars(state: PillarState)
+        if bars is not None and hasattr(calc_engine, "update_pillar_candle"):
+            if isinstance(bars, dict):
+                bar_identity = extract_canonical_bar_identity(
+                    {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
+                    default_symbol=symbol,
+                    default_timeframe_sec=int(tf_sec),
+                    default_source_mode=RuntimeBarSourceMode.LIVE,
+                )
+                bar_close = bars.get("close")
+                bar_high = bars.get("high", bar_close)
+                bar_low = bars.get("low", bar_close)
+                bar_ts_ms = (
+                    int(bar_identity.close_boundary_ts_ms)
+                    if bar_identity is not None
+                    else bars.get("close_boundary_ts_ms")
+                    or bars.get("end_ts_ms")
+                    or bars.get("close_ts")
+                    or bars.get("kline_close_time")
+                )
+            else:
+                bar_identity = extract_canonical_bar_identity(
+                    {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
+                    default_symbol=symbol,
+                    default_timeframe_sec=int(tf_sec),
+                    default_source_mode=RuntimeBarSourceMode.LIVE,
+                )
+                bar_close = getattr(bars, "close", None)
+                bar_high = getattr(bars, "high", bar_close)
+                bar_low = getattr(bars, "low", bar_close)
+                bar_ts_ms = (
+                    (
                         int(bar_identity.close_boundary_ts_ms)
                         if bar_identity is not None
-                        else bars.get("close_boundary_ts_ms")
-                        or bars.get("end_ts_ms")
-                        or bars.get("close_ts")
-                        or bars.get("kline_close_time")
+                        else None
                     )
-                else:
-                    bar_identity = extract_canonical_bar_identity(
-                        {"symbol": symbol, "tf_sec": tf_sec, "bar": bars},
-                        default_symbol=symbol,
-                        default_timeframe_sec=int(tf_sec),
-                        default_source_mode=RuntimeBarSourceMode.LIVE,
-                    )
-                    bar_close = getattr(bars, "close", None)
-                    bar_high = getattr(bars, "high", bar_close)
-                    bar_low = getattr(bars, "low", bar_close)
-                    bar_ts_ms = (
-                        (
-                            int(bar_identity.close_boundary_ts_ms)
-                            if bar_identity is not None
-                            else None
-                        )
-                        or getattr(bars, "close_boundary_ts_ms", None)
-                        or getattr(bars, "end_ts_ms", None)
-                        or getattr(bars, "close_ts", None)
-                        or getattr(bars, "kline_close_time", None)
-                    )
+                    or getattr(bars, "close_boundary_ts_ms", None)
+                    or getattr(bars, "end_ts_ms", None)
+                    or getattr(bars, "close_ts", None)
+                    or getattr(bars, "kline_close_time", None)
+                )
 
-                tf_map = getattr(self, "_pillar_timeframe_to_label", None)
-                if not isinstance(tf_map, dict) or not tf_map:
-                    tf_map = {900: "m15", 14400: "h4", 86400: "d1"}
-                tf_label = tf_map.get(int(tf_sec))
-                if tf_label and bar_close is not None and bar_ts_ms is not None:
-                    try:
-                        calc_engine.update_pillar_candle(
-                            state,
-                            timeframe=tf_label,
-                            close=float(bar_close),
-                            high=float(bar_high if bar_high is not None else bar_close),
-                            low=float(bar_low if bar_low is not None else bar_close),
-                            bar_ts_ms=int(bar_ts_ms),
-                        )
-                    except Exception as e:
-                        self.logger.debug(f"[{symbol}] Pillar candle update skipped: {e}")
+            tf_map = getattr(self, "_pillar_timeframe_to_label", None)
+            if not isinstance(tf_map, dict) or not tf_map:
+                tf_map = {900: "m15", 14400: "h4", 86400: "d1"}
+            tf_label = tf_map.get(int(tf_sec))
+            if tf_label and bar_close is not None and bar_ts_ms is not None:
+                try:
+                    calc_engine.update_pillar_candle(
+                        state,
+                        timeframe=tf_label,
+                        close=float(bar_close),
+                        high=float(bar_high if bar_high is not None else bar_close),
+                        low=float(bar_low if bar_low is not None else bar_close),
+                        bar_ts_ms=int(bar_ts_ms),
+                    )
+                except Exception as e:
+                    self.logger.debug(f"[{symbol}] Pillar candle update skipped: {e}")
 
-            raw = calc_engine.compute_pillars(state)
+        raw = calc_engine.compute_pillars(state)
 
         if raw is None:
             return None
@@ -1063,6 +1086,8 @@ class FeatureEngineering:
             prev_price = decimal.Decimal(str(last_tick["price"] if "price" in last_tick else 0))
             time_diff = current_tick["ts"] - last_tick["ts"]
             current_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
+            # FIX:BAR-TS-CAUSALITY-GUARD bar events carry wall-clock processing time so live anchors do not look "future".
+            causality_ts_ms = int((current_tick.get("wall_ts_ms") if isinstance(current_tick, dict) else 0) or current_ts_ms)
             self._ticks_seen[symbol] += 1
 
             # P1-1 FIX: Early return on bad time_diff (out-of-order or duplicate tick)
@@ -1190,31 +1215,34 @@ class FeatureEngineering:
                 # ================================================================
                 # Replaces macro_sync for direction scoring (SIGNED, neutral=0)
                 if self.cfg.macro_resid_enabled:
-                    # FIX 2 (P0): Causality guard.
-                    # Never use anchor data from the future relative to this tick.
-                    btc_anchor_ts = int((self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
-                    if btc_anchor_ts > 0 and btc_anchor_ts > int(current_ts_ms):
-                        hot.macro_resid_ready = False
-                        hot.macro_resid_not_ready_reason = "anchor_from_future:BTCUSDT"
-                        inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
-                        macro_resid_val = self.cfg.zero_value
-                        macro_resid_ready = False
-                        macro_resid_reason = hot.macro_resid_not_ready_reason
-                    else:
-                        # Get BTC price for anchor return
-                        btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
-                        if btc_price_hist and len(btc_price_hist) >= 2 and prev_price > 0:
-                            # Calculate returns
-                            asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
-                            btc_prev = btc_price_hist[-2] if len(btc_price_hist) >= 2 else btc_price_hist[-1]
-                            btc_curr = btc_price_hist[-1]
-                            anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
-                            
-                            # Update buffers
-                            self._engine.update_macro_resid(hot, asset_return, anchor_return)
-                        
-                        # Compute
+                    if symbol == "BTCUSDT" and prev_price > 0:
+                        asset_return = float((price - prev_price) / prev_price)
+                        self._engine.update_macro_resid(hot, asset_return, asset_return)
                         macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                    else:
+                        btc_anchor_pair = self._latest_anchor_price_pair_before(
+                            "BTCUSDT",
+                            current_ts_ms=int(causality_ts_ms),
+                        )
+                        if btc_anchor_pair is None:
+                            btc_anchor_ts = int((self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
+                            hot.macro_resid_ready = False
+                            if btc_anchor_ts > 0 and btc_anchor_ts > int(causality_ts_ms):
+                                hot.macro_resid_not_ready_reason = "anchor_from_future:BTCUSDT"
+                                inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
+                            else:
+                                hot.macro_resid_not_ready_reason = "insufficient_anchor_samples:BTCUSDT"
+                            macro_resid_val = self.cfg.zero_value
+                            macro_resid_ready = False
+                            macro_resid_reason = hot.macro_resid_not_ready_reason
+                        elif prev_price > 0:
+                            btc_prev, btc_curr = btc_anchor_pair
+                            asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
+                            anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
+                            self._engine.update_macro_resid(hot, asset_return, anchor_return)
+                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                        else:
+                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
                     
 
                     # FIX-AUDITED-ISSUES-01 (Part C): Fail-closed emission.

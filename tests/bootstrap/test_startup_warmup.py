@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from apps.reference.bootstrap.runtime_analytics_restore import (
@@ -177,3 +178,13 @@ def test_startup_warmup_report_keeps_restore_and_warmup_separate() -> None:
     assert record["warmup"]["feature_engineering"]["state"] == "WARMED"
     assert record["warmup"]["regime_detector"]["state"] == "PARTIAL"
     assert "startup_warmup_in_progress" in record["effective_blockers"]
+
+
+def test_main_starts_regime_detector_before_market_data() -> None:
+    source = Path(
+        "C:/Users/user/Music/Phenix/apps/reference/main.py"
+    ).read_text(encoding="utf-8")
+
+    assert source.index("regime_detector.start()") < source.index(
+        "market_data.start_async()"
+    )

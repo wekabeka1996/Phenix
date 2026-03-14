@@ -38,8 +38,8 @@ class AuroraAdapterConfig(BaseModel):
     """Configuration for Aurora scoring adapter."""
 
     scoring_version: str = Field(
-        default="v2",
-        description="Aurora scoring version (v1 or v2)"
+        default="quadratic",
+        description="Aurora scoring version: quadratic (Phase 9). v1/v2 are DEPRECATED."
     )
     essential_features: List[str] = Field(
         default_factory=lambda: ["obi", "delta_price", "macro_resid"],
@@ -53,6 +53,8 @@ class AuroraAdapterConfig(BaseModel):
         default=0.02,
         description="Cap for delta_price normalization"
     )
+    # DEPRECATED: signal_weights and feature_neutrals are parsed for backward-compat
+    # but QuadraticScoringKernel ignores them. Quadratic reads pillar_sum only.
     signal_weights: Dict[str, float] = Field(
         default_factory=lambda: {
             "obi": 0.42,
@@ -65,7 +67,7 @@ class AuroraAdapterConfig(BaseModel):
             "volume_spike": 0.10,
             "volatility_state": 0.10,
         },
-        description="Aurora per-feature scoring weights"
+        description="DEPRECATED: Weights parsed for compat, ignored by QuadraticScoringKernel"
     )
     feature_neutrals: Dict[str, float] = Field(
         default_factory=lambda: {
@@ -79,7 +81,7 @@ class AuroraAdapterConfig(BaseModel):
             "macro_sync": 0.5,
             "macro_resid": 0.0,
         },
-        description="Aurora neutral values for scoring kernel"
+        description="DEPRECATED: Neutrals parsed for compat, ignored by QuadraticScoringKernel"
     )
     regime_thresholds: Dict[str, float] = Field(
         default_factory=lambda: {

@@ -66,7 +66,7 @@ aurora:
 #   3. aurora.assets.BNBUSDT.allowed_regimes                : remove TREND_UP, TREND_DOWN  ← NEW in patched3
 #   4. aurora.assets.BTCUSDT.regime_sizing.HIGH_VOLATILITY  : 0.65  → 0.50
 #
-# File: regime.yaml (B only — aurora_baseline unchanged)
+# File: regime.yaml (aurora_baseline was archived to archive/config_snapshots/ on 2026-03-14)
 #   5. sma_short_period : 24 → 48
 #   6. sma_long_period  : 96 → 192
 #

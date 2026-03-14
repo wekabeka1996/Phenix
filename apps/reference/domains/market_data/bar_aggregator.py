@@ -17,7 +17,7 @@ Usage:
         timeframes_sec=[180, 300],  # 3m and 5m bars
         emit_fn=fsm.emit
     )
-    
+
     # In tick handler:
     aggregator.on_tick(symbol, price, volume, ts_ms)
 """
@@ -57,17 +57,17 @@ LOG = logging.getLogger(__name__)
 class BarAggregator:
     """
     Multi-symbol, multi-timeframe bar aggregator with event emission.
-    
+
     SSOT for bar construction. Emits EVT:BAR_CLOSED when bars complete.
-    
+
     Thread-safety: Uses per-key locking for concurrent access.
-    
+
     Out-of-order policy:
     - If ts_ms <= last_ts_ms for (symbol, tf): tick is dropped
     - Metrics are incremented for dropped ticks
     - No bar corruption occurs
     """
-    
+
     def __init__(
         self,
         timeframes_sec: Optional[List[int]] = None,
@@ -76,7 +76,7 @@ class BarAggregator:
     ):
         """
         Initialize bar aggregator.
-        
+
         Args:
             timeframes_sec: List of bar durations in seconds (default [180, 300])
             emit_fn: Function to emit events (FSM emit or mock)
@@ -85,36 +85,38 @@ class BarAggregator:
         self.timeframes_sec = timeframes_sec or [180, 300]  # 3m and 5m default
         self.emit_fn = emit_fn
         self.max_bars_per_key = max_bars_per_key
-        
+
         # Validate timeframes
         for tf in self.timeframes_sec:
             if tf <= 0:
                 raise ValueError(f"timeframe_sec must be positive, got {tf}")
-        
+
         # State per (symbol, timeframe_sec) key
         # key -> current incomplete bar
         self._current_bars: Dict[Tuple[str, int], Bar] = {}
-        
+
         # key -> list of completed bars (most recent last)
-        self._completed_bars: Dict[Tuple[str, int], List[Bar]] = defaultdict(list)
-        
+        self._completed_bars: Dict[Tuple[str, int],
+                                   List[Bar]] = defaultdict(list)
+
         # key -> last tick timestamp (for out-of-order detection)
         self._last_ts: Dict[Tuple[str, int], int] = {}
-        
+
         # Locks per key for thread safety
         self._locks: Dict[Tuple[str, int], Lock] = defaultdict(Lock)
-        
+
         # Metrics
         self._ticks_processed: int = 0
         self._ticks_dropped_ooo: int = 0  # out-of-order drops
         self._bars_completed: int = 0
         self._events_emitted: int = 0
-        
+
         LOG.info(
             "BarAggregator initialized",
-            extra={"timeframes_sec": self.timeframes_sec, "max_bars": max_bars_per_key}
+            extra={"timeframes_sec": self.timeframes_sec,
+                   "max_bars": max_bars_per_key}
         )
-    
+
     def on_tick(
         self,
         symbol: str,
@@ -124,28 +126,29 @@ class BarAggregator:
     ) -> List[Bar]:
         """
         Process a tick for all configured timeframes.
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
             price: Tick price
             volume: Tick volume (default 0)
             ts_ms: Tick timestamp in milliseconds (default: current time)
-        
+
         Returns:
             List of completed bars (one per timeframe that closed)
         """
         if ts_ms is None:
             ts_ms = get_clock().now_ms()
-        
+
         completed = []
-        
+
         for tf_sec in self.timeframes_sec:
-            bar = self._process_tick_for_tf(symbol, tf_sec, price, volume, ts_ms)
+            bar = self._process_tick_for_tf(
+                symbol, tf_sec, price, volume, ts_ms)
             if bar is not None:
                 completed.append(bar)
-        
+
         return completed
-    
+
     def _process_tick_for_tf(
         self,
         symbol: str,
@@ -156,14 +159,14 @@ class BarAggregator:
     ) -> Optional[Bar]:
         """
         Process tick for a specific timeframe.
-        
+
         Returns completed Bar if bar period ended, None otherwise.
         """
         key = (symbol, tf_sec)
-        
+
         with self._locks[key]:
             self._ticks_processed += 1
-            
+
             # Out-of-order check (fail-closed: drop, don't corrupt)
             last_ts = self._last_ts.get(key, 0)
             if ts_ms <= last_ts:
@@ -178,12 +181,12 @@ class BarAggregator:
                     }
                 )
                 return None
-            
+
             self._last_ts[key] = ts_ms
             tf_ms = tf_sec * 1000
-            
+
             current = self._current_bars.get(key)
-            
+
             # First tick for this key
             if current is None:
                 bar_start = self._align_to_boundary(ts_ms, tf_ms)
@@ -200,32 +203,32 @@ class BarAggregator:
                     end_ts_ms=ts_ms,
                 )
                 return None
-            
+
             # Check if tick belongs to new bar period
             bar_end_ts = current.start_ts_ms + tf_ms
-            
+
             if ts_ms >= bar_end_ts:
                 # Close current bar
                 current.end_ts_ms = bar_end_ts - 1
                 closed_bar = current
-                
+
                 # Store completed bar
                 completed_list = self._completed_bars[key]
                 completed_list.append(closed_bar)
                 if len(completed_list) > self.max_bars_per_key:
                     completed_list.pop(0)
-                
+
                 self._bars_completed += 1
-                
+
                 # Emit EVT:BAR_CLOSED
                 self._emit_bar_closed(closed_bar, ts_ms)
-                
+
                 # Detect gap
                 new_bar_start = self._align_to_boundary(ts_ms, tf_ms)
                 expected_next = bar_end_ts
                 gap_bars = (new_bar_start - expected_next) // tf_ms
                 is_gap = gap_bars > 0
-                
+
                 # Start new bar
                 self._current_bars[key] = Bar(
                     symbol=symbol,
@@ -241,9 +244,9 @@ class BarAggregator:
                     gap_bars_skipped=int(gap_bars),
                     is_gap_bar=is_gap,
                 )
-                
+
                 return closed_bar
-            
+
             # Update current bar
             current.close = price
             current.high = max(current.high, price)
@@ -251,22 +254,28 @@ class BarAggregator:
             current.volume += volume
             current.trade_count += 1
             current.end_ts_ms = ts_ms
-            
+
             return None
-    
+
     def _align_to_boundary(self, ts_ms: int, tf_ms: int) -> int:
         """Align timestamp to bar boundary (floor to timeframe)."""
         return (ts_ms // tf_ms) * tf_ms
-    
-    def _emit_bar_closed(self, bar: Bar, event_ts_ms: int) -> None:
+
+    def _emit_bar_closed(
+        self,
+        bar: Bar,
+        event_ts_ms: int,
+        source_mode: RuntimeBarSourceMode = RuntimeBarSourceMode.LIVE,
+    ) -> None:
         """Emit EVT:BAR_CLOSED event."""
         identity = build_canonical_bar_identity(
             symbol=bar.symbol,
             timeframe_sec=int(bar.timeframe_sec),
             bar_start_ts_ms=int(bar.start_ts_ms),
             bar_end_ts_ms=int(bar.end_ts_ms),
-            close_boundary_ts_ms=int(bar.start_ts_ms) + int(bar.timeframe_sec) * 1000,
-            source_mode=RuntimeBarSourceMode.LIVE,
+            close_boundary_ts_ms=int(bar.start_ts_ms) +
+            int(bar.timeframe_sec) * 1000,
+            source_mode=source_mode,
         )
 
         # Serialize bar to dict with string decimals (JSON-safe)
@@ -312,23 +321,29 @@ class BarAggregator:
         if gap_status is not None:
             attach_gap_status_payload(wal_payload, gap=gap_status)
 
-        try:
-            msg = Message(
-                op="EVT",
-                verb="BAR_CLOSED",
-                src="market_data",
-                dst="any",
-                rid=f"bar:{bar.symbol}:{bar.timeframe_sec}:{bar.end_ts_ms}",
-                ts=int(event_ts_ms),
-                why=truncate_why(f"bar_closed:{bar.timeframe_sec}s:{bar.symbol}"),
-                pld=wal_payload,
-            )
-            wal.append(msg.model_dump())
-        except Exception as e:
-            LOG.warning(
-                "Failed to write BAR_CLOSED to WAL",
-                extra={"symbol": bar.symbol, "tf_sec": bar.timeframe_sec, "error": str(e)},
-            )
+        # STARTUP-BASIS-HYDRATION: Do not write WARMUP_IMPORT bars to WAL.
+        # Historical basis bars are not live events; writing them would corrupt the
+        # replay contract (WAL consumers expect only real-time events in LIVE mode).
+        if source_mode != RuntimeBarSourceMode.WARMUP_IMPORT:
+            try:
+                msg = Message(
+                    op="EVT",
+                    verb="BAR_CLOSED",
+                    src="market_data",
+                    dst="any",
+                    rid=f"bar:{bar.symbol}:{bar.timeframe_sec}:{bar.end_ts_ms}",
+                    ts=int(event_ts_ms),
+                    why=truncate_why(
+                        f"bar_closed:{bar.timeframe_sec}s:{bar.symbol}"),
+                    pld=wal_payload,
+                )
+                wal.append(msg.model_dump())
+            except Exception as e:
+                LOG.warning(
+                    "Failed to write BAR_CLOSED to WAL",
+                    extra={"symbol": bar.symbol,
+                           "tf_sec": bar.timeframe_sec, "error": str(e)},
+                )
 
         if self.emit_fn is None:
             return
@@ -364,15 +379,39 @@ class BarAggregator:
                 extra={"error": str(e), "symbol": bar.symbol},
                 exc_info=True,
             )
-    
+
+    def inject_historical_bar(self, bar: Bar) -> None:
+        """Inject a pre-built completed bar for startup warmup (WARMUP_IMPORT source mode).
+
+        STARTUP-BASIS-HYDRATION: Called by startup executor to seed FE feature buffers
+        with historical Binance klines. Bypasses tick-based OHLCV construction.
+
+        - Stores bar in _completed_bars (same as live-constructed bars)
+        - Advances _last_ts boundary so subsequent live ticks are not OOO-dropped
+        - Emits EVT:BAR_CLOSED with WARMUP_IMPORT source mode for FE to process
+        """
+        key = (bar.symbol, bar.timeframe_sec)
+        with self._locks[key]:
+            completed_list = self._completed_bars[key]
+            completed_list.append(bar)
+            if len(completed_list) > self.max_bars_per_key:
+                completed_list.pop(0)
+            # Advance _last_ts so subsequent live ticks are not dropped as OOO
+            self._last_ts[key] = max(self._last_ts.get(key, 0), bar.end_ts_ms)
+            self._bars_completed += 1
+        # Emit outside lock — emit_fn may trigger downstream synchronous handlers
+        self._emit_bar_closed(
+            bar, bar.end_ts_ms, source_mode=RuntimeBarSourceMode.WARMUP_IMPORT
+        )
+
     # =========================================================================
     # Query methods (for testing and debugging)
     # =========================================================================
-    
+
     def get_current_bar(self, symbol: str, tf_sec: int) -> Optional[Bar]:
         """Get current incomplete bar for (symbol, tf)."""
         return self._current_bars.get((symbol, tf_sec))
-    
+
     def get_completed_bars(
         self, symbol: str, tf_sec: int, n: Optional[int] = None
     ) -> List[Bar]:
@@ -381,7 +420,7 @@ class BarAggregator:
         if n is None:
             return list(bars)
         return bars[-n:]
-    
+
     def get_metrics(self) -> dict:
         """Get aggregator metrics."""
         return {
@@ -391,11 +430,11 @@ class BarAggregator:
             "events_emitted": self._events_emitted,
             "active_keys": len(self._current_bars),
         }
-    
+
     def reset(self, symbol: Optional[str] = None, tf_sec: Optional[int] = None) -> None:
         """
         Reset aggregator state.
-        
+
         Args:
             symbol: Reset only this symbol (None = all)
             tf_sec: Reset only this timeframe (None = all)
@@ -406,43 +445,45 @@ class BarAggregator:
             self._last_ts.clear()
             LOG.info("BarAggregator reset (all)")
             return
-        
+
         keys_to_remove = [
             k for k in self._current_bars.keys()
             if (symbol is None or k[0] == symbol)
             and (tf_sec is None or k[1] == tf_sec)
         ]
-        
+
         for key in keys_to_remove:
             self._current_bars.pop(key, None)
             self._completed_bars.pop(key, None)
             self._last_ts.pop(key, None)
-        
+
         LOG.info(
             "BarAggregator reset (partial)",
-            extra={"symbol": symbol, "tf_sec": tf_sec, "keys_removed": len(keys_to_remove)}
+            extra={"symbol": symbol, "tf_sec": tf_sec,
+                   "keys_removed": len(keys_to_remove)}
         )
-    
+
     # =========================================================================
     # FSM event handler for wiring
     # =========================================================================
-    
+
     def on_market_tick(self, event) -> None:
         """
         FSM event handler for EVT:MARKET_TICK_RECEIVED.
-        
+
         BAR-SSOT-002: Wiring as passive observer on tick stream.
-        
+
         Args:
             event: FSM Message with payload containing tick data
         """
         try:
-            pld = event.pld if hasattr(event, 'pld') else event.get('payload', event)
-            
+            pld = event.pld if hasattr(
+                event, 'pld') else event.get('payload', event)
+
             symbol = pld.get('symbol')
             # Payload uses 'ts' (not 'ts_ms'), fallback to 'ts_ms' and 'timestamp'
             ts_ms = pld.get('ts') or pld.get('ts_ms') or pld.get('timestamp')
-            
+
             # Price: prefer mid, fallback to bid/ask average, then last
             price_raw = pld.get('mid') or pld.get('price')
             if price_raw is None:
@@ -452,15 +493,17 @@ class BarAggregator:
                     price_raw = (Decimal(str(bid)) + Decimal(str(ask))) / 2
                 else:
                     price_raw = pld.get('last_price') or pld.get('close')
-            
+
             if symbol is None or ts_ms is None or price_raw is None:
-                LOG.debug("BarAggregator: incomplete tick, skipping", extra={"pld": pld})
+                LOG.debug("BarAggregator: incomplete tick, skipping",
+                          extra={"pld": pld})
                 return
-            
+
             price = Decimal(str(price_raw))
             volume = Decimal(str(pld.get('volume', 0) or 0))
-            
+
             self.on_tick(symbol, price, volume, int(ts_ms))
-            
+
         except Exception as e:
-            LOG.warning(f"BarAggregator.on_market_tick error: {e}", exc_info=True)
+            LOG.warning(
+                f"BarAggregator.on_market_tick error: {e}", exc_info=True)

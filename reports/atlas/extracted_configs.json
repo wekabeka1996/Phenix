@@ -904,7 +904,7 @@
             "threshold": 0.155,
             "fail_closed": true,
             "adapter": {
-              "scoring_version": "v2",
+              "scoring_version": "quadratic",
               "essential_features": [
                 "obi",
                 "delta_price",
@@ -29086,7 +29086,47 @@
             "danger_zone_action": "TIGHTEN_STOPS",
             "danger_zone_tighten_factor": 0.5
           },
-          "scoring_version": "v2",
+          "scoring_version": "quadratic",
+          "scoring_engine": {
+            "shield_enabled": true,
+            "danger_zone_shield": {
+              "enabled": true,
+              "vol_threshold": 0.95,
+              "spread_threshold": 50.0,
+              "motion_threshold": 3.0
+            },
+            "context_shield": {
+              "enabled": true,
+              "regime_multipliers": {
+                "TREND_UP": 1.0,
+                "TREND_DOWN": 1.0,
+                "MEAN_REVERSION": 0.75,
+                "LOW_VOLATILITY": 0.85,
+                "HIGH_VOLATILITY": 0.3,
+                "UNCERTAIN": 0.55
+              },
+              "default_multiplier": 0.8,
+              "no_regime_multiplier": 0.5,
+              "ttl_ms": 14400000,
+              "stale_mult_normal": 0.7,
+              "stale_mult_danger": 0.35,
+              "danger_regimes": [
+                "HIGH_VOLATILITY"
+              ]
+            },
+            "memory_shield": {
+              "enabled": true,
+              "decay_rate": 0.95,
+              "max_states": 200,
+              "unknown_threshold": 10.0,
+              "exploring_threshold": 50.0,
+              "unknown_multiplier": 0.6,
+              "exploring_multiplier": 0.8,
+              "known_multiplier": 1.0,
+              "storage_path": null,
+              "flush_interval_sec": 60.0
+            }
+          },
           "direction_strength_scoring": {
             "directional_features": [
               "obi",
@@ -30681,6 +30721,33 @@
               "bb_window": 40,
               "bb_num_std": 2.5,
               "min_bb_width": 0.005,
+              "flat_low_short_min_bb_width": 0.015,
+              "squeeze_expansion_veto": {
+                "enabled": true,
+                "squeeze_width_max": 0.01,
+                "post_squeeze_width_max": 0.02,
+                "expansion_ratio_min": 2.0,
+                "regimes": [
+                  "FLAT_LOW"
+                ],
+                "sides": [
+                  "LONG",
+                  "SHORT"
+                ]
+              },
+              "momentum_separation_veto": {
+                "enabled": true,
+                "lookback_bars": 4,
+                "min_drift_pct": 0.02,
+                "min_current_bb_width": 0.02,
+                "regimes": [
+                  "FLAT_LOW"
+                ],
+                "sides": [
+                  "LONG",
+                  "SHORT"
+                ]
+              },
               "entry_threshold": 0.05,
               "sl_atr_mult": 1.5,
               "tp_to_mid": false,
@@ -31059,6 +31126,54 @@
         },
         {
           "op": "EVT",
+          "verb": "EXECUTION_CLOSE_RECONCILED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/execution_close_reconciled_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXECUTION_DIVERGENCE_DETECTED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/execution_divergence_detected_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXECUTION_GUARD_BLOCKED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/execution_guard_blocked_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXECUTION_TIDY_PERFORMED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/execution_tidy_performed_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXIT_MATCH_ATTEMPTED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/exit_match_attempted_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXIT_MATCH_FAILED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": "apps/reference/domains/execution_position/schemas/exit_match_failed_v1.json",
+          "since": "2026-03-13"
+        },
+        {
+          "op": "EVT",
           "verb": "FEATURES_CALCULATED",
           "owner": "feature_engineering",
           "status": "active",
@@ -31300,9 +31415,9 @@
         {
           "op": "EVT",
           "verb": "SYMBOL_TIDY",
-          "owner": "market_data",
+          "owner": "execution_position",
           "status": "active",
-          "schema": null,
+          "schema": "apps/reference/domains/execution_position/schemas/symbol_tidy_v1.json",
           "since": "2026-01-08"
         },
         {

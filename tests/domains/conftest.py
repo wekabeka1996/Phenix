@@ -89,12 +89,5 @@ def mock_config():
     return config
 
 
-@pytest.fixture
-def adapter_live(mock_fsm, mock_config):
-    """Live mode Binance execution adapter for testing."""
-    from apps.reference.domains.execution_position.binance_execution_adapter import (
-        BinanceExecutionAdapter,
-    )
-
-    adapter = BinanceExecutionAdapter(shadow_mode=False, fsm_core=mock_fsm)
-    return adapter
+# NOTE: adapter_live fixture removed — binance_execution_adapter.py was deleted.
+# Use adapter_init.AdapterInitMixin for adapter wiring tests.

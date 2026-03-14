@@ -90,7 +90,10 @@ def test_cmd_process_strategy_emits_quadratic_signal(monkeypatch):
     assert payload["side"] == "BUY"
     assert psi["scoring_engine"] == "quadratic_v1"
     assert psi["s_linear"] == pytest.approx(0.8)
-    assert psi["final_exposure"] == pytest.approx(0.64, abs=1e-6)
+    # Phase 9: Shield cascade is active (scoring_engine.shield_enabled=true in aurora.yaml).
+    # ContextShield TREND_UP=1.0, MemoryShield unknown_mult=0.60 => combined=0.60
+    # final_exposure = s_linear^2 * combined = 0.64 * 0.60 = 0.384
+    assert psi["final_exposure"] == pytest.approx(0.384, abs=1e-3)
 
 
 def test_cmd_process_strategy_missing_pillar_sum_blocks_fail_closed():

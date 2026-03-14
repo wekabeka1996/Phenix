@@ -1,6 +1,11 @@
 """
 Typed payload schemas — Phase 14C.
 
+COMPATIBILITY-ONLY — this module is frozen at 11 entries.
+Domain-local Pydantic models (e.g. CmdOpenPayload, FeaturesCalculatedPayloadV1)
+are the actual runtime validators. Do NOT add new entries here.
+See: docs/contracts/CONTRACT_ARCHITECTURE.md
+
 Pydantic models for opt-in type-safe access to Message.pld.
 Does NOT change Message.pld (Dict[str, Any]) — backward compatible.
 

@@ -19,7 +19,8 @@ def _config(*, aurora_scoring_version: str = "v2"):
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
                 timeframe_sec=300,
-                decision=SimpleNamespace(scoring_version=aurora_scoring_version),
+                decision=SimpleNamespace(
+                    scoring_version=aurora_scoring_version),
             ),
             mean_reversion=SimpleNamespace(
                 timeframe_sec=300,
@@ -53,13 +54,17 @@ def _config(*, aurora_scoring_version: str = "v2"):
     )
 
 
-def test_active_aurora_profile_switches_without_affecting_other_strategies() -> None:
-    assert active_aurora_profile_id(_config(aurora_scoring_version="v2")) == "aurora_v2"
-    assert active_aurora_profile_id(_config(aurora_scoring_version="quadratic")) == "aurora_quadratic"
+def test_active_aurora_profile_is_always_quadratic() -> None:
+    # Post Phase 9 cleanup: aurora is always quadratic regardless of config scoring_version
+    assert active_aurora_profile_id(
+        _config(aurora_scoring_version="v2")) == "aurora_quadratic"
+    assert active_aurora_profile_id(
+        _config(aurora_scoring_version="quadratic")) == "aurora_quadratic"
 
 
 def test_mean_reversion_remains_quadratic_htf_free_when_aurora_quadratic_active() -> None:
-    matrix = build_full_strategy_compatibility_matrix(_config(aurora_scoring_version="quadratic"))
+    matrix = build_full_strategy_compatibility_matrix(
+        _config(aurora_scoring_version="quadratic"))
     mr_profile = matrix["mean_reversion"]
 
     assert mr_profile.required_htf == ()
@@ -78,7 +83,8 @@ def test_md_amr_keeps_local_hydration_contract_and_protect_only_capability() -> 
 
 
 def test_aurora_quadratic_profile_declares_explicit_htf_requirements() -> None:
-    matrix = build_full_strategy_compatibility_matrix(_config(aurora_scoring_version="quadratic"))
+    matrix = build_full_strategy_compatibility_matrix(
+        _config(aurora_scoring_version="quadratic"))
     profile = matrix["aurora_quadratic"]
 
     assert profile.active is True
@@ -91,7 +97,8 @@ def test_aurora_quadratic_profile_declares_explicit_htf_requirements() -> None:
 
 
 def test_active_profiles_keep_single_aurora_truth() -> None:
-    profiles = build_active_strategy_compatibility_profiles(_config(aurora_scoring_version="quadratic"))
+    profiles = build_active_strategy_compatibility_profiles(
+        _config(aurora_scoring_version="quadratic"))
 
     assert set(profiles.keys()) == {"aurora", "mean_reversion", "md_amr"}
     assert profiles["aurora"].profile_id == "aurora_quadratic"

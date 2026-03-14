@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "execution_guard_blocked_v1.json",
+  "title": "EVT:EXECUTION_GUARD_BLOCKED payload schema",
+  "description": "Structured fail-closed execution guard telemetry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "block_reason",
+    "current_local_state",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "lifecycle_id": { "type": ["string", "null"] },
+    "tracked_rid": { "type": ["string", "null"] },
+    "block_reason": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "current_local_state": { "type": "string", "minLength": 1 },
+    "local_manage_state": { "type": "string", "minLength": 1 },
+    "portfolio_truth_state": { "type": "string", "minLength": 1 },
+    "portfolio_state": { "type": "string", "minLength": 1 },
+    "divergence_detected": { "type": "boolean" },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

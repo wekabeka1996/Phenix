@@ -1,261 +1,204 @@
-# State Machine Passport: `config/aurora/strategies/mean_reversion.yaml` (Phase 8)
+# Code-Driven State Machine Passport: `config/aurora/strategies/mean_reversion.yaml`
 
-Цей паспорт описує **state machine** стратегії Mean Reversion: як `MeanReversion1mStrategy` обробляє бари (`on_bar`) і як `MeanReversionHandler` оркеструє тригер/гейти та емісію `EVT:STRATEGY_SIGNAL_PRODUCED`.
+Цей паспорт описує лише поточний live/runtime контракт state machine для `mean_reversion`: де закінчується власне bar-based стратегія і де починаються handler overlays та downstream execution.
 
-**Critical Consumers (Trace Targets):**
-1. **State Machine:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py` (`MeanReversion1mStrategy`)
-2. **Handler:** `apps/reference/domains/decision_making/mean_reversion_handler.py`
-3. **Indicators:** `apps/reference/domains/feature_engineering/indicators.py` (`compute_bollinger_bands`, `compute_atr`, `compute_rsi`)
-4. **Regime Mapping:** `apps/reference/domains/feature_engineering/regime_mapping.py` (`map_to_flat_regime`, `MRParameters`)
+Owner surface:
+- Strategy state machine: `apps/reference/domains/feature_engineering/mean_reversion_strategy.py`
+- Runtime orchestration: `apps/reference/domains/decision_making/mean_reversion_handler.py`
+- Plugin wiring: `apps/reference/domains/strategies/plugins/mean_reversion.py`
+- Typed contract: `apps/reference/config_models.py::MeanReversion1mStrategyConfig`
 
-**Дата генерації:** `2026-02-03`
+## 1. Головна корекція паспорта
 
----
+Старий документ застряг у змішаній термінології `1m/3m/Phase 8`, але поточний live YAML задає:
+- `timeframe_sec: 300`
+- registry assignment для `mean_reversion` зараз лише на `DOGEUSDT`
 
-### `entry_logic` (Synthesis)
-* **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:300` (`MeanReversion1mStrategy.on_bar`); `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:491` (`_evaluate_signal`); `apps/reference/domains/feature_engineering/indicators.py:90` (`compute_bollinger_bands`)
-* **Condition:** `IF (pct_b < entry_threshold) THEN BUY` ; `IF (pct_b > 1 - entry_threshold) THEN SELL`
-    ```text
-    # Gating order (fail-closed style)
-    on_bar(symbol, bar):
-      state.bars += bar
-      if len(bars) < min_bars:                 return NEUTRAL("insufficient_bars")
-      update_indicators(bb, atr, rsi)
-      if in_cooldown(last_signal_ts):          return NEUTRAL("cooldown")
+Тобто поточний live path такий:
+- клас усе ще називається `MeanReversion1mStrategy`
+- деякі handler/docstring comments усе ще кажуть `1m` або `3m`
+- але реально активний runtime profile зараз 5m (`300s`), і саме він є live TF SSOT
 
-      flat_regime = map_to_flat_regime(regime, atr_pct, thresholds)
-      if flat_regime is None:                  return NEUTRAL("regime_not_flat:*")
-      if flat_regime.name not in allowed_regimes:
-                                                return NEUTRAL("regime_not_allowed:*")
+## 2. Activation SSOT
 
-      if bb is None:                           return NEUTRAL("no_bb")
-      if bb.width < min_bb_width:              return NEUTRAL("bb_width_too_narrow")
-      if bb.width > max_bb_width:              return NEUTRAL("bb_width_too_wide")
+`mean_reversion` активується не просто через `enabled=true`, а через assignment-first контракт:
+- `config/aurora/strategies.yaml` визначає, які symbols assigned до `mean_reversion`
+- `MeanReversionHandler._parse_config()` бере фінальний universe як `assigned ∩ assets.enabled`
 
-      pct_b = (close - bb.lower) / (bb.upper - bb.lower)   # can be <0 or >1
-      if pct_b < entry_threshold:               emit LONG (side=BUY)
-      else if pct_b > (1 - entry_threshold):    emit SHORT (side=SELL)
-      else:                                     return NEUTRAL("no_signal")
+Поточний live assignment:
+- `DOGEUSDT`
 
-      # RSI is NOT a hard gate: it only increases confidence when extreme.
-    ```
+Fail-closed інваріанти при assignment:
+- якщо `config.strategies.mean_reversion` відсутній, handler падає
+- якщо `mean_reversion.enabled=false`, але symbol assigned, handler падає
+- якщо assigned symbol відсутній у `mean_reversion.assets` або `enabled=false`, handler падає
 
----
+## 3. Де проходить межа state machine
 
-### `exit_logic` (Synthesis)
-* **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:570` (`_evaluate_signal`)
-* **Condition:** `Signal emits static stop_price/target_price (no time-based exit in strategy)`
-    ```text
-    entry_price = close
+Власне state machine закінчується на `MRSignal` і не керує execution lifecycle.
 
-    # Base TP anchor:
-    # - tp_to_mid=true  => target = bb.mid
-    # - tp_to_mid=false => target = opposite band (LONG->bb.upper, SHORT->bb.lower)
-    target0 = bb.mid if tp_to_mid else (bb.upper for LONG, bb.lower for SHORT)
+До state machine належить:
+- накопичення bars
+- індикатори `BB`, `ATR`, `RSI`
+- regime mapping у flat regimes
+- entry/no-entry рішення по `%B`
+- розрахунок `entry_price`, `stop_price`, `target_price`, `confidence`
 
-    # Stop:
-    sl_mult = sl_atr_mult * stop_mult(regime)            # stop_mult from regime_sizing
-    atr_eff = atr if atr else (bb.upper - bb.lower) / 4  # fallback if ATR missing
-    stop = entry ± atr_eff * sl_mult                     # - for LONG, + for SHORT
+До handler overlay належить:
+- assignment/config gating
+- `CMD:PROCESS_STRATEGY` payload validation
+- liquidity gate
+- objective engine integration
+- runtime readiness/runtime permissions envelope
+- emission `EVT:STRATEGY_SIGNAL_PRODUCED`
 
-    # Target:
-    target = entry ± (|target0 - entry| * target_mult(regime))  # target_mult from regime_sizing
+До downstream execution domain належить:
+- `ExecPosFSM`
+- `ManageFlowFSM`
+- bracket/order lifecycle
+- `ORDER_UPDATED` sync, `TTL_EXPIRED_3600s`, `ORPHANED_TTL`
 
-    # Optional buffers (if configured via YAML): widen stop/target by % of entry
-    stop   ±= entry * sl_buffer_pct
-    target ±= entry * tp_buffer_pct
-    ```
-* **Note:** `max_hold_sec` (timeout) не реалізований у `MeanReversion1mStrategy`/`MeanReversionHandler`; якщо є forced-exit таймер — це вже зона ExecutionPosition/ManageFlow, не цього state machine.
+Це критично для incident analysis: split-brain із `ManageFlowFSM` не є behavior самого MR state machine.
 
----
+## 4. Реальний trigger path
 
-### `regime_filtering` (Synthesis)
-* **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:335` (`on_bar`); `apps/reference/domains/feature_engineering/regime_mapping.py:77` (`map_to_flat_regime`)
-* **Condition:** `Trade only when Aurora regime maps to FlatRegime AND is allowlisted`
-    ```text
-    map_to_flat_regime(regime):
-      TREND_*         => None
-      HIGH_VOLATILITY => None
-      UNCERTAIN       => None
-      LOW_VOLATILITY  => FLAT_LOW
-      MEAN_REVERSION  => classify by atr_pct using (low_vol_pct, high_vol_pct)
+Поточний primary entrypoint для decision path:
+- тільки `CMD:PROCESS_STRATEGY`
 
-    allowlist check:
-      if flat_regime.name not in allowed_regimes => NO TRADE
-      # Important: empty allowed_regimes => allow nothing (explicit fail-closed).
-    ```
-* **Wiring Detail:** Regime filter застосовується **після** оновлення індикаторів (бо `atr_pct` залежить від ATR), але **до** обчислення entry signal (до `%B`/RSI логіки). (`apps/reference/domains/feature_engineering/mean_reversion_strategy.py:325`)
+`MeanReversionHandler._on_process_strategy()` робить таке:
+- reject якщо `tf_sec` відсутній
+- skip якщо `tf_sec != self.timeframe_sec`
+- reject якщо відсутній `bar_close_ts`
+- reject якщо відсутній `bar`
+- пропускає symbol, який не входить у `enabled_symbols`
+- будує `Bar` з payload
+- кешує `features` для volatility/liquidity propagation
+- встановлює regime з payload або з внутрішнього кешу
+- викликає `strategy.on_bar(symbol, bar, ts_ms)`
+- якщо signal actionable і liquidity gate проходить, емить `EVT:STRATEGY_SIGNAL_PRODUCED`
 
----
+Отже, стара tick-driven ментальна модель більше не є SSOT. У файлах ще є історичні сліди старого шляху, але live contract зараз bar-driven через `CMD:PROCESS_STRATEGY`.
 
-### `activation_wiring` (Synthesis)
-* **Code Reference:** `apps/reference/domains/decision_making/mean_reversion_handler.py:214` (`MeanReversionHandler._parse_config`); `apps/reference/domains/decision_making/mean_reversion_handler.py:697` (`_on_process_strategy`)
-* **Condition:** `Strategy runs only for (assigned ∩ enabled) symbols, and only on CMD:PROCESS_STRATEGY(tf_sec == timeframe_sec)`
-    ```text
-    enabled_symbols = {sym | sym has "mean_reversion" in strategies_registry.assignments[sym]}
-                     ∩ {sym | mean_reversion.assets[sym].enabled == true}
+## 5. Внутрішня логіка `MeanReversion1mStrategy.on_bar()`
 
-    # Hard fail-closed checks:
-    if assigned_symbols non-empty and mean_reversion config missing => raise
-    if assigned_symbols non-empty and mean_reversion.enabled == false => raise
-    if any assigned symbol missing/disabled in mean_reversion.assets => raise
+Актуальний порядок state machine такий:
 
-    # Runtime trigger:
-    on CMD:PROCESS_STRATEGY:
-      if tf_sec missing => reject
-      if tf_sec != mean_reversion.timeframe_sec => skip
-      if bar_close_ts missing => reject
-      if bar missing => reject
-      run MeanReversion1mStrategy.on_bar(...)
-      if signal actionable and liquidity gate passes (if configured) => emit EVT:STRATEGY_SIGNAL_PRODUCED
-    ```
+1. Додати завершений bar у symbol state
+2. Якщо bars < `min_bars` → neutral `insufficient_bars`
+3. Оновити `BB`, `ATR`, `RSI`
+4. Якщо cooldown активний → neutral `cooldown`
+5. Перетворити external regime у `FlatRegime` через `map_to_flat_regime()`
+6. Якщо regime не flat → neutral `regime_not_flat:*`
+7. Якщо `flat_regime.name` не входить у `allowed_regimes` → neutral `regime_not_allowed:*`
+8. Якщо `BB` відсутній → neutral `no_bb`
+9. Якщо `bb.width < min_bb_width` → neutral `bb_width_too_narrow:*`
+10. Якщо `bb.width > max_bb_width` → neutral `bb_width_too_wide:*`
+11. Обчислити `%B`
+12. Якщо `%B < entry_threshold` → LONG
+13. Якщо `%B > 1 - entry_threshold` → SHORT
+14. Інакше → neutral `no_signal:*`
 
----
+Важливе уточнення:
+- RSI не є hard gate
+- RSI лише додає бонус до `confidence`, якщо підтверджує екстремум
 
-### `strategies.mean_reversion.enabled`
-- **Type:** `bool`
-- **Logic Owner:** `MeanReversionHandler`
-- **Code Reference:** `apps/reference/domains/decision_making/mean_reversion_handler.py:244`
-- **Mathematical Role:**
-    > Global kill-switch. Важливо: активація стратегії є SSOT-driven через `strategies_registry.assignments`, але якщо MR призначена (assigned) і `enabled=false`, handler **падає fail-closed** (SSOT conflict).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` ⇒ дозволяє MR працювати (але тільки для assigned symbols).
-    - 🔽 **Too Low:** `false` ⇒ hard-stop (і навіть `raise` при наявності assignments).
+## 6. Entry / exit semantics усередині strategy
 
----
+`MeanReversion1mStrategy` не відкриває позиції сама. Вона лише формує `MRSignal` з advisory prices.
 
-### `strategies.mean_reversion.assets.<SYM>.enabled`
-- **Type:** `bool`
-- **Logic Owner:** `MeanReversionHandler`
-- **Code Reference:** `apps/reference/domains/decision_making/mean_reversion_handler.py:261`
-- **Mathematical Role:**
-    > Per-asset enable. Якщо символ assigned у registry, але відсутній або `enabled=false` в `mean_reversion.assets`, handler робить **fail-closed raise** (щоб не було “silent disable” на assigned символі).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` ⇒ символ може торгуватись (за умови assignment).
-    - 🔽 **Too Low:** `false` ⇒ символ вимикається, але assignment тоді стає помилкою конфігу (fail-closed).
+Entry:
+- `entry_price = current close`
 
----
+Target:
+- якщо `tp_to_mid=true`, базова ціль = `bb.mid`
+- якщо `tp_to_mid=false`, базова ціль = протилежна band boundary
+- потім target distance множиться на `mr_params.target_mult`
+- опційно додається `tp_buffer_pct`
 
-### `strategies.mean_reversion.assets.<SYM>.strategy.*` (override semantics)
-- **Type:** `object`
-- **Logic Owner:** `MeanReversionHandler` → `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/decision_making/mean_reversion_handler.py:321`
-- **Mathematical Role:**
-    > Override-ланцюжок параметрів state machine: handler будує `MRStrategyConfig` як `global strategy defaults` → `asset.strategy overrides` (лише явно задані поля) і передає в `MeanReversion1mStrategy`.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Агресивні overrides (нижчі пороги/вужчі фільтри) ⇒ більше сигналів, більше noise/churn.
-    - 🔽 **Too Low:** Консервативні overrides ⇒ менше сигналів, більше missed opportunities.
+Stop:
+- базовий stop = `ATR * sl_atr_mult * mr_params.stop_mult`
+- якщо ATR немає, fallback = `(bb.upper - bb.lower) / 4`
+- опційно додається `sl_buffer_pct`
 
----
+Time-based forced exit у самій strategy немає. Якщо існують timeout/cleanup/forced close сценарії, це вже execution-position domain, не state machine.
 
-### `strategies.mean_reversion.execution.entry_order_type`
-- **Type:** `string`
-- **Logic Owner:** `DecisionMaking` (ORDER-POLICY-01)
-- **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:3142`
-- **Mathematical Role:**
-    > Політика entry-ордера для стратегії (fail-closed якщо відсутня): `MARKET` або `LIMIT`. Для MR в SSOT задано `MARKET` (швидкий mean-reversion entry, але гірший контроль ціни).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** `MARKET` ⇒ швидкий fill, але slippage risk ↑.
-    - 🔽 **Too Low:** `LIMIT` ⇒ контроль ціни ↑, але risk missed fill ↑.
+## 7. Override semantics
 
----
+Handler будує фактичний `MRStrategyConfig` у такому порядку:
+- глобальні `mean_reversion.strategy`
+- потім `mean_reversion.assets.<SYM>.allowed_regimes`
+- потім найспецифічніші `mean_reversion.assets.<SYM>.strategy.*`
 
-### `strategies.mean_reversion.execution.entry_tif`
-- **Type:** `string|null`
-- **Logic Owner:** `DecisionMaking` (ORDER-POLICY-01)
-- **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:3142`
-- **Mathematical Role:**
-    > Time-in-force для LIMIT entries. Для `MARKET` зазвичай `null`/ignored. Якщо MR буде переведена на `LIMIT`, TIF стає обовʼязковим.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Більш агресивний TIF (IOC/FOK) ⇒ менше hanging orders, але більше rejects.
-    - 🔽 **Too Low:** Пасивний TIF (GTC/GTX) ⇒ більше шансів maker, але більше ризик зависання.
+Тобто precedence для `allowed_regimes` така:
+- global default
+- per-asset `allowed_regimes`
+- per-asset strategy override `strategy.allowed_regimes`, якщо заданий
 
----
+Це підтверджено config wiring tests.
 
-### `strategies.mean_reversion.safety_gates.enabled`
-- **Type:** `bool`
-- **Logic Owner:** `DecisionMaking`
-- **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:2699`
-- **Mathematical Role:**
-    > DM-SAFETY-BYPASSES-P1: якщо `true`, DecisionMaking застосовує directional sanity + price-motion gates перед OPEN. Для mean reversion (контртренд) у SSOT зазвичай `false`, щоб не блокувати контртрендові входи. Missing block ⇒ fail-closed reject.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` ⇒ більше safety, але менше MR угод (може системно “вбити” сигнал).
-    - 🔽 **Too Low:** `false` ⇒ більше угод, але вище ризик входу “проти сильного руху”.
+## 8. Liquidity gate і objective engine не належать самій state machine
 
----
+`MeanReversion1mStrategy` про них нічого не знає.
 
-### `strategies.mean_reversion.strategy.bb_window`
-- **Type:** `int`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:458`; `apps/reference/domains/feature_engineering/indicators.py:90`
-- **Mathematical Role:**
-    > Window SMA/STD для Bollinger Bands: `mid = SMA(close, bb_window)`, `upper/lower = mid ± bb_num_std * STD(close, bb_window)`. Впливає на ширину каналу і на `%B`.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Повільніший mid/std ⇒ рідші входи, менше noise, але більше lag (гірша реакція на швидкі mean-reversion).
-    - 🔽 **Too Low:** Швидший mid/std ⇒ часті входи, але більше false positives у шумі.
+Liquidity gate живе в handler:
+- precedence: `assets.<SYM>.liquidity_gate` → global `mean_reversion.liquidity_gate`
+- якщо gate enabled, а `liquidity_kappa` відсутній у cache, handler fail-closed кидає помилку контракту
+- якщо `kappa < kappa_min`, сигнал блокується до emission
 
----
+Objective Engine теж живе в handler, уже після формування `MRSignal`:
+- вмикається тільки якщо і domain, і strategy objective blocks enabled
+- використовує portfolio, exposure summary, regime timestamps/confidence та cached features
+- може блокувати emission через `OBJECTIVE_GATE_BLOCKED`
+- може fail-close через `OBJECTIVE_ENGINE_FAIL_CLOSED`
 
-### `strategies.mean_reversion.strategy.bb_num_std`
-- **Type:** `float`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:458`; `apps/reference/domains/feature_engineering/indicators.py:134`
-- **Mathematical Role:**
-    > Визначає ширину Боллінджера: `upper/lower = mid ± num_std * std`. Більше значення ⇒ ширші смуги ⇒ важче дістатись екстремів `%B`.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Рідші входи; ловить лише екстремальні відхилення (може зменшити churn).
-    - 🔽 **Too Low:** Часті входи; ризик торгувати “всередині шуму” (менше edge).
+## 9. Signal payload boundary
 
----
+Коли signal пройшов handler overlays, emit містить:
+- `strategy_id=mean_reversion`
+- `tf_sec=self.timeframe_sec`
+- `side`
+- `price_ctx.entry_price/stop_price/target_price`
+- `regime`
+- `volatility` і `liquidity` з cached features
+- `mr_params`
+- `score` і `scoring.objective`
+- `runtime_permissions`
+- `runtime_readiness`
 
-### `strategies.mean_reversion.strategy.entry_threshold`
-- **Type:** `float`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:530`; `apps/reference/domains/feature_engineering/indicators.py:142`
-- **Mathematical Role:**
-    > Симетричний поріг по `%B`:
-    > - `BUY` якщо `%B < entry_threshold`
-    > - `SELL` якщо `%B > 1 - entry_threshold`
-    > де `%B = (close - lower) / (upper - lower)`; може бути `<0` (нижче lower) або `>1` (вище upper).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Тригер ближче до середини каналу ⇒ більше trades, але слабший mean-reversion edge.
-    - 🔽 **Too Low:** Тригер ближче до країв/за межами ⇒ менше trades, але “чистіші” екстреми.
+Отже, downstream execution бачить уже не raw state-machine reasoning, а обгорнутий decision payload.
 
----
+## 10. Що реально говорить YAML сьогодні
 
-### `strategies.mean_reversion.strategy.rsi_window`
-- **Type:** `int`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:479`; `apps/reference/domains/feature_engineering/indicators.py:203`
-- **Mathematical Role:**
-    > RSI в MR — це **confidence booster**, не hard gate: якщо RSI екстремальний, confidence +0.2. Вікно визначає гладкість RSI.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** RSI більш інертний ⇒ менше “екстремних підтверджень”, але стабільніше.
-    - 🔽 **Too Low:** RSI більш реактивний ⇒ більше підтверджень, але більше noise.
+У поточному профілі:
+- `timeframe_sec=300`
+- `execution.entry_order_type=MARKET`
+- `safety_gates.enabled=false`
+- `objective.enabled=true`
+- `DOGEUSDT` є єдиним live symbol через assignment
+- `DOGEUSDT.strategy.min_bb_width=0.005`
 
----
+Для incident context це важливо:
+- strategy-level вхід у squeeze breakout справді може бути «правильним за кодом», якщо `bb_width > 0.005`
+- downstream execution split-brain після цього вже не є частиною MR state machine
 
-### `strategies.mean_reversion.strategy.rsi_oversold`
-- **Type:** `float`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:545`
-- **Mathematical Role:**
-    > Якщо `rsi < rsi_oversold`, confidence збільшується (`+0.2`) для LONG сигналу. Не блокує входи при відсутності підтвердження.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** “Oversold” спрацьовує частіше ⇒ confidence частіше підвищується (може викривити downstream використання score/confidence).
-    - 🔽 **Too Low:** Підтвердження рідше ⇒ confidence ближче до базової (менше “підсилення”).
+## 11. Drift, виявлений аудитом
 
----
+- Імена та comments у codebase частково застарілі: `MeanReversion1mStrategy`, `Mean Reversion 3m strategy`, старі Phase B/T2B описи. Live TF SSOT зараз 300s.
+- Старий integration файл `tests/integration/test_mean_reversion_handler_event_contract_v1.py` позначений `skip` і досі прив'язаний до старого tick-based path. Це не слід використовувати як джерело істини.
+- Старий паспорт переоцінював “strategy-owned” зони і недостатньо чітко відділяв їх від execution FSM layer.
 
-### `strategies.mean_reversion.strategy.rsi_overbought`
-- **Type:** `float`
-- **Logic Owner:** `MeanReversion1mStrategy`
-- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:556`
-- **Mathematical Role:**
-    > Якщо `rsi > rsi_overbought`, confidence збільшується (`+0.2`) для SHORT сигналу. Не блокує входи.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** “Overbought” спрацьовує частіше ⇒ частіше підсилення confidence.
-    - 🔽 **Too Low:** Рідкі підтвердження ⇒ confidence рідше підсилюється.
+## 12. Підсумок
+
+Поточна `mean_reversion` state machine є bar-driven mean-reversion логікою, яка:
+- працює на live 5m bars
+- приймає рішення через `%B`, BB width, flat regime mapping, cooldown та confidence boosts
+- не володіє execution lifecycle
+- передає downstream уже збагачений handler-ом payload
+
+Правильна ментальна модель така:
+- `MeanReversion1mStrategy` = math/state
+- `MeanReversionHandler` = activation + contract gates + enrichment + emission
+- `ExecPosFSM/ManageFlowFSM` = execution/state reconciliation, де й живуть incident-класи типу `ORDER_UPDATED` desync
 
 ---
 

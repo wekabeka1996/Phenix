@@ -129,6 +129,30 @@ def _decimal_attr(obj: Any, name: str, default: str) -> Decimal:
         return Decimal(default)
 
 
+def _runtime_squeeze_expansion_veto(obj: Any) -> Dict[str, Any]:
+    """Normalize typed squeeze-expansion veto config into runtime-friendly payload."""
+    return {
+        "enabled": bool(getattr(obj, "enabled")),
+        "squeeze_width_max": Decimal(str(getattr(obj, "squeeze_width_max"))),
+        "post_squeeze_width_max": Decimal(str(getattr(obj, "post_squeeze_width_max"))),
+        "expansion_ratio_min": Decimal(str(getattr(obj, "expansion_ratio_min"))),
+        "regimes": [str(regime) for regime in getattr(obj, "regimes", [])],
+        "sides": [str(side).upper() for side in getattr(obj, "sides", [])],
+    }
+
+
+def _runtime_momentum_separation_veto(obj: Any) -> Dict[str, Any]:
+    """Normalize typed momentum-separation veto config into runtime-friendly payload."""
+    return {
+        "enabled": bool(getattr(obj, "enabled")),
+        "lookback_bars": int(getattr(obj, "lookback_bars")),
+        "min_drift_pct": Decimal(str(getattr(obj, "min_drift_pct"))),
+        "min_current_bb_width": Decimal(str(getattr(obj, "min_current_bb_width"))),
+        "regimes": [str(regime) for regime in getattr(obj, "regimes", [])],
+        "sides": [str(side).upper() for side in getattr(obj, "sides", [])],
+    }
+
+
 def _maybe_build_position_queries(
     *,
     config: AuroraConfig,
@@ -478,6 +502,16 @@ class MeanReversionHandler:
                 if strat_override.bb_window is not None: config.bb_window = strat_override.bb_window
                 if strat_override.bb_num_std is not None: config.bb_num_std = strat_override.bb_num_std
                 if strat_override.min_bb_width is not None: config.min_bb_width = Decimal(str(strat_override.min_bb_width))
+                if strat_override.flat_low_short_min_bb_width is not None:
+                    config.flat_low_short_min_bb_width = Decimal(str(strat_override.flat_low_short_min_bb_width))
+                if strat_override.squeeze_expansion_veto is not None:
+                    config.squeeze_expansion_veto = _runtime_squeeze_expansion_veto(
+                        strat_override.squeeze_expansion_veto
+                    )
+                if strat_override.momentum_separation_veto is not None:
+                    config.momentum_separation_veto = _runtime_momentum_separation_veto(
+                        strat_override.momentum_separation_veto
+                    )
                 if strat_override.entry_threshold is not None: config.entry_threshold = Decimal(str(strat_override.entry_threshold))
                 if strat_override.tp_to_mid is not None: config.tp_to_mid = bool(strat_override.tp_to_mid)
                 if strat_override.cooldown_sec is not None: config.cooldown_sec = strat_override.cooldown_sec
@@ -1457,15 +1491,24 @@ class MeanReversionHandler:
                     reason_code = "REGIME_MAPPING_NONE"
                 elif why_norm.startswith("regime_not_allowed:"):
                     reason_code = "REGIME_NOT_ALLOWED"
+                elif why_norm.startswith("flat_low_short_bb_width_too_narrow:"):
+                    reason_code = "FLAT_LOW_SHORT_HARDENED"
+                elif why_norm.startswith("squeeze_expansion_veto:"):
+                    reason_code = "SQUEEZE_EXPANSION_VETO"
+                elif why_norm.startswith("momentum_separation_veto:"):
+                    reason_code = "MOMENTUM_SEPARATION_VETO"
                 
                 if reason_code:
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code=reason_code,
-                        reason="REGIME",
+                        reason="REGIME" if reason_code.startswith("REGIME") else "SIGNAL",
                         context="mean_reversion_handler:_on_process_strategy",
                         details={"why": why_norm},
-                        why_chain=["REGIME", why_norm],
+                        why_chain=[
+                            "REGIME" if reason_code.startswith("REGIME") else "SIGNAL",
+                            why_norm,
+                        ],
                     )
         except Exception as e:
             self.logger.error(f"Error in _on_process_strategy: {e}")

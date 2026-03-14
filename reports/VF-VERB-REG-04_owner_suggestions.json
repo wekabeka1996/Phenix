@@ -1,8 +1,8 @@
 {
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
-  "unknown_tokens": 17,
-  "generated": 17,
+  "unknown_tokens": 11,
+  "generated": 11,
   "rules": {
     "path_owner_prefix": "apps/reference/domains/<X>/",
     "threshold_pct": 70.0,
@@ -18,35 +18,6 @@
       "suggested_owner": "unknown",
       "candidates": [],
       "top_files": []
-    },
-    {
-      "op": "EVT",
-      "verb": "BALANCE_UPDATE_RECEIVED",
-      "token": "EVT:BALANCE_UPDATE_RECEIVED",
-      "total_occurrences": 3,
-      "suggested_owner": "unknown",
-      "candidates": [
-        {
-          "owner": "position_tracking",
-          "count": 2,
-          "pct": 66.67
-        },
-        {
-          "owner": "account_balance",
-          "count": 1,
-          "pct": 33.33
-        }
-      ],
-      "top_files": [
-        {
-          "path": "apps/reference/domains/position_tracking/position_tracking.py",
-          "count": 2
-        },
-        {
-          "path": "apps/reference/domains/account_balance/account_connector.py",
-          "count": 1
-        }
-      ]
     },
     {
       "op": "EVT",
@@ -69,26 +40,6 @@
         {
           "path": "apps/reference/domains/execution_position/drift_monitor.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "op": "EVT",
-      "verb": "CONFIG_DEBUG_OVERRIDE_ACTIVE",
-      "token": "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
-      "total_occurrences": 2,
-      "suggested_owner": "risk_management",
-      "candidates": [
-        {
-          "owner": "risk_management",
-          "count": 2,
-          "pct": 100.0
-        }
-      ],
-      "top_files": [
-        {
-          "path": "apps/reference/domains/risk_management/risk_management.py",
-          "count": 2
         }
       ]
     },
@@ -140,15 +91,6 @@
     },
     {
       "op": "EVT",
-      "verb": "INTENT_DROPPED",
-      "token": "EVT:INTENT_DROPPED",
-      "total_occurrences": 0,
-      "suggested_owner": "unknown",
-      "candidates": [],
-      "top_files": []
-    },
-    {
-      "op": "EVT",
       "verb": "MR_SIGNAL_PRODUCED",
       "token": "EVT:MR_SIGNAL_PRODUCED",
       "total_occurrences": 0,
@@ -169,115 +111,6 @@
       "op": "EVT",
       "verb": "ORDER_EXECUTED",
       "token": "EVT:ORDER_EXECUTED",
-      "total_occurrences": 0,
-      "suggested_owner": "unknown",
-      "candidates": [],
-      "top_files": []
-    },
-    {
-      "op": "EVT",
-      "verb": "ORDER_REJECTED",
-      "token": "EVT:ORDER_REJECTED",
-      "total_occurrences": 6,
-      "suggested_owner": "unknown",
-      "candidates": [
-        {
-          "owner": "decision_making",
-          "count": 1,
-          "pct": 16.67
-        },
-        {
-          "owner": "execution_position",
-          "count": 1,
-          "pct": 16.67
-        },
-        {
-          "owner": "shadow_telemetry",
-          "count": 1,
-          "pct": 16.67
-        }
-      ],
-      "top_files": [
-        {
-          "path": "apps/reference/adapters/binance_ws_client.py",
-          "count": 2
-        },
-        {
-          "path": "apps/reference/config_models.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/decision_making/md_amr_handler.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/execution_position/fsm.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/shadow_telemetry/snapshot_store.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "op": "EVT",
-      "verb": "ORDER_STATE_CHANGED",
-      "token": "EVT:ORDER_STATE_CHANGED",
-      "total_occurrences": 9,
-      "suggested_owner": "unknown",
-      "candidates": [
-        {
-          "owner": "decision_making",
-          "count": 3,
-          "pct": 33.33
-        },
-        {
-          "owner": "execution_position",
-          "count": 1,
-          "pct": 11.11
-        },
-        {
-          "owner": "shadow_telemetry",
-          "count": 1,
-          "pct": 11.11
-        }
-      ],
-      "top_files": [
-        {
-          "path": "apps/reference/adapters/binance_ws_client.py",
-          "count": 2
-        },
-        {
-          "path": "apps/reference/domains/decision_making/mean_reversion_handler.py",
-          "count": 2
-        },
-        {
-          "path": "apps/reference/config_models.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/decision_making/md_amr_handler.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/execution_position/watchdog.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/shadow_telemetry/snapshot_store.py",
-          "count": 1
-        },
-        {
-          "path": "apps/reference/domains/strategies/plugins/aurora_builtin.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "op": "EVT",
-      "verb": "ORDER_TIMEOUT",
-      "token": "EVT:ORDER_TIMEOUT",
       "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],

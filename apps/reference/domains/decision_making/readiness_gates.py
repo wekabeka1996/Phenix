@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from apps.reference.core.time.clock import Clock
     from .decision_context import DecisionContext
 
-from .aurora_scoring_kernel import AuroraScoringKernel, SideBiasState
 from vfoundation.core.protocol import truncate_why
 from apps.reference.telemetry.metrics import inc_warmup_block
 
@@ -323,94 +322,11 @@ class ReadinessGates:
         self._record_blocked_intent(symbol)
         return True
 
-    # ── Shadow Mode: Kernel Comparison ────────────────────────────────
-
-    def shadow_compare_kernel(
-        self,
-        symbol: str,
-        *,
-        legacy_score: decimal.Decimal,
-        legacy_side: str,
-        legacy_thr_buy: decimal.Decimal,
-        legacy_thr_sell: decimal.Decimal,
-        features: Dict[str, Any],
-        warmup_readiness: Dict[str, bool],
-        price: decimal.Decimal,
-        signal_weights: Dict[str, float],
-        feature_neutrals: Dict[str, float],
-        essential_features: List[str],
-        base_threshold: decimal.Decimal,
-        regime_name: Optional[str],
-        regime_thresholds: Dict[str, float],
-        buy_count: int,
-        sell_count: int,
-    ) -> None:
-        """
-        Shadow mode: compare legacy scoring with kernel (no side effects).
-
-        Logs divergences for validation before switching to kernel.
-        """
-        aurora_cfg = getattr(self.config.strategies, "aurora", None)
-        if not aurora_cfg or not getattr(aurora_cfg, "shadow_mode_enabled", False):
-            return
-
-        try:
-            side_bias_state = SideBiasState(
-                buy_count=buy_count,
-                sell_count=sell_count,
-                window_sec=aurora_cfg.decision.side_bias_window_sec or 420,
-                target_ratio=aurora_cfg.decision.side_bias_target_ratio or 0.72,
-                penalty_factor=aurora_cfg.decision.side_bias_penalty_factor or 0.25,
-                min_intents=aurora_cfg.decision.side_bias_min_intents or 18,
-            )
-
-            ds_cfg = getattr(aurora_cfg.decision, "direction_strength_scoring", None)
-            direction_strength_cfg = {
-                "directional_features": list(ds_cfg.directional_features) if ds_cfg else [],
-                "strength_features": list(ds_cfg.strength_features) if ds_cfg else [],
-                "strength_alpha": ds_cfg.strength_alpha if ds_cfg else 0.5,
-                "strength_cap": ds_cfg.strength_cap if ds_cfg else 1.5,
-            }
-
-            signals_cfg = getattr(aurora_cfg.decision, "signals", None)
-            delta_price_cap_pct = decimal.Decimal(
-                str(signals_cfg.delta_price_cap_pct)
-            ) if signals_cfg and signals_cfg.delta_price_cap_pct else decimal.Decimal("0.005")
-
-            kernel_result = AuroraScoringKernel.compute(
-                symbol=symbol,
-                features=features,
-                warmup_readiness=warmup_readiness,
-                price=price,
-                signal_weights=signal_weights,
-                feature_neutrals=feature_neutrals,
-                essential_features=essential_features,
-                base_threshold=base_threshold,
-                regime_name=regime_name,
-                regime_thresholds=regime_thresholds,
-                side_bias_state=side_bias_state,
-                direction_strength_cfg=direction_strength_cfg,
-                delta_price_cap_pct=delta_price_cap_pct,
-            )
-
-            score_diff = abs(float(legacy_score) - float(kernel_result.score))
-            thr_buy_diff = abs(float(legacy_thr_buy) - float(kernel_result.thr_buy))
-            thr_sell_diff = abs(float(legacy_thr_sell) - float(kernel_result.thr_sell))
-            side_match = legacy_side.lower() == kernel_result.side.lower()
-
-            threshold = 0.001
-            if score_diff > threshold or thr_buy_diff > threshold or thr_sell_diff > threshold or not side_match:
-                self.logger.warning(
-                    f"[{symbol}] SHADOW_DIVERGENCE: "
-                    f"legacy_score={float(legacy_score):.4f} vs kernel={float(kernel_result.score):.4f} (diff={score_diff:.6f}) | "
-                    f"legacy_side={legacy_side} vs kernel={kernel_result.side} (match={side_match}) | "
-                    f"thr_buy_diff={thr_buy_diff:.6f} thr_sell_diff={thr_sell_diff:.6f}"
-                )
-            else:
-                self.logger.debug(f"[{symbol}] SHADOW_MATCH: score={float(legacy_score):.4f}, side={legacy_side}")
-
-        except Exception as e:
-            self.logger.error(f"[{symbol}] SHADOW_ERROR: {e}")
+    # PHASE-9-PURGE: shadow_compare_kernel() removed.
+    # It was the pre-Quadratic shadow validation path (gated by shadow_mode_enabled),
+    # which compared legacy AuroraScoringKernel (v2) results against the production score.
+    # Quadratic Brain is now the live truth. The comparison path is obsolete.
+    # If shadow comparison is needed in future, implement against QuadraticScoringKernel.
 
     # ── Exposure Cache Pre-check ──────────────────────────────────────
 

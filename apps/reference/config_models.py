@@ -436,6 +436,67 @@ class MRRegimeThresholdsConfig(BaseModel):
     low_vol_pct: float = Field(description='ATR% for FLAT_LOW')
 
 
+class MRSqueezeExpansionVetoConfig(BaseModel):
+    """Per-asset squeeze-expansion veto contract for MR breakout fades."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable squeeze-expansion veto')
+    squeeze_width_max: float = Field(
+        gt=0.0,
+        description='Previous BB width must be at or below this squeeze threshold',
+    )
+    post_squeeze_width_max: float = Field(
+        gt=0.0,
+        description='Current BB width must stay at or below this threshold after expansion',
+    )
+    expansion_ratio_min: float = Field(
+        gt=1.0,
+        description='Current/previous BB width ratio required to veto breakout fades',
+    )
+    regimes: List[str] = Field(
+        min_length=1,
+        description='Flat regimes where the squeeze-expansion veto applies',
+    )
+    sides: List[Literal["LONG", "SHORT"]] = Field(
+        min_length=1,
+        description='Signal sides where the squeeze-expansion veto applies',
+    )
+
+    @model_validator(mode="after")
+    def _validate_width_relationship(self) -> "MRSqueezeExpansionVetoConfig":
+        if self.post_squeeze_width_max < self.squeeze_width_max:
+            raise ValueError(
+                "post_squeeze_width_max must be >= squeeze_width_max")
+        return self
+
+
+class MRMomentumSeparationVetoConfig(BaseModel):
+    """Per-asset late-drift veto contract for MR counter-trend fades."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable late-drift momentum separation veto')
+    lookback_bars: int = Field(
+        ge=1,
+        description='Number of completed bars used to measure directional drift',
+    )
+    min_drift_pct: float = Field(
+        gt=0.0,
+        description='Minimum cumulative drift required to veto a counter-trend fade',
+    )
+    min_current_bb_width: float = Field(
+        gt=0.0,
+        description='Current BB width floor before the late-drift veto is allowed to engage',
+    )
+    regimes: List[str] = Field(
+        min_length=1,
+        description='Flat regimes where the momentum-separation veto applies',
+    )
+    sides: List[Literal["LONG", "SHORT"]] = Field(
+        min_length=1,
+        description='Signal sides where the momentum-separation veto applies',
+    )
+
+
 class MRStrategyOverrideConfig(BaseModel):
     """Per-asset strategy parameter overrides for MR.
 
@@ -449,6 +510,18 @@ class MRStrategyOverrideConfig(BaseModel):
         default=None, description='BB std multiplier')
     min_bb_width: Optional[float] = Field(
         default=None, description='Min BB width filter')
+    flat_low_short_min_bb_width: Optional[float] = Field(
+        default=None,
+        description='Optional stricter BB width floor for FLAT_LOW short setups only',
+    )
+    squeeze_expansion_veto: Optional[MRSqueezeExpansionVetoConfig] = Field(
+        default=None,
+        description='Optional squeeze-expansion veto for breakout-from-squeeze fade traps',
+    )
+    momentum_separation_veto: Optional[MRMomentumSeparationVetoConfig] = Field(
+        default=None,
+        description='Optional late-drift veto for counter-trend fade traps after expansion',
+    )
     entry_threshold: Optional[float] = Field(
         default=None, description='Entry distance threshold')
     tp_to_mid: Optional[bool] = Field(
@@ -810,6 +883,162 @@ class QuadraticRolloutConfig(BaseModel):
     )
 
 
+# ══════════════════════════════════════════════════════════════
+# Phase 9: Quadratic Brain — Shield Configs
+# ══════════════════════════════════════════════════════════════
+
+class DangerZoneShieldConfig(BaseModel):
+    """Phase 9: DangerZone circuit-breaker shield config.
+
+    Vetoes signals when volatility, spread, or price motion exceed safe thresholds.
+    Trigger: volatility_state > vol_threshold OR spread > spread_threshold OR
+             price_motion > motion_threshold.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description="Enable DangerZone shield")
+    vol_threshold: float = Field(
+        default=0.95, ge=0.0, le=1.0,
+        description="Volatility state threshold (0.95 = block when top 5% volatility)"
+    )
+    spread_threshold: float = Field(
+        default=50.0, ge=0.0,
+        description="Spread threshold in bps to trigger DangerZone veto"
+    )
+    motion_threshold: float = Field(
+        default=3.0, ge=0.0,
+        description="Price motion sigma threshold to trigger DangerZone veto"
+    )
+
+
+class ContextShieldConfig(BaseModel):
+    """Phase 9: Context shield config — regime-aware score attenuation.
+
+    Multiplies score by regime-specific factor. Supports TTL for stale regime data.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description="Enable Context shield")
+    regime_multipliers: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-regime score multipliers (e.g., HIGH_VOLATILITY: 0.3)"
+    )
+    default_multiplier: float = Field(
+        default=0.8, ge=0.0, le=2.0,
+        description="Multiplier used when regime is not in the map"
+    )
+    no_regime_multiplier: float = Field(
+        default=0.5, ge=0.0, le=2.0,
+        description="Multiplier when no regime has been received yet (fail-cautious)"
+    )
+    ttl_ms: int = Field(
+        default=14_400_000, ge=0,
+        description="Regime TTL in ms. After this, stale multipliers apply (0 = disable TTL)"
+    )
+    stale_mult_normal: float = Field(
+        default=0.7, ge=0.0, le=2.0,
+        description="Multiplier for stale regime in non-danger regimes"
+    )
+    stale_mult_danger: float = Field(
+        default=0.35, ge=0.0, le=2.0,
+        description="Multiplier for stale regime in danger regimes (e.g., HIGH_VOLATILITY)"
+    )
+    danger_regimes: List[str] = Field(
+        default_factory=lambda: ["HIGH_VOLATILITY"],
+        description="Regimes classified as danger (stricter stale multiplier applied)"
+    )
+
+
+class MemoryShieldConfig(BaseModel):
+    """Phase 9: Memory shield config — state familiarity attenuation.
+
+    Attenuates score based on how familiar the system is with the current market state.
+    Uses exponentially-decayed counters to track state visit frequency.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description="Enable Memory shield")
+    decay_rate: float = Field(
+        default=0.95, gt=0.0, le=1.0,
+        description="Exponential decay rate per bar (0.95 = 5% decay per bar)"
+    )
+    max_states: int = Field(
+        default=200, ge=1,
+        description="LRU cap: max distinct states tracked (oldest evicted when exceeded)"
+    )
+    unknown_threshold: float = Field(
+        default=10.0, ge=0.0,
+        description="Visit count below which state is 'UNKNOWN' (most restrictive)"
+    )
+    exploring_threshold: float = Field(
+        default=50.0, ge=0.0,
+        description="Visit count below which state is 'EXPLORING' (intermediate)"
+    )
+    unknown_multiplier: float = Field(
+        default=0.6, ge=0.0, le=2.0,
+        description="Score multiplier when state is UNKNOWN"
+    )
+    exploring_multiplier: float = Field(
+        default=0.8, ge=0.0, le=2.0,
+        description="Score multiplier when state is EXPLORING"
+    )
+    known_multiplier: float = Field(
+        default=1.0, ge=0.0, le=2.0,
+        description="Score multiplier when state is KNOWN"
+    )
+    storage_path: Optional[str] = Field(
+        default=None,
+        description="Path for JSON persistence of memory state (None = in-memory only)"
+    )
+    flush_interval_sec: float = Field(
+        default=60.0, gt=0.0,
+        description="Interval between memory state flushes to disk"
+    )
+
+    @model_validator(mode='after')
+    def _validate_thresholds(self) -> 'MemoryShieldConfig':
+        if self.unknown_threshold >= self.exploring_threshold:
+            raise ValueError(
+                f"unknown_threshold ({self.unknown_threshold}) must be < "
+                f"exploring_threshold ({self.exploring_threshold})"
+            )
+        return self
+
+
+class ScoringEngineConfig(BaseModel):
+    """Phase 9: Quadratic scoring engine parameters.
+
+    Used when decision.scoring_version == 'quadratic'.
+    Controls shield cascade activation and per-shield configuration.
+
+    shield_enabled must be True for Quadratic mode (fail-closed at startup).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    shield_enabled: bool = Field(
+        default=True,
+        description=(
+            "Master switch for shield cascade. Must be True for Quadratic mode (fail-closed). "
+            "True = build real cascade from sub-configs below."
+        )
+    )
+    danger_zone_shield: Optional[DangerZoneShieldConfig] = Field(
+        default=None,
+        description="DangerZone circuit-breaker config (veto on extreme volatility/spread)"
+    )
+    context_shield: Optional[ContextShieldConfig] = Field(
+        default=None,
+        description="Context shield config (regime-aware score attenuation)"
+    )
+    memory_shield: Optional[MemoryShieldConfig] = Field(
+        default=None,
+        description="Memory shield config (state-familiarity attenuation)"
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
 
@@ -845,10 +1074,11 @@ class DecisionConfig(BaseModel):
     retry_max_count: int = Field(description='Max retry attempts')
     retry_backoff_factor: float = Field(description='Retry backoff multiplier')
 
-    signal_weights: SignalWeights = Field()
+    signal_weights: Optional[SignalWeights] = Field(default=None)
     signals: SignalsConfig = Field()
-    direction_strength_scoring: DirectionStrengthScoringConfig = Field(
-        description="Direction/Strength split scoring configuration (SSOT-required)."
+    direction_strength_scoring: Optional[DirectionStrengthScoringConfig] = Field(
+        default=None,
+        description="DEPRECATED (V2 path): Direction/Strength split scoring configuration."
     )
     kelly: KellyConfig = Field()
     qos: QosConfig = Field()
@@ -878,9 +1108,9 @@ class DecisionConfig(BaseModel):
     neutral_threshold: Optional[float] = Field(
         description='Neutral zone threshold')
 
-    # Phase 4: Score V2 Global Configuration
+    # Phase 9: Quadratic is the only active scoring path. v1/v2 retained for config parsing only.
     scoring_version: Literal["v1", "v2", "quadratic"] = Field(
-        default="v1", description="Scoring engine version: v1, v2, or quadratic (Phase 9)")
+        default="quadratic", description="Scoring engine version: quadratic (Phase 9). v1/v2 are DEPRECATED.")
     feature_neutrals: Dict[str, float] = Field(
         default_factory=dict, description="Neutral offsets for V2 scoring")
     essential_features: List[str] = Field(
@@ -948,9 +1178,17 @@ class DecisionConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_direction_strength_contract(self) -> "DecisionConfig":
+        # Phase 9: direction_strength_scoring is only required for v1/v2 linear paths.
+        # Quadratic kernel reads pillar_sum from FeatureEngineering and does NOT use
+        # direction_strength_scoring at runtime.  Skip the entire check when quadratic.
+        sv = getattr(self, "scoring_version", "quadratic")
+        if sv == "quadratic":
+            return self
+
         ds = getattr(self, "direction_strength_scoring", None)
         if ds is None:
-            raise ValueError("direction_strength_scoring is required (SSOT)")
+            raise ValueError(
+                "direction_strength_scoring is required for scoring_version v1/v2")
 
         essentials = set(getattr(self, "essential_features", []) or [])
         directional = set(getattr(ds, "directional_features", []) or [])
@@ -3645,7 +3883,8 @@ class ObjectiveEngineDomainConfig(BaseModel):
     def _validate_enabled_domain(self) -> "ObjectiveEngineDomainConfig":
         if not self.enabled:
             return self
-        allowed = {"cost", "risk", "edge", "execution", "information", "behavior"}
+        allowed = {"cost", "risk", "edge",
+                   "execution", "information", "behavior"}
         unknown = sorted(set(self.components.keys()) - allowed)
         if unknown:
             raise ValueError(
@@ -4023,9 +4262,10 @@ class AuroraInstrumentConfig(BaseModel):
     allowed_regimes: Optional[List[str]] = Field(
         default=None, description='If set, only trade when current regime is in this list (Phase 3+ regime gating)')
 
-    # Phase 4: Score V2 Overrides
+    # DEPRECATED: Per-asset scoring_version override is non-operational (Quadratic is the sole path).
+    # Retained for config parsing backward-compatibility only. Has no runtime effect.
     scoring_version: Optional[Literal["v1", "v2"]] = Field(
-        default=None, description="Override scoring version")
+        default=None, description="DEPRECATED: Per-asset scoring version override (non-operational, Quadratic only)")
     feature_neutrals: Optional[Dict[str, float]] = Field(
         default=None, description="Override neutral offsets")
     essential_features: Optional[List[str]] = Field(
@@ -5130,14 +5370,16 @@ class AuroraConfig(BaseModel):
         if cfg is None:
             raise ValueError("strategy_config_missing(mean_reversion)")
         if not bool(cfg.enabled):
-            raise ValueError("mean_reversion enabled=false for assigned symbols")
+            raise ValueError(
+                "mean_reversion enabled=false for assigned symbols")
 
         invalid: list[str] = []
         for symbol in assigned:
             if symbol not in self.instruments:
                 invalid.append(f"{symbol}:instrument_missing")
                 continue
-            asset_cfg = cfg.assets.get(symbol) if isinstance(cfg.assets, dict) else None
+            asset_cfg = cfg.assets.get(symbol) if isinstance(
+                cfg.assets, dict) else None
             if asset_cfg is None:
                 invalid.append(f"{symbol}:asset_missing")
                 continue
@@ -5173,47 +5415,63 @@ class AuroraConfig(BaseModel):
         coverage_errors: list[str] = []
 
         aurora_cfg = getattr(self.strategies, "aurora", None)
-        aurora_objective = getattr(aurora_cfg, "objective", None) if aurora_cfg is not None else None
+        aurora_objective = getattr(
+            aurora_cfg, "objective", None) if aurora_cfg is not None else None
         if aurora_cfg is not None and aurora_objective is not None and bool(aurora_objective.enabled):
             expected_regimes: set[str] = set()
             for symbol in _assigned_symbols("aurora"):
-                asset_cfg = aurora_cfg.assets.get(symbol) if isinstance(aurora_cfg.assets, dict) else None
+                asset_cfg = aurora_cfg.assets.get(symbol) if isinstance(
+                    aurora_cfg.assets, dict) else None
                 if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
                     continue
-                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
-            missing = sorted(expected_regimes - set(aurora_objective.regimes.keys()))
+                expected_regimes.update(_non_empty_regimes(
+                    getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes -
+                             set(aurora_objective.regimes.keys()))
             if missing:
-                coverage_errors.append(f"aurora:missing_objective_regimes={','.join(missing)}")
+                coverage_errors.append(
+                    f"aurora:missing_objective_regimes={','.join(missing)}")
 
         md_cfg = getattr(self.strategies, "md_amr", None)
-        md_objective = getattr(md_cfg, "objective", None) if md_cfg is not None else None
+        md_objective = getattr(md_cfg, "objective",
+                               None) if md_cfg is not None else None
         if md_cfg is not None and md_objective is not None and bool(md_objective.enabled):
             expected_regimes = set()
             for symbol in _assigned_symbols("md_amr"):
-                asset_cfg = md_cfg.assets.get(symbol) if isinstance(md_cfg.assets, dict) else None
+                asset_cfg = md_cfg.assets.get(symbol) if isinstance(
+                    md_cfg.assets, dict) else None
                 if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
                     continue
-                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
-            missing = sorted(expected_regimes - set(md_objective.regimes.keys()))
+                expected_regimes.update(_non_empty_regimes(
+                    getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes -
+                             set(md_objective.regimes.keys()))
             if missing:
-                coverage_errors.append(f"md_amr:missing_objective_regimes={','.join(missing)}")
+                coverage_errors.append(
+                    f"md_amr:missing_objective_regimes={','.join(missing)}")
 
         mr_cfg = getattr(self.strategies, "mean_reversion", None)
-        mr_objective = getattr(mr_cfg, "objective", None) if mr_cfg is not None else None
+        mr_objective = getattr(mr_cfg, "objective",
+                               None) if mr_cfg is not None else None
         if mr_cfg is not None and mr_objective is not None and bool(mr_objective.enabled):
             expected_regimes = set()
             for symbol in _assigned_symbols("mean_reversion"):
-                asset_cfg = mr_cfg.assets.get(symbol) if isinstance(mr_cfg.assets, dict) else None
+                asset_cfg = mr_cfg.assets.get(symbol) if isinstance(
+                    mr_cfg.assets, dict) else None
                 if asset_cfg is None or not bool(getattr(asset_cfg, "enabled", False)):
                     continue
-                expected_regimes.update(_non_empty_regimes(getattr(asset_cfg, "allowed_regimes", None)))
-            missing = sorted(expected_regimes - set(mr_objective.regimes.keys()))
+                expected_regimes.update(_non_empty_regimes(
+                    getattr(asset_cfg, "allowed_regimes", None)))
+            missing = sorted(expected_regimes -
+                             set(mr_objective.regimes.keys()))
             if missing:
-                coverage_errors.append(f"mean_reversion:missing_objective_regimes={','.join(missing)}")
+                coverage_errors.append(
+                    f"mean_reversion:missing_objective_regimes={','.join(missing)}")
 
         if coverage_errors:
             raise ValueError(
-                "objective regime coverage invalid for assigned symbols: " + "; ".join(coverage_errors)
+                "objective regime coverage invalid for assigned symbols: " +
+                "; ".join(coverage_errors)
             )
         return self
 

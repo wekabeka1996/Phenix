@@ -1,17 +1,192 @@
 # TODO
 
+## EP contract boundary follow-ups (added 2026-03-14)
+
+### P3: Update CONTRACT_ARCHITECTURE.md with co_emitters policy
+- [ ] Add co_emitters annotation pattern to `docs/contracts/CONTRACT_ARCHITECTURE.md`
+
+## EP domain audit follow-ups (added 2026-03-14)
+
+### P3: Consolidate triple OrderStatus enum
+- [ ] Extract adapter mapping functions instead of merging the 3 OrderStatus enums (contracts.py, idempotent_cancel.py, infra/order_ledger.py)
+
+### P3: Add missing EP event schemas
+- [ ] Add schemas for ~20 EP-emitted events with `schema: null` in registry
+
+### P3: Purge/refresh auto-generated EP docs
+- [ ] Purge or refresh stale auto-generated docs in `apps/reference/domains/execution_position/docs/` subdirectory
+
+### P4: Evaluate fsm.py split
+- [ ] Evaluate splitting fsm.py (2,056 LOC) into smaller orchestration units (very low priority)
+
+## EP contract boundary (completed 2026-03-14)
+- [x] EXPOSURE_SUMMARY_UPDATED owner moved from risk_management to execution_position
+- [x] co_emitters annotations added to TRADE_INTENT_REJECTED and TRADE_EXECUTED
+- [x] NRR import migrated from direct DM import to shared/types.py re-export
+- [x] 8 guardrail tests in `test_ep_contract_boundary_guardrails.py`
+
+## EP domain audit (completed 2026-03-14)
+- [x] Phase A: Context map — 40 live files, ~16,500 LOC, 9 consumed + 31 emitted events, ~1,192 test functions
+- [x] Phase B: Cleanup — 3 ghost subpackages, 12 ghost .pyc, broken conftest import fixed
+- [x] Phase C: Lifecycle hygiene — triple OrderStatus documented (not merged)
+- [x] Phase D+E: Authoritative README.md, domain_dict.json v1.0.0, staleness notes on docs/
+- [x] Phase F: 13 guardrail tests in `test_ep_domain_structural_guardrails.py`
+- [x] Phase G: Report `reports/domains/EXECUTION_POSITION_DOMAIN_AUDIT_2026-03-14.md`
+
+## DM domain audit follow-ups (added 2026-03-14)
+
+### P3: Consolidate schemas.py + schemas_decision_blocked.py
+- [ ] Merge into single `models.py` or consolidate, to avoid confusion with JSON `schemas/` dir
+
+### P3: Migrate all DM WhyCode imports
+- [ ] Migrate all `from .why_codes import` to `from vfoundation.core.why_codes import` (currently backward-compatible via re-export shim)
+
+### P3: Purge/refresh auto-generated docs
+- [ ] Purge or refresh 12 auto-generated docs in `apps/reference/domains/decision_making/docs/` subdirectory
+
+### P4: Rename shields/ to safety/
+- [ ] Consider `shields/` → `safety/` rename for clarity (very low priority)
+
+## DM domain audit (completed 2026-03-14)
+- [x] Phase A: Context map — 37 live files, ~98 test files, 13 consumed + 12 emitted events
+- [x] Phase B: Cleanup — 5 pycache ghosts, 1 empty test, stale docs fixed
+- [x] Phase C: Authoritative README.md, domain_dict.json v2.0.0, __init__.py v2.0.0
+- [x] Phase D: 8 guardrail tests in `test_dm_domain_structural_guardrails.py`
+- [x] Phase E: Report `reports/domains/dm_domain_audit_2026-03-14.md`
+
+## Contract SSOT consolidation follow-ups (added 2026-03-14)
+
+### P2: NRR ad-hoc code migration
+- [ ] Normalize `NRR-LEV-REDUCE`, `NRR-LEV-BRACKET`, `NRR-MARGIN-ORDERS`, `NRR-MARGIN-POSITION`, `NRR-CANCEL-STRICT`, `NRR-INSTRUMENT-CONFIG-MISSING` to `NRR-\d{3}` format in canonical NormalizedRejectReasons
+
+### P2: Schema coverage push
+- [ ] Add schemas for high-traffic active contracts with `schema: null` (ORDER_REJECTED, ORDER_STATE_CHANGED, ACCOUNT_UPDATE_RECEIVED, ORDER_PLACED, BALANCE_UPDATE_RECEIVED)
+
+### P3: WhyCode import migration
+- [ ] Migrate all `from decision_making.why_codes` imports to `from vfoundation.core.why_codes` (currently backward-compatible via re-export shim)
+
+### P3: NRR WhyCode removal
+- [ ] Remove 9 deprecated NRR members from `vfoundation/core/why_codes.py` WhyCode enum (after verifying no production consumers)
+
+### P3: VERB_PAYLOAD_MAP decision
+- [ ] Either promote to active Pydantic migration or remove entirely
+
+### P3: vfoundation event registration policy
+- [ ] Decide whether internal meta-FSM/routing events (STATE_TRANSITION, DOMAIN_STATUS, INIT, ENTROPY_SPIKE, etc.) should be registered in verb_registry or remain internal
+
+### Schema cleanup
+- [ ] Remove duplicate `schemas/portfolio_state_v1.json` (keep `apps/reference/domains/position_tracking/schemas/portfolio_state_v1.json` which is registry-referenced)
+- [ ] Decide whether orphan sub-schemas (`bracket_order_v1.json`, `bracket_error_v1.json`, `features_price_motion_v1.json`, `order_clipped_event_v1.json`, `order_rejected_event_v1.json`) should be registered or remain internal
+- [ ] Decide whether `message_v1.json` and `order_logger_v1.json` should be registered or documented as internal
+
+## Contract SSOT consolidation (completed 2026-03-14)
+- [x] WhyCode fork resolved — 7 codes promoted to vfoundation, decision_making converted to re-export
+- [x] 12 dead registry entries marked deprecated
+- [x] VERB_PAYLOAD_MAP frozen as COMPATIBILITY-ONLY
+- [x] Architecture spec: `docs/contracts/CONTRACT_ARCHITECTURE.md`
+- [x] 9 guardrail tests: `tests/contracts/test_contract_ssot_guardrails.py`
+
+## Contract audit (completed 2026-03-14)
+- [x] 20 missing contracts added to registry
+- [x] Broken schema ref fixed, duplicate removed, 7 owner fixes
+- [x] 28 regression tests in `tests/contracts/test_contract_registry_audit.py`
+
+## Config namespace cleanup (completed 2026-03-14)
+- [x] Relocate `config/aurora_baseline/` and `config/mean_reversion/` to `archive/config_snapshots/`
+- [x] Create archive manifest `archive/config_snapshots/README.md`
+- [x] Create config SSOT contract `config/README.md`
+- [x] Clean `PROJECT_ATLAS.md` dead config entries
+- [x] Add regression guard `tests/config/test_config_namespace_ssot.py`
+- [x] Update JOURNAL.md and JOURNAL_мій.md
+
+## Execution-position P0 split-brain repair package (updated 2026-03-13)
+
+### Implemented in this package
+- [x] Add a fail-closed local execution guard so `CMD:OPEN` is rejected whenever local execution still owns an active lifecycle
+- [x] Add an explicit divergence gate so `REST=FLAT` + local `FSM=TRACKING` blocks reopen until reconciliation completes
+- [x] Repair stale-lifecycle handling so an unexpected new entry fill cannot stay on the old `TRACKING` path with old bracket ids
+- [x] Normalize exit matching so pre-ACK client ids and exchange order ids both reconcile valid TP/SL fills
+- [x] Keep `OrderGuardian.cleanup_orphans()` / `EVT:SYMBOL_TIDY` as maintenance only; do not treat tidy/cleanup as a substitute for business close reconciliation
+- [x] Convert `tests/domains/execution_position/test_split_brain_repro.py` from bug-demonstration evidence into fail-closed invariant tests
+
+### Follow-up still open
+- [ ] Recover raw runtime evidence to upgrade or disprove `H1` (`WS/order update loss`) beyond `LIKELY`
+- [ ] Capture live/testnet event traces for the original DOGEUSDT incident window so the primary trigger can be classified without inference
+
+## Mean reversion state machine passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by MR state-machine re-audit
+- [ ] Rename or clearly annotate stale `1m` / `3m` MR names and comments so they do not contradict live `timeframe_sec=300`
+- [ ] Replace or unskip `tests/integration/test_mean_reversion_handler_event_contract_v1.py`; it still targets an obsolete tick-driven path instead of current `CMD:PROCESS_STRATEGY` bar-driven runtime
+- [ ] Keep incident and strategy docs explicit that `MeanReversion1mStrategy` stops at signal formation, while `ExecPosFSM` / `ManageFlowFSM` own downstream lifecycle and reconciliation failures
+
+## MD-AMR strategy passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by md_amr re-audit
+- [ ] Decide whether `strategies.md_amr.execution.gtx_fallback_to_market` should trigger a real fallback path after GTX reject exhaustion or be renamed/documented as logging-only bookkeeping
+- [ ] Decide whether `MDAMRHandler.reconcile_position()` needs explicit end-to-end wiring from exchange/account sync or should be documented as a local dormant hook
+- [ ] Decide whether unassigned asset blocks in `config/aurora/strategies/md_amr.yaml` should remain mixed into the live profile or be separated from the active contract surface
+
+## LLM microstructure passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by llm microstructure re-audit
+- [ ] Align bridge-emitted `EVT:STRATEGY_SIGNAL_PRODUCED.tf_sec` with `strategies.llm_microstructure.timeframe_sec`, or explicitly codify why the bridge must emit `300` while the profile declares `60`
+- [ ] Decide whether `strategies.llm_microstructure.enabled` should become a real runtime gate for ingress / bridge wiring or remain typed metadata only
+- [ ] Keep `shadow_telemetry` docs and strategy docs aligned on the sentinel-plugin architecture so llm_microstructure is not described as a normal in-process handler
+
+## Instruments passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by instruments re-audit
+- [ ] Either wire `instruments.<SYM>.execution.max_notional_utilization` into a real runtime capacity/exposure gate or remove it from the active live execution contract
+- [ ] Decide whether `instruments.<SYM>.symbol` should be validated against the map key or removed as duplicated metadata
+- [ ] Continue deprecating or clearly marking legacy strategy-side leverage fields that are now ignored when they disagree with instruments SSOT
+
+## Strategies passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by strategies re-audit
+- [ ] Remove or wire `strategies_registry.arbitration.logging.log_level`; no runtime arbitration consumer was found
+- [ ] Decide whether `aurora.enabled` should become a hard activation constraint or remain a soft/profile metadata flag beside assignment SSOT
+- [ ] Document `llm_microstructure` consistently as sentinel plugin + bridge-driven runtime across internal strategy docs
+- [ ] Review whether any unassigned strategy profiles should still be prevalidated at startup or remain load-on-assignment only
+
+## Aurora math passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by aurora math re-audit
+- [x] Remove or wire `AuroraInstrumentConfig.scoring_version`; current Aurora loader routes only through global `DecisionConfig.scoring_version`
+  - **DONE (Phase 9 cleanup 2026-03-14):** Per-asset `scoring_version` marked DEPRECATED with `default=None`, non-operational. Global `DecisionConfig.scoring_version` defaults to `"quadratic"`.
+- [ ] Decide whether per-symbol `neutral_threshold` should exist in strict `AuroraInstrumentConfig` or be removed from Aurora runtime probing
+- [ ] Keep decision-making internal docs aligned with the Phase 14A decomposed runtime topology instead of treating `aurora_handler.py` as the sole math owner
+- [ ] Review whether deprecated `side_bias_min_score` should remain in `DecisionConfig` now that no Aurora math consumer was found
+
+## Scoring passport follow-ups (added 2026-03-13)
+
+### Runtime / contract cleanup exposed by scoring re-audit
+- [ ] Align `DecisionConfig.scoring_version` with rollout contract: either retire `v1` from Pydantic or make rollout contract accept it explicitly
+- [ ] Remove or wire `strategies.aurora.decision.regime_thresholds`; current Aurora kernels ignore the global block and use `regime_threshold_multipliers`
+- [ ] Remove or wire `ScoringEngineConfig.exposure_cap` in Aurora live runtime / quantization path
+- [ ] Remove or wire `ScoringEngineConfig.min_pillar_confidence` in Quadratic runtime path
+- [ ] Remove or implement `LiquidityGateConfig.failsafe_qty_check`; current runtime only echoes it in diagnostics
+- [x] Decide explicitly whether Aurora remains on configured `v2` or moves to explicit `quadratic` rollout in `config/aurora/strategies/aurora.yaml`
+  - **DONE (Phase 9 cleanup 2026-03-14):** Aurora is now quadratic-only. `scoring_version: "quadratic"` is the sole active path. v2 runtime deleted.
+- [x] If Quadratic remains planned, add explicit live YAML blocks for `scoring_engine` and `quadratic_rollout` instead of relying on repo-level code presence
+  - **DONE (Phase 9 cleanup 2026-03-14):** `scoring_engine` and `quadratic_rollout` are now explicit in aurora.yaml with fail-closed defaults.
+- [ ] Decide whether `trading.risk.daily.max_realized_loss_usd` should be wired into `DailyRiskState.can_open()` or removed from the active L1 contract
+
 ## Aurora runtime audit follow-ups (added 2026-03-10)
 
 ### Must-fix before next live/testnet run with Quadratic ambitions
 - [ ] Wire startup HTF pillar backfill into live bootstrap and emit `EVT:HTF_BARS_IMPORTED` before Aurora signal generation
 - [ ] Add explicit Quadratic readiness gate so FE/DM readiness cannot be `true` while `pillar_sum` is still absent
-- [ ] Make runtime intent explicit: keep Aurora on `v2` or switch to `quadratic`; do not leave activation implicit in repo state
+- [x] Make runtime intent explicit: keep Aurora on `v2` or switch to `quadratic`; do not leave activation implicit in repo state
+  - **DONE (Phase 9 cleanup 2026-03-14):** `scoring_version: quadratic` is now the global default, v2 runtime fully deleted, rollback infrastructure non-operational.
 - [ ] Add startup/restart policy for regime and pillar state: historical seed, snapshot restore, or explicit cold-start deny window
 - [ ] Add one end-to-end integration test from runtime startup to first Quadratic-ready `CMD:PROCESS_STRATEGY`
 - [ ] Reconcile `market_data_connector.py` runtime behavior with its REST/klines docstring, or remove the stale contract claim
 - [ ] Decide whether current 5m regime cold-start requirement must be satisfied by startup history load instead of natural live accumulation
-- [ ] Evaluate explicitly setting `scoring_version: "quadratic"` in `config/aurora/strategies/aurora.yaml` when Phase 9 pillars are globally ready.
+- [x] Evaluate explicitly setting `scoring_version: "quadratic"` in `config/aurora/strategies/aurora.yaml` when Phase 9 pillars are globally ready.
+  - **DONE (Phase 9 cleanup 2026-03-14):** All config variants now set `scoring_version: "quadratic"`. Default in schema is `"quadratic"`.
 - [ ] Periodically sync `regime_passport.md` with upcoming Phase R3-A Grid calibrations, specifically monitoring shifts in `sma_short_period`, `sma_long_period`, and `atr_sma_length`.
+- [ ] Ensure `aurora_math_passport.md` is updated if Phase 9 introduces new quadratic bounds on signal strengths or significantly alters the hysteresis formula.
 
 ## Neocortex production-shadow remediation (planned 2026-03-10)
 
@@ -51,7 +226,11 @@
 - [x] Prefer structured close feed; keep parser only as transitional shim
 - [x] Add reward completeness and coverage tests
 - [x] Extend `test_reward_parsing.py` and add close-feed fixtures
-- [ ] P3 follow-up: producer-side close plane must emit canonical `close_price` / `fees` / `trade_id` consistently
+- [x] P3 follow-up: producer-side close plane must emit canonical `close_price` / `fees` / `trade_id` consistently
+      — RESOLVED by `AURORA-PRODUCER-CONTRACT-ALIGNMENT-IMPLEMENTATION` (2026-03-12):
+        `lifecycle_id` (Phase 1), `trade_id` + real `side` (Phase 2), `fees` + `realized_pnl_net`
+        (Phase 3) now emitted as top-level keys in `ORDER_INTENT`, `ORDER_FILLED`, and
+        `POSITION_CLOSED` writes. 57 TDD tests + 19 contract tests + 1140 regression tests pass.
 - [ ] P3 follow-up: retire the transitional parser shim once authoritative structured close events exist
 
 ### P4 Objective Split
@@ -134,60 +313,15 @@
 - [x] `NEO-P9-EVALUATOR-CALIBRATION-AND-ADVISORY-HARDENING`
 - [x] `NEO-INTEGRATION-DATA-CONTRACT-AUDIT` (audit/research only, no code changes)
 - [x] `NEO-PRODUCER-CONTRACT-ALIGNMENT-AUDIT-AND-IMPLEMENTATION-PLAN` (audit only, 2026-03-12)
-- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-1` (lifecycle_id propagation)
-- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-2` (trade_id + side)
-- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-3` (fees + net_pnl)
-- [ ] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-4` (structured close validation)
+- [x] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-1` (lifecycle_id propagation)
+      — DONE 2026-03-12: intent_builder, fsm, event_handlers. 19 TDD tests green.
+- [x] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-2` (trade_id + side)
+      — DONE 2026-03-12: real side + tradeId cached+emitted in POSITION_CLOSED. 16 TDD tests green.
+- [x] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-3` (fees + net_pnl)
+      — DONE 2026-03-12: fee accumulation per lifecycle, realized_pnl_net computed at close. 22 TDD tests green.
+- [x] Post-remediation milestone: `NEO-PRODUCER-CONTRACT-ALIGNMENT-PKG-4` (structured close validation)
+      — DONE 2026-03-12: 19 contract tests + dead-code annotation. All 1140 regression tests pass.
 - [ ] Post-remediation milestone: `NEO-ACCEPTANCE-CAMPAIGN-SHADOW-ANALYTICS`
-
-## NEO-PRODUCER-CONTRACT-ALIGNMENT — Aurora-side telemetry fixes for neocortex integration
-
-### Audit completed 2026-03-12 — all 4 HBs confirmed, implementation plan ready
-- See `docs/audits/aurora_producer_contract_alignment_audit.md`
-- See `docs/audits/aurora_neocortex_integration_gap_deep_dive.md`
-- See `docs/roadmaps/aurora_producer_contract_alignment_plan.md`
-
-### PKG-1: lifecycle_id propagation (write tests first)
-- [ ] Test: `tests/domains/decision_making/test_lifecycle_id_propagation.py` — ORDER_INTENT has top-level `lifecycle_id`
-- [ ] Test: `tests/integration/test_lifecycle_id_end_to_end.py` — same `lifecycle_id` across all 3 log events
-- [ ] Test: `tests/contracts/test_order_log_lifecycle_id_contract.py`
-- [ ] Impl: `intent_builder.py:357-364` — add `"lifecycle_id": trade_intent["idempotent_key"]` to ORDER_INTENT log
-- [ ] Impl: `fsm.py` — add `_last_lifecycle_ikey_by_symbol: Dict[str, str] = {}` to `__init__`
-- [ ] Impl: `event_handlers.py:on_order_fill` — cache `idempotent_key` from order_index for symbol
-- [ ] Impl: `event_handlers.py:245-261` — add `"lifecycle_id"` to POSITION_CLOSED log dict
-
-### PKG-2: trade_id + side in POSITION_CLOSED (write tests first)
-- [ ] Test: `tests/domains/decision_making/test_position_closed_identity_fields.py` — trade_id not empty, side not "N/A"
-- [ ] Test: `tests/contracts/test_order_log_position_closed_contract.py`
-- [ ] Impl: `fsm.py` — add `_last_trade_id_by_symbol` and `_last_entry_side_by_symbol` caches
-- [ ] Impl: `event_handlers.py:on_order_fill` — cache `tradeId` and `side` from fill payload
-- [ ] Impl: `event_handlers.py:245-261` — emit `trade_id` and correct `side`
-
-### PKG-3: fees accumulation + net_pnl (write tests first)
-- [ ] Test: `tests/domains/decision_making/test_position_closed_reward_fields.py` — fees=sum, net_pnl=realized_pnl-fees
-- [ ] Test: `tests/integration/test_fees_accumulation_multiclosure.py` — partial fill accumulation
-- [ ] Test: `tests/contracts/test_reward_completeness_contract.py`
-- [ ] Impl: `fsm.py` — add `_accumulated_fees_by_symbol: Dict[str, float] = {}` to `__init__`
-- [ ] Impl: `event_handlers.py:on_order_fill` — accumulate commission for close fills (SL/TP/CLOSE)
-- [ ] Impl: `event_handlers.py:245-261` — emit `fees` and `net_pnl` in POSITION_CLOSED metadata; reset accumulator
-
-### PKG-4: structured close validation + regex deprecation (write tests first)
-- [ ] Test: `tests/contracts/test_order_log_producer_contract_v2.py` — full lifecycle fixture, all fields present
-- [ ] Test: `tests/contracts/test_core_parser_structured_path.py` — structured path fires, not regex
-- [ ] Test: `tests/integration/test_execution_quality_reward_complete.py` — reward_complete=True e2e
-- [ ] Impl: `core_parser.py` — add deprecation comment to POSITION_CLOSED_PATTERN: "DEPRECATED — should never fire after PKG-4"
-- [ ] Optional: `trade_lifecycle_logger.py` — add `trade_id` field; compute `net_pnl` in `_flush()`
-
-### Hard blocker status (post-audit)
-- [ ] HB-1: `lifecycle_id` absent → PKG-1 (`intent_builder.py`, `event_handlers.py`, `fsm.py`)
-- [ ] HB-2: `trade_id` absent from POSITION_CLOSED → PKG-2 (`event_handlers.py`, `fsm.py`)
-- [ ] HB-3: `fees`/`net_pnl` absent → PKG-3 (`event_handlers.py`, `fsm.py`)
-- [ ] HB-4: regex-only reward path → PKG-4 (`core_parser.py` deprecation comment)
-
-### Soft prerequisites (for live shadow, unchanged from 2026-03-11)
-- [ ] SP-1: Feature engineering must embed `event_ts_ms` in every feature log line (required for `fail_closed` timestamp policy)
-- [ ] SP-2: Persist Aurora decision reference for disagreement analysis (minimal JSONL with strategy_id, symbol, side, score, regime, ts_ms)
-- [ ] SP-3: Add restart-gap detection in neocortex ingest (quarantine samples during cold-start window)
 
 ## EP-SSOT-NORMALIZE-SIGNEDV2 — normalize_mode SSOT Enforcement (completed 2026-03-01)
 - [x] P1: Wire `normalize_signals_mode` YAML → `AuroraConfigLoaderMixin` → `AuroraScoringKernel` (block non-`signed_v2` in kernel)
@@ -298,3 +432,60 @@
 - VF-VERB-REG-05: gate now fails only when coverage ≥98% and missing>0; keep an eye on the threshold and adjust when registry matures.
 - VF-VERB-REG-06: applied all owner suggestions with confidence ≥70%; next is to rerun VF-VERB-REG-04 regularly and batch-apply new high-confidence suggestions.
 - VF-VERB-REG: decide SSOT policy for wildcards (keep default false; `UPD` currently allowed by policy).
+
+## Execution observability follow-up
+- [x] P1 execution observability hardening package
+  - Added structured execution guard/divergence/matcher/tidy/reconcile telemetry.
+  - Added execution event schemas and registry entries.
+  - Kept P0 split-brain invariants green while improving forensic readability.
+- [ ] Recover raw WS / adapter payload evidence for the DOGEUSDT incident path so `H1` can be upgraded or disproven with direct proof.
+
+## Mean reversion research follow-up
+- [x] P1 mean reversion logic review package
+  - Rebuilt the current MR contract from code/config/log evidence.
+  - Separated strategy weakness from already-closed execution failures.
+  - Produced false-positive archetypes and a candidate filter matrix.
+- [x] P2-A MR DOGE / high-beta hardening package
+  - Added per-asset `flat_low_short_min_bb_width` contract and DOGE-only `FLAT_LOW` short hardening.
+  - Blocked the narrow-band toxic DOGE short class without globally bumping `min_bb_width`.
+- [x] P2-B MR squeeze-expansion veto package
+  - Added per-asset squeeze-expansion veto on `previous width + expansion ratio + active fade trigger`.
+  - Scoped the live YAML rollout to DOGE `FLAT_LOW` for minimal blast radius.
+- [x] P2-C MR momentum-separation package
+  - Added a per-asset `momentum_separation_veto` on cumulative drift plus current-width floor.
+  - Scoped the live YAML rollout to DOGE `FLAT_LOW` and kept P2-B ownership of squeeze traps.
+- [ ] P2 MR broader high-beta family package
+  - Decide whether squeeze/hardening contracts should be generalized beyond DOGE when more MR assets are enabled.
+- [ ] P2 MR broader regime redesign package
+  - Keep broader trend/regime separation out of the narrow P2-C blast radius unless new evidence justifies it.
+- [ ] P2 MR contract cleanup / doc-sync package
+  - Normalize 5m terminology and clarify `allowed_regimes`, RSI, and filter ownership semantics.
+
+## Phase 9 Quadratic cleanup — remaining follow-ups (added 2026-03-14)
+
+### Completed in this cleanup pass
+- [x] Fix validator bug: `_validate_direction_strength_contract` made scoring-mode-aware
+- [x] Kill rollback-to-v2 runtime: `_VALID_SCORING_VERSIONS = {"quadratic"}`, gate always active
+- [x] Shield fail-closed: NullShield guard + `is not True` identity check
+- [x] Config defaults: `scoring_version → "quadratic"`, `shield_enabled → True`
+- [x] Stale enum cleanup: `LEGACY_LIVE`, `V2_LIVE`, `V2_ROLLBACK` removed from `QuadraticRolloutMode`
+- [x] Broken files deleted: 4 files importing deleted v2 modules
+- [x] Alpha_search config: `scoring_version → "quadratic"` in YAML and Pydantic model
+- [x] Stale docstrings: `AuroraScoringKernel` references updated in handler, adapter, kernel
+- [x] Config variant annotations: mean_reversion and baseline YAML annotated with DEPRECATED
+- [x] Scoring passport: deleted module references marked DEPRECATED
+
+### Still open (low-risk / deferred)
+- [ ] Remove `Literal["v1", "v2"]` from `DecisionConfig.scoring_version` type — requires config migration for existing YAML files
+- [ ] Remove dead wiring: `signal_weights` / `feature_neutrals` / `direction_strength_cfg` kwargs passed to `QuadraticScoringKernel.compute()` (accepted but ignored)
+- [ ] Remove dead helpers: `_get_signal_weights()`, `_get_feature_neutrals()` in `aurora_scoring_helpers.py`
+- [ ] Remove dead direction_strength_scoring parsing in `aurora_config_loader.py:170-177`
+- [ ] Clean alpha_search `scenario_matrix.yaml` signal_weight overrides (tuning dead knobs)
+- [ ] Clean alpha_search `override_allowlist.py` deprecated config paths
+- [ ] Update `DOMAIN_DOCUMENTATION_DECISION_MAKING.md` to reference QuadraticScoringKernel
+- [ ] Review `tools/calibration/calibrate_aurora_signal_weights.py` — operates on dead config surfaces
+
+### Pre-existing test failures (not caused by this cleanup)
+- [ ] `test_no_forbidden_config_get_patterns` — `.get()` patterns in `mean_reversion_strategy.py`
+- [ ] `test_stale_features_do_not_update_buffers` — regime detector stale_features assertion
+- [ ] `test_emit_failure_logged_not_swallowed` — order guardian log message mismatch

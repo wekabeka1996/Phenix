@@ -53,11 +53,8 @@ from apps.reference.contracts.quadratic_rollout import (
     not_requested_shadow_evaluation,
     resolve_requested_quadratic_rollout,
 )
-from apps.reference.domains.decision_making.aurora_scoring_kernel import (
-    AuroraScoringKernel,
-    ScoringResult,
-)
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+    ScoringResult,
     QuadraticScoringKernel,
 )
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
@@ -91,6 +88,79 @@ class AuroraDecisionMixin:
       - self.monotonic_fn, self.wall_time_fn
       - Various helper methods from other mixins
     """
+
+    def _build_quadratic_decision_trace(
+        self,
+        *,
+        symbol: str,
+        cmd: Dict[str, Any],
+        state: "SymbolState",
+        features: Dict[str, Any],
+        result: ScoringResult,
+        effective_neutral: decimal.Decimal,
+    ) -> Dict[str, Any]:
+        psi = result.psi_vector or {}
+        shield_reasons = []
+        if isinstance(psi.get("shield_reasons"), list):
+            shield_reasons = list(psi.get("shield_reasons") or [])
+        return {
+            "symbol": symbol,
+            "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+            "bar_close_ts": features.get("bar_close_ts") or cmd.get("bar_close_ts"),
+            "regime": state.regime,
+            "regime_adjustment_source": "regime_thresholds",
+            "pillar_sum": psi.get("s_linear", features.get("pillar_sum")),
+            "pillar_tactician": features.get("pillar_tactician"),
+            "pillar_operator": features.get("pillar_operator"),
+            "pillar_strategist": features.get("pillar_strategist"),
+            "pillar_contribs": dict(features.get("pillar_contribs", {}) or {}),
+            "raw_sum": psi.get("s_linear"),
+            "score_multiplier": psi.get("multiplier", getattr(self, "score_multiplier", 1.0)),
+            "s_scaled_raw": psi.get("s_scaled_raw"),
+            "s_clamped": psi.get("s_clamped"),
+            "raw_exposure": psi.get("raw_exposure"),
+            "shield_multiplier": psi.get("shield_multiplier", float(result.shield_multiplier or 1.0)),
+            "shield_reasons": shield_reasons,
+            "final_score": psi.get("final_score", float(getattr(result, "score", 0.0))),
+            "final_exposure": psi.get("final_exposure", float(getattr(result, "score", 0.0))),
+            "thr_buy": psi.get("thr_buy", float(getattr(result, "thr_buy", 0.0))),
+            "thr_sell": psi.get("thr_sell", float(getattr(result, "thr_sell", 0.0))),
+            "neutral_threshold": float(effective_neutral),
+            "threshold_factor": psi.get(
+                "threshold_factor",
+                float(getattr(result, "threshold_factor", 1.0)),
+            ),
+            "side": getattr(result, "side", ""),
+            "deferred": bool(getattr(result, "deferred", False)),
+            "defer_reason": getattr(result, "defer_reason", None),
+            "side_why": psi.get("side_why"),
+        }
+
+    def _compact_quadratic_decision_trace(
+        self,
+        trace: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        if not isinstance(trace, dict):
+            return {}
+        keys = (
+            "regime",
+            "raw_sum",
+            "raw_exposure",
+            "shield_multiplier",
+            "final_score",
+            "thr_buy",
+            "thr_sell",
+            "threshold_factor",
+            "side",
+            "deferred",
+            "defer_reason",
+            "side_why",
+        )
+        return {
+            key: trace.get(key)
+            for key in keys
+            if key in trace
+        }
 
     def _process_decision(self, symbol: str, cmd: Dict[str, Any]) -> None:
         """
@@ -394,22 +464,48 @@ class AuroraDecisionMixin:
                 **extra_kwargs,
             )
         except Exception as _kernel_exc:
-            if self.scoring_kernel_cls is QuadraticScoringKernel:
-                self.logger.error(
-                    "[%s] QUADRATIC_FALLBACK: %s — falling back to AuroraScoringKernel (local only)",
-                    symbol, _kernel_exc,
-                )
-                try:
-                    result = AuroraScoringKernel.compute(**_compute_kwargs)
-                except Exception as _fallback_exc:
-                    self.logger.error(
-                        "[%s] FALLBACK ALSO FAILED: %s", symbol, _fallback_exc)
-                    raise _fallback_exc from _kernel_exc
-            else:
-                raise
+            # QUADRATIC-FAIL-CLOSED: No silent fallback to v2.
+            # Policy: kernel crash → emit observable event + fail-closed (no signal this bar).
+            # Explicit rollback requires: scoring_version: "v2" in aurora.yaml
+            _kernel_name = getattr(self.scoring_kernel_cls, "__name__",
+                                   "UnknownKernel") if self.scoring_kernel_cls else "None"
+            self.logger.exception(
+                "[%s] KERNEL_CRASH: %s — fail-closed, no v2 fallback (kernel=%s)",
+                symbol, _kernel_exc, _kernel_name,
+            )
+            try:
+                self.emit_fn("EVT:QUADRATIC_KERNEL_CRASH", {
+                    "schema_version": 1,
+                    "symbol": symbol,
+                    "strategy_id": self.strategy_id,
+                    "kernel": _kernel_name,
+                    "error": str(_kernel_exc),
+                    "ts_ms": int(self.wall_time_fn() * 1000),
+                })
+            except Exception:
+                pass  # Best-effort telemetry, never mask the original crash
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="QUADRATIC_KERNEL_CRASH",
+                reason="KERNEL_CRASH",
+                context="aurora_handler:kernel_crash_failsafe",
+                details={"kernel": _kernel_name,
+                         "error": str(_kernel_exc)[:200]},
+                why_chain=["KERNEL_CRASH", str(_kernel_exc)[:80]],
+            )
+            return
 
         # Handle result
         state.last_signal_side = result.side
+        decision_trace = self._build_quadratic_decision_trace(
+            symbol=symbol,
+            cmd=cmd,
+            state=state,
+            features=features,
+            result=result,
+            effective_neutral=effective_neutral,
+        )
+        self.logger.debug("[%s] QUADRATIC_DECISION_TRACE %s", symbol, decision_trace)
 
         # Kernel visibility log
         _psi = result.psi_vector or {}
@@ -442,7 +538,12 @@ class AuroraDecisionMixin:
                 reason_code=reason_code,
                 reason=reason,
                 context="aurora_handler:kernel_deferred",
-                details={"defer_reason": defer_reason},
+                details={
+                    "defer_reason": defer_reason,
+                    "decision_trace": self._compact_quadratic_decision_trace(
+                        decision_trace
+                    ),
+                },
                 why_chain=["KERNEL_DEFERRED", defer_reason],
             )
             return
@@ -933,6 +1034,9 @@ class AuroraDecisionMixin:
                         "score": float(result.score),
                         "shield_mult": shield_mult,
                         "threshold": active_threshold,
+                        "decision_trace": self._compact_quadratic_decision_trace(
+                            decision_trace
+                        ),
                     },
                     why_chain=["EXECUTION_GATE", str(gate_reason)],
                 )

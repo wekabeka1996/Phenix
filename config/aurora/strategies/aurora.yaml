@@ -249,6 +249,7 @@ aurora:
       exposure_block_cooldown_sec: 30
       symbol_cooldown_sec: 1
       max_intents_per_minute_per_symbol: 60
+    # Phase 9 Migration complete: V2 legacy surfaces removed (direction_strength_scoring, feature_neutrals, signal_weights)
     signals:
       normalize_signals_mode: signed_v2
       enable_new_metrics: true
@@ -268,12 +269,52 @@ aurora:
       danger_zone_action: "TIGHTEN_STOPS"
       danger_zone_tighten_factor: 0.5
 
-    #  Phase 9: Quadratic Brain Logic
-    # Values: "v1" (Legacy), "v2" (Linear), "quadratic" (Phase 9)
-    # Default: "v1" (Fail-safe)
-    scoring_version: "v2"
+    #  Phase 9: Quadratic Brain — sole active scoring path.
+    scoring_version: "quadratic"
 
-    # Direction/Strength split scoring (project-wide hardening)
+    # === Phase 9: Quadratic Scoring Engine / Shield Cascade ===
+    # shield_enabled: true activates the real cascade (DangerZone → Context → Memory).
+    # NullShield is used only if this block is absent or shield_enabled: false.
+    scoring_engine:
+      shield_enabled: true
+
+      danger_zone_shield:
+        enabled: true
+        vol_threshold: 0.95        # Block when volatility_state > 95th pct
+        spread_threshold: 50.0     # Block when spread > 50 bps
+        motion_threshold: 3.0      # Block when price motion sigma > 3.0
+
+      context_shield:
+        enabled: true
+        regime_multipliers:
+          TREND_UP: 1.0
+          TREND_DOWN: 1.0
+          MEAN_REVERSION: 0.75
+          LOW_VOLATILITY: 0.85
+          HIGH_VOLATILITY: 0.30    # Sharp reduction in high-vol regime
+          UNCERTAIN: 0.55
+        default_multiplier: 0.80   # Unknown regimes: conservative
+        no_regime_multiplier: 0.50 # No regime received yet: very cautious
+        ttl_ms: 14400000           # 4h regime TTL before stale policy kicks in
+        stale_mult_normal: 0.70    # Stale regime in safe regimes
+        stale_mult_danger: 0.35    # Stale regime in HIGH_VOLATILITY
+        danger_regimes:
+          - HIGH_VOLATILITY
+
+      memory_shield:
+        enabled: true
+        decay_rate: 0.95           # 5% decay per bar
+        max_states: 200            # LRU cap: 200 distinct states
+        unknown_threshold: 10.0    # < 10 visits = UNKNOWN state
+        exploring_threshold: 50.0  # 10-50 visits = EXPLORING state
+        unknown_multiplier: 0.60   # UNKNOWN: 60% of signal
+        exploring_multiplier: 0.80 # EXPLORING: 80% of signal
+        known_multiplier: 1.00     # KNOWN: full signal
+        storage_path: null         # null = in-memory only (no persistence)
+        flush_interval_sec: 60.0   # Would flush every 60s if persistence enabled
+
+    # DEPRECATED (Phase 9): direction_strength_scoring was used by v2 linear path (AuroraScoringKernel).
+    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
     direction_strength_scoring:
       directional_features:
         - obi
@@ -336,6 +377,8 @@ aurora:
     # After exiting a position, wait this many seconds before allowing new entry.
     reentry_cooldown_sec: 900  # Global default: 600 seconds
 
+    # DEPRECATED (Phase 9): feature_neutrals was used by v2 linear scoring.
+    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
     feature_neutrals:
       obi: 0.0
       tfi: 0.0
@@ -348,6 +391,8 @@ aurora:
       macro_resid: 0.0
       absorption: 0.0    # R2: SIGNED feature, neutral is 0.0
 
+    # DEPRECATED (Phase 9): signal_weights was used by v2 linear scoring.
+    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
     signal_weights:
       obi: 0.42
       tfi: 0.15

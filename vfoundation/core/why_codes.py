@@ -1,6 +1,10 @@
 """
 WHY Codes - Standardized Rejection and Event Reason Codes
 
+CANONICAL SOURCE — this is the single source of truth for WhyCode enums.
+Any domain that needs WhyCode must import from here.
+See: docs/contracts/CONTRACT_ARCHITECTURE.md
+
 This module defines standardized WHY codes used throughout the Aurora trading system
 to provide consistent, machine-readable reasons for decisions, rejections, and events.
 
@@ -9,8 +13,10 @@ Categories:
 - SPREAD: Market spread related issues
 - RISK: Risk management rejections
 - LIQ: Liquidity and sizing issues
+- SIZING: Position sizing outcomes
 - MARGIN: Margin and leverage issues
 - REGIME: Market regime filtering
+- SIGNAL: Signal processing outcomes
 - GUARD: System guards and limits
 - FSM: FSM state and transition issues
 - EXCHANGE: Exchange API rejections
@@ -25,7 +31,10 @@ from typing import Dict, Any, Optional
 
 
 class WhyCode(Enum):
-    """Standardized WHY codes for Aurora trading system."""
+    """Standardized WHY codes for Aurora trading system.
+
+    CANONICAL SSOT — all WhyCode consumers must import from this module.
+    """
 
     # Market Spread Issues
     SPREAD_TOO_WIDE = "SPREAD_TOO_WIDE"
@@ -44,6 +53,12 @@ class WhyCode(Enum):
     LIQ_POSITION_TOO_LARGE = "LIQ_POSITION_TOO_LARGE"
     LIQ_INSUFFICIENT_DEPTH = "LIQ_INSUFFICIENT_DEPTH"
     LIQ_PRICE_IMPACT_HIGH = "LIQ_PRICE_IMPACT_HIGH"
+    SIZING_KELLY_FRACTION = "SIZING_KELLY_FRACTION"
+    SIZING_CAPPED_BY_LIQUIDITY = "SIZING_CAPPED_BY_LIQUIDITY"
+    SIZING_FLOORED_BY_MIN_SIZE = "SIZING_FLOORED_BY_MIN_SIZE"
+    SIZING_ERROR_NO_INSTRUMENT_SPECS = "SIZING_ERROR_NO_INSTRUMENT_SPECS"
+    SIZING_ERROR_QTY_ZERO_AFTER_ROUNDING = "SIZING_ERROR_QTY_ZERO_AFTER_ROUNDING"
+    SIZING_SUCCESS = "SIZING_SUCCESS"
 
     # Margin and Leverage Issues
     MARGIN_INSUFFICIENT = "MARGIN_INSUFFICIENT"
@@ -57,6 +72,9 @@ class WhyCode(Enum):
     REGIME_HIGH_VOL_SIZE_REDUCED = "REGIME_HIGH_VOL_SIZE_REDUCED"
     REGIME_LOW_VOL_SIZE_INCREASED = "REGIME_LOW_VOL_SIZE_INCREASED"
     REGIME_MEAN_REVERSION_SIZE_REDUCED = "REGIME_MEAN_REVERSION_SIZE_REDUCED"
+
+    # Signal Processing Issues
+    SIGNAL_NEUTRAL = "SIGNAL_NEUTRAL"
 
     # System Guards and Limits
     GUARD_LIQ_DIST_TOO_CLOSE = "GUARD_LIQ_DIST_TOO_CLOSE"
@@ -112,6 +130,9 @@ class WhyCode(Enum):
     INFO_RISK_RECALCULATED = "INFO_RISK_RECALCULATED"
 
     # NRR Codes (Normalized Reject Reasons)
+    # DEPRECATED — these have semantic drift vs canonical NRR in
+    # NormalizedRejectReasons. For NRR codes use NormalizedRejectReasons directly.
+    # Kept for backward compatibility; do NOT add new NRR codes here.
     NRR_011_EXPOSURE_LIMIT_EXCEEDED = "NRR-011"
     NRR_012_RATE_LIMIT_EXCEEDED = "NRR-012"
     NRR_013_EXPOSURE_BLOCK_COOLDOWN_ACTIVE = "NRR-013"
@@ -141,6 +162,12 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.LIQ_POSITION_TOO_LARGE: "Calculated position size exceeds maximum limit",
         WhyCode.LIQ_INSUFFICIENT_DEPTH: "Order book depth insufficient for position size",
         WhyCode.LIQ_PRICE_IMPACT_HIGH: "Estimated price impact exceeds tolerance",
+        WhyCode.SIZING_KELLY_FRACTION: "Position sized using Kelly criterion fraction",
+        WhyCode.SIZING_CAPPED_BY_LIQUIDITY: "Position size capped by liquidity limits",
+        WhyCode.SIZING_FLOORED_BY_MIN_SIZE: "Position size floored by minimum size requirement",
+        WhyCode.SIZING_ERROR_NO_INSTRUMENT_SPECS: "Cannot size position: instrument specs unavailable",
+        WhyCode.SIZING_ERROR_QTY_ZERO_AFTER_ROUNDING: "Quantity became zero after rounding to step size",
+        WhyCode.SIZING_SUCCESS: "Position sizing completed successfully",
         # Margin and Leverage Issues
         WhyCode.MARGIN_INSUFFICIENT: "Available margin insufficient for position",
         WhyCode.MARGIN_LEVERAGE_TOO_HIGH: "Leverage exceeds safe liquidation distance",
@@ -152,6 +179,8 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.REGIME_HIGH_VOL_SIZE_REDUCED: "Position size reduced in HIGH_VOLATILITY regime",
         WhyCode.REGIME_LOW_VOL_SIZE_INCREASED: "Position size increased in LOW_VOLATILITY regime",
         WhyCode.REGIME_MEAN_REVERSION_SIZE_REDUCED: "Position size reduced in MEAN_REVERSION regime",
+        # Signal Processing Issues
+        WhyCode.SIGNAL_NEUTRAL: "Signal score is neutral, no trade action required",
         # System Guards and Limits
         WhyCode.GUARD_LIQ_DIST_TOO_CLOSE: "Liquidation distance too close to entry price",
         WhyCode.GUARD_POSITION_LIMIT_EXCEEDED: "Position limit per symbol exceeded",
@@ -196,7 +225,7 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.SUCCESS_POSITION_CLOSED: "Position successfully closed",
         WhyCode.INFO_REGIME_DETECTED: "Market regime detected and classified",
         WhyCode.INFO_RISK_RECALCULATED: "Risk parameters recalculated",
-        # NRR Codes
+        # NRR Codes (deprecated — see NormalizedRejectReasons for canonical NRR)
         WhyCode.NRR_011_EXPOSURE_LIMIT_EXCEEDED: "Exposure limit exceeded",
         WhyCode.NRR_012_RATE_LIMIT_EXCEEDED: "Rate limit exceeded",
         WhyCode.NRR_013_EXPOSURE_BLOCK_COOLDOWN_ACTIVE: "Exposure block cooldown active",
@@ -211,11 +240,16 @@ def get_why_description(code: WhyCode) -> str:
     return descriptions.get(code, f"Unknown WHY code: {code.value}")
 
 
-def format_why_with_details(code: WhyCode, details: Optional[str] = None) -> str:
-    """Format WHY code with optional details for logging."""
+def format_why_with_details(code: WhyCode, *details: str) -> str:
+    """Format WHY code with optional details for logging.
+
+    Accepts variadic string arguments for flexible detail formatting.
+    """
     base = f"{code.value}"
     if details:
-        return f"{base}: {details}"
+        detail_str = " | ".join(d for d in details if d)
+        if detail_str:
+            return f"{base}: {detail_str}"
     return base
 
 

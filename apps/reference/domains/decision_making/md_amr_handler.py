@@ -205,6 +205,20 @@ class MDAMRHandler:
     def timeframe_sec(self) -> int:
         return int(self._cfg.timeframe_sec) if self._cfg is not None else 900
 
+    def seed_startup_bars(self, symbol: str, count: int) -> None:
+        """Seed _bars_seen_since_restart counter after startup basis import.
+
+        STARTUP-BASIS-HYDRATION: Called by startup executor after hydrate_basis_bars().
+        Uses max() to avoid overwriting any live bars already counted in the counter.
+        """
+        if count > 0:
+            current = self._bars_seen_since_restart.get(symbol, 0)
+            self._bars_seen_since_restart[symbol] = max(current, count)
+            self.mlog.info(
+                "MD_AMR seed_startup_bars sym=%s bars_seen=%d (seeded=%d)",
+                symbol, self._bars_seen_since_restart[symbol], count,
+            )
+
     def register(self) -> None:
         if not self._enabled:
             return

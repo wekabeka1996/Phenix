@@ -43,9 +43,10 @@ def _compute_kwargs(*, pillar_sum: float | None) -> dict[str, object]:
     }
 
 
-def test_quadratic_shadow_can_be_evaluated_while_live_scoring_stays_v2() -> None:
+def test_shadow_evaluation_works_when_quadratic_live() -> None:
+    """Shadow evaluation still functional when quadratic is the sole live path."""
     decision_cfg = SimpleNamespace(
-        scoring_version="v2",
+        scoring_version="quadratic",
         quadratic_rollout=SimpleNamespace(
             shadow_enabled=True,
             rollback_armed=False,
@@ -74,8 +75,8 @@ def test_quadratic_shadow_can_be_evaluated_while_live_scoring_stays_v2() -> None
         shadow_evaluation=shadow,
     )
 
-    assert requested.effective_live_scoring_version == "v2"
-    assert rollout.mode == QuadraticRolloutMode.QUADRATIC_SHADOW
+    assert requested.effective_live_scoring_version == "quadratic"
+    assert rollout.mode == QuadraticRolloutMode.QUADRATIC_LIVE
     assert shadow.state == QuadraticShadowEvaluationState.READY
     assert shadow.side == "BUY"
     assert rollout.quadratic_can_open_new_risk is True
@@ -119,7 +120,9 @@ def test_live_quadratic_open_new_risk_is_gated_by_explicit_quadratic_readiness()
     assert gated_permissions.can_open_new_risk is False
 
 
-def test_rollback_arm_creates_one_step_v2_mode_and_preserves_manage_existing_risk() -> None:
+def test_rollback_armed_is_non_operational_post_phase9_cleanup() -> None:
+    """rollback_armed=True in config is ignored — v2 kernel is deleted.
+    Effective live version stays quadratic, rollback_armed is forced to False."""
     decision_cfg = SimpleNamespace(
         scoring_version="quadratic",
         quadratic_rollout=SimpleNamespace(
@@ -148,12 +151,11 @@ def test_rollback_arm_creates_one_step_v2_mode_and_preserves_manage_existing_ris
         rollout,
     )
 
-    assert requested.effective_live_scoring_version == "v2"
-    assert rollout.mode == QuadraticRolloutMode.V2_ROLLBACK
-    assert rollout.rollback_armed is True
-    assert rollout.quadratic_can_open_new_risk is False
-    assert "quadratic_rollback_armed" in rollout.quadratic_blocking_reason_chain
-    assert "operator_triggered" in rollout.rollback_reason_chain
+    # Key: effective stays quadratic, rollback_armed is disarmed
+    assert requested.effective_live_scoring_version == "quadratic"
+    assert requested.rollback_armed is False
+    assert rollout.mode == QuadraticRolloutMode.QUADRATIC_LIVE
+    assert rollout.quadratic_can_open_new_risk is True
     assert gated_permissions.can_manage_existing_risk is True
     assert gated_permissions.can_open_new_risk is True
 
@@ -166,8 +168,8 @@ def test_startup_quadratic_rollout_report_is_operator_visible() -> None:
                     scoring_version="quadratic",
                     quadratic_rollout=SimpleNamespace(
                         shadow_enabled=False,
-                        rollback_armed=True,
-                        rollback_reason_chain=["operator_triggered"],
+                        rollback_armed=False,
+                        rollback_reason_chain=[],
                     ),
                 )
             )
@@ -181,12 +183,13 @@ def test_startup_quadratic_rollout_report_is_operator_visible() -> None:
     )
 
     assert report["strategy_id"] == "aurora"
-    assert report["mode"] == "v2_rollback"
-    assert report["rollback_armed_status"] == "ARMED"
-    assert report["effective_live_scoring_version"] == "v2"
+    assert report["mode"] == "quadratic_live"
+    assert report["rollback_armed_status"] == "DISARMED"
+    assert report["effective_live_scoring_version"] == "quadratic"
 
 
-def test_untyped_invalid_scoring_version_falls_back_to_v2(caplog) -> None:
+def test_unrecognized_scoring_version_forces_quadratic(caplog) -> None:
+    """Unrecognized scoring_version forces quadratic (v2 kernel deleted)."""
     decision_cfg = SimpleNamespace(
         scoring_version="typo",
         quadratic_rollout=SimpleNamespace(
@@ -199,6 +202,24 @@ def test_untyped_invalid_scoring_version_falls_back_to_v2(caplog) -> None:
     with caplog.at_level("CRITICAL", logger="quadratic_rollout"):
         requested = resolve_requested_quadratic_rollout(decision_cfg)
 
-    assert requested.requested_scoring_version == "v2"
-    assert requested.effective_live_scoring_version == "v2"
-    assert "falling back to 'v2'" in caplog.text
+    assert requested.requested_scoring_version == "quadratic"
+    assert requested.effective_live_scoring_version == "quadratic"
+    assert "forcing 'quadratic'" in caplog.text
+
+
+def test_v2_scoring_version_forced_to_quadratic(caplog) -> None:
+    """scoring_version='v2' is no longer valid — forced to quadratic."""
+    decision_cfg = SimpleNamespace(
+        scoring_version="v2",
+        quadratic_rollout=SimpleNamespace(
+            shadow_enabled=False,
+            rollback_armed=False,
+            rollback_reason_chain=[],
+        ),
+    )
+
+    with caplog.at_level("CRITICAL", logger="quadratic_rollout"):
+        requested = resolve_requested_quadratic_rollout(decision_cfg)
+
+    assert requested.requested_scoring_version == "quadratic"
+    assert requested.effective_live_scoring_version == "quadratic"

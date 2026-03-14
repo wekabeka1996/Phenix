@@ -32,6 +32,9 @@ from apps.reference.bootstrap.startup_warmup import (
 from apps.reference.bootstrap.startup_hydration_planner import (
     build_startup_hydration_plan,
 )
+from apps.reference.bootstrap.startup_basis_hydrator import (
+    execute_startup_basis_hydration,
+)
 from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.contracts.strategy_compatibility_matrix import (
@@ -813,6 +816,7 @@ def main() -> None:
     ).start()
     LOG.info(" RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
     restore_report = None
+    hydration_plan = None
     try:
         restore_report = build_startup_analytics_restore_report(
             config=config,
@@ -932,7 +936,8 @@ def main() -> None:
     )
     LOG.info(
         " STARTUP_BACKFILL_CONFIG %s",
-        json.dumps(backfill_plan.to_payload(), ensure_ascii=False, default=str),
+        json.dumps(backfill_plan.to_payload(),
+                   ensure_ascii=False, default=str),
     )
     warmup_statuses: dict[str, dict[str, object]] = {
         str(symbol).upper(): {}
@@ -957,7 +962,14 @@ def main() -> None:
     decision_making.start()
 
     LOG.info("Starting regime detector...")
-    LOG.debug("Regime detector already started before startup warmup")
+    try:
+        if hasattr(regime_detector, "start"):
+            regime_detector.start()
+            LOG.info(" RegimeDetector started")
+        else:
+            LOG.info(" RegimeDetector has no start() method (purely reactive)")
+    except Exception as e:
+        LOG.error(f"Failed to start RegimeDetector: {e}")
 
     LOG.info("Starting market data connector...")
     if guardian_runtime is not None and guardian_loop is not None and guardian_loop.is_running():
@@ -1048,7 +1060,8 @@ def main() -> None:
                                     symbol=_sym,
                                     timeframe_sec=_tf_sec,
                                     bar_start_ts_ms=int(_bar.open_time_ms),
-                                    close_boundary_ts_ms=int(_bar.open_time_ms) + int(_tf_sec) * 1000,
+                                    close_boundary_ts_ms=int(
+                                        _bar.open_time_ms) + int(_tf_sec) * 1000,
                                     source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
                                 )
                                 _payload = {
@@ -1141,7 +1154,8 @@ def main() -> None:
                         details={"error": str(_warmup_exc)},
                     )
 
-            LOG.info("REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
+            LOG.info(
+                "REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
             for _sym in backfill_plan.symbols:
                 warmup_statuses.setdefault(_sym, {})
                 try:
@@ -1159,7 +1173,8 @@ def main() -> None:
                                 symbol=_sym,
                                 timeframe_sec=300,
                                 bar_start_ts_ms=int(_rd_bar.open_time_ms),
-                                close_boundary_ts_ms=int(_rd_bar.open_time_ms) + 300000,
+                                close_boundary_ts_ms=int(
+                                    _rd_bar.open_time_ms) + 300000,
                                 source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
                             )
                             _rd_payload = {
@@ -1209,7 +1224,8 @@ def main() -> None:
                             },
                         )
                 except Exception as _rd_exc:
-                    LOG.error("REGIME_BACKFILL: Failed for %s: %s", _sym, _rd_exc)
+                    LOG.error("REGIME_BACKFILL: Failed for %s: %s",
+                              _sym, _rd_exc)
                     warmup_statuses[_sym]["regime_detector"] = failed_warmup_status(
                         why=["regime_backfill_exception"],
                         updated_at=int(time.time() * 1000),
@@ -1217,6 +1233,26 @@ def main() -> None:
                         evidence_ref=f"regime_detector:{_sym}:{_warmup_updated_at}",
                         details={"error": str(_rd_exc)},
                     )
+
+        # ── STARTUP_BASIS_EXECUTOR ─────────────────────────────────────────────
+        # Fetch historical closed bars from Binance and inject into BarAggregator
+        # (WARMUP_IMPORT source mode). This fills FE feature buffers AND seeds the
+        # _bars_seen_since_restart counter in Aurora/md_amr handlers so the cold-start
+        # gate passes on the first live bar instead of waiting 25 hours.
+        #
+        # Dedup: collect unique (symbol, tf_sec) pairs first. Two strategies with the
+        # same (symbol, tf_sec) share a single Binance fetch + inject pass.
+        LOG.info(" STARTUP_BASIS_EXECUTOR starting")
+        _basis_summary = execute_startup_basis_hydration(
+            hydration_plan=hydration_plan,
+            restore_report=restore_report,
+            started_strategy_handlers=started_strategy_handlers,
+            bar_aggregator=bar_aggregator,
+            backfill_adapter=backfill_adapter,
+            guardian_runtime=guardian_runtime,
+        )
+        LOG.info(" STARTUP_BASIS_EXECUTOR done: %s", _basis_summary)
+        # ── END STARTUP_BASIS_EXECUTOR ────────────────────────────────────────
 
         if restore_report is None:
             restore_report = StartupAnalyticsRestoreReport(
@@ -1234,7 +1270,8 @@ def main() -> None:
         )
         LOG.info(
             " STARTUP_WARMUP_REPORT %s",
-            json.dumps(warmup_report.to_payload(), ensure_ascii=False, default=str),
+            json.dumps(warmup_report.to_payload(),
+                       ensure_ascii=False, default=str),
         )
     finally:
         release_startup_warmup_gate()
@@ -1353,20 +1390,14 @@ def main() -> None:
                             _rd_sym, getattr(_rd_result, "error", "no result"),
                         )
                 except Exception as _rd_e:
-                    LOG.error("REGIME_BACKFILL: Failed for %s: %s", _rd_sym, _rd_e)
+                    LOG.error("REGIME_BACKFILL: Failed for %s: %s",
+                              _rd_sym, _rd_e)
         except Exception as _rd_e:
             LOG.error("REGIME_BACKFILL: Startup failed: %s", _rd_e)
     else:
         LOG.debug("REGIME_BACKFILL_LEGACY_PATH disabled")
     # ─────────────────────────────────────────────────────────────────────────
-    try:
-        if hasattr(regime_detector, "start"):
-            regime_detector.start()
-            LOG.info(" RegimeDetector started")
-        else:
-            LOG.info(" RegimeDetector has no start() method (purely reactive)")
-    except Exception as e:
-        LOG.error(f"Failed to start RegimeDetector: {e}")
+    LOG.debug("Regime detector already started before market data startup")
 
     LOG.info("Starting snapshot scheduler (DR)...")
     # snapshot_scheduler.start()

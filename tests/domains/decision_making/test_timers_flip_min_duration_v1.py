@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.aurora_scoring_kernel import ScoringResult
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 
 class DeterministicClock:
     def __init__(self, start_ts=1000.0):

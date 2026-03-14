@@ -47,6 +47,7 @@ class StrategyHydrationRequirement:
     needs_microstructure: bool = False
     needs_execution_context: bool = False
     local_hydration_contract: str | None = None
+    restart_local_basis_counter: bool = False
     degraded_mode_allowance: str = "NON_TRADING_ONLY"
     protect_only_capability: bool = False
     quadratic_readiness_blocks_by_default: bool = False
@@ -63,6 +64,7 @@ class StrategyHydrationRequirement:
             "needs_microstructure": bool(self.needs_microstructure),
             "needs_execution_context": bool(self.needs_execution_context),
             "local_hydration_contract": self.local_hydration_contract,
+            "restart_local_basis_counter": bool(self.restart_local_basis_counter),
             "degraded_mode_allowance": self.degraded_mode_allowance,
             "protect_only_capability": bool(self.protect_only_capability),
             "quadratic_readiness_blocks_by_default": bool(self.quadratic_readiness_blocks_by_default),
@@ -156,6 +158,7 @@ def _requirement_from_profile(
         needs_microstructure=bool(profile.needs_microstructure),
         needs_execution_context=bool(profile.needs_execution_context),
         local_hydration_contract=profile.local_hydration_contract,
+        restart_local_basis_counter=bool(profile.restart_local_basis_counter),
         degraded_mode_allowance=str(profile.degraded_mode_allowance),
         protect_only_capability=bool(profile.protect_only_capability),
         quadratic_readiness_blocks_by_default=bool(profile.quadratic_readiness_blocks_by_default),
@@ -222,6 +225,17 @@ def _build_actions(
             owner="market_data",
             scope=RuntimeAnalyticsRestoreScope.BARS.value,
             reason="basis_bars_not_restored",
+            timeframe_sec=requirement.basis_tf_sec,
+            required_bars=requirement.basis_required_bars,
+        )
+
+    if requirement.restart_local_basis_counter:
+        _append_action(
+            actions,
+            action="SEED_HANDLER_BASIS_COUNTER",
+            owner="decision_making",
+            scope=RuntimeAnalyticsRestoreScope.BARS.value,
+            reason="restart_local_basis_counter",
             timeframe_sec=requirement.basis_tf_sec,
             required_bars=requirement.basis_required_bars,
         )

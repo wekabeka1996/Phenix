@@ -88,6 +88,12 @@ class FeatureCalculationEngine:
             - is_ready: True if value passed sanity, False if failed
             - not_ready_reason: None if ready, else reason string
         """
+        # `macro_resid=None` is an intentional fail-closed sentinel from FE warmup logic.
+        # Keep it not-ready, but do not add a duplicate synthetic reason like
+        # `invalid_value_type` on top of the original warmup blocker.
+        if raw_value is None and feature_name == "macro_resid":
+            return (self.cfg.neutral_value, False, None)
+
         if not self.cfg.feature_sanity_enabled:
             # Firewall disabled - pass through (backward compat)
             try:

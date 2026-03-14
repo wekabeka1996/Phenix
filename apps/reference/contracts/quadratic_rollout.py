@@ -14,8 +14,8 @@ from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     QuadraticScoringKernel,
 )
 
-# FIX:N-6 — Canonical set of recognized scoring_version values
-_VALID_SCORING_VERSIONS = {"v2", "quadratic"}
+# Phase 9 cleanup: v2 scoring kernel is deleted — only "quadratic" is a valid runtime version.
+_VALID_SCORING_VERSIONS = {"quadratic"}
 
 
 def _normalize_tokens(tokens: str | Iterable[str] | None) -> tuple[str, ...]:
@@ -33,14 +33,12 @@ def _normalize_tokens(tokens: str | Iterable[str] | None) -> tuple[str, ...]:
 
 
 class QuadraticRolloutMode(str, Enum):
-    LEGACY_LIVE = "legacy_live"
-    V2_LIVE = "v2_live"
     QUADRATIC_SHADOW = "quadratic_shadow"
     QUADRATIC_LIVE = "quadratic_live"
-    V2_ROLLBACK = "v2_rollback"
 
 
 class QuadraticRollbackArmedStatus(str, Enum):
+    # Phase 9: rollback is permanently disarmed. ARMED retained for schema backward-compat only.
     ARMED = "ARMED"
     DISARMED = "DISARMED"
 
@@ -69,15 +67,13 @@ class RequestedQuadraticRollout:
 
     @property
     def mode(self) -> QuadraticRolloutMode:
-        if self.requested_scoring_version == "quadratic" and self.rollback_armed:
-            return QuadraticRolloutMode.V2_ROLLBACK
+        # Phase 9 cleanup: v2 kernel deleted, only quadratic paths are reachable.
         if self.effective_live_scoring_version == "quadratic":
             return QuadraticRolloutMode.QUADRATIC_LIVE
         if self.shadow_requested:
             return QuadraticRolloutMode.QUADRATIC_SHADOW
-        if self.effective_live_scoring_version == "v2":
-            return QuadraticRolloutMode.V2_LIVE
-        return QuadraticRolloutMode.LEGACY_LIVE
+        # Fallback — should never be reached post-cleanup.
+        return QuadraticRolloutMode.QUADRATIC_LIVE
 
     @property
     def rollback_armed_status(self) -> QuadraticRollbackArmedStatus:
@@ -89,11 +85,7 @@ class RequestedQuadraticRollout:
 
     @property
     def live_profile_id(self) -> str:
-        return (
-            "aurora_quadratic"
-            if self.effective_live_scoring_version == "quadratic"
-            else "aurora_v2"
-        )
+        return "aurora_quadratic"
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -187,17 +179,20 @@ class QuadraticRolloutSnapshot:
 
 def resolve_requested_quadratic_rollout(decision_cfg: Any) -> RequestedQuadraticRollout:
     requested_scoring_version = str(
-        getattr(decision_cfg, "scoring_version", "v2") or "v2"
+        getattr(decision_cfg, "scoring_version", "quadratic") or "quadratic"
     ).strip().lower()
-    # FIX:N-6 — Reject unrecognized scoring_version to prevent silent fallback
+    # Phase 9 cleanup: only "quadratic" is valid. Reject anything else loudly.
     if requested_scoring_version not in _VALID_SCORING_VERSIONS:
         import logging as _logging
         _logging.getLogger("quadratic_rollout").critical(
-            "scoring_version=%r is not in %s — falling back to 'v2' (potential config typo)",
+            "scoring_version=%r is not in %s — forcing 'quadratic' (v2 kernel deleted, rollback impossible)",
             requested_scoring_version,
             _VALID_SCORING_VERSIONS,
         )
-        requested_scoring_version = "v2"
+        requested_scoring_version = "quadratic"
+
+    # Rollback to v2 is permanently disabled — v2 kernel has been deleted.
+    # rollback_armed is read for telemetry/observability only but has no runtime effect.
     rollout_cfg = getattr(decision_cfg, "quadratic_rollout", None)
 
     shadow_enabled_raw = getattr(rollout_cfg, "shadow_enabled", False)
@@ -213,19 +208,23 @@ def resolve_requested_quadratic_rollout(decision_cfg: Any) -> RequestedQuadratic
     if not isinstance(rollback_reason_chain_raw, (list, tuple, set)):
         rollback_reason_chain_raw = ()
 
-    effective_live_scoring_version = requested_scoring_version
-    if requested_scoring_version == "quadratic" and rollback_armed:
-        effective_live_scoring_version = "v2"
+    if rollback_armed:
+        import logging as _logging
+        _logging.getLogger("quadratic_rollout").warning(
+            "rollback_armed=True in config but v2 kernel is deleted — "
+            "rollback is non-operational. Proceeding with quadratic."
+        )
 
-    shadow_requested = shadow_enabled or (
-        requested_scoring_version == "quadratic" and rollback_armed
-    )
+    # effective_live_scoring_version is ALWAYS quadratic — no v2 fallback path.
+    effective_live_scoring_version = "quadratic"
+
+    shadow_requested = shadow_enabled
 
     return RequestedQuadraticRollout(
         requested_scoring_version=requested_scoring_version,
         effective_live_scoring_version=effective_live_scoring_version,
         shadow_requested=shadow_requested,
-        rollback_armed=rollback_armed,
+        rollback_armed=False,  # Always disarmed — v2 path deleted
         rollback_reason_chain=_normalize_tokens(rollback_reason_chain_raw),
     )
 
@@ -329,8 +328,7 @@ def apply_live_quadratic_permission_gate(
     permissions: RuntimePermissions,
     rollout: QuadraticRolloutSnapshot,
 ) -> RuntimePermissions:
-    if rollout.effective_live_scoring_version != "quadratic":
-        return permissions
+    # Phase 9: always quadratic, always apply the gate.
     return make_permissions(
         can_manage_existing_risk=permissions.can_manage_existing_risk,
         can_open_new_risk=(

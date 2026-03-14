@@ -1,7 +1,7 @@
 """
 AuroraHandler — Stateful Strategy Handler for Aurora.
 
-This module wraps the pure AuroraScoringKernel with state management for:
+This module wraps the pure QuadraticScoringKernel with state management for:
 1. Regime caching (from EVT:REGIME_DETECTED)
 2. Warmup tracking
 3. Side bias history
@@ -33,15 +33,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable
 
-from apps.reference.domains.decision_making.aurora_scoring_kernel import (
-    AuroraScoringKernel,
-    ScoringResult,
-    SideBiasState,
-)
-# NOTE: compute_direction_strength_score import removed (Plan A SSOT cleanup)
-# Linear score is now sourced exclusively from FE pillar_sum.
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     QuadraticScoringKernel,
+    ScoringResult,
+    SideBiasState,
 )
 from apps.reference.domains.decision_making.shields.null_shield import NullShield
 from apps.reference.domains.decision_making.shields.base import ShieldCascade
@@ -203,11 +198,11 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             lambda: get_clock().now_sec())
 
         # Dependency Injection / Testability
-        self.scoring_kernel_cls = AuroraScoringKernel
+        self.scoring_kernel_cls = QuadraticScoringKernel
         self._shield_fn = None  # Phase 9: set during _load_config if quadratic
         self._scoring_engine_cfg = None  # Phase 9: ScoringEngineConfig
-        self._aurora_requested_scoring_version = "v2"
-        self._aurora_effective_scoring_version = "v2"
+        self._aurora_requested_scoring_version = "quadratic"
+        self._aurora_effective_scoring_version = "quadratic"
         self._quadratic_shadow_requested = False
         self._quadratic_shadow_shield_fn = None
         self._quadratic_rollback_armed = False
@@ -247,6 +242,20 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         symbol: str,
     ) -> StrategyAnalyticsRestoreSnapshot | None:
         return self._analytics_restore_snapshots.get(str(symbol))
+
+    def seed_startup_bars(self, symbol: str, count: int) -> None:
+        """Seed _bars_seen_since_restart counter after startup basis import.
+
+        STARTUP-BASIS-HYDRATION: Called by startup executor after hydrate_basis_bars().
+        Uses max() to avoid overwriting any live bars already counted in the counter.
+        """
+        if count > 0:
+            current = self._bars_seen_since_restart.get(symbol, 0)
+            self._bars_seen_since_restart[symbol] = max(current, count)
+            self.logger.info(
+                "[%s] seed_startup_bars: _bars_seen_since_restart=%d (seeded=%d)",
+                symbol, self._bars_seen_since_restart[symbol], count,
+            )
 
     # _load_config → moved to AuroraConfigLoaderMixin (see aurora_config_loader.py)
 

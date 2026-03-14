@@ -107,28 +107,5 @@ class TestReadyMapBasicFeatures(unittest.TestCase):
             self.assertIn(feat, ready_map, f"Essential {feat} must be in ready_map")
             self.assertTrue(ready_map[feat], f"Essential {feat} must be ready")
 
-    def test_signal_score_v2_readiness_lookup(self):
-        """Simulate SignalScoreV2 readiness lookup behavior."""
-        ready_map = {
-            "obi": True,
-            "tfi": True,
-            "delta_price": True,
-            "ema_bias": False,  # Not ready yet
-        }
-
-        essential_features = {"obi", "delta_price"}
-        directional_features = ["obi", "tfi", "delta_price", "ema_bias"]
-
-        not_ready = []
-        for feat in directional_features:
-            # This is how SignalScoreV2 checks readiness
-            is_ready = ready_map.get(feat, False)
-            if not is_ready and feat in essential_features:
-                not_ready.append(feat)
-
-        # obi and delta_price are ready, ema_bias is not but not essential
-        self.assertEqual(not_ready, [], "No essential features should be not-ready")
-
-
 if __name__ == '__main__':
     unittest.main()

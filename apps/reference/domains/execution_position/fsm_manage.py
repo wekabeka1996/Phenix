@@ -16,7 +16,7 @@ from enum import Enum
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
-from typing import Dict, Any, Optional, Union
+from typing import Callable, Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
@@ -75,6 +75,8 @@ class ManageFlowFSM:
         self.position_entry_price: Optional[Decimal] = None
         self.position_open_ts: float = 0.0
         self.position_side: Optional[str] = None  # 'BUY' or 'SELL'
+        self.entry_order_id: Optional[str] = None
+        self.entry_client_order_id: Optional[str] = None
 
         # Bracket orders tracking
         self.sl_order_id: Optional[str] = None
@@ -165,6 +167,7 @@ class ManageFlowFSM:
             "fsm_partial_exits_total": 0,
             "fsm_errors_total": 0,
         }
+        self._observability_hook: Optional[Callable[[str, Dict[str, Any]], None]] = None
 
     # =========================================================================
     # Phase 0: Per-Instrument Aurora Configuration Helpers
@@ -376,6 +379,261 @@ class ManageFlowFSM:
         # Log synchronization for debugging
         LOG.debug(f" Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
 
+    def has_active_lifecycle(self) -> bool:
+        """Return True when local execution state still owns a lifecycle for the symbol."""
+        if self.state != ManageState.FLAT:
+            return True
+        if self._closing_position:
+            return True
+        if self.position_qty not in (None, Decimal("0")):
+            return True
+        return any(
+            (
+                self.position_entry_price,
+                self.entry_order_id,
+                self.entry_client_order_id,
+                self.sl_order_id,
+                self.tp_order_id,
+                self.tp1_order_id,
+                self.tp2_order_id,
+            )
+        )
+
+    def _client_order_id_from_payload(self, payload: Dict[str, Any]) -> str:
+        return str(payload.get("clientOrderId") or payload.get("client_order_id") or "")
+
+    def set_observability_hook(
+        self,
+        hook: Optional[Callable[[str, Dict[str, Any]], None]],
+    ) -> None:
+        self._observability_hook = hook
+
+    def _emit_observability(self, topic: str, payload: Dict[str, Any]) -> None:
+        if self._observability_hook is None:
+            return
+        try:
+            self._observability_hook(topic, payload)
+        except Exception as exc:
+            LOG.debug("ManageFlowFSM observability emit failed for %s: %s", topic, exc)
+
+    def _now_ms(self) -> int:
+        return int(get_clock().now_sec() * 1000)
+
+    def _clear_lifecycle_tracking(self, *, reason: str, clear_symbol: bool) -> None:
+        LOG.info(
+            "[ManageFlowFSM] clearing lifecycle tracking reason=%s symbol=%s state=%s",
+            reason,
+            self.symbol,
+            self.state.value,
+        )
+        if clear_symbol:
+            self.symbol = None
+        self.position_qty = None
+        self.position_entry_price = None
+        self.position_open_ts = 0.0
+        self.position_side = None
+        self.entry_order_id = None
+        self.entry_client_order_id = None
+        self.sl_order_id = None
+        self.tp_order_id = None
+        self.tp1_order_id = None
+        self.tp2_order_id = None
+        self._intent_sl_price = None
+        self._intent_tp_price = None
+        self.sl_price = None
+        self.tp_price = None
+        self.tp1_price = None
+        self.tp2_price = None
+        self.partial_exit_pct = None
+        self.trailing_activated = False
+        self.last_trailing_ts = 0.0
+        self.peak_price = None
+        self._closing_position = False
+        self._closing_position_ts = 0.0
+
+    def _normalize_client_order_id(self, client_order_id: str) -> str:
+        return str(client_order_id or "").strip().upper()
+
+    def _is_exit_fill_payload(self, payload: Dict[str, Any]) -> bool:
+        order_type = payload.get("order_type") or (payload["type"] if "type" in payload else "")
+        close_position = (
+            str(payload["closePosition"] if "closePosition" in payload else "").lower() == "true"
+            or str(payload["cp"] if "cp" in payload else "").lower() == "true"
+        )
+        is_reduce_only = str(payload["reduceOnly"] if "reduceOnly" in payload else "").lower() == "true"
+        return bool(
+            order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]
+            or close_position
+            or is_reduce_only
+        )
+
+    def _matches_tracked_entry(self, order_id: Optional[str], client_order_id: str) -> bool:
+        return bool(
+            (order_id and self.entry_order_id and str(order_id) == str(self.entry_order_id))
+            or (client_order_id and self.entry_client_order_id and client_order_id == str(self.entry_client_order_id))
+        )
+
+    def _matches_tracked_bracket(
+        self,
+        order_id: Optional[str],
+        client_order_id: str,
+    ) -> bool:
+        return any(
+            self._matches_order_identity(order_id, client_order_id, tracked_id, prefix)
+            for tracked_id, prefix in (
+                (self.sl_order_id, "SL-"),
+                (self.tp1_order_id, "TP1-"),
+                (self.tp2_order_id, "TP2-"),
+                (self.tp_order_id, "TP-"),
+            )
+        )
+
+    def _matches_order_identity(
+        self,
+        order_id: Optional[str],
+        client_order_id: str,
+        tracked_id: Optional[str],
+        prefix: str,
+    ) -> bool:
+        matched, _ = self._match_order_identity_detail(
+            order_id,
+            client_order_id,
+            tracked_id,
+            prefix,
+        )
+        return matched
+
+    def _match_order_identity_detail(
+        self,
+        order_id: Optional[str],
+        client_order_id: str,
+        tracked_id: Optional[str],
+        prefix: str,
+    ) -> tuple[bool, str]:
+        client_upper = self._normalize_client_order_id(client_order_id)
+        tracked = str(tracked_id or "")
+        if order_id and tracked and str(order_id) == tracked:
+            return True, "exchange_order_id_exact"
+        if tracked and client_order_id == tracked:
+            return True, "client_order_id_exact"
+        if client_upper.startswith(prefix):
+            return True, "client_order_id_prefix"
+        return False, "no_match"
+
+    def _local_expected_ids_snapshot(self) -> Dict[str, Optional[str]]:
+        return {
+            "entry_order_id": self.entry_order_id,
+            "entry_client_order_id": self.entry_client_order_id,
+            "sl_order_id": self.sl_order_id,
+            "tp_order_id": self.tp_order_id,
+            "tp1_order_id": self.tp1_order_id,
+            "tp2_order_id": self.tp2_order_id,
+        }
+
+    def _resolve_bracket_match(
+        self,
+        order_id: Optional[str],
+        client_order_id: str,
+    ) -> tuple[str, bool, str]:
+        for role, tracked_id, prefix in (
+            ("SL", self.sl_order_id, "SL-"),
+            ("TP1", self.tp1_order_id, "TP1-"),
+            ("TP2", self.tp2_order_id, "TP2-"),
+            ("TP", self.tp_order_id, "TP-"),
+        ):
+            matched, basis = self._match_order_identity_detail(
+                order_id,
+                client_order_id,
+                tracked_id,
+                prefix,
+            )
+            if matched:
+                return role, True, f"matched_{role.lower()}_{basis}"
+        return "UNKNOWN", False, "no_tracked_bracket_match"
+
+    def _emit_guard_blocked_event(self, msg: Message, reason: str) -> None:
+        payload = {
+            "ts_ms": self._now_ms(),
+            "symbol": (msg.pld or {}).get("symbol") or self.symbol,
+            "rid": msg.rid,
+            "block_reason": reason,
+            "reason": reason,
+            "current_local_state": self.state.value,
+            "local_manage_state": self.state.value,
+            "why": f"execution:{reason}",
+        }
+        self._emit_observability("EVT:EXECUTION_GUARD_BLOCKED", payload)
+
+    def _emit_exit_match_observability(
+        self,
+        msg: Message,
+        *,
+        order_id: Optional[str],
+        client_order_id: str,
+        inferred_role: str,
+        matched: bool,
+        match_reason: str,
+        local_expected_ids: Dict[str, Optional[str]],
+        local_state_before: str,
+        local_state_after: str,
+        position_qty_before: Optional[Decimal],
+    ) -> None:
+        payload = {
+            "ts_ms": self._now_ms(),
+            "symbol": (msg.pld or {}).get("symbol") or self.symbol,
+            "rid": msg.rid,
+            "event_type": msg.verb,
+            "incoming_order_id": order_id,
+            "incoming_client_order_id": client_order_id,
+            "normalized_client_order_id": self._normalize_client_order_id(client_order_id),
+            "inferred_role": inferred_role,
+            "local_expected_ids": local_expected_ids,
+            "local_expected_ids_after": self._local_expected_ids_snapshot(),
+            "matched": matched,
+            "match_reason": match_reason,
+            "local_state_before": local_state_before,
+            "local_state_after": local_state_after,
+            "position_qty_before": str(position_qty_before) if position_qty_before is not None else None,
+            "position_qty_after": str(self.position_qty) if self.position_qty is not None else None,
+            "why": "execution:exit_match_attempted",
+        }
+        self._emit_observability("EVT:EXIT_MATCH_ATTEMPTED", payload)
+        if not matched:
+            fail_payload = {
+                "ts_ms": payload["ts_ms"],
+                "symbol": payload["symbol"],
+                "rid": payload["rid"],
+                "event_type": msg.verb,
+                "incoming_order_id": order_id,
+                "incoming_client_order_id": client_order_id,
+                "normalized_client_order_id": payload["normalized_client_order_id"],
+                "inferred_role": inferred_role,
+                "local_expected_ids": local_expected_ids,
+                "local_state_before": local_state_before,
+                "local_state_after": local_state_after,
+                "mismatch_reason": match_reason,
+                "why": "execution:exit_match_failed",
+            }
+            self._emit_observability("EVT:EXIT_MATCH_FAILED", fail_payload)
+
+    def _emit_manage_guard_fail(self, msg: Message, reason: str) -> Message:
+        return Message(
+            op="ERR",
+            verb=msg.verb,
+            src="execution_position",
+            dst=msg.src,
+            rid=msg.rid,
+            why="MANAGE_GUARD_FAIL",
+            pld={
+                "symbol": (msg.pld or {}).get("symbol"),
+                "reason": reason,
+                "block_reason": reason,
+                "current_local_state": self.state.value,
+                "local_manage_state": self.state.value,
+            },
+            data_ref=msg.data_ref.copy() if msg.data_ref else [],
+        )
+
     def handle(self, msg: Message) -> Optional[Message]:
         """
         Process incoming events and emit DEC:ADJUST if rules trigger.
@@ -457,19 +715,17 @@ class ManageFlowFSM:
                       f"pld_keys={list(pld.keys())}")
 
             # EXIT orders: TAKE_PROFIT_MARKET, STOP_MARKET, or LIMIT with closePosition=true
-            is_exit_order = (order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]) or \
-                (close_position or is_reduce_only)
+            is_exit_order = self._is_exit_fill_payload(pld)
 
             if is_exit_order:
                 #  Position is CLOSING via TP/SL - do NOT create new TP/SL!
                 LOG.info(
                     f"EXIT fill detected ({order_type}), position closing, NOT placing brackets")
-                self.position_qty = None
-                self.position_entry_price = None
-                self.position_side = None
-                self.symbol = None  # Phase 0: clear symbol on position close
-                self.sl_price = None
-                self.tp_price = None
+                self._clear_lifecycle_tracking(
+                    reason="flat_exit_fill",
+                    clear_symbol=True,
+                )
+                self.state = ManageState.FLAT
                 # Stay in FLAT, return without placing new brackets
                 return None
             else:
@@ -490,6 +746,38 @@ class ManageFlowFSM:
                 # Place bracket orders immediately
                 return self._place_brackets(msg)
 
+        if self.state in (
+            ManageState.OPENED,
+            ManageState.TRACKING,
+            ManageState.BRACKETS_PENDING,
+            ManageState.BRACKETS_PLACED,
+            ManageState.EMIT_DEC_ADJUST,
+            ManageState.ERROR,
+            ManageState.EMERGENCY,
+        ) and msg.verb in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED"):
+            pld = msg.pld or {}
+            order_id = pld.get("orderId")
+            client_order_id = self._client_order_id_from_payload(pld)
+            if (
+                (order_id or client_order_id)
+                and
+                not self._is_exit_fill_payload(pld)
+                and not self._matches_tracked_entry(order_id, client_order_id)
+                and not self._matches_tracked_bracket(order_id, client_order_id)
+            ):
+                LOG.error(
+                    "[ManageFlowFSM] blocking entry-like fill over active lifecycle: "
+                    f"state={self.state.value} symbol={pld.get('symbol')} order_id={order_id}"
+                )
+                self._emit_guard_blocked_event(
+                    msg,
+                    "stale_local_lifecycle_conflict",
+                )
+                return self._emit_manage_guard_fail(
+                    msg,
+                    "stale_local_lifecycle_conflict",
+                )
+
         # Handle bracket order confirmations
         if self.state == ManageState.BRACKETS_PENDING and msg.verb == "ORDER_UPDATED":
             return self._on_bracket_placed(msg)
@@ -508,6 +796,8 @@ class ManageFlowFSM:
             price = Decimal(str(pld["price"] if "price" in pld else 0))
             side = pld.get("side")  # BUY or SELL
             symbol = pld.get("symbol")  # Phase 0: extract symbol from fill event
+            order_id = pld.get("orderId")
+            client_order_id = self._client_order_id_from_payload(pld)
 
             if self.position_qty is None:
                 self.position_qty = qty
@@ -515,6 +805,8 @@ class ManageFlowFSM:
                 self.position_side = side
                 self.symbol = symbol  # Phase 0: track symbol for per-instrument config
                 self.position_open_ts = get_clock().now_sec()
+                self.entry_order_id = str(order_id) if order_id else None
+                self.entry_client_order_id = client_order_id or None
             else:
                 # Average down (stub logic)
                 total_qty = self.position_qty + qty
@@ -528,6 +820,10 @@ class ManageFlowFSM:
                 self.position_qty = total_qty
                 self.position_entry_price = avg_price
                 # Keep original side for position
+                if self.entry_order_id is None and order_id:
+                    self.entry_order_id = str(order_id)
+                if self.entry_client_order_id is None and client_order_id:
+                    self.entry_client_order_id = client_order_id
 
         except (ValueError, TypeError, KeyError) as e:
             LOG.warning(f"Failed to process fill event: {e}")
@@ -1114,17 +1410,29 @@ class ManageFlowFSM:
         """
         pld = msg.pld or {}
         order_id = pld.get("orderId")
-        client_order_id = pld["clientOrderId"] if "clientOrderId" in pld else ""
+        client_order_id = self._client_order_id_from_payload(pld)
 
         if not order_id:
             return None
+
+        should_trace_exit_match = self._is_exit_fill_payload(pld) or self._matches_tracked_bracket(
+            order_id,
+            client_order_id,
+        )
+        local_state_before = self.state.value
+        position_qty_before = self.position_qty
+        expected_ids_before = self._local_expected_ids_snapshot()
+        inferred_role, matched, match_reason = self._resolve_bracket_match(
+            order_id,
+            client_order_id,
+        )
 
         oco_enabled = False
         if self._manage_cfg and self._manage_cfg.brackets:
             oco_enabled = self._manage_cfg.brackets.oco_emulation
 
         # === SL FILLED ===
-        if order_id == self.sl_order_id or "_sl" in client_order_id:
+        if self._matches_order_identity(order_id, client_order_id, self.sl_order_id, "SL-"):
             LOG.info(f"[ManageFlowFSM] SL filled: {order_id}")
             decisions = []
             
@@ -1139,18 +1447,33 @@ class ManageFlowFSM:
                     decisions.append(self._emit_cancel_order(msg, self.tp_order_id, "OCO_SL_filled"))
 
             # Clear all bracket tracking
-            self.sl_order_id = None
-            self.tp_order_id = None
-            self.tp1_order_id = None
-            self.tp2_order_id = None
-            
+            self._clear_lifecycle_tracking(
+                reason="sl_filled",
+                clear_symbol=True,
+            )
+            self.state = ManageState.FLAT
+             
             # Return first cancel decision (others handled in next cycle)
-            return decisions[0] if decisions else None
+            result = decisions[0] if decisions else None
+            if should_trace_exit_match:
+                self._emit_exit_match_observability(
+                    msg,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                    inferred_role="SL",
+                    matched=True,
+                    match_reason=match_reason,
+                    local_expected_ids=expected_ids_before,
+                    local_state_before=local_state_before,
+                    local_state_after=self.state.value,
+                    position_qty_before=position_qty_before,
+                )
+            return result
 
         # === TP1 FILLED (partial exit) ===
-        if order_id == self.tp1_order_id or "_tp1" in client_order_id:
+        if self._matches_order_identity(order_id, client_order_id, self.tp1_order_id, "TP1-"):
             LOG.info(f"[ManageFlowFSM] TP1 filled (partial exit): {order_id}")
-            
+             
             # Update position qty (reduce by partial_exit_pct)
             if self.position_qty and self.partial_exit_pct:
                 filled_pct = Decimal(str(self.partial_exit_pct))
@@ -1168,13 +1491,39 @@ class ManageFlowFSM:
                 decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP1_filled_no_tp2")
                 self.sl_order_id = None
                 self.tp_order_id = None
+                if should_trace_exit_match:
+                    self._emit_exit_match_observability(
+                        msg,
+                        order_id=order_id,
+                        client_order_id=client_order_id,
+                        inferred_role="TP1",
+                        matched=True,
+                        match_reason=match_reason,
+                        local_expected_ids=expected_ids_before,
+                        local_state_before=local_state_before,
+                        local_state_after=self.state.value,
+                        position_qty_before=position_qty_before,
+                    )
                 return decision
-            
+             
             # TODO: Consider adjusting SL to breakeven after TP1 (optional feature)
+            if should_trace_exit_match:
+                self._emit_exit_match_observability(
+                    msg,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                    inferred_role="TP1",
+                    matched=True,
+                    match_reason=match_reason,
+                    local_expected_ids=expected_ids_before,
+                    local_state_before=local_state_before,
+                    local_state_after=self.state.value,
+                    position_qty_before=position_qty_before,
+                )
             return None
 
         # === TP2 FILLED (remainder/runner) ===
-        if order_id == self.tp2_order_id or "_tp2" in client_order_id:
+        if self._matches_order_identity(order_id, client_order_id, self.tp2_order_id, "TP2-"):
             LOG.info(f"[ManageFlowFSM] TP2 filled (runner closed): {order_id}")
             decision = None
             
@@ -1184,26 +1533,68 @@ class ManageFlowFSM:
                 decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP2_filled")
 
             # Clear all bracket tracking
-            self.sl_order_id = None
-            self.tp_order_id = None
-            self.tp1_order_id = None
-            self.tp2_order_id = None
-            self.position_qty = Decimal("0")
-            
+            self._clear_lifecycle_tracking(
+                reason="tp2_filled",
+                clear_symbol=True,
+            )
+            self.state = ManageState.FLAT
+             
+            if should_trace_exit_match:
+                self._emit_exit_match_observability(
+                    msg,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                    inferred_role="TP2",
+                    matched=True,
+                    match_reason=match_reason,
+                    local_expected_ids=expected_ids_before,
+                    local_state_before=local_state_before,
+                    local_state_after=self.state.value,
+                    position_qty_before=position_qty_before,
+                )
             return decision
 
         # === Legacy TP (backward compat) ===
-        if order_id == self.tp_order_id:
+        if self._matches_order_identity(order_id, client_order_id, self.tp_order_id, "TP-"):
             LOG.info(f"[ManageFlowFSM] Legacy TP filled: {order_id}")
             decision = None
             
             if oco_enabled and self.sl_order_id:
                 decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP_filled")
 
-            self.tp_order_id = None
-            self.sl_order_id = None
+            self._clear_lifecycle_tracking(
+                reason="tp_filled",
+                clear_symbol=True,
+            )
+            self.state = ManageState.FLAT
+            if should_trace_exit_match:
+                self._emit_exit_match_observability(
+                    msg,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                    inferred_role="TP",
+                    matched=True,
+                    match_reason=match_reason,
+                    local_expected_ids=expected_ids_before,
+                    local_state_before=local_state_before,
+                    local_state_after=self.state.value,
+                    position_qty_before=position_qty_before,
+                )
             return decision
 
+        if should_trace_exit_match:
+            self._emit_exit_match_observability(
+                msg,
+                order_id=order_id,
+                client_order_id=client_order_id,
+                inferred_role=inferred_role,
+                matched=matched,
+                match_reason=match_reason,
+                local_expected_ids=expected_ids_before,
+                local_state_before=local_state_before,
+                local_state_after=self.state.value,
+                position_qty_before=position_qty_before,
+            )
         return None
 
     def _check_trailing_stop(self, msg: Message) -> Optional[Message]:
@@ -1432,23 +1823,4 @@ class ManageFlowFSM:
     def reset(self):
         """Reset FSM state (for testing)."""
         self.state = ManageState.FLAT
-        self.symbol = None  # Phase 0: clear symbol on reset
-        self.position_qty = None
-        self.position_entry_price = None
-        self.position_open_ts = 0.0
-        self.position_side = None
-        # Bracket orders (legacy)
-        self.sl_order_id = None
-        self.tp_order_id = None
-        self.sl_price = None
-        self.tp_price = None
-        # Phase A2: TP1/TP2
-        self.tp1_order_id = None
-        self.tp2_order_id = None
-        self.tp1_price = None
-        self.tp2_price = None
-        self.partial_exit_pct = None
-        # Phase A3: Trailing stop
-        self.trailing_activated = False
-        self.last_trailing_ts = 0.0
-        self.peak_price = None
+        self._clear_lifecycle_tracking(reason="reset", clear_symbol=True)

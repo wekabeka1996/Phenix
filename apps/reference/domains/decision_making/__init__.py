@@ -1,31 +1,22 @@
 """
 Decision Making Domain
 
-Core trading decision engine that aggregates alpha signals, applies risk controls
-and QoS, and generates executable trade intents based on portfolio state, market
-regime, and risk budgets.
+Central decision engine: receives upstream data (features, risk, regime,
+portfolio, exposure), dispatches to strategy handlers, and produces trade
+intents (proposed / rejected / deferred).
 
 Components:
-    - DecisionMaking: Main FSM component for trade intent generation
-    - NormalizedRejectReasons: Standardized rejection reason mapping (NRR codes)
+    - DecisionMaking: Main FSM component (thin facade)
+    - AuroraHandler / MdAmrHandler / MeanReversionHandler: Strategy handlers
+    - NormalizedRejectReasons: Standardized rejection reason mapping (NRR SSOT)
     - DeferredIntentScheduler: QoS retry scheduling after cooldowns
-    - WhyCodes: Standardized WHY chain codes for observability
+    - WhyCode: Re-export from vfoundation/core/why_codes.py (canonical SSOT)
     - DecisionLog: Structured JSON logging for decision tracing
-    - MeanReversionHandler: Track B integration for 1m MR strategy
+    - QuadraticScoringKernel: Canonical scoring engine
 
-Events Consumed:
-    - EVT:FEATURES_CALCULATED
-    - EVT:RISK_ASSESSMENT_COMPLETED
-    - EVT:PORTFOLIO_STATE_UPDATED
-    - EVT:REGIME_DETECTED
-    - EVT:EXPOSURE_SUMMARY_UPDATED
-    - EVT:TICK_RECEIVED (for MR handler)
+See README.md for full file map and event contracts.
 
-Events Produced:
-    - EVT:TRADE_INTENT_PROPOSED
-    - EVT:ALPHA_SCORE_CALCULATED
-
-Version: 1.3.0
+Version: 2.0.0
 """
 
 from .decision_making import DecisionMaking
@@ -56,4 +47,4 @@ __all__ = [
     "MeanReversionHandler",
 ]
 
-__version__ = "1.3.0"
+__version__ = "2.0.0"

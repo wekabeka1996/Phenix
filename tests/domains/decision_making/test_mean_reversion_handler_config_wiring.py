@@ -4,8 +4,10 @@ from types import SimpleNamespace
 
 from apps.reference.config_models import (
     MRAssetConfig,
+    MRMomentumSeparationVetoConfig,
     MRRegimeSizingConfig,
     MRRegimeThresholdsConfig,
+    MRSqueezeExpansionVetoConfig,
     MRStrategyOverrideConfig,
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
@@ -59,6 +61,23 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
                     bb_window=55,
                     bb_num_std=2.7,
                     min_bb_width=0.009,
+                    flat_low_short_min_bb_width=0.015,
+                    squeeze_expansion_veto=MRSqueezeExpansionVetoConfig(
+                        enabled=True,
+                        squeeze_width_max=0.010,
+                        post_squeeze_width_max=0.020,
+                        expansion_ratio_min=2.0,
+                        regimes=["FLAT_LOW"],
+                        sides=["LONG", "SHORT"],
+                    ),
+                    momentum_separation_veto=MRMomentumSeparationVetoConfig(
+                        enabled=True,
+                        lookback_bars=4,
+                        min_drift_pct=0.02,
+                        min_current_bb_width=0.02,
+                        regimes=["FLAT_LOW"],
+                        sides=["LONG", "SHORT"],
+                    ),
                     sl_atr_mult=None,
                     allowed_regimes=["FLAT_HIGH"],
                 ),
@@ -91,6 +110,19 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
     assert s_cfg.bb_window == 55
     assert s_cfg.bb_num_std == 2.7
     assert str(s_cfg.min_bb_width) == "0.009"
+    assert str(s_cfg.flat_low_short_min_bb_width) == "0.015"
+    assert s_cfg.squeeze_expansion_veto is not None
+    assert str(s_cfg.squeeze_expansion_veto["squeeze_width_max"]) == "0.01"
+    assert str(s_cfg.squeeze_expansion_veto["post_squeeze_width_max"]) == "0.02"
+    assert str(s_cfg.squeeze_expansion_veto["expansion_ratio_min"]) == "2.0"
+    assert s_cfg.squeeze_expansion_veto["regimes"] == ["FLAT_LOW"]
+    assert s_cfg.squeeze_expansion_veto["sides"] == ["LONG", "SHORT"]
+    assert s_cfg.momentum_separation_veto is not None
+    assert s_cfg.momentum_separation_veto["lookback_bars"] == 4
+    assert str(s_cfg.momentum_separation_veto["min_drift_pct"]) == "0.02"
+    assert str(s_cfg.momentum_separation_veto["min_current_bb_width"]) == "0.02"
+    assert s_cfg.momentum_separation_veto["regimes"] == ["FLAT_LOW"]
+    assert s_cfg.momentum_separation_veto["sides"] == ["LONG", "SHORT"]
     assert str(s_cfg.entry_threshold) == "0.123"
     assert s_cfg.tp_to_mid is False
     assert s_cfg.cooldown_sec == 321

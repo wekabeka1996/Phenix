@@ -801,6 +801,82 @@ class OrderGuardian:
 
         return cancelled_count
 
+    def _emit_tidy_events(
+        self,
+        *,
+        symbol: str,
+        source: str,
+        tidy_reason: str,
+        why: str,
+        rid: Optional[str] = None,
+    ) -> None:
+        if not self.bus:
+            return
+        payload = {
+            "symbol": symbol,
+            "source": source,
+            "ts_ms": int(self.clock.time() * 1000),
+            "tidy_reason": tidy_reason,
+            "business_close_reconciled": False,
+            "why": why,
+        }
+        if rid is not None:
+            payload["rid"] = rid
+        try:
+            self.bus.emit(
+                "EVT:EXECUTION_TIDY_PERFORMED",
+                dict(payload),
+                why=why,
+            )
+            self.bus.emit(
+                "EVT:SYMBOL_TIDY",
+                dict(payload),
+                why=why,
+            )
+            LOG.info(
+                "[GUARD] Execution tidy performed",
+                extra={
+                    "event_type": "execution_tidy_performed",
+                    **payload,
+                },
+            )
+        except Exception as exc:
+            LOG.error("[%s] CRITICAL: Failed to emit tidy events: %s", symbol, exc)
+
+    def _emit_close_reconciled_event(
+        self,
+        *,
+        symbol: str,
+        rid: Optional[str],
+        source: str,
+    ) -> None:
+        if not self.bus:
+            return
+        why = "guardian:close_reconciled"
+        payload = {
+            "symbol": symbol,
+            "rid": rid,
+            "source": source,
+            "ts_ms": int(self.clock.time() * 1000),
+            "business_close_reconciled": True,
+            "why": why,
+        }
+        try:
+            self.bus.emit(
+                "EVT:EXECUTION_CLOSE_RECONCILED",
+                payload,
+                why=why,
+            )
+            LOG.info(
+                "[GUARD] Execution close reconciled",
+                extra={
+                    "event_type": "execution_close_reconciled",
+                    **payload,
+                },
+            )
+        except Exception as exc:
+            LOG.error("[%s] CRITICAL: Failed to emit close reconcile event: %s", symbol, exc)
+
     async def cleanup_orphans(
         self,
         symbol: Optional[str] = None,
@@ -1061,20 +1137,12 @@ class OrderGuardian:
 
             if self.bus and tidied_symbols:
                 for tidy_symbol in tidied_symbols:
-                    try:
-                        self.bus.emit(
-                            "EVT:SYMBOL_TIDY",
-                            {
-                                "symbol": tidy_symbol,
-                                "source": "guardian_poll",
-                                "ts_ms": int(self.clock.time() * 1000),
-                            },
-                            why="guardian:orphan_cleanup:tidy",
-                        )
-                    except Exception as e:
-                        LOG.error(
-                            f"[{tidy_symbol}] CRITICAL: Failed to emit EVT:SYMBOL_TIDY: {e}"
-                        )
+                    self._emit_tidy_events(
+                        symbol=tidy_symbol,
+                        source="guardian_poll",
+                        tidy_reason="orphan_cleanup",
+                        why="guardian:orphan_cleanup:tidy",
+                    )
 
         except Exception as e:
             LOG.error(f"Orphan cleanup failed: {e}")
@@ -1276,21 +1344,19 @@ class OrderGuardian:
                         any_tracked = True
                         break
                 if not any_tracked and self.bus:
-                    try:
-                        self.bus.emit(
-                            "EVT:SYMBOL_TIDY",
-                            {
-                                "symbol": symbol,
-                                "rid": rid,
-                                "source": "guardian_reconcile",
-                                "ts_ms": int(self.clock.time() * 1000),
-                            },
-                            why=f"guardian:reconcile:tidy:rid={rid}",
-                        )
-                    except Exception as e:
-                        LOG.error(
-                            f"[{symbol}] CRITICAL: Failed to emit EVT:SYMBOL_TIDY: {e}"
-                        )
+                    why = f"guardian:reconcile:tidy:rid={rid}"
+                    self._emit_tidy_events(
+                        symbol=symbol,
+                        source="guardian_reconcile",
+                        tidy_reason="close_reconcile_tidy",
+                        why=why,
+                        rid=rid,
+                    )
+                    self._emit_close_reconciled_event(
+                        symbol=symbol,
+                        rid=rid,
+                        source="guardian_reconcile",
+                    )
             except Exception:
                 pass
 

@@ -33,6 +33,7 @@ class StrategyCompatibilityProfile:
     needs_microstructure: bool
     needs_execution_context: bool
     local_hydration_contract: str | None
+    restart_local_basis_counter: bool
     degraded_mode_allowance: str
     protect_only_capability: bool
     quadratic_readiness_blocks_by_default: bool
@@ -50,6 +51,7 @@ class StrategyCompatibilityProfile:
             "needs_microstructure": bool(self.needs_microstructure),
             "needs_execution_context": bool(self.needs_execution_context),
             "local_hydration_contract": self.local_hydration_contract,
+            "restart_local_basis_counter": bool(self.restart_local_basis_counter),
             "degraded_mode_allowance": self.degraded_mode_allowance,
             "protect_only_capability": bool(self.protect_only_capability),
             "quadratic_readiness_blocks_by_default": bool(self.quadratic_readiness_blocks_by_default),
@@ -57,14 +59,16 @@ class StrategyCompatibilityProfile:
 
 
 def _extract_assignments(config: Any) -> dict[str, list[str]]:
-    assignments_raw = getattr(getattr(config, "strategies_registry", None), "assignments", None)
+    assignments_raw = getattr(
+        getattr(config, "strategies_registry", None), "assignments", None)
     if not isinstance(assignments_raw, dict):
         return {}
     assignments: dict[str, list[str]] = {}
     for symbol, strategy_ids in assignments_raw.items():
         if not isinstance(strategy_ids, list):
             continue
-        clean_ids = [str(strategy_id) for strategy_id in strategy_ids if str(strategy_id)]
+        clean_ids = [str(strategy_id)
+                     for strategy_id in strategy_ids if str(strategy_id)]
         if clean_ids:
             assignments[str(symbol).upper()] = clean_ids
     return assignments
@@ -81,7 +85,8 @@ def _active_symbols(assignments: Mapping[str, list[str]], strategy_id: str) -> t
 
 
 def _aurora_basis_required_bars(config: Any) -> int:
-    regime_cfg = config if hasattr(config, "basis_tf_sec") else getattr(config, "regime", config)
+    regime_cfg = config if hasattr(
+        config, "basis_tf_sec") else getattr(config, "regime", config)
     models_cfg = getattr(regime_cfg, "models", None)
     sma_cfg = getattr(models_cfg, "sma_trend", None)
     vol_cfg = getattr(models_cfg, "volatility", None)
@@ -92,7 +97,8 @@ def _aurora_basis_required_bars(config: Any) -> int:
 
 
 def _aurora_required_htf(config: Any) -> tuple[StrategyHTFRequirement, ...]:
-    pillars_cfg = getattr(getattr(getattr(config, "domains", None), "feature_engineering", None), "pillars", None)
+    pillars_cfg = getattr(getattr(
+        getattr(config, "domains", None), "feature_engineering", None), "pillars", None)
     if pillars_cfg is None or not bool(getattr(pillars_cfg, "enabled", False)):
         return ()
     backfill_cfg = getattr(pillars_cfg, "backfill", None)
@@ -119,10 +125,8 @@ def _aurora_required_htf(config: Any) -> tuple[StrategyHTFRequirement, ...]:
 
 
 def _active_aurora_profile_id(config: Any) -> str:
-    aurora_cfg = getattr(getattr(config, "strategies", None), "aurora", None)
-    decision_cfg = getattr(aurora_cfg, "decision", None)
-    scoring_version = str(getattr(decision_cfg, "scoring_version", "v2") or "v2").strip().lower()
-    return "aurora_quadratic" if scoring_version == "quadratic" else "aurora_v2"
+    # Phase 9 cleanup: Aurora is always quadratic. v2 kernel deleted.
+    return "aurora_quadratic"
 
 
 def active_aurora_profile_id(config: Any) -> str:
@@ -142,7 +146,8 @@ def build_full_strategy_compatibility_matrix(
 ) -> dict[str, StrategyCompatibilityProfile]:
     assignments = _extract_assignments(config)
     aurora_cfg = getattr(getattr(config, "strategies", None), "aurora", None)
-    mr_cfg = getattr(getattr(config, "strategies", None), "mean_reversion", None)
+    mr_cfg = getattr(getattr(config, "strategies", None),
+                     "mean_reversion", None)
     md_cfg = getattr(getattr(config, "strategies", None), "md_amr", None)
     active_aurora_profile_id = _active_aurora_profile_id(config)
 
@@ -152,13 +157,15 @@ def build_full_strategy_compatibility_matrix(
             strategy_id="aurora",
             active=active_aurora_profile_id == "aurora_v2",
             active_symbols=_active_symbols(assignments, "aurora"),
-            required_basis_tf_sec=int(getattr(aurora_cfg, "timeframe_sec", 300) or 300),
+            required_basis_tf_sec=int(
+                getattr(aurora_cfg, "timeframe_sec", 300) or 300),
             basis_required_bars=_aurora_basis_required_bars(config),
             required_htf=(),
             needs_regime=True,
             needs_microstructure=True,
             needs_execution_context=True,
             local_hydration_contract=None,
+            restart_local_basis_counter=True,
             degraded_mode_allowance="PROTECT_ONLY",
             protect_only_capability=True,
             quadratic_readiness_blocks_by_default=False,
@@ -168,13 +175,15 @@ def build_full_strategy_compatibility_matrix(
             strategy_id="aurora",
             active=active_aurora_profile_id == "aurora_quadratic",
             active_symbols=_active_symbols(assignments, "aurora"),
-            required_basis_tf_sec=int(getattr(aurora_cfg, "timeframe_sec", 300) or 300),
+            required_basis_tf_sec=int(
+                getattr(aurora_cfg, "timeframe_sec", 300) or 300),
             basis_required_bars=_aurora_basis_required_bars(config),
             required_htf=_aurora_required_htf(config),
             needs_regime=True,
             needs_microstructure=True,
             needs_execution_context=True,
             local_hydration_contract=None,
+            restart_local_basis_counter=True,
             degraded_mode_allowance="PROTECT_ONLY",
             protect_only_capability=True,
             quadratic_readiness_blocks_by_default=True,
@@ -184,13 +193,16 @@ def build_full_strategy_compatibility_matrix(
             strategy_id="mean_reversion",
             active=True,
             active_symbols=_active_symbols(assignments, "mean_reversion"),
-            required_basis_tf_sec=int(getattr(mr_cfg, "timeframe_sec", 300) or 300),
-            basis_required_bars=int(getattr(getattr(mr_cfg, "strategy", None), "min_bars", 25) or 25),
+            required_basis_tf_sec=int(
+                getattr(mr_cfg, "timeframe_sec", 300) or 300),
+            basis_required_bars=int(
+                getattr(getattr(mr_cfg, "strategy", None), "min_bars", 25) or 25),
             required_htf=(),
             needs_regime=True,
             needs_microstructure=False,
             needs_execution_context=True,
             local_hydration_contract=None,
+            restart_local_basis_counter=False,
             degraded_mode_allowance="NON_TRADING_ONLY",
             protect_only_capability=False,
             quadratic_readiness_blocks_by_default=False,
@@ -200,7 +212,8 @@ def build_full_strategy_compatibility_matrix(
             strategy_id="md_amr",
             active=True,
             active_symbols=_active_symbols(assignments, "md_amr"),
-            required_basis_tf_sec=int(getattr(md_cfg, "timeframe_sec", 900) or 900),
+            required_basis_tf_sec=int(
+                getattr(md_cfg, "timeframe_sec", 900) or 900),
             basis_required_bars=max(
                 96,
                 int(getattr(md_cfg, "channel_window_bars", 12) or 12),
@@ -212,6 +225,7 @@ def build_full_strategy_compatibility_matrix(
             needs_microstructure=False,
             needs_execution_context=True,
             local_hydration_contract="md_amr_rest_hydration",
+            restart_local_basis_counter=True,
             degraded_mode_allowance="PROTECT_ONLY",
             protect_only_capability=True,
             quadratic_readiness_blocks_by_default=False,

@@ -12,8 +12,14 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_models import (
+    MRMomentumSeparationVetoConfig,
+    MRSqueezeExpansionVetoConfig,
+    MRStrategyOverrideConfig,
+)
 
 
 def _copy_canonical_config_dir(dst_config_dir: Path) -> None:
@@ -123,6 +129,29 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
             assert a.strategy.bb_window == raw_asset_strategy.get("bb_window")
             assert a.strategy.bb_num_std == raw_asset_strategy.get("bb_num_std")
             assert a.strategy.min_bb_width == raw_asset_strategy.get("min_bb_width")
+            assert a.strategy.flat_low_short_min_bb_width == raw_asset_strategy.get("flat_low_short_min_bb_width")
+            raw_squeeze_veto = raw_asset_strategy.get("squeeze_expansion_veto")
+            if raw_squeeze_veto is None:
+                assert a.strategy.squeeze_expansion_veto is None
+            else:
+                assert a.strategy.squeeze_expansion_veto is not None
+                assert a.strategy.squeeze_expansion_veto.enabled == raw_squeeze_veto["enabled"]
+                assert a.strategy.squeeze_expansion_veto.squeeze_width_max == raw_squeeze_veto["squeeze_width_max"]
+                assert a.strategy.squeeze_expansion_veto.post_squeeze_width_max == raw_squeeze_veto["post_squeeze_width_max"]
+                assert a.strategy.squeeze_expansion_veto.expansion_ratio_min == raw_squeeze_veto["expansion_ratio_min"]
+                assert a.strategy.squeeze_expansion_veto.regimes == raw_squeeze_veto["regimes"]
+                assert a.strategy.squeeze_expansion_veto.sides == raw_squeeze_veto["sides"]
+            raw_momentum_veto = raw_asset_strategy.get("momentum_separation_veto")
+            if raw_momentum_veto is None:
+                assert a.strategy.momentum_separation_veto is None
+            else:
+                assert a.strategy.momentum_separation_veto is not None
+                assert a.strategy.momentum_separation_veto.enabled == raw_momentum_veto["enabled"]
+                assert a.strategy.momentum_separation_veto.lookback_bars == raw_momentum_veto["lookback_bars"]
+                assert a.strategy.momentum_separation_veto.min_drift_pct == raw_momentum_veto["min_drift_pct"]
+                assert a.strategy.momentum_separation_veto.min_current_bb_width == raw_momentum_veto["min_current_bb_width"]
+                assert a.strategy.momentum_separation_veto.regimes == raw_momentum_veto["regimes"]
+                assert a.strategy.momentum_separation_veto.sides == raw_momentum_veto["sides"]
             assert a.strategy.entry_threshold == raw_asset_strategy.get("entry_threshold")
             assert a.strategy.tp_to_mid == raw_asset_strategy.get("tp_to_mid")
             assert a.strategy.sl_atr_mult == raw_asset_strategy.get("sl_atr_mult")
@@ -132,3 +161,32 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
         # MRAssetRiskConfig purged (DEAD CODE): per-asset risk fields were never read in runtime.
         # MRRiskConfig purged (DEAD CODE): global risk config was never read in runtime.
         # Risk decisions are centralized in RiskManagement and PositionSizing domains.
+
+
+def test_mr_override_rejects_unknown_flat_low_short_hardening_key() -> None:
+    with pytest.raises(ValidationError):
+        MRStrategyOverrideConfig(flat_low_short_min_bb_wdith=0.015)
+
+
+def test_mr_squeeze_expansion_veto_rejects_inverted_width_contract() -> None:
+    with pytest.raises(ValidationError):
+        MRSqueezeExpansionVetoConfig(
+            enabled=True,
+            squeeze_width_max=0.02,
+            post_squeeze_width_max=0.01,
+            expansion_ratio_min=2.0,
+            regimes=["FLAT_LOW"],
+            sides=["SHORT"],
+        )
+
+
+def test_mr_momentum_separation_veto_rejects_zero_lookback() -> None:
+    with pytest.raises(ValidationError):
+        MRMomentumSeparationVetoConfig(
+            enabled=True,
+            lookback_bars=0,
+            min_drift_pct=0.02,
+            min_current_bb_width=0.02,
+            regimes=["FLAT_LOW"],
+            sides=["SHORT"],
+        )

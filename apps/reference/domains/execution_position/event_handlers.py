@@ -258,6 +258,8 @@ class EPEventHandlers:
 
                     if _get_order_logger is not None:
                         try:
+                            # PHASE 3: Get accumulated fees before write (used in two keys)
+                            _pos_fees = self._fsm._accumulated_fees_by_symbol.get(sym, 0.0)
                             _get_order_logger().write({
                                 "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
                                 "event_type": "POSITION_CLOSED",
@@ -268,6 +270,9 @@ class EPEventHandlers:
                                 "side": self._fsm._last_entry_side_by_symbol.get(sym, "N/A"),
                                 # PHASE 2: exchange tradeId from last fill cached per symbol
                                 "trade_id": self._fsm._last_trade_id_by_symbol.get(sym, ""),
+                                # PHASE 3: accumulated fees and net PnL for neocortex reward_complete
+                                "fees": _pos_fees,
+                                "realized_pnl_net": pos_pnl - _pos_fees,
                                 "source_fsm": "ExecPosFSM",
                                 "why": close_reason,
                                 "close_reason": close_reason,
@@ -284,10 +289,12 @@ class EPEventHandlers:
                         # CRITICAL: this block must stay AFTER the write above, NOT inside the
                         # _trade_lifecycle finally block at lines ~238-243 which runs before this write.
                         # PHASE 2: Also clean up trade_id and entry side caches.
+                        # PHASE 3: Also clean up accumulated fees cache.
                         try:
                             self._fsm._last_lifecycle_ikey_by_symbol.pop(sym, None)
                             self._fsm._last_trade_id_by_symbol.pop(sym, None)
                             self._fsm._last_entry_side_by_symbol.pop(sym, None)
+                            self._fsm._accumulated_fees_by_symbol.pop(sym, None)
                         except Exception:
                             pass
 
@@ -468,10 +475,11 @@ class EPEventHandlers:
                     except Exception:
                         pass
                 if oi:
-                    intent = oi.get_intent_for_order(
-                        str(payload.get("clientOrderId") or payload.get("orderId")))
-                    if intent:
-                        res_id = getattr(intent, "reservation_id", None)
+                    # DEAD-CODE (PHASE 4): get_intent_for_order() does not exist on OrderIndex.
+                    # This block always evaluates to res_id=None because the AttributeError is
+                    # swallowed by the outer except. Preserved for reference — do not call.
+                    # TODO: Remove in a future cleanup pass after confirming res_id is unused.
+                    res_id = None
 
                 _get_order_logger().write({
                     "rid": str(payload.get("clientOrderId") or payload.get("orderId") or "unknown_fill"),
@@ -560,6 +568,18 @@ class EPEventHandlers:
                             self._fsm._last_entry_side_by_symbol[symbol] = str(_p2_ref.side)
                 except Exception:
                     pass
+
+        # PHASE 3: Accumulate commission fees across all fills for this symbol lifecycle.
+        # Runs for ALL fills (ENTRY, SL, TP, CLOSE). Zero commission is accumulated as 0.0
+        # to ensure the _accumulated_fees_by_symbol key is present even for fee-free fills.
+        # This enables fees to be non-None in POSITION_CLOSED → reward_complete=True in neocortex.
+        if symbol:
+            try:
+                _fee = float(payload.get("commission") or 0.0)
+                _cur_fees = self._fsm._accumulated_fees_by_symbol.get(symbol, 0.0)
+                self._fsm._accumulated_fees_by_symbol[symbol] = _cur_fees + _fee
+            except Exception:
+                pass
 
         # PHASE A2 FIX: Inject cached intent data into ManageFlowFSM
         if rid in self._fsm._pending_intent_data:

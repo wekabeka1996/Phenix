@@ -18,7 +18,7 @@ import decimal
 import logging
 from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
 
-from apps.reference.domains.decision_making.aurora_scoring_kernel import SideBiasState
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import SideBiasState
 from apps.reference.domains.decision_making.shields.null_shield import NullShield
 from apps.reference.domains.decision_making.shields.base import ShieldCascade
 from apps.reference.domains.decision_making.shields.context_shield import ContextShield
@@ -108,7 +108,8 @@ class AuroraScoringHelpersMixin:
 
         if motion_norm_sigma is None:
             # Readiness handles missing data, don't block here
-            self.logger.debug(f"[{symbol}] VOL_GATES: motion_norm_sigma=None, skipping")
+            self.logger.debug(
+                f"[{symbol}] VOL_GATES: motion_norm_sigma=None, skipping")
             return False
 
         # Anti-Flat gate: block entry in dead market
@@ -127,7 +128,8 @@ class AuroraScoringHelpersMixin:
                     "threshold": self.anti_flat_sigma,
                     "window_sec": self.motion_window_sec,
                 },
-                why_chain=["VOL_GATE", "ANTI_FLAT", f"motion:{motion_norm_sigma:.3f}"],
+                why_chain=["VOL_GATE", "ANTI_FLAT",
+                           f"motion:{motion_norm_sigma:.3f}"],
             )
             return True
 
@@ -147,7 +149,8 @@ class AuroraScoringHelpersMixin:
                     "threshold": self.anti_fomo_sigma,
                     "window_sec": self.motion_window_sec,
                 },
-                why_chain=["VOL_GATE", "ANTI_FOMO", f"motion:{motion_norm_sigma:.3f}"],
+                why_chain=["VOL_GATE", "ANTI_FOMO",
+                           f"motion:{motion_norm_sigma:.3f}"],
             )
             return True
 
@@ -177,7 +180,12 @@ class AuroraScoringHelpersMixin:
         Otherwise returns NullShield (transparent pass-through).
         """
         cfg = self._scoring_engine_cfg if cfg is None else cfg
-        if not cfg or not getattr(cfg, "shield_enabled", False):
+        if not cfg:
+            return NullShield()
+        shield_enabled_raw = getattr(cfg, "shield_enabled", False)
+        # Guard: only build real cascade if shield_enabled is explicitly True (bool).
+        # This prevents MagicMock or other non-bool truthy values from triggering cascade build.
+        if shield_enabled_raw is not True:
             return NullShield()
 
         shields = []
@@ -195,31 +203,38 @@ class AuroraScoringHelpersMixin:
         ctx_cfg = getattr(cfg, "context_shield", None)
         if ctx_cfg and getattr(ctx_cfg, "enabled", True):
             shields.append(ContextShield(
-                regime_multipliers=dict(getattr(ctx_cfg, "regime_multipliers", {})),
+                regime_multipliers=dict(
+                    getattr(ctx_cfg, "regime_multipliers", {})),
                 default_multiplier=getattr(ctx_cfg, "default_multiplier", 1.0),
-                no_regime_multiplier=getattr(ctx_cfg, "no_regime_multiplier", 0.5),
+                no_regime_multiplier=getattr(
+                    ctx_cfg, "no_regime_multiplier", 0.5),
                 ttl_ms=getattr(ctx_cfg, "ttl_ms", 14_400_000),
                 stale_mult_normal=getattr(ctx_cfg, "stale_mult_normal", 0.7),
                 stale_mult_danger=getattr(ctx_cfg, "stale_mult_danger", 0.35),
-                danger_regimes=list(getattr(ctx_cfg, "danger_regimes", ["HIGH_VOLATILITY"])),
+                danger_regimes=list(
+                    getattr(ctx_cfg, "danger_regimes", ["HIGH_VOLATILITY"])),
             ))
 
         # Memory last — state-familiarity (Doctrine v2.6)
         mem_cfg = getattr(cfg, "memory_shield", None)
         if mem_cfg and getattr(mem_cfg, "enabled", True):
             if self.mode_manager:
-                mem_cfg = self.mode_manager.apply_memory_shield_overrides(mem_cfg)
+                mem_cfg = self.mode_manager.apply_memory_shield_overrides(
+                    mem_cfg)
 
             ms = MemoryShield(
                 decay_rate=getattr(mem_cfg, "decay_rate", 0.95),
                 max_states=getattr(mem_cfg, "max_states", 200),
                 unknown_threshold=getattr(mem_cfg, "unknown_threshold", 10),
-                exploring_threshold=getattr(mem_cfg, "exploring_threshold", 50),
+                exploring_threshold=getattr(
+                    mem_cfg, "exploring_threshold", 50),
                 unknown_multiplier=getattr(mem_cfg, "unknown_multiplier", 0.6),
-                exploring_multiplier=getattr(mem_cfg, "exploring_multiplier", 0.8),
+                exploring_multiplier=getattr(
+                    mem_cfg, "exploring_multiplier", 0.8),
                 known_multiplier=getattr(mem_cfg, "known_multiplier", 1.0),
                 storage_path=getattr(mem_cfg, "storage_path", None),
-                flush_interval_sec=getattr(mem_cfg, "flush_interval_sec", 60.0),
+                flush_interval_sec=getattr(
+                    mem_cfg, "flush_interval_sec", 60.0),
             )
             shields.append(ms)
             if record_memory_shield:
@@ -260,17 +275,20 @@ class AuroraScoringHelpersMixin:
         - features['liquidity_kappa'] must exist and be parseable
         - liquidity_kappa >= kappa_min
         """
-        gate_cfg = getattr(instr_cfg, "liquidity_gate", None) if instr_cfg is not None else None
+        gate_cfg = getattr(instr_cfg, "liquidity_gate",
+                           None) if instr_cfg is not None else None
         if gate_cfg is None:
             gate_cfg = getattr(self, "_global_liquidity_gate_cfg", None)
 
-        enabled_raw = getattr(gate_cfg, "enabled", False) if gate_cfg is not None else False
+        enabled_raw = getattr(gate_cfg, "enabled",
+                              False) if gate_cfg is not None else False
         if not isinstance(enabled_raw, bool) or not enabled_raw:
             return True, {}
 
         kappa_min_raw = getattr(gate_cfg, "kappa_min", None)
         kappa_max_raw = getattr(gate_cfg, "kappa_max", None)
-        failsafe_qty_check = bool(getattr(gate_cfg, "failsafe_qty_check", True))
+        failsafe_qty_check = bool(
+            getattr(gate_cfg, "failsafe_qty_check", True))
 
         # Readiness contract: require liquidity_kappa readiness when gate is enabled.
         ready_flag = None
@@ -321,7 +339,8 @@ class AuroraScoringHelpersMixin:
             pass
 
         try:
-            kappa_min = decimal.Decimal(str(kappa_min_raw)) if kappa_min_raw is not None else decimal.Decimal("0")
+            kappa_min = decimal.Decimal(
+                str(kappa_min_raw)) if kappa_min_raw is not None else decimal.Decimal("0")
         except Exception:
             kappa_min = decimal.Decimal("0")
 
@@ -363,7 +382,8 @@ class AuroraScoringHelpersMixin:
         target_ratio = self.side_bias_target_ratio
         min_intents = self.side_bias_min_intents
 
-        sb_cfg = getattr(instr_cfg, "side_bias", None) if instr_cfg is not None else None
+        sb_cfg = getattr(instr_cfg, "side_bias",
+                         None) if instr_cfg is not None else None
         if sb_cfg is not None:
             try:
                 pen = getattr(sb_cfg, "penalty_factor", None)
@@ -383,8 +403,10 @@ class AuroraScoringHelpersMixin:
         now = float(self.wall_time_fn())
 
         # Clean old entries outside window
-        state.buy_timestamps = [ts for ts in state.buy_timestamps if now - ts < window_sec]
-        state.sell_timestamps = [ts for ts in state.sell_timestamps if now - ts < window_sec]
+        state.buy_timestamps = [
+            ts for ts in state.buy_timestamps if now - ts < window_sec]
+        state.sell_timestamps = [
+            ts for ts in state.sell_timestamps if now - ts < window_sec]
 
         return SideBiasState(
             buy_count=len(state.buy_timestamps),

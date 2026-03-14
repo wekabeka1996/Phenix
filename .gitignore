@@ -56,11 +56,11 @@ reports/arhive/*
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-
+logs/*
 # Flask stuff:
 instance/
 .webassets-cache
-
+ops/wal/*
 # Scrapy stuff:
 .scrapy
 
@@ -165,10 +165,10 @@ data/raw/
 data/interim/
 data/processed/*.parquet
 data/processed/*.json
-logs/
+#logs/
 *.log
-*.jsonl
-test_logs/
+#*.jsonl
+test_#logs/
 test_results/
 manifests/
 ledger.json

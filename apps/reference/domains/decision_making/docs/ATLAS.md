@@ -20,7 +20,7 @@ graph TD
         RM[risk_management]
         AB[account_balance]
     end
-    
+
     subgraph "Domain: decision_making"
         DM[DecisionMaking Facade]
         AH[AuroraHandler]
@@ -29,7 +29,7 @@ graph TD
         EP[EntryPlan]
         PS[PositionSizing]
     end
-    
+
     subgraph "Outbound"
         EPOS[execution_position]
         TEL[telemetry]
@@ -40,13 +40,13 @@ graph TD
     RD --> DM
     RM --> DM
     AB --> DM
-    
+
     DM --> AH
     AH --> SK
     DM --> SG
     DM --> EP
     DM --> PS
-    
+
     DM -->|EVT:TRADE_INTENT_PROPOSED| EPOS
     DM -->|EVT:STRATEGY_DECISION_BLOCKED| TEL
 ```
@@ -57,8 +57,7 @@ graph TD
   - `aurora_handler.py`: Обробник стратегії Aurora зі станом (warmup, side bias).
   - `aurora_decision.py`: Основна логіка прийняття рішень для Aurora.
 - **Scoring & Logic:**
-  - `aurora_scoring_kernel.py`: Чиста математика розрахунку скорингу та гістерезису.
-  - `quadratic_scoring_kernel.py`: Квадратична модель скорингу.
+  - `quadratic_scoring_kernel.py`: Квадратична модель скорингу (єдиний канонічний скоринг-кернел).
   - `entry_plan.py`: Розрахунок цін Entry, SL, TP та OBI-модуляція.
   - `sizing_margin_first.py`: Логіка розрахунку об'єму на основі маржі.
 - **Safety & Quality:**
@@ -66,7 +65,8 @@ graph TD
   - `qos_rate_control.py`: Контроль частоти ордерів та кулдауни символів.
   - `readiness_gates.py`: Перевірка актуальності даних (TTL) перед торгівлею.
 - **Metadata & Infrastructure:**
-  - `why_codes.py` & `normalized_reject_reasons.py`: Стандартизовані коди помилок та відмов.
+  - `why_codes.py`: Ре-експорт з `vfoundation/core/why_codes.py` (SSOT).
+  - `normalized_reject_reasons.py`: Стандартизовані коди відмов (канонічне джерело NRR).
   - `dm_log_adapter.py`: Структуроване логування рішень (Decision Trace).
 
 ## 4. Карта подій (Event Map)

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import decimal
 
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.aurora_scoring_kernel import ScoringResult
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 
 
 def _make_config():

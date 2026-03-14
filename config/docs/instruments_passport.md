@@ -1,192 +1,329 @@
-# 📄 Semantic Configuration Passport: `config/aurora/instruments.yaml`
+# INSTRUMENTS PASSPORT
+## Aurora / Phenix — canonical instruments SSOT, execution leverage, sizing, and flip orchestration
 
-**Нотація:** `instruments.*.<field>` означає «поле `<field>` для будь-якого символа (ключа) в мапі `instruments:`».
-
----
-
-### `instruments.*.symbol`
-- **Type:** `string`
-- **Logic Owner:** `config_loader` / `config_symbols` (SSOT symbol registry)
-- **Code Reference:** `apps/reference/config_models.py:40` (model: `InstrumentPrecisionSpec`); `apps/reference/config_symbols.py:20` (func: `get_trading_symbols`)
-- **Mathematical Role:**
-    > Не бере участі у формулах напряму. Використовується як ідентифікатор інструмента; фактична “канонічна” множина символів береться з ключів `config.instruments` (`list(instruments.keys())`).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(N/A)* (рядок-ідентифікатор).
-    - 🔽 **Too Low:** *(N/A)*.
-- **Invariant/Constraints:** Має збігатися з ключем мапи (`instruments.<KEY>.symbol == <KEY>`), інакше виникає «дві правди» (ключ використовується як primary у багатьох місцях).
-
----
-
-### `instruments.*.tick_size`
-- **Type:** `string` *(Decimal-encoded)*
-- **Logic Owner:** `execution_position` (price quantization / anti-2021), `exchange_filters` (SSOT↔exchange validation)
-- **Code Reference:** `apps/reference/config_models.py:41` (model: `InstrumentPrecisionSpec`); `apps/reference/domains/execution_position/utils.py:22` (func: `_round_to_tick`); `apps/reference/domains/exchange_filters/validator.py:202` (func: `_parse_exchange_filters`)
-- **Mathematical Role:**
-    > **Квантування ціни до сітки тіку:** `q = floor(price / tick_size)` або `ceil(...)` → `price_q = q * tick_size` (Decimal, без float-rounding).  
-    > Напрямок округлення залежить від контексту:
-    > - StopPrice: BUY → `ceil`, SELL → `floor` (`quantize_stop_price`).
-    > - Anti-2021 guard може “підштовхувати” stop_price на правильний бік і потім квантувати (`validate_anti_2021`).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Груба сітка цін → TP/SL/stopPrice «стрибають» великими кроками, зростає ризик відхилення ордера або поганої якості виконання (гірший entry/exit).
-    - 🔽 **Too Low:** Якщо поставити точність нижчу за біржову (SSOT більш “дозвільна”) → `PRICE_FILTER` reject або fail-fast на старті при валідації фільтрів (критичний mismatch).
-- **Invariant/Constraints:** **Must match exchangeInfo exactly** (tickSize). Не можна “вгадувати”; має бути синхронізовано через `ExchangeFiltersValidator` (fail-closed).
+> AUDIT SUMMARY
+> - Document path: config/docs/instruments_passport.md
+> - Audit date: 2026-03-13
+> - Audit mode: code-driven sync
+> - Total claims checked: 22
+> - Confirmed: 14
+> - Corrected: 6
+> - Removed as stale: 2
+> - Added as missing: 6
+> - Major drifts found:
+>   1. `instruments.<SYM>.symbol` is not the true symbol registry SSOT; runtime primarily trusts the map keys of `config.instruments`.
+>   2. Execution leverage SSOT for bootstrap/runtime is now `instruments.<SYM>.execution.*`; legacy strategy-side leverage values are explicitly ignored when mismatched.
+>   3. `max_notional_utilization` is still validated as part of the live contract, but no active runtime gate consuming it was found.
+>   4. Exchange-filter validation against exchangeInfo is a startup guard gated by `system.validate_instruments_on_startup`, not an unconditional runtime path.
+>   5. Per-symbol `flip.*` is required in the typed contract and fail-closes for active symbols when the global flip killswitch is enabled.
+> - Overall confidence: HIGH
 
 ---
 
-### `instruments.*.step_size`
-- **Type:** `string` *(Decimal-encoded)*
-- **Logic Owner:** `execution_position` (qty normalization), `decision_making` (margin-first sizing), `exchange_filters` (SSOT↔exchange validation)
-- **Code Reference:** `apps/reference/domains/execution_position/qty_normalizer.py:73` (func: `normalize_qty`); `apps/reference/domains/decision_making/sizing_margin_first.py:20` (func: `floor_to_step`); `apps/reference/domains/exchange_filters/validator.py:185` (func: `_parse_exchange_filters`)
-- **Mathematical Role:**
-    > **ROUND_DOWN only (no bump-ups):**  
-    > `steps = floor(raw_qty / step_size)` → `rounded_qty = steps * step_size` (Decimal, `ROUND_DOWN`).  
-    > Це застосовується:
-    > - у DM при розрахунку qty (`floor_to_step`)  
-    > - у EP перед відправкою ордера (`normalize_qty`).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Великий крок лоту → неможливо точно виставляти розмір (over-rounding вниз), більше шансів `rounded_qty` стати 0 або впасти нижче `min_qty`.
-    - 🔽 **Too Low:** Якщо `step_size` менший за біржовий → SSOT стає більш “дозвільним” → ризик `LOT_SIZE` reject; `ExchangeFiltersValidator` класифікує як **CRITICAL** (SSOT < exchange) і звалить старт у live/testnet.
-- **Invariant/Constraints:** `step_size > 0`. **Must match exchangeInfo `LOT_SIZE.stepSize` exactly.**
+## 1. Scope
+
+This passport covers exactly one configuration surface: `config/aurora/instruments.yaml`.
+
+It traces:
+
+1. Canonical loading into `config.instruments`.
+2. Pydantic contract and field constraints.
+3. Symbol registry ownership.
+4. Quantity and price normalization.
+5. Live execution leverage / margin control.
+6. Margin-first sizing.
+7. Per-symbol flip orchestration.
+8. Optional startup validation against exchange filters.
+
+Authoritative sources traced for this passport:
+
+- YAML: config/aurora/instruments.yaml.
+- Pydantic: apps/reference/config_models.py.
+- Loader: apps/reference/config_loader.py.
+- Runtime: apps/reference/config_symbols.py, apps/reference/main.py, apps/reference/domains/execution_position/qty_normalizer.py, apps/reference/domains/execution_position/fsm_open.py, apps/reference/domains/execution_position/fsm.py, apps/reference/domains/execution_position/fsm_manage.py, apps/reference/domains/execution_position/leverage_service.py, apps/reference/domains/execution_position/leverage_config.py, apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py, apps/reference/domains/execution_position/exposure_guard.py, apps/reference/domains/decision_making/sizing_margin_first.py, apps/reference/domains/decision_making/decision_making.py.
+- Startup validation: apps/reference/domains/exchange_filters/validator.py, apps/reference/main.py.
+- Tests: tests/contracts/test_exchange_filters_validation.py, tests/integration/test_startup_filters_wiring.py, tests/domains/execution_position/test_task50_qty_normalizer.py, tests/domains/decision_making/test_sizing_margin_first.py, tests/domains/execution_position/test_exposure_guard_matrix_v1.py.
 
 ---
 
-### `instruments.*.min_qty`
-- **Type:** `string` *(Decimal-encoded)*
-- **Logic Owner:** `execution_position` (fail-closed qty gate), `decision_making` (exchange constraints), `exchange_filters` (SSOT↔exchange validation)
-- **Code Reference:** `apps/reference/domains/execution_position/qty_normalizer.py:73` (Rule 3); `apps/reference/domains/decision_making/sizing_margin_first.py:72` (func: `validate_exchange_constraints`); `apps/reference/domains/exchange_filters/contracts.py:93` (class: `FilterMismatch.severity`)
-- **Mathematical Role:**
-    > **Hard lower bound:** якщо `rounded_qty < min_qty` → reject (fail-closed).  
-    > EP: `NRR-QTY-BELOW-MIN_QTY` (`normalize_qty`).  
-    > DM: `validate_exchange_constraints` повертає `MIN_QTY`.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Система буде занадто консервативна: багато малих позицій стануть неможливими (часті відмови при малому equity або низькому `margin_pct`).
-    - 🔽 **Too Low:** Якщо `min_qty` менший за біржовий → SSOT більш “дозвільний” → біржа відхилятиме ордер; валідатор фільтрів класифікує як **CRITICAL** mismatch і (в нормі) має валити старт.
-- **Invariant/Constraints:** `min_qty > 0`. **Must match exchangeInfo `LOT_SIZE.minQty` exactly.**
+## 2. Loader and namespace wiring
+
+### config/aurora/instruments.yaml
+- Type: canonical instruments SSOT
+- Logic Owner: ConfigLoader + AuroraConfig root contract
+- Runtime Role: provides the root `config.instruments` map used by market-data symbol enumeration, decision-making, execution-position, exposure, and startup validation.
+- Actual Runtime Semantics:
+  - ConfigLoader always loads `instruments.yaml`.
+  - If the file contains a top-level `instruments:` map, that map is attached to `config.instruments`.
+  - Empty or missing instruments config is a startup error.
+- Constraints / Invariants:
+  - `trading.instruments` is explicitly forbidden and raises `ConfigContractError`.
+- Status: ACTIVE
+
+### config.instruments
+- Type: `Dict[str, InstrumentPrecisionSpec]`
+- Logic Owner: AuroraConfig root model
+- Runtime Role: canonical runtime namespace for per-symbol precision, execution, sizing, and flip config.
+- Actual Runtime Semantics:
+  - The map keys are the canonical trading-symbol registry used across runtime.
+  - Current configured keys are:
+    - `SOLUSDT`
+    - `ETHUSDT`
+    - `BTCUSDT`
+    - `DOGEUSDT`
+    - `XRPUSDT`
+    - `BNBUSDT`
+    - `1000PEPEUSDT`
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.min_notional`
-- **Type:** `string` *(Decimal-encoded)*
-- **Logic Owner:** `execution_position` (fail-closed notional gate), `decision_making` (exchange constraints), `exchange_filters` (SSOT↔exchange validation)
-- **Code Reference:** `apps/reference/domains/execution_position/qty_normalizer.py:73` (Rule 4); `apps/reference/domains/decision_making/sizing_margin_first.py:72` (func: `validate_exchange_constraints`); `apps/reference/domains/exchange_filters/validator.py:188` (func: `_parse_exchange_filters`)
-- **Mathematical Role:**
-    > **Special Focus — поведінка при `qty * price < min_notional`:**  
-    > - **EP (перед відправкою ордера):** `notional = rounded_qty * price`; якщо `notional < min_notional` → **reject**, `why=NRR-NOTIONAL-BELOW-MIN` (без “підтягування” qty).  
-    > - **DM (на етапі сайзингу):** якщо `qty*price < min_notional` → `reject_code="MIN_NOTIONAL"`; інтенція не генерується/маркується як відхилена.  
-    > **Ніяких soft-adjust/bump-up політик у базовому контракті немає.**
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Більше відмов на малих рахунках/низькому `margin_pct`; може практично “вимкнути” торгівлю на інструменті, якщо модель часто дає малий notional.
-    - 🔽 **Too Low:** Якщо нижче біржового MIN_NOTIONAL → SSOT стає більш “дозвільний” → біржа відхилятиме; валідатор фільтрів класифікує як **CRITICAL** mismatch (SSOT < exchange) і має fail-fast.
-- **Invariant/Constraints:** `min_notional >= 0`. **Must match exchangeInfo `MIN_NOTIONAL`/`NOTIONAL` exactly. Cannot be guessed.**
+## 3. Symbol registry ownership
+
+### instruments.<SYM>.symbol
+- Type: string metadata field
+- Logic Owner: InstrumentPrecisionSpec
+- Runtime Role: duplicated symbol label inside each per-symbol map entry.
+- Actual Runtime Semantics:
+  - Runtime symbol enumeration uses `list(config.instruments.keys())`.
+  - `config_symbols.get_trading_symbols()` and several startup flows trust map keys, not the nested `symbol` field.
+  - `validate_instruments_on_startup()` checks that `symbol` exists before building SSOTFilters, but the symbol identity passed to validation still comes from the map key.
+- Constraints / Invariants:
+  - No explicit Pydantic validator was found enforcing `instruments.<KEY>.symbol == <KEY>`.
+- Status: METADATA / DUPLICATE
+
+### symbol list ownership
+- Type: runtime registry synthesis
+- Logic Owner: config_loader + config_symbols + main
+- Runtime Role: defines which symbols are seen by symbol-driven subsystems.
+- Actual Runtime Semantics:
+  - `get_trading_symbols()` is fail-closed and returns keys from `config.instruments`.
+  - Main startup and several warmup loops iterate `config.instruments.keys()`.
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.execution.margin_mode`
-- **Type:** `string` *(enum: `isolated` | `cross`)*
-- **Logic Owner:** `execution_position` (leverage/margin sync + pre-open gate)
-- **Code Reference:** `apps/reference/config_models.py:109` (model: `InstrumentExecutionConfig`); `apps/reference/domains/execution_position/leverage_service.py:182` (func: `set_and_verify`); `apps/reference/domains/execution_position/bootstrapping/leverage_bootstrapper.py:172` (func: `sync_symbol`)
-- **Mathematical Role:**
-    > Не формула, а **режим маржі** на біржі. Важливий інваріант інтеграції: режим маржі має бути виставлений **до** виставлення плеча (у `LeverageService.set_and_verify` це зафіксовано порядком викликів).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(N/A)* (категоріальне поле), але неправильний режим може змінити профіль ризику (cross може “розмазувати” ризик по гаманцю).
-    - 🔽 **Too Low:** *(N/A)*.
-- **Invariant/Constraints:** Має відповідати фактичному режиму на біржі; інакше `verify_only` політика відхилятиме відкриття (leverage gate).
+## 4. Precision and exchange constraints
+
+### instruments.<SYM>.tick_size
+- Type: positive Decimal
+- Logic Owner: InstrumentPrecisionSpec + execution_position
+- Runtime Role: price-grid SSOT for stop/TP quantization.
+- Actual Runtime Semantics:
+  - Used in execution-position stop-price quantization paths.
+  - BUY stop prices are rounded upward and SELL stop prices downward by the quantizer path referenced from execution-position.
+  - Missing symbol config in the relevant execution path causes fail-closed behavior.
+- Constraints / Invariants:
+  - Pydantic requires `tick_size > 0`.
+  - Exchange filter validation can detect drift versus exchange reality at startup.
+- Status: ACTIVE
+
+### instruments.<SYM>.step_size
+- Type: positive Decimal
+- Logic Owner: InstrumentPrecisionSpec + qty_normalizer + sizing_margin_first
+- Runtime Role: quantity-grid SSOT.
+- Actual Runtime Semantics:
+  - `floor_to_step()` uses strict ROUND_DOWN.
+  - `normalize_qty()` uses strict ROUND_DOWN and never silently bumps quantity upward.
+- Constraints / Invariants:
+  - Pydantic requires `step_size > 0`.
+  - If SSOT is more permissive than exchange reality, startup filter validation can fail closed when enabled.
+- Status: ACTIVE
+
+### instruments.<SYM>.min_qty
+- Type: positive Decimal
+- Logic Owner: InstrumentPrecisionSpec + qty_normalizer + sizing_margin_first
+- Runtime Role: hard lower bound for allowed order quantity.
+- Actual Runtime Semantics:
+  - `normalize_qty()` rejects with `NRR-QTY-BELOW-MIN_QTY` if rounded quantity is below `min_qty`.
+  - `validate_exchange_constraints()` returns `MIN_QTY` on the decision-making side.
+- Status: ACTIVE
+
+### instruments.<SYM>.min_notional
+- Type: positive Decimal
+- Logic Owner: InstrumentPrecisionSpec + qty_normalizer + sizing_margin_first
+- Runtime Role: hard lower bound for order notional.
+- Actual Runtime Semantics:
+  - `normalize_qty()` rejects with `NRR-NOTIONAL-BELOW-MIN` when `qty * price < min_notional`.
+  - `validate_exchange_constraints()` returns `MIN_NOTIONAL` in decision-making.
+  - No silent bump-up policy exists in the traced normalization contract.
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.execution.target_leverage`
-- **Type:** `int`
-- **Logic Owner:** `decision_making` (margin-first sizing), `execution_position` (leverage bootstrap/gate), `exposure_guard` (margin-based utilization)
-- **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:2530` (func: `_calculate_position_size`); `apps/reference/domains/execution_position/fsm.py:585` (func: `_collect_leverage_configs`); `apps/reference/domains/execution_position/exposure_guard.py:365` (func: `resolve_symbol_leverage`)
-- **Mathematical Role:**
-    > **Margin-first sizing (SSOT):**  
-    > `safe_equity = equity * (1 - fee_buffer)` → `margin_usdt = safe_equity * margin_pct` → `notional_target = margin_usdt * target_leverage`.  
-    > Далі `qty = floor_to_step(notional_target / price, step_size)` (ROUND_DOWN).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Різко зростає notional при тому ж `margin_pct` → ризик перевищити leverage bracket / отримати `-2027` (max leverage exceeded), або впертися в портфельні ліміти/експозицію; також підвищує чутливість до помилок при неправильній маржі.
-    - 🔽 **Too Low:** Позиції стають дрібніші (частіше нижче `min_notional`), стратегія може “перестати торгувати”; менший ризик, але нижча ефективність капіталу.
-- **Invariant/Constraints:** `1 <= target_leverage <= 125` (Pydantic). **Має відповідати leverage bracket / правилам біржі для цього символа**; інакше bootstrap або set може впасти.
+## 5. Startup exchange filter validation
+
+### system.validate_instruments_on_startup + validate_instruments_on_startup()
+- Type: optional startup guard
+- Logic Owner: main + exchange_filters validator
+- Runtime Role: validates SSOT instrument constraints against exchangeInfo before runtime fully starts.
+- Actual Runtime Semantics:
+  - Main executes this guard only when `config.system.validate_instruments_on_startup` is true.
+  - The validator compares SSOT step/min filters against exchange filters.
+  - In live/production, `warn_only_filters=true` is ignored and fail-closed behavior is enforced.
+  - On mismatch, `FilterMismatchError` leads to `SystemExit(1)` in startup wiring tests.
+- Constraints / Invariants:
+  - This is a startup guard, not a per-order runtime consumer.
+- Status: ACTIVE / CONDITIONAL
 
 ---
 
-### `instruments.*.execution.leverage_policy`
-- **Type:** `string` *(enum: `verify_only` | `set_and_verify`)*
-- **Logic Owner:** `execution_position` (pre-open leverage gate)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm_open.py:526` (func: `handle_async`); `apps/reference/domains/execution_position/leverage_service.py:97` (func: `verify`); `apps/reference/domains/execution_position/leverage_service.py:182` (func: `set_and_verify`)
-- **Mathematical Role:**
-    > Це **політика синхронізації стану біржі**, не числова формула:  
-    > - `verify_only`: лише перевірити `actual == expected`, інакше reject.  
-    > - `set_and_verify`: спробувати виставити margin_mode + leverage, потім перевірити (з idempotency window).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(set_and_verify всюди)* Більше API-викликів (rate/latency), але вища гарантія консистентності; у випадку помилок біржі частіше буде fail-closed reject перед відкриттям.
-    - 🔽 **Too Low:** *(verify_only всюди)* Менше API-викликів, але будь-який дрейф плеча/маржі (ручна зміна, рестарт без bootstrap) призведе до reject і “мовчазної” зупинки торгів по символу.
-- **Invariant/Constraints:** Має бути узгоджено з тим, чи реально у проді проводиться leverage bootstrap і чи wired `leverage_service` (без сервісу політика стає фактично неактивною).
+## 6. Execution leverage contract
+
+### instruments.<SYM>.execution.margin_mode
+- Type: enum `isolated | cross`
+- Logic Owner: InstrumentExecutionConfig + LeverageService + LeverageBootstrapper
+- Runtime Role: expected exchange margin mode for the symbol.
+- Actual Runtime Semantics:
+  - `fsm_open.handle_async()` reads it before `CMD:OPEN` when leverage verification is enabled.
+  - `LeverageService.set_and_verify()` sets margin mode before leverage.
+  - Leverage bootstrap also syncs margin mode first.
+- Status: ACTIVE
+
+### instruments.<SYM>.execution.target_leverage
+- Type: int `1..125`
+- Logic Owner: InstrumentExecutionConfig + ExposureGuard + LeverageService + LeverageConfigManager
+- Runtime Role: canonical leverage SSOT for execution and exposure.
+- Actual Runtime Semantics:
+  - Read directly by the leverage gate before `DEC:OPEN`.
+  - Used by `ExposureGuard.resolve_symbol_leverage()` with no silent fallback.
+  - Used by leverage bootstrap collection from `instruments.yaml`.
+  - Tests confirm leverage resolution from instruments SSOT and clamp-to-one safety behavior in ExposureGuard.
+- Constraints / Invariants:
+  - Pydantic enforces `1 <= target_leverage <= 125`.
+- Status: ACTIVE
+
+### instruments.<SYM>.execution.leverage_policy
+- Type: enum `verify_only | set_and_verify`
+- Logic Owner: InstrumentExecutionConfig + fsm_open
+- Runtime Role: selects whether pre-open leverage handling only verifies exchange state or actively sets it.
+- Actual Runtime Semantics:
+  - `verify_only` calls `LeverageService.verify()`.
+  - `set_and_verify` calls `LeverageService.set_and_verify()`.
+  - Failed verification or set leads to leverage-gate rejection before order emission.
+- Status: ACTIVE
+
+### instruments.<SYM>.execution.max_notional_utilization
+- Type: float `0.0..1.0`
+- Logic Owner: InstrumentExecutionConfig + ConfigLoader live validation
+- Runtime Role: live contract field with no confirmed downstream runtime consumer in traced code.
+- Actual Runtime Semantics:
+  - Required by `_validate_execution_config_for_live()` for active symbols.
+  - No concrete execution-position, exposure, or decision-making gate was found reading it after startup validation.
+- Status: DECLARED BUT NOT USED
+
+### leverage SSOT precedence
+- Type: runtime authority rule
+- Logic Owner: LeverageConfigManager
+- Runtime Role: resolves conflict between legacy strategy-side leverage and instruments execution leverage.
+- Actual Runtime Semantics:
+  - Leverage bootstrap now collects values from `instruments.<SYM>.execution.target_leverage`.
+  - `validate_ssot_consistency()` logs warnings when strategy-level leverage in Aurora or Mean Reversion assets disagrees with instruments SSOT.
+  - Mismatching strategy-side leverage is explicitly treated as ignored legacy/stale data.
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.execution.max_notional_utilization`
-- **Type:** `float`
-- **Logic Owner:** `config_loader` (LIVE contract), *(планований consumer: capacity gate)*
-- **Code Reference:** `apps/reference/config_models.py:119` (model: `InstrumentExecutionConfig`); `apps/reference/config_loader.py:715` (func: `_validate_execution_config_for_live`)
-- **Mathematical Role:**
-    > Наразі у runtime-коді **немає прямого використання** цього поля у формулах/гейтах (окрім fail-closed валідації на старті). Семантика поля за описом моделі: “частка доступної ємності” для L1 capacity gate.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(якщо буде підключено у capacity gate)* дозволить більшу утилізацію notional-ємності → більший ризик концентрації/перевищення.
-    - 🔽 **Too Low:** *(якщо буде підключено)* більше блоків через “capacity exceeded”.
-- **Invariant/Constraints:** `0.0 <= value <= 1.0`. Якщо ваша архітектурна норма — fail-closed capacity, це поле має бути реально підключене до гейта (інакше воно “мертве”).
+## 7. Margin-first sizing
+
+### instruments.<SYM>.sizing.margin_pct
+- Type: float `(0, 1]`
+- Logic Owner: InstrumentSizingConfig + sizing_margin_first + ConfigLoader live validation
+- Runtime Role: per-symbol isolated margin budget.
+- Actual Runtime Semantics:
+  - `compute_notional_target()` calculates:
+
+    `safe_equity = equity * (1 - fee_buffer)`
+
+    `margin_usdt = safe_equity * margin_pct`
+
+    `notional_target = margin_usdt * leverage`
+
+  - `compute_qty()` then floors quantity to `step_size`.
+  - Live validation requires this field for active symbols.
+- Constraints / Invariants:
+  - Pydantic enforces `0 < margin_pct <= 1`.
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.sizing.margin_pct`
-- **Type:** `float`
-- **Logic Owner:** `decision_making` (margin-first sizing), `config_loader` (LIVE sizing contract)
-- **Code Reference:** `apps/reference/domains/decision_making/sizing_margin_first.py:28` (func: `compute_notional_target`); `apps/reference/domains/decision_making/decision_making.py:2530` (func: `_calculate_position_size`); `apps/reference/config_loader.py:764` (func: `_validate_sizing_config_for_live`)
-- **Mathematical Role:**
-    > **Per-symbol isolated margin budget:**  
-    > `safe_equity = equity * (1 - fee_buffer)` (default fee_buffer=0.001)  
-    > `margin_usdt = safe_equity * margin_pct`  
-    > `notional_target = margin_usdt * leverage`  
-    > `qty = floor_to_step(notional_target / price, step_size)`.
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Більше маржі на символ → більші позиції/ризик, сильніші просадки; при `~1.0` ви майже “all-in” на символ (хоча fee_buffer трохи зменшує safe_equity).
-    - 🔽 **Too Low:** Система може систематично не проходити `min_notional` → часті reject-и і фактична “тишина” на символі.
-- **Invariant/Constraints:** `0.0 < margin_pct <= 1.0` (Pydantic + live validation). Має узгоджуватися з портфельними exposure-гейтами.
+## 8. Flip orchestration
+
+### instruments.<SYM>.flip.enabled
+- Type: required bool
+- Logic Owner: FlipOrchestrationConfig + DecisionMaking
+- Runtime Role: per-symbol enable switch for close-first flip orchestration.
+- Actual Runtime Semantics:
+  - If the global flip killswitch is disabled in domains config, DecisionMaking returns `(False, 1.0)` and per-symbol flip config is bypassed.
+  - If global flip is enabled, missing symbol config or missing `flip` block is fail-closed.
+  - When present, `flip.enabled` governs whether flip orchestration is active for that symbol.
+- Status: ACTIVE
+
+### instruments.<SYM>.flip.hysteresis_mult
+- Type: required float `>= 1.0`
+- Logic Owner: FlipOrchestrationConfig + DecisionMaking
+- Runtime Role: requires a stronger opposite signal before reduce-only close during flip.
+- Actual Runtime Semantics:
+  - DecisionMaking clamps the runtime value with `max(1.0, float(...))`.
+  - The hysteresis value is part of the per-symbol flip contract and is required whenever the symbol exists in `config.instruments`.
+- Constraints / Invariants:
+  - Pydantic enforces `hysteresis_mult >= 1.0`.
+- Status: ACTIVE
 
 ---
 
-### `instruments.*.flip.enabled`
-- **Type:** `bool`
-- **Logic Owner:** `decision_making` (flip orchestration; close-on-reversal)
-- **Code Reference:** `apps/reference/config_models.py:1106` (model: `FlipOrchestrationConfig`); `apps/reference/domains/decision_making/decision_making.py:1900` (func: `_get_flip_config`); `apps/reference/domains/decision_making/decision_making.py:4014` (func: `_handle_flip_orchestration`)
-- **Mathematical Role:**
-    > Вмикає/вимикає flip-оркестрацію на символі (за умови, що глобальний killswitch теж увімкнений).  
-    > Якщо `false` і є позиція протилежна новому intent — OPEN може бути дозволений без “close-first” сценарію (оркестрація вимкнена).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(true всюди)* Більше “close → defer open” сценаріїв → менше різких flip-входів, але більше latency/складність у швидких реверсах.
-    - 🔽 **Too Low:** *(false)* Менше контролю flip-поведінки; можливі агресивні реверси (залежить від біржі/неттингу).
-- **Invariant/Constraints:** Якщо глобальний flip killswitch вимкнений, per-symbol `flip.enabled` ігнорується (поведінка визначається глобально).
+## 9. Current configured snapshot
+
+Current instrument keys and notable execution parameters in `instruments.yaml`:
+
+- `SOLUSDT`: integer lot sizing, leverage `20`, margin mode `isolated`, `margin_pct=0.11`
+- `ETHUSDT`: leverage `41`, margin mode `isolated`, `margin_pct=0.11`
+- `BTCUSDT`: leverage `25`, margin mode `isolated`, `margin_pct=0.10`, `tick_size=0.1`, `min_notional=100`
+- `DOGEUSDT`: leverage `20`, margin mode `isolated`, integer lot sizing
+- `XRPUSDT`: leverage `20`, margin mode `isolated`, `step_size=0.1`
+- `BNBUSDT`: leverage `20`, margin mode `isolated`
+- `1000PEPEUSDT`: leverage `20`, margin mode `isolated`, very fine `tick_size=0.0000001`
 
 ---
 
-### `instruments.*.flip.hysteresis_mult`
-- **Type:** `float`
-- **Logic Owner:** `decision_making` (flip hysteresis gate)
-- **Code Reference:** `apps/reference/config_models.py:1110` (model: `FlipOrchestrationConfig`); `apps/reference/domains/decision_making/decision_making.py:4078` (func: `_handle_flip_orchestration`)
-- **Mathematical Role:**
-    > **Optional hysteresis** перед flip-close: потрібен сильніший протилежний сигнал.  
-    > Якщо intent = BUY: `required = thr_buy * hysteresis_mult`; блок, якщо `score < required`.  
-    > Якщо intent = SELL: `required = thr_sell * hysteresis_mult`; блок, якщо `score > -required`.  
-    > Якщо немає `score/thr_buy/thr_sell` у payload — гістерезис не застосовується (не можна безпечно рахувати).
-- **Tuning Sensitivity:**
-    - 🔼 **Too High:** Важче ініціювати flip-close → позиції довше “терплять” розвороти, менше churn, але ризик запізнілого виходу при реальному реверсі.
-    - 🔽 **Too Low:** Ближче до `1.0` → майже без гістерезису, частіші flip-дії/закриття при маржинальних протилежних сигналах.
-- **Invariant/Constraints:** `hysteresis_mult >= 1.0` (Pydantic). Значення `< 1.0` заборонене як небезпечне (робить flip надто “нервовим”).
+## 10. Legacy and drift ledger
+
+### instruments.<SYM>.symbol as canonical identity
+- Type: stale assumption
+- Actual Runtime Semantics:
+  - Canonical symbol identity comes from the map key, not the nested `symbol` field.
+- Status: LEGACY
+
+### strategy-side leverage as runtime SSOT
+- Type: stale assumption
+- Actual Runtime Semantics:
+  - Strategy leverage can still exist in strategy configs, but execution bootstrap now treats instruments execution leverage as the authority.
+- Status: LEGACY
+
+### max_notional_utilization
+- Type: typed live-contract field
+- Actual Runtime Semantics:
+  - Enforced at startup validation only; no active runtime consumer found.
+- Status: DECLARED BUT NOT USED
+
+### exchange filter matching as unconditional runtime rule
+- Type: corrected assumption
+- Actual Runtime Semantics:
+  - Validation is conditional on `system.validate_instruments_on_startup`.
+  - When enabled in live/prod, mismatches are fail-closed.
+- Status: PARTIAL
 
 ---
 
-## Додаткові зауваження (корисні для аудитів)
+## 11. Final verdict
 
-- **SSOT loading & deprecations:** `config/aurora/instruments.yaml` витягується в `merged_config["instruments"]`; `trading.instruments` заборонений і дає `ConfigContractError` (`apps/reference/config_loader.py:314`).
-- **Fail-closed на відсутній symbol:** якщо `instruments.<SYMBOL>` немає — `execution_position` відхиляє ордер (`NRR-INSTRUMENT-CONFIG-MISSING`) (`apps/reference/domains/execution_position/fsm.py:2494`).
-- **`attributes.is_stable` / `allow_trading`:** у поточному `config/aurora/instruments.yaml` таких полів немає; runtime consumers теж не знайдено — додавання потребує явного контракту в `InstrumentPrecisionSpec` і гейтів у доменах.
+`config/aurora/instruments.yaml` is no longer just a precision sheet. In the current Aurora/Phenix runtime it is a multi-purpose SSOT for:
 
+1. the canonical symbol registry via `config.instruments` keys,
+2. exchange-facing quantity and price constraints,
+3. pre-open leverage and margin-mode enforcement,
+4. margin-first sizing inputs,
+5. per-symbol flip orchestration,
+6. optional startup exchange-filter validation.
+
+The main corrections in this passport are about authority boundaries: map keys, not `symbol`, drive symbol identity; instruments execution leverage, not strategy-side leverage, drives current bootstrap/runtime authority; and `max_notional_utilization` remains typed contract surface without a confirmed downstream runtime gate.

@@ -9,7 +9,7 @@ import pytest
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     QuadraticScoringKernel,
 )
-from apps.reference.domains.decision_making.aurora_scoring_kernel import (
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     ScoringResult,
     SideBiasState,
 )
@@ -88,3 +88,11 @@ class TestExplainability:
         assert "s_linear" in psi
         assert "final_exposure" in psi
         assert psi["final_exposure"] == pytest.approx(0.36, abs=1e-6)
+        assert psi["raw_exposure"] == pytest.approx(0.36, abs=1e-6)
+        assert psi["final_score"] == pytest.approx(0.36, abs=1e-6)
+        assert psi["threshold_factor"] == pytest.approx(1.0, abs=1e-6)
+        assert psi["thr_buy"] == pytest.approx(0.1, abs=1e-6)
+        assert psi["thr_sell"] == pytest.approx(0.1, abs=1e-6)
+        assert psi["buy_bias_mult"] == pytest.approx(1.0, abs=1e-6)
+        assert psi["sell_bias_mult"] == pytest.approx(1.0, abs=1e-6)
+        assert "side_why" in psi

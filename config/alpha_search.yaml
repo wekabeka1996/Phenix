@@ -41,7 +41,7 @@ alpha_search:
       fail_closed: true
 
       adapter:
-        scoring_version: "v2"
+        scoring_version: "quadratic"  # Phase 9: Quadratic only. v2 deleted.
         essential_features:
           - obi
           - delta_price

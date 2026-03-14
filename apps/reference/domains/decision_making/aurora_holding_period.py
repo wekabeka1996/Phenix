@@ -16,7 +16,7 @@ import decimal
 import logging
 from typing import Any, Dict, Optional
 
-from apps.reference.domains.decision_making.aurora_scoring_kernel import ScoringResult
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 from apps.reference.domains.decision_making.dashboard import TradeOutcome
 
 logger = logging.getLogger("aurora_handler")

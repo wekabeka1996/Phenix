@@ -33,9 +33,10 @@ registry:
 - op: DEC
   verb: CANCEL
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: DEC
   verb: CANCEL_ORDER
   owner: execution_position
@@ -80,14 +81,14 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: ANCHOR_UPDATED
-  owner: decision_making
+  owner: market_data
   status: active
   schema: schemas/anchor_updated_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: BALANCE_UPDATE_RECEIVED
-  owner: unknown
-  status: experimental
+  owner: account_balance
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT
@@ -104,7 +105,7 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: CONFIG_DEBUG_OVERRIDE_ACTIVE
-  owner: unknown
+  owner: risk_management
   status: experimental
   schema: null
   since: '2026-01-08'
@@ -123,15 +124,53 @@ registry:
 - op: EVT
   verb: EXPIRED
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: EXPOSURE_SUMMARY_UPDATED
-  owner: risk_management
+  owner: execution_position
   status: active
   schema: apps/reference/domains/execution_position/schemas/exposure_summary_updated_v1.json
   since: '2026-01-08'
+  note: "ownership moved from risk_management to execution_position (2026-03-14) — EP is sole emitter + schema owner"
+- op: EVT
+  verb: EXECUTION_CLOSE_RECONCILED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/execution_close_reconciled_v1.json
+  since: '2026-03-13'
+- op: EVT
+  verb: EXECUTION_DIVERGENCE_DETECTED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/execution_divergence_detected_v1.json
+  since: '2026-03-13'
+- op: EVT
+  verb: EXECUTION_GUARD_BLOCKED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/execution_guard_blocked_v1.json
+  since: '2026-03-13'
+- op: EVT
+  verb: EXECUTION_TIDY_PERFORMED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/execution_tidy_performed_v1.json
+  since: '2026-03-13'
+- op: EVT
+  verb: EXIT_MATCH_ATTEMPTED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/exit_match_attempted_v1.json
+  since: '2026-03-13'
+- op: EVT
+  verb: EXIT_MATCH_FAILED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/exit_match_failed_v1.json
+  since: '2026-03-13'
 - op: EVT
   verb: FEATURES_CALCULATED
   owner: feature_engineering
@@ -141,9 +180,10 @@ registry:
 - op: EVT
   verb: FILL
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: FUNDING_UPDATE
   owner: feature_engineering
@@ -158,16 +198,17 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: INTENT_DROPPED
-  owner: unknown
-  status: experimental
+  owner: vfoundation
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT
   verb: MARKET_TICK_FORWARDED
   owner: market_data
-  status: active
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: MARKET_TICK_RECEIVED
   owner: market_data
@@ -177,9 +218,10 @@ registry:
 - op: EVT
   verb: MR_SIGNAL_PRODUCED
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: NEOCORTEX_ALERT
   owner: neocortex
@@ -195,9 +237,10 @@ registry:
 - op: EVT
   verb: NEOCORTEX_STATE_UPDATED
   owner: neocortex
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-12'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: OI_UPDATE
   owner: feature_engineering
@@ -207,21 +250,23 @@ registry:
 - op: EVT
   verb: ORCHESTRATOR_ERROR
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: ORDER_ACK
   owner: execution_position
   status: experimental
-  schema: schemas/order_ack_v1.json
+  schema: apps/reference/schemas/order_ack_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_EXECUTED
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: ORDER_FILL
   owner: execution_position
@@ -236,28 +281,29 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_REJECTED
-  owner: unknown
-  status: experimental
+  owner: execution_position
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_STATE_CHANGED
-  owner: unknown
-  status: experimental
+  owner: execution_position
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_TIMEOUT
-  owner: unknown
-  status: experimental
+  owner: execution_position
+  status: active
   schema: null
   since: '2026-01-08'
 - op: EVT
   verb: PARTIAL_FILL
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: PORTFOLIO_STATE_UPDATED
   owner: position_tracking
@@ -270,12 +316,6 @@ registry:
   status: active
   schema: apps/reference/domains/feature_engineering/schemas/process_strategy_blocked_v1.json
   since: '2026-02-26'
-- op: EVT
-  verb: PROCESS_STRATEGY_BLOCKED
-  owner: feature_engineering
-  status: active
-  schema: null
-  since: '2026-02-19'
 - op: EVT
   verb: POSITION_CLOSED
   owner: unknown
@@ -291,9 +331,10 @@ registry:
 - op: EVT
   verb: REJECTED
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: RISK_ASSESSMENT_COMPLETED
   owner: risk_management
@@ -314,22 +355,25 @@ registry:
   since: '2026-01-08'
 - op: EVT
   verb: SYMBOL_TIDY
-  owner: market_data
+  owner: execution_position
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/symbol_tidy_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: TICK_RECEIVED
   owner: decision_making
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: EVT
   verb: TRADE_EXECUTED
   owner: position_tracking
+  co_emitters: [adapters, execution_position]
   status: active
   schema: apps/reference/domains/position_tracking/schemas/trade_executed_v1.json
   since: '2026-01-08'
+  note: "adapter (binance_ws_client) is primary emitter; EP watchdog is REST polling fallback emitter; PT owns schema + is authoritative consumer"
 - op: EVT
   verb: TRADE_INTENT_PROPOSED
   owner: decision_making
@@ -339,15 +383,18 @@ registry:
 - op: EVT
   verb: TRADE_INTENT_REJECTED
   owner: decision_making
+  co_emitters: [execution_position]
   status: experimental
   schema: schemas/trade_intent_rejected_v1.json
   since: '2026-01-08'
+  note: "DM rejects at strategy level; EP co-emits when intent fails at execution boundary (exposure guard, leverage)"
 - op: EVT
   verb: VERB
   owner: unknown
-  status: experimental
+  status: deprecated
   schema: null
   since: '2026-01-08'
+  deprecated_since: '2026-03-14'
 - op: UPD
   verb: TICK
   owner: execution_position
@@ -378,6 +425,127 @@ registry:
   status: active
   schema: schemas/system_stress_state_updated_v1.json
   since: '2026-03-02'
+# --- Contract audit 2026-03-14: registry gap additions (code-evidence-based) ---
+- op: EVT
+  verb: OBJECTIVE_REALIZED_V1
+  owner: objective_engine
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: QUADRATIC_KERNEL_CRASH
+  owner: decision_making
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: FEATURE_DEFER_EXPIRED
+  owner: decision_making
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: LIMIT_ORDER_TIMEOUT
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: FALLBACK_MODE_ENTERED
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: FALLBACK_MODE_EXITED
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: EXPOSURE_MISMATCH
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: PENDING_EXPOSURE_EXPIRED
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: MANAGE_SKIPPED
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: PENDING_BRACKETS_STORED
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: PENDING_BRACKETS_CLEARED
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: LLM_INTENT_RECEIVED_V1
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: LLM_INTENT_ACCEPTED_V1
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: LLM_INTENT_REJECTED_V1
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: CMD
+  verb: LLM_INTENT_SUBMIT_V1
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: NEOCORTEX_REGIME_PREDICTION
+  owner: neocortex
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: EVT
+  verb: NEOCORTEX_SHADOW_INTENT_PROPOSED
+  owner: neocortex
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: DEC
+  verb: BATCH
+  owner: execution_position
+  status: experimental
+  schema: null
+  since: '2026-03-14'
+- op: ERR
+  verb: EXECUTION_FAILED
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
+- op: ERR
+  verb: FATAL_CONFIG_MISMATCH
+  owner: execution_position
+  status: active
+  schema: null
+  since: '2026-03-14'
 policies:
   wildcard:
     UPD: true

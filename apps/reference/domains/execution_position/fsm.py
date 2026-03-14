@@ -322,6 +322,13 @@ class ExecPosFSM(
         self._last_trade_id_by_symbol: Dict[str, str] = {}
         self._last_entry_side_by_symbol: Dict[str, str] = {}
 
+        # PHASE 3: Accumulated commission fees for current lifecycle per symbol.
+        # Updated on every fill (ENTRY, SL, TP, CLOSE). Reset after POSITION_CLOSED write.
+        # Emitted as 'fees' in POSITION_CLOSED; combined with realized_pnl to produce
+        # 'realized_pnl_net'. Both non-None fields enable reward_complete=True in neocortex.
+        # Safety: Same per-symbol overwrite profile as other caches above.
+        self._accumulated_fees_by_symbol: Dict[str, float] = {}
+
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # PHASE4: Rehydrate pending brackets from WAL on startup
         # SKIP IN BACKTEST: Do not restore live state into backtest
@@ -1448,7 +1455,15 @@ class ExecPosFSM(
                     is_live_execution=self.is_live_execution,
                 )
                 self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
+                if hasattr(self.manage_flows[symbol], "set_observability_hook"):
+                    self.manage_flows[symbol].set_observability_hook(
+                        self._emit_execution_bus_event,
+                    )
                 self.close_flows[symbol] = CloseFlowFSM()
+            elif hasattr(self.manage_flows[symbol], "set_observability_hook"):
+                self.manage_flows[symbol].set_observability_hook(
+                    self._emit_execution_bus_event,
+                )
 
             return (
                 self.open_flows[symbol],
@@ -1509,31 +1524,24 @@ class ExecPosFSM(
                     },
                 )
 
+            local_guard_err = self._local_open_guard(msg, manage_flow)
+            if local_guard_err is not None:
+                self._cancel_entry_reservation(str(msg.rid))
+                return local_guard_err
+
             # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
             exposure_err = self._check_exposure_fail_closed(msg)
             if exposure_err is not None:
                 # TASK49/TASK40: If DecisionMaking reserved ENTRY_INTENT in OrderIndex,
                 # ensure we clear it when OPEN is blocked fail-closed (no order will be placed).
-                try:
-                    # type: ignore[attr-defined]
-                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:
-                        self.fsm.order_index.cancel_reservation(
-                            str(msg.rid))  # type: ignore[attr-defined]
-                except Exception:
-                    pass
+                self._cancel_entry_reservation(str(msg.rid))
                 return exposure_err
             result = open_flow.handle(msg)
 
             # If guards rejected CMD:OPEN, clear ENTRY_INTENT reservation so DM doesn't get stuck
             # deferring with NRR-ORDER-IN-FLIGHT.
             if result is not None and getattr(result, "op", None) == "ERR":
-                try:
-                    # type: ignore[attr-defined]
-                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:
-                        self.fsm.order_index.cancel_reservation(
-                            str(msg.rid))  # type: ignore[attr-defined]
-                except Exception:
-                    pass
+                self._cancel_entry_reservation(str(msg.rid))
 
             # PHASE A2 FIX: Capture TP/SL intent data if present
             if result and result.op == "DEC" and result.verb == "OPEN":
@@ -1775,6 +1783,135 @@ class ExecPosFSM(
         _, _, close_f = self._get_or_create_flows(symbol)
         return close_f
 
+    def _cancel_entry_reservation(self, rid: str) -> None:
+        """Clear OrderIndex reservation when an OPEN path is blocked fail-closed."""
+        try:
+            # type: ignore[attr-defined]
+            if hasattr(self.fsm, "order_index") and self.fsm.order_index:
+                self.fsm.order_index.cancel_reservation(str(rid))  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def _get_portfolio_state_for_symbol(self, symbol: str) -> str:
+        """Best-effort portfolio snapshot for split-brain guard telemetry."""
+        portfolio = self._latest_portfolio_state or {}
+        if not portfolio:
+            return "UNKNOWN"
+
+        positions = portfolio.get("positions")
+        if not isinstance(positions, list):
+            return "UNKNOWN"
+
+        for pos in positions:
+            if not isinstance(pos, dict):
+                continue
+            if str(pos.get("symbol") or "").upper() != symbol.upper():
+                continue
+            qty_raw = pos.get("positionAmt", "0")
+            try:
+                qty = Decimal(str(qty_raw))
+            except Exception:
+                return "UNKNOWN"
+            if abs(qty) <= Decimal("1e-9"):
+                return "FLAT"
+            return "LONG" if qty > 0 else "SHORT"
+
+        return "FLAT"
+
+    def _emit_execution_bus_event(self, topic: str, payload: Dict[str, Any]) -> None:
+        why = str(payload.get("why") or "execution:observability")
+        event_payload = dict(payload)
+        event_payload.setdefault("ts_ms", int(get_clock().now_sec() * 1000))
+        event_payload.setdefault("why", why)
+        try:
+            self.bus.emit(
+                topic,
+                event_payload,
+                why=why,
+            )
+        except Exception:
+            pass
+        try:
+            self._emit_observability_event(
+                topic.replace("EVT:", ""),
+                event_payload,
+            )
+        except Exception:
+            pass
+
+    def _local_open_guard(self, msg: Message, manage_flow: ManageFlowFSM) -> Optional[Message]:
+        """Fail closed when local execution state still owns an unresolved lifecycle."""
+        has_active_lifecycle = (
+            manage_flow.has_active_lifecycle()
+            if hasattr(manage_flow, "has_active_lifecycle")
+            else str(getattr(getattr(manage_flow, "state", None), "value", manage_flow.state)) != "FLAT"
+        )
+        if not has_active_lifecycle:
+            return None
+
+        symbol = (msg.pld or {}).get("symbol", "")
+        local_state = str(getattr(getattr(manage_flow, "state", None), "value", "UNKNOWN"))
+        portfolio_state = self._get_portfolio_state_for_symbol(symbol)
+        divergence_detected = portfolio_state == "FLAT" and local_state != "FLAT"
+        tracked_rid = self._last_lifecycle_rid_by_symbol.get(symbol)
+        lifecycle_id = self._last_lifecycle_ikey_by_symbol.get(symbol)
+        why = "execution:local_manage_state_conflict"
+        payload = {
+            "ts_ms": int(get_clock().now_sec() * 1000),
+            "symbol": symbol,
+            "rid": msg.rid,
+            "lifecycle_id": lifecycle_id,
+            "tracked_rid": tracked_rid,
+            "block_reason": "local_manage_state_conflict",
+            "reason": "local_manage_state_conflict",
+            "current_local_state": local_state,
+            "local_manage_state": local_state,
+            "portfolio_truth_state": portfolio_state,
+            "portfolio_state": portfolio_state,
+            "divergence_detected": divergence_detected,
+            "has_active_lifecycle": has_active_lifecycle,
+            "closing_position": bool(getattr(manage_flow, "_closing_position", False)),
+            "position_qty": (
+                str(getattr(manage_flow, "position_qty", None))
+                if getattr(manage_flow, "position_qty", None) is not None
+                else None
+            ),
+            "entry_order_id": getattr(manage_flow, "entry_order_id", None),
+            "entry_client_order_id": getattr(manage_flow, "entry_client_order_id", None),
+            "sl_order_id": getattr(manage_flow, "sl_order_id", None),
+            "tp_order_id": getattr(manage_flow, "tp_order_id", None),
+            "tp1_order_id": getattr(manage_flow, "tp1_order_id", None),
+            "tp2_order_id": getattr(manage_flow, "tp2_order_id", None),
+            "why": why,
+        }
+
+        self._emit_execution_bus_event("EVT:EXECUTION_GUARD_BLOCKED", payload)
+        if divergence_detected:
+            self._emit_execution_bus_event(
+                "EVT:EXECUTION_DIVERGENCE_DETECTED",
+                {
+                    "ts_ms": payload["ts_ms"],
+                    "symbol": symbol,
+                    "current_rid": msg.rid,
+                    "tracked_rid": tracked_rid,
+                    "lifecycle_id": lifecycle_id,
+                    "local_manage_state": local_state,
+                    "portfolio_state": portfolio_state,
+                    "divergence_type": "portfolio_flat_vs_local_nonflat",
+                    "why": "execution:divergence_detected",
+                },
+            )
+
+        return Message(
+            op="ERR",
+            verb="OPEN",
+            src=msg.dst,
+            dst=msg.src,
+            rid=msg.rid,
+            why="OPEN_GUARD_FAIL",
+            pld=payload,
+        )
+
     def _check_exposure_fail_closed(self, msg: Message) -> Optional[Message]:
         """Phase 14A: Delegated to ExposureManager."""
         return self._exposure_mgr.check_exposure_fail_closed(msg)
@@ -1816,7 +1953,14 @@ class ExecPosFSM(
         event = {
             "timestamp_utc": datetime.utcnow().isoformat(),
             "event_type": event_type,
-            "rid": self.current_decision.rid if hasattr(self, 'current_decision') and self.current_decision else "N/A",
+            "rid": (
+                data.get("rid")
+                or (
+                    self.current_decision.rid
+                    if hasattr(self, 'current_decision') and self.current_decision
+                    else "N/A"
+                )
+            ),
             **data
         }
         LOG.info(f" [EVENT] {event_type}: {event}", extra={"event": event})

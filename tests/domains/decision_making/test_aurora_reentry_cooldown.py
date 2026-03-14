@@ -9,7 +9,7 @@ from apps.reference.domains.decision_making.aurora_handler import (
     AuroraHandler,
     SymbolState,
 )
-from apps.reference.domains.decision_making.aurora_scoring_kernel import ScoringResult
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 
 # Setup logger to suppress noise during tests
 logging.basicConfig(level=logging.ERROR)

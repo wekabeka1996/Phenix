@@ -180,6 +180,21 @@ mean_reversion:
         bb_window: 40
         bb_num_std: 2.5
         min_bb_width: 0.005  # (min_vol_atr from report)
+        flat_low_short_min_bb_width: 0.015
+        squeeze_expansion_veto:
+          enabled: true
+          squeeze_width_max: 0.010
+          post_squeeze_width_max: 0.020
+          expansion_ratio_min: 2.0
+          regimes: ["FLAT_LOW"]
+          sides: ["LONG", "SHORT"]
+        momentum_separation_veto:
+          enabled: true
+          lookback_bars: 4
+          min_drift_pct: 0.02
+          min_current_bb_width: 0.020
+          regimes: ["FLAT_LOW"]
+          sides: ["LONG", "SHORT"]
         entry_threshold: 0.05
         # Exit parameters
         sl_atr_mult: 1.5     # Base, overridden below

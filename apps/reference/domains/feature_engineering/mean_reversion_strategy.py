@@ -156,6 +156,16 @@ class MRStrategyConfig:
     # If empty, all Flat regimes are allowed.
     allowed_regimes: List[str] = field(default_factory=list)
 
+    # Optional per-symbol hardening for narrow-band FLAT_LOW short fades.
+    # None keeps the generic width gate unchanged.
+    flat_low_short_min_bb_width: Optional[Decimal] = None
+
+    # Optional per-symbol squeeze-expansion veto contract for breakout fades.
+    squeeze_expansion_veto: Optional[Dict[str, Any]] = None
+
+    # Optional per-symbol late-drift veto contract for counter-trend fades.
+    momentum_separation_veto: Optional[Dict[str, Any]] = None
+
     # Tier D: Tunable confidence scalars (Pydantic SSOT → no hardcodes in _evaluate_signal)
     # WARNING: Defaults here are for UNIT TESTS ONLY. Production values come from YAML.
     confidence_base: Decimal = Decimal("0.5")        # Base confidence when BB threshold touched
@@ -453,6 +463,60 @@ class MeanReversion1mStrategy:
         # Evaluate signal based on %B
         pct_b = Decimal(str(bb.pct_b))
         entry_threshold = Decimal(str(self.config.entry_threshold))
+        flat_low_short_min_bb_width = self.config.flat_low_short_min_bb_width
+
+        if (
+            flat_regime == FlatRegime.FLAT_LOW
+            and flat_low_short_min_bb_width is not None
+            and pct_b > (Decimal("1") - entry_threshold)
+            and bb_width < flat_low_short_min_bb_width
+        ):
+            return self._neutral_signal(
+                symbol,
+                current_price,
+                timestamp_ms,
+                f"flat_low_short_bb_width_too_narrow:{bb_width}<{flat_low_short_min_bb_width}",
+                bar=bar,
+                rsi=rsi,
+            )
+
+        candidate_side = None
+        if pct_b < entry_threshold:
+            candidate_side = "LONG"
+        elif pct_b > (Decimal("1") - entry_threshold):
+            candidate_side = "SHORT"
+
+        squeeze_veto_reason = self._squeeze_expansion_veto_reason(
+            closes=closes,
+            flat_regime=flat_regime,
+            candidate_side=candidate_side,
+            current_bb_width=bb_width,
+        )
+        if squeeze_veto_reason is not None:
+            return self._neutral_signal(
+                symbol,
+                current_price,
+                timestamp_ms,
+                squeeze_veto_reason,
+                bar=bar,
+                rsi=rsi,
+            )
+
+        momentum_veto_reason = self._momentum_separation_veto_reason(
+            closes=closes,
+            flat_regime=flat_regime,
+            candidate_side=candidate_side,
+            current_bb_width=bb_width,
+        )
+        if momentum_veto_reason is not None:
+            return self._neutral_signal(
+                symbol,
+                current_price,
+                timestamp_ms,
+                momentum_veto_reason,
+                bar=bar,
+                rsi=rsi,
+            )
         
         signal_type = MRSignalType.NEUTRAL
         confidence = Decimal("0")
@@ -569,6 +633,111 @@ class MeanReversion1mStrategy:
             bar=bar,
             config_params=self.config.__dict__.copy() if self.config else None
         )
+
+    def _squeeze_expansion_veto_reason(
+        self,
+        *,
+        closes: List[Decimal],
+        flat_regime: FlatRegime,
+        candidate_side: Optional[str],
+        current_bb_width: Decimal,
+    ) -> Optional[str]:
+        """Return a veto reason when a squeeze is expanding into a breakout fade."""
+        veto_cfg = self.config.squeeze_expansion_veto or {}
+        if not veto_cfg or not bool(veto_cfg.get("enabled")):
+            return None
+        if candidate_side is None:
+            return None
+
+        configured_regimes = {str(regime) for regime in veto_cfg.get("regimes", [])}
+        if configured_regimes and flat_regime.name not in configured_regimes:
+            return None
+
+        configured_sides = {str(side).upper() for side in veto_cfg.get("sides", [])}
+        if configured_sides and candidate_side not in configured_sides:
+            return None
+
+        previous_bb_width = self._previous_bb_width(closes)
+        if previous_bb_width is None or previous_bb_width <= 0:
+            return None
+
+        squeeze_width_max = Decimal(str(veto_cfg["squeeze_width_max"]))
+        post_squeeze_width_max = Decimal(str(veto_cfg["post_squeeze_width_max"]))
+        expansion_ratio_min = Decimal(str(veto_cfg["expansion_ratio_min"]))
+
+        if previous_bb_width > squeeze_width_max:
+            return None
+        if current_bb_width > post_squeeze_width_max:
+            return None
+
+        expansion_ratio = current_bb_width / previous_bb_width
+        if expansion_ratio < expansion_ratio_min:
+            return None
+
+        return (
+            f"squeeze_expansion_veto:{candidate_side}:"
+            f"{previous_bb_width:.4f}->{current_bb_width:.4f}"
+        )
+
+    def _previous_bb_width(self, closes: List[Decimal]) -> Optional[Decimal]:
+        """Rebuild the previous BB width from the prior completed window."""
+        if len(closes) <= self.config.bb_window:
+            return None
+        previous_bb = compute_bollinger_bands(
+            closes[:-1],
+            window=self.config.bb_window,
+            num_std=self.config.bb_num_std,
+        )
+        if previous_bb is None:
+            return None
+        return Decimal(str(previous_bb.width))
+
+    def _momentum_separation_veto_reason(
+        self,
+        *,
+        closes: List[Decimal],
+        flat_regime: FlatRegime,
+        candidate_side: Optional[str],
+        current_bb_width: Decimal,
+    ) -> Optional[str]:
+        """Return a veto reason when a fade tries to fight an already obvious directional drift."""
+        veto_cfg = self.config.momentum_separation_veto or {}
+        if not veto_cfg or not bool(veto_cfg.get("enabled")):
+            return None
+        if candidate_side is None:
+            return None
+
+        configured_regimes = {str(regime) for regime in veto_cfg.get("regimes", [])}
+        if configured_regimes and flat_regime.name not in configured_regimes:
+            return None
+
+        configured_sides = {str(side).upper() for side in veto_cfg.get("sides", [])}
+        if configured_sides and candidate_side not in configured_sides:
+            return None
+
+        min_current_bb_width = Decimal(str(veto_cfg["min_current_bb_width"]))
+        if current_bb_width < min_current_bb_width:
+            return None
+
+        lookback_bars = int(veto_cfg["lookback_bars"])
+        if len(closes) < (lookback_bars + 1):
+            return None
+
+        reference_close = closes[-(lookback_bars + 1)]
+        if reference_close <= 0:
+            return None
+
+        current_close = closes[-1]
+        drift_pct = (current_close - reference_close) / reference_close
+        min_drift_pct = Decimal(str(veto_cfg["min_drift_pct"]))
+
+        if candidate_side == "SHORT" and drift_pct < min_drift_pct:
+            return None
+        if candidate_side == "LONG" and drift_pct > (-min_drift_pct):
+            return None
+
+        drift_pct_display = drift_pct * Decimal("100")
+        return f"momentum_separation_veto:{candidate_side}:{drift_pct_display:+.4f}%"
     
     def force_close_all(self, timestamp_ms: int) -> Dict[str, Optional[Bar]]:
         """

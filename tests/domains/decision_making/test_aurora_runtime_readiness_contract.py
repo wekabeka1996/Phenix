@@ -21,6 +21,7 @@ from apps.reference.contracts.quadratic_rollout import (
     resolve_requested_quadratic_rollout,
 )
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 
 
 def test_aurora_emit_signal_adds_runtime_readiness_and_permissions() -> None:
@@ -29,7 +30,8 @@ def test_aurora_emit_signal_adds_runtime_readiness_and_permissions() -> None:
     def emit_fn(name: str, payload: dict) -> None:
         emitted.append((name, payload))
 
-    config = SimpleNamespace(strategies=SimpleNamespace(aurora=SimpleNamespace()), instruments=None)
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
 
     with patch.object(AuroraHandler, "_load_config", lambda self: None):
         handler = AuroraHandler(
@@ -79,7 +81,8 @@ def test_aurora_emit_signal_adds_runtime_readiness_and_permissions() -> None:
     handler._emit_signal(
         "BTCUSDT",
         result,
-        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"}},
         {
             "bar_close_ts": identity.bar_end_ts_ms,
             "source_mode": "live",
@@ -94,17 +97,19 @@ def test_aurora_emit_signal_adds_runtime_readiness_and_permissions() -> None:
     assert event_name == "EVT:STRATEGY_SIGNAL_PRODUCED"
     assert payload["readiness"] == {"warmup_ok": True}
     assert payload["runtime_permissions"]["can_manage_existing_risk"] is True
-    assert payload["runtime_permissions"]["can_open_new_risk"] is True
-    assert payload["runtime_permissions"]["mode"] == "OPEN_AND_MANAGE"
+    # Quadratic mode: can_open_new_risk is gated by quadratic_htf_ready.
+    # When htf is COLD, the quadratic gate blocks new risk (correct behavior).
+    assert payload["runtime_permissions"]["can_open_new_risk"] is False
+    assert payload["runtime_permissions"]["mode"] == "PROTECT_ONLY"
     assert payload["runtime_readiness"]["scopes"]["strategy_ready_per_symbol"]["state"] == "READY"
     assert payload["runtime_readiness"]["scopes"]["quadratic_htf_ready"]["state"] == "COLD"
     assert payload["bar_close_ts"] == identity.bar_end_ts_ms
     assert payload["source_mode"] == "live"
     assert payload["bar_identity"]["close_boundary_ts_ms"] == identity.close_boundary_ts_ms
     assert payload["replay_identity"]["replay_generation"] == 0
-    assert payload["rollout_mode"] == "v2_live"
+    assert payload["rollout_mode"] == "quadratic_live"
     assert payload["rollback_armed_status"] == "DISARMED"
-    assert payload["quadratic_rollout"]["effective_live_scoring_version"] == "v2"
+    assert payload["quadratic_rollout"]["effective_live_scoring_version"] == "quadratic"
     assert payload["quadratic_rollout"]["quadratic_can_open_new_risk"] is False
     assert payload["quadratic_rollout"]["shadow_evaluation"]["state"] == "NOT_REQUESTED"
 
@@ -173,7 +178,8 @@ def test_aurora_live_quadratic_requires_explicit_quadratic_readiness_for_new_ent
     handler._emit_signal(
         "BTCUSDT",
         result,
-        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"}},
         {
             "bar_close_ts": identity.bar_end_ts_ms,
             "source_mode": "live",
@@ -192,7 +198,9 @@ def test_aurora_live_quadratic_requires_explicit_quadratic_readiness_for_new_ent
     assert "quadratic_htf_not_ready" in payload["quadratic_rollout"]["quadratic_blocking_reason_chain"]
 
 
-def test_aurora_rollback_arm_keeps_v2_live_and_reports_shadow_state() -> None:
+def test_aurora_rollback_armed_is_non_operational_reports_quadratic_live() -> None:
+    """Post Phase 9 cleanup: rollback_armed=True in config has no runtime effect.
+    effective_live stays quadratic, rollback_armed is forced to False."""
     emitted: list[tuple[str, dict]] = []
 
     def emit_fn(name: str, payload: dict) -> None:
@@ -207,7 +215,8 @@ def test_aurora_rollback_arm_keeps_v2_live_and_reports_shadow_state() -> None:
         ),
     )
     config = SimpleNamespace(
-        strategies=SimpleNamespace(aurora=SimpleNamespace(decision=decision_cfg)),
+        strategies=SimpleNamespace(
+            aurora=SimpleNamespace(decision=decision_cfg)),
         instruments=None,
     )
 
@@ -294,12 +303,11 @@ def test_aurora_rollback_arm_keeps_v2_live_and_reports_shadow_state() -> None:
     )
 
     _, payload = emitted[0]
-    assert payload["rollout_mode"] == "v2_rollback"
-    assert payload["rollback_armed_status"] == "ARMED"
+    # Key: rollback is non-operational, everything is quadratic
+    assert payload["rollout_mode"] == "quadratic_live"
+    assert payload["rollback_armed_status"] == "DISARMED"
     assert payload["runtime_permissions"]["can_open_new_risk"] is True
-    assert payload["quadratic_rollout"]["quadratic_can_open_new_risk"] is False
-    assert payload["quadratic_rollout"]["shadow_evaluation"]["state"] == "READY"
-    assert "operator_triggered" in payload["quadratic_rollout"]["rollback_reason_chain"]
+    assert payload["quadratic_rollout"]["quadratic_can_open_new_risk"] is True
 
 
 def test_aurora_gap_signal_is_protect_only_and_marks_basis_invalidated() -> None:
@@ -308,7 +316,8 @@ def test_aurora_gap_signal_is_protect_only_and_marks_basis_invalidated() -> None
     def emit_fn(name: str, payload: dict) -> None:
         emitted.append((name, payload))
 
-    config = SimpleNamespace(strategies=SimpleNamespace(aurora=SimpleNamespace()), instruments=None)
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
 
     with patch.object(AuroraHandler, "_load_config", lambda self: None):
         handler = AuroraHandler(
@@ -358,7 +367,8 @@ def test_aurora_gap_signal_is_protect_only_and_marks_basis_invalidated() -> None
     handler._emit_signal(
         "BTCUSDT",
         result,
-        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"}},
         {
             "bar_close_ts": identity.bar_end_ts_ms,
             "source_mode": "live",
@@ -390,7 +400,8 @@ def test_aurora_live_warmup_overrides_cold_restore_snapshot() -> None:
     def emit_fn(name: str, payload: dict) -> None:
         emitted.append((name, payload))
 
-    config = SimpleNamespace(strategies=SimpleNamespace(aurora=SimpleNamespace()), instruments=None)
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
 
     with patch.object(AuroraHandler, "_load_config", lambda self: None):
         handler = AuroraHandler(
@@ -505,7 +516,8 @@ def test_aurora_live_warmup_overrides_cold_restore_snapshot() -> None:
     handler._emit_signal(
         "BTCUSDT",
         result,
-        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"}},
         {
             "bar_close_ts": identity.bar_end_ts_ms,
             "source_mode": "live",
@@ -517,8 +529,9 @@ def test_aurora_live_warmup_overrides_cold_restore_snapshot() -> None:
 
     assert len(emitted) == 1
     _, payload = emitted[0]
-    assert payload["runtime_permissions"]["can_open_new_risk"] is True
-    assert payload["runtime_permissions"]["mode"] == "OPEN_AND_MANAGE"
+    # Quadratic mode: can_open_new_risk gated by quadratic_htf_ready (COLD → blocked)
+    assert payload["runtime_permissions"]["can_open_new_risk"] is False
+    assert payload["runtime_permissions"]["mode"] == "PROTECT_ONLY"
     assert payload["analytics_restore"]["rollup_state"] == "PARTIAL"
     assert payload["runtime_readiness"]["scopes"]["execution_context_ready"]["state"] == "READY"
     assert payload["runtime_readiness"]["scopes"]["microstructure_ready"]["state"] == "READY"
@@ -530,7 +543,8 @@ def test_aurora_startup_warmup_gate_blocks_new_risk_until_boot_finishes() -> Non
     def emit_fn(name: str, payload: dict) -> None:
         emitted.append((name, payload))
 
-    config = SimpleNamespace(strategies=SimpleNamespace(aurora=SimpleNamespace()), instruments=None)
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
 
     with patch.object(AuroraHandler, "_load_config", lambda self: None):
         handler = AuroraHandler(
@@ -579,7 +593,8 @@ def test_aurora_startup_warmup_gate_blocks_new_risk_until_boot_finishes() -> Non
         handler._emit_signal(
             "BTCUSDT",
             result,
-            {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+            {"price": "100.0", "volatility": {"atr_14": 1.0,
+                                              "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
             {
                 "bar_close_ts": identity.bar_end_ts_ms,
                 "source_mode": "live",
@@ -603,7 +618,8 @@ def test_aurora_live_gap_precedence_beats_restored_snapshot() -> None:
     def emit_fn(name: str, payload: dict) -> None:
         emitted.append((name, payload))
 
-    config = SimpleNamespace(strategies=SimpleNamespace(aurora=SimpleNamespace()), instruments=None)
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
 
     with patch.object(AuroraHandler, "_load_config", lambda self: None):
         handler = AuroraHandler(
@@ -665,7 +681,8 @@ def test_aurora_live_gap_precedence_beats_restored_snapshot() -> None:
     handler._emit_signal(
         "BTCUSDT",
         result,
-        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True}, "liquidity": {"obi_close": "0.1"}},
+        {"price": "100.0", "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"}},
         {
             "bar_close_ts": identity.bar_end_ts_ms,
             "source_mode": "live",
@@ -711,7 +728,8 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
             allowed_regimes=["LOW_VOLATILITY"]
         )
         handler._check_regime_liveness = lambda symbol, state: None
-        handler._emit_strategy_blocked = lambda **kwargs: blocked.append(kwargs)
+        handler._emit_strategy_blocked = lambda **kwargs: blocked.append(
+            kwargs)
         handler._basis_required_bars_override = 5
         handler._bars_seen_since_restart["BTCUSDT"] = 1
 
@@ -735,6 +753,95 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
     assert blocked[0]["reason_code"] == "BARS_REQUIRED_COLD_START"
     assert blocked[0]["details"] == {"bars_seen": 1, "basis_required_bars": 5}
     rejected_wal.assert_called_once()
+
+
+def test_aurora_seeded_basis_bars_bypass_cold_start_gate() -> None:
+    blocked: list[dict] = []
+
+    scoring_result = ScoringResult(
+        score=Decimal("0"),
+        side="",
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        deferred=True,
+        defer_reason="PILLAR_WARMUP",
+    )
+    scoring_kernel_cls = type(
+        "StubAuroraKernel",
+        (),
+        {"compute": staticmethod(lambda **_kwargs: scoring_result)},
+    )
+
+    with (
+        patch.object(AuroraHandler, "_load_config", lambda self: None),
+        patch("apps.reference.domains.decision_making.aurora_decision.write_trade_intent_rejected"),
+        patch(
+            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            return_value=SimpleNamespace(state="NOT_REQUESTED"),
+        ),
+    ):
+        handler = AuroraHandler(
+            config=SimpleNamespace(
+                strategies=SimpleNamespace(
+                    aurora=SimpleNamespace(
+                        decision=SimpleNamespace(scoring_version="quadratic"),
+                    )
+                ),
+                regime_shift_inception=None,
+                instruments=None,
+            ),
+            emit_fn=lambda *_args, **_kwargs: None,
+            monotonic_fn=lambda: 1_700_000_000.0,
+            wall_time_fn=lambda: 1_700_000_000.0,
+        )
+
+    handler._is_symbol_enabled = lambda symbol: True
+    handler._get_instrument_config = lambda symbol: SimpleNamespace(
+        allowed_regimes=["LOW_VOLATILITY"],
+        tick_size=None,
+        volatility_entry_logic=None,
+    )
+    handler._check_regime_liveness = lambda symbol, state: None
+    handler._emit_strategy_blocked = lambda **kwargs: blocked.append(kwargs)
+    handler._get_signal_weights = lambda symbol, instr_cfg: {}
+    handler._get_feature_neutrals = lambda symbol, instr_cfg: {}
+    handler._get_essential_features = lambda symbol, instr_cfg: []
+    handler._check_liquidity_gate = lambda **_kwargs: (True, {})
+    handler._get_side_bias_state = lambda symbol: None
+    handler._get_regime_thresholds = lambda symbol, instr_cfg: {
+        "LOW_VOLATILITY": 1.0,
+        "DEFAULT": 1.0,
+    }
+    handler._basis_required_bars_override = 5
+    handler.scoring_kernel_cls = scoring_kernel_cls
+    handler.signal_threshold = Decimal("0.1")
+    handler.neutral_threshold = Decimal("0.05")
+    handler.direction_strength_cfg = {}
+    handler.delta_price_cap_pct = Decimal("0.01")
+    handler.normalize_signals_mode = "signed_v2"
+    handler.score_multiplier = 1.0
+    handler._quadratic_shadow_shield_fn = None
+    handler._regime_smoother = None
+    handler.seed_startup_bars("BTCUSDT", 5)
+
+    state = handler._symbol_states["BTCUSDT"]
+    state.regime = "LOW_VOLATILITY"
+    state.regime_ts_ms = 1_700_000_000_000
+
+    handler._process_decision(
+        "BTCUSDT",
+        {
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "bar_close_ts": 1_700_000_000_000,
+            "rid": "bars-seeded-test",
+            "warmup": {"full_ready": True, "ready": {}},
+            "features": {"price": "100.0", "pillar_sum": 0.1},
+        },
+    )
+
+    assert blocked
+    assert blocked[0]["reason_code"] == "AURORA_KERNEL_DEFERRED"
 
 
 def test_aurora_objective_missing_exposure_summary_blocks_explicitly() -> None:
