@@ -1,5 +1,189 @@
 # Engineering Journal
 
+## 2026-03-15: RUNTIME-RECOVERY-AND-MR-REGRESSION-AUDIT - live-truth bootstrap fix + MR rollback
+
+**Task:** Red-team the real startup path after live evidence showed `md_amr_handler:cold_start:51/96` and `aurora_handler` still climbing one bar per live tick after restart, then isolate why `mean_reversion` lost its edge.
+
+**Live proof that prior fix failed:**
+1. `logs/aurora_trades.log` showed `md_amr` moving from `8/96` to `51/96` in exact 15-minute steps on 2026-03-15 instead of starting ready
+2. `logs/aurora_core.log.1/.2` showed `aurora` moving from `139/301` to `154/301` in exact 5-minute steps after the same restart
+3. This proved startup hydration did not seed handler-local readiness counters; handlers were counting only post-restart live bars
+
+**Root causes verified:**
+1. `PillarBackfillService.fetch_candles()` was single-shot; one transient adapter exception or empty/short response collapsed startup import to zero bars
+2. `startup_basis_hydrator` then skipped seeding or reported incomplete truth, so operator-visible readiness could diverge from handler state
+3. Prior bootstrap tests did not exercise the real runtime contract `StrategyRuntime.start() -> hydration plan -> live handler registry -> real backfill -> seed_startup_bars()`
+4. `mean_reversion` DOGE config had drifted away from the last healthier 300s baseline: `bb_window 20 -> 40`, `bb_num_std 2.1 -> 2.5`, `cooldown 210 -> 660`, plus new squeeze/momentum veto layers
+5. Live MR evidence also showed execution degradation: the only 2026-03-15 live DOGE signal was rejected by Binance with `-1007 timeout`, so the regression is not signal-only
+
+**Fixes applied:**
+- Added retry logic to `PillarBackfillService.fetch_candles()` so transient startup transport failure no longer leaves handlers cold
+- Hardened `execute_startup_basis_hydration()` to emit truthful structured readiness summaries and actual `seed_source`
+- Added failing-first real-path bootstrap reproducer covering real config, real runtime startup, real hydration planning, transient backfill failure, and real handler seeding
+- Added explicit startup backfill retry unit coverage
+- Rolled DOGE mean-reversion config back to the last materially healthier 300s profile (`bb_window=20`, `bb_num_std=2.1`, `cooldown_sec=210`, veto layers removed)
+
+**Verification:**
+- `pytest tests/config/test_mean_reversion_doge_regression_config.py tests/bootstrap/test_startup_basis_real_path.py tests/bootstrap/test_startup_basis_hydrator.py tests/bootstrap/test_startup_hydration_planner.py tests/unit/feature_engineering/test_pillar_backfill_startup.py -q`
+- Result: `37 passed`
+
+**Artifacts:**
+- `reports/forensics/RUNTIME_RECOVERY_AND_MR_REGRESSION_AUDIT_2026-03-15.md`
+- `reports/forensics/RUNTIME_BLOCKER_AND_MR_REGRESSION_MATRIX_2026-03-15.csv`
+
+## 2026-03-15: BOOTSTRAP-READINESS-HARDENING — Runtime recovery for cold-start blockers
+
+**Task:** Fix runtime blockers preventing aurora/md_amr from trading after startup. Root causes: invisible bootstrap hydration, mode config conflict (backtest vs hybrid), and buried quadratic trace.
+
+**Root causes verified:**
+1. `system.yaml` had `trading_mode: "backtest"` while `trading.yaml` had `mode: hybrid_live_data_testnet_exec` — config loader silently forced backtest
+2. Bootstrap hydration executor ran but emitted no structured lifecycle evidence — invisible to operator
+3. Cold-start gates logged at DEBUG — invisible in production log level
+4. Quadratic decision trace was DEBUG-only, never emitted as FSM event
+
+**Fixes applied:**
+- **Bootstrap observability:** Added `_emit_bootstrap_lifecycle()` with structured JSON events: `STARTUP_BASIS_EXECUTOR_START`, `STARTUP_BASIS_IMPORTED`, `STARTUP_BASIS_SEEDED`, `STRATEGY_READINESS_STATE`, `STARTUP_BASIS_EXECUTOR_DONE`
+- **Readiness model:** Added `get_readiness_diagnostics()` to both `AuroraHandler` and `MDAMRHandler` — returns per-symbol `{strategy, symbol, tf_sec, bars_seen, bars_required, ready, block_reason}`
+- **Mode SSOT:** Config loader now raises `ConfigContractError` on non-backtest mode mismatch; fixed `system.yaml` to `hybrid_live_data_testnet_exec`
+- **Quadratic visibility:** Quadratic decision trace emitted as `EVT:QUADRATIC_DECISION_TRACE` FSM event + INFO log; cold-start gate elevated from DEBUG to INFO with "quadratic path NOT reached" message
+- **Tests:** 15 new tests covering all 7 required areas. Updated 1 existing test for new event compatibility.
+
+**Results:** 1231/1231 domain tests passed, 0 failures. 15 new tests added.
+
+**Report:** `reports/fixes/BOOTSTRAP_READINESS_HARDENING_2026-03-15.md`
+
+## 2026-03-15: TEST-HYGIENE-NORMALIZATION — Stale xfail + artifact ignore cleanup
+
+**Task:** Remove stale xfail marker and normalize generated artifact tracking.
+
+**Changes:**
+- Removed stale `@pytest.mark.xfail` from `test_binance_adapter_session.py` (test passes consistently since strict asyncio mode migration)
+- Added `.gitignore` rules for `.pytest_junit.xml`, `async_inventory.json`, `coverage*.json`
+- Untracked 4 generated artifacts from git index (kept on disk)
+
+**Results:** 89/89 guardrails, test now PASSED (was XPASS). Zero regressions.
+
+**Report:** `reports/cleanup/TEST_HYGIENE_NORMALIZATION_2026-03-15.md`
+
+## 2026-03-15: LEGACY-PURGE-WAVE-2 — Manual review + empty structure cleanup
+
+**Task:** Re-evaluate 4 NEEDS_MANUAL_DECISION test files and remove dead test structure.
+
+**Re-evaluated:**
+- `test_execution_schemas_sim.py` → DELETE_NOW (zero assertions, superseded)
+- `test_decision_qos_features_burst.py` → DELETE_NOW (mock-only, forbidden `.get()` pattern)
+- `test_binance_adapter_session.py` → KEEP (real assertions, stale xfail)
+- `test_features_full_chain_happy.py` → KEEP (genuine integration value, skipped for complexity)
+
+**Deleted:** 2 test files (~145 LOC), 17 empty directories.
+
+**Results:** 89/89 guardrails, 524/524 config+contracts. Zero regressions.
+
+**Report:** `reports/cleanup/LEGACY_PURGE_WAVE_2_2026-03-15.md`
+
+## 2026-03-15: FORBIDDEN-CONFIG-PATTERN-FIX — Typed veto configs, zero .get() patterns
+
+**Task:** Fix 4 `.get()` silent-fallback violations in `mean_reversion_strategy.py` causing pre-existing test failure.
+
+**Root cause:** `MRStrategyConfig.squeeze_expansion_veto` and `momentum_separation_veto` were `Optional[Dict[str, Any]]` — accessed via `.get("regimes", [])` and `.get("sides", [])`.
+
+**Fix:** Added `SqueezeExpansionVetoConfig` and `MomentumSeparationVetoConfig` dataclasses. Replaced all 4 `.get()` patterns with typed attribute access. Updated handler converter functions, strategy bridge re-exports, and 3 test files.
+
+**Results:** 6/6 forbidden config scan (was 5/6), 386/386 FE+DM domain tests, 89/89 guardrails. Zero regressions. Pre-existing failure resolved.
+
+**Report:** `reports/cleanup/FORBIDDEN_CONFIG_PATTERN_FIX_2026-03-15.md`
+
+## 2026-03-15: TEST-SUITE-RECLASSIFICATION — Test suite audit and dead test cleanup
+
+**Task:** Classify entire test suite (684 files, 5,368 tests) and safely purge proven dead tests.
+
+**Classified into:** RUNTIME_CRITICAL (~882), ARCH_GUARDRAIL (~162), CONFIG_VALIDATION (~400), INTEGRATION_E2E (~369), VFOUNDATION_CORE (~1,231), ALPHA_SEARCH (~281), NEOCORTEX (~289), FORENSIC_DIAGNOSTIC (~55), UNIT_MISC (~958), OTHER (~741).
+
+**Deleted 15 dead test files (~1,210 LOC):**
+- 6 debug scripts masquerading as tests (no `test_*` functions)
+- 2 deprecated-event tests (EVT:MARKET_TICK_FORWARDED — 0 emitters)
+- 2 deleted-class tests (AuroraBridge removed from main.py)
+- 1 empty file, 1 hardcoded-path skip, 1 live-WS utility, 1 live-env skip, 1 zero-method test class
+
+**Results:** 162/162 guardrails, 1,681/1,682 broader tests (1 pre-existing failure). 93 skip-containing files mapped.
+
+**Report:** `reports/tests/TEST_SUITE_RECLASSIFICATION_2026-03-15.md`
+
+## 2026-03-15: LEGACY-PURGE-WAVE-1 — Proven dead code and ghost cleanup
+
+**Task:** First safe deletion wave using evidence from 7 completed domain audits.
+
+**Deleted:**
+- `market_ws_client.py` (119 LOC dead module, zero production importers)
+- Dead imports: `asdict` in bar_aggregator.py, `time` in market_data_connector.py
+- Deprecated no-op: `set_feature_engineering()` from proxy.py and connector
+- 7 ghost .pyc in vfoundation/ (errors, binance_adapter, bracket_aggregator, fsm, price_service)
+- 2 orphaned vfoundation directory trees (vfoundation/apps/, vfoundation/services/)
+- 45 deprecated doc files across 7 domains (docs/deprecated/ directories)
+- All test `__pycache__/` directories (~371 orphaned .pyc)
+
+**Cleaned:**
+- `__init__.py` MarketWSClient export removed
+- `domain_dict.json` dead_code note updated
+- `README.md` debt table updated (3 items resolved)
+- `decision_context.py` stale doc reference annotated
+- Guardrail tests: `TestDeadCodeMarker` → `TestDeletedDeadCode` (3 tests)
+- New: `test_legacy_purge_wave1_guardrails.py` (3 cross-project guardrails)
+
+**Results:** 165/165 guardrails, 40/40 market_data tests. Zero runtime behavior changes.
+
+**Report:** `reports/cleanup/LEGACY_PURGE_WAVE_1_2026-03-15.md`
+
+## 2026-03-15: MD-DOMAIN-AUDIT — market_data domain audit + structural cleanup
+
+**Task:** Audit and structurally harden `apps/reference/domains/market_data/` — the root upstream domain.
+
+**Findings:** 7 files, ~2,661 LOC, 4 test files (~23 test functions). Clean event-driven boundary — no other domain imports MD source directly. 3 active verbs (MARKET_TICK_RECEIVED, BAR_CLOSED, ANCHOR_UPDATED), 1 deprecated (MARKET_TICK_FORWARDED). No `domain_dict.json` existed. Dead code: `market_ws_client.py` (119 LOC, never imported). Default timeframe mismatch between domain_builder `[60, 300]` and BarAggregator `[180, 300]`. No TTL enforcement within domain. Auto-generated docs had no staleness warning.
+
+**Changes:** Created `domain_dict.json` v1.0.0 (3 exports, 0 imports, 5 components). Created authoritative `README.md`. Staleness note on `docs/README.md`. 15 guardrail tests (domain_dict consistency, pycache ghosts, empty tests, BarAggregator SSOT, cross-domain import ban, dead code marker, event emitter consistency). **158/158 total guardrail tests across all 7 domains.** Score: 8/10 (was ~6/10).
+
+Report: `reports/domains/MARKET_DATA_DOMAIN_AUDIT_2026-03-15.md`
+
+## 2026-03-15: FE-DM-BOUNDARY-STABILIZATION — FE↔DM boundary stabilization
+
+**Task:** Resolve the domain-boundary leak where strategy-domain logic lives in feature_engineering but is consumed by decision_making.
+
+**Findings:** 3 strategy files in FE (mean_reversion_strategy.py, md_amr_strategy.py, regime_mapping.py) are semantically owned by DM. 5 direct FE strategy imports in DM production code. 27+ import sites in test code. Physical move blast radius: 40+ files.
+
+**Changes:** Created `decision_making/strategy_bridge.py` as sanctioned DM-facing re-export facade (13 symbols). Migrated all 3 DM production files to import via bridge. Bar imports migrated to `shared/types.py`. Both domain READMEs and domain_dict.json updated with boundary policy. 6 guardrail tests (AST-scans DM for forbidden imports, bridge completeness, no new strategy files in FE). **1,143 tests pass, 0 failures.**
+
+Report: `reports/domains/FE_DM_BOUNDARY_STABILIZATION_2026-03-15.md`
+
+## 2026-03-15: FE-DOMAIN-AUDIT — feature_engineering domain audit + structural cleanup
+
+**Task:** Audit and structurally harden `apps/reference/domains/feature_engineering/`.
+
+**Findings:** Largest signal domain: 16 files, ~8,849 LOC, ~150+ test functions. Solid architecture: 60+ typed config properties (Pydantic extra='forbid'), feature catalog in contracts.py with V1/V2 metadata (range, neutral, monotonicity), 3 JSON schemas. 7 events consumed, 3 emitted. `domain_dict.json` was stale (v1.1.0, missing V2/futures/pillars/price_motion and 6 of 7 consumed events). 2 ghost .pyc (config, phase1). Strategy files (MR, MD-AMR, regime_mapping) live in FE but conceptually belong to DM — documented as debt.
+
+**Changes:** Rewrote `domain_dict.json` v2.0.0 (all imports/exports/feature_families). Created authoritative `README.md`. Staleness note on `docs/README.md`. Deleted 2 ghost .pyc. 15 guardrail tests (feature catalog SSOT, schema alignment, domain_dict consistency, pycache, version). Score: **8/10** (was ~6/10).
+
+Report: `reports/domains/FEATURE_ENGINEERING_DOMAIN_AUDIT_2026-03-15.md`
+
+## 2026-03-14: RD-DOMAIN-AUDIT — regime_detector domain audit + structural cleanup
+
+**Task:** Audit and structurally harden `apps/reference/domains/regime_detector/`.
+
+**Findings:** Compact domain (2 files, 803 LOC, ~181 tests across ~18 files). Clean event-driven architecture: consumes EVT:FEATURES_CALCULATED, runs priority cascade (Volatility > MeanReversion > SMATrend), applies hysteresis stabilisation + slope gate, emits EVT:REGIME_DETECTED on every basis bar close. No top-level `domain_dict.json` (only deprecated copy). 1 ghost `.pyc` (`config.cpython-311.pyc`). Auto-generated docs had no staleness warning.
+
+**Changes:** Created `domain_dict.json` v1.0.0. Created authoritative `README.md`. Added staleness note to `docs/README.md`. Deleted ghost `config.cpython-311.pyc`. 10 guardrail tests (fail-closed, domain_dict consistency, schema/code regime label sync, pycache, empty tests, __version__). Score: **9/10** (was ~7/10).
+
+Report: `reports/domains/REGIME_DETECTOR_DOMAIN_AUDIT_2026-03-14.md`
+
+## 2026-03-14: RM-DOMAIN-AUDIT — risk_management domain audit + structural cleanup
+
+**Task:** Audit and structurally harden `apps/reference/domains/risk_management/`.
+
+**Findings:** Compact domain (3 files, 990 LOC, 73 tests). Clean 2-layer fail-closed architecture (daily drawdown gate + per-instrument risk score). No ghost pycache. No duplicate gates. `domain_dict.json` was garbled (whitespace-only descriptions, missing imports).
+
+**Changes:** Rewrote `domain_dict.json` v2.0.0. Created authoritative `README.md`. Added staleness note to `docs/README.md`. 11 guardrail tests (fail-closed, WhyCode canonical, no NRR usage, domain_dict consistency, pycache, empty tests). Score: **9/10** (was ~7/10).
+
+Report: `reports/domains/RISK_MANAGEMENT_DOMAIN_AUDIT_2026-03-14.md`
+
 ## 2026-03-14: EP-CONTRACT-BOUNDARY — execution_position contract boundary cleanup
 
 **Task:** Resolve 3 co-emitter gaps and cross-domain NRR import coupling in execution_position.

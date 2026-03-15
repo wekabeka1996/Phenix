@@ -48,6 +48,7 @@
   "ssot_notes": {
     "why_codes": "re-export from vfoundation/core/why_codes.py",
     "nrr": "normalized_reject_reasons.py is canonical SSOT",
-    "contracts": "registered in verb_registry_v1.yaml"
+    "contracts": "registered in verb_registry_v1.yaml",
+    "strategy_bridge": "strategy_bridge.py is the sanctioned DM-facing facade for strategy classes hosted in feature_engineering (MR, MD-AMR, regime_mapping). DM production code MUST import via this bridge, NOT directly from FE submodules (FE-DM-BOUNDARY-STABILIZATION 2026-03-15)."
   }
 }

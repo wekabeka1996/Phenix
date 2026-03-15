@@ -1,32 +1,51 @@
 {
   "domain_name": "feature_engineering",
-  "description": "Signal component that transforms raw market tick data into normalized features (OBI, TFI, EMA bias, volume spike, volatility, depth imbalance, macro sync) for downstream decision making.",
-  "version": "1.1.0",
-  "schema_version": "1.0",
-  "schema_path": "schemas/features_calculated_v1.json",
-  "docs_path": "docs/",
+  "description": "Signal component that transforms raw market ticks and bars into normalized feature vectors (V1: 11 base+phase1, V2: +3 additive, futures: +3, pillars: +4, price_motion: +12 fields) for downstream decision making, regime detection, and risk assessment. Also hosts bar-based strategy infrastructure (MR, MD-AMR).",
+  "version": "2.0.0",
+  "status": "production",
   "imports": [
-    {
-      "event_name": "EVT:MARKET_TICK_RECEIVED",
-      "source": "market_data",
-      "description": "Raw tick data with price, bid/ask sizes, buy/sell volumes",
-      "required_fields": ["symbol", "ts", "price", "bid_size", "ask_size", "buy_volume", "sell_volume"]
-    }
+    {"event_name": "EVT:MARKET_TICK_RECEIVED", "source_domain": "market_data"},
+    {"event_name": "EVT:BAR_CLOSED", "source_domain": "market_data"},
+    {"event_name": "EVT:REGIME_DETECTED", "source_domain": "regime_detector"},
+    {"event_name": "EVT:HTF_BARS_IMPORTED", "source_domain": "bootstrap"},
+    {"event_name": "EVT:FUNDING_UPDATE", "source_domain": "market_data", "notes": "config-gated: futures.enabled"},
+    {"event_name": "EVT:OI_UPDATE", "source_domain": "market_data", "notes": "config-gated: futures.enabled"},
+    {"event_name": "EVT:ANCHOR_UPDATED", "source_domain": "market_data"}
   ],
   "exports": [
-    {
-      "event_name": "EVT:FEATURES_CALCULATED",
-      "destinations": ["decision_making", "risk_strategy", "analyzer", "feature_store"],
-      "description": "Computed features including OBI, TFI, delta_price, liquidity_kappa, and Phase 1 metrics (ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync)",
-      "payload_fields": ["ts", "symbol", "features"]
-    }
+    {"event_name": "EVT:FEATURES_CALCULATED", "target_domains": ["regime_detector", "decision_making"], "schema": "schemas/features_calculated_v1.json"},
+    {"event_name": "CMD:PROCESS_STRATEGY", "target_domains": ["decision_making"], "schema": "schemas/cmd_process_strategy_v1.json", "notes": "bar-driven trigger, tf_sec>=60, warmup-gated"},
+    {"event_name": "EVT:PROCESS_STRATEGY_BLOCKED", "target_domains": ["observability"], "schema": "schemas/process_strategy_blocked_v1.json"}
   ],
-  "features_computed": {
-    "base": ["obi", "tfi", "delta_price", "liquidity_kappa", "price", "absorption"],
-    "phase1": ["ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_sync"]
+  "components": [
+    "FeatureEngineering",
+    "FeatureCalculationEngine",
+    "FeatureEngineeringConfig",
+    "BarResampler",
+    "MultiSymbolBarResampler",
+    "MacroSyncResampler",
+    "LargeTradeImbalanceCalculator",
+    "MeanReversion1mStrategy",
+    "MDAMRStrategyV11",
+    "PillarBackfillService"
+  ],
+  "feature_families": {
+    "v1_base": ["obi", "tfi", "delta_price", "price", "absorption", "liquidity_kappa"],
+    "v1_phase1": ["ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_sync"],
+    "v2_additive": ["volume_zscore", "large_trade_imbalance", "spread_bps"],
+    "futures": ["funding_rate_normalized", "oi_delta_pct", "funding_rate"],
+    "r1_macro": ["macro_resid"],
+    "pillars": ["pillar_tactician", "pillar_operator", "pillar_strategist", "pillar_sum"],
+    "price_motion": ["ret_10s", "ret_60s", "ret_300s", "ret_900s", "vol_pct_10s", "vol_pct_60s", "vol_pct_300s", "vol_pct_900s", "pm_norm_10s", "pm_norm_60s", "pm_norm_300s", "pm_norm_900s"]
   },
-  "config_paths": [
-    "domains.feature_engineering",
-    "trading.feature_engineering"
-  ]
+  "documentation": "README.md",
+  "ssot_notes": {
+    "feature_catalog": "contracts.py V1_FEATURE_METADATA / V2_FEATURE_METADATA is the canonical feature list with range, neutral, monotonicity",
+    "computation_engine": "calculation_engine.py is the sole runtime feature computer. indicators.py provides pure-math helpers",
+    "config": "FeatureEngineeringConfig wraps AuroraConfig (Pydantic, extra='forbid'). 60+ typed properties from config/aurora/domains.yaml",
+    "normalization": "V1 base: native ranges; V1 phase1: [0,1]; V2 volume_zscore: tanh([0,1]); spread_bps: unbounded R+",
+    "strategy_infra": "MR + MD-AMR strategy classes live in FE but are semantically owned by DM. DM production code uses decision_making/strategy_bridge.py facade. Direct DM imports from FE strategy files are forbidden (FE-DM-BOUNDARY-STABILIZATION 2026-03-15).",
+    "duplicate_sma_atr": "regime_detector has independent SMA/ATR (Decimal, rolling buffers). Intentional — different precision/lifecycle",
+    "registry_verbs": "FEATURES_CALCULATED (active, owner), FUNDING_UPDATE (experimental, owner), PROCESS_STRATEGY_BLOCKED (active, owner). CMD:PROCESS_STRATEGY (owner: strategies, schema in FE)"
+  }
 }

@@ -990,25 +990,61 @@ class ConfigLoader:
         observability_config = self._load_observability()
         merged_config["observability"] = observability_config.model_dump()
 
-        # BACKTEST SAFETY: allow `trading.mode: backtest` (trading.yaml) to force root `trading_mode`.
-        # This avoids accidental execution-mode leakage when system.yaml is left in hybrid/testnet.
+        # MODE-SSOT: Resolve trading mode from two potential sources.
+        # system.yaml → root `trading_mode`
+        # trading.yaml → `trading.mode`
+        # Policy: backtest from either source forces backtest everywhere.
+        # Any other mismatch is a HARD FAIL — the operator must fix config.
         try:
             root_mode = merged_config.get("trading_mode")
             trading_block = merged_config.get("trading")
+            trading_mode = None
             if isinstance(trading_block, dict):
                 trading_mode = trading_block.get("mode")
-                if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
-                    if not isinstance(root_mode, str) or root_mode.strip().lower() != "backtest":
-                        LOG.warning(
-                            "Config: trading.mode=backtest detected; forcing root trading_mode=backtest"
-                        )
-                        merged_config["trading_mode"] = "backtest"
-                elif isinstance(root_mode, str) and isinstance(trading_mode, str):
-                    # Keep legacy `trading.mode` consistent with root `trading_mode` for non-backtest modes.
-                    if trading_mode.strip().lower() != root_mode.strip().lower():
-                        trading_block["mode"] = root_mode
-        except Exception:
-            pass
+
+            root_norm = root_mode.strip().lower() if isinstance(root_mode, str) else None
+            trade_norm = trading_mode.strip().lower() if isinstance(trading_mode, str) else None
+
+            if root_norm and trade_norm and root_norm != trade_norm:
+                # Backtest safety: if either source says backtest, force backtest everywhere
+                if root_norm == "backtest" or trade_norm == "backtest":
+                    LOG.warning(
+                        "MODE_SSOT_CONFLICT: system.yaml trading_mode=%r vs trading.yaml trading.mode=%r — "
+                        "backtest detected in one source, forcing backtest everywhere. "
+                        "Fix config to remove ambiguity.",
+                        root_mode, trading_mode,
+                    )
+                    merged_config["trading_mode"] = "backtest"
+                    if isinstance(trading_block, dict):
+                        trading_block["mode"] = "backtest"
+                else:
+                    raise ConfigContractError(
+                        path="trading_mode",
+                        why=(
+                            f"MODE_SSOT_CONFLICT: system.yaml trading_mode={root_mode!r} "
+                            f"vs trading.yaml trading.mode={trading_mode!r}. "
+                            f"These must match. Fix one config source to eliminate ambiguity."
+                        ),
+                    )
+            elif root_norm and trade_norm:
+                pass  # Already consistent
+            elif root_norm and not trade_norm and isinstance(trading_block, dict):
+                trading_block["mode"] = root_mode
+            elif trade_norm and not root_norm:
+                merged_config["trading_mode"] = trading_mode
+
+            # Emit final mode truth for operator visibility
+            effective_mode = merged_config.get("trading_mode", "UNKNOWN")
+            LOG.info(
+                "MODE_SSOT_RESOLVED: effective_trading_mode=%s source=%s",
+                effective_mode,
+                "system.yaml" if root_norm else (
+                    "trading.yaml" if trade_norm else "default"),
+            )
+        except ConfigContractError:
+            raise
+        except Exception as exc:
+            LOG.error("MODE_SSOT_RESOLUTION_FAILED: %s", exc)
 
         # Enforce service key hygiene before validation
         for key in list(merged_config.keys()):

@@ -975,7 +975,8 @@ def test_aurora_objective_missing_exposure_summary_blocks_explicitly() -> None:
         },
     )
 
-    assert not emitted
+    assert not any(
+        name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
     assert len(blocked) == 1
     assert blocked[0]["reason_code"] == "OBJECTIVE_PRECONDITION_NOT_MET"
     assert blocked[0]["details"]["precondition"] == "OBJECTIVE_EXPOSURE_SUMMARY_MISSING"

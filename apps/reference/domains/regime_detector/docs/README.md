@@ -16,4 +16,7 @@
 Налаштування порогів та моделей здійснюється в `regime.yaml`.
 
 ---
+> **Staleness note (2026-03-14, RD-DOMAIN-AUDIT):** This auto-generated documentation may be stale.
+> The authoritative domain reference is `../README.md` in the domain root.
+
 *Документація згенерована автоматично (Domain Cartographer v1.0)*

@@ -1,5 +1,171 @@
 # TODO
 
+## Runtime recovery + MR regression follow-ups (added 2026-03-15)
+
+### P1: Post-deploy live verification
+- [ ] Restart runtime and verify `STARTUP_BASIS_IMPORTED`, `STARTUP_BASIS_SEEDED`, and `STRATEGY_READINESS_STATE` appear for every warmup-sensitive symbol
+- [ ] Confirm `md_amr` jumps to `>=96/96` and `aurora` jumps to `>=301/301` immediately after startup instead of climbing one live bar at a time
+- [ ] Capture the first post-restart 30 minutes of `aurora_core.log`, `aurora_trades.log`, and lifecycle logs as evidence that readiness is now real
+
+### P1: Mean reversion regression closure
+- [ ] Investigate Binance `-1007` timeout path for MR order intents and determine whether execution retry/state reconciliation is missing
+- [ ] Replay current 300s DOGE config versus rolled-back 300s DOGE config on the same historical window to measure whether the rollback restores edge
+- [ ] Decide explicitly whether historical 180s MR pipeline should be restored or the 300s line should remain the production contract
+
+### P2: Bootstrap contract hardening
+- [ ] Add a deployment-grade check that fails loudly when hydration plan exists but imports/seeds resolve to zero for warmup-sensitive handlers
+- [ ] Add operator-facing alerting when `STRATEGY_READINESS_STATE.ready=false` persists beyond the first startup warmup window
+
+## Bootstrap readiness — residual debt (added 2026-03-15)
+
+### P1: Hydration data-path verification
+- [ ] Verify `PillarBackfillService.fetch_candles()` actually returns sufficient bars for all enabled symbols in production
+- [ ] Verify `started_strategy_handlers` dict is populated before `execute_startup_basis_hydration()` runs (timing dependency)
+- [ ] Add integration test that runs full bootstrap → hydration → seed → readiness check path end-to-end
+
+### P1: Quadratic trace sink routing
+- [ ] Verify `EVT:QUADRATIC_DECISION_TRACE` is picked up by the operator-visible decision sink (not just FSM bus)
+- [ ] Consider adding JSONL file sink for quadratic traces (`logs/aurora/quadratic_trace.jsonl`)
+
+### P2: Readiness dashboard
+- [ ] Wire `get_readiness_diagnostics()` to a periodic health check emitter (e.g. every 60s after startup)
+- [ ] Consider adding `/readiness` HTTP endpoint for operator tooling
+
+## Test suite follow-ups (added 2026-03-15)
+
+### P1: Manual review candidates (RESOLVED 2026-03-15)
+- [x] ~~`tests/test_execution_schemas_sim.py`~~ — deleted in LEGACY-PURGE-WAVE-2 (zero assertions, superseded)
+- [x] ~~`tests/integration/test_decision_qos_features_burst.py`~~ — deleted in LEGACY-PURGE-WAVE-2 (mock-only, forbidden .get())
+- [x] `tests/units/test_binance_adapter_session.py` — KEEP (xfail removed in TEST-HYGIENE-NORMALIZATION)
+- [x] `tests/integration/test_features_full_chain_happy.py` — KEEP (integration value, modernize later)
+
+### P2: Test location consolidation
+- [ ] Resolve `tests/units/` vs `tests/unit/` dual naming
+- [ ] Consolidate `tests/execution_position/` → `tests/domains/execution_position/`
+- [ ] Consolidate `tests/decision_making/` → `tests/domains/decision_making/`
+- [ ] Relocate root-level test orphans to appropriate subdirectories
+
+### P2: Empty directory cleanup (RESOLVED 2026-03-15)
+- [x] ~~Remove 14 empty directories under tests/~~ — removed 17 in LEGACY-PURGE-WAVE-2
+
+### P3: Pre-existing test failure (RESOLVED 2026-03-15)
+- [x] ~~Fix 4 `.get()` patterns in `mean_reversion_strategy.py`~~ — done in FORBIDDEN-CONFIG-PATTERN-FIX
+
+## Legacy Purge Wave 2 candidates (added 2026-03-15)
+
+### P2: Skipped deprecated event tests
+- [x] ~~Delete `tests/integration/test_market_tick_forwarded_emitted.py`~~ — done in TEST-SUITE-RECLASSIFICATION
+- [x] ~~Delete `tests/integration/test_mr_receives_forwarded_tick_smoke.py`~~ — done in TEST-SUITE-RECLASSIFICATION
+- [ ] Review `scripts/diagnostics/mr_restore_002_probe.py` MARKET_TICK_FORWARDED ref
+
+### P2: Default timeframe mismatch
+- [ ] Unify `domain_builder.py` fallback `[60, 300]` and `BarAggregator.__init__` default `[180, 300]`
+
+### P2: Absorption stub
+- [ ] `websocket_aggregator.py:335` hardcodes `"absorption": "0.0"` — implement or document as intentional
+
+### P2: Memory leak risk
+- [ ] `seen_trade_ids` set in WebSocketAggregator has no size limit — add eviction
+
+### P3: WS URL duplication
+- [ ] Extract hardcoded Binance WS URLs from 2 files (connector, worker) into config
+
+## Legacy Purge Wave 1 (completed 2026-03-15)
+- [x] Deleted `market_ws_client.py` (119 LOC dead module)
+- [x] Cleaned `__init__.py` MarketWSClient export
+- [x] Deleted dead imports: `asdict` (bar_aggregator), `time` (connector)
+- [x] Deleted `set_feature_engineering()` no-op from proxy + connector
+- [x] Deleted 7 ghost .pyc in vfoundation/ (5 unique stems)
+- [x] Deleted 2 orphaned vfoundation directories (apps/, services/)
+- [x] Purged 45 deprecated doc files across 7 domains (docs/deprecated/)
+- [x] Purged all test `__pycache__/` directories
+- [x] Updated guardrail tests (3 anti-reintroduction + 3 cross-project)
+- [x] Report: `reports/cleanup/LEGACY_PURGE_WAVE_1_2026-03-15.md`
+
+## Market data domain audit (completed 2026-03-15)
+- [x] Phase A: Context map — 7 files, ~2,661 LOC, 3 active verbs, 1 deprecated
+- [x] Phase B: Created domain_dict.json v1.0.0, staleness note on docs/README.md
+- [x] Phase C: Created authoritative README.md
+- [x] Phase D: 15 guardrail tests in `test_md_domain_structural_guardrails.py`
+- [x] Phase E: Report `reports/domains/MARKET_DATA_DOMAIN_AUDIT_2026-03-15.md`
+
+## FE-DM boundary stabilization follow-ups (added 2026-03-15)
+
+### P2: Physical strategy file migration
+- [ ] Move `mean_reversion_strategy.py`, `md_amr_strategy.py`, `regime_mapping.py` from FE to DM
+- [ ] Convert `strategy_bridge.py` into backward-compat shim in FE
+- [ ] Update ~17 test files to import from bridge or DM paths
+
+## FE-DM boundary stabilization (completed 2026-03-15)
+- [x] Classified 5 disputed files (3 WRAP_BEHIND_DM_FACADE, 2 KEEP_IN_FE)
+- [x] Created `decision_making/strategy_bridge.py` (13 symbols)
+- [x] Migrated 3 DM production files (5 import sites)
+- [x] Updated both domain README.md and domain_dict.json
+- [x] 6 guardrail tests in `test_fe_dm_boundary_guardrails.py`
+- [x] Report `reports/domains/FE_DM_BOUNDARY_STABILIZATION_2026-03-15.md`
+
+## FE domain audit follow-ups (added 2026-03-15)
+
+### P3: Config-drive strategy constants
+- [ ] Make BB/RSI/ATR defaults in MR/MD-AMR config-overridable (currently hardcoded)
+
+### P3: Unify duplicate compute_sma
+- [ ] Consider unifying `indicators.compute_sma()` (list-based) and `pillar_indicators.compute_sma()` (deque-based) with adapter pattern
+
+### P3: Purge deprecated FE docs
+- [ ] Purge or refresh stale docs in `apps/reference/domains/feature_engineering/docs/deprecated/` (7 files)
+
+### P3: Fix FE skipped/xfail tests
+- [ ] Fix `test_features_full_chain_happy.py` (skipped: complex async domain integration chain)
+- [ ] Fix P1-1, P1-2 xfail tests in `test_task24_feature_engineering_correctness.py`
+
+### P4: Ghost test .pyc cleanup (cross-project)
+- [ ] Clean ~15 ghost .pyc across test __pycache__ directories (not FE-specific)
+
+## FE domain audit (completed 2026-03-15)
+- [x] Phase A: Context map — 16 files, ~8,849 LOC, 7 consumed / 3 emitted events, ~150+ tests
+- [x] Phase B: Deleted 2 ghost .pyc (config, feature_engineering_phase1), rewrote domain_dict.json v2.0.0, staleness note
+- [x] Phase C: Created authoritative README.md
+- [x] Phase D: 15 guardrail tests in `test_fe_domain_structural_guardrails.py`
+- [x] Phase E: Report `reports/domains/FEATURE_ENGINEERING_DOMAIN_AUDIT_2026-03-15.md`
+
+## RD domain audit follow-ups (added 2026-03-14)
+
+### P3: Purge/refresh deprecated RD docs
+- [ ] Purge or refresh stale docs in `apps/reference/domains/regime_detector/docs/deprecated/` (6 files)
+
+### P3: Fix skipped integration test
+- [ ] Fix `tests/integration/test_regime_detector_event_flow.py` (unconditionally skipped — needs BAR-ONLY mock payload)
+
+### P3: Create shared RegimeLabel Enum
+- [ ] Consider extracting regime label strings to a shared Enum class (currently raw strings, schema-only enforcement)
+
+### P4: Add RegimeDetector re-export to __init__.py
+- [ ] Add `from .regime_detector import RegimeDetector` to `__init__.py` (currently only exports `__version__`)
+
+### P4: Replace silent bar_ttl_ms default
+- [ ] Replace `getattr(sys_md, "bar_ttl_ms", 10000)` with explicit config contract (minor config opacity)
+
+## RD domain audit (completed 2026-03-14)
+- [x] Phase A: Context map — 2 files, 803 LOC, ~181 test functions, clean event-driven, priority cascade
+- [x] Phase B: Cleanup — deleted ghost config.cpython-311.pyc, created domain_dict.json, staleness note
+- [x] Phase C: Created authoritative README.md
+- [x] Phase D: 10 guardrail tests in `test_rd_domain_structural_guardrails.py`
+- [x] Phase E: Report `reports/domains/REGIME_DETECTOR_DOMAIN_AUDIT_2026-03-14.md`
+
+## RM domain audit follow-ups (added 2026-03-14)
+
+### P3: Purge/refresh auto-generated RM docs
+- [ ] Purge or refresh stale auto-generated docs in `apps/reference/domains/risk_management/docs/` subdirectory
+
+### P3: Delete broken test_risk_strategy_fsm.py
+- [ ] Delete `tests/domains/test_risk_strategy_fsm.py` (references non-existent `risk_strategy` domain, unconditionally skipped)
+
+## RM domain audit (completed 2026-03-14)
+- [x] Phase A: Context map — 3 files, 990 LOC, 73 test functions, clean 2-layer fail-closed
+- [x] Phase B-F: Rewrote garbled domain_dict.json v2.0.0, created README, staleness note, 11 guardrail tests
+- [x] Phase G: Report `reports/domains/RISK_MANAGEMENT_DOMAIN_AUDIT_2026-03-14.md`
+
 ## EP contract boundary follow-ups (added 2026-03-14)
 
 ### P3: Update CONTRACT_ARCHITECTURE.md with co_emitters policy

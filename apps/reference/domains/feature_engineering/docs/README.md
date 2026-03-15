@@ -15,4 +15,7 @@
 Домен автоматично обробляє подію `EVT:MARKET_TICK_RECEIVED`. Для додавання нової ознаки необхідно оновити `calculation_engine.py` та схему в `contracts.py`.
 
 ---
+> **Staleness note (2026-03-15, FE-DOMAIN-AUDIT):** This auto-generated documentation may be stale.
+> The authoritative domain reference is `../README.md` in the domain root.
+
 *Документація згенерована автоматично (Domain Cartographer v1.0)*

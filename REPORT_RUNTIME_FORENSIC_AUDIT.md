@@ -1,7 +1,7 @@
 # RUNTIME FORENSIC AUDIT: md_amr cold_start / Aurora inactivity / Quadratic visibility / FE integrity
 
 ## 1. Executive Summary
-This deep forensic audit of the Aurora / Phenix runtime environment reveals several systemic issues blocking live trading and alpha search logic. `md_amr` (Mean Reversion) strategy is strictly bound to a 96-bar (24-hour) cold start counter that rejects its own signals until saturated. Even when strategies successfully pass the cold start and emit `TRADE_INTENT`, the Execution Guard abruptly blocks trades with a `local_manage_state_conflict` (even when both local and portfolio states are correctly `FLAT`). Furthermore, the Feature Engineering (FE) pipeline is systematically failing to produce required Technical Analysis (TA) features (`bb_position`, `rsi_14`, etc.), causing the Alpha Search `ta_ensemble` to fail-closed globally. Lastly, while `pillar_sum` is calculated in FE, it is entirely omitted from `DecisionMaking` and intent logs, rendering Quadratic regime logic impossible to debug operationally.
+This deep forensic audit of the Aurora / Phenix runtime environment reveals several systemic issues blocking live trading and alpha search logic. `md_amr` (Mean Reversion) strategy is strictly bound to a 96-bar (24-hour) cold start counter that rejects its own signals until saturated. Even when strategies successfully pass the cold start and emit `TRADE_INTENT`, the Execution Guard abruptly blocks trades with a `local_manage_state_conflict` (even when both local and portfolio states are correctly `FLAT`). Furthermore, the Feature Engineering (FE) pipeline is systematically failing to produce required Technical Analysis (TA) features (`bb_position`, `rsi_14`, etc.), causing the Alpha Search `ta_ensemble` to fail-closed globally. Lastly, the current Quadratic observability is only partially implemented: `pillar_sum` is produced in FE, rich Quadratic traces exist in Aurora code, but the observed live Aurora path is mostly fail-closed on invalid `tf_sec` before Quadratic compute/logging, and the standard decision trace serialization still drops most Quadratic-specific fields.
 
 ## 2. Runtime Artefacts Used
 - `logs/aurora_core.log` & `logs/aurora_trades.log` (Intent generation, Execution Guard rejects, FE feature payloads)
@@ -14,7 +14,7 @@ This deep forensic audit of the Aurora / Phenix runtime environment reveals seve
 - **First observation:** `md_amr_handler` tracking bars and generating signals but immediately dropping them.
 - **Evidence:** `GUARD_REJECT: DECISION_REJECT - XRPUSDT buy (md_amr_handler:cold_start:8/96)` at 05:00:02.
 - **Increment:** The counter increments precisely every 15 minutes (e.g., `9/96` at 05:15:03, `10/96` at 05:30:04, up to `31/96` at 10:45:01).
-- **Result:** The strategy natively generates decisions but a hard-coded guard drops them until exactly 96 bars are observed. 
+- **Result:** The strategy natively generates decisions but a hard-coded guard drops them until exactly 96 bars are observed.
 
 ## 4. What md_amr Actually Needs At Startup
 - `md_amr` operates purely on `EVT:BAR_CLOSED` to build its buffer.
@@ -32,17 +32,30 @@ Using `DOGEUSDT` as the unblocked asset (surpassed cold start):
 7. **REJECT:** `08:35:02,137 - Execution Rejected: OPEN_GUARD_FAIL`
 
 ## 6. Why Aurora Is Not Trading
-Aurora is successfully evaluating features, processing strategies, and generating high-confidence `TRADE_INTENT_PROPOSED` events. The entire decision-making pipeline works. 
+Aurora is successfully evaluating features, processing strategies, and generating high-confidence `TRADE_INTENT_PROPOSED` events. The entire decision-making pipeline works.
 **The failure is entirely in the Execution Position domain.** The `ExposureGuard` FSM intercepts `CMD:OPEN` and erroneously raises `local_manage_state_conflict` even though both `local_manage_state` and `portfolio_truth_state` correctly read as `FLAT`. Additionally, other symbols (like `BTCUSDT`) are rejected for `COOLDOWN (Position recently closed)`.
 
 ## 7. Quadratic / Pillar / Regime Logging Audit
-- **Feature Engineering:** Perfectly logs `pillar_sum`, `pillar_tactician`, `pillar_operator`, `pillar_strategist`, and individual `pillar_contribs` for every bar.
-- **Decision Making:** Completely missing. The `on_risk()` logger outputs `toxicity_term` and `absorption_feature_term`, but `pillar_sum` and the Quadratic transformation are entirely absent from the decision trace.
-- **Strategy:** `MRHandler` logs the discrete regime label (`regime:FLAT_LOW`) but no continuous Quadratic score.
-- **Verdict:** Insufficient. An operator cannot debug how the continuous `pillar_sum` scaled the signal or intent size because it is discarded before or during the Decision Making layer logging.
+
+#### Quadratic Regime / Scoring Logging Audit
+- **Does current runtime code contain Quadratic regime / scoring logic?** Yes. `apps/reference/domains/decision_making/quadratic_scoring_kernel.py` contains `QuadraticScoringKernel.compute()`, and Aurora runtime code builds a rich Quadratic decision trace in `aurora_decision.py`.
+- **Where is it computed?** In Aurora only, after `AuroraHandler.on_process_strategy()` passes strict fail-closed input gates and delegates into `_process_decision()`, which calls the Quadratic kernel.
+- **Where is it supposed to be logged?** There are three intended observability points in code: `QUADRATIC_DECISION_TRACE` at debug level, `KERNEL_DIAG` at info level, and compact `decision_trace` attached to blocked-strategy details. Trade intents and `EVT:DECISION_TRACE_EMITTED` additionally expose only generic fields like `regime`, `regime_confidence`, and `pm_norm_*`.
+- **Which logger / sink / file / event should contain it?** Aurora emits through logger names `aurora_handler.<strategy_id>`. Those records should be visible through the core/root logging path (for example `logs/aurora_core.log`). They do **not** match the `decision_making` domain sink prefix used for `logs/domain_decision_making.log`, so that file is not a reliable sink for Aurora Quadratic logs.
+- **Actual runtime evidence found:** live WAL confirms `aurora_handler` is executing in runtime, but the observed events are dominated by `TRADE_INTENT_REJECTED` with `NRR-046` reasons `CMD:PROCESS_STRATEGY missing tf_sec (fail-closed)` and `CMD:PROCESS_STRATEGY tf_sec=0 forbidden (fail-closed)`. No live `KERNEL_DIAG` or `QUADRATIC_DECISION_TRACE` records were found in searched logs.
+- **What this means operationally:** Aurora path is alive, but the observed live calls are mostly rejected before `_process_decision()` and therefore before Quadratic compute/logging. Separately, even when Quadratic compute does happen, the standard emitted decision trace payload still omits the rich Quadratic fields (`pillar_sum`, `raw_exposure`, `final_score`, `shield_multiplier`, `side_why`, etc.), so operator-visible telemetry remains incomplete.
+- **Primary missing-visibility causes:**
+	1. Runtime entry reaches Aurora, but the observed live path usually exits early on `tf_sec` fail-closed validation before Quadratic computation.
+	2. Aurora logger names are not routed into `logs/domain_decision_making.log` because the sink filter expects `apps.reference.domains.decision_making.*`, not `aurora_handler.*`.
+	3. The generic decision trace / intent serialization does not preserve the full Quadratic trace even where the code constructs it.
+- **Verdict:** `QUADRATIC_LOGGING_PARTIALLY_IMPLEMENTED`
+- **Exact fix recommendation:**
+	1. Fix the producer of `CMD:PROCESS_STRATEGY` so `tf_sec` is always present and non-zero.
+	2. Route `aurora_handler.*` into an explicit decision/strategy sink or widen the decision-making sink filter so Aurora diagnostics land in a predictable file.
+	3. Serialize the compact Quadratic trace into the standard `EVT:DECISION_TRACE_EMITTED` / `TRADE_INTENT_PROPOSED` observability payload so operators can see `pillar_sum`, score transformation, thresholds, shielding, and final side decision without relying on debug-only logger text.
 
 ## 8. Feature Engineering Integrity Audit
-- **Massive Hole:** FE is failing to publish structural TA features. 
+- **Massive Hole:** FE is failing to publish structural TA features.
 - `apps.reference.domains.alpha_search.backtest_plugin` spams warnings every 5 minutes across ALL symbols: `Provider ta_ensemble skipped: missing required features: bb_position,bb_width,rsi_14,price_sma_20_deviation,volume_sma_ratio,stoch_k,stoch_d,price_momentum_5m`.
 - The `alpha_search_runtime` continuously logs `"why": ["fail_closed:missing_features_for_bar"]`, effectively paralyzing the ensemble strategy.
 - Existing features (`obi`, `tfi`, `pillar_sum`) are cleanly populated without nulls, pointing to a disabled or disconnected TA calculator module in the FE pipeline.
@@ -50,7 +63,7 @@ Aurora is successfully evaluating features, processing strategies, and generatin
 ## 9. Confirmed Runtime Defects
 1. **Execution FSM Bug:** `EXECUTION_GUARD_BLOCKED` throws `local_manage_state_conflict` when both local and portfolio states are `FLAT`, halting all valid trades.
 2. **Missing FE TA Features:** `bb_position`, `rsi_14`, etc., are completely missing from the FE output payload, breaking `ta_ensemble`.
-3. **Quadratic Logging Gap:** `pillar_sum` is calculated in FE but disappears in Decision Making; its impact on trade size/confidence is unlogged.
+3. **Quadratic Logging Gap:** FE computes `pillar_sum`, Aurora contains real Quadratic compute/logging code, but observed live Aurora calls usually fail before Quadratic compute on invalid `tf_sec`, and the standard decision trace still omits the rich Quadratic fields.
 
 ## 10. Likely / Not Fully Proven Problems
 - The `md_amr_handler` cold start of 96 bars implies a strict 24-hour waiting period. While it can likely be fixed by hydrating historical candles on startup, it's not proven if the regime detectors *also* require live latency to align with those candles.
@@ -67,10 +80,10 @@ Aurora is successfully evaluating features, processing strategies, and generatin
 3. **Якщо тільки від свічок — які TF і скільки барів потрібні?** 96 барів (крок 15 хвилин, що дорівнює 24 годинам).
 4. **Якщо не тільки від свічок — що ще є blocker-ом?** N/A.
 5. **Aurora взагалі отримує CMD:PROCESS_STRATEGY?** Так, стратегії обробляють події та генерують сигнали.
-6. **Aurora доходить до Quadratic kernel?** Так, `pillar_sum` успішно розраховується у FE.
+6. **Aurora доходить до Quadratic kernel?** Кодово так, але в observed live runtime більшість викликів `aurora_handler` відсікаються раніше fail-closed перевіркою `tf_sec`, тому Quadratic compute/logging у зібраних артефактах не видно.
 7. **Якщо доходить — чому не дає trade?** Блокується `ExposureGuard` через помилковий конфлікт станів (`local_manage_state_conflict`), хоча обидва стани `FLAT`.
-8. **Де саме логується Quadratic / pillar / regime logic?** Логується тільки у `feature_engineering.log`. Зникає на етапі `decision_making`.
-9. **Чи достатньо поточного логування, щоб дебажити Quadratic decisions?** Ні, абсолютно недостатньо. Не видно впливу `pillar_sum` на ризик і сайзинг.
+8. **Де саме логується Quadratic / pillar / regime logic?** У FE добре видно `pillar_sum` і `pillar_contribs`; в Aurora code існують `QUADRATIC_DECISION_TRACE` і `KERNEL_DIAG`, але у live-артефактах вони не знайдені, бо observed path зазвичай падає на `tf_sec` gate ще до Quadratic compute. Стандартний decision trace event не несе rich Quadratic fields.
+9. **Чи достатньо поточного логування, щоб дебажити Quadratic decisions?** Ні. Поточне логування частково імплементоване, але неоперабельне: нема стабільного sink routing для `aurora_handler.*`, а стандартний trace не серіалізує повну Quadratic explainability.
 10. **Чи є в FE дірки / нульові / missing фічі?** Так, критичні дірки: повністю відсутні `bb_position`, `rsi_14`, `stoch_k` та інші TA фічі, через що `ta_ensemble` відхиляє всі бари.
 11. **Які 3 найкритичніші runtime проблеми зараз по факту логів?** 1) Баг ExecutionGuard `local_manage_state_conflict`. 2) Відсутність базових TA-фіч у FE. 3) 24-годинний cold_start у `md_amr`.
 12. **Який найкоротший practical next step after this audit?** Пофіксити логіку порівняння станів у `ExposureGuard` (FSM), щоб він пропускав інтенти для `FLAT`-стану.
@@ -105,4 +118,4 @@ Aurora is successfully evaluating features, processing strategies, and generatin
 |------------------|---------------|-------------|---------------------|----------------|
 | `pillar_sum` components | `FeatureEngineering` | Yes (for FE) | Missing in DM | Propagate to intent metadata |
 | Risk Score (Toxicity) | `DecisionMaking` | Yes | None | N/A |
-| Final exposure/score | Nowhere | **No** | Missing from Decision logs | Add `Quadratic` sizing multiplier to `TRADE_INTENT` payload trace |
+| Final exposure/score | Aurora code only (`KERNEL_DIAG`, `QUADRATIC_DECISION_TRACE`) | **No** | Not found in live logs; missing from standard decision trace serialization | Fix `CMD:PROCESS_STRATEGY.tf_sec`, route `aurora_handler.*` to a stable sink, and embed compact Quadratic trace into `TRADE_INTENT` / `EVT:DECISION_TRACE_EMITTED` |

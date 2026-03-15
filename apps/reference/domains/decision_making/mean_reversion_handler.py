@@ -67,14 +67,16 @@ from apps.reference.utils.accessors import aget
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
 
-# Import MR strategy components
-from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
+# Import MR strategy components (via DM strategy bridge — FE-DM-BOUNDARY-STABILIZATION)
+from apps.reference.domains.decision_making.strategy_bridge import (
     MeanReversion1mStrategy,
     MRStrategyConfig,
     MRSignal,
     MRSignalType,
+    FlatRegimeThresholds,
+    SqueezeExpansionVetoConfig,
+    MomentumSeparationVetoConfig,
 )
-from apps.reference.domains.feature_engineering.regime_mapping import FlatRegimeThresholds
 from apps.reference.config_models import (
     AuroraConfig,
     MeanReversion1mStrategyConfig,
@@ -129,28 +131,28 @@ def _decimal_attr(obj: Any, name: str, default: str) -> Decimal:
         return Decimal(default)
 
 
-def _runtime_squeeze_expansion_veto(obj: Any) -> Dict[str, Any]:
-    """Normalize typed squeeze-expansion veto config into runtime-friendly payload."""
-    return {
-        "enabled": bool(getattr(obj, "enabled")),
-        "squeeze_width_max": Decimal(str(getattr(obj, "squeeze_width_max"))),
-        "post_squeeze_width_max": Decimal(str(getattr(obj, "post_squeeze_width_max"))),
-        "expansion_ratio_min": Decimal(str(getattr(obj, "expansion_ratio_min"))),
-        "regimes": [str(regime) for regime in getattr(obj, "regimes", [])],
-        "sides": [str(side).upper() for side in getattr(obj, "sides", [])],
-    }
+def _runtime_squeeze_expansion_veto(obj: Any) -> SqueezeExpansionVetoConfig:
+    """Normalize typed squeeze-expansion veto config into runtime-friendly typed config."""
+    return SqueezeExpansionVetoConfig(
+        enabled=bool(getattr(obj, "enabled")),
+        squeeze_width_max=Decimal(str(getattr(obj, "squeeze_width_max"))),
+        post_squeeze_width_max=Decimal(str(getattr(obj, "post_squeeze_width_max"))),
+        expansion_ratio_min=Decimal(str(getattr(obj, "expansion_ratio_min"))),
+        regimes=[str(regime) for regime in getattr(obj, "regimes", [])],
+        sides=[str(side).upper() for side in getattr(obj, "sides", [])],
+    )
 
 
-def _runtime_momentum_separation_veto(obj: Any) -> Dict[str, Any]:
-    """Normalize typed momentum-separation veto config into runtime-friendly payload."""
-    return {
-        "enabled": bool(getattr(obj, "enabled")),
-        "lookback_bars": int(getattr(obj, "lookback_bars")),
-        "min_drift_pct": Decimal(str(getattr(obj, "min_drift_pct"))),
-        "min_current_bb_width": Decimal(str(getattr(obj, "min_current_bb_width"))),
-        "regimes": [str(regime) for regime in getattr(obj, "regimes", [])],
-        "sides": [str(side).upper() for side in getattr(obj, "sides", [])],
-    }
+def _runtime_momentum_separation_veto(obj: Any) -> MomentumSeparationVetoConfig:
+    """Normalize typed momentum-separation veto config into runtime-friendly typed config."""
+    return MomentumSeparationVetoConfig(
+        enabled=bool(getattr(obj, "enabled")),
+        lookback_bars=int(getattr(obj, "lookback_bars")),
+        min_drift_pct=Decimal(str(getattr(obj, "min_drift_pct"))),
+        min_current_bb_width=Decimal(str(getattr(obj, "min_current_bb_width"))),
+        regimes=[str(regime) for regime in getattr(obj, "regimes", [])],
+        sides=[str(side).upper() for side in getattr(obj, "sides", [])],
+    )
 
 
 def _maybe_build_position_queries(
@@ -161,10 +163,12 @@ def _maybe_build_position_queries(
 ) -> PositionQueries | None:
     try:
         dm_sizing_cfg = config.domains.decision_making.position_sizing
-        min_position_size_usd = Decimal(str(dm_sizing_cfg.min_position_size_usd))
+        min_position_size_usd = Decimal(
+            str(dm_sizing_cfg.min_position_size_usd))
         liquidity_cap_usd = Decimal(str(dm_sizing_cfg.liquidity_based_cap_usd))
     except Exception as exc:
-        logger.debug("PositionQueries unavailable during mean_reversion init: %s", exc)
+        logger.debug(
+            "PositionQueries unavailable during mean_reversion init: %s", exc)
         return None
     return PositionQueries(
         config,
@@ -177,20 +181,20 @@ def _maybe_build_position_queries(
 
 class MeanReversionHandler:
     """Handler for Mean Reversion 3m strategy integration with DecisionMaking.
-    
+
     T2B-03 Workflow (Orchestrated Cycle):
         1. _on_process_strategy() — receives CMD:PROCESS_STRATEGY from FE
         2. Strategy processes bar (OHLCV from CMD payload), MR signal
         3. If signal is actionable, emit EVT:STRATEGY_SIGNAL_PRODUCED
-    
+
     Activation SSOT: strategies_registry.assignments.
     The config flag mean_reversion.enabled is a global kill-switch.
     """
-    
+
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         """
         Initialize Mean Reversion handler.
-        
+
         Args:
             fsm: FSMCore instance for event emission
             config: Full application config (typed AuroraConfig)
@@ -199,7 +203,7 @@ class MeanReversionHandler:
         self.config = config
         self.logger = LOG.getChild("MRHandler")
         self.mlog = logging.getLogger("domain_mean_reversion")
-        
+
         # Parse MR config
         self._mr_config: Optional[MeanReversion1mStrategyConfig] = None
         self._enabled: bool = False
@@ -239,19 +243,20 @@ class MeanReversionHandler:
             portfolio_getter=lambda: self._latest_portfolio,
             logger=self.logger,
         )
-        
+
         self._parse_config()
-        
+
         # Initialize strategy per symbol if enabled
         self._strategies: Dict[str, MeanReversion1mStrategy] = {}
         if self._enabled:
             self._init_strategies()
-        
+
         # Signal tracking for logging
         self._signal_counts: Dict[str, int] = {}
         self._last_signal_time: Dict[str, float] = {}
-        self._analytics_restore_snapshots: Dict[str, StrategyAnalyticsRestoreSnapshot] = {}
-        
+        self._analytics_restore_snapshots: Dict[str,
+                                                StrategyAnalyticsRestoreSnapshot] = {}
+
         # Cache for liquidity kappa (from FeatureEngineering)
         self._liquidity_kappa_map: Dict[str, Decimal] = {}
 
@@ -262,7 +267,7 @@ class MeanReversionHandler:
         # Block reason throttling (avoid per-tick spam)
         self._last_block_reason: Dict[str, str] = {}
         self._last_block_ts_ms: Dict[str, int] = {}
-        
+
         self.logger.info(
             f"MeanReversionHandler initialized: enabled={self._enabled}, "
             f"symbols={list(self._enabled_symbols)}, "
@@ -279,12 +284,13 @@ class MeanReversionHandler:
                 ensure_ascii=False,
             ),
         )
-        
-        # Initialize Bar Logger (Lazy init in _init_strategies might be safer if config not yet parsed, 
+
+        # Initialize Bar Logger (Lazy init in _init_strategies might be safer if config not yet parsed,
         # but _parse_config is called in __init__ before this)
         self.bar_logger: Optional[MeanReversionBarLogger] = None
         if self._mr_config and self._mr_config.timeframe_sec > 0:
-            self.bar_logger = MeanReversionBarLogger(self._mr_config.timeframe_sec)
+            self.bar_logger = MeanReversionBarLogger(
+                self._mr_config.timeframe_sec)
 
     def apply_runtime_analytics_restore_snapshot(
         self,
@@ -302,7 +308,7 @@ class MeanReversionHandler:
 
     def register(self) -> None:
         """Attach FSM listeners.
-        
+
         T2B-03: Primary trigger is CMD:PROCESS_STRATEGY (Orchestrated Cycle).
         EVT:BAR_CLOSED and EVT:FEATURES_CALCULATED are kept for data caching only.
         """
@@ -314,10 +320,14 @@ class MeanReversionHandler:
         self.fsm.listen("EVT:BAR_CLOSED", self._on_bar_closed_data_only)
         self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
         self.fsm.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
-        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self._on_portfolio_state_updated)
-        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED", self._on_exposure_summary_updated)
-        self.fsm.listen("EVT:ORDER_STATE_CHANGED", self._on_order_state_changed)
-        self.fsm.listen("EVT:TRADE_INTENT_REJECTED", self._on_trade_intent_rejected)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
+                        self._on_portfolio_state_updated)
+        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
+                        self._on_exposure_summary_updated)
+        self.fsm.listen("EVT:ORDER_STATE_CHANGED",
+                        self._on_order_state_changed)
+        self.fsm.listen("EVT:TRADE_INTENT_REJECTED",
+                        self._on_trade_intent_rejected)
         self.mlog.info(
             "MR_REGISTER %s",
             json.dumps(
@@ -338,36 +348,36 @@ class MeanReversionHandler:
                 ensure_ascii=False,
             ),
         )
-    
+
     def _get_mr_assigned_symbols(self) -> set[str]:
         """
         Get symbols that have mean_reversion assigned in strategies_registry.
-        
+
         CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
         SSOT for activation is strategies_registry.assignments.
         mean_reversion.enabled is a global kill-switch (can disable but does not activate by itself).
         """
         mr_symbols = set()
-        
+
         if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
             assignments = self.config.strategies_registry.assignments
             for symbol, strategies in assignments.items():
                 if "mean_reversion" in strategies:
                     mr_symbols.add(symbol)
-        
+
         return mr_symbols
-    
+
     def _parse_config(self) -> None:
         """
         Parse Mean Reversion config from application config.
-        
+
         CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
         - Only typed Pydantic config (no dict-fallback)
         - Fail-closed: missing config when MR assigned → ValueError
         """
         # Check if MR is assigned in strategies_registry
         mr_assigned_symbols = self._get_mr_assigned_symbols()
-        
+
         # Try Pydantic config (ONLY typed access)
         mr_cfg = getattr(self.config.strategies, "mean_reversion", None)
         if mr_cfg is not None:
@@ -383,10 +393,11 @@ class MeanReversionHandler:
                 )
             else:
                 # MR not assigned and config missing → disabled (fail-closed, no noise)
-                self.logger.info("Mean Reversion 1m: config missing, handler disabled (no assignment)")
+                self.logger.info(
+                    "Mean Reversion 1m: config missing, handler disabled (no assignment)")
                 self._enabled = False
                 return
-        
+
         # TASK32: Strategy activation is SSOT-driven via strategies_registry.assignments.
         # Keep config.enabled as a safety flag but fail-closed on conflicts.
         if mr_assigned_symbols and not bool(self._mr_config.enabled):
@@ -394,7 +405,7 @@ class MeanReversionHandler:
                 f"❌ CRITICAL: mean_reversion is assigned to symbols {mr_assigned_symbols} "
                 f"but mean_reversion.enabled=false. Resolve SSOT conflict."
             )
-        
+
         # Collect enabled symbols
         if self._mr_config and self._mr_config.assets:
             for symbol, asset_cfg in self._mr_config.assets.items():
@@ -402,9 +413,11 @@ class MeanReversionHandler:
                     if asset_cfg.enabled:
                         self._enabled_symbols.add(symbol)
                 elif isinstance(asset_cfg, dict):
-                    raise TypeError("mean_reversion.assets must contain typed MRAssetConfig values, got dict")
+                    raise TypeError(
+                        "mean_reversion.assets must contain typed MRAssetConfig values, got dict")
 
-        missing_assets = sorted([s for s in mr_assigned_symbols if not self._mr_config or s not in self._mr_config.assets])
+        missing_assets = sorted(
+            [s for s in mr_assigned_symbols if not self._mr_config or s not in self._mr_config.assets])
         disabled_assets = sorted(
             [
                 s
@@ -422,16 +435,18 @@ class MeanReversionHandler:
             )
 
         # Final activation is assignment ∩ enabled assets.
-        self._enabled_symbols = set(mr_assigned_symbols) & set(self._enabled_symbols)
+        self._enabled_symbols = set(
+            mr_assigned_symbols) & set(self._enabled_symbols)
         self._enabled = bool(self._enabled_symbols)
-        
+
         # TF-SSOT-PACK-001: SSOT timeframe from config (removes hardcode)
         self.timeframe_sec = self._mr_config.timeframe_sec
-        
+
         if not self._enabled_symbols:
-            self.logger.info("Mean Reversion 1m: no assigned+enabled symbols; handler disabled")
+            self.logger.info(
+                "Mean Reversion 1m: no assigned+enabled symbols; handler disabled")
             self._enabled = False
-            
+
     def _init_strategies(self) -> None:
         """Initialize separate strategy instance per symbol with overrides."""
         if not self._mr_config:
@@ -439,24 +454,28 @@ class MeanReversionHandler:
 
         timeframe_sec = self._mr_config.timeframe_sec
         if timeframe_sec <= 0:
-            raise ValueError(f"mean_reversion.timeframe_sec must be positive, got {timeframe_sec}")
-        
+            raise ValueError(
+                f"mean_reversion.timeframe_sec must be positive, got {timeframe_sec}")
+
         # Global base config
         base_strat_cfg = self._mr_config.strategy
-        
+
         # Shared regime sizing
         regime_sizing = None
         if self._mr_config.regime_sizing:
             regime_sizing = {}
             for regime_name, sizing_cfg in self._mr_config.regime_sizing.items():
                 if hasattr(sizing_cfg, 'model_dump'):
-                    regime_sizing[regime_name] = sizing_cfg.model_dump(exclude_none=True)
+                    regime_sizing[regime_name] = sizing_cfg.model_dump(
+                        exclude_none=True)
                 elif isinstance(sizing_cfg, dict):
                     regime_sizing[regime_name] = sizing_cfg
 
         flat_regime_thresholds = FlatRegimeThresholds(
-            high_vol_pct=Decimal(str(self._mr_config.regime_thresholds.high_vol_pct)),
-            low_vol_pct=Decimal(str(self._mr_config.regime_thresholds.low_vol_pct)),
+            high_vol_pct=Decimal(
+                str(self._mr_config.regime_thresholds.high_vol_pct)),
+            low_vol_pct=Decimal(
+                str(self._mr_config.regime_thresholds.low_vol_pct)),
         )
 
         for symbol in self._enabled_symbols:
@@ -467,7 +486,8 @@ class MeanReversionHandler:
             self._last_close_ts[symbol] = 0
             asset_cfg = self._mr_config.assets.get(symbol)
             if isinstance(asset_cfg, dict):
-                raise TypeError("mean_reversion.assets must contain typed MRAssetConfig values, got dict")
+                raise TypeError(
+                    "mean_reversion.assets must contain typed MRAssetConfig values, got dict")
 
             # Start with base config
             config = MRStrategyConfig()
@@ -478,32 +498,41 @@ class MeanReversionHandler:
             config.min_bars = base_strat_cfg.min_bars
             config.min_bb_width = Decimal(str(base_strat_cfg.min_bb_width))
             config.max_bb_width = Decimal(str(base_strat_cfg.max_bb_width))
-            config.entry_threshold = Decimal(str(base_strat_cfg.entry_threshold))
+            config.entry_threshold = Decimal(
+                str(base_strat_cfg.entry_threshold))
             config.rsi_oversold = Decimal(str(base_strat_cfg.rsi_oversold))
             config.rsi_overbought = Decimal(str(base_strat_cfg.rsi_overbought))
             config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
             config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.cooldown_sec = base_strat_cfg.cooldown_sec
             # Tier D: confidence scalars from Pydantic SSOT
-            config.confidence_base = _decimal_attr(base_strat_cfg, "confidence_base", "0.5")
-            config.confidence_bb_slope = _decimal_attr(base_strat_cfg, "confidence_bb_slope", "2.0")
-            config.confidence_rsi_bonus = _decimal_attr(base_strat_cfg, "confidence_rsi_bonus", "0.2")
+            config.confidence_base = _decimal_attr(
+                base_strat_cfg, "confidence_base", "0.5")
+            config.confidence_bb_slope = _decimal_attr(
+                base_strat_cfg, "confidence_bb_slope", "2.0")
+            config.confidence_rsi_bonus = _decimal_attr(
+                base_strat_cfg, "confidence_rsi_bonus", "0.2")
 
             # Allowed regimes precedence:
             # global default -> per-asset -> per-asset strategy override (if present)
             config.allowed_regimes = list(self._mr_config.allowed_regimes)
             if asset_cfg is not None:
                 config.allowed_regimes = list(asset_cfg.allowed_regimes)
-            
+
             # Apply asset-specific overrides
             if asset_cfg is not None and hasattr(asset_cfg, "strategy") and asset_cfg.strategy is not None:
                 strat_override = asset_cfg.strategy
                 # Check for overrides
-                if strat_override.bb_window is not None: config.bb_window = strat_override.bb_window
-                if strat_override.bb_num_std is not None: config.bb_num_std = strat_override.bb_num_std
-                if strat_override.min_bb_width is not None: config.min_bb_width = Decimal(str(strat_override.min_bb_width))
+                if strat_override.bb_window is not None:
+                    config.bb_window = strat_override.bb_window
+                if strat_override.bb_num_std is not None:
+                    config.bb_num_std = strat_override.bb_num_std
+                if strat_override.min_bb_width is not None:
+                    config.min_bb_width = Decimal(
+                        str(strat_override.min_bb_width))
                 if strat_override.flat_low_short_min_bb_width is not None:
-                    config.flat_low_short_min_bb_width = Decimal(str(strat_override.flat_low_short_min_bb_width))
+                    config.flat_low_short_min_bb_width = Decimal(
+                        str(strat_override.flat_low_short_min_bb_width))
                 if strat_override.squeeze_expansion_veto is not None:
                     config.squeeze_expansion_veto = _runtime_squeeze_expansion_veto(
                         strat_override.squeeze_expansion_veto
@@ -512,18 +541,36 @@ class MeanReversionHandler:
                     config.momentum_separation_veto = _runtime_momentum_separation_veto(
                         strat_override.momentum_separation_veto
                     )
-                if strat_override.entry_threshold is not None: config.entry_threshold = Decimal(str(strat_override.entry_threshold))
-                if strat_override.tp_to_mid is not None: config.tp_to_mid = bool(strat_override.tp_to_mid)
-                if strat_override.cooldown_sec is not None: config.cooldown_sec = strat_override.cooldown_sec
-                if strat_override.sl_atr_mult is not None: config.sl_atr_mult = Decimal(str(strat_override.sl_atr_mult))
-                if strat_override.allowed_regimes is not None: config.allowed_regimes = list(strat_override.allowed_regimes)
+                if strat_override.entry_threshold is not None:
+                    config.entry_threshold = Decimal(
+                        str(strat_override.entry_threshold))
+                if strat_override.tp_to_mid is not None:
+                    config.tp_to_mid = bool(strat_override.tp_to_mid)
+                if strat_override.cooldown_sec is not None:
+                    config.cooldown_sec = strat_override.cooldown_sec
+                if strat_override.sl_atr_mult is not None:
+                    config.sl_atr_mult = Decimal(
+                        str(strat_override.sl_atr_mult))
+                if strat_override.allowed_regimes is not None:
+                    config.allowed_regimes = list(
+                        strat_override.allowed_regimes)
                 # Wire sl_buffer_pct and tp_buffer_pct from YAML
-                if strat_override.sl_buffer_pct is not None: config.sl_buffer_pct = Decimal(str(strat_override.sl_buffer_pct))
-                if strat_override.tp_buffer_pct is not None: config.tp_buffer_pct = Decimal(str(strat_override.tp_buffer_pct))
+                if strat_override.sl_buffer_pct is not None:
+                    config.sl_buffer_pct = Decimal(
+                        str(strat_override.sl_buffer_pct))
+                if strat_override.tp_buffer_pct is not None:
+                    config.tp_buffer_pct = Decimal(
+                        str(strat_override.tp_buffer_pct))
                 # Tier D: per-asset confidence overrides
-                if strat_override.confidence_base is not None: config.confidence_base = _decimal_attr(strat_override, "confidence_base", "0.5")
-                if strat_override.confidence_bb_slope is not None: config.confidence_bb_slope = _decimal_attr(strat_override, "confidence_bb_slope", "2.0")
-                if strat_override.confidence_rsi_bonus is not None: config.confidence_rsi_bonus = _decimal_attr(strat_override, "confidence_rsi_bonus", "0.2")
+                if strat_override.confidence_base is not None:
+                    config.confidence_base = _decimal_attr(
+                        strat_override, "confidence_base", "0.5")
+                if strat_override.confidence_bb_slope is not None:
+                    config.confidence_bb_slope = _decimal_attr(
+                        strat_override, "confidence_bb_slope", "2.0")
+                if strat_override.confidence_rsi_bonus is not None:
+                    config.confidence_rsi_bonus = _decimal_attr(
+                        strat_override, "confidence_rsi_bonus", "0.2")
 
             self._strategies[symbol] = MeanReversion1mStrategy(
                 config=config,
@@ -531,13 +578,14 @@ class MeanReversionHandler:
                 regime_sizing=regime_sizing,
                 regime_thresholds=flat_regime_thresholds,
             )
-            self.logger.info(f"[{symbol}] Initialized MR Strategy (BB={config.bb_window}, W={config.min_bb_width})")
+            self.logger.info(
+                f"[{symbol}] Initialized MR Strategy (BB={config.bb_window}, W={config.min_bb_width})")
 
     @property
     def enabled(self) -> bool:
         """Check if MR handler is enabled."""
         return self._enabled
-    
+
     def is_symbol_enabled(self, symbol: str) -> bool:
         """Check if MR is enabled for specific symbol."""
         return self._enabled and symbol in self._enabled_symbols
@@ -574,37 +622,39 @@ class MeanReversionHandler:
         }
         if details:
             payload["details"] = details
-        self.fsm.emit("EVT:STRATEGY_DECISION_BLOCKED", payload, why=f"mr_blocked:{reason_code}")
-    
+        self.fsm.emit("EVT:STRATEGY_DECISION_BLOCKED",
+                      payload, why=f"mr_blocked:{reason_code}")
+
     def on_regime(self, symbol: str, regime: str) -> None:
         """
         Update regime for symbol.
         """
         if not self._enabled:
             return
-        
+
         strategy = self._strategies.get(symbol)
         if strategy:
             strategy.set_regime(symbol, regime)
             self.logger.debug(f"[{symbol}] MR regime updated: {regime}")
-    
+
     def _log_bar(self, signal: MRSignal) -> None:
         """Log completed bar to dedicated TSV/JSONL logger."""
         if not self.bar_logger or not signal.bar:
             return
-            
+
         try:
             # Extract reason from 'why'
             why = str(getattr(signal, "why", "") or "")
-            why_norm = why[len("neutral:") :] if why.startswith("neutral:") else why
-            
+            why_norm = why[len("neutral:"):] if why.startswith(
+                "neutral:") else why
+
             # Build context
             context = {
                 # DET-BT-09: Use get_clock() for deterministic backtest
                 "generated_ts_ms": get_clock().now_ms(),
                 "signal_type": signal.signal_type.name,
                 "reason": why_norm,
-                "regime": signal.flat_regime.name if signal.flat_regime else (self._per_symbol_regime.get(signal.symbol) or "UNKNOWN"), 
+                "regime": signal.flat_regime.name if signal.flat_regime else (self._per_symbol_regime.get(signal.symbol) or "UNKNOWN"),
                 "bb": {
                     "upper": str(signal.bb.upper) if signal.bb else None,
                     "mid": str(signal.bb.mid) if signal.bb else None,
@@ -616,18 +666,19 @@ class MeanReversionHandler:
                 "atr": float(signal.atr) if signal.atr is not None else None,
                 "mr_params": {
                     "sizing_mult": float(signal.mr_params.sizing_mult) if signal.mr_params else 1.0,
-                    "stop_mult": float(signal.mr_params.stop_mult) if signal.mr_params else 1.0, 
+                    "stop_mult": float(signal.mr_params.stop_mult) if signal.mr_params else 1.0,
                     "target_mult": float(signal.mr_params.target_mult) if signal.mr_params else 1.0,
                 } if signal.mr_params else None,
                 "config": signal.config_params
             }
-            
+
             self.bar_logger.log_bar(signal.symbol, signal.bar, context)
-            
+
         except Exception as e:
             self._stats["bar_logging_errors"] += 1
             if self._stats["bar_logging_errors"] <= 5:
-                self.logger.warning(f"Failed to log bar for {signal.symbol}: {e}")
+                self.logger.warning(
+                    f"Failed to log bar for {signal.symbol}: {e}")
 
     def _emit_signal(
         self,
@@ -639,19 +690,20 @@ class MeanReversionHandler:
         warmup_readiness: Dict[str, Any] | None = None,
     ) -> None:
         symbol = signal.symbol
-        
+
         # Track signal
-        self._signal_counts[symbol] = (self._signal_counts[symbol] if symbol in self._signal_counts else 0) + 1
+        self._signal_counts[symbol] = (
+            self._signal_counts[symbol] if symbol in self._signal_counts else 0) + 1
         # DET-BT-09: Use get_clock() for deterministic backtest
         self._last_signal_time[symbol] = get_clock().now_sec()
-        
+
         self.logger.info(
             f"[{symbol}] MR Signal: {signal.signal_type.name} "
             f"confidence={signal.confidence:.2f} "
             f"entry={signal.entry_price} stop={signal.stop_price} target={signal.target_price} "
             f"why={signal.why}"
         )
-        
+
         # DET-BT-13: Use deterministic rid from bar timestamp + symbol + signal type (not random uuid)
         import hashlib
         ts_ms = get_clock().now_ms()
@@ -685,7 +737,8 @@ class MeanReversionHandler:
                 gap_status,
                 updated_at=int(signal.timestamp_ms),
                 source="market_data:payload_bridge",
-                evidence_ref=(bar_identity.to_ref() if bar_identity is not None else None),
+                evidence_ref=(bar_identity.to_ref()
+                              if bar_identity is not None else None),
             ),
             RuntimeReadinessScope.MICROSTRUCTURE_READY.value: (
                 ready_status(
@@ -748,7 +801,8 @@ class MeanReversionHandler:
                     restore_snapshot,
                     RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
                 ),
-                live_status=runtime_scopes.get(RuntimeReadinessScope.MICROSTRUCTURE_READY.value),
+                live_status=runtime_scopes.get(
+                    RuntimeReadinessScope.MICROSTRUCTURE_READY.value),
                 updated_at=int(signal.timestamp_ms),
                 source="feature_engineering:startup_restore",
                 evidence_ref=rid,
@@ -823,9 +877,12 @@ class MeanReversionHandler:
         )
         objective_trace = None
         emitted_score = float(signal.confidence)
-        domain_cfg = getattr(getattr(self.config, "domains", None), "objective_engine", None)
-        mr_cfg = getattr(getattr(self.config, "strategies", None), "mean_reversion", None)
-        objective_cfg = getattr(mr_cfg, "objective", None) if mr_cfg is not None else None
+        domain_cfg = getattr(
+            getattr(self.config, "domains", None), "objective_engine", None)
+        mr_cfg = getattr(getattr(self.config, "strategies",
+                         None), "mean_reversion", None)
+        objective_cfg = getattr(mr_cfg, "objective",
+                                None) if mr_cfg is not None else None
         if (
             domain_cfg is not None
             and objective_cfg is not None
@@ -857,8 +914,10 @@ class MeanReversionHandler:
                 if not isinstance(self._latest_exposure_summary, dict):
                     raise ValueError("OBJECTIVE_EXPOSURE_SUMMARY_MISSING")
                 if self._position_queries is None:
-                    raise ValueError("OBJECTIVE_SIZING_UNAVAILABLE:position_queries")
-                regime_name = str(signal.flat_regime.name if signal.flat_regime else "")
+                    raise ValueError(
+                        "OBJECTIVE_SIZING_UNAVAILABLE:position_queries")
+                regime_name = str(
+                    signal.flat_regime.name if signal.flat_regime else "")
                 if not regime_name:
                     raise ValueError("OBJECTIVE_REGIME_MISSING")
                 regime_ts_ms = int(self._regime_ts_ms.get(symbol, 0) or 0)
@@ -881,20 +940,24 @@ class MeanReversionHandler:
                     if isinstance(warmup_readiness, dict) and isinstance(warmup_readiness.get("ready"), dict)
                     else warmup_readiness
                 )
-                objective_market = build_market_input(features=features_for_objective)
+                objective_market = build_market_input(
+                    features=features_for_objective)
                 signal_input = build_signal_input(
                     strategy_id="mean_reversion",
                     symbol=symbol,
                     signal_score=float(signal.confidence),
                     signal_direction=1 if str(side).upper() == "BUY" else -1,
                     regime=regime_name,
-                    regime_age_sec=max(0.0, float((int(signal.timestamp_ms) - regime_ts_ms) / 1000.0)),
+                    regime_age_sec=max(0.0, float(
+                        (int(signal.timestamp_ms) - regime_ts_ms) / 1000.0)),
                     regime_confidence=float(regime_confidence),
-                    readiness_completeness=compute_readiness_completeness(readiness_source),
+                    readiness_completeness=compute_readiness_completeness(
+                        readiness_source),
                 )
                 structure_input = build_structure_input_from_prices(
                     signal_score=float(signal.confidence),
-                    active_threshold=float(self._strategies[symbol].config.entry_threshold),
+                    active_threshold=float(
+                        self._strategies[symbol].config.entry_threshold),
                     entry_price=Decimal(str(signal.entry_price)),
                     stop_price=Decimal(str(signal.stop_price)),
                     target_price=Decimal(str(signal.target_price)),
@@ -917,13 +980,18 @@ class MeanReversionHandler:
                 behavior_input = build_behavior_input(
                     now_ms=int(signal.timestamp_ms),
                     window_sec=float(behavior_cfg.parameters["window_sec"]),
-                    cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(symbol, deque()),
-                    blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(symbol, deque()),
-                    reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(symbol, deque()),
+                    cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(
+                        symbol, deque()),
+                    blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(
+                        symbol, deque()),
+                    reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(
+                        symbol, deque()),
                 )
                 execution_input = build_execution_input(
-                    expected_fee_bps=float(cost_cfg.parameters["base_fee_bps"]),
-                    expected_slippage_bps=objective_market.spread_bps * float(cost_cfg.parameters["slippage_from_spread_ratio"]),
+                    expected_fee_bps=float(
+                        cost_cfg.parameters["base_fee_bps"]),
+                    expected_slippage_bps=objective_market.spread_bps *
+                    float(cost_cfg.parameters["slippage_from_spread_ratio"]),
                 )
                 obj_input = build_objective_input(
                     signal=signal_input,
@@ -933,11 +1001,13 @@ class MeanReversionHandler:
                     behavior=behavior_input,
                     execution=execution_input,
                 )
-                obj_score = evaluate_objective(obj_input, domain_cfg, objective_cfg)
+                obj_score = evaluate_objective(
+                    obj_input, domain_cfg, objective_cfg)
                 objective_trace = obj_score.trace.model_dump()
                 emitted_score = float(obj_score.objective_score)
                 if obj_score.is_blocked:
-                    self._objective_blocked_ts_ms.setdefault(symbol, deque()).append(int(signal.timestamp_ms))
+                    self._objective_blocked_ts_ms.setdefault(
+                        symbol, deque()).append(int(signal.timestamp_ms))
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code="OBJECTIVE_GATE_BLOCKED",
@@ -950,22 +1020,25 @@ class MeanReversionHandler:
                             "objective_raw_metrics": obj_score.raw_metrics,
                             "block_reason": obj_score.block_reason,
                         },
-                        why_chain=["OBJECTIVE_ENGINE", str(obj_score.block_reason or "GATE_BLOCKED")],
+                        why_chain=["OBJECTIVE_ENGINE", str(
+                            obj_score.block_reason or "GATE_BLOCKED")],
                     )
                     return
             except Exception as exc:
                 if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
-                    self._objective_blocked_ts_ms.setdefault(symbol, deque()).append(int(signal.timestamp_ms))
+                    self._objective_blocked_ts_ms.setdefault(
+                        symbol, deque()).append(int(signal.timestamp_ms))
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                         reason="DECISION",
                         context="mean_reversion_handler:objective_engine",
                         details={"error": str(exc)},
-                        why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED", str(exc)],
+                        why_chain=["OBJECTIVE_ENGINE",
+                                   "FAIL_CLOSED", str(exc)],
                     )
                     return
-        
+
         pld = {
             "schema_version": 1,
             "strategy_id": "mean_reversion",
@@ -1012,12 +1085,14 @@ class MeanReversionHandler:
         }
         if bar_identity is not None:
             pld["bar_identity"] = bar_identity.to_payload()
-            pld["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+            pld["close_boundary_ts_ms"] = int(
+                bar_identity.close_boundary_ts_ms)
         if replay_identity is not None:
             pld["replay_identity"] = replay_identity.to_payload()
             pld["replay_generation"] = int(replay_identity.replay_generation)
         if gap_status is not None:
-            attach_gap_status_payload(pld, gap=gap_status, attach_nested_bar=False)
+            attach_gap_status_payload(
+                pld, gap=gap_status, attach_nested_bar=False)
         if restore_snapshot is not None:
             pld["analytics_restore"] = restore_snapshot.to_payload()
 
@@ -1055,7 +1130,7 @@ class MeanReversionHandler:
                 ensure_ascii=False,
             ),
         )
-        
+
         self.logger.info(
             f"[{symbol}] EVT:STRATEGY_SIGNAL_PRODUCED emitted: {side} @ {signal.entry_price}"
         )
@@ -1080,22 +1155,27 @@ class MeanReversionHandler:
                 return
             if isinstance(pld, dict):
                 symbol = str(pld.get("symbol") or "")
-                regime = normalize_structural_regime_label(pld.get("regime") or pld.get("overall_regime") or "")
+                regime = normalize_structural_regime_label(
+                    pld.get("regime") or pld.get("overall_regime") or "")
             else:
                 symbol = str(getattr(pld, "symbol", "") or "")
-                regime = normalize_structural_regime_label(aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
+                regime = normalize_structural_regime_label(
+                    aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
 
             if not symbol or symbol not in self._enabled_symbols:
                 return
             if not regime:
                 return
             self._per_symbol_regime[symbol] = regime
-            confidence_raw = pld.get("confidence") if isinstance(pld, dict) else getattr(pld, "confidence", None)
+            confidence_raw = pld.get("confidence") if isinstance(
+                pld, dict) else getattr(pld, "confidence", None)
             if confidence_raw is not None:
                 self._regime_confidence[symbol] = float(confidence_raw)
-            ts_ms = normalize_ts_ms(pld.get("ts_ms") if isinstance(pld, dict) else getattr(pld, "ts_ms", None))
+            ts_ms = normalize_ts_ms(pld.get("ts_ms") if isinstance(
+                pld, dict) else getattr(pld, "ts_ms", None))
             if ts_ms <= 0:
-                ts_ms = normalize_ts_ms(pld.get("ts") if isinstance(pld, dict) else getattr(pld, "ts", None))
+                ts_ms = normalize_ts_ms(pld.get("ts") if isinstance(
+                    pld, dict) else getattr(pld, "ts", None))
             if ts_ms > 0:
                 self._regime_ts_ms[symbol] = int(ts_ms)
             self.on_regime(symbol, regime)
@@ -1127,7 +1207,8 @@ class MeanReversionHandler:
         prev = self._position_qty.get(symbol, Decimal("0"))
         now = prev + qty
         if prev == Decimal("0") and now != Decimal("0") and int(self._last_close_ts.get(symbol, 0) or 0) > 0:
-            self._objective_reentry_ts_ms.setdefault(symbol, deque()).append(get_clock().now_ms())
+            self._objective_reentry_ts_ms.setdefault(
+                symbol, deque()).append(get_clock().now_ms())
         if abs(now) < Decimal("1e-9"):
             now = Decimal("0")
             self._last_close_ts[symbol] = get_clock().now_ms()
@@ -1191,7 +1272,8 @@ class MeanReversionHandler:
             # TF guard
             tf_sec = pld.get("tf_sec")
             if tf_sec is None:
-                self.logger.warning(f"MR rejecting features for {symbol}: missing tf_sec")
+                self.logger.warning(
+                    f"MR rejecting features for {symbol}: missing tf_sec")
                 # TAP LOG: MR features rejected
                 log_entry = {
                     "symbol": symbol,
@@ -1205,7 +1287,8 @@ class MeanReversionHandler:
                 print(json.dumps(log_entry), flush=True)
                 return
             if tf_sec != self.timeframe_sec:
-                self.logger.warning(f"MR rejecting features for {symbol}: tf_sec {tf_sec} != {self.timeframe_sec}")
+                self.logger.warning(
+                    f"MR rejecting features for {symbol}: tf_sec {tf_sec} != {self.timeframe_sec}")
                 # TAP LOG: MR features rejected
                 log_entry = {
                     "symbol": symbol,
@@ -1252,10 +1335,10 @@ class MeanReversionHandler:
         asset_cfg = self._mr_config.assets.get(symbol)
         if asset_cfg and isinstance(asset_cfg, MRAssetConfig) and asset_cfg.liquidity_gate:
             gate_cfg = asset_cfg.liquidity_gate
-        
+
         if not gate_cfg or not gate_cfg.enabled:
             return True  # Gate disabled / not configured -> Pass
-        
+
         # FAIL-CLOSED: Require explicit kappa when gate is enabled.
         # No silent fallback - missing kappa is a contract violation.
         kappa = self._liquidity_kappa_map.get(symbol)
@@ -1266,9 +1349,10 @@ class MeanReversionHandler:
                 f"Gate config: enabled={gate_cfg.enabled}, kappa_min={gate_cfg.kappa_min}"
             )
         if kappa < Decimal(str(gate_cfg.kappa_min)):
-            self.logger.info(f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")
+            self.logger.info(
+                f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")
             return False
-        
+
         return True
 
     # =========================================================================
@@ -1278,10 +1362,10 @@ class MeanReversionHandler:
     def _on_process_strategy(self, event: Message) -> None:
         """
         T2B-03: Handle CMD:PROCESS_STRATEGY command.
-        
+
         This is the PRIMARY entry point for MR decision making.
         Strategies are triggered ONLY by this command (orchestrated by FE).
-        
+
         Payload contract:
         - symbol: str
         - tf_sec: int (required, must match self.timeframe_sec)
@@ -1293,23 +1377,27 @@ class MeanReversionHandler:
         """
         if not self._enabled:
             return
-        
+
         pld = event.pld if hasattr(event, "pld") else event
         self._stats["bars_received"] += 1
-        
+
         try:
-            symbol = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", None)
-            tf_sec = pld.get("tf_sec") if isinstance(pld, dict) else getattr(pld, "tf_sec", None)
+            symbol = pld.get("symbol") if isinstance(
+                pld, dict) else getattr(pld, "symbol", None)
+            tf_sec = pld.get("tf_sec") if isinstance(
+                pld, dict) else getattr(pld, "tf_sec", None)
             bar_identity = extract_canonical_bar_identity(
                 pld if isinstance(pld, dict) else None,
                 default_symbol=str(symbol or "") or None,
-                default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
+                default_timeframe_sec=int(
+                    tf_sec) if tf_sec is not None else None,
                 default_source_mode=RuntimeBarSourceMode.LIVE,
             )
             replay_identity = extract_canonical_replay_identity(
                 pld if isinstance(pld, dict) else None,
                 default_symbol=str(symbol or "") or None,
-                default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
+                default_timeframe_sec=int(
+                    tf_sec) if tf_sec is not None else None,
                 default_source_mode=RuntimeBarSourceMode.LIVE,
             )
             gap_status = extract_gap_status(
@@ -1317,29 +1405,32 @@ class MeanReversionHandler:
                 default_source="market_data:payload_bridge",
                 default_source_mode=RuntimeBarSourceMode.LIVE,
             )
-            
+
             # T2B-03 GATE 1: Missing tf_sec -> REJECT
             if tf_sec is None:
                 self._stats["bars_rejected_missing_tf"] += 1
-                self.logger.warning(f"REJECTED: MR CMD missing tf_sec for {symbol}")
+                self.logger.warning(
+                    f"REJECTED: MR CMD missing tf_sec for {symbol}")
                 write_trade_intent_rejected(
                     symbol=str(symbol or ""),
                     tf_sec=None,
-                    bar_close_ts=(pld.get("bar_close_ts") if isinstance(pld, dict) else None),
+                    bar_close_ts=(pld.get("bar_close_ts")
+                                  if isinstance(pld, dict) else None),
                     reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                     stage="STRATEGY",
                     why="CMD:PROCESS_STRATEGY missing tf_sec for MR (fail-closed)",
                     src="mean_reversion",
-                    ts_ms=(pld.get("bar_close_ts") if isinstance(pld, dict) else None),
+                    ts_ms=(pld.get("bar_close_ts")
+                           if isinstance(pld, dict) else None),
                     rid=(pld.get("rid") if isinstance(pld, dict) else None),
                 )
                 return
-            
+
             # T2B-03 GATE 2: Wrong timeframe -> silently skip (other strategies handle it)
             if tf_sec != self.timeframe_sec:
                 self._stats["bars_rejected_wrong_tf"] += 1
                 return
-            
+
             # T2B-03 GATE 3: Missing bar_close_ts -> REJECT
             bar_close_ts = (
                 int(bar_identity.bar_end_ts_ms)
@@ -1348,7 +1439,8 @@ class MeanReversionHandler:
             )
             if not bar_close_ts:
                 self._stats["bars_rejected_missing_tf"] += 1
-                self.logger.warning(f"REJECTED: MR CMD missing bar_close_ts for {symbol}")
+                self.logger.warning(
+                    f"REJECTED: MR CMD missing bar_close_ts for {symbol}")
                 write_trade_intent_rejected(
                     symbol=str(symbol or ""),
                     tf_sec=int(tf_sec) if tf_sec is not None else None,
@@ -1360,12 +1452,14 @@ class MeanReversionHandler:
                     rid=(pld.get("rid") if isinstance(pld, dict) else None),
                 )
                 return
-            
+
             # T2B-05 GATE 4: Missing bar data -> REJECT (fail-closed)
-            bar_data_raw = pld.get("bar") if isinstance(pld, dict) else getattr(pld, "bar", None)
+            bar_data_raw = pld.get("bar") if isinstance(
+                pld, dict) else getattr(pld, "bar", None)
             if not bar_data_raw:
                 self._stats["bars_rejected_missing_bar"] += 1
-                self.logger.warning(f"REJECTED: MR CMD missing 'bar' field for {symbol}")
+                self.logger.warning(
+                    f"REJECTED: MR CMD missing 'bar' field for {symbol}")
                 write_trade_intent_rejected(
                     symbol=str(symbol or ""),
                     tf_sec=int(tf_sec) if tf_sec is not None else None,
@@ -1378,81 +1472,94 @@ class MeanReversionHandler:
                     rid=(pld.get("rid") if isinstance(pld, dict) else None),
                 )
                 return
-            
+
             # Skip if symbol not enabled for MR
             if not symbol or symbol not in self._enabled_symbols:
                 return
-            
+
             # Extract bar data from CMD payload
-            bar_data = pld.get("bar", {}) if isinstance(pld, dict) else getattr(pld, "bar", None) or {}
-            
+            bar_data = pld.get("bar", {}) if isinstance(
+                pld, dict) else getattr(pld, "bar", None) or {}
+
             # Parse bar into Bar object
-            from apps.reference.domains.feature_engineering.bar_resampler import Bar
-            
+            from apps.reference.shared.types import Bar
+
             bar = Bar(
                 symbol=symbol,
                 timeframe_sec=tf_sec,
-                open=Decimal(str(bar_data.get("open", 0) if isinstance(bar_data, dict) else getattr(bar_data, "open", 0))),
-                high=Decimal(str(bar_data.get("high", 0) if isinstance(bar_data, dict) else getattr(bar_data, "high", 0))),
-                low=Decimal(str(bar_data.get("low", 0) if isinstance(bar_data, dict) else getattr(bar_data, "low", 0))),
-                close=Decimal(str(bar_data.get("close", 0) if isinstance(bar_data, dict) else getattr(bar_data, "close", 0))),
-                volume=Decimal(str(bar_data.get("volume", 0) if isinstance(bar_data, dict) else getattr(bar_data, "volume", 0))),
-                start_ts_ms=int(bar_data.get("start_ts_ms", 0) if isinstance(bar_data, dict) else getattr(bar_data, "start_ts_ms", 0)),
+                open=Decimal(str(bar_data.get("open", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "open", 0))),
+                high=Decimal(str(bar_data.get("high", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "high", 0))),
+                low=Decimal(str(bar_data.get("low", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "low", 0))),
+                close=Decimal(str(bar_data.get("close", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "close", 0))),
+                volume=Decimal(str(bar_data.get("volume", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "volume", 0))),
+                start_ts_ms=int(bar_data.get("start_ts_ms", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "start_ts_ms", 0)),
                 end_ts_ms=(
                     int(bar_identity.bar_end_ts_ms)
                     if bar_identity is not None
                     else int(bar_close_ts)
                 ),
-                trade_count=int(bar_data.get("trade_count", 0) if isinstance(bar_data, dict) else getattr(bar_data, "trade_count", 0)),
+                trade_count=int(bar_data.get("trade_count", 0) if isinstance(
+                    bar_data, dict) else getattr(bar_data, "trade_count", 0)),
             )
-            
+
             # DET-BT-09: Use get_clock() for deterministic backtest
             ts_ms = bar.end_ts_ms or get_clock().now_ms()
 
             # OBS-04-INT: Prefer bar-driven features as SSOT for liquidity gate.
             # P0-1: Cache full features for volatility/liquidity propagation to signal
             try:
-                features_payload = pld.get("features") if isinstance(pld, dict) else getattr(pld, "features", None)
+                features_payload = pld.get("features") if isinstance(
+                    pld, dict) else getattr(pld, "features", None)
                 if isinstance(features_payload, dict):
                     # P0-1: Store features keyed by symbol for propagation
                     self._last_cmd_features[symbol] = features_payload
                     kappa_raw = features_payload.get("liquidity_kappa")
                     if kappa_raw is not None:
-                        self._liquidity_kappa_map[symbol] = Decimal(str(kappa_raw))
+                        self._liquidity_kappa_map[symbol] = Decimal(
+                            str(kappa_raw))
             except Exception:
                 pass
-            
+
             # Get strategy for symbol
             strategy = self._strategies.get(symbol)
             if not strategy:
                 return
-            
+
             # Set regime from CMD payload or cache
-            regime_data = pld.get("regime") if isinstance(pld, dict) else getattr(pld, "regime", None)
+            regime_data = pld.get("regime") if isinstance(
+                pld, dict) else getattr(pld, "regime", None)
             if regime_data:
-                regime_name = regime_data.get("regime") if isinstance(regime_data, dict) else getattr(regime_data, "regime", None)
+                regime_name = regime_data.get("regime") if isinstance(
+                    regime_data, dict) else getattr(regime_data, "regime", None)
                 if regime_name:
                     strategy.set_regime(symbol, regime_name)
             else:
                 regime = self._per_symbol_regime.get(symbol)
                 if regime:
                     strategy.set_regime(symbol, regime)
-            
+
             # Process bar through strategy (T2B-03: CMD is the ONLY trigger)
             signal = strategy.on_bar(symbol, bar, ts_ms)
-            
+
             if signal:
-                print(f"[DEBUG MR] Signal why: {signal.why} | Type: {signal.signal_type} | Regime: {strategy.get_regime(symbol)} | Allowed: {strategy.config.allowed_regimes}", flush=True)
+                print(
+                    f"[DEBUG MR] Signal why: {signal.why} | Type: {signal.signal_type} | Regime: {strategy.get_regime(symbol)} | Allowed: {strategy.config.allowed_regimes}", flush=True)
 
             self._stats["bars_completed"] += 1
-            
+
             if signal is None:
                 return
-            
+
             # Log bar
             if signal.bar:
                 self._log_bar(signal)
-            
+
                 if signal.is_signal:
                     if self._check_liquidity_gate(symbol):
                         self._emit_signal(
@@ -1460,14 +1567,17 @@ class MeanReversionHandler:
                             bar_identity=bar_identity,
                             replay_identity=replay_identity,
                             gap_status=gap_status,
-                            warmup_readiness=(pld.get("warmup") if isinstance(pld, dict) else None),
+                            warmup_readiness=(
+                                pld.get("warmup") if isinstance(pld, dict) else None),
                         )
                     else:
-                        self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
+                        self.logger.info(
+                            f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
                         write_trade_intent_rejected(
                             symbol=str(symbol),
                             tf_sec=int(tf_sec) if tf_sec is not None else None,
-                            bar_close_ts=int(bar_close_ts) if bar_close_ts else None,
+                            bar_close_ts=int(
+                                bar_close_ts) if bar_close_ts else None,
                             reason_code=NormalizedRejectReasons.LIQUIDITY_LOW,
                             stage="STRATEGY",
                             why="Liquidity gate blocked MR signal",
@@ -1478,14 +1588,16 @@ class MeanReversionHandler:
                             symbol=symbol,
                             reason_code="LIQUIDITY_GATE",
                             reason="LIQUIDITY",
-                        context="mean_reversion_handler:_on_process_strategy",
-                        details={"kappa": str(self._liquidity_kappa_map.get(symbol, "MISSING"))},
-                        why_chain=["LIQUIDITY_GATE"],
-                    )
+                            context="mean_reversion_handler:_on_process_strategy",
+                            details={"kappa": str(
+                                self._liquidity_kappa_map.get(symbol, "MISSING"))},
+                            why_chain=["LIQUIDITY_GATE"],
+                        )
             else:
                 self._stats["neutral_bars"] += 1
                 why = str(getattr(signal, "why", "") or "")
-                why_norm = why[len("neutral:"):] if why.startswith("neutral:") else why
+                why_norm = why[len("neutral:"):] if why.startswith(
+                    "neutral:") else why
                 reason_code = None
                 if why_norm.startswith("regime_not_flat:"):
                     reason_code = "REGIME_MAPPING_NONE"
@@ -1497,16 +1609,18 @@ class MeanReversionHandler:
                     reason_code = "SQUEEZE_EXPANSION_VETO"
                 elif why_norm.startswith("momentum_separation_veto:"):
                     reason_code = "MOMENTUM_SEPARATION_VETO"
-                
+
                 if reason_code:
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code=reason_code,
-                        reason="REGIME" if reason_code.startswith("REGIME") else "SIGNAL",
+                        reason="REGIME" if reason_code.startswith(
+                            "REGIME") else "SIGNAL",
                         context="mean_reversion_handler:_on_process_strategy",
                         details={"why": why_norm},
                         why_chain=[
-                            "REGIME" if reason_code.startswith("REGIME") else "SIGNAL",
+                            "REGIME" if reason_code.startswith(
+                                "REGIME") else "SIGNAL",
                             why_norm,
                         ],
                     )
@@ -1518,7 +1632,7 @@ class MeanReversionHandler:
     def _on_bar_closed_data_only(self, event: Message) -> None:
         """
         T2B-03: Data-only handler for EVT:BAR_CLOSED.
-        
+
         Caches bar data but does NOT trigger decision.
         Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
         """
@@ -1526,10 +1640,10 @@ class MeanReversionHandler:
         # The primary purpose is to maintain backwards compatibility
         # without triggering decision logic.
         pass
-    
+
     # NOTE (SIZING-MARGIN-FIRST-SSOT-02):
     # Mean Reversion sizing moved to per-symbol instruments SSOT.
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get handler statistics."""
         return {
@@ -1541,7 +1655,7 @@ class MeanReversionHandler:
                 for k, v in self._last_signal_time.items()
             },
         }
-    
+
     def reset_symbol(self, symbol: str) -> None:
         """Reset state for symbol."""
         strategy = self._strategies.get(symbol)
@@ -1549,7 +1663,7 @@ class MeanReversionHandler:
             strategy.reset_symbol(symbol)
         self._signal_counts.pop(symbol, None)
         self._last_signal_time.pop(symbol, None)
-    
+
     def reset_all(self) -> None:
         """Reset all state."""
         for strategy in self._strategies.values():

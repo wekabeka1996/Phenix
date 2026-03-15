@@ -104,3 +104,18 @@ def test_active_profiles_keep_single_aurora_truth() -> None:
     assert profiles["aurora"].profile_id == "aurora_quadratic"
     assert profiles["mean_reversion"].profile_id == "mean_reversion"
     assert profiles["md_amr"].profile_id == "md_amr"
+
+
+def test_regime_dependent_strategies_require_minimum_basis_bars() -> None:
+    config = _config(aurora_scoring_version="quadratic")
+    matrix = build_full_strategy_compatibility_matrix(config)
+    
+    # structural regime requires max(192, 14 + 288 - 1) = 301 bars
+    expected_min_bars = 301
+    
+    for profile in matrix.values():
+        if profile.needs_regime:
+            assert profile.basis_required_bars >= expected_min_bars, (
+                f"Profile {profile.profile_id} needs regime but only requests "
+                f"{profile.basis_required_bars} bars (expected >= {expected_min_bars})"
+            )

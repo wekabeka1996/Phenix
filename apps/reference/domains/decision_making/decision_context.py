@@ -16,7 +16,7 @@ Architecture:
 - V2 features are Optional (graceful fallback to defaults)
 - Views expose computed properties (is_bullish, is_crowded_long, etc.)
 
-Reference: FTR_FEATURES_FUTURES_V2_DESIGN.md Section 6
+Reference: FTR_FEATURES_FUTURES_V2_DESIGN.md Section 6 (doc removed in LEGACY-PURGE-WAVE-1)
 """
 
 from dataclasses import dataclass, field

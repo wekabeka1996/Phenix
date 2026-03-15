@@ -191,7 +191,12 @@ safety_guard_dump_*.json
 
 # Coverage
 coverage*.xml
+coverage*.json
 .coverage*
+
+# Test/CI generated outputs
+.pytest_junit.xml
+async_inventory.json
 
 # Analysis results
 analyzer*.json

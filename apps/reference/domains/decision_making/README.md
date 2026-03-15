@@ -33,6 +33,7 @@ QoS rate control, and reject normalization (NRR).
 | `aurora_handler.py` | Aurora strategy handler (5m bars) |
 | `md_amr_handler.py` | MD-AMR strategy handler (5m bars, adaptive mean reversion) |
 | `mean_reversion_handler.py` | MR strategy handler (1m/3m bars) |
+| `strategy_bridge.py` | **Sanctioned DM-facing re-export facade** for strategy classes hosted in feature_engineering (FE-DM-BOUNDARY-STABILIZATION 2026-03-15) |
 
 ### Aurora Subsystem
 | File | Purpose |
@@ -132,3 +133,28 @@ authoritative domain reference.
 - When adding new WhyCode members: add to `vfoundation/core/why_codes.py`, NOT to local `why_codes.py`
 - When adding new NRR codes: add to `normalized_reject_reasons.py`
 - When adding new events: register in `verb_registry_v1.yaml` first
+
+## FE↔DM Boundary Policy (2026-03-15)
+
+Strategy math cores (`MeanReversion1mStrategy`, `MDAMRStrategyV11`, `FlatRegime`, `regime_mapping`)
+currently live in `feature_engineering/` for historical reasons but are **semantically owned by decision_making**.
+
+### Sanctioned import path
+DM production code MUST import strategy artifacts via the bridge facade:
+```python
+from apps.reference.domains.decision_making.strategy_bridge import (
+    MeanReversion1mStrategy, MRSignal, MRSignalType, MRStrategyConfig,
+    MDAMRStrategyV11, MDAMRSignal,
+    FlatRegime, FlatRegimeThresholds, map_to_flat_regime, MRParameters,
+)
+```
+
+### Forbidden patterns
+- Do NOT import `apps.reference.domains.feature_engineering.mean_reversion_strategy` from DM production code
+- Do NOT import `apps.reference.domains.feature_engineering.md_amr_strategy` from DM production code
+- Do NOT import `apps.reference.domains.feature_engineering.regime_mapping` from DM production code
+- Bar (`apps.reference.domains.feature_engineering.bar_resampler.Bar`) is a shared helper — use `apps.reference.shared.types.Bar`
+
+### Future migration
+A dedicated package will physically move strategy files to DM and replace `strategy_bridge.py`
+with backward-compatible shims in FE.

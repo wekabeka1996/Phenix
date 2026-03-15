@@ -1,6 +1,171 @@
 # JOURNAL_мій
 
+## 2026-03-15
+
+### RUNTIME-RECOVERY-AND-MR-REGRESSION-AUDIT - live proof over synthetic confidence
+
+**Shcho bulo dovedeno po live logakh:**
+1. `md_amr` pislia restartu ne buv ready: `8/96 -> 51/96`, krok rivno po odnomu 15m baru
+2. `aurora` pislia restartu tak samo ne buv ready: `139/301 -> 154/301`, krok rivno po odnomu 5m baru
+3. Tobe startup-import ne doshodyv do `seed_startup_bars()` u realnykh handlerakh, a poperedni testi ne chypaly cej kontrakt
+
+**Korin u bootstrap fail:**
+- `PillarBackfillService.fetch_candles()` buv odnorazovym
+- odyn transient fail / empty response / short response na starti obryvav import
+- dali readiness-lancyuh zalyshav handlery kholodnymy i vony nakopychuvaly tilky live bary pislia restartu
+
+**Shcho zmineno:**
+- dodano retry v startup-backfill
+- u `startup_basis_hydrator` dodano pravdyvu readiness-zvitnist i faktichnyi `seed_source`
+- dodano real-path failing-first test, yakyi pidnimae realnyi runtime, realnyi hydration plan i seedyt realni handler counters
+- dodano unit-test na transient startup fail
+
+**MR regression verdict:**
+- istotnyi config drift po DOGE vid ostannoho zdorovoho 300s stanu: shyryshi BB, bilsh zhorstki porohy, dovshyi cooldown, novi veto
+- live 2026-03-15 takozh pokazav execution problemu: yedynyi signal buv vidkhylenyi Binance `-1007 timeout`
+- u cej paket vneseno safe rollback DOGE MR config do ostannoho zdorovoho 300s profiliu; 180s pipeline ne poverneno bez okremoho runtime-rishennia
+
+**Perevirka:**
+- target suite: `37 passed`
+- zvit: `reports/forensics/RUNTIME_RECOVERY_AND_MR_REGRESSION_AUDIT_2026-03-15.md`
+- matrix: `reports/forensics/RUNTIME_BLOCKER_AND_MR_REGRESSION_MATRIX_2026-03-15.csv`
+
+## 2026-03-15
+
+### BOOTSTRAP-READINESS-HARDENING — Виправлення runtime-блокерів cold-start
+
+**Проблема:** aurora та md_amr не торгують після старту — cold-start gate блокує (71/301 та 23/96 barів), конфлікт mode (backtest vs hybrid), квадратичний trace невидимий.
+
+**Кореневі причини:**
+1. `system.yaml` мав `trading_mode: "backtest"` замість `hybrid_live_data_testnet_exec` — система мовчки працювала в backtest
+2. Bootstrap hydration не емітив structured lifecycle events — оператор не бачив чи він взагалі запустився
+3. Cold-start gate логував на DEBUG — невидимо в production
+4. Quadratic trace — тільки DEBUG, без FSM event
+
+**Виправлення:**
+- Structured lifecycle events для bootstrap: START, IMPORTED, SEEDED, READINESS_STATE, DONE
+- `get_readiness_diagnostics()` для обох handler-ів — per-symbol bars_seen/bars_required/ready/block_reason
+- Mode SSOT: hard-fail на конфлікт, виправлено system.yaml
+- Quadratic trace → INFO + `EVT:QUADRATIC_DECISION_TRACE`
+- 15 нових тестів, 1231/1231 пройшли
+
+### TEST-HYGIENE-NORMALIZATION — Застарілий xfail + гігієна артефактів
+
+**Задача:** Видалити застарілий xfail маркер та нормалізувати відстеження згенерованих артефактів.
+
+**Зміни:**
+- Видалено застарілий `@pytest.mark.xfail` з `test_binance_adapter_session.py` (тест стабільно проходить після міграції на strict asyncio mode)
+- Додано `.gitignore` правила для `.pytest_junit.xml`, `async_inventory.json`, `coverage*.json`
+- Прибрано 4 згенерованих артефакти з git index (залишені на диску)
+
+**Результати:** 89/89 гуардрейлів, тест тепер PASSED (був XPASS). Нуль регресій.
+
+**Звіт:** `reports/cleanup/TEST_HYGIENE_NORMALIZATION_2026-03-15.md`
+
+### LEGACY-PURGE-WAVE-2 — Ручний перегляд + очищення порожньої структури
+
+**Задача:** Переоцінка 4 NEEDS_MANUAL_DECISION тест-файлів та видалення мертвої тест-структури.
+
+**Переоцінено:**
+- `test_execution_schemas_sim.py` → DELETE_NOW (нуль assertions, вже покритий)
+- `test_decision_qos_features_burst.py` → DELETE_NOW (тестує mock, forbidden `.get()`)
+- `test_binance_adapter_session.py` → KEEP (реальні assertions, застарілий xfail)
+- `test_features_full_chain_happy.py` → KEEP (інтеграційна цінність, skip через складність)
+
+**Видалено:** 2 тест-файли (~145 рядків), 17 порожніх директорій.
+
+**Результати:** 89/89 гуардрейлів, 524/524 config+contracts. Нуль регресій.
+
+**Звіт:** `reports/cleanup/LEGACY_PURGE_WAVE_2_2026-03-15.md`
+
+### FORBIDDEN-CONFIG-PATTERN-FIX — Типізовані вето конфіги, нуль .get() патернів
+
+**Задача:** Виправити 4 порушення `.get()` silent-fallback в `mean_reversion_strategy.py`, які спричиняли старий фейл тесту.
+
+**Причина:** `squeeze_expansion_veto` та `momentum_separation_veto` були `Optional[Dict[str, Any]]` — доступ через `.get("regimes", [])`.
+
+**Виправлення:** Додано `SqueezeExpansionVetoConfig` та `MomentumSeparationVetoConfig` dataclass-и. Замінено всі 4 `.get()` на типізований доступ. Оновлено handler конвертери, strategy bridge, 3 тест-файли.
+
+**Результати:** 6/6 forbidden config scan (було 5/6), 386/386 FE+DM тестів, 89/89 гуардрейлів. Нуль регресій.
+
+**Звіт:** `reports/cleanup/FORBIDDEN_CONFIG_PATTERN_FIX_2026-03-15.md`
+
+### TEST-SUITE-RECLASSIFICATION — Аудит тест-сюіту та видалення мертвих тестів
+
+**Задача:** Класифікація всього тест-сюіту (684 файли, 5,368 тестів) та безпечне видалення мертвих тестів.
+
+**Видалено 15 мертвих тест-файлів (~1,210 рядків):**
+- 6 дебаг-скриптів (не справжні тести)
+- 2 тести для deprecated EVT:MARKET_TICK_FORWARDED
+- 2 тести для видаленого AuroraBridge
+- 1 порожній файл, 1 хардкоджений skip, 1 WS утиліта, 1 env-skip, 1 клас без тестів
+
+**Результати:** 162/162 гуардрейли, 1,681/1,682 тестів (1 старий фейл). 93 файли зі skip-маркерами замаплені.
+
+**Звіт:** `reports/tests/TEST_SUITE_RECLASSIFICATION_2026-03-15.md`
+
+### LEGACY-PURGE-WAVE-1 — Перша хвиля видалення мертвого коду
+
+**Задача:** Перша безпечна хвиля видалення на основі доказів з 7 завершених аудитів доменів.
+
+**Видалено:**
+- `market_ws_client.py` (119 рядків мертвого коду, нуль виробничих імпортерів)
+- Мертві імпорти: `asdict` у bar_aggregator.py, `time` у market_data_connector.py
+- Застарілий no-op: `set_feature_engineering()` з proxy.py та connector
+- 7 ghost .pyc у vfoundation/ (errors, binance_adapter, bracket_aggregator, fsm, price_service)
+- 2 осиротілі директорії vfoundation (vfoundation/apps/, vfoundation/services/)
+- 45 застарілих doc файлів у 7 доменах (docs/deprecated/ директорії)
+- Всі test `__pycache__/` директорії (~371 осиротілих .pyc)
+
+**Очищено:**
+- `__init__.py` — видалено експорт MarketWSClient
+- `domain_dict.json` — оновлено dead_code примітку
+- `README.md` — борг таблицю оновлено (3 пункти вирішено)
+- `decision_context.py` — анотовано посилання на видалений doc
+- Гуардрейл тести: `TestDeadCodeMarker` → `TestDeletedDeadCode` (3 тести)
+- Новий: `test_legacy_purge_wave1_guardrails.py` (3 крос-проектних гуардрейли)
+
+**Результати:** 165/165 гуардрейлів, 40/40 market_data тестів. Нуль змін у поведінці runtime.
+
+**Результати:** 162/162 гуардрейли, 40/40 market_data, 10/10 proxy. Нуль змін у runtime поведінці.
+
+**Звіт:** `reports/cleanup/LEGACY_PURGE_WAVE_1_2026-03-15.md`
+
+### MD-DOMAIN-AUDIT — Аудит домену market_data + структурна чистка
+
+**Задача:** Аудит та структурне зміцнення `apps/reference/domains/market_data/` — кореневий upstream домен.
+
+**Знахідки:** 7 файлів, ~2,661 LOC. Чиста подієва межа — жоден інший домен не імпортує з MD напряму. 3 активних верби, 1 deprecated. Не було `domain_dict.json`. Мертвий код: `market_ws_client.py` (119 LOC). Розбіжність дефолтних таймфреймів: domain_builder `[60, 300]` vs BarAggregator `[180, 300]`.
+
+**Зміни:** Створено `domain_dict.json` v1.0.0. Створено авторитетний `README.md`. Додано staleness note до `docs/README.md`. 15 guardrail-тестів. **158/158 guardrail-тестів по всіх 7 доменах.** Оцінка: 8/10 (було ~6/10).
+
+Звіт: `reports/domains/MARKET_DATA_DOMAIN_AUDIT_2026-03-15.md`
+
+### FE-DM-BOUNDARY-STABILIZATION — Стабілізація межі FE↔DM
+
+3 файли стратегій у FE семантично належать DM. Створено `strategy_bridge.py` як санкціонований фасад (13 символів). Всі 3 продакшн-файли DM мігровані на бридж. Bar-імпорти на `shared/types.py`. README/domain_dict оновлено з boundary policy. 6 гарді-тестів. **1143 тести пройшли, 0 фейлів.**
+
+Звіт: `reports/domains/FE_DM_BOUNDARY_STABILIZATION_2026-03-15.md`
+
+### FE-DOMAIN-AUDIT — Аудит та структурний хардінг домену feature_engineering
+
+Найбільший сигнальний домен: 16 файлів, ~8849 рядків, ~150+ тестів. Якісна архітектура: типізована конфігурація (60+ властивостей), каталог фіч у contracts.py з V1/V2 метаданими, 3 JSON-схеми. domain_dict.json був застарілий (v1.1.0) — переписано на v2.0.0. 2 привиди .pyc видалено. README створено. 15 гарді-тестів. Оцінка: **8/10** (було ~6/10).
+
+Звіт: `reports/domains/FEATURE_ENGINEERING_DOMAIN_AUDIT_2026-03-15.md`
+
 ## 2026-03-14
+
+### RD-DOMAIN-AUDIT — Аудит та структурний хардінг домену regime_detector
+- **Контекст:** 2 .py файли, 803 LOC, ~181 тестова функція у ~18 файлах. Чиста event-driven архітектура: priority cascade (Volatility > MeanReversion > SMATrend) + hysteresis + slope gate.
+- **Знахідки:** Не було top-level `domain_dict.json` (тільки deprecated копія). 1 ghost `.pyc` (`config.cpython-311.pyc`). Auto-generated docs без staleness warning.
+- **Виправлення:** Створено `domain_dict.json` v1.0.0. Створено авторитетний `README.md`. Staleness note до `docs/README.md`. Видалено ghost `.pyc`. 10 guardrail тестів.
+- Оцінка: **9/10** (було ~7/10). Звіт: `reports/domains/REGIME_DETECTOR_DOMAIN_AUDIT_2026-03-14.md`
+
+### RM-DOMAIN-AUDIT — Аудит та структурний хардінг домену risk_management
+- **Контекст:** 3 .py файли, 990 LOC, 73 тестові функції. Чиста 2-шарова fail-closed архітектура (daily drawdown gate + per-instrument risk score).
+- **Знахідки:** Ніяких ghost pycache, дублікатних gate, прихованих оверрайдів. `domain_dict.json` був зіпсований (whitespace-only descriptions, неповні imports).
+- **Виправлення:** Перезаписано `domain_dict.json` v2.0.0. Створено авторитетний `README.md`. 11 guardrail тестів.
+- Оцінка: **9/10** (було ~7/10). Звіт: `reports/domains/RISK_MANAGEMENT_DOMAIN_AUDIT_2026-03-14.md`
 
 ### EP-CONTRACT-BOUNDARY — Очищення контрактних меж execution_position
 - **3 co-emitter gaps вирішено:**

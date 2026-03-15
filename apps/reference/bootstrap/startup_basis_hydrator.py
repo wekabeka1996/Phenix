@@ -6,7 +6,9 @@ buffers. Pairing with seed_startup_bars() on each handler seeds the cold-start c
 """
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -21,6 +23,29 @@ if TYPE_CHECKING:
     from apps.reference.domains.market_data.bar_aggregator import BarAggregator
 
 LOG = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Structured lifecycle event helpers for bootstrap observability
+# ---------------------------------------------------------------------------
+
+
+def _emit_bootstrap_lifecycle(event_name: str, **fields: object) -> None:
+    """Emit a structured bootstrap lifecycle log line.
+
+    All events are logged at INFO to the ``startup_basis_hydrator`` logger so
+    they land in the operator-visible startup log regardless of sink routing.
+    The payload is JSON so it is machine-parseable for post-mortem analysis.
+    """
+    payload = {
+        "event": event_name,
+        "ts_ms": int(time.time() * 1000),
+        **{k: v for k, v in fields.items() if v is not None},
+    }
+    LOG.info(
+        "BOOTSTRAP_LIFECYCLE %s %s",
+        event_name,
+        json.dumps(payload, ensure_ascii=False, default=str),
+    )
 
 
 @dataclass(frozen=True)
@@ -164,6 +189,15 @@ def _seed_handler_counter(
         seeded_bars=seeded_bars,
         source=source,
     )
+    _emit_bootstrap_lifecycle(
+        "STARTUP_BASIS_SEEDED",
+        strategy=strategy_id,
+        symbol=symbol,
+        tf_sec=tf_sec,
+        bars_required=required_bars,
+        bars_seeded=seeded_bars,
+        source=source,
+    )
     LOG.info(
         "STARTUP_BASIS_SEEDED strategy=%s symbol=%s tf=%ds seeded=%d/%d source=%s",
         strategy_id,
@@ -189,7 +223,21 @@ def execute_startup_basis_hydration(
         PillarBackfillService,
     )
 
+    _emit_bootstrap_lifecycle(
+        "STARTUP_BASIS_EXECUTOR_START",
+        hydration_plan_present=hydration_plan is not None,
+        bar_aggregator_present=bar_aggregator is not None,
+        backfill_adapter_present=backfill_adapter is not None,
+        guardian_runtime_present=guardian_runtime is not None,
+        handlers_available=sorted((started_strategy_handlers or {}).keys()),
+    )
+
     if hydration_plan is None:
+        _emit_bootstrap_lifecycle(
+            "STARTUP_BASIS_EXECUTOR_DONE",
+            outcome="skipped",
+            reason="hydration_plan_missing",
+        )
         return {
             "imports": {},
             "seeded": [],
@@ -238,35 +286,87 @@ def execute_startup_basis_hydration(
             )
         else:
             basis_service = PillarBackfillService(backfill_adapter)
+            _BASIS_IMPORT_MAX_ATTEMPTS = 3
+            _BASIS_IMPORT_RETRY_DELAY_SEC = 2.0
             for (symbol, tf_sec), required_bars in import_needs.items():
-                try:
-                    fetch_result = guardian_runtime.run(
-                        basis_service.fetch_candles(symbol, tf_sec, required_bars),
-                        timeout=60.0,
-                    )
-                    imported_counts[(symbol, tf_sec)] = hydrate_basis_bars(
-                        bar_aggregator,
-                        symbol,
-                        tf_sec,
-                        required_bars,
-                        fetch_result,
+                _imported = 0
+                _last_error: str | None = None
+                _attempt = 0
+                for _attempt in range(1, _BASIS_IMPORT_MAX_ATTEMPTS + 1):
+                    try:
+                        fetch_result = guardian_runtime.run(
+                            basis_service.fetch_candles(
+                                symbol, tf_sec, required_bars),
+                            timeout=60.0,
+                        )
+                        _imported = hydrate_basis_bars(
+                            bar_aggregator,
+                            symbol,
+                            tf_sec,
+                            required_bars,
+                            fetch_result,
+                        )
+                        _last_error = getattr(fetch_result, "error", None)
+                        if _imported > 0:
+                            break
+                        if _attempt < _BASIS_IMPORT_MAX_ATTEMPTS:
+                            LOG.warning(
+                                "STARTUP_BASIS_IMPORT_RETRY symbol=%s tf=%ds "
+                                "imported=0/%d attempt=%d/%d error=%s — retrying in %.1fs",
+                                symbol, tf_sec, required_bars,
+                                _attempt, _BASIS_IMPORT_MAX_ATTEMPTS,
+                                _last_error, _BASIS_IMPORT_RETRY_DELAY_SEC,
+                            )
+                            time.sleep(_BASIS_IMPORT_RETRY_DELAY_SEC)
+                    except Exception as exc:
+                        _last_error = str(exc)
+                        if _attempt < _BASIS_IMPORT_MAX_ATTEMPTS:
+                            LOG.warning(
+                                "STARTUP_BASIS_IMPORT_RETRY symbol=%s tf=%ds "
+                                "attempt=%d/%d error=%s — retrying in %.1fs",
+                                symbol, tf_sec,
+                                _attempt, _BASIS_IMPORT_MAX_ATTEMPTS,
+                                exc, _BASIS_IMPORT_RETRY_DELAY_SEC,
+                            )
+                            time.sleep(_BASIS_IMPORT_RETRY_DELAY_SEC)
+                            continue
+                        skipped.append(f"basis_import_failed:{symbol}:{tf_sec}")
+                        LOG.error(
+                            "STARTUP_BASIS_IMPORT_FAILED symbol=%s tf=%ds error=%s",
+                            symbol, tf_sec, exc, exc_info=True,
+                        )
+
+                imported_counts[(symbol, tf_sec)] = _imported
+                if _imported > 0:
+                    _emit_bootstrap_lifecycle(
+                        "STARTUP_BASIS_IMPORTED",
+                        symbol=symbol,
+                        tf_sec=tf_sec,
+                        bars_required=required_bars,
+                        bars_imported=_imported,
+                        attempts=_attempt,
+                        success=True,
                     )
                     LOG.info(
-                        "STARTUP_BASIS_IMPORTED symbol=%s tf=%ds imported=%d/%d success=%s",
-                        symbol,
-                        tf_sec,
-                        imported_counts[(symbol, tf_sec)],
-                        required_bars,
-                        bool(fetch_result and getattr(fetch_result, "success", False)),
+                        "STARTUP_BASIS_IMPORTED symbol=%s tf=%ds imported=%d/%d attempts=%d",
+                        symbol, tf_sec, _imported, required_bars, _attempt,
                     )
-                except Exception as exc:
-                    skipped.append(f"basis_import_failed:{symbol}:{tf_sec}")
-                    LOG.error(
-                        "STARTUP_BASIS_IMPORT_FAILED symbol=%s tf=%ds error=%s",
-                        symbol,
-                        tf_sec,
-                        exc,
-                        exc_info=True,
+                else:
+                    _emit_bootstrap_lifecycle(
+                        "STARTUP_BASIS_IMPORT_EXHAUSTED",
+                        symbol=symbol,
+                        tf_sec=tf_sec,
+                        bars_required=required_bars,
+                        attempts=_BASIS_IMPORT_MAX_ATTEMPTS,
+                        last_error=_last_error,
+                    )
+                    skipped.append(
+                        f"basis_import_exhausted:{symbol}:{tf_sec}")
+                    LOG.warning(
+                        "STARTUP_BASIS_IMPORT_EXHAUSTED symbol=%s tf=%ds "
+                        "required=%d attempts=%d last_error=%s",
+                        symbol, tf_sec, required_bars,
+                        _BASIS_IMPORT_MAX_ATTEMPTS, _last_error,
                     )
 
     seeded_records: list[StartupBasisSeedRecord] = []
@@ -276,19 +376,22 @@ def execute_startup_basis_hydration(
         source = ""
 
         if imported_key in imported_counts:
-            seeded_bars = min(int(imported_counts[imported_key]), required_bars)
+            seeded_bars = min(
+                int(imported_counts[imported_key]), required_bars)
             source = "startup_replay_import"
         else:
             snapshot = None
             if restore_report is not None and hasattr(restore_report, "get_snapshot"):
                 snapshot = restore_report.get_snapshot(strategy_id, symbol)
-            status = lookup_restore_status(snapshot, RuntimeAnalyticsRestoreScope.BARS)
+            status = lookup_restore_status(
+                snapshot, RuntimeAnalyticsRestoreScope.BARS)
             if status is not None and status.state == RuntimeAnalyticsRestoreState.RESTORED:
                 seeded_bars = required_bars
                 source = "restore_snapshot_bars"
 
         if seeded_bars <= 0:
-            skipped.append(f"basis_seed_skipped:{strategy_id}:{symbol}:{tf_sec}")
+            skipped.append(
+                f"basis_seed_skipped:{strategy_id}:{symbol}:{tf_sec}")
             LOG.warning(
                 "STARTUP_BASIS_SEED_SKIPPED strategy=%s symbol=%s tf=%ds "
                 "reason=no_seed_source required=%d",
@@ -311,11 +414,61 @@ def execute_startup_basis_hydration(
         if record is not None:
             seeded_records.append(record)
 
-    return {
+    # Emit per-strategy readiness state after seeding
+    _seeded_lookup: dict[tuple[str, str, int], int] = {}
+    _seeded_source_lookup: dict[tuple[str, str, int], str] = {}
+    for rec in seeded_records:
+        _seeded_lookup[(rec.strategy_id, rec.symbol,
+                        rec.timeframe_sec)] = rec.seeded_bars
+        _seeded_source_lookup[(rec.strategy_id, rec.symbol,
+                               rec.timeframe_sec)] = rec.source
+    readiness_states: list[dict[str, object]] = []
+    for strategy_id, symbol, tf_sec, required_bars in seed_requirements:
+        seeded = _seeded_lookup.get((strategy_id, symbol, tf_sec), 0)
+        ready = seeded >= required_bars
+        seed_source = _seeded_source_lookup.get((strategy_id, symbol, tf_sec))
+        readiness_payload = {
+            "strategy_id": strategy_id,
+            "symbol": symbol,
+            "timeframe_sec": tf_sec,
+            "required_bars": required_bars,
+            "seeded_bars": seeded,
+            "imported_bars": imported_counts.get((symbol, tf_sec), 0),
+            "ready": ready,
+            "block_reason": None if ready else f"INSUFFICIENT_SEED:{seeded}/{required_bars}",
+            "seed_source": seed_source,
+        }
+        readiness_states.append(readiness_payload)
+        _emit_bootstrap_lifecycle(
+            "STRATEGY_READINESS_STATE",
+            strategy=strategy_id,
+            symbol=symbol,
+            tf_sec=tf_sec,
+            bars_required=required_bars,
+            bars_seeded=seeded,
+            bars_imported=imported_counts.get((symbol, tf_sec), 0),
+            ready=ready,
+            block_reason=readiness_payload["block_reason"],
+            seed_source=seed_source,
+        )
+
+    result = {
         "imports": {
             f"{symbol}:{tf_sec}": imported_count
             for (symbol, tf_sec), imported_count in imported_counts.items()
         },
         "seeded": [record.to_payload() for record in seeded_records],
+        "readiness": readiness_states,
         "skipped": skipped,
     }
+
+    _emit_bootstrap_lifecycle(
+        "STARTUP_BASIS_EXECUTOR_DONE",
+        outcome="completed",
+        imports_count=len(imported_counts),
+        seeded_count=len(seeded_records),
+        skipped_count=len(skipped),
+        skipped_reasons=skipped[:10] if skipped else [],
+    )
+
+    return result

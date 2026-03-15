@@ -257,6 +257,42 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 symbol, self._bars_seen_since_restart[symbol], count,
             )
 
+    def get_readiness_diagnostics(self) -> list[dict[str, object]]:
+        """Return per-symbol readiness diagnostics for operator visibility.
+
+        Provides a machine-readable view of the cold-start readiness state
+        for every enabled symbol tracked by this handler.
+        """
+        _basis_required = getattr(self, "_basis_required_bars_override", None)
+        if _basis_required is None:
+            try:
+                from apps.reference.contracts.strategy_compatibility_matrix import (
+                    get_active_strategy_profile,
+                )
+                _profile = get_active_strategy_profile(
+                    self.config, self.strategy_id)
+                _basis_required = int(
+                    _profile.basis_required_bars) if _profile else 0
+            except Exception:
+                _basis_required = 0
+        results: list[dict[str, object]] = []
+        for symbol in sorted(self._enabled_symbols):
+            bars_seen = self._bars_seen_since_restart.get(symbol, 0)
+            ready = bars_seen >= _basis_required if _basis_required else True
+            results.append({
+                "strategy": self.strategy_id,
+                "symbol": symbol,
+                "tf_sec": self.timeframe_sec,
+                "bars_seen": bars_seen,
+                "bars_required": _basis_required or 0,
+                "ready": ready,
+                "block_reason": (
+                    None if ready
+                    else f"BARS_REQUIRED_COLD_START:{bars_seen}/{_basis_required}"
+                ),
+            })
+        return results
+
     # _load_config → moved to AuroraConfigLoaderMixin (see aurora_config_loader.py)
 
     def _get_time_multiplier(self, regime: Optional[str]) -> float:

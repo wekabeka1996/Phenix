@@ -178,6 +178,26 @@ class TestFetchCandles:
 
 # ── warmup_pillars ────────────────────────────────────────────────────────────
 
+    def test_retries_transient_adapter_exception_before_failing_closed(self):
+        """Transient startup transport failure must be retried before the fetch is declared cold."""
+        attempts = {"count": 0}
+
+        async def _flaky_get_klines(symbol, interval, limit):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise ConnectionError("timeout")
+            return _make_klines(limit)
+
+        adapter = MagicMock()
+        adapter.get_klines = _flaky_get_klines
+        svc = PillarBackfillService(adapter)
+        result = asyncio.run(svc.fetch_candles("BTCUSDT", 86400, 100))
+
+        assert result.success is True
+        assert result.fetched_count == 100
+        assert attempts["count"] == 2
+
+
 class TestWarmupPillars:
     """Тести для warmup_pillars() — повний трьохтаймфреймний запит."""
 
@@ -278,7 +298,8 @@ class TestFetchCandlesCache:
         asyncio.run(svc.fetch_candles("BTCUSDT", 86400, 200))
         asyncio.run(svc.fetch_candles("BTCUSDT", 86400, 200))
 
-        assert mock_get_klines.call_count == 2
+        # 3 attempts per failed fetch, then the next fetch starts a fresh retry cycle.
+        assert mock_get_klines.call_count == 6
 
 
 # ── payload format for EVT:HTF_BARS_IMPORTED ─────────────────────────────────

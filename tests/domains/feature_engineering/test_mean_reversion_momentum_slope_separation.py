@@ -6,30 +6,32 @@ from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
     MRSignalType,
     MRStrategyConfig,
     MeanReversion1mStrategy,
+    MomentumSeparationVetoConfig,
+    SqueezeExpansionVetoConfig,
 )
 from apps.reference.domains.feature_engineering.regime_mapping import FlatRegime, MRParameters
 
 
-def _squeeze_veto_config() -> dict:
-    return {
-        "enabled": True,
-        "squeeze_width_max": Decimal("0.001"),
-        "post_squeeze_width_max": Decimal("0.005"),
-        "expansion_ratio_min": Decimal("3.0"),
-        "regimes": ["FLAT_LOW"],
-        "sides": ["LONG", "SHORT"],
-    }
+def _squeeze_veto_config() -> SqueezeExpansionVetoConfig:
+    return SqueezeExpansionVetoConfig(
+        enabled=True,
+        squeeze_width_max=Decimal("0.001"),
+        post_squeeze_width_max=Decimal("0.005"),
+        expansion_ratio_min=Decimal("3.0"),
+        regimes=["FLAT_LOW"],
+        sides=["LONG", "SHORT"],
+    )
 
 
-def _momentum_veto_config() -> dict:
-    return {
-        "enabled": True,
-        "lookback_bars": 4,
-        "min_drift_pct": Decimal("0.02"),
-        "min_current_bb_width": Decimal("0.020"),
-        "regimes": ["FLAT_LOW"],
-        "sides": ["LONG", "SHORT"],
-    }
+def _momentum_veto_config() -> MomentumSeparationVetoConfig:
+    return MomentumSeparationVetoConfig(
+        enabled=True,
+        lookback_bars=4,
+        min_drift_pct=Decimal("0.02"),
+        min_current_bb_width=Decimal("0.020"),
+        regimes=["FLAT_LOW"],
+        sides=["LONG", "SHORT"],
+    )
 
 
 def _make_bar(symbol: str, close: Decimal, index: int) -> Bar:
@@ -50,8 +52,8 @@ def _make_bar(symbol: str, close: Decimal, index: int) -> Bar:
 
 def _make_strategy(
     *,
-    momentum_separation_veto: dict | None,
-    squeeze_expansion_veto: dict | None = None,
+    momentum_separation_veto: MomentumSeparationVetoConfig | None,
+    squeeze_expansion_veto: SqueezeExpansionVetoConfig | None = None,
     flat_low_short_min_bb_width: Decimal | None = None,
 ) -> MeanReversion1mStrategy:
     config = MRStrategyConfig(
@@ -63,7 +65,8 @@ def _make_strategy(
         max_bb_width=Decimal("0.15"),
         entry_threshold=Decimal("0.05"),
         cooldown_sec=0,
-        allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"],
+        allowed_regimes=["FLAT_LOW", "FLAT_NORMAL",
+                         "FLAT_HIGH", "MEAN_REVERSION"],
         flat_low_short_min_bb_width=flat_low_short_min_bb_width,
         squeeze_expansion_veto=squeeze_expansion_veto,
         momentum_separation_veto=momentum_separation_veto,
@@ -78,8 +81,8 @@ def _run_sequence(
     *,
     symbol: str,
     closes: list[Decimal],
-    momentum_separation_veto: dict | None,
-    squeeze_expansion_veto: dict | None = None,
+    momentum_separation_veto: MomentumSeparationVetoConfig | None,
+    squeeze_expansion_veto: SqueezeExpansionVetoConfig | None = None,
 ) -> object:
     strategy = _make_strategy(
         momentum_separation_veto=momentum_separation_veto,

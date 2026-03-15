@@ -263,8 +263,8 @@ class AuroraDecisionMixin:
             except Exception:
                 _basis_required = 0
         if _basis_required and _bars_seen < _basis_required:
-            self.logger.debug(
-                "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal",
+            self.logger.info(
+                "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal (quadratic path NOT reached)",
                 symbol, _bars_seen, _basis_required,
             )
             write_trade_intent_rejected(
@@ -505,7 +505,38 @@ class AuroraDecisionMixin:
             result=result,
             effective_neutral=effective_neutral,
         )
-        self.logger.debug("[%s] QUADRATIC_DECISION_TRACE %s", symbol, decision_trace)
+
+        # QUADRATIC-VISIBILITY: Emit structured trace at INFO level and as FSM event
+        # so the operator can see it in logs and downstream sinks.
+        compact_trace = self._compact_quadratic_decision_trace(decision_trace)
+        self.logger.info(
+            "[%s] QUADRATIC_DECISION_TRACE score=%.6f side=%s deferred=%s regime=%s",
+            symbol,
+            float(result.score),
+            result.side,
+            result.deferred,
+            state.regime,
+        )
+        try:
+            self.emit_fn("EVT:QUADRATIC_DECISION_TRACE", {
+                "schema_version": 1,
+                "strategy_id": self.strategy_id,
+                "symbol": symbol,
+                "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+                "score": float(result.score),
+                "side": str(result.side),
+                "deferred": bool(result.deferred),
+                "defer_reason": str(result.defer_reason) if result.defer_reason else None,
+                "regime": str(state.regime),
+                "shield_multiplier": float(result.shield_multiplier or 1.0),
+                "thr_buy": str(result.thr_buy) if result.thr_buy is not None else None,
+                "thr_sell": str(result.thr_sell) if result.thr_sell is not None else None,
+                "quadratic_path_reached": True,
+                "compact_trace": compact_trace,
+                "ts_ms": int(self.wall_time_fn() * 1000),
+            })
+        except Exception:
+            pass  # Best-effort telemetry
 
         # Kernel visibility log
         _psi = result.psi_vector or {}

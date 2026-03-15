@@ -11,7 +11,6 @@ This is an async-first implementation using aiohttp WebSocket.
 import asyncio
 import json
 import logging
-import time
 from typing import Any, Optional, TYPE_CHECKING
 
 try:
@@ -51,7 +50,8 @@ class MarketDataConnector:
         if aiohttp is None:
             raise ImportError("aiohttp is required for MarketDataConnector")
         if isinstance(config, dict):
-            raise TypeError("MarketDataConnector requires AuroraConfig, got dict")
+            raise TypeError(
+                "MarketDataConnector requires AuroraConfig, got dict")
         """
         Initialize the connector with validated Config V2 object.
 
@@ -80,7 +80,8 @@ class MarketDataConnector:
 
         # CFG-TRADING-YAML-BURN-DOWN-02: Use canonical config.instruments (SSOT)
         # Symbols: Load from instruments dict keys. Fail if empty.
-        instruments = self.config.instruments if hasattr(self.config, 'instruments') else {}
+        instruments = self.config.instruments if hasattr(
+            self.config, 'instruments') else {}
         self.symbols: list[str] = list(instruments.keys())
         if not self.symbols:
             raise ValueError(
@@ -126,22 +127,10 @@ class MarketDataConnector:
         LOG.info(f"✅ MarketDataConnector initialized: symbols={self.symbols}, "
                  f"anchors={self.anchors}, mode={self.data_source_tag}")
 
-    def set_feature_engineering(self, fe: Any) -> None:
-        """
-        DEPRECATED (FSMP-ARCH-01): This method is kept for backward compatibility only.
-        
-        Anchor updates are now handled via EVT:ANCHOR_UPDATED events.
-        This method is a no-op and will be removed in a future version.
-        """
-        LOG.warning(
-            "⚠️ set_feature_engineering() is DEPRECATED. "
-            "Anchor updates are now event-driven (EVT:ANCHOR_UPDATED)."
-        )
-
     async def _emit_anchor_update(self, anchor: str, price: str, ts_ms: int) -> None:
         """
         Emit anchor price update as FSM event.
-        
+
         FSMP-ARCH-01: Replaces direct method call to FeatureEngineering.
         This enables loose coupling and multiprocess-safe anchor updates.
         """
@@ -235,7 +224,8 @@ class MarketDataConnector:
                 qty = msg["q"] if "q" in msg else "0"
                 # True if buyer is maker (sell)
                 is_buyer_maker = msg["m"] if "m" in msg else False
-                ts = msg["T"] if "T" in msg else (msg["E"] if "E" in msg else 0)
+                ts = msg["T"] if "T" in msg else (
+                    msg["E"] if "E" in msg else 0)
                 if ts <= 0:
                     return
                 # Aggregate Trade ID for deduplication

@@ -57,7 +57,7 @@ from apps.reference.contracts.runtime_readiness import (
 )
 from vfoundation.core.protocol import Message
 from apps.reference.core.time import get_clock
-from apps.reference.domains.feature_engineering.md_amr_strategy import MDAMRStrategyV11, MDAMRSignal
+from apps.reference.domains.decision_making.strategy_bridge import MDAMRStrategyV11, MDAMRSignal
 from apps.reference.config_models import AuroraConfig, MDAMRStrategyConfig
 from apps.reference.domains.decision_making.position_queries import PositionQueries
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
@@ -218,6 +218,40 @@ class MDAMRHandler:
                 "MD_AMR seed_startup_bars sym=%s bars_seen=%d (seeded=%d)",
                 symbol, self._bars_seen_since_restart[symbol], count,
             )
+
+    def get_readiness_diagnostics(self) -> list[dict[str, object]]:
+        """Return per-symbol readiness diagnostics for operator visibility.
+
+        Provides a machine-readable view of the cold-start readiness state
+        for every enabled symbol tracked by this handler.
+        """
+        _basis_required = 0
+        try:
+            from apps.reference.contracts.strategy_compatibility_matrix import (
+                get_active_strategy_profile,
+            )
+            _profile = get_active_strategy_profile(self.config, "md_amr")
+            _basis_required = int(
+                _profile.basis_required_bars) if _profile else 0
+        except Exception:
+            pass
+        results: list[dict[str, object]] = []
+        for symbol in sorted(self._enabled_symbols):
+            bars_seen = self._bars_seen_since_restart.get(symbol, 0)
+            ready = bars_seen >= _basis_required if _basis_required else True
+            results.append({
+                "strategy": "md_amr",
+                "symbol": symbol,
+                "tf_sec": self.timeframe_sec,
+                "bars_seen": bars_seen,
+                "bars_required": _basis_required,
+                "ready": ready,
+                "block_reason": (
+                    None if ready
+                    else f"BARS_REQUIRED_COLD_START:{bars_seen}/{_basis_required}"
+                ),
+            })
+        return results
 
     def register(self) -> None:
         if not self._enabled:
@@ -1058,8 +1092,8 @@ class MDAMRHandler:
         except Exception:
             pass
         if _basis_required and _bars_seen < _basis_required:
-            self.mlog.debug(
-                "MD_AMR_BARS_REQUIRED sym=%s bars=%d/%d — blocking",
+            self.mlog.info(
+                "MD_AMR_BARS_REQUIRED sym=%s bars=%d/%d — blocking (quadratic/signal path NOT reached)",
                 symbol, _bars_seen, _basis_required,
             )
             rid = self._rid(symbol=symbol, side="BUY",

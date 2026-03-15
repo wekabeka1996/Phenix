@@ -147,59 +147,116 @@ class PillarBackfillService:
             )
             return result
 
-        try:
-            interval = self._tf_sec_to_interval(timeframe_sec)
-            logger.info(
-                "PILLAR_BACKFILL: Fetching %d %s candles for %s...",
-                count, interval, symbol,
-            )
+        interval = self._tf_sec_to_interval(timeframe_sec)
+        max_attempts = 3
 
-            # Exchange API call
-            raw_klines = await self._exchange.get_klines(
-                symbol=symbol,
-                interval=interval,
-                limit=count,
-            )
-
-            if not raw_klines:
-                result.error = "empty_response"
-                logger.warning(
-                    "PILLAR_BACKFILL: Empty response for %s/%s",
-                    symbol, interval,
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(
+                    "PILLAR_BACKFILL: Fetching %d %s candles for %s (attempt=%d/%d)...",
+                    count,
+                    interval,
+                    symbol,
+                    attempt,
+                    max_attempts,
                 )
-                return result
 
-            # Parse klines to CandleBar objects
-            candles = []
-            for kline in raw_klines:
-                try:
-                    candle = self._parse_kline(kline)
-                    candles.append(candle)
-                except (KeyError, ValueError, TypeError) as e:
+                raw_klines = await self._exchange.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    limit=count,
+                )
+
+                if not raw_klines:
+                    result.error = "empty_response"
+                    if attempt < max_attempts:
+                        logger.warning(
+                            "PILLAR_BACKFILL: Empty response for %s/%s (attempt=%d/%d) - retrying",
+                            symbol,
+                            interval,
+                            attempt,
+                            max_attempts,
+                        )
+                        continue
                     logger.warning(
-                        "PILLAR_BACKFILL: Skipping malformed kline: %s", e,
+                        "PILLAR_BACKFILL: Empty response for %s/%s",
+                        symbol,
+                        interval,
+                    )
+                    return result
+
+                candles = []
+                for kline in raw_klines:
+                    try:
+                        candle = self._parse_kline(kline)
+                        candles.append(candle)
+                    except (KeyError, ValueError, TypeError) as e:
+                        logger.warning(
+                            "PILLAR_BACKFILL: Skipping malformed kline: %s", e,
+                        )
+                        continue
+
+                result.candles = candles
+                result.fetched_count = len(candles)
+                result.success = len(candles) >= count * 0.9
+                result.error = None if result.success else (
+                    f"insufficient_candles:{len(candles)}/{count}"
+                )
+
+                if result.success:
+                    self._cache[cache_key] = result
+                    logger.info(
+                        "PILLAR_BACKFILL: Fetched %d/%d %s candles for %s (success=%s attempts=%d)",
+                        len(candles),
+                        count,
+                        interval,
+                        symbol,
+                        result.success,
+                        attempt,
+                    )
+                    return result
+
+                if attempt < max_attempts:
+                    logger.warning(
+                        "PILLAR_BACKFILL: Insufficient candles for %s/%s (%d/%d attempt=%d/%d) - retrying",
+                        symbol,
+                        interval,
+                        len(candles),
+                        count,
+                        attempt,
+                        max_attempts,
                     )
                     continue
 
-            result.candles = candles
-            result.fetched_count = len(candles)
-            result.success = len(candles) >= count * 0.9  # Allow 10% missing
+                logger.warning(
+                    "PILLAR_BACKFILL: Fetched %d/%d %s candles for %s (success=%s)",
+                    len(candles),
+                    count,
+                    interval,
+                    symbol,
+                    result.success,
+                )
+                return result
 
-            # Cache successful result
-            if result.success:
-                self._cache[cache_key] = result
-
-            logger.info(
-                "PILLAR_BACKFILL: Fetched %d/%d %s candles for %s (success=%s)",
-                len(candles), count, interval, symbol, result.success,
-            )
-
-        except Exception as e:
-            result.error = f"fetch_error: {e}"
-            logger.error(
-                "PILLAR_BACKFILL: Failed to fetch %s/%ds: %s",
-                symbol, timeframe_sec, e, exc_info=True,
-            )
+            except Exception as e:
+                result.error = f"fetch_error: {e}"
+                if attempt < max_attempts:
+                    logger.warning(
+                        "PILLAR_BACKFILL: Fetch attempt %d/%d failed for %s/%ds: %s - retrying",
+                        attempt,
+                        max_attempts,
+                        symbol,
+                        timeframe_sec,
+                        e,
+                    )
+                    continue
+                logger.error(
+                    "PILLAR_BACKFILL: Failed to fetch %s/%ds: %s",
+                    symbol,
+                    timeframe_sec,
+                    e,
+                    exc_info=True,
+                )
 
         return result
 

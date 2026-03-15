@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import asdict
 from decimal import Decimal
 from threading import Lock
 from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING

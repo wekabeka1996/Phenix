@@ -1,3 +1,6 @@
+> **Note:** This auto-generated doc may be stale. The authoritative domain
+> documentation is `apps/reference/domains/market_data/README.md`.
+
 # Домен Market Data
 
 ## 1. Опис

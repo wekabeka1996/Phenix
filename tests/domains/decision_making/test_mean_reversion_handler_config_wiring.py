@@ -48,7 +48,8 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             tp_to_mid=True,
             cooldown_sec=60,
         ),
-        regime_thresholds=MRRegimeThresholdsConfig(high_vol_pct=0.003, low_vol_pct=0.001),
+        regime_thresholds=MRRegimeThresholdsConfig(
+            high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=True,
@@ -81,7 +82,7 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
                     sl_atr_mult=None,
                     allowed_regimes=["FLAT_HIGH"],
                 ),
-                
+
             )
         },
         regime_sizing={
@@ -97,11 +98,13 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
     )
 
     cfg = SimpleNamespace(
-        strategies_registry=SimpleNamespace(assignments={symbol: ["mean_reversion"]}),
+        strategies_registry=SimpleNamespace(
+            assignments={symbol: ["mean_reversion"]}),
         strategies=SimpleNamespace(mean_reversion=mr_cfg),
     )
 
-    handler = MeanReversionHandler(fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
+    handler = MeanReversionHandler(
+        fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
 
     strat = handler._strategies[symbol]
     s_cfg = strat.config
@@ -112,17 +115,17 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
     assert str(s_cfg.min_bb_width) == "0.009"
     assert str(s_cfg.flat_low_short_min_bb_width) == "0.015"
     assert s_cfg.squeeze_expansion_veto is not None
-    assert str(s_cfg.squeeze_expansion_veto["squeeze_width_max"]) == "0.01"
-    assert str(s_cfg.squeeze_expansion_veto["post_squeeze_width_max"]) == "0.02"
-    assert str(s_cfg.squeeze_expansion_veto["expansion_ratio_min"]) == "2.0"
-    assert s_cfg.squeeze_expansion_veto["regimes"] == ["FLAT_LOW"]
-    assert s_cfg.squeeze_expansion_veto["sides"] == ["LONG", "SHORT"]
+    assert str(s_cfg.squeeze_expansion_veto.squeeze_width_max) == "0.01"
+    assert str(s_cfg.squeeze_expansion_veto.post_squeeze_width_max) == "0.02"
+    assert str(s_cfg.squeeze_expansion_veto.expansion_ratio_min) == "2.0"
+    assert s_cfg.squeeze_expansion_veto.regimes == ["FLAT_LOW"]
+    assert s_cfg.squeeze_expansion_veto.sides == ["LONG", "SHORT"]
     assert s_cfg.momentum_separation_veto is not None
-    assert s_cfg.momentum_separation_veto["lookback_bars"] == 4
-    assert str(s_cfg.momentum_separation_veto["min_drift_pct"]) == "0.02"
-    assert str(s_cfg.momentum_separation_veto["min_current_bb_width"]) == "0.02"
-    assert s_cfg.momentum_separation_veto["regimes"] == ["FLAT_LOW"]
-    assert s_cfg.momentum_separation_veto["sides"] == ["LONG", "SHORT"]
+    assert s_cfg.momentum_separation_veto.lookback_bars == 4
+    assert str(s_cfg.momentum_separation_veto.min_drift_pct) == "0.02"
+    assert str(s_cfg.momentum_separation_veto.min_current_bb_width) == "0.02"
+    assert s_cfg.momentum_separation_veto.regimes == ["FLAT_LOW"]
+    assert s_cfg.momentum_separation_veto.sides == ["LONG", "SHORT"]
     assert str(s_cfg.entry_threshold) == "0.123"
     assert s_cfg.tp_to_mid is False
     assert s_cfg.cooldown_sec == 321
@@ -159,17 +162,19 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
             tp_to_mid=True,
             cooldown_sec=60,
         ),
-        regime_thresholds=MRRegimeThresholdsConfig(high_vol_pct=0.003, low_vol_pct=0.001),
+        regime_thresholds=MRRegimeThresholdsConfig(
+            high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=True,
                 position_mode="STRICT",
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL"],
                 strategy=None,
-                
+
             )
         },
-        regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
+        regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(
+            sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_HIGH"],
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
@@ -179,11 +184,13 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
     )
 
     cfg = SimpleNamespace(
-        strategies_registry=SimpleNamespace(assignments={symbol: ["mean_reversion"]}),
+        strategies_registry=SimpleNamespace(
+            assignments={symbol: ["mean_reversion"]}),
         strategies=SimpleNamespace(mean_reversion=mr_cfg),
     )
 
-    handler = MeanReversionHandler(fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
+    handler = MeanReversionHandler(
+        fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
 
     strat = handler._strategies[symbol]
     assert strat.config.allowed_regimes == ["FLAT_LOW", "FLAT_NORMAL"]

@@ -8,6 +8,8 @@ Tests the proxy component that bridges the worker process with the main FSM:
 - Graceful shutdown
 """
 
+from apps.reference.domains.market_data.worker import MarketDataWorker
+from apps.reference.domains.market_data.proxy import MarketDataProxy
 import asyncio
 import queue
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -20,43 +22,41 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from apps.reference.domains.market_data.proxy import MarketDataProxy
-from apps.reference.domains.market_data.worker import MarketDataWorker
-
 
 class MockFSM:
     """Mock FSMCore for testing."""
-    
+
     def __init__(self):
         self.emitted_events = []
-    
+
     def emit(self, event_name: str, payload: dict, why: str = ""):
         self.emitted_events.append({
             "event_name": event_name,
             "payload": payload,
             "why": why,
         })
-    
+
     def listen(self, event_name: str, callback):
         pass  # Not needed for proxy tests
 
 
 class MockConfig:
     """Mock AuroraConfig for testing."""
-    
+
     def __init__(self, config_dict: dict):
         self._config = config_dict
         self.instruments = config_dict.get("instruments", {})
         sys_cfg = config_dict.get("system", {})
-        md_cfg = sys_cfg.get("market_data", {}) if isinstance(sys_cfg, dict) else {}
+        md_cfg = sys_cfg.get("market_data", {}) if isinstance(
+            sys_cfg, dict) else {}
         self.system = SimpleNamespace(market_data=SimpleNamespace(**md_cfg))
-    
+
     def model_dump(self, mode: str = "python") -> dict:
         return self._config
-    
+
     def to_dict(self) -> dict:
         return self._config
-    
+
     def get(self, key: str, default=None):
         return self._config.get(key, default)
 
@@ -77,9 +77,9 @@ class TestProxyTickEmission:
                 },
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         # Simulate tick data from worker
         tick_data = {
             "type": "tick",
@@ -98,12 +98,12 @@ class TestProxyTickEmission:
                 # No data_source - should default to "multiprocess_worker"
             },
         }
-        
+
         proxy._emit_tick(tick_data)
-        
+
         assert len(fsm.emitted_events) == 1
         event = fsm.emitted_events[0]
-        
+
         assert event["event_name"] == "EVT:MARKET_TICK_RECEIVED"
         assert event["payload"]["symbol"] == "BTCUSDT"
         assert event["payload"]["price"] == "95000.50"
@@ -121,20 +121,20 @@ class TestProxyTickEmission:
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
         assert proxy._ticks_emitted == 0
-        
+
         tick_data = {
             "type": "tick",
             "symbol": "BTCUSDT",
             "data": {"ts": 1234567890000, "price": "95000", "bid": "94999", "ask": "95001"},
         }
-        
+
         proxy._emit_tick(tick_data)
         proxy._emit_tick(tick_data)
         proxy._emit_tick(tick_data)
-        
+
         assert proxy._ticks_emitted == 3
 
 
@@ -154,21 +154,21 @@ class TestProxyAnchorEmission:
                 },
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         anchor_data = {
             "type": "anchor",
             "anchor": "BTCUSDT",
             "price": "95000.00",
             "ts_ms": 1234567890000,
         }
-        
+
         proxy._emit_anchor_update(anchor_data)
-        
+
         assert len(fsm.emitted_events) == 1
         event = fsm.emitted_events[0]
-        
+
         assert event["event_name"] == "EVT:ANCHOR_UPDATED"
         assert event["payload"]["anchor"] == "BTCUSDT"
         assert event["payload"]["price"] == "95000.00"
@@ -188,11 +188,11 @@ class TestProxyHeartbeat:
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
         assert proxy._last_heartbeat_ts == 0
         assert proxy._worker_alive is False
-        
+
         heartbeat = {
             "type": "heartbeat",
             "ts": 1234567890000,
@@ -202,9 +202,9 @@ class TestProxyHeartbeat:
                 "queue_size": 42,
             },
         }
-        
+
         proxy._handle_heartbeat(heartbeat)
-        
+
         assert proxy._last_heartbeat_ts == 1234567890000
         assert proxy._worker_alive is True
 
@@ -215,7 +215,7 @@ class TestProxyConfigSerialization:
     def test_get_config_dict_pydantic_v2(self):
         """Test config serialization with Pydantic V2 model."""
         fsm = MockFSM()
-        
+
         class PydanticV2Config:
             instruments = {"BTCUSDT": {}}
             system = SimpleNamespace(
@@ -226,12 +226,13 @@ class TestProxyConfigSerialization:
                     proxy_idle_sleep_sec=0.01,
                 )
             )
+
             def model_dump(self, mode="python"):
                 return {"key": "value", "mode": mode}
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=PydanticV2Config())
         result = proxy._get_config_dict()
-        
+
         assert result["key"] == "value"
         assert result["mode"] == "json"
         # Proxy attaches runtime metadata for worker bootstrap diagnostics
@@ -241,38 +242,14 @@ class TestProxyConfigSerialization:
     def test_proxy_rejects_plain_dict_config(self):
         """MarketDataProxy requires a Pydantic-like config object, not a raw dict."""
         fsm = MockFSM()
-        
+
         config_dict = {
             "instruments": {"BTCUSDT": {}},
             "trading": {"market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1}},
         }
-        
+
         with pytest.raises(TypeError, match="requires AuroraConfig"):
             _ = MarketDataProxy(fsm=fsm, config=config_dict)
-
-
-class TestProxyDeprecation:
-    """Test deprecated method handling."""
-
-    def test_set_feature_engineering_is_noop(self):
-        """Test that deprecated method logs warning but doesn't fail."""
-        fsm = MockFSM()
-        config = MockConfig({
-            "instruments": {"BTCUSDT": {}},
-            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
-            "trading": {
-                "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
-            },
-        })
-        
-        proxy = MarketDataProxy(fsm=fsm, config=config)
-        
-        # Should not raise
-        mock_fe = MagicMock()
-        proxy.set_feature_engineering(mock_fe)
-        
-        # Should have no effect
-        assert len(fsm.emitted_events) == 0
 
 
 class TestProxyMetrics:
@@ -288,16 +265,16 @@ class TestProxyMetrics:
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         # Simulate some activity
         proxy._ticks_emitted = 100
         proxy._batches_processed = 10
         proxy._last_heartbeat_ts = 1234567890000
-        
+
         metrics = proxy.metrics
-        
+
         assert metrics["ticks_emitted"] == 100
         assert metrics["batches_processed"] == 10
         assert metrics["last_heartbeat_ts"] == 1234567890000
@@ -318,9 +295,9 @@ class TestProxyBatchProcessing:
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         assert proxy._batch_size == 100
         assert proxy._queue_maxsize == 10000
 
@@ -334,14 +311,14 @@ class TestProxyBatchProcessing:
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         # Create a standard queue for testing (multiprocessing.Queue doesn't work in same process)
         import queue as stdlib_queue
         proxy._ipc_queue = stdlib_queue.Queue(maxsize=100)
         proxy._running = True
-        
+
         # Put some test messages
         for i in range(5):
             msg = {
@@ -350,7 +327,7 @@ class TestProxyBatchProcessing:
                 "data": {"ts": i, "price": "95000", "bid": "94999", "ask": "95001"},
             }
             proxy._ipc_queue.put_nowait(msg)
-        
+
         # Run one iteration (stop after first batch)
         items_processed = 0
         while items_processed < proxy._batch_size:
@@ -362,7 +339,7 @@ class TestProxyBatchProcessing:
                     items_processed += 1
             except Exception:
                 break
-        
+
         assert len(fsm.emitted_events) == 5
         assert proxy._ticks_emitted == 5
 
@@ -376,13 +353,13 @@ class TestProxyBatchProcessing:
                 "market_data": {"macro_sync": {"anchors": ["ETHUSDT"]}, "poll_interval_sec": 1},
             },
         })
-        
+
         proxy = MarketDataProxy(fsm=fsm, config=config)
-        
+
         # Create a standard queue for testing (multiprocessing.Queue doesn't work in same process)
         import queue as stdlib_queue
         proxy._ipc_queue = stdlib_queue.Queue(maxsize=100)
-        
+
         # Put mixed messages
         proxy._ipc_queue.put_nowait({
             "type": MarketDataWorker.MSG_TYPE_TICK,
@@ -400,7 +377,7 @@ class TestProxyBatchProcessing:
             "ts": 1234567890000,
             "metrics": {"ticks_received": 10, "ticks_dropped": 0, "queue_size": 2},
         })
-        
+
         # Process all
         while not proxy._ipc_queue.empty():
             msg = proxy._ipc_queue.get_nowait()
@@ -411,11 +388,13 @@ class TestProxyBatchProcessing:
                 proxy._emit_anchor_update(msg)
             elif msg_type == MarketDataWorker.MSG_TYPE_HEARTBEAT:
                 proxy._handle_heartbeat(msg)
-        
+
         # Verify
-        tick_events = [e for e in fsm.emitted_events if e["event_name"] == "EVT:MARKET_TICK_RECEIVED"]
-        anchor_events = [e for e in fsm.emitted_events if e["event_name"] == "EVT:ANCHOR_UPDATED"]
-        
+        tick_events = [
+            e for e in fsm.emitted_events if e["event_name"] == "EVT:MARKET_TICK_RECEIVED"]
+        anchor_events = [
+            e for e in fsm.emitted_events if e["event_name"] == "EVT:ANCHOR_UPDATED"]
+
         assert len(tick_events) == 1
         assert len(anchor_events) == 1
         assert proxy._worker_alive is True
