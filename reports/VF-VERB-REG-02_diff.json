@@ -2,11 +2,11 @@
   "date": "2026-01-08",
   "registry_path": "apps\\reference\\dictionaries\\verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 82,
-    "registry_tokens": 88,
-    "runtime_not_in_registry": 13,
-    "registry_not_in_runtime": 19,
-    "coverage": 0.841463
+    "runtime_tokens": 83,
+    "registry_tokens": 90,
+    "runtime_not_in_registry": 14,
+    "registry_not_in_runtime": 21,
+    "coverage": 0.831325
   },
   "runtime_not_in_registry": [
     "CMD:CANCEL",
@@ -18,6 +18,7 @@
     "EVT:DOMAIN_STATUS",
     "EVT:ENTROPY_SPIKE",
     "EVT:PROCESS_STRATEGY",
+    "EVT:QUADRATIC_DECISION_TRACE",
     "EVT:RECOVERY_SIGNAL",
     "EVT:STABILIZED",
     "EVT:STATE_TRANSITION",
@@ -31,6 +32,7 @@
     "EVT:EXPOSURE_MISMATCH",
     "EVT:FALLBACK_MODE_ENTERED",
     "EVT:FALLBACK_MODE_EXITED",
+    "EVT:HANDLER_READINESS_DIAGNOSTICS",
     "EVT:INTENT_DROPPED",
     "EVT:LIMIT_ORDER_TIMEOUT",
     "EVT:MANAGE_SKIPPED",
@@ -42,6 +44,7 @@
     "EVT:ORDER_TIMEOUT",
     "EVT:PENDING_BRACKETS_CLEARED",
     "EVT:PENDING_BRACKETS_STORED",
-    "EVT:PENDING_EXPOSURE_EXPIRED"
+    "EVT:PENDING_EXPOSURE_EXPIRED",
+    "EVT:TICK_RECEIVED"
   ]
 }

@@ -6,6 +6,11 @@ uncertain_cutoff: 0.22  #  : 0.35  0.22 (  )
 # Default: 3 (i.e., 15 minutes for 5m basis)
 liveness_factor: 3
 
+# Extra basis bars imported above regime_detector_required_bars() to absorb Binance fetch gaps.
+# Total import = regime_detector_required_bars() + basis_import_buffer
+# regime_detector_required_bars() = max(sma_long_period, atr_period + atr_sma_length - 1) = 301 currently.
+basis_import_buffer: 20
+
 # HYSTERESIS-SLOPE-GATE-01
 # NOTE: These are top-level regime.yaml keys (NOT under `models:`).
 # FIX-HYST-01: Increased from 35 bars (25 min confirmation at 5m basis).
@@ -49,7 +54,7 @@ models:
     threshold: 0.0050               # TUNED: Adjusted for 0.5% natural spread
     confidence_multiplier: 120.0
 
-#  SYSTEM STRESS GUARD (Phase 0.0) 
+#  SYSTEM STRESS GUARD (Phase 0.0)
 # Independent circuit-breaker overlay: NORMAL  STRESS  EXTREME.
 # NOT a replacement for TREND/MR regimes  a separate guard layer.
 # When enabled + state=STRESS/EXTREME, DM can gate/attenuate entries.

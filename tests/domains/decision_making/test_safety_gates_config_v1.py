@@ -127,3 +127,36 @@ class TestNRRCodesExist:
         assert desc_054 is not None, "NRR-054 should have a description"
         assert "fail-closed" in desc_053.lower()
         assert "fail-closed" in desc_054.lower()
+
+
+class TestSystemStressPolicyFailClosed:
+    """DM-SAFETY-BYPASSES-P1: Ensure system stress policy fails closed on config resolution error."""
+
+    def test_resolve_stress_policy_exception_fails_closed(self):
+        from apps.reference.domains.decision_making.safety_gates import _resolve_stress_policy
+
+        config = MagicMock()
+        # Simulate an exception accessing 'strategies' to trigger the except block
+        type(config).strategies = property(lambda self: (_ for _ in ()).throw(ValueError("Test exception")))
+
+        policy, factor = _resolve_stress_policy(config, "test_strat")
+
+        assert policy == "CONFIG_ERROR", "Should fail closed on exception"
+        assert factor == 0.0
+
+    def test_check_system_stress_gate_fails_closed_on_config_error(self):
+        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+
+        outcome, deny_reason, why_short, state = _check_system_stress_gate(
+            symbol="BTCUSDT",
+            reduce_only=False,
+            apply_safety_gates_flag=True,
+            system_stress_states={"BTCUSDT": "NORMAL"},
+            stress_policy="CONFIG_ERROR"
+        )
+
+        assert outcome == "DENY"
+        assert deny_reason == NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING
+        assert "resolution failed (fail-closed)" in why_short
+        assert state == "UNKNOWN"

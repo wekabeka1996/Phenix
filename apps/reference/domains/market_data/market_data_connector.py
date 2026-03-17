@@ -469,11 +469,57 @@ class MarketDataConnector:
                 ),
             }
 
-            self.fsm.emit(
-                event_name="EVT:MARKET_TICK_RECEIVED",
-                payload=payload,
-                why=f"Real-time market tick for {symbol} from {tick['data_source']}",
-            )
+            def _emit(payload_to_emit: dict[str, Any]) -> None:
+                self.fsm.emit(
+                    event_name="EVT:MARKET_TICK_RECEIVED",
+                    payload=payload_to_emit,
+                    why=f"Real-time market tick for {symbol} from {tick['data_source']}",
+                )
+
+            try:
+                _emit(payload)
+            except Exception as emit_error:
+                err_text = str(emit_error)
+                # Legacy-compat fallback: some runtime schema snapshots still reject TASK31 additive fields.
+                if "Additional properties are not allowed" in err_text:
+                    legacy_payload = {
+                        "ts": tick["ts"],
+                        "symbol": symbol,
+                        "price": tick["price"],
+                        "bid": tick["bid"],
+                        "ask": tick["ask"],
+                        "mid": tick["mid"],
+                        "bid_size": tick["bid_size"],
+                        "ask_size": tick["ask_size"],
+                        "buy_volume": tick["buy_volume"],
+                        "sell_volume": tick["sell_volume"],
+                        "data_type": "market_tick_aggregated",
+                        "data_source": tick["data_source"],
+                        "debug_info": payload["debug_info"],
+                    }
+                    try:
+                        _emit(legacy_payload)
+                        LOG.warning(
+                            "MARKET_TICK_RECEIVED emitted via legacy-compatible payload for symbol=%s",
+                            symbol,
+                        )
+                    except Exception as legacy_emit_error:
+                        legacy_err_text = str(legacy_emit_error)
+                        if "does not match '^[A-Z]{2,10}USDT$'" in legacy_err_text:
+                            LOG.warning(
+                                "Skipping tick for symbol=%s due to active runtime symbol pattern mismatch",
+                                symbol,
+                            )
+                            return
+                        raise
+                elif "does not match '^[A-Z]{2,10}USDT$'" in err_text:
+                    LOG.warning(
+                        "Skipping tick for symbol=%s due to active runtime symbol pattern mismatch",
+                        symbol,
+                    )
+                    return
+                else:
+                    raise
 
             trade_count = tick.get("trade_count")
             buy_trade_count = "N/A"

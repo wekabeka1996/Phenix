@@ -182,44 +182,10 @@ class AuroraDecisionMixin:
         warmup = cmd.get("warmup", {})
         warmup_readiness = warmup.get("ready", {})
 
-        # Update warmup state
+        # System-level warmup state is now exclusively controlled by the StrategyGateway 
+        # (see readiness_gates.py). Handlers only track it for diagnostics, not fail-closed gates.
         state = self._symbol_states[symbol]
         state.warmup_full_ready = bool(warmup.get("full_ready", False))
-
-        # Check warmup readiness (fail-closed)
-        if not state.warmup_full_ready:
-            mode = str(
-                getattr(self, "_fe_warmup_enforcement_mode", "fail_fast"))
-            if mode == "fail_fast":
-                self.logger.debug(
-                    f"[{symbol}] Warmup not ready, skipping (mode=fail_fast)")
-                write_trade_intent_rejected(
-                    symbol=symbol,
-                    tf_sec=int(cmd.get("tf_sec") or 0),
-                    bar_close_ts=cmd.get("bar_close_ts"),
-                    reason_code=NormalizedRejectReasons.FEATURES_NOT_READY,
-                    stage="STRATEGY",
-                    why="Warmup not full_ready (fail-closed; enforcement_mode=fail_fast)",
-                    src="aurora_handler",
-                    ts_ms=cmd.get("bar_close_ts"),
-                    rid=cmd.get("rid"),
-                )
-                self._emit_strategy_blocked(
-                    symbol=symbol,
-                    reason_code="READINESS_FE_WARMUP_NOT_READY",
-                    reason="READINESS",
-                    context="aurora_handler:_process_decision",
-                    details={"warmup_full_ready": False,
-                             "enforcement_mode": mode},
-                    why_chain=["READINESS", "warmup_full_ready:false",
-                               f"enforcement_mode:{mode}"],
-                )
-                return
-
-            # warn_only / disabled: allow decision processing to proceed in degraded mode
-            self.logger.debug(
-                f"[{symbol}] Warmup not ready, continuing (enforcement_mode={mode})"
-            )
 
         # DM-CRITICAL-PATCHES-02: Regime liveness guard
         liveness_block = self._check_regime_liveness(symbol, state)
@@ -251,6 +217,7 @@ class AuroraDecisionMixin:
         _bars_seen = getattr(
             self, "_bars_seen_since_restart", {}).get(symbol, 0)
         _basis_required = getattr(self, "_basis_required_bars_override", None)
+        _readiness_contract_error: str | None = None
         if _basis_required is None:
             try:
                 from apps.reference.contracts.strategy_compatibility_matrix import (
@@ -258,10 +225,28 @@ class AuroraDecisionMixin:
                 )
                 _profile = get_active_strategy_profile(
                     self.config, self.strategy_id)
-                _basis_required = int(
-                    _profile.basis_required_bars) if _profile else 0
-            except Exception:
+                if _profile is None:
+                    _readiness_contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"
+                    _basis_required = 0
+                else:
+                    _basis_required = int(_profile.basis_required_bars)
+            except Exception as _exc:
+                _readiness_contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
                 _basis_required = 0
+        if _readiness_contract_error:
+            self.logger.error(
+                "[%s] READINESS_CONTRACT_UNRESOLVED — cannot resolve basis_required_bars: %s — blocking signal",
+                symbol, _readiness_contract_error,
+            )
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="READINESS_CONTRACT_UNRESOLVED",
+                reason="READINESS",
+                context="aurora_handler:basis_required_resolution",
+                details={"error": _readiness_contract_error},
+                why_chain=["READINESS", "READINESS_CONTRACT_UNRESOLVED"],
+            )
+            return
         if _basis_required and _bars_seen < _basis_required:
             self.logger.info(
                 "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal (quadratic path NOT reached)",

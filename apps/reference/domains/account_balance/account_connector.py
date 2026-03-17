@@ -29,6 +29,18 @@ def _dget(d: Dict[str, Any], key: str, default: Any) -> Any:
     return d[key] if key in d else default
 
 
+def _dec_str(value: Any) -> str:
+    """Serialize Decimal to plain fixed-point string (no scientific notation)."""
+    try:
+        dec = decimal.Decimal(str(value))
+    except Exception:
+        dec = decimal.Decimal("0")
+    fixed = format(dec, "f")
+    if "." in fixed:
+        fixed = fixed.rstrip("0").rstrip(".")
+    return fixed if fixed else "0"
+
+
 class AccountConnector:
     """
     Connects to Binance REST API via BinanceAdapter to retrieve account data.
@@ -246,11 +258,9 @@ class AccountConnector:
         assets = [
             {
                 "asset": asset["asset"],
-                "balance": str(decimal.Decimal(_dget(asset, "balance", "0"))),
-                "crossUnPnl": str(decimal.Decimal(_dget(asset, "crossUnPnl", "0"))),
-                "crossWalletBalance": str(
-                    decimal.Decimal(_dget(asset, "crossWalletBalance", "0"))
-                ),
+                "balance": _dec_str(_dget(asset, "balance", "0")),
+                "crossUnPnl": _dec_str(_dget(asset, "crossUnPnl", "0")),
+                "crossWalletBalance": _dec_str(_dget(asset, "crossWalletBalance", "0")),
                 "updateTime": _dget(asset, "updateTime", 0),
             }
             for asset in balance_data
@@ -313,13 +323,13 @@ class AccountConnector:
             open_positions.append(
                 {
                     "symbol": pos["symbol"],
-                    "positionAmt": str(decimal.Decimal(position_amt_raw)),
-                    "entryPrice": str(decimal.Decimal(entry_price_raw)),
-                    "unRealizedProfit": str(decimal.Decimal(unrealized_pnl_raw)),
+                    "positionAmt": _dec_str(position_amt_raw),
+                    "entryPrice": _dec_str(entry_price_raw),
+                    "unRealizedProfit": _dec_str(unrealized_pnl_raw),
                     "leverage": int(_dget(pos, "leverage", 1)),
                     "marginType": _dget(pos, "marginType", "cross"),
-                    "markPrice": str(decimal.Decimal(mark_price_raw)),
-                    "liquidationPrice": str(decimal.Decimal(liquidation_price_raw)),
+                    "markPrice": _dec_str(mark_price_raw),
+                    "liquidationPrice": _dec_str(liquidation_price_raw),
                 }
             )
 
@@ -353,16 +363,12 @@ class AccountConnector:
             )
             if usdt_asset:
                 # Use 'balance' field instead of 'walletBalance' (which doesn't exist in /fapi/v2/balance response)
-                wallet_balance = str(decimal.Decimal(
-                    _dget(usdt_asset, "balance", "0")))
-                unrealized_profit = str(
-                    decimal.Decimal(_dget(usdt_asset, "crossUnPnl", "0"))
-                )
+                wallet_balance = _dec_str(_dget(usdt_asset, "balance", "0"))
+                unrealized_profit = _dec_str(
+                    _dget(usdt_asset, "crossUnPnl", "0"))
                 # crossWalletBalance = balance - unrealizedProfit (approximately)
-                cross_wallet_balance = str(
-                    decimal.Decimal(
-                        _dget(usdt_asset, "crossWalletBalance", "0"))
-                )
+                cross_wallet_balance = _dec_str(
+                    _dget(usdt_asset, "crossWalletBalance", "0"))
 
                 LOG.info(
                     f"   ✅ Found USDT: balance={wallet_balance}, "

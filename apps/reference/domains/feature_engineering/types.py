@@ -33,10 +33,10 @@ if TYPE_CHECKING:
 class HotState:
     """
     Tick-critical state for feature engineering.
-    
+
     Updated on every market tick. Contains all data needed for
     real-time feature calculations.
-    
+
     FTR-03: Added Welford stats tuples for O(1) mean/stddev calculation.
     The deques are still needed as FIFO queues to know which value to remove.
     """
@@ -45,7 +45,7 @@ class HotState:
     ema_long: Optional[decimal.Decimal] = None
     ema_short_alpha: float = 0.0
     ema_long_alpha: float = 0.0
-    
+
     # Volume spike state
     vol_window_start_ts: Optional[int] = None
     vol_current_ts: Optional[int] = None
@@ -59,19 +59,20 @@ class HotState:
     volume_rate_current: Optional[decimal.Decimal] = None
     volume_spike_ready: bool = False
     volume_spike_not_ready_reason: Optional[str] = None
-    
+
     # Volatility state
     range_window_start_ts: Optional[int] = None
     range_min: Optional[decimal.Decimal] = None
     range_max: Optional[decimal.Decimal] = None
-    range_hist: Deque[float] = field(default_factory=deque)  # Changed to float for Welford
+    # Changed to float for Welford
+    range_hist: Deque[float] = field(default_factory=deque)
     # FTR-03: Welford stats for O(1) range mean/stddev
     range_stats: tuple[int, float, float] = (0, 0.0, 0.0)  # (count, mean, m2)
 
     # TASK24.C3: Volatility readiness (explicit)
     volatility_state_ready: bool = False
     volatility_state_not_ready_reason: Optional[str] = None
-    
+
     # Returns for macro_sync
     returns_buffer: Deque[float] = field(default_factory=deque)
     prev_price: Optional[decimal.Decimal] = None
@@ -92,8 +93,9 @@ class HotState:
 
     # PRICE-MOTION-V1: Rolling price history for multi-window returns/volatility proxy.
     # Stores (ts_ms, price) in chronological order; pruned by time window in runtime logic.
-    price_history: Deque[Tuple[int, decimal.Decimal]] = field(default_factory=deque)
-    
+    price_history: Deque[Tuple[int, decimal.Decimal]
+                         ] = field(default_factory=deque)
+
     # =========================================================================
     # R1 (P1): MACRO RESID STATE — Beta-Adjusted Residual
     # =========================================================================
@@ -105,7 +107,7 @@ class HotState:
     # Readiness
     macro_resid_ready: bool = False
     macro_resid_not_ready_reason: Optional[str] = None
-    
+
     # =========================================================================
     # R2 (P2): ABSORPTION STATE — Experimental (Default OFF)
     # =========================================================================
@@ -131,35 +133,35 @@ class HotState:
 class BarVolatilityState:
     """
     Per (symbol, tf_sec) state for bar-based volatility features.
-    
+
     EP-01.1: Tracks True Range history for ATR calculation.
     Used to compute bar_range, bar_body, true_range, ATR_N.
-    
+
     This is kept SEPARATE from HotState because it's timeframe-specific,
     while HotState is tick-level (tf_sec=0).
     """
     # ATR window size (configurable, default 14)
     atr_window: int = 14
-    
+
     # Rolling buffer of True Range values
     tr_buffer: Deque[float] = field(default_factory=deque)
-    
+
     # Previous bar's close price for True Range calculation
     prev_close: Optional[decimal.Decimal] = None
-    
+
     # Last computed ATR (None if not enough history)
     last_atr: Optional[float] = None
-    
+
     # Readiness flag
     atr_ready: bool = False
-    
+
     def update_tr(self, true_range: float) -> None:
         """Add new True Range value and update ATR."""
         # Add to buffer, respecting maxlen
         if len(self.tr_buffer) >= self.atr_window:
             self.tr_buffer.popleft()
         self.tr_buffer.append(true_range)
-        
+
         # Calculate ATR if we have enough history
         if len(self.tr_buffer) >= self.atr_window:
             self.last_atr = sum(self.tr_buffer) / len(self.tr_buffer)
@@ -224,17 +226,17 @@ class PillarState:
 class ColdState:
     """
     Slow-changing state for feature engineering.
-    
+
     Updated periodically (e.g., funding rate every 8h).
     FTR-05: Activated for Futures features (funding_rate, OI).
     """
     # Funding Rate (updated every 8h typically)
     funding_rate: decimal.Decimal = decimal.Decimal("0")
     next_funding_ts: int = 0
-    
+
     # Open Interest (updated periodically)
     open_interest: decimal.Decimal = decimal.Decimal("0")
-    
+
     # FTR-05: Fields for delta calculation
     prev_open_interest: Optional[decimal.Decimal] = None
     last_oi_update_ts: int = 0
@@ -244,12 +246,37 @@ class ColdState:
 class SymbolFeatureState:
     """
     Container for all feature state for a single symbol.
-    
+
     Separates hot (tick-critical) and cold (periodic) state
     for clear ownership and future optimization.
     """
     hot: HotState
     cold: ColdState
+
+
+@dataclass
+class AnchorIntakeDiagnostics:
+    """Per-anchor intake evidence for EVT:ANCHOR_UPDATED forensic tracing."""
+
+    updates_received: int = 0
+    missing_ts_ms: int = 0
+    malformed_ts_ms: int = 0
+    last_valid_anchor_ts_ms: int = 0
+    anchor_ts_missing_latch: bool = False
+
+
+@dataclass
+class FEReadinessDiagnostics:
+    """Per-(symbol, tf) diagnostics for FE warmup/CMD blocker visibility."""
+
+    features_emitted: int = 0
+    cmd_emitted: int = 0
+    cmd_blocked: int = 0
+    cmd_suppressed_due_to_warmup: bool = False
+    last_cmd_block_reason_code: Optional[str] = None
+    last_cmd_block_why: Optional[str] = None
+    warmup_full_ready: bool = False
+    warmup_false_keys: List[str] = field(default_factory=list)
 
 
 # =============================================================================
@@ -260,21 +287,21 @@ class SymbolFeatureState:
 class FeatureEngineeringConfig:
     """
     Configuration wrapper that provides clean access to feature engineering settings.
-    
+
     Eliminates hasattr/isinstance checks by providing typed access to all config values.
     Works with both DomainConfigResolver (preferred) and raw AuroraConfig.
     """
     __slots__ = ('_cfg',)
-    
+
     def __init__(self, config: Union["DomainConfigResolver", "AuroraConfig"]):
         """
         Initialize with config source.
-        
+
         Args:
             config: DomainConfigResolver or AuroraConfig
         """
         self._cfg = self._resolve_config(config)
-    
+
     def _resolve_config(self, config) -> "FeatureEngineeringDomainConfig":
         """Resolve config to FeatureEngineeringDomainConfig."""
         # Import here to avoid circular imports
@@ -283,26 +310,28 @@ class FeatureEngineeringConfig:
             AuroraConfig,
         )
         from apps.reference.domain_config import DomainConfigResolver
-        
+
         # If already a resolver, use it
         if isinstance(config, DomainConfigResolver):
             return config.get_feature_engineering()
-        
+
         # If AuroraConfig, create resolver
         if isinstance(config, AuroraConfig):
             resolver = DomainConfigResolver(config)
             return resolver.get_feature_engineering()
-        
+
         # Strict object config: no dict support (TASK25).
         if isinstance(config, dict):
-            raise TypeError("FeatureEngineeringConfig requires AuroraConfig or DomainConfigResolver, got dict")
-        
-        raise TypeError(f"Invalid config type for FeatureEngineering: {type(config)}")
-    
+            raise TypeError(
+                "FeatureEngineeringConfig requires AuroraConfig or DomainConfigResolver, got dict")
+
+        raise TypeError(
+            f"Invalid config type for FeatureEngineering: {type(config)}")
+
     # =========================================================================
     # TYPED ACCESSORS - No more hasattr/try-except!
     # =========================================================================
-    
+
     @property
     def enable_new_metrics(self) -> bool:
         return self._cfg.enable_new_metrics
@@ -310,10 +339,10 @@ class FeatureEngineeringConfig:
     @property
     def trace_features(self) -> bool:
         try:
-         return bool(self._cfg.trace_features)
+            return bool(self._cfg.trace_features)
         except AttributeError:
-         return False
-    
+            return False
+
     @property
     def enabled_timeframes_sec(self) -> List[int]:
         return self._cfg.enabled_timeframes_sec
@@ -341,55 +370,58 @@ class FeatureEngineeringConfig:
                 return out
 
             if bool(getattr(pillars.tactician, "enabled", False)):
-                out["tactician"] = int(getattr(pillars.tactician, "timeframe_sec", 900))
+                out["tactician"] = int(
+                    getattr(pillars.tactician, "timeframe_sec", 900))
             if bool(getattr(pillars.operator, "enabled", False)):
-                out["operator"] = int(getattr(pillars.operator, "timeframe_sec", 14400))
+                out["operator"] = int(
+                    getattr(pillars.operator, "timeframe_sec", 14400))
             if bool(getattr(pillars.strategist, "enabled", False)):
-                out["strategist"] = int(getattr(pillars.strategist, "timeframe_sec", 86400))
+                out["strategist"] = int(
+                    getattr(pillars.strategist, "timeframe_sec", 86400))
         except Exception:
             return {}
         return out
-    
+
     @property
     def ema_period_short(self) -> int:
         return self._cfg.ema.period_short
-    
+
     @property
     def ema_period_long(self) -> int:
         return self._cfg.ema.period_long
-    
+
     @property
     def ema_short_alpha(self) -> float:
         return 2.0 / (self._cfg.ema.period_short + 1)
-    
+
     @property
     def ema_long_alpha(self) -> float:
         return 2.0 / (self._cfg.ema.period_long + 1)
-    
+
     @property
     def volume_sma_length(self) -> int:
         return self._cfg.volume.sma_length
-    
+
     @property
     def volume_window_sec(self) -> int:
         return self._cfg.volume.window_sec
-    
+
     @property
     def volume_window_ms(self) -> int:
         return self._cfg.volume.window_sec * 1000
-    
+
     @property
     def volatility_sma_length(self) -> int:
         return self._cfg.volatility.sma_length
-    
+
     @property
     def volatility_window_sec(self) -> int:
         return self._cfg.volatility.window_sec
-    
+
     @property
     def volatility_window_ms(self) -> int:
         return self._cfg.volatility.window_sec * 1000
-    
+
     @property
     def depth_half(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.liquidity.depth_half))
@@ -397,23 +429,23 @@ class FeatureEngineeringConfig:
     @property
     def depth_imbalance_use_laplace_smoothing(self) -> bool:
         return bool(self._cfg.depth_imbalance.use_laplace_smoothing)
-    
+
     @property
     def kappa_min(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.liquidity.kappa_min))
-    
+
     @property
     def kappa_max(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.liquidity.kappa_max))
-    
+
     @property
     def ema_bias_clamp_min(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.ema_bias.clamp_min))
-    
+
     @property
     def ema_bias_clamp_max(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.ema_bias.clamp_max))
-    
+
     @property
     def volume_spike_cap(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.volume_spike.cap_max))
@@ -452,15 +484,15 @@ class FeatureEngineeringConfig:
     @property
     def large_trade_imbalance_use_notional(self) -> bool:
         return bool(self._cfg.large_trade_imbalance.use_notional)
-    
+
     @property
     def volatility_state_cap(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.volatility_state.cap_max))
-    
+
     # =========================================================================
     # P0-1: VOLATILITY HARD FLOOR (config-driven)
     # =========================================================================
-    
+
     @property
     def volatility_tick_floor(self) -> decimal.Decimal:
         """P0-1: Tick floor to prevent division by zero (price units)."""
@@ -469,7 +501,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             # Backward compat: default if not in config
             return decimal.Decimal("0.0001")
-    
+
     @property
     def volatility_division_eps(self) -> decimal.Decimal:
         """P0-1: Division epsilon for safe division."""
@@ -477,11 +509,11 @@ class FeatureEngineeringConfig:
             return decimal.Decimal(str(self._cfg.volatility_state.division_eps))
         except AttributeError:
             return decimal.Decimal("0.000000001")
-    
+
     # =========================================================================
     # P0-0: READINESS REGISTRY (SSOT)
     # =========================================================================
-    
+
     @property
     def readiness_registry_declared_keys(self) -> list:
         """P0-0: Declared ready keys that FE can emit in warmup.ready."""
@@ -496,8 +528,8 @@ class FeatureEngineeringConfig:
             "absorption", "ema_bias", "volume_spike", "volatility_state",
             "macro_sync", "spread_bps", "large_trade_imbalance", "volume_zscore"
         ]
-    
-    @property 
+
+    @property
     def warmup_enforcement_mode(self) -> str:
         """P0-0: Warmup enforcement mode (fail_fast|warn_only|disabled)."""
         try:
@@ -506,7 +538,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return "fail_fast"  # Default: fail-closed
-    
+
     @property
     def warmup_check_full_ready_invariant(self) -> bool:
         """P0-0: Check full_ready invariant (all declared keys present)."""
@@ -548,17 +580,20 @@ class FeatureEngineeringConfig:
         override_keys: list[str] | None = None
         try:
             warmup_cfg = getattr(self._cfg, "warmup", None)
-            by_symbol = getattr(warmup_cfg, "required_ready_keys_by_symbol", None) if warmup_cfg is not None else None
+            by_symbol = getattr(warmup_cfg, "required_ready_keys_by_symbol",
+                                None) if warmup_cfg is not None else None
             if isinstance(by_symbol, dict) and symbol in by_symbol and isinstance(by_symbol[symbol], list):
                 override_keys = [str(k) for k in by_symbol[symbol]]
             else:
-                global_keys = getattr(warmup_cfg, "required_ready_keys", None) if warmup_cfg is not None else None
+                global_keys = getattr(
+                    warmup_cfg, "required_ready_keys", None) if warmup_cfg is not None else None
                 if isinstance(global_keys, list):
                     override_keys = [str(k) for k in global_keys]
         except Exception:
             override_keys = None
 
-        base_keys = override_keys if override_keys else [str(k) for k in declared_keys]
+        base_keys = override_keys if override_keys else [
+            str(k) for k in declared_keys]
 
         required_keys: list[str] = []
         declared_set = set(str(k) for k in declared_keys)
@@ -582,11 +617,11 @@ class FeatureEngineeringConfig:
                 return False
 
         return True
-    
+
     # =========================================================================
     # P0-2: SPREAD BPS HEALTH GATE
     # =========================================================================
-    
+
     @property
     def spread_health_gate_enabled(self) -> bool:
         """P0-2: Whether spread health gate is enabled."""
@@ -596,7 +631,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return False  # Default: off for backward compat
-    
+
     @property
     def spread_health_max_age_sec(self) -> float:
         """P0-2: Max age before book is considered stale (seconds)."""
@@ -606,7 +641,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 5.0
-    
+
     @property
     def spread_health_min_update_events(self) -> int:
         """P0-2: Min book update events for healthy status."""
@@ -616,7 +651,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 1
-    
+
     @property
     def spread_health_min_trades_count(self) -> int:
         """P0-2: Min trades in window for healthy status."""
@@ -626,7 +661,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 1
-    
+
     @property
     def spread_health_window_sec(self) -> float:
         """P0-2: Lookback window for health check (seconds)."""
@@ -636,11 +671,11 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 10.0
-    
+
     # =========================================================================
     # P0-3: FEATURE SANITY FIREWALL
     # =========================================================================
-    
+
     @property
     def feature_sanity_enabled(self) -> bool:
         """P0-3: Whether feature sanity firewall is enabled."""
@@ -650,7 +685,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return False  # Default: off for backward compat
-    
+
     @property
     def feature_sanity_nan_inf_behavior(self) -> str:
         """P0-3: Behavior on NaN/Inf (neutral_and_not_ready|neutral_only|crash)."""
@@ -660,7 +695,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return "neutral_and_not_ready"
-    
+
     @property
     def feature_sanity_bounds(self) -> dict:
         """P0-3: Feature bounds for validation."""
@@ -673,11 +708,11 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return {}
-    
+
     # =========================================================================
     # R1 (P1): MACRO RESID — Beta-Adjusted Residual
     # =========================================================================
-    
+
     @property
     def macro_resid_enabled(self) -> bool:
         """R1: Whether macro_resid is enabled."""
@@ -687,7 +722,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return False  # Default: off for backward compat
-    
+
     @property
     def macro_resid_beta_window(self) -> int:
         """R1: Beta estimation window (samples)."""
@@ -697,7 +732,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 60
-    
+
     @property
     def macro_resid_mad_window(self) -> int:
         """R1: MAD calculation window (samples)."""
@@ -707,7 +742,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 30
-    
+
     @property
     def macro_resid_winsor_percentile(self) -> float:
         """R1: Winsorize percentile (e.g., 0.05 = 5%)."""
@@ -717,7 +752,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 0.05
-    
+
     @property
     def macro_resid_var_floor(self) -> float:
         """R1: Floor for var(r_btc) to prevent div-by-zero."""
@@ -727,7 +762,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 1e-7
-    
+
     @property
     def macro_resid_scale_floor(self) -> float:
         """R1: Floor for MAD scale to prevent explosion."""
@@ -737,7 +772,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 1e-4
-    
+
     @property
     def macro_resid_clip(self) -> float:
         """R1: Output clip bound."""
@@ -747,7 +782,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 3.0
-    
+
     @property
     def macro_resid_neutral(self) -> float:
         """R1: Neutral value (SIGNED: 0.0)."""
@@ -757,11 +792,11 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 0.0
-    
+
     # =========================================================================
     # R2 (P2): ABSORPTION — Experimental (Default OFF)
     # =========================================================================
-    
+
     @property
     def absorption_mode(self) -> str:
         """R2: Absorption mode (disabled|proxy|full)."""
@@ -771,7 +806,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return "disabled"
-    
+
     @property
     def absorption_proxy_source(self) -> str:
         """R2: Absorption proxy source."""
@@ -781,7 +816,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return "aggressive_trade_imbalance"
-    
+
     @property
     def absorption_proxy_window(self) -> int:
         """R2: Absorption proxy window (samples)."""
@@ -791,7 +826,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 30
-    
+
     @property
     def absorption_proxy_eps(self) -> float:
         """R2: Absorption proxy epsilon for division."""
@@ -801,7 +836,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 0.0001
-    
+
     @property
     def absorption_dedup_enabled(self) -> bool:
         """R2: Whether dedup guard is enabled."""
@@ -811,7 +846,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return True  # Default: enabled for safety
-    
+
     @property
     def absorption_dedup_window(self) -> int:
         """R2: Dedup correlation window (samples)."""
@@ -821,7 +856,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 60
-    
+
     @property
     def absorption_dedup_threshold(self) -> float:
         """R2: Dedup threshold (|corr| > threshold → mute)."""
@@ -831,7 +866,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 0.8
-    
+
     @property
     def absorption_clip(self) -> float:
         """R2: Absorption output clip."""
@@ -841,7 +876,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             pass
         return 1.0
-    
+
     @property
     def absorption_neutral(self) -> float:
         """R2: Absorption neutral value (SIGNED: 0.0)."""
@@ -915,7 +950,7 @@ class FeatureEngineeringConfig:
     @property
     def macro_sync_anchor_update_from_ticks(self) -> bool:
         return bool(self._cfg.macro_sync.anchor_update_from_ticks)
-    
+
     @property
     def macro_sync_window(self) -> int:
         return self._cfg.macro_sync.window
@@ -938,11 +973,11 @@ class FeatureEngineeringConfig:
     @property
     def macro_sync_eps(self) -> float:
         return float(self._cfg.macro_sync.eps)
-    
+
     @property
     def macro_sync_min_buffer(self) -> int:
         return self._cfg.macro_sync.min_buffer_size
-    
+
     @property
     def delta_price_spike_filter_ms(self) -> int:
         return self._cfg.delta_price.spike_filter_ms
@@ -950,26 +985,26 @@ class FeatureEngineeringConfig:
     @property
     def ms_per_sec(self) -> int:
         return int(self._cfg.defaults.ms_per_sec)
-    
+
     # =========================================================================
     # DEFAULT VALUES - No more magic numbers!
     # =========================================================================
-    
+
     @property
     def neutral_value(self) -> decimal.Decimal:
         """Default neutral value for normalized features [0,1]. 0.5 = center."""
         return decimal.Decimal(str(self._cfg.defaults.neutral_value))
-    
+
     @property
     def zero_value(self) -> decimal.Decimal:
         """Zero value for absent features (e.g., absorption placeholder)."""
         return decimal.Decimal(str(self._cfg.defaults.zero_value))
-    
+
     @property
     def correlation_default(self) -> float:
         """Default correlation value when insufficient data."""
         return self._cfg.defaults.correlation_default
-    
+
     @property
     def ms_per_sec(self) -> int:
         """Conversion constant: milliseconds per second."""
@@ -978,7 +1013,7 @@ class FeatureEngineeringConfig:
     # =========================================================================
     # FUTURES CONFIG (FTR-05)
     # =========================================================================
-    
+
     @property
     def futures_enabled(self) -> bool:
         """Whether Futures features (funding_rate, OI) are enabled."""
@@ -987,7 +1022,7 @@ class FeatureEngineeringConfig:
         except AttributeError:
             return False
         return futures_cfg is not None and futures_cfg.enabled
-    
+
     @property
     def funding_extreme_threshold(self) -> decimal.Decimal:
         """Threshold for extreme funding rate normalization (default 0.001 = 0.1%)."""

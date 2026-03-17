@@ -1,5 +1,106 @@
 # Engineering Journal
 
+## 2026-03-16: LIVE-SCHEMA-VALIDATION-HOTFIX (3 crashes)
+
+**Task:** Fix three P0 live runtime crashes caused by JSON schema validation mismatches after Phase 14C schema enforcement was activated.
+
+### Crash 1: EVT:PORTFOLIO_STATE_UPDATED — `'0E-8'` Decimal scientific notation
+**Root cause:** `str(Decimal('0.00000000'))` produces `'0E-8'` (Python scientific notation), fails regex `^-?[0-9]+(\.[0-9]+)?$`.
+**Fix:** Added `_ds(value: Decimal) -> str` safe serializer in `position_tracking.py` using `format(d, 'f')` for fixed-point output. Replaced all `str(Decimal)` in 6 payload builder sites (~30 fields) with `_ds()`.
+**File:** `apps/reference/domains/position_tracking/position_tracking.py`
+
+### Crash 2: EVT:HTF_BARS_IMPORTED — `'o' is a required property`
+**Root cause:** Both pillar backfill emit sites in `main.py` built bar dicts with `c, h, l` but omitted `o` (open) and `v` (volume), which schema requires.
+**Fix:** Added `"o": bar.open, "v": bar.volume` to both emit sites. Also added `bar_close_ts` to schema (set by `attach_canonical_bar_payload`). Removed `why` from schema required (FSM passes `why` as separate arg, never in payload).
+**Files:** `apps/reference/main.py` (2 sites), `schemas/htf_bars_imported_v1.json`
+
+### Crash 3: EVT:MARKET_TICK_RECEIVED — additionalProperties + symbol regex
+**Root cause:** Schema had `additionalProperties: false` but emitter sends 8 fields not in schema (`buy_count`, `sell_count`, `buy_notional`, `sell_notional`, `trades_dropped_out_of_order`, `features`, `bid_ask_count`, `trade_count`). Symbol regex `^[A-Z]{2,10}USDT$` rejected `1000PEPEUSDT`.
+**Fix:** Added all 8 missing properties to schema. Widened symbol regex to `^[A-Z0-9]{2,20}USDT$`. Added `multiprocess_worker` to `data_source` enum.
+**File:** `schemas/market_tick_received_v1.json`
+
+**Verification:** 170 tests passed across position_tracking, feature_engineering, market_data, bootstrap domains. All `_ds()` edge cases verified against schema regex.
+
+## 2026-03-16: DM-EVT-ORDER-REJECTED-CONTRACT-HARDENING-PACK
+
+**Task:** Fix broken cross-domain payload contract between execution_position emitters and decision_making consumer for `EVT:ORDER_REJECTED`.
+
+**Root cause:**
+`md_amr_handler._on_order_rejected` read `pld.get("reject_reason")`, but **no emitter** sends `reject_reason`:
+- `open_executor.py` sends `reason: "MAKER_ONLY_REJECT"`
+- `fsm.py` sends `reason_code: "ADAPTER_ERROR"` + `reason_text: str(e)`
+- `binance_ws_client.py` sends `reason: "MAKER_ONLY_REJECT"`
+
+Result: GTX retry counter was **dead in production** — POST_ONLY/MAKER_ONLY rejects never incremented `_gtx_retries`, silently falling through to the else branch that resets counter to 0.
+
+**Fix applied:**
+- Added `_normalize_order_reject_reason(pld)` static method to `MDAMRHandler`
+- Priority: `reject_reason` > `reason` > `reason_code`+`reason_text` > `""` (fail-closed)
+- All values: `.strip().upper()`
+- Empty/malformed → `""` → no POST_ONLY/MAKER_ONLY match → no unsafe retry/fallback
+- INFO log emitted on empty reason with payload keys for operator visibility
+
+**Files changed:**
+- `apps/reference/domains/decision_making/md_amr_handler.py` — added `_normalize_order_reject_reason()`, rewired `_on_order_rejected` to use it
+- `tests/domains/decision_making/test_order_rejected_payload_normalization.py` — 41 new tests (17 unit, 10 integration, 7 table-driven POST_ONLY/MAKER_ONLY spellings, 7 safe non-GTX reasons)
+
+**Verification:**
+- `pytest tests/domains/decision_making/test_order_rejected_payload_normalization.py -v` → **41/41 passed**
+- `pytest tests/domains/decision_making/ -v` → **406 passed**, 23 skipped, 0 failures
+- Existing `test_event_import_order_rejected.py` → **4/4 passed** (backward compat confirmed)
+
+**Risk closed:** GTX retry/fallback path now responds to real emitter payloads. Malformed payloads fail-closed (no unsafe MARKET fallback).
+
+**Not in scope:** emitter-side schema enforcement, other event contracts, broad handler refactor.
+
+## 2026-03-16: WARMUP-REGIME-SSOT-UNIFICATION — Corrective patch: profile=None residual fail-open
+
+**Task:** Close residual fail-open path not covered by the 2026-03-15 package.
+
+**Root cause confirmed:**
+Independent audit found that exception-based fail-open was fixed, but a second fail-open path remained:
+```python
+_basis_required = int(_profile.basis_required_bars) if _profile else 0
+```
+When `get_active_strategy_profile` returns `None` (strategy not registered in matrix) without raising an exception, `_basis_required` silently becomes 0. Gate `if _basis_required and bars_seen < _basis_required` then never fires → strategy trades without readiness enforcement. Same class of live risk as exception fail-open.
+
+**Sites fixed (all 4):**
+- `aurora_decision.py` trading path: `if _profile is None:` → `_readiness_contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"` → block + return
+- `aurora_handler.py` diagnostics: `if _profile is None:` → immediate return with `ready=False, block_reason=READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND` for all symbols
+- `md_amr_handler.py` diagnostics: same pattern as aurora_handler
+- `md_amr_handler.py` trading gate: `if _profile is None:` → `_readiness_contract_error` → existing block/return path fires
+
+**Verification:**
+- `pytest tests/bootstrap/test_warmup_ssot_alignment.py tests/domains/decision_making/test_handler_fail_closed.py -v` → **24/24 passed** (5 new `profile is None` regression tests)
+- Full suite: **1552 passed**, 35 skipped, 1 pre-existing failure (`test_task28`)
+
+**Package status:** WARMUP-REGIME-SSOT-UNIFICATION now COMPLETE. Readiness contract is fully fail-closed for both exception and `profile=None` paths.
+
+
+
+**Task:** Eliminate three parallel truth layers for regime warmup requirements and fix critical handler fail-open in trading paths.
+
+**Root causes verified:**
+1. **RC-1 (CRITICAL):** `aurora_decision.py:263-264` and `md_amr_handler.py:1092-1093` — `except Exception: _basis_required = 0` with `if _basis_required and ...` gate. Any exception during `get_active_strategy_profile` silently disabled the cold-start gate; strategy traded without readiness enforcement.
+2. **RC-2 (HIGH):** Two hardcoded literals `320` in `startup_warmup.py:221` and `main.py:1365` — detached from config and based on incorrect math (`"288 + 32"` ignores `atr_period`). Correct canonical value is `max(192, 14+288-1) = 301`.
+3. **RC-3 (MEDIUM):** `strategy_compatibility_matrix.py` used `getattr(sma_cfg, "sma_long_period", 192) or 192` — silently fell back to hardcoded defaults when config path traversal failed (i.e., when `sma_cfg` or `vol_cfg` was `None`).
+
+**Fixes applied:**
+- `strategy_compatibility_matrix.py`: Added public `regime_detector_required_bars(config)` with `ValueError` guard on `None` models; `_structural_regime_basis_required_bars` alias; removed dead `96` in md_amr profile max(); removed `_aurora_basis_required_bars` no-op wrapper.
+- `regime.yaml` + `config_models.py`: Added `basis_import_buffer: 20` — safety buffer field now tracked in YAML + Pydantic as true SSOT.
+- `startup_warmup.py` + `main.py`: Replaced both `320` literals with `regime_detector_required_bars(config) + int(getattr(config, "basis_import_buffer", 20))` = 321 currently.
+- `aurora_decision.py`: Trading path fail-closed — exception now sets `_readiness_contract_error`, emits `READINESS_CONTRACT_UNRESOLVED` at ERROR, calls `_emit_strategy_blocked`, returns immediately.
+- `aurora_handler.py`: Diagnostics fail-closed — exception returns list with `ready=False, bars_required=None, block_reason=...` for all symbols; `ready = bars_seen >= _basis_required` (no more `if _basis_required else True`).
+- `md_amr_handler.py`: Both trading path and diagnostics hardened with identical fail-closed patterns.
+
+**Verification:**
+- `pytest tests/bootstrap/test_warmup_ssot_alignment.py tests/domains/decision_making/test_handler_fail_closed.py -v` → **19/19 new tests passed**
+- Full suite: **861 passed**, 35 skipped, 1 pre-existing failure (`test_task28_hybrid_mode_config_contract.py` — MODE_SSOT conflict, pre-dates this package)
+
+**Artifacts:**
+- `reports/fixes/WARMUP_REGIME_SSOT_UNIFICATION_2026-03-15.md`
+- `reports/audit/WARMUP_SSOT_AND_FALLBACK_AUDIT_2026-03-15.md`
+
 ## 2026-03-15: RUNTIME-RECOVERY-AND-MR-REGRESSION-AUDIT - live-truth bootstrap fix + MR rollback
 
 **Task:** Red-team the real startup path after live evidence showed `md_amr_handler:cold_start:51/96` and `aurora_handler` still climbing one bar per live tick after restart, then isolate why `mean_reversion` lost its edge.

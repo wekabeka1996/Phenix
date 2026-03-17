@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from apps.reference.logging_setup import WinSafeRotatingFileHandler
+
 LOGGER_NAME = "domain.decision_making"
 
 
@@ -35,7 +37,7 @@ def _get_logger() -> logging.Logger:
     # Create new handler with current log path
     log_path = _get_log_path()
     _ensure_dir(log_path)
-    fh = logging.handlers.RotatingFileHandler(
+    fh = WinSafeRotatingFileHandler(
         log_path, maxBytes=5_000_000, backupCount=5, encoding="utf-8", delay=False
     )
     fmt = logging.Formatter(

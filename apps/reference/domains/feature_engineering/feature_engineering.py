@@ -52,6 +52,8 @@ from apps.reference.domains.feature_engineering.types import (
     FeatureEngineeringConfig,
     BarVolatilityState,  # EP-01.1: Bar-based ATR tracking
     PillarState,
+    AnchorIntakeDiagnostics,
+    FEReadinessDiagnostics,
 )
 
 # FTR-04: Import calculation engine
@@ -78,22 +80,22 @@ if TYPE_CHECKING:
 class FeatureEngineering:
     """
     Feature Engineering domain component.
-    
+
     FTR-04: Thin FSM handler. All calculations delegated to FeatureCalculationEngine.
-    
+
     Transforms raw market tick data into normalized features for downstream
     decision making and risk assessment.
     """
-    
+
     def __init__(
-        self, 
-        fsm: "FSMCore", 
+        self,
+        fsm: "FSMCore",
         config: Any,
         feature_store: Optional[Any] = None
     ) -> None:
         """
         Initialize FeatureEngineering.
-        
+
         Args:
             fsm: FSM core for event handling
             config: Configuration (DomainConfigResolver, AuroraConfig, or dict)
@@ -101,8 +103,9 @@ class FeatureEngineering:
         """
         self.fsm = fsm
         self.feature_store = feature_store
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
+
         # Initialize typed config wrapper (replaces 100+ lines of try/except!)
         self.cfg = FeatureEngineeringConfig(config)
 
@@ -117,7 +120,8 @@ class FeatureEngineering:
             elif isinstance(config, AuroraConfig):
                 resolver = DomainConfigResolver(config)
             else:
-                raise TypeError(f"Unsupported config type for price_motion_sanity: {type(config)}")
+                raise TypeError(
+                    f"Unsupported config type for price_motion_sanity: {type(config)}")
 
             self._price_motion_sanity_cfg = resolver.get_decision_making().price_motion_sanity
         except Exception as e:
@@ -125,7 +129,7 @@ class FeatureEngineering:
                 path="domains.decision_making.price_motion_sanity",
                 why="Missing/invalid SSOT price_motion_sanity config (required for LIVE).",
             ) from e
-        
+
         # FTR-04: Initialize calculation engine
         self._engine = FeatureCalculationEngine(self.cfg)
         # P0-1 wiring compatibility: keep explicit alias expected by some call sites.
@@ -133,12 +137,12 @@ class FeatureEngineering:
 
         # TF-BAR-SSOT-003: per-(symbol, tf_sec) last bar for multi-TF safety
         self.last_bar: Dict[Tuple[str, int], Any] = {}
-        
+
         # State tracking
         self.last_tick_data: Dict[str, dict] = {}
         self.symbol_states: Dict[str, SymbolFeatureState] = {}
         self._pillar_states: Dict[str, PillarState] = {}
-        
+
         # Anchor price buffers for macro_sync
         self.anchor_prices: Dict[str, deque] = {
             anchor: deque(maxlen=self.cfg.macro_sync_window)
@@ -148,14 +152,17 @@ class FeatureEngineering:
             anchor: deque(maxlen=self.cfg.macro_sync_window)
             for anchor in self.cfg.macro_sync_anchors
         }
-        self._anchor_last_ts_ms: Dict[str, int] = {anchor: 0 for anchor in self.cfg.macro_sync_anchors}
+        self._anchor_last_ts_ms: Dict[str, int] = {
+            anchor: 0 for anchor in self.cfg.macro_sync_anchors}
         self._macro_sync_runtime_bin_ms: int = int(self.cfg.macro_sync_bin_ms)
         self._macro_sync_gap_bins_override: Optional[int] = None
         try:
-            trading_mode = str(getattr(config, "trading_mode", "") or "").strip().lower()
+            trading_mode = str(
+                getattr(config, "trading_mode", "") or "").strip().lower()
         except Exception:
             trading_mode = ""
-        emit_ticks = str(os.getenv("BACKTEST_EMIT_MARKET_TICKS", "0")).strip() == "1"
+        emit_ticks = str(
+            os.getenv("BACKTEST_EMIT_MARKET_TICKS", "0")).strip() == "1"
         if trading_mode == "backtest" and not emit_ticks:
             # Bar-only backtest can legitimately have 1 update per bar (e.g. 5m),
             # which is sparse relative to macro_sync.bin_ms (often a few seconds).
@@ -165,7 +172,8 @@ class FeatureEngineering:
                 for tf in (self.cfg.enabled_timeframes_sec or [])
                 if int(tf) >= 60
             ]
-            basis_tf_sec = 300 if 300 in tf_candidates else (min(tf_candidates) if tf_candidates else 300)
+            basis_tf_sec = 300 if 300 in tf_candidates else (
+                min(tf_candidates) if tf_candidates else 300)
             self._macro_sync_runtime_bin_ms = max(
                 int(self.cfg.macro_sync_bin_ms),
                 int(basis_tf_sec) * 1000,
@@ -197,6 +205,12 @@ class FeatureEngineering:
             max_late_ms=self.cfg.macro_sync_max_late_ms,
         )
         self._macro_sync_anchor_ts_missing: bool = False
+        self._anchor_intake_diag: Dict[str, AnchorIntakeDiagnostics] = {
+            anchor: AnchorIntakeDiagnostics()
+            for anchor in self.cfg.macro_sync_anchors
+        }
+        self._fe_readiness_diag: Dict[Tuple[str,
+                                            int], FEReadinessDiagnostics] = {}
 
         # Warmup/readiness tracking
         self._ticks_seen: dict[str, int] = defaultdict(int)
@@ -205,14 +219,16 @@ class FeatureEngineering:
         self._last_warmup_reasons_sig: dict[str, str] = {}
         self._last_macro_resid_ready: dict[str, bool] = {}
         self._last_macro_resid_reason: dict[str, str | None] = {}
-        
+
         # EP-01.1: Bar Volatility State (per symbol,tf_sec for ATR)
-        self._bar_volatility_states: Dict[Tuple[str, int], BarVolatilityState] = {}
+        self._bar_volatility_states: Dict[Tuple[str,
+                                                int], BarVolatilityState] = {}
         self._emit_timeframes_sec = {
             int(tf) for tf in (self.cfg.enabled_timeframes_sec or []) if int(tf) >= 60
         }
         pillar_tf_cfg = self.cfg.pillar_timeframes_sec
-        pillar_label_map = {"tactician": "m15", "operator": "h4", "strategist": "d1"}
+        pillar_label_map = {"tactician": "m15",
+                            "operator": "h4", "strategist": "d1"}
         self._pillar_timeframe_to_label: Dict[int, str] = {}
         for pillar_name, tf in pillar_tf_cfg.items():
             tf_int = int(tf)
@@ -223,32 +239,33 @@ class FeatureEngineering:
         self._calculation_timeframes_sec = set(self._emit_timeframes_sec) | set(
             self._pillar_timeframe_to_label.keys()
         )
-        
+
         # EP-01.1: Last OBI snapshot per symbol (for bar close snapshot)
         self._last_obi: Dict[str, decimal.Decimal] = {}
-        
+
         # Register event listener
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
-        
+
         # REG-FIX-01: Regime cache for CMD injection
         self.last_regime: Dict[str, Dict] = {}
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime_detected)
-        
+
         # BAR-FEATURES-001: Listen for bar events to emit bar-based features
         self.fsm.listen("EVT:BAR_CLOSED", self.on_bar_closed)
-        
+
         # HTF-WARMUP: Listen for API-backfilled HTF candles to prime pillars instantly
         self.fsm.listen("EVT:HTF_BARS_IMPORTED", self._on_htf_bars_imported)
-        
+
         # FTR-05: Register Futures event listeners (config-gated)
         if self.cfg.futures_enabled:
             self.fsm.listen("EVT:FUNDING_UPDATE", self._on_funding_update)
             self.fsm.listen("EVT:OI_UPDATE", self._on_oi_update)
-            self.logger.info("Futures features enabled: listening for EVT:FUNDING_UPDATE, EVT:OI_UPDATE")
-        
+            self.logger.info(
+                "Futures features enabled: listening for EVT:FUNDING_UPDATE, EVT:OI_UPDATE")
+
         # FSMP-ARCH-01: Register anchor update listener (replaces direct method call)
         self.fsm.listen("EVT:ANCHOR_UPDATED", self._on_anchor_updated_event)
-        
+
         self.logger.info(
             f"FeatureEngineering initialized: "
             f"new_metrics={self.cfg.enable_new_metrics}, "
@@ -256,7 +273,7 @@ class FeatureEngineering:
             f"macro_sync={self.cfg.macro_sync_enabled}, "
             f"futures={self.cfg.futures_enabled}"
         )
-        
+
         # Ensure feature logs directory exists
         self._feature_logs_dir = os.path.join("logs", "features")
         os.makedirs(self._feature_logs_dir, exist_ok=True)
@@ -288,13 +305,18 @@ class FeatureEngineering:
             with open(file_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(features, default=str) + "\n")
         except Exception as e:
-            self.logger.error(f"Error logging features to file for {symbol}: {e}")
+            self.logger.error(
+                f"Error logging features to file for {symbol}: {e}")
 
     def update_anchor_price(self, anchor: str, price: str, ts_ms: int | None = None) -> None:
         """Update anchor price buffer directly from MarketData."""
+        anchor_diag = self._anchor_diag(str(anchor))
         if ts_ms is None or int(ts_ms) <= 0:
-            inc_config_contract_violation(path="market_data.anchor.ts_ms", symbol=str(anchor))
+            inc_config_contract_violation(
+                path="market_data.anchor.ts_ms", symbol=str(anchor))
             self._macro_sync_anchor_ts_missing = True
+            anchor_diag.missing_ts_ms += 1
+            anchor_diag.anchor_ts_missing_latch = True
             raise ConfigContractError(
                 path="market_data.anchor.ts_ms",
                 symbol=str(anchor),
@@ -305,6 +327,7 @@ class FeatureEngineering:
             self.anchor_prices[anchor].append(price_dec)
             self.anchor_price_points[anchor].append((int(ts_ms), price_dec))
             self._anchor_last_ts_ms[anchor] = int(ts_ms)
+            anchor_diag.last_valid_anchor_ts_ms = int(ts_ms)
             self._macro_sync_resampler.update_anchor(
                 anchor,
                 ts_ms=int(ts_ms),
@@ -312,6 +335,7 @@ class FeatureEngineering:
                 max_gap_bins=self._macro_sync_effective_max_gap_bins(),
             )
             self._macro_sync_anchor_ts_missing = False
+            anchor_diag.anchor_ts_missing_latch = False
             self.logger.debug(f"Updated anchor {anchor} price: {price}")
 
     def _latest_anchor_price_pair_before(
@@ -350,10 +374,100 @@ class FeatureEngineering:
             return max(int(self._macro_sync_gap_bins_override), int(bins_per_tf) + 1)
         return int(self._macro_sync_gap_bins_override)
 
+    def _anchor_diag(self, anchor: str) -> AnchorIntakeDiagnostics:
+        if anchor not in self._anchor_intake_diag:
+            self._anchor_intake_diag[anchor] = AnchorIntakeDiagnostics()
+        return self._anchor_intake_diag[anchor]
+
+    def _fe_diag(self, symbol: str, tf_sec: int) -> FEReadinessDiagnostics:
+        key = (str(symbol), int(tf_sec))
+        if key not in self._fe_readiness_diag:
+            self._fe_readiness_diag[key] = FEReadinessDiagnostics()
+        return self._fe_readiness_diag[key]
+
+    @staticmethod
+    def _warmup_false_keys(warmup: Optional[dict]) -> list[str]:
+        if not isinstance(warmup, dict):
+            return []
+        ready_map = warmup.get("ready")
+        if not isinstance(ready_map, dict):
+            return []
+        return [str(k) for k, v in ready_map.items() if not bool(v)]
+
+    def _update_fe_warmup_diag(self, symbol: str, tf_sec: int, warmup: Optional[dict]) -> None:
+        diag = self._fe_diag(symbol, tf_sec)
+        full_ready = bool(warmup.get("full_ready")) if isinstance(
+            warmup, dict) else False
+        diag.warmup_full_ready = full_ready
+        diag.warmup_false_keys = self._warmup_false_keys(warmup)
+
+    def _record_features_emitted(self, symbol: str, tf_sec: int, warmup: Optional[dict]) -> FEReadinessDiagnostics:
+        diag = self._fe_diag(symbol, tf_sec)
+        diag.features_emitted += 1
+        self._update_fe_warmup_diag(symbol, tf_sec, warmup)
+        return diag
+
+    def _record_cmd_emitted(self, symbol: str, tf_sec: int, warmup: Optional[dict]) -> FEReadinessDiagnostics:
+        diag = self._fe_diag(symbol, tf_sec)
+        diag.cmd_emitted += 1
+        diag.cmd_suppressed_due_to_warmup = False
+        self._update_fe_warmup_diag(symbol, tf_sec, warmup)
+        return diag
+
+    def _record_cmd_blocked(
+        self,
+        symbol: str,
+        tf_sec: int,
+        *,
+        reason_code: str,
+        why: str,
+        warmup: Optional[dict],
+    ) -> FEReadinessDiagnostics:
+        diag = self._fe_diag(symbol, tf_sec)
+        diag.cmd_blocked += 1
+        diag.last_cmd_block_reason_code = str(reason_code)
+        diag.last_cmd_block_why = str(why)
+        diag.cmd_suppressed_due_to_warmup = (
+            reason_code == "WARMUP_NOT_FULL_READY")
+        self._update_fe_warmup_diag(symbol, tf_sec, warmup)
+        return diag
+
+    def get_live_blocker_evidence(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        """Return compact forensic diagnostics for FE anchor/warmup/CMD blocker tracing."""
+        anchor_diag = {
+            anchor: {
+                "updates_received": int(diag.updates_received),
+                "missing_ts_ms": int(diag.missing_ts_ms),
+                "malformed_ts_ms": int(diag.malformed_ts_ms),
+                "last_valid_anchor_ts_ms": int(diag.last_valid_anchor_ts_ms),
+                "anchor_ts_missing_latch": bool(diag.anchor_ts_missing_latch),
+            }
+            for anchor, diag in self._anchor_intake_diag.items()
+            if symbol is None or str(anchor) == str(symbol)
+        }
+        readiness_diag = {}
+        for (sym, tf_sec), diag in self._fe_readiness_diag.items():
+            if symbol is not None and str(sym) != str(symbol):
+                continue
+            readiness_diag[f"{sym}:{int(tf_sec)}"] = {
+                "features_emitted": int(diag.features_emitted),
+                "cmd_emitted": int(diag.cmd_emitted),
+                "cmd_blocked": int(diag.cmd_blocked),
+                "cmd_suppressed_due_to_warmup": bool(diag.cmd_suppressed_due_to_warmup),
+                "last_cmd_block_reason_code": diag.last_cmd_block_reason_code,
+                "last_cmd_block_why": diag.last_cmd_block_why,
+                "warmup_full_ready": bool(diag.warmup_full_ready),
+                "warmup_false_keys": list(diag.warmup_false_keys),
+            }
+        return {
+            "anchor_intake": anchor_diag,
+            "fe_readiness": readiness_diag,
+        }
+
     def _on_anchor_updated_event(self, event: Message) -> None:
         """
         Handle EVT:ANCHOR_UPDATED event from MarketData.
-        
+
         FSMP-ARCH-01: Replaces direct method call from MarketDataConnector.
         This enables loose coupling and multiprocess-safe anchor updates.
         """
@@ -361,15 +475,31 @@ class FeatureEngineering:
             anchor = event.pld.get("anchor")
             price = event.pld.get("price")
             ts_ms = event.pld.get("ts_ms")
+            if anchor:
+                self._anchor_diag(str(anchor)).updates_received += 1
             if anchor and price:
-                self.update_anchor_price(anchor, price, int(ts_ms) if ts_ms else None)
+                try:
+                    parsed_ts_ms = int(ts_ms) if ts_ms is not None else None
+                except (TypeError, ValueError):
+                    diag = self._anchor_diag(str(anchor))
+                    diag.malformed_ts_ms += 1
+                    diag.anchor_ts_missing_latch = True
+                    self._macro_sync_anchor_ts_missing = True
+                    inc_config_contract_violation(
+                        path="market_data.anchor.ts_ms", symbol=str(anchor))
+                    raise ConfigContractError(
+                        path="market_data.anchor.ts_ms",
+                        symbol=str(anchor),
+                        why="Malformed exchange-derived ts_ms for EVT:ANCHOR_UPDATED",
+                    )
+                self.update_anchor_price(anchor, price, parsed_ts_ms)
         except Exception as e:
             self.logger.error(f"Error processing EVT:ANCHOR_UPDATED: {e}")
 
     def _get_symbol_state(self, symbol: str) -> SymbolFeatureState:
         """
         Get or create state for a symbol.
-        
+
         Returns the SymbolFeatureState, initializing it if needed.
         """
         if symbol not in self.symbol_states:
@@ -391,7 +521,8 @@ class FeatureEngineering:
                 range_window_start_ts=None,
                 range_min=None,
                 range_max=None,
-                range_hist=deque(maxlen=self.cfg.volatility_sma_length),  # Now float for Welford
+                # Now float for Welford
+                range_hist=deque(maxlen=self.cfg.volatility_sma_length),
                 range_stats=(0, 0.0, 0.0),  # FTR-03: Welford stats
                 volatility_state_ready=False,
                 volatility_state_not_ready_reason=None,
@@ -402,7 +533,7 @@ class FeatureEngineering:
             )
             cold = ColdState()
             self.symbol_states[symbol] = SymbolFeatureState(hot=hot, cold=cold)
-        
+
         return self.symbol_states[symbol]
 
     def _init_symbol_state(self, symbol: str) -> None:
@@ -427,13 +558,14 @@ class FeatureEngineering:
     def _update_volume_spike(self, symbol: str, volume: decimal.Decimal, time_diff_ms: int) -> None:
         """TASK24.C2: Update time-normalized volume spike rate samples."""
         state = self._get_symbol_state(symbol).hot
-        self._engine.update_volume_spike(state, volume=volume, time_diff_ms=time_diff_ms)
+        self._engine.update_volume_spike(
+            state, volume=volume, time_diff_ms=time_diff_ms)
 
     def _compute_volume_spike(self, symbol: str) -> decimal.Decimal:
         """Compute volume spike = vol_window / mean(vol), normalized to [0,1]."""
         state = self._get_symbol_state(symbol).hot
         return self._engine.compute_volume_spike(state)
-    
+
     def _compute_volume_zscore(self, symbol: str) -> decimal.Decimal:
         """Compute volume Z-score, normalized via tanh."""
         state = self._get_symbol_state(symbol).hot
@@ -450,14 +582,14 @@ class FeatureEngineering:
         return self._engine.compute_volatility_state(state)
 
     def _compute_spread_bps(
-        self, 
-        best_bid: decimal.Decimal, 
+        self,
+        best_bid: decimal.Decimal,
         best_ask: decimal.Decimal,
         mid_price: decimal.Decimal,
     ) -> decimal.Decimal:
         """Compute bid-ask spread in basis points."""
         return self._engine.compute_spread_bps(best_bid, best_ask, mid_price)
-    
+
     def _compute_large_trade_imbalance(self, symbol: str, current_tick: dict) -> decimal.Decimal:
         """Compute large trade imbalance (TASK31, explicit readiness)."""
         state = self._get_symbol_state(symbol).hot
@@ -476,7 +608,8 @@ class FeatureEngineering:
         """Compute macro_sync = correlation with anchor returns, normalized to [0,1]."""
         state = self._get_symbol_state(symbol).hot
         if current_ts_ms <= 0:
-            inc_config_contract_violation(path="market_data.tick.ts", symbol=str(symbol))
+            inc_config_contract_violation(
+                path="market_data.tick.ts", symbol=str(symbol))
             state.macro_sync_ready = False
             state.macro_sync_not_ready_reason = "tick_ts_missing"
             return self.cfg.neutral_value
@@ -505,9 +638,9 @@ class FeatureEngineering:
     def _on_funding_update(self, event: Message) -> None:
         """
         Handle EVT:FUNDING_UPDATE event.
-        
+
         FTR-05: Updates ColdState funding_rate. Features included in next tick.
-        
+
         Expected payload:
             {
                 "symbol": "BTCUSDT",
@@ -520,28 +653,31 @@ class FeatureEngineering:
             if not symbol:
                 self.logger.warning("EVT:FUNDING_UPDATE missing symbol")
                 return
-            
+
             funding_rate_str = event.pld["funding_rate"] if "funding_rate" in event.pld else "0"
             funding_rate = decimal.Decimal(str(funding_rate_str))
-            next_funding_ts = int(event.pld["next_funding_ts"] if "next_funding_ts" in event.pld else 0)
-            
+            next_funding_ts = int(
+                event.pld["next_funding_ts"] if "next_funding_ts" in event.pld else 0)
+
             # Get or create symbol state
             state = self._get_symbol_state(symbol)
-            
+
             # Delegate to engine
-            self._engine.update_funding(state.cold, funding_rate, next_funding_ts)
-            
-            self.logger.debug(f"Updated funding for {symbol}: {funding_rate} (next: {next_funding_ts})")
-            
+            self._engine.update_funding(
+                state.cold, funding_rate, next_funding_ts)
+
+            self.logger.debug(
+                f"Updated funding for {symbol}: {funding_rate} (next: {next_funding_ts})")
+
         except Exception as e:
             self.logger.error(f"Error processing EVT:FUNDING_UPDATE: {e}")
 
     def _on_oi_update(self, event: Message) -> None:
         """
         Handle EVT:OI_UPDATE event.
-        
+
         FTR-05: Updates ColdState open_interest with history for delta calculation.
-        
+
         Expected payload:
             {
                 "symbol": "BTCUSDT",
@@ -554,19 +690,19 @@ class FeatureEngineering:
             if not symbol:
                 self.logger.warning("EVT:OI_UPDATE missing symbol")
                 return
-            
+
             oi_str = event.pld["open_interest"] if "open_interest" in event.pld else "0"
             open_interest = decimal.Decimal(str(oi_str))
             ts = int(event.pld["ts"] if "ts" in event.pld else 0)
-            
+
             # Get or create symbol state
             state = self._get_symbol_state(symbol)
-            
+
             # Delegate to engine
             self._engine.update_open_interest(state.cold, open_interest, ts)
-            
+
             self.logger.debug(f"Updated OI for {symbol}: {open_interest}")
-            
+
         except Exception as e:
             self.logger.error(f"Error processing EVT:OI_UPDATE: {e}")
 
@@ -597,8 +733,10 @@ class FeatureEngineering:
             return
         ts_pld = event.pld.get("ts")
         if ts_pld is None:
-            inc_config_contract_violation(path="market_data.tick.ts", symbol=str(symbol))
-            inc_data_quality_drop(domain="feature_engineering", reason="tick_ts_missing")
+            inc_config_contract_violation(
+                path="market_data.tick.ts", symbol=str(symbol))
+            inc_data_quality_drop(
+                domain="feature_engineering", reason="tick_ts_missing")
             return
 
         current_tick = event.pld
@@ -623,11 +761,13 @@ class FeatureEngineering:
                         max_gap_bins=self._macro_sync_effective_max_gap_bins(),
                     )
 
-            self.logger.debug(f"No previous tick for {symbol}, skipping feature calculation")
+            self.logger.debug(
+                f"No previous tick for {symbol}, skipping feature calculation")
             return
 
         # FIX 1 (P0): Only advance last_tick_data when the tick is accepted.
-        accepted = self._calculate_and_emit_features(symbol, current_tick, last_tick)
+        accepted = self._calculate_and_emit_features(
+            symbol, current_tick, last_tick)
         if not accepted:
             return
 
@@ -649,17 +789,17 @@ class FeatureEngineering:
 
     def on_bar_closed(self, event: Message) -> None:
         """Handle bar closed event - emit bar-features for MR strategy.
-        
+
         BAR-FEATURES-001: When a bar closes, emit FEATURES_CALCULATED with
         the bar's tf_sec so MR strategy can receive them.
         """
         pld = event.pld if hasattr(event, 'pld') else event
         bar_data = pld.get("bar") if isinstance(pld, dict) else None
-        
+
         if not bar_data:
             self.logger.debug("on_bar_closed: no bar in payload")
             return
-        
+
         # Bar can be dict or object
         if isinstance(bar_data, dict):
             symbol = bar_data.get("symbol")
@@ -667,9 +807,10 @@ class FeatureEngineering:
         else:
             symbol = getattr(bar_data, "symbol", None)
             tf_sec = getattr(bar_data, "timeframe_sec", None)
-        
+
         if not symbol or not tf_sec:
-            self.logger.debug(f"on_bar_closed: missing symbol={symbol} or tf_sec={tf_sec}")
+            self.logger.debug(
+                f"on_bar_closed: missing symbol={symbol} or tf_sec={tf_sec}")
             return
         try:
             tf_sec = int(tf_sec)
@@ -684,14 +825,16 @@ class FeatureEngineering:
             )
             return
         emit_timeframes = getattr(self, "_emit_timeframes_sec", None)
-        emit_events = True if not emit_timeframes else (tf_sec in emit_timeframes)
+        emit_events = True if not emit_timeframes else (
+            tf_sec in emit_timeframes)
         bar_identity = extract_canonical_bar_identity(
-            pld if isinstance(pld, dict) else {"bar": bar_data, "symbol": symbol, "tf_sec": tf_sec},
+            pld if isinstance(pld, dict) else {
+                "bar": bar_data, "symbol": symbol, "tf_sec": tf_sec},
             default_symbol=symbol,
             default_timeframe_sec=tf_sec,
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
-        
+
         # Store bar for reference
         self.last_bar[(symbol, tf_sec)] = bar_data
 
@@ -712,10 +855,12 @@ class FeatureEngineering:
                 else getattr(bar_data, "end_ts_ms", None)
             )
             bar_open = getattr(bar_data, "open", None)
-            bar_get = lambda key, default=None: getattr(bar_data, key, default)
+            def bar_get(key, default=None): return getattr(
+                bar_data, key, default)
 
         if close_price is None or bar_ts is None:
-            self.logger.debug(f"on_bar_closed: missing close={close_price} or ts={bar_ts}")
+            self.logger.debug(
+                f"on_bar_closed: missing close={close_price} or ts={bar_ts}")
             return
 
         # Bar-only mode: derive feature seed directly from bar payload.
@@ -752,13 +897,17 @@ class FeatureEngineering:
             if v is not None:
                 bar_tick[k] = v
 
-        bar_open_dec = decimal.Decimal(str(bar_open)) if bar_open is not None else None
-        bar_last_tick = self._create_synthetic_tick_for_bar_close(bar_tick, int(bar_ts), bar_open_dec)
+        bar_open_dec = decimal.Decimal(
+            str(bar_open)) if bar_open is not None else None
+        bar_last_tick = self._create_synthetic_tick_for_bar_close(
+            bar_tick, int(bar_ts), bar_open_dec)
 
         if emit_events:
-            self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
+            self.logger.info(
+                f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
         else:
-            self.logger.debug(f"[{symbol}] on_bar_closed internal-only tf_sec={tf_sec} (pillars update, no emit)")
+            self.logger.debug(
+                f"[{symbol}] on_bar_closed internal-only tf_sec={tf_sec} (pillars update, no emit)")
         try:
             accepted = self._calculate_and_emit_features_for_tf(
                 symbol,
@@ -783,18 +932,19 @@ class FeatureEngineering:
     def _on_htf_bars_imported(self, event: "Message") -> None:
         """
         Handle EVT:HTF_BARS_IMPORTED.
-        
+
         Directly hydrates the PillarState without triggering TTL age checks
         or standard delta computation logic. Used strictly for startup warmup.
         """
-        pld = getattr(event, "pld", {}) if not isinstance(event, dict) else event.get("pld", {})
+        pld = getattr(event, "pld", {}) if not isinstance(
+            event, dict) else event.get("pld", {})
         if not pld:
             return
 
         symbol = pld.get("symbol")
         tf_sec = pld.get("tf_sec")
         bars = pld.get("bars", [])
-        
+
         if not symbol or not tf_sec or not bars:
             self.logger.warning("HTF_BARS_IMPORTED missing required fields.")
             return
@@ -804,11 +954,13 @@ class FeatureEngineering:
         except ValueError:
             return
 
-        tf_map = getattr(self, "_pillar_timeframe_to_label", None) or {900: "m15", 14400: "h4", 86400: "d1"}
+        tf_map = getattr(self, "_pillar_timeframe_to_label", None) or {
+            900: "m15", 14400: "h4", 86400: "d1"}
         tf_label = tf_map.get(tf_sec)
-        
+
         if not tf_label:
-            self.logger.debug(f"[{symbol}] Ignoring imported bars for tf_sec={tf_sec} (not a configured pillar tf)")
+            self.logger.debug(
+                f"[{symbol}] Ignoring imported bars for tf_sec={tf_sec} (not a configured pillar tf)")
             return
 
         state = self._pillar_states.get(symbol)
@@ -819,9 +971,11 @@ class FeatureEngineering:
             state = PillarState()
             self._pillar_states[symbol] = state
 
-        calc_engine = getattr(self, "calc_engine", None) or getattr(self, "_engine", None)
+        calc_engine = getattr(self, "calc_engine", None) or getattr(
+            self, "_engine", None)
         if not calc_engine or not hasattr(calc_engine, "update_pillar_candle"):
-            self.logger.error("FeatureCalculationEngine does not support update_pillar_candle.")
+            self.logger.error(
+                "FeatureCalculationEngine does not support update_pillar_candle.")
             return
 
         processed = 0
@@ -830,7 +984,8 @@ class FeatureEngineering:
                 if not isinstance(bar, dict):
                     continue
                 identity = extract_canonical_bar_identity(
-                    {"symbol": symbol, "tf_sec": tf_sec, "bar": bar, "source_mode": "warmup_import"},
+                    {"symbol": symbol, "tf_sec": tf_sec,
+                        "bar": bar, "source_mode": "warmup_import"},
                     default_symbol=symbol,
                     default_timeframe_sec=tf_sec,
                     default_source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
@@ -847,7 +1002,8 @@ class FeatureEngineering:
                 attach_canonical_bar_payload(
                     bar,
                     identity=identity,
-                    replay_generation=int(bar.get("replay_generation", 0) or 0),
+                    replay_generation=int(
+                        bar.get("replay_generation", 0) or 0),
                     attach_nested_bar=False,
                 )
                 updated = calc_engine.update_pillar_candle(
@@ -861,7 +1017,8 @@ class FeatureEngineering:
                 if updated:
                     processed += 1
             except Exception as e:
-                self.logger.debug(f"[{symbol}] Malformed imported bar skipped: {e}")
+                self.logger.debug(
+                    f"[{symbol}] Malformed imported bar skipped: {e}")
 
         self.logger.info(
             f"✅ [{symbol}] Successfully hydrated PillarState with {processed} historical {tf_label} candles "
@@ -869,41 +1026,41 @@ class FeatureEngineering:
         )
 
     def _create_synthetic_tick_for_bar_close(
-        self, 
-        last_tick: Dict[str, Any], 
-        bar_ts: int, 
+        self,
+        last_tick: Dict[str, Any],
+        bar_ts: int,
         bar_open: Optional[decimal.Decimal]
     ) -> Dict[str, Any]:
         """Create synthetic 'previous tick' for bar-feature calculation.
-        
+
         Problem: When calculating bar-features, time_diff = current_ts - last_ts.
         If last_tick.ts == bar_ts (same millisecond), time_diff = 0 → rejected by guard.
-        
+
         Solution: Offset last_tick.ts by -1ms to ensure time_diff > 0.
         This is safe because bar-features use OHLC data, not tick-level timing.
-        
+
         Additionally, use bar's OPEN price as prev_price for delta_price calculation,
         ensuring delta_price = (close - open), not (close - last_tick_price).
-        
+
         Args:
             last_tick: Last real tick data for this symbol
             bar_ts: Bar close timestamp (end_ts_ms)
             bar_open: Bar's opening price (for delta_price calculation)
-        
+
         Returns:
             Synthetic tick dict with ts=bar_ts-1 and price=bar_open
         """
         synthetic_tick = dict(last_tick)
         synthetic_tick["ts"] = bar_ts - 1  # 1ms before bar close
-        
+
         if bar_open is not None:
             synthetic_tick["price"] = str(bar_open)
-        
+
         return synthetic_tick
 
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> bool:
         """Calculate tick-features and emit EVT:FEATURES_CALCULATED.
-        
+
         FIX-TICK-FE-GATE-001: Tick-features do NOT depend on bars.
         Bar-features (OHLC-based) will be a separate pipeline (BAR-FEATURES-001).
         """
@@ -946,11 +1103,13 @@ class FeatureEngineering:
         if int(tf_sec or 0) < 60:
             return None
 
-        calc_engine = getattr(self, "calc_engine", None) or getattr(self, "_engine", None)
+        calc_engine = getattr(self, "calc_engine", None) or getattr(
+            self, "_engine", None)
         if calc_engine is None or not hasattr(calc_engine, "compute_pillars"):
             return None
 
-        bars = bar_data if bar_data is not None else self.last_bar.get((symbol, tf_sec))
+        bars = bar_data if bar_data is not None else self.last_bar.get(
+            (symbol, tf_sec))
         raw = None
         # PHASE-9: calc_engine.compute_pillars canonical signature is compute_pillars(state: PillarState).
         # The old (bars, symbol, tf_sec) signature no longer exists. Using canonical path directly.
@@ -1012,12 +1171,15 @@ class FeatureEngineering:
                         state,
                         timeframe=tf_label,
                         close=float(bar_close),
-                        high=float(bar_high if bar_high is not None else bar_close),
-                        low=float(bar_low if bar_low is not None else bar_close),
+                        high=float(
+                            bar_high if bar_high is not None else bar_close),
+                        low=float(
+                            bar_low if bar_low is not None else bar_close),
                         bar_ts_ms=int(bar_ts_ms),
                     )
                 except Exception as e:
-                    self.logger.debug(f"[{symbol}] Pillar candle update skipped: {e}")
+                    self.logger.debug(
+                        f"[{symbol}] Pillar candle update skipped: {e}")
 
         raw = calc_engine.compute_pillars(state)
 
@@ -1026,15 +1188,20 @@ class FeatureEngineering:
 
         if isinstance(raw, dict):
             pillar_sum = raw.get("pillar_sum")
-            pillar_tactician = raw.get("pillar_tactician", raw.get("tactician"))
+            pillar_tactician = raw.get(
+                "pillar_tactician", raw.get("tactician"))
             pillar_operator = raw.get("pillar_operator", raw.get("operator"))
-            pillar_strategist = raw.get("pillar_strategist", raw.get("strategist"))
+            pillar_strategist = raw.get(
+                "pillar_strategist", raw.get("strategist"))
             pillar_contribs = raw.get("pillar_contribs", {})
         else:
             pillar_sum = getattr(raw, "pillar_sum", None)
-            pillar_tactician = getattr(raw, "pillar_tactician", getattr(raw, "tactician", None))
-            pillar_operator = getattr(raw, "pillar_operator", getattr(raw, "operator", None))
-            pillar_strategist = getattr(raw, "pillar_strategist", getattr(raw, "strategist", None))
+            pillar_tactician = getattr(
+                raw, "pillar_tactician", getattr(raw, "tactician", None))
+            pillar_operator = getattr(
+                raw, "pillar_operator", getattr(raw, "operator", None))
+            pillar_strategist = getattr(
+                raw, "pillar_strategist", getattr(raw, "strategist", None))
             pillar_contribs = getattr(raw, "pillar_contribs", {})
 
         if pillar_sum is None:
@@ -1062,6 +1229,40 @@ class FeatureEngineering:
             "pillar_contribs": safe_contribs,
         }
 
+    def _try_warmup_seed_atr(self, symbol: str, tf_sec: int, bar_data: Optional[Dict]) -> None:
+        """Update BarVolatilityState TR buffer from a warmup/blocked bar.
+
+        ATR-WARMUP-SEED: Called in CMD:PROCESS_STRATEGY blocked paths (warmup not ready,
+        _warmup_bar, is_candidate=False) so the TR buffer builds up during startup
+        hydration. Without this, Aurora needs 14 live bar closes (~70 min for 5m TF)
+        after restart before ATR is ready, blocking all signals.
+        """
+        if not bar_data or not tf_sec or tf_sec < 60:
+            return
+        h = bar_data.get("high")
+        l = bar_data.get("low")
+        c = bar_data.get("close")
+        if h is None or l is None or c is None:
+            return
+        try:
+            bh = decimal.Decimal(str(h))
+            bl = decimal.Decimal(str(l))
+            bc = decimal.Decimal(str(c))
+            vol_key = (symbol, tf_sec)
+            if vol_key not in self._bar_volatility_states:
+                self._bar_volatility_states[vol_key] = BarVolatilityState(
+                    atr_window=14)
+            vs = self._bar_volatility_states[vol_key]
+            if vs.prev_close is not None:
+                tr = float(max(bh - bl, abs(bh - vs.prev_close),
+                           abs(bl - vs.prev_close)))
+            else:
+                tr = float(bh - bl)
+            vs.update_tr(tr)
+            vs.prev_close = bc
+        except Exception:
+            pass
+
     def _calculate_and_emit_features_for_tf(
         self,
         symbol: str,
@@ -1078,23 +1279,32 @@ class FeatureEngineering:
                 self._init_symbol_state(symbol)
 
             # Parse tick data
-            bid_size = decimal.Decimal(str(current_tick["bid_size"] if "bid_size" in current_tick else 0))
-            ask_size = decimal.Decimal(str(current_tick["ask_size"] if "ask_size" in current_tick else 0))
-            buy_volume = decimal.Decimal(str(current_tick["buy_volume"] if "buy_volume" in current_tick else 0))
-            sell_volume = decimal.Decimal(str(current_tick["sell_volume"] if "sell_volume" in current_tick else 0))
-            price = decimal.Decimal(str(current_tick["price"] if "price" in current_tick else 0))
-            prev_price = decimal.Decimal(str(last_tick["price"] if "price" in last_tick else 0))
+            bid_size = decimal.Decimal(
+                str(current_tick["bid_size"] if "bid_size" in current_tick else 0))
+            ask_size = decimal.Decimal(
+                str(current_tick["ask_size"] if "ask_size" in current_tick else 0))
+            buy_volume = decimal.Decimal(
+                str(current_tick["buy_volume"] if "buy_volume" in current_tick else 0))
+            sell_volume = decimal.Decimal(
+                str(current_tick["sell_volume"] if "sell_volume" in current_tick else 0))
+            price = decimal.Decimal(
+                str(current_tick["price"] if "price" in current_tick else 0))
+            prev_price = decimal.Decimal(
+                str(last_tick["price"] if "price" in last_tick else 0))
             time_diff = current_tick["ts"] - last_tick["ts"]
-            current_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
+            current_ts_ms = int(
+                (current_tick["ts"] if "ts" in current_tick else 0) or 0)
             # FIX:BAR-TS-CAUSALITY-GUARD bar events carry wall-clock processing time so live anchors do not look "future".
-            causality_ts_ms = int((current_tick.get("wall_ts_ms") if isinstance(current_tick, dict) else 0) or current_ts_ms)
+            causality_ts_ms = int((current_tick.get("wall_ts_ms") if isinstance(
+                current_tick, dict) else 0) or current_ts_ms)
             self._ticks_seen[symbol] += 1
 
             # P1-1 FIX: Early return on bad time_diff (out-of-order or duplicate tick)
             # Do NOT update any state with bad dt - emit degraded features and return
             if time_diff <= 0:
                 inc_data_quality_bad_dt(domain="feature_engineering")
-                inc_data_quality_drop(domain="feature_engineering", reason="bad_dt")
+                inc_data_quality_drop(
+                    domain="feature_engineering", reason="bad_dt")
                 warmup_bad_dt = {
                     "ticks_seen": int(self._ticks_seen[symbol]),
                     "full_ready": False,
@@ -1118,8 +1328,10 @@ class FeatureEngineering:
                     "data_quality": {"drops": ["bad_dt"], "notes": []},
                 }
                 if emit_events:
-                    self.fsm.emit("EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
-                self.logger.warning(f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
+                    self.fsm.emit(
+                        "EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
+                self.logger.warning(
+                    f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
                 return False
 
             # Update last tick timestamp ONLY after validation.
@@ -1130,7 +1342,8 @@ class FeatureEngineering:
                     symbol,
                     ts_ms=self._last_tick_ts_ms,
                     price=float(price),
-                    max_gap_bins=self._macro_sync_effective_max_gap_bins(tf_sec=tf_sec),
+                    max_gap_bins=self._macro_sync_effective_max_gap_bins(
+                        tf_sec=tf_sec),
                 )
                 # R1 (P1): macro_resid depends on anchor_prices["BTCUSDT"] history.
                 # In live mode, anchors are typically part of the trading symbols list, so they
@@ -1140,42 +1353,49 @@ class FeatureEngineering:
                 if (not self.cfg.macro_sync_anchor_update_from_ticks) and symbol in self.cfg.macro_sync_anchors:
                     if symbol in self.anchor_prices:
                         self.anchor_prices[symbol].append(price)
-                        self._anchor_last_ts_ms[symbol] = int(self._last_tick_ts_ms)
+                        self._anchor_last_ts_ms[symbol] = int(
+                            self._last_tick_ts_ms)
 
             # ================================================================
             # BASE FEATURES (always computed)
             # ================================================================
-            
+
             # OBI (Order Book Imbalance) [-1, 1]
             depth = bid_size + ask_size
-            obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
-            
+            obi = (bid_size - ask_size) / \
+                depth if depth > 0 else decimal.Decimal(0)
+
             # EP-01.1: Cache OBI for bar close snapshot
             self._last_obi[symbol] = obi
 
             # TFI (Trade Flow Imbalance) [-1, 1]
             total_flow = buy_volume + sell_volume
-            tfi = (buy_volume - sell_volume) / total_flow if total_flow > 0 else decimal.Decimal(0)
+            tfi = (buy_volume - sell_volume) / \
+                total_flow if total_flow > 0 else decimal.Decimal(0)
 
             # Delta Price (with spike filter)
             delta_price = (
-                price - prev_price 
-                if time_diff < self.cfg.delta_price_spike_filter_ms 
+                price - prev_price
+                if time_diff < self.cfg.delta_price_spike_filter_ms
                 else decimal.Decimal(0)
             )
 
             # Liquidity Kappa [kappa_min, kappa_max]
             # FTR-FIX: Convert depth to USD to match depth_half (1000 USD)
             depth_usd = depth * price
-            liq_ratio = depth_usd / (depth_usd + self.cfg.depth_half) if (depth_usd + self.cfg.depth_half) > 0 else decimal.Decimal(0)
-            liq_ratio = max(decimal.Decimal(0), min(decimal.Decimal(1), liq_ratio))
-            liq_kappa = max(self.cfg.kappa_min, min(self.cfg.kappa_max, liq_ratio))
+            liq_ratio = depth_usd / (depth_usd + self.cfg.depth_half) if (
+                depth_usd + self.cfg.depth_half) > 0 else decimal.Decimal(0)
+            liq_ratio = max(decimal.Decimal(0), min(
+                decimal.Decimal(1), liq_ratio))
+            liq_kappa = max(self.cfg.kappa_min, min(
+                self.cfg.kappa_max, liq_ratio))
 
             features = {
                 "obi": str(obi),
                 "tfi": str(tfi),
                 "delta_price": str(delta_price),
-                "absorption": str(self.cfg.zero_value),  # Placeholder - using configured default
+                # Placeholder - using configured default
+                "absorption": str(self.cfg.zero_value),
                 "price": str(price),
                 "liquidity_kappa": str(liq_kappa),
             }
@@ -1186,10 +1406,10 @@ class FeatureEngineering:
             if self.cfg.enable_new_metrics:
                 # Get hot state early for spread tracking
                 hot = self._get_symbol_state(symbol).hot
-                
+
                 # EMA Bias
                 self._update_ema(symbol, price)
-                # In Phase 3, this might be overwritten later by the augmented pass-through 
+                # In Phase 3, this might be overwritten later by the augmented pass-through
                 # if running in backtest. In live mode, it calculates normally.
                 features["ema_bias"] = str(self._compute_ema_bias(symbol))
 
@@ -1197,19 +1417,24 @@ class FeatureEngineering:
                 if time_diff <= 0:
                     inc_data_quality_bad_dt(domain="feature_engineering")
                 else:
-                    self._update_volume_spike(symbol, buy_volume + sell_volume, int(time_diff))
-                features["volume_spike"] = str(self._compute_volume_spike(symbol))
+                    self._update_volume_spike(
+                        symbol, buy_volume + sell_volume, int(time_diff))
+                features["volume_spike"] = str(
+                    self._compute_volume_spike(symbol))
 
                 # Volatility State
                 self._update_volatility_state(symbol, price, current_tick)
-                features["volatility_state"] = str(self._compute_volatility_state(symbol))
+                features["volatility_state"] = str(
+                    self._compute_volatility_state(symbol))
 
                 # Depth Imbalance (Convert to USD for smoothing consistency)
-                features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size * price, ask_size * price))
+                features["depth_imbalance"] = str(
+                    self._compute_depth_imbalance(bid_size * price, ask_size * price))
 
                 # Macro Sync (legacy, kept for telemetry)
-                features["macro_sync"] = str(self._compute_macro_sync(symbol, current_ts_ms=int(current_ts_ms)))
-                
+                features["macro_sync"] = str(self._compute_macro_sync(
+                    symbol, current_ts_ms=int(current_ts_ms)))
+
                 # ================================================================
                 # R1 (P1): MACRO RESID — Beta-Adjusted Residual
                 # ================================================================
@@ -1217,19 +1442,23 @@ class FeatureEngineering:
                 if self.cfg.macro_resid_enabled:
                     if symbol == "BTCUSDT" and prev_price > 0:
                         asset_return = float((price - prev_price) / prev_price)
-                        self._engine.update_macro_resid(hot, asset_return, asset_return)
-                        macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                        self._engine.update_macro_resid(
+                            hot, asset_return, asset_return)
+                        macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(
+                            hot)
                     else:
                         btc_anchor_pair = self._latest_anchor_price_pair_before(
                             "BTCUSDT",
                             current_ts_ms=int(causality_ts_ms),
                         )
                         if btc_anchor_pair is None:
-                            btc_anchor_ts = int((self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
+                            btc_anchor_ts = int(
+                                (self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
                             hot.macro_resid_ready = False
                             if btc_anchor_ts > 0 and btc_anchor_ts > int(causality_ts_ms):
                                 hot.macro_resid_not_ready_reason = "anchor_from_future:BTCUSDT"
-                                inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
+                                inc_data_quality_drop(
+                                    domain="feature_engineering", reason="macro_anchor_future")
                             else:
                                 hot.macro_resid_not_ready_reason = "insufficient_anchor_samples:BTCUSDT"
                             macro_resid_val = self.cfg.zero_value
@@ -1237,13 +1466,17 @@ class FeatureEngineering:
                             macro_resid_reason = hot.macro_resid_not_ready_reason
                         elif prev_price > 0:
                             btc_prev, btc_curr = btc_anchor_pair
-                            asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
-                            anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
-                            self._engine.update_macro_resid(hot, asset_return, anchor_return)
-                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                            asset_return = float(
+                                (price - prev_price) / prev_price) if prev_price > 0 else 0.0
+                            anchor_return = float(
+                                (btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
+                            self._engine.update_macro_resid(
+                                hot, asset_return, anchor_return)
+                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(
+                                hot)
                         else:
-                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
-                    
+                            macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(
+                                hot)
 
                     # FIX-AUDITED-ISSUES-01 (Part C): Fail-closed emission.
                     # If not ready (warmup or missing anchor), emit None instead of 0.0 (neutral).
@@ -1259,11 +1492,11 @@ class FeatureEngineering:
                         pass
                     except Exception:
                         pass
-            
+
             # ================================================================
             # ALPHA-SEARCH SUPPORT: AUGMENTED FEATURE PASS-THROUGH
             # ================================================================
-            # In backtest mode, BacktestEngine injects TA features (RSI, MACD etc) 
+            # In backtest mode, BacktestEngine injects TA features (RSI, MACD etc)
             # into the tick payload. FeatureEngineering natively ignores unknown keys.
             # We explicitly pass them through here to ensure AlphaSearch receives them.
             aug_keys = [
@@ -1299,38 +1532,42 @@ class FeatureEngineering:
                         sell_vol=float(sell_volume),
                         tfi=tfi_val,
                     )
-                    
+
                     # Compute
-                    absorption_val, absorption_ready, absorption_reason = self._engine.compute_absorption(hot)
+                    absorption_val, absorption_ready, absorption_reason = self._engine.compute_absorption(
+                        hot)
                     features["absorption"] = str(absorption_val)
                 else:
                     # Disabled: emit neutral, mark not ready (excluded from scoring)
                     features["absorption"] = str(self.cfg.zero_value)
                     hot.absorption_ready = False
                     hot.absorption_not_ready_reason = "mode_disabled"
-                
+
                 # ================================================================
                 # V2 FEATURES (FTR-03: Additive)
                 # ================================================================
-                
+
                 # Volume Z-Score (normalized via tanh)
-                features["volume_zscore"] = str(self._compute_volume_zscore(symbol))
-                
+                features["volume_zscore"] = str(
+                    self._compute_volume_zscore(symbol))
+
                 # Large Trade Imbalance (TASK31)
                 if self.cfg.large_trade_imbalance_enabled:
-                    features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(symbol, current_tick))
+                    features["large_trade_imbalance"] = str(
+                        self._compute_large_trade_imbalance(symbol, current_tick))
                 else:
                     hot.large_trade_imbalance_ready = True
                     hot.large_trade_imbalance_not_ready_reason = None
                     hot.large_trade_imbalance_trades_used = 0
                     hot.large_trade_imbalance_dropped_out_of_order = 0
-                    features["large_trade_imbalance"] = str(self.cfg.neutral_value)
-                
+                    features["large_trade_imbalance"] = str(
+                        self.cfg.neutral_value)
+
                 # Spread in basis points
                 # P1-2 FIX: Track spread_ready - if bid/ask missing, spread is unreliable
                 spread_ready = True
                 spread_missing = False
-                
+
                 if "best_bid" in current_tick:
                     best_bid_raw = current_tick["best_bid"]
                 elif "bid" in current_tick:
@@ -1338,7 +1575,7 @@ class FeatureEngineering:
                 else:
                     best_bid_raw = None
                     spread_missing = True
-                
+
                 if "best_ask" in current_tick:
                     best_ask_raw = current_tick["best_ask"]
                 elif "ask" in current_tick:
@@ -1346,21 +1583,24 @@ class FeatureEngineering:
                 else:
                     best_ask_raw = None
                     spread_missing = True
-                
+
                 if spread_missing:
                     # Do NOT fallback to price=0 spread - use neutral and mark not ready
                     spread_ready = False
                     best_bid = price
                     best_ask = price
                     mid_price = price
-                    inc_data_quality_drop(domain="feature_engineering", reason="spread_missing")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="spread_missing")
                 else:
                     best_bid = decimal.Decimal(str(best_bid_raw))
                     best_ask = decimal.Decimal(str(best_ask_raw))
-                    mid_price = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else price
-                
-                features["spread_bps"] = str(self._compute_spread_bps(best_bid, best_ask, mid_price))
-                
+                    mid_price = (best_bid + best_ask) / \
+                        2 if best_bid > 0 and best_ask > 0 else price
+
+                features["spread_bps"] = str(
+                    self._compute_spread_bps(best_bid, best_ask, mid_price))
+
                 # Store spread readiness for warmup
                 hot.spread_ready = spread_ready
                 hot.spread_missing = spread_missing
@@ -1370,13 +1610,14 @@ class FeatureEngineering:
                 # ================================================================
                 if self.cfg.futures_enabled:
                     state = self._get_symbol_state(symbol)
-                    
+
                     # Funding Rate Normalized [-1, 1]
-                    funding_norm = self._engine.compute_funding_normalized(state.cold)
+                    funding_norm = self._engine.compute_funding_normalized(
+                        state.cold)
                     if funding_norm is not None:
                         features["funding_rate_normalized"] = str(funding_norm)
                         features["funding_rate"] = str(state.cold.funding_rate)
-                    
+
                     # OI Delta Percentage
                     oi_delta = self._engine.compute_oi_delta_pct(state.cold)
                     if oi_delta is not None:
@@ -1403,7 +1644,8 @@ class FeatureEngineering:
                     "volume_spike": bool(hot.volume_spike_ready),
                     "volatility_state": bool(hot.volatility_state_ready),
                     "macro_sync": bool(hot.macro_sync_ready) if self.cfg.macro_sync_enabled else True,
-                    "spread_bps": bool(hot.spread_ready),  # P1-2 FIX: Include spread readiness
+                    # P1-2 FIX: Include spread readiness
+                    "spread_bps": bool(hot.spread_ready),
                     "large_trade_imbalance": bool(hot.large_trade_imbalance_ready)
                     if self.cfg.large_trade_imbalance_enabled
                     else True,
@@ -1415,47 +1657,65 @@ class FeatureEngineering:
                 }
                 reasons: list[str] = []
                 if not hot.volume_spike_ready and hot.volume_spike_not_ready_reason:
-                    reasons.append(f"volume_spike:{hot.volume_spike_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="volume_spike_not_ready")
+                    reasons.append(
+                        f"volume_spike:{hot.volume_spike_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="volume_spike_not_ready")
                 if not hot.volatility_state_ready and hot.volatility_state_not_ready_reason:
-                    reasons.append(f"volatility_state:{hot.volatility_state_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="volatility_state_not_ready")
+                    reasons.append(
+                        f"volatility_state:{hot.volatility_state_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="volatility_state_not_ready")
                 if self.cfg.macro_sync_enabled and (not hot.macro_sync_ready) and hot.macro_sync_not_ready_reason:
-                    reasons.append(f"macro_sync:{hot.macro_sync_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="macro_sync_not_ready")
+                    reasons.append(
+                        f"macro_sync:{hot.macro_sync_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="macro_sync_not_ready")
                 if (
                     self.cfg.large_trade_imbalance_enabled
                     and (not hot.large_trade_imbalance_ready)
                     and hot.large_trade_imbalance_not_ready_reason
                 ):
-                    reasons.append(f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="large_trade_imbalance_not_ready")
+                    reasons.append(
+                        f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="large_trade_imbalance_not_ready")
                 # R1: macro_resid not ready
                 if self.cfg.macro_resid_enabled and (not hot.macro_resid_ready) and hot.macro_resid_not_ready_reason:
-                    reasons.append(f"macro_resid:{hot.macro_resid_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="macro_resid_not_ready")
+                    reasons.append(
+                        f"macro_resid:{hot.macro_resid_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="macro_resid_not_ready")
                 # R2: absorption not ready (or dedup muted)
                 if self.cfg.absorption_mode != "disabled" and (not hot.absorption_ready) and hot.absorption_not_ready_reason:
-                    reasons.append(f"absorption:{hot.absorption_not_ready_reason}")
-                    inc_data_quality_drop(domain="feature_engineering", reason="absorption_not_ready")
+                    reasons.append(
+                        f"absorption:{hot.absorption_not_ready_reason}")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="absorption_not_ready")
                 # P1-2 FIX: Add spread_missing to reasons
                 if hot.spread_missing:
                     reasons.append("spread_bps:spread_missing")
 
                 warmup["ready"] = ready_map
                 warmup["reasons"] = reasons
-                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
-                warmup["large_trade_imbalance_ready"] = bool(hot.large_trade_imbalance_ready)
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(
+                    symbol=symbol, ready_map=ready_map)
+                warmup["large_trade_imbalance_ready"] = bool(
+                    hot.large_trade_imbalance_ready)
                 warmup["large_trade_imbalance_not_ready_reason"] = hot.large_trade_imbalance_not_ready_reason
-                warmup["large_trade_imbalance_trades_used"] = int(hot.large_trade_imbalance_trades_used)
-                warmup["large_trade_imbalance_dropped_out_of_order"] = int(hot.large_trade_imbalance_dropped_out_of_order)
+                warmup["large_trade_imbalance_trades_used"] = int(
+                    hot.large_trade_imbalance_trades_used)
+                warmup["large_trade_imbalance_dropped_out_of_order"] = int(
+                    hot.large_trade_imbalance_dropped_out_of_order)
 
                 # Log warmup state transitions (helps diagnose "trading never starts" cases).
                 # NOTE: this is separate from feature value logging and focuses on readiness.
                 try:
                     full_ready = bool(warmup.get("full_ready"))
-                    reasons_list = list(warmup.get("reasons", [])) if isinstance(warmup.get("reasons"), list) else []
-                    reasons_sig = "|".join(sorted(str(r) for r in reasons_list))
+                    reasons_list = list(warmup.get("reasons", [])) if isinstance(
+                        warmup.get("reasons"), list) else []
+                    reasons_sig = "|".join(sorted(str(r)
+                                           for r in reasons_list))
                     last_full_ready = self._last_warmup_full_ready.get(symbol)
                     last_sig = self._last_warmup_reasons_sig.get(symbol)
                     if (last_full_ready is None) or (last_full_ready != full_ready) or (last_sig != reasons_sig):
@@ -1479,9 +1739,11 @@ class FeatureEngineering:
                     hot.price_history,
                     ts_ms=int(current_tick.get("ts", 0) or 0),
                     price=price,
-                    k_vol=float(getattr(self._price_motion_sanity_cfg, "k_vol")),
+                    k_vol=float(
+                        getattr(self._price_motion_sanity_cfg, "k_vol")),
                     # VOL-ADJ-GATES-CLIP-CONFIG-01: config-driven pm_norm clipping
-                    clip_abs=float(getattr(self._price_motion_sanity_cfg, "pm_norm_clip_abs", 10.0)),
+                    clip_abs=float(
+                        getattr(self._price_motion_sanity_cfg, "pm_norm_clip_abs", 10.0)),
                 )
             except Exception:
                 pm_block = {
@@ -1500,9 +1762,10 @@ class FeatureEngineering:
             # P0-3: FEATURE SANITY FIREWALL (before emit)
             # ================================================================
             # Apply central sanity check to all features
-            sanitized_features, sanity_readiness, sanity_reasons = self._engine.sanitize_features_dict(features)
+            sanitized_features, sanity_readiness, sanity_reasons = self._engine.sanitize_features_dict(
+                features)
             features = sanitized_features
-            
+
             # Merge sanity readiness into warmup.ready
             if self.cfg.enable_new_metrics:
                 ready_map = warmup.get("ready", {})
@@ -1513,21 +1776,22 @@ class FeatureEngineering:
                     else:
                         ready_map[fname] = is_ready
                 warmup["ready"] = ready_map
-                
+
                 # Add sanity reasons
                 existing_reasons = list(warmup.get("reasons", []))
                 existing_reasons.extend(sanity_reasons)
                 warmup["reasons"] = existing_reasons
-                
+
                 # Recalculate full_ready after sanity
-                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(
+                    symbol=symbol, ready_map=ready_map)
 
             # ================================================================
             # P0-2: BOOK HEALTH CHECK (spread truth validation)
             # ================================================================
             if self.cfg.enable_new_metrics and self.cfg.spread_health_gate_enabled:
                 current_ts_ms = int(current_tick.get("ts", 0) or 0)
-                
+
                 # Update book health tracking (tick has both book and trade data)
                 self._engine.update_book_health(
                     symbol=symbol,
@@ -1535,22 +1799,26 @@ class FeatureEngineering:
                     is_book_update=not spread_missing,  # Book update if bid/ask present
                     is_trade=True,  # Tick always includes trade
                 )
-                
+
                 # Check book health
-                book_healthy, book_reason = self._engine.check_book_health(symbol, current_ts_ms)
+                book_healthy, book_reason = self._engine.check_book_health(
+                    symbol, current_ts_ms)
                 if not book_healthy:
                     # Mark spread_bps as not ready if book unhealthy
                     ready_map = warmup.get("ready", {})
                     ready_map["spread_bps"] = False
                     warmup["ready"] = ready_map
-                    warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
+                    warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(
+                        symbol=symbol, ready_map=ready_map)
                     existing_reasons = list(warmup.get("reasons", []))
                     existing_reasons.append(f"spread_bps:{book_reason}")
                     warmup["reasons"] = existing_reasons
-                    inc_data_quality_drop(domain="feature_engineering", reason="book_unhealthy")
+                    inc_data_quality_drop(
+                        domain="feature_engineering", reason="book_unhealthy")
 
             # P0-1: Wire pillars into the same TF payload consumed by decision flow.
-            pillars = self._compute_pillars_for_emit(symbol=symbol, tf_sec=int(tf_sec), bar_data=bar_data)
+            pillars = self._compute_pillars_for_emit(
+                symbol=symbol, tf_sec=int(tf_sec), bar_data=bar_data)
             if pillars is not None:
                 pillar_keys = (
                     "pillar_sum",
@@ -1569,7 +1837,8 @@ class FeatureEngineering:
                     features["pillar_tactician"] = pillars["pillar_tactician"]
                     features["pillar_operator"] = pillars["pillar_operator"]
                     features["pillar_strategist"] = pillars["pillar_strategist"]
-                    features["pillar_contribs"] = pillars.get("pillar_contribs", {})
+                    features["pillar_contribs"] = pillars.get(
+                        "pillar_contribs", {})
 
             if not emit_events:
                 self.logger.debug(
@@ -1611,33 +1880,63 @@ class FeatureEngineering:
             )
 
             # Build payload
+            fe_diag = self._record_features_emitted(symbol, int(
+                tf_sec), warmup if isinstance(warmup, dict) else None)
+            anchor_diag_snapshot = {
+                anchor: {
+                    "updates_received": int(diag.updates_received),
+                    "missing_ts_ms": int(diag.missing_ts_ms),
+                    "malformed_ts_ms": int(diag.malformed_ts_ms),
+                    "last_valid_anchor_ts_ms": int(diag.last_valid_anchor_ts_ms),
+                    "anchor_ts_missing_latch": bool(diag.anchor_ts_missing_latch),
+                }
+                for anchor, diag in self._anchor_intake_diag.items()
+            }
             features_payload = {
                 "ts": current_tick["ts"],
                 "symbol": symbol,
                 "tf_sec": tf_sec,
                 "features": features,
                 "warmup": warmup,
+                "diagnostics": {
+                    "fe": {
+                        "features_emitted": int(fe_diag.features_emitted),
+                        "cmd_emitted": int(fe_diag.cmd_emitted),
+                        "cmd_blocked": int(fe_diag.cmd_blocked),
+                        "warmup_full_ready": bool(fe_diag.warmup_full_ready),
+                        "warmup_false_keys": list(fe_diag.warmup_false_keys),
+                        "cmd_suppressed_due_to_warmup": bool(fe_diag.cmd_suppressed_due_to_warmup),
+                        "last_cmd_block_reason_code": fe_diag.last_cmd_block_reason_code,
+                        "last_cmd_block_why": fe_diag.last_cmd_block_why,
+                        "anchor_intake": anchor_diag_snapshot,
+                    }
+                },
                 "price_motion": pm_block,
-                "bar": bar_data,  # DATA-RECORDER-01: Inject raw bar (OHLCV) for recording
+                # DATA-RECORDER-01: Inject raw bar (OHLCV) for recording
+                "bar": bar_data,
                 "source_mode": source_mode,
             }
             if bar_identity is not None:
                 features_payload["bar_identity"] = bar_identity.to_payload()
-                features_payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+                features_payload["close_boundary_ts_ms"] = int(
+                    bar_identity.close_boundary_ts_ms)
             if replay_identity is not None:
                 features_payload["replay_identity"] = replay_identity.to_payload()
-                features_payload["replay_generation"] = int(replay_identity.replay_generation)
+                features_payload["replay_generation"] = int(
+                    replay_identity.replay_generation)
             if gap_status is not None:
                 attach_gap_status_payload(features_payload, gap=gap_status)
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)
-            self.logger.info(f"Calculated features for {symbol}: {json.dumps(features, default=str)}")
-            
+            self.logger.info(
+                f"Calculated features for {symbol}: {json.dumps(features, default=str)}")
+
             # Log separate cleaner file for user inspection
             self._log_features_to_file(symbol, features)
 
             # Emit event
-            self.fsm.emit("EVT:FEATURES_CALCULATED", payload=features_payload, why="features_calculated")
+            self.fsm.emit("EVT:FEATURES_CALCULATED",
+                          payload=features_payload, why="features_calculated")
 
             # T2B-03 + REC-01-FIX: EMIT CMD:PROCESS_STRATEGY (Bar-Driven Trigger)
             # FAIL-CLOSED CONDITIONS:
@@ -1648,6 +1947,13 @@ class FeatureEngineering:
             # 5. bar must have OHLCV fields
             def _emit_cmd_blocked(reason_code: str, reason: str) -> None:
                 try:
+                    diag = self._record_cmd_blocked(
+                        symbol,
+                        int(tf_sec),
+                        reason_code=str(reason_code),
+                        why=str(reason),
+                        warmup=warmup if isinstance(warmup, dict) else None,
+                    )
                     self.fsm.emit(
                         "EVT:PROCESS_STRATEGY_BLOCKED",
                         payload={
@@ -1656,12 +1962,25 @@ class FeatureEngineering:
                             "reason_code": reason_code,
                             "reason": reason,
                             "ts": current_tick.get("ts"),
+                            "diagnostics": {
+                                "fe": {
+                                    "features_emitted": int(diag.features_emitted),
+                                    "cmd_emitted": int(diag.cmd_emitted),
+                                    "cmd_blocked": int(diag.cmd_blocked),
+                                    "warmup_full_ready": bool(diag.warmup_full_ready),
+                                    "warmup_false_keys": list(diag.warmup_false_keys),
+                                    "cmd_suppressed_due_to_warmup": bool(diag.cmd_suppressed_due_to_warmup),
+                                    "last_cmd_block_reason_code": diag.last_cmd_block_reason_code,
+                                    "last_cmd_block_why": diag.last_cmd_block_why,
+                                    "anchor_intake": anchor_diag_snapshot,
+                                }
+                            },
                         },
                         why="cmd_blocked",
                     )
                 except Exception:
                     pass
-            
+
             # Gate 1: bar_data presence
             if not bar_data:
                 pass  # Tick-level features, no CMD emission expected
@@ -1679,15 +1998,18 @@ class FeatureEngineering:
                 _emit_cmd_blocked("WARMUP_MISSING", "warmup missing")
             elif bar_data.get("_warmup_bar") is True:
                 # PRE-SIMULATION WARMUP BAR: state-only pass, no decision.
-                pass
+                # ATR-WARMUP-SEED: still seed TR buffer so ATR is ready when warmup lifts.
+                self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
             elif bar_data.get("is_candidate") is False:
 
                 # SPARSE DECISION LOOP (Phase 2):
                 # Skip emitting CMD:PROCESS_STRATEGY for non-candidate bars.
                 # Do not emit blocked reason as this is a high-frequency expected shortcut.
-                pass
+                # ATR-WARMUP-SEED: still seed TR buffer so ATR state builds continuously.
+                self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
             else:
-                warmup_mode = str(self.cfg.warmup_enforcement_mode or "fail_fast")
+                warmup_mode = str(
+                    self.cfg.warmup_enforcement_mode or "fail_fast")
                 warmup_full_ready = warmup.get("full_ready") is True
                 if not warmup_full_ready:
                     msg = (
@@ -1697,7 +2019,10 @@ class FeatureEngineering:
                     )
                     if warmup_mode == "fail_fast":
                         self.logger.warning(f"{msg} -> rejected")
-                        _emit_cmd_blocked("WARMUP_NOT_FULL_READY", "warmup full_ready=false")
+                        _emit_cmd_blocked(
+                            "WARMUP_NOT_FULL_READY", "warmup full_ready=false")
+                        # ATR-WARMUP-SEED: seed TR buffer so ATR is ready when warmup lifts.
+                        self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
                         return
                     # warn_only / disabled: allow strategy processing to proceed
                     self.logger.warning(f"{msg} -> allowed")
@@ -1709,22 +2034,25 @@ class FeatureEngineering:
                     if bar_identity is not None
                     else bar_data.get("end_ts_ms") or bar_data.get("close_ts") or bar_data.get("kline_close_time")
                 )
-                
+
                 if not bar_close_ts:
                     self.logger.warning(
                         f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar_close_ts missing in bar_data"
                     )
-                    _emit_cmd_blocked("BAR_CLOSE_TS_MISSING", "bar close timestamp missing")
+                    _emit_cmd_blocked("BAR_CLOSE_TS_MISSING",
+                                      "bar close timestamp missing")
                 # Gate 5: Validate bar has OHLCV fields (REC-01-FIX: bar structure check)
                 elif not all(bar_data.get(f) is not None for f in ("open", "high", "low", "close", "volume")):
-                    missing = [f for f in ("open", "high", "low", "close", "volume") if bar_data.get(f) is None]
+                    missing = [f for f in (
+                        "open", "high", "low", "close", "volume") if bar_data.get(f) is None]
                     self.logger.warning(
                         f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar fields missing ({missing})"
                     )
-                    _emit_cmd_blocked("BAR_FIELDS_MISSING", f"bar missing fields {missing}")
+                    _emit_cmd_blocked("BAR_FIELDS_MISSING",
+                                      f"bar missing fields {missing}")
                 else:
                     # All gates passed — compute EP-01.1 features and emit CMD
-                    
+
                     # =========================================================
                     # EP-01.1: BAR VOLATILITY FEATURES
                     # =========================================================
@@ -1732,19 +2060,20 @@ class FeatureEngineering:
                     bar_high = decimal.Decimal(str(bar_data.get("high")))
                     bar_low = decimal.Decimal(str(bar_data.get("low")))
                     bar_close = decimal.Decimal(str(bar_data.get("close")))
-                    
+
                     # bar_range = high - low
                     bar_range = bar_high - bar_low
-                    
+
                     # bar_body = |close - open|
                     bar_body = abs(bar_close - bar_open)
-                    
+
                     # Get/create bar volatility state for this (symbol, tf_sec)
                     vol_key = (symbol, tf_sec)
                     if vol_key not in self._bar_volatility_states:
-                        self._bar_volatility_states[vol_key] = BarVolatilityState(atr_window=14)
+                        self._bar_volatility_states[vol_key] = BarVolatilityState(
+                            atr_window=14)
                     vol_state = self._bar_volatility_states[vol_key]
-                    
+
                     # True Range calculation
                     # TR = max(H - L, |H - prev_close|, |L - prev_close|)
                     if vol_state.prev_close is not None:
@@ -1755,33 +2084,36 @@ class FeatureEngineering:
                     else:
                         # First bar: use H - L only
                         true_range = bar_high - bar_low
-                    
+
                     # Update prev_close for next bar
                     vol_state.prev_close = bar_close
-                    
+
                     # Update TR buffer and compute ATR
                     vol_state.update_tr(float(true_range))
-                    
+
                     # Normalized values (% of price)
                     eps = decimal.Decimal("0.00000001")
                     close_safe = max(bar_close, eps)
                     range_pct = float(bar_range / close_safe)
-                    
+
                     # Phase 3 Vectorized Warmup
                     # Try to use precomputed atr_pct from the augmented backtest feed
                     if "atr_pct" in bar_data and bar_data["atr_pct"] is not None:
                         atr_pct = float(bar_data["atr_pct"])
                         vol_state.atr_ready = True  # Mock ready for downstream
-                        vol_state.last_atr = atr_pct * float(close_safe) # Update state for downstream dependency
+                        # Update state for downstream dependency
+                        vol_state.last_atr = atr_pct * float(close_safe)
                     else:
-                        atr_pct = float(vol_state.last_atr / float(close_safe)) if vol_state.atr_ready and vol_state.last_atr else None
-                    
+                        atr_pct = float(vol_state.last_atr / float(close_safe)
+                                        ) if vol_state.atr_ready and vol_state.last_atr else None
+
                     # =========================================================
                     # EP-01.1: OBI SNAPSHOT AT BAR CLOSE
                     # =========================================================
                     obi_close = self._last_obi.get(symbol)
-                    obi_close_str = str(obi_close) if obi_close is not None else None
-                    
+                    obi_close_str = str(
+                        obi_close) if obi_close is not None else None
+
                     # =========================================================
                     # EP-01.1: INJECT INTO FEATURES
                     # =========================================================
@@ -1797,27 +2129,51 @@ class FeatureEngineering:
                     features["liquidity"] = {
                         "obi_close": obi_close_str,
                     }
-                    
+
                     cmd_payload = {
                         "symbol": symbol,
                         "tf_sec": tf_sec,                        # T2B-03: Required for strategy routing
-                        "bar_close_ts": int(bar_close_ts),       # T2B-03: Required for dedup/idempotency
+                        # T2B-03: Required for dedup/idempotency
+                        "bar_close_ts": int(bar_close_ts),
                         "bar": bar_data,                         # T2B-05: Real Bar SSOT
                         "features": features,                    # Calculated features + EP-01.1
                         "warmup": warmup,                        # T2B-03: Readiness snapshot
-                        "regime": self.last_regime.get(symbol),  # REG-FIX-01: Injected regime
+                        # REG-FIX-01: Injected regime
+                        "regime": self.last_regime.get(symbol),
                         "source_mode": source_mode,
                     }
                     if bar_identity is not None:
                         cmd_payload["bar_identity"] = bar_identity.to_payload()
-                        cmd_payload["close_boundary_ts_ms"] = int(bar_identity.close_boundary_ts_ms)
+                        cmd_payload["close_boundary_ts_ms"] = int(
+                            bar_identity.close_boundary_ts_ms)
                     if replay_identity is not None:
                         cmd_payload["replay_identity"] = replay_identity.to_payload()
-                        cmd_payload["replay_generation"] = int(replay_identity.replay_generation)
+                        cmd_payload["replay_generation"] = int(
+                            replay_identity.replay_generation)
                     if gap_status is not None:
                         attach_gap_status_payload(cmd_payload, gap=gap_status)
-                    self.fsm.emit("CMD:PROCESS_STRATEGY", payload=cmd_payload, why="bar_closed_trigger")
-                    self.logger.debug(f"[{symbol}] Emitted CMD:PROCESS_STRATEGY (tf={tf_sec}s, bar_close_ts={bar_close_ts}, atr_ready={vol_state.atr_ready})")
+                    cmd_diag = self._record_cmd_emitted(
+                        symbol,
+                        int(tf_sec),
+                        warmup=warmup if isinstance(warmup, dict) else None,
+                    )
+                    cmd_payload["diagnostics"] = {
+                        "fe": {
+                            "features_emitted": int(cmd_diag.features_emitted),
+                            "cmd_emitted": int(cmd_diag.cmd_emitted),
+                            "cmd_blocked": int(cmd_diag.cmd_blocked),
+                            "warmup_full_ready": bool(cmd_diag.warmup_full_ready),
+                            "warmup_false_keys": list(cmd_diag.warmup_false_keys),
+                            "cmd_suppressed_due_to_warmup": bool(cmd_diag.cmd_suppressed_due_to_warmup),
+                            "last_cmd_block_reason_code": cmd_diag.last_cmd_block_reason_code,
+                            "last_cmd_block_why": cmd_diag.last_cmd_block_why,
+                            "anchor_intake": anchor_diag_snapshot,
+                        }
+                    }
+                    self.fsm.emit("CMD:PROCESS_STRATEGY",
+                                  payload=cmd_payload, why="bar_closed_trigger")
+                    self.logger.debug(
+                        f"[{symbol}] Emitted CMD:PROCESS_STRATEGY (tf={tf_sec}s, bar_close_ts={bar_close_ts}, atr_ready={vol_state.atr_ready})")
 
             # Store features
             if self.feature_store:
@@ -1826,7 +2182,8 @@ class FeatureEngineering:
                     try:
                         self.feature_store.aggregate_all_timeframes(symbol)
                     except Exception as agg_e:
-                        self.logger.warning(f"Failed to aggregate timeframes for {symbol}: {agg_e}")
+                        self.logger.warning(
+                            f"Failed to aggregate timeframes for {symbol}: {agg_e}")
                 except Exception as e:
                     self.logger.error(f"Error storing features: {e}")
 

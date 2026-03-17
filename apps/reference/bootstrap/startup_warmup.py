@@ -20,6 +20,7 @@ from apps.reference.contracts.runtime_readiness import (
 )
 from apps.reference.contracts.strategy_compatibility_matrix import (
     build_active_strategy_compatibility_profiles,
+    regime_detector_required_bars,
 )
 
 
@@ -204,11 +205,14 @@ def resolve_feature_engineering_backfill_plan(
     )
     instruments = getattr(config, "instruments", None)
     if isinstance(instruments, Mapping):
-        symbols = tuple(sorted(str(symbol).upper() for symbol in instruments.keys()))
+        symbols = tuple(sorted(str(symbol).upper()
+                        for symbol in instruments.keys()))
     else:
-        assignments = getattr(getattr(config, "strategies_registry", None), "assignments", None)
+        assignments = getattr(
+            getattr(config, "strategies_registry", None), "assignments", None)
         if isinstance(assignments, Mapping):
-            symbols = tuple(sorted(str(symbol).upper() for symbol in assignments.keys()))
+            symbols = tuple(sorted(str(symbol).upper()
+                            for symbol in assignments.keys()))
         else:
             symbols = ()
     return FeatureEngineeringBackfillPlan(
@@ -218,7 +222,8 @@ def resolve_feature_engineering_backfill_plan(
         d1_candles=int(getattr(backfill_cfg, "d1_candles", 200) or 200),
         h4_candles=int(getattr(backfill_cfg, "h4_candles", 100) or 100),
         m15_candles=int(getattr(backfill_cfg, "m15_candles", 50) or 50),
-        regime_basis_candles=320,
+        regime_basis_candles=regime_detector_required_bars(
+            config) + int(getattr(config, "basis_import_buffer", 20)),
     )
 
 
@@ -353,19 +358,23 @@ def build_startup_warmup_report(
     config: Any,
     analytics_restore_report: StartupAnalyticsRestoreReport,
     warmup_statuses: Mapping[str, Mapping[str, StartupWarmupStatus]] | None,
+    basis_seed_statuses: Mapping[str, StartupWarmupStatus] | None = None,
     updated_at: int | None,
     source: str = "startup:warmup_report",
     gate_active: bool | None = None,
 ) -> StartupWarmupReport:
     profiles = build_active_strategy_compatibility_profiles(config)
-    warmup_statuses = warmup_statuses if isinstance(warmup_statuses, Mapping) else {}
-    gate_active = startup_warmup_gate_active() if gate_active is None else bool(gate_active)
+    warmup_statuses = warmup_statuses if isinstance(
+        warmup_statuses, Mapping) else {}
+    gate_active = startup_warmup_gate_active(
+    ) if gate_active is None else bool(gate_active)
 
     records: dict[str, StrategyStartupWarmupSnapshot] = {}
     for strategy_id, profile in profiles.items():
         for symbol in profile.active_symbols:
             symbol_key = str(symbol).upper()
-            restore_snapshot = analytics_restore_report.get_snapshot(strategy_id, symbol_key)
+            restore_snapshot = analytics_restore_report.get_snapshot(
+                strategy_id, symbol_key)
             owner_statuses = {
                 str(owner): status
                 for owner, status in (
@@ -382,14 +391,16 @@ def build_startup_warmup_report(
             if execution_blocker is not None:
                 blockers.append(execution_blocker)
 
-            feature_engineering_status = owner_statuses.get("feature_engineering")
+            feature_engineering_status = owner_statuses.get(
+                "feature_engineering")
             regime_status = owner_statuses.get("regime_detector")
 
             if profile.needs_microstructure and (
                 feature_engineering_status is None
                 or feature_engineering_status.state != StartupWarmupState.WARMED
             ):
-                blockers.append(_warmup_blocker("feature_engineering", feature_engineering_status))
+                blockers.append(_warmup_blocker(
+                    "feature_engineering", feature_engineering_status))
             if profile.quadratic_readiness_blocks_by_default and (
                 feature_engineering_status is None
                 or feature_engineering_status.state != StartupWarmupState.WARMED
@@ -399,7 +410,19 @@ def build_startup_warmup_report(
                 regime_status is None
                 or regime_status.state != StartupWarmupState.WARMED
             ):
-                blockers.append(_warmup_blocker("regime_detector", regime_status))
+                blockers.append(_warmup_blocker(
+                    "regime_detector", regime_status))
+
+            # Handler basis seed check: if strategy requires local basis counter
+            # restart, verify that seed was successful before allowing new risk.
+            if profile.restart_local_basis_counter:
+                seed_key = f"{strategy_id}:{symbol_key}"
+                seed_status = (basis_seed_statuses or {}).get(seed_key)
+                if seed_status is None or seed_status.state != StartupWarmupState.WARMED:
+                    blockers.append(_warmup_blocker(
+                        "handler_basis_seed", seed_status))
+                if seed_status is not None:
+                    owner_statuses["handler_basis_seed"] = seed_status
 
             blockers = list(dict.fromkeys(_normalize_tokens(blockers)))
             permissions = make_permissions(

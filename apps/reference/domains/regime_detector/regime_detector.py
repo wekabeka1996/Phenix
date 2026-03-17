@@ -85,6 +85,7 @@ class RegimeDetector:
         self._subscribed = False
         self._last_emitted_regime: Dict[str, str] = {}
         self._last_full_ready: Dict[str, bool] = {}
+        self._rd_diag: Dict[str, Dict[str, Any]] = {}
 
         models_cfg = self.config.models
         if models_cfg is None:
@@ -137,7 +138,8 @@ class RegimeDetector:
             lambda: deque(maxlen=self.atr_sma_length))
         self._atr_last: Dict[str, Decimal] = {}
         self._ticks_seen: Dict[str, int] = defaultdict(int)
-        self._last_basis_close_boundary_ts_ms: Dict[str, int] = defaultdict(int)
+        self._last_basis_close_boundary_ts_ms: Dict[str, int] = defaultdict(
+            int)
 
         # HYSTERESIS-SLOPE-GATE-01: State storage
         self._hysteresis_stable: Dict[str, str] = {}  # symbol -> stable_regime
@@ -155,6 +157,81 @@ class RegimeDetector:
             f"RegimeDetector initialized with model: {self.model_name}")
 
         self._subscribe_once()
+
+    def _diag_for_symbol(self, symbol: str) -> Dict[str, Any]:
+        sym = str(symbol)
+        if sym not in self._rd_diag:
+            self._rd_diag[sym] = {
+                "fe_basis_bars_seen": 0,
+                "rd_basis_events_received": 0,
+                "last_rd_emit_ts_ms": 0,
+                "rd_warmup_full_ready": False,
+                "rd_warmup_reasons": [],
+                "rd_lagging_expected_fe_basis_cadence": False,
+                "rd_lag_events": 0,
+                "last_basis_close_boundary_ts_ms": 0,
+            }
+        return self._rd_diag[sym]
+
+    def _update_basis_diag(
+        self,
+        *,
+        symbol: str,
+        close_boundary_ts_ms: int,
+        warmup: Optional[Dict[str, Any]] = None,
+        emit_ts_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        diag = self._diag_for_symbol(symbol)
+        diag["fe_basis_bars_seen"] = int(diag["fe_basis_bars_seen"]) + 1
+        diag["rd_basis_events_received"] = int(
+            diag["rd_basis_events_received"]) + 1
+
+        prev_boundary = int(
+            diag.get("last_basis_close_boundary_ts_ms", 0) or 0)
+        expected_gap_ms = int(self._basis_tf_sec) * 1000
+        lagging = False
+        if prev_boundary > 0 and close_boundary_ts_ms > 0:
+            actual_gap = int(close_boundary_ts_ms) - prev_boundary
+            lag_threshold_ms = max(expected_gap_ms + 1,
+                                   int(expected_gap_ms * 1.5))
+            if actual_gap > lag_threshold_ms:
+                lagging = True
+                diag["rd_lag_events"] = int(diag["rd_lag_events"]) + 1
+
+        diag["rd_lagging_expected_fe_basis_cadence"] = bool(lagging)
+        if close_boundary_ts_ms > 0:
+            diag["last_basis_close_boundary_ts_ms"] = int(close_boundary_ts_ms)
+        if emit_ts_ms is not None:
+            diag["last_rd_emit_ts_ms"] = int(emit_ts_ms)
+
+        warmup_dict = warmup if isinstance(warmup, dict) else {}
+        diag["rd_warmup_full_ready"] = bool(warmup_dict.get("full_ready"))
+        reasons = warmup_dict.get("reasons")
+        diag["rd_warmup_reasons"] = list(
+            reasons) if isinstance(reasons, list) else []
+        return diag
+
+    def get_live_blocker_evidence(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        """Return per-symbol RD basis/warmup diagnostics for live blocker attribution."""
+        out: Dict[str, Any] = {}
+        for sym, diag in self._rd_diag.items():
+            if symbol is not None and str(sym) != str(symbol):
+                continue
+            out[str(sym)] = {
+                "fe_basis_bars_seen": int(diag.get("fe_basis_bars_seen", 0) or 0),
+                "rd_basis_events_received": int(diag.get("rd_basis_events_received", 0) or 0),
+                "last_rd_emit_ts_ms": int(diag.get("last_rd_emit_ts_ms", 0) or 0),
+                "rd_warmup_full_ready": bool(diag.get("rd_warmup_full_ready", False)),
+                "rd_warmup_reasons": list(diag.get("rd_warmup_reasons", []) or []),
+                "rd_lagging_expected_fe_basis_cadence": bool(
+                    diag.get("rd_lagging_expected_fe_basis_cadence", False)
+                ),
+                "rd_lag_events": int(diag.get("rd_lag_events", 0) or 0),
+                "last_basis_close_boundary_ts_ms": int(
+                    diag.get("last_basis_close_boundary_ts_ms", 0) or 0
+                ),
+            }
+        return out
 
     def _subscribe_once(self) -> None:
         if self._subscribed:
@@ -346,6 +423,12 @@ class RegimeDetector:
                 "ready": {},
                 "reasons": ["drop:stale_features"],
             }
+            rd_diag = self._update_basis_diag(
+                symbol=str(symbol),
+                close_boundary_ts_ms=int(close_boundary_ts_ms),
+                warmup=warmup,
+                emit_ts_ms=int(ts_ms),
+            )
             payload = {
                 "ts": ts_ms,
                 "ts_ms": ts_ms,
@@ -359,6 +442,16 @@ class RegimeDetector:
                 "regime_owner": "regime_detector",
                 "structural_regime_ref": structural_regime_ref(symbol, ts_ms),
                 "warmup": warmup,
+                "diagnostics": {
+                    "rd": {
+                        "fe_basis_bars_seen": int(rd_diag["fe_basis_bars_seen"]),
+                        "rd_basis_events_received": int(rd_diag["rd_basis_events_received"]),
+                        "last_rd_emit_ts_ms": int(rd_diag["last_rd_emit_ts_ms"]),
+                        "rd_warmup_full_ready": bool(rd_diag["rd_warmup_full_ready"]),
+                        "rd_warmup_reasons": list(rd_diag["rd_warmup_reasons"]),
+                        "rd_lagging_expected_fe_basis_cadence": bool(rd_diag["rd_lagging_expected_fe_basis_cadence"]),
+                    }
+                },
                 "data_quality": {"drops": data_drops, "notes": data_notes},
             }
             self.fsm.emit(
@@ -672,6 +765,23 @@ class RegimeDetector:
             "storm_rejected": storm_rejected,
             "hysteresis_confirm_count": self._hysteresis_count[symbol],
         }
+        rd_diag = self._update_basis_diag(
+            symbol=str(symbol),
+            close_boundary_ts_ms=int(close_boundary_ts_ms),
+            warmup=warmup,
+            emit_ts_ms=int(ts_ms),
+        )
+        payload["diagnostics"] = {
+            "rd": {
+                "fe_basis_bars_seen": int(rd_diag["fe_basis_bars_seen"]),
+                "rd_basis_events_received": int(rd_diag["rd_basis_events_received"]),
+                "last_rd_emit_ts_ms": int(rd_diag["last_rd_emit_ts_ms"]),
+                "rd_warmup_full_ready": bool(rd_diag["rd_warmup_full_ready"]),
+                "rd_warmup_reasons": list(rd_diag["rd_warmup_reasons"]),
+                "rd_lagging_expected_fe_basis_cadence": bool(rd_diag["rd_lagging_expected_fe_basis_cadence"]),
+                "rd_lag_events": int(rd_diag["rd_lag_events"]),
+            }
+        }
 
         why = f"regime={stable_regime} model={source_model} symbol={symbol}"
         if not changed:
@@ -744,7 +854,8 @@ class RegimeDetector:
             except Exception:
                 open_ts_ms = 0
             if open_ts_ms > 0:
-                close_boundary_ts_ms = open_ts_ms + int(self._basis_tf_sec) * 1000
+                close_boundary_ts_ms = open_ts_ms + \
+                    int(self._basis_tf_sec) * 1000
 
         last_boundary_ts_ms = int(
             self._last_basis_close_boundary_ts_ms.get(symbol, 0) or 0

@@ -296,8 +296,7 @@ def _resolve_stress_policy(
 
     Returns:
         (stress_policy, stress_attenuation_factor)
-        Falls back to ("off", 1.0) on any missing/bad config — fail-open
-        so strategies without a declared policy are unaffected by Gate 0.5.
+        Returns ("CONFIG_ERROR", 0.0) on any missing/bad config resolution — fail-closed.
     """
     try:
         strat_cfg = getattr(config.strategies, str(strategy_id), None)
@@ -310,7 +309,7 @@ def _resolve_stress_policy(
         factor = float(getattr(sg_cfg, "stress_attenuation_factor", 0.5))
         return policy, max(0.0, min(1.0, factor))
     except Exception:
-        return "off", 1.0
+        return "CONFIG_ERROR", 0.0
 
 
 def _check_system_stress_gate(
@@ -327,17 +326,24 @@ def _check_system_stress_gate(
         off       → Gate fully bypassed; even EXTREME is ignored.
         attenuate → EXTREME=DENY; STRESS=ALLOW+surface for size attenuation.
         block     → EXTREME and STRESS both DENY.
+        CONFIG_ERROR → DENY (Fail-closed).
     reduce_only orders always bypass (closing is risk-reducing).
 
     Returns:
         (gate_outcome, deny_reason, why_short, stress_state_str)
     """
-    if (
-        reduce_only
-        or stress_policy == "off"
-        or not apply_safety_gates_flag
-        or system_stress_states is None
-    ):
+    if reduce_only or not apply_safety_gates_flag:
+        return "ALLOW", None, "ok", "NORMAL"
+        
+    if stress_policy == "CONFIG_ERROR":
+        return (
+            "DENY",
+            NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING,
+            f"system_stress_policy config resolution failed (fail-closed) for {symbol}",
+            "UNKNOWN",
+        )
+
+    if stress_policy == "off" or system_stress_states is None:
         return "ALLOW", None, "ok", "NORMAL"
 
     stress_state = system_stress_states.get(symbol, "NORMAL")

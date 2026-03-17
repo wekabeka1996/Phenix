@@ -20,6 +20,18 @@ class StrategyHandlerProtocol(Protocol):
 # Migration to AuroraHandler complete. legacy_tick_path_enabled was always False in config.
 
 
+class _DisabledAuroraHandlerWrapper:
+    """Wrapper that does NOTHING, enforcing the global disable killswitch."""
+    def register(self) -> None:
+        logger.warning("⚠️ Aurora Strategy: Handler is GLOBALLY DISABLED. No event listeners registered.")
+
+    def apply_runtime_analytics_restore_snapshot(self, snapshot: Any) -> None:
+        pass
+
+    def get_runtime_analytics_restore_snapshot(self, symbol: str) -> Any:
+        return None
+
+
 class _AuroraHandlerWrapper:
     """
     Wrapper that registers AuroraHandler event listeners.
@@ -133,9 +145,26 @@ class AuroraBuiltinPlugin:
             logger.error("❌ Aurora Strategy: Configuration missing (config.strategies.aurora)")
             raise ValueError("Aurora strategy configuration missing - cannot create handler")
         
-        # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled check REMOVED
-        # Migration complete. Always use AuroraHandler.
+        # Phase 3 Killswitch enforcement
+        is_enabled = getattr(aurora_cfg, "enabled", True)
+        registry = getattr(config, "strategies_registry", None)
+        has_assignments = False
+        if registry:
+            assignments = getattr(registry, "assignments", {}) or {}
+            has_assignments = any(self.strategy_id in strats for strats in assignments.values())
+            
+        if not is_enabled:
+            if has_assignments:
+                from apps.reference.config_contract import ConfigContractError
+                raise ConfigContractError(
+                    path="strategies.aurora.enabled",
+                    why=f"Aurora Strategy is globally disabled (enabled=False) but still assigned to symbols in strategies_registry.assignments. Please remove '{self.strategy_id}' from assignments to bypass this fail-closed validation."
+                )
+            else:
+                logger.warning("⚠️ Aurora Strategy is GLOBALLY DISABLED (enabled=False). Creating disconnected handler.")
+                return _DisabledAuroraHandlerWrapper()
         
+        # Migration complete. Always use AuroraHandler.
         logger.info("✅ Aurora Strategy: Creating AuroraHandler")
         
         # Create real handler
@@ -153,4 +182,3 @@ class AuroraBuiltinPlugin:
         logger.info("   - Contract: v7 (Readiness/QoS Partitioned)")
         
         return _AuroraHandlerWrapper(handler, fsm)
-

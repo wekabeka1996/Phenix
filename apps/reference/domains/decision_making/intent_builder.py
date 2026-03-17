@@ -271,9 +271,9 @@ class IntentBuilder:
         if isinstance(strategy_trace, dict) and strategy_trace:
             trade_intent["trace"] = strategy_trace
 
-        # ── Arbitration commit ─────────────────────────────────
+        # ── Arbitration pre-check ──────────────────────────────
         commit = self._check_strategy_arbitration(
-            symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
+            symbol, strategy_id, ts_ms=decision_ts_ms, commit=False)
         if not commit["allowed"]:
             self.logger.info(
                 f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {commit['reason']}")
@@ -320,12 +320,23 @@ class IntentBuilder:
             if res is None:
                 self.logger.error(
                     f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}")
+                return
         except Exception as wal_e:
             self.logger.warning(
                 f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
+            return
 
-        self._fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=trade_intent,
-                       why="trade_intent", data_ref=why_chain)
+        try:
+            self._fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=trade_intent,
+                           why="trade_intent", data_ref=why_chain)
+        except Exception as emit_e:
+            self.logger.error(
+                f"[{symbol}] CRITICAL: FSM EMIT FAILED. RID={rid}: {emit_e}")
+            return
+
+        # ── Arbitration final commit ───────────────────────────
+        self._check_strategy_arbitration(
+            symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
 
         # ── Lifecycle logger ───────────────────────────────────
         if _trade_lifecycle is not None:

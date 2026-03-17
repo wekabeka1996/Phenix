@@ -15,9 +15,9 @@
     },
     "tf_sec": {
       "type": "integer",
-      "minimum": 60,
+      "minimum": 0,
       "maximum": 3600,
-      "description": "Timeframe in seconds for bar aggregation (e.g., 180 for 3m bars)"
+      "description": "Timeframe in seconds for bar aggregation (e.g., 180 for 3m bars), or 0 for tick-level features"
     },
     "warmup": {
       "type": "object",
@@ -84,27 +84,27 @@
         },
         "ema_bias": {
           "type": "string",
-          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "EMA3/EMA7 trend bias normalized to [0, 1] (Phase 1)"
         },
         "volume_spike": {
           "type": "string",
-          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Volume spike ratio normalized to [0, 1] (Phase 1)"
         },
         "volatility_state": {
           "type": "string",
-          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Current vs historical volatility [0, 1] (Phase 1)"
         },
         "depth_imbalance": {
           "type": "string",
-          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Depth imbalance normalized to [0, 1] (Phase 1)"
         },
         "macro_sync": {
           "type": "string",
-          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?(E[+-]?[0-9]+)?$",
           "description": "Correlation with anchor symbols (BTC/ETH) [0, 1] (Phase 1)"
         }
       },
@@ -230,12 +230,77 @@
             "volume": {
               "type": "string"
             }
-          }
+          },
+          "additionalProperties": true
         },
         {
           "type": "null"
         }
       ]
+    },
+    "source_mode": {
+      "type": "string",
+      "description": "Bar/tick source mode (live, replay, warmup_import, synthetic_repair)",
+      "enum": [
+        "live",
+        "replay",
+        "warmup_import",
+        "synthetic_repair"
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "FE internal diagnostics snapshot: emission counters, anchor intake, warmup state.",
+      "additionalProperties": true
+    },
+    "bar_identity": {
+      "type": "object",
+      "description": "Canonical bar identity (symbol, timeframe_sec, bar_start_ts_ms, bar_end_ts_ms, close_boundary_ts_ms, source_mode). Present only for bar-level events.",
+      "additionalProperties": true
+    },
+    "close_boundary_ts_ms": {
+      "type": "integer",
+      "description": "Canonical close boundary timestamp in milliseconds epoch. Present only for bar-level events.",
+      "minimum": 1
+    },
+    "replay_identity": {
+      "type": "object",
+      "description": "Replay identity envelope (symbol, timeframe_sec, close_boundary_ts_ms, source_mode, replay_generation). Present only in replay mode.",
+      "additionalProperties": true
+    },
+    "replay_generation": {
+      "type": "integer",
+      "description": "Replay generation counter. Present only in replay mode.",
+      "minimum": 0
+    },
+    "gap_state": {
+      "type": "string",
+      "enum": [
+        "CLEAR",
+        "GAP_DETECTED",
+        "REPAIRED",
+        "INVALIDATED"
+      ]
+    },
+    "gap_policy_action": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "REPAIR",
+        "INVALIDATE",
+        "DEGRADE_TO_NON_TRADING"
+      ]
+    },
+    "gap_bars_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "is_gap_bar": {
+      "type": "boolean"
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   "required": [

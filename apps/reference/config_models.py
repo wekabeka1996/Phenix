@@ -474,7 +474,8 @@ class MRMomentumSeparationVetoConfig(BaseModel):
     """Per-asset late-drift veto contract for MR counter-trend fades."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable late-drift momentum separation veto')
+    enabled: bool = Field(
+        description='Enable late-drift momentum separation veto')
     lookback_bars: int = Field(
         ge=1,
         description='Number of completed bars used to measure directional drift',
@@ -1786,6 +1787,10 @@ class RiskSkewConfig(BaseModel):
         description='Window duration (seconds) - resets defer_count after this period')
     until_refresh_retry_sec: int = Field(
         description='Retry delay when in NO_TRADE_UNTIL_REFRESH state')
+    until_refresh_max_hold_sec: int = Field(
+        default=300, ge=30, le=3600,
+        description='Max seconds until_refresh latch can be held. After this, auto-clear and log CRITICAL.'
+    )
 
 
 class RiskGateConfig(BaseModel):
@@ -2161,6 +2166,10 @@ class DecisionMakingDomainConfig(BaseModel):
             "Optional per-strategy overrides for degraded_context_critical_keys. "
             "If a strategy_id is present here, its list is used instead of the global list."
         ),
+    )
+    portfolio_warmup_timeout_sec: int = Field(
+        default=30, ge=5, le=120,
+        description='Max seconds to wait for initial EVT:PORTFOLIO_STATE_UPDATED at startup before emitting empty fallback.'
     )
 
 
@@ -4960,6 +4969,18 @@ class AlertsConfig(BaseModel):
         default=60, ge=0, description='Circuit breaker active duration threshold')
     recent_alerts_max_keys: int = Field(
         default=5000, ge=100, description='Hard cap for dedup cache keys')
+    entropy_volume_threshold: int = Field(
+        default=3000, ge=10,
+        description=(
+            'EntropyMonitor: max FSM events per 60s window before CRITICAL alert. '
+            'Baseline: N_symbols × 60 ticks/min × ~5 events/tick. '
+            'Default 3000 covers 7 symbols at normal tick rate with 2x headroom.'
+        ),
+    )
+    entropy_error_rate_threshold: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description='EntropyMonitor: max ERR-op fraction (0.0–1.0) before CRITICAL alert.',
+    )
 
 
 class ObservabilityConfig(BaseModel):
@@ -5145,6 +5166,16 @@ class AuroraConfig(BaseModel):
         default=3, ge=1,
         description='If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, '
                     'block trading. Default: 3 (i.e., 15 minutes for 5m basis).'
+    )
+
+    # WARMUP-SSOT: Extra bars imported above regime_detector_required_bars() for fetch gap tolerance.
+    # Total startup import = regime_detector_required_bars() + basis_import_buffer.
+    basis_import_buffer: int = Field(
+        default=20, ge=0,
+        description=(
+            'Extra basis bars imported above regime_detector_required_bars() to absorb Binance fetch gaps. '
+            'Source: regime.yaml. Total import = regime_required + basis_import_buffer.'
+        ),
     )
 
     # HYSTERESIS-SLOPE-GATE-01: Regime stability

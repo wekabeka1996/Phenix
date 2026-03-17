@@ -80,48 +80,48 @@
       }
     },
     "config\\aurora\\trading.yaml": {},
-    "config\\aurora_baseline\\domains.yaml": {},
-    "config\\aurora_baseline\\instruments.yaml": {},
-    "config\\aurora_baseline\\observability.yaml": {},
-    "config\\aurora_baseline\\regime.yaml": {},
-    "config\\aurora_baseline\\strategies.yaml": {},
-    "config\\aurora_baseline\\system.yaml": {
-      "execution": null,
-      "ops": {
-        "panic_killswitch": false,
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      }
-    },
-    "config\\aurora_baseline\\trading.yaml": {},
-    "config\\mean_reversion\\domains.yaml": {},
-    "config\\mean_reversion\\instruments.yaml": {},
-    "config\\mean_reversion\\observability.yaml": {},
-    "config\\mean_reversion\\regime.yaml": {},
-    "config\\mean_reversion\\strategies.yaml": {},
-    "config\\mean_reversion\\system.yaml": {
-      "execution": null,
-      "ops": {
-        "panic_killswitch": false,
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      }
-    },
-    "config\\mean_reversion\\trading.yaml": {},
     "config\\overlays\\patched3_bnb_block_trend_down.yaml": {},
     "config\\overlays\\patched4a_strategy_guard.yaml": {},
     "config\\overlays\\patched4b_block_btc.yaml": {},
     "config\\overlays\\patched5_block_low_vol_eth_bnb.yaml": {},
-    "config\\mean_reversion\\strategies\\aurora.yaml": {},
-    "config\\mean_reversion\\strategies\\mean_reversion.yaml": {},
-    "config\\aurora_baseline\\archive\\aurora_phase3_production.yaml": {},
-    "config\\aurora_baseline\\strategies\\aurora.yaml": {},
-    "config\\aurora_baseline\\strategies\\mean_reversion.yaml": {},
     "config\\aurora\\archive\\aurora_phase3_production.yaml": {},
     "config\\aurora\\strategies\\aurora.yaml": {},
     "config\\aurora\\strategies\\llm_microstructure.yaml": {},
     "config\\aurora\\strategies\\md_amr.yaml": {},
     "config\\aurora\\strategies\\mean_reversion.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\domains.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\instruments.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\observability.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\regime.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\strategies.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\system.yaml": {
+      "execution": null,
+      "ops": {
+        "panic_killswitch": false,
+        "metrics_url": "http://127.0.0.1:8000/metrics",
+        "reports_dir": "reports"
+      }
+    },
+    "archive\\config_snapshots\\aurora_baseline\\trading.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\domains.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\instruments.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\observability.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\regime.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\strategies.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\system.yaml": {
+      "execution": null,
+      "ops": {
+        "panic_killswitch": false,
+        "metrics_url": "http://127.0.0.1:8000/metrics",
+        "reports_dir": "reports"
+      }
+    },
+    "archive\\config_snapshots\\mean_reversion\\trading.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\strategies\\aurora.yaml": {},
+    "archive\\config_snapshots\\mean_reversion\\strategies\\mean_reversion.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\archive\\aurora_phase3_production.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\strategies\\aurora.yaml": {},
+    "archive\\config_snapshots\\aurora_baseline\\strategies\\mean_reversion.yaml": {},
     "apps\\reference\\dictionaries\\global_v2_2.yaml": {
       "ops": [
         "ASK",

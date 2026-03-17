@@ -231,14 +231,39 @@ class MDAMRHandler:
                 get_active_strategy_profile,
             )
             _profile = get_active_strategy_profile(self.config, "md_amr")
-            _basis_required = int(
-                _profile.basis_required_bars) if _profile else 0
-        except Exception:
-            pass
+            if _profile is None:
+                _contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"
+                return [
+                    {
+                        "strategy": "md_amr",
+                        "symbol": sym,
+                        "tf_sec": self.timeframe_sec,
+                        "bars_seen": self._bars_seen_since_restart.get(sym, 0),
+                        "bars_required": None,
+                        "ready": False,
+                        "block_reason": _contract_error,
+                    }
+                    for sym in sorted(self._enabled_symbols)
+                ]
+            _basis_required = int(_profile.basis_required_bars)
+        except Exception as _exc:
+            _contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
+            return [
+                {
+                    "strategy": "md_amr",
+                    "symbol": sym,
+                    "tf_sec": self.timeframe_sec,
+                    "bars_seen": self._bars_seen_since_restart.get(sym, 0),
+                    "bars_required": None,
+                    "ready": False,
+                    "block_reason": _contract_error,
+                }
+                for sym in sorted(self._enabled_symbols)
+            ]
         results: list[dict[str, object]] = []
         for symbol in sorted(self._enabled_symbols):
             bars_seen = self._bars_seen_since_restart.get(symbol, 0)
-            ready = bars_seen >= _basis_required if _basis_required else True
+            ready = bars_seen >= _basis_required
             results.append({
                 "strategy": "md_amr",
                 "symbol": symbol,
@@ -864,6 +889,42 @@ class MDAMRHandler:
             if abs(exchange_qty) < tolerance:
                 self._bars_held[symbol] = 0
 
+    @staticmethod
+    def _normalize_order_reject_reason(pld: dict) -> str:
+        """Canonical normalization for EVT:ORDER_REJECTED payload reason.
+
+        Priority: reject_reason > reason > reason_code+reason_text.
+        Returns UPPER-CASED trimmed string, or "" if unresolvable.
+        Empty / malformed payloads yield "" which is fail-closed:
+        no POST_ONLY/MAKER_ONLY substring match → no unsafe retry/fallback.
+        """
+        # 1. reject_reason (legacy / test contract)
+        raw = pld.get("reject_reason")
+        if raw is not None:
+            val = str(raw).strip().upper()
+            if val:
+                return val
+
+        # 2. reason (open_executor / binance_ws_client emitter)
+        raw = pld.get("reason")
+        if raw is not None:
+            val = str(raw).strip().upper()
+            if val:
+                return val
+
+        # 3. reason_code + reason_text (fsm.py ADAPTER_ERROR path)
+        code = pld.get("reason_code")
+        text = pld.get("reason_text")
+        if code is not None:
+            parts = [str(code).strip().upper()]
+            if text is not None:
+                parts.append(str(text).strip().upper())
+            combined = ": ".join(p for p in parts if p)
+            if combined:
+                return combined
+
+        return ""
+
     def _on_order_rejected(self, event: Message) -> None:
         pld = event.pld or {}
         if not isinstance(pld, dict):
@@ -874,8 +935,13 @@ class MDAMRHandler:
         self._objective_cancel_replace_ts_ms.setdefault(
             symbol, deque()).append(get_clock().now_ms())
 
-        # Simple retry logic tracking mechanism for GTX Rejects
-        reason = str(pld.get("reject_reason", "")).upper()
+        # Canonical normalization: reject_reason > reason > reason_code+reason_text
+        reason = self._normalize_order_reject_reason(pld)
+        if not reason:
+            self.mlog.info(
+                "ORDER_REJECTED_REASON_EMPTY symbol=%s pld_keys=%s — fail-closed, no retry",
+                symbol, sorted(pld.keys()),
+            )
         if "MAKER_ONLY" in reason or "POST_ONLY" in reason:
             retries = self._gtx_retries.get(symbol, 0)
             max_retries = self._cfg.execution.gtx_retry_max if self._cfg and hasattr(
@@ -1082,15 +1148,38 @@ class MDAMRHandler:
         # handler has received enough bars to produce meaningful features.
         _bars_seen = self._bars_seen_since_restart.get(symbol, 0)
         _basis_required = 0
+        _readiness_contract_error: str | None = None
         try:
             from apps.reference.contracts.strategy_compatibility_matrix import (
                 get_active_strategy_profile,
             )
             _profile = get_active_strategy_profile(self.config, "md_amr")
-            _basis_required = int(
-                _profile.basis_required_bars) if _profile else 0
-        except Exception:
-            pass
+            if _profile is None:
+                _readiness_contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"
+                _basis_required = 0
+            else:
+                _basis_required = int(_profile.basis_required_bars)
+        except Exception as _exc:
+            _readiness_contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
+        if _readiness_contract_error:
+            self.mlog.error(
+                "MD_AMR sym=%s READINESS_CONTRACT_UNRESOLVED — blocking: %s",
+                symbol, _readiness_contract_error,
+            )
+            rid = self._rid(symbol=symbol, side="BUY",
+                            ts_ms=bar_close_ts, intent_kind="ENTRY")
+            self._emit_trade_intent_rejected_gate(
+                symbol=symbol,
+                side="BUY",
+                rid=rid,
+                ts_ms=now_ms,
+                reason_code="READINESS_CONTRACT_UNRESOLVED",
+                stage="READINESS",
+                why="md_amr_handler:readiness_contract_unresolved",
+                why_chain=["READINESS", "READINESS_CONTRACT_UNRESOLVED"],
+                details={"error": _readiness_contract_error},
+            )
+            return
         if _basis_required and _bars_seen < _basis_required:
             self.mlog.info(
                 "MD_AMR_BARS_REQUIRED sym=%s bars=%d/%d — blocking (quadratic/signal path NOT reached)",
@@ -1104,8 +1193,8 @@ class MDAMRHandler:
                 rid=rid,
                 ts_ms=now_ms,
                 reason_code="BARS_REQUIRED_COLD_START",
-                stage="READINESS",
-                why=f"md_amr_handler:cold_start:{_bars_seen}/{_basis_required}",
+                stage="STRATEGY",
+                why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
                 why_chain=["READINESS", "BARS_REQUIRED",
                            f"bars_seen:{_bars_seen}",
                            f"basis_required:{_basis_required}"],

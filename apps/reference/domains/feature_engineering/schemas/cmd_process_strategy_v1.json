@@ -340,6 +340,11 @@
           "type": "null"
         }
       ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "FE emission diagnostics snapshot: counters, warmup state, anchor intake.",
+      "additionalProperties": true
     }
   },
   "required": [

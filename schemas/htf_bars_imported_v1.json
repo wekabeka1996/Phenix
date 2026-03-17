@@ -68,6 +68,10 @@
                         "type": "integer",
                         "minimum": 0
                     },
+                    "bar_close_ts": {
+                        "type": "integer",
+                        "description": "Legacy alias for the bar close timestamp in milliseconds (set by attach_canonical_bar_payload)."
+                    },
                     "o": {
                         "type": "number",
                         "description": "Open price"
@@ -110,8 +114,7 @@
         "symbol",
         "tf_sec",
         "as_of_ms",
-        "bars",
-        "why"
+        "bars"
     ],
     "additionalProperties": false
 }

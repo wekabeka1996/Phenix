@@ -228,6 +228,10 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         # Config extraction
         self._load_config()
+        
+        # Global kill-switch enforcement inside runtime handler
+        aurora_cfg = getattr(self.config.strategies, "aurora", None) if hasattr(self.config, "strategies") else None
+        self._is_enabled = getattr(aurora_cfg, "enabled", True) if aurora_cfg else False
 
     def apply_runtime_analytics_restore_snapshot(
         self,
@@ -271,20 +275,45 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 )
                 _profile = get_active_strategy_profile(
                     self.config, self.strategy_id)
-                _basis_required = int(
-                    _profile.basis_required_bars) if _profile else 0
-            except Exception:
-                _basis_required = 0
+                if _profile is None:
+                    _contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"
+                    return [
+                        {
+                            "strategy": self.strategy_id,
+                            "symbol": sym,
+                            "tf_sec": self.timeframe_sec,
+                            "bars_seen": self._bars_seen_since_restart.get(sym, 0),
+                            "bars_required": None,
+                            "ready": False,
+                            "block_reason": _contract_error,
+                        }
+                        for sym in sorted(self._enabled_symbols)
+                    ]
+                _basis_required = int(_profile.basis_required_bars)
+            except Exception as _exc:
+                _contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
+                return [
+                    {
+                        "strategy": self.strategy_id,
+                        "symbol": sym,
+                        "tf_sec": self.timeframe_sec,
+                        "bars_seen": self._bars_seen_since_restart.get(sym, 0),
+                        "bars_required": None,
+                        "ready": False,
+                        "block_reason": _contract_error,
+                    }
+                    for sym in sorted(self._enabled_symbols)
+                ]
         results: list[dict[str, object]] = []
         for symbol in sorted(self._enabled_symbols):
             bars_seen = self._bars_seen_since_restart.get(symbol, 0)
-            ready = bars_seen >= _basis_required if _basis_required else True
+            ready = bars_seen >= _basis_required
             results.append({
                 "strategy": self.strategy_id,
                 "symbol": symbol,
                 "tf_sec": self.timeframe_sec,
                 "bars_seen": bars_seen,
-                "bars_required": _basis_required or 0,
+                "bars_required": _basis_required,
                 "ready": ready,
                 "block_reason": (
                     None if ready
@@ -569,6 +598,25 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         # T2B-03: STRICT FAIL-CLOSED TF GATE
         tf_sec = cmd.get("tf_sec")
+
+        # Gate 0: Global Killswitch
+        if not self._is_enabled:
+            self._tick_path_rejections += 1
+            self.logger.warning(
+                f"REJECTED: Aurora CMD for {symbol}: Strategy is globally disabled (Killswitch)"
+            )
+            write_trade_intent_rejected(
+                symbol=symbol,
+                tf_sec=int(tf_sec) if tf_sec is not None else 0,
+                bar_close_ts=cmd.get("bar_close_ts"),
+                reason_code="STRATEGY_DISABLED",
+                stage="STRATEGY",
+                why="CMD:PROCESS_STRATEGY rejected: Aurora is globally disabled",
+                src="aurora_handler",
+                ts_ms=cmd.get("bar_close_ts"),
+                rid=cmd.get("rid"),
+            )
+            return
 
         # Gate 1: Missing tf_sec → REJECT
         if tf_sec is None:

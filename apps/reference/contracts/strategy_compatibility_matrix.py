@@ -84,27 +84,40 @@ def _active_symbols(assignments: Mapping[str, list[str]], strategy_id: str) -> t
     )
 
 
-def _structural_regime_basis_required_bars(config: Any) -> int:
+def regime_detector_required_bars(config: Any) -> int:
     """
+    Canonical required bars for RegimeDetector warmup.
+
+    Truth source: regime.yaml → models.sma_trend.sma_long_period
+                              + models.volatility.atr_period / atr_sma_length
+
     Contract: Any strategy with needs_regime=True MUST fetch at least this many
     basis bars to ensure the global RegimeDetector can warm up its SMA and ATR buffers.
+
+    Used by: strategy_compatibility_matrix, startup_warmup, main.py legacy path.
+    Raises ValueError if regime model config is not reachable (fail-closed).
     """
     regime_cfg = config if hasattr(
         config, "basis_tf_sec") else getattr(config, "regime", config)
     models_cfg = getattr(regime_cfg, "models", None)
     sma_cfg = getattr(models_cfg, "sma_trend", None)
     vol_cfg = getattr(models_cfg, "volatility", None)
-    
-    # Regime detector needs sma_long_period (default 192) and atr_period + atr_sma_length - 1 (default 301)
-    sma_long = int(getattr(sma_cfg, "sma_long_period", 192) or 192)
-    atr_period = int(getattr(vol_cfg, "atr_period", 14) or 14)
-    atr_sma_length = int(getattr(vol_cfg, "atr_sma_length", 288) or 288)
-    
+
+    if sma_cfg is None or vol_cfg is None:
+        raise ValueError(
+            "regime.models.sma_trend / regime.models.volatility not found in config — "
+            "cannot compute regime_detector_required_bars. "
+            "Verify regime.yaml is loaded and config_loader is not stripping models section."
+        )
+
+    sma_long = int(sma_cfg.sma_long_period)
+    atr_period = int(vol_cfg.atr_period)
+    atr_sma_length = int(vol_cfg.atr_sma_length)
     return max(sma_long, atr_period + atr_sma_length - 1)
 
 
-def _aurora_basis_required_bars(config: Any) -> int:
-    return _structural_regime_basis_required_bars(config)
+# Internal alias — keeps existing internal call sites working during rollout
+_structural_regime_basis_required_bars = regime_detector_required_bars
 
 
 def _aurora_required_htf(config: Any) -> tuple[StrategyHTFRequirement, ...]:
@@ -170,7 +183,7 @@ def build_full_strategy_compatibility_matrix(
             active_symbols=_active_symbols(assignments, "aurora"),
             required_basis_tf_sec=int(
                 getattr(aurora_cfg, "timeframe_sec", 300) or 300),
-            basis_required_bars=_aurora_basis_required_bars(config),
+            basis_required_bars=_structural_regime_basis_required_bars(config),
             required_htf=(),
             needs_regime=True,
             needs_microstructure=True,
@@ -188,7 +201,7 @@ def build_full_strategy_compatibility_matrix(
             active_symbols=_active_symbols(assignments, "aurora"),
             required_basis_tf_sec=int(
                 getattr(aurora_cfg, "timeframe_sec", 300) or 300),
-            basis_required_bars=_aurora_basis_required_bars(config),
+            basis_required_bars=_structural_regime_basis_required_bars(config),
             required_htf=_aurora_required_htf(config),
             needs_regime=True,
             needs_microstructure=True,
@@ -208,7 +221,8 @@ def build_full_strategy_compatibility_matrix(
                 getattr(mr_cfg, "timeframe_sec", 300) or 300),
             basis_required_bars=max(
                 int(getattr(getattr(mr_cfg, "strategy", None), "min_bars", 25) or 25),
-                _structural_regime_basis_required_bars(config)  # Needs regime warmly loaded
+                _structural_regime_basis_required_bars(
+                    config)  # Needs regime warmly loaded
             ),
             required_htf=(),
             needs_regime=True,
@@ -228,11 +242,9 @@ def build_full_strategy_compatibility_matrix(
             required_basis_tf_sec=int(
                 getattr(md_cfg, "timeframe_sec", 900) or 900),
             basis_required_bars=max(
-                96,
                 int(getattr(md_cfg, "channel_window_bars", 12) or 12),
                 int(getattr(md_cfg, "atr_window", 14) or 14),
                 int(getattr(md_cfg, "atr_stats_window", 64) or 64),
-                _structural_regime_basis_required_bars(config)  # Needs regime warmly loaded
             ),
             required_htf=(),
             needs_regime=True,

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://phenix.aurora/schemas/balance_update_received_v1.json",
+  "title": "EVT:BALANCE_UPDATE_RECEIVED Payload",
+  "type": "object",
+  "required": ["assets", "updateTime"],
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["asset", "balance", "crossUnPnl", "crossWalletBalance", "updateTime"],
+        "properties": {
+          "asset": { "type": "string", "minLength": 1 },
+          "balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "crossUnPnl": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "crossWalletBalance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "updateTime": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "updateTime": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

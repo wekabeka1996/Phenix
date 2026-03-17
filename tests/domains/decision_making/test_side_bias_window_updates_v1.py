@@ -169,7 +169,7 @@ def test_side_bias_window_updates_on_emitted_open_intents():
     dm.symbol_states[symbol]["risk"] = {"ok": True}
     dm._per_symbol_regimes[symbol] = {"warmup": {"full_ready": True, "ticks_seen": 999}}
 
-    with patch("apps.reference.domains.decision_making.intent_builder.wal.append", lambda *_args, **_kwargs: None):
+    with patch("apps.reference.domains.decision_making.intent_builder.wal.append", lambda *_args, **_kwargs: "success-id"):
         with patch("time.time", return_value=now_sec):
             dm._propose_trade_intent(
                 symbol=symbol,

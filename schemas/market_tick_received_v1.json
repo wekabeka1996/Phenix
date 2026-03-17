@@ -27,9 +27,9 @@
     },
     "symbol": {
       "type": "string",
-      "description": "Trading pair symbol (e.g., BTCUSDT, SOLUSDT)",
-      "pattern": "^[A-Z]{2,10}USDT$",
-      "examples": ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+      "description": "Trading pair symbol (e.g., BTCUSDT, SOLUSDT, 1000PEPEUSDT)",
+      "pattern": "^[A-Z0-9]{2,20}USDT$",
+      "examples": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "1000PEPEUSDT"]
     },
     "price": {
       "type": "string",
@@ -88,8 +88,43 @@
     "data_source": {
       "type": "string",
       "description": "Source environment for the data",
-      "enum": ["live", "testnet", "websocket_live"],
+      "enum": ["live", "testnet", "websocket_live", "multiprocess_worker"],
       "examples": ["websocket_live", "testnet"]
+    },
+    "buy_count": {
+      "type": ["integer", "null"],
+      "description": "Number of buy trades in aggregation window"
+    },
+    "sell_count": {
+      "type": ["integer", "null"],
+      "description": "Number of sell trades in aggregation window"
+    },
+    "buy_notional": {
+      "type": ["string", "null"],
+      "description": "Buy-side notional volume as string decimal",
+      "examples": ["12345.67"]
+    },
+    "sell_notional": {
+      "type": ["string", "null"],
+      "description": "Sell-side notional volume as string decimal",
+      "examples": ["9876.54"]
+    },
+    "trades_dropped_out_of_order": {
+      "type": ["integer", "null"],
+      "description": "Count of trades dropped due to out-of-order timestamps"
+    },
+    "features": {
+      "type": "object",
+      "description": "Computed microstructure features (OBI, TFI, delta_price, absorption)",
+      "additionalProperties": true
+    },
+    "bid_ask_count": {
+      "type": "string",
+      "description": "Human-readable bid/ask size summary"
+    },
+    "trade_count": {
+      "type": "string",
+      "description": "Human-readable buy/sell trade count summary"
     },
     "debug_info": {
       "type": "string",

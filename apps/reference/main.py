@@ -20,6 +20,7 @@ from apps.reference.bootstrap.runtime_analytics_restore import (
     build_startup_analytics_restore_report,
 )
 from apps.reference.bootstrap.startup_warmup import (
+    StartupWarmupStatus,
     activate_startup_warmup_gate,
     build_startup_warmup_report,
     failed_warmup_status,
@@ -39,6 +40,7 @@ from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.contracts.strategy_compatibility_matrix import (
     build_active_strategy_compatibility_profiles,
+    regime_detector_required_bars,
 )
 from apps.reference.contracts.quadratic_rollout import (
     build_startup_quadratic_rollout_report,
@@ -142,13 +144,6 @@ def _perform_alert_checks(
     except Exception as e:
         LOG.error(f"Error checking WAL size: {e}")
 
-    # Check circuit breaker status (placeholder - would need actual CB state)
-    # For now, just check if we have any active alerts as proxy
-    alert_stats = alert_manager.get_alert_stats()
-    if alert_stats["active_alerts"] > 5:
-        # Assume CB active if many alerts
-        alert_manager.check_circuit_breaker(True, 300)
-
     # Check entropy spike via the explicitly supplied monitor or the current global instance.
     try:
         em = entropy_monitor if entropy_monitor is not None else entropy_monitor_instance
@@ -170,7 +165,7 @@ def _perform_alert_checks(
     # This would typically come from risk_management domain
     # alert_manager.check_risk_gate(current_risk_percent)
 
-    LOG.debug(f"Alert checks completed: {alert_stats}")
+    LOG.debug("Alert checks completed")
 
 
 def initialize_domains(*args: Any, **kwargs: Any) -> None:
@@ -419,10 +414,12 @@ def main() -> None:
 
     # Initialize EntropyMonitor for system anomaly detection
     from vfoundation.obs.entropy_monitor import EntropyMonitor
+    _alerts_cfg = getattr(
+        getattr(config, "observability", None), "alerts", None)
     entropy_monitor = EntropyMonitor(
-        window_sec=60,  # 1-minute sliding window
-        volume_threshold=100,  # Alert if >100 events/min
-        error_rate_threshold=0.5  # Alert if >50% errors
+        window_sec=60,
+        volume_threshold=_alerts_cfg.entropy_volume_threshold if _alerts_cfg is not None else 3000,
+        error_rate_threshold=_alerts_cfg.entropy_error_rate_threshold if _alerts_cfg is not None else 0.5,
     )
     entropy_monitor_instance = entropy_monitor
     LOG.info(" EntropyMonitor initialized")
@@ -441,6 +438,11 @@ def main() -> None:
     LOG.info("Initializing FSM Core...")
     global fsm
     fsm = FSMCore()
+
+    # Phase 14C: Activate JSON Schema validation for all FSM events
+    init_global_registry(project_root=str(project_root))
+    LOG.info("SCHEMA_REGISTRY initialized (Phase 14C active)")
+
     _init_order_index(fsm, config)
     shadow_event_tap_publisher: Optional[ShadowEventTapPublisher] = None
     llm_intent_ingress_bridge: Optional[LLMIntentIngressBridge] = None
@@ -1065,9 +1067,11 @@ def main() -> None:
                                     source_mode=RuntimeBarSourceMode.WARMUP_IMPORT,
                                 )
                                 _payload = {
+                                    "o": _bar.open,
                                     "c": _bar.close,
                                     "h": _bar.high,
                                     "l": _bar.low,
+                                    "v": _bar.volume,
                                     "open_ts": int(_bar.open_time_ms),
                                 }
                                 attach_canonical_bar_payload(
@@ -1254,16 +1258,55 @@ def main() -> None:
         LOG.info(" STARTUP_BASIS_EXECUTOR done: %s", _basis_summary)
         # ── END STARTUP_BASIS_EXECUTOR ────────────────────────────────────────
 
+        # Convert basis seed results to warmup status format for warmup_report
+        basis_seed_statuses: dict[str, StartupWarmupStatus] = {}
+        for _rs_entry in (_basis_summary or {}).get("readiness", []):
+            _rs_key = f"{_rs_entry['strategy_id']}:{_rs_entry['symbol']}"
+            if _rs_entry.get("ready"):
+                basis_seed_statuses[_rs_key] = warmed_warmup_status(
+                    why=("basis_seed_complete",),
+                    updated_at=int(time.time() * 1000),
+                    source="main:basis_seed",
+                    details={
+                        "seeded_bars": _rs_entry.get("seeded_bars", 0),
+                        "required_bars": _rs_entry.get("required_bars", 0),
+                        "seed_source": _rs_entry.get("seed_source"),
+                    },
+                )
+            else:
+                basis_seed_statuses[_rs_key] = failed_warmup_status(
+                    why=(_rs_entry.get("block_reason", "seed_failed"),),
+                    updated_at=int(time.time() * 1000),
+                    source="main:basis_seed",
+                    details={
+                        "seeded_bars": _rs_entry.get("seeded_bars", 0),
+                        "required_bars": _rs_entry.get("required_bars", 0),
+                    },
+                )
+
         if restore_report is None:
             restore_report = StartupAnalyticsRestoreReport(
                 updated_at=int(time.time() * 1000),
                 source="main:startup_analytics_restore_missing",
                 snapshots={},
             )
+
+        # Emit structured seed status events for operator visibility
+        for _ss_key, _ss_status in basis_seed_statuses.items():
+            _ss_strat, _ss_sym = _ss_key.split(":", 1)
+            fsm.emit("EVT:STARTUP_SEED_STATUS", payload={
+                "strategy_id": _ss_strat,
+                "symbol": _ss_sym,
+                "state": _ss_status.state.value,
+                "why": list(_ss_status.why),
+                "details": dict(_ss_status.details) if _ss_status.details else {},
+            }, why="startup_basis_seed_status")
+
         warmup_report = build_startup_warmup_report(
             config=config,
             analytics_restore_report=restore_report,
             warmup_statuses=warmup_statuses,
+            basis_seed_statuses=basis_seed_statuses,
             updated_at=int(time.time() * 1000),
             source="main:startup_warmup_report",
             gate_active=True,
@@ -1276,6 +1319,30 @@ def main() -> None:
     finally:
         release_startup_warmup_gate()
         LOG.info(" STARTUP_WARMUP_GATE released")
+
+    # ── PORTFOLIO STARTUP GUARANTEE (Phase 4) ─────────────────────────────────
+    # Ensure decision_making.latest_portfolio is populated before live trading.
+    # Without this, strategy_gateway rejects ALL intents with LATEST_PORTFOLIO_MISSING.
+    _portfolio_timeout = config.domains.decision_making.portfolio_warmup_timeout_sec
+    _portfolio_deadline = time.time() + _portfolio_timeout
+    _portfolio_received = False
+    while time.time() < _portfolio_deadline:
+        if decision_making.latest_portfolio is not None:
+            _portfolio_received = True
+            break
+        time.sleep(1.0)
+    if not _portfolio_received:
+        LOG.critical(
+            "STARTUP_PORTFOLIO_TIMEOUT: No EVT:PORTFOLIO_STATE_UPDATED received within %ds. "
+            "Emitting empty fallback to prevent total paralysis.",
+            _portfolio_timeout,
+        )
+        fsm.emit("EVT:PORTFOLIO_STATE_UPDATED", payload={
+            "positions": {},
+            "balances": {},
+            "updated_at": int(time.time() * 1000),
+            "source": "startup:portfolio_fallback",
+        }, why="startup_portfolio_timeout_fallback")
 
     # ── PILLAR BACKFILL (КР-1 fix) ────────────────────────────────────────────
     # PillarBackfillService та EVT:HTF_BARS_IMPORTED listener в FeatureEngineering
@@ -1310,9 +1377,11 @@ def main() -> None:
                         if _res and _res.success:
                             _bars_payload = [
                                 {
+                                    "o": bar.open,
                                     "c": bar.close,
                                     "h": bar.high,
                                     "l": bar.low,
+                                    "v": bar.volume,
                                     "open_ts": bar.open_time_ms,
                                     "replay_generation": 0,
                                 }
@@ -1362,7 +1431,9 @@ def main() -> None:
         LOG.info("REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
         try:
             _rd_svc = PillarBackfillService(execution_position.adapter)
-            _rd_bars_count = 320  # 288 atr_sma_length + 32 buffer
+            # WARMUP-SSOT: derived from regime.yaml via canonical formula
+            _rd_bars_count = regime_detector_required_bars(
+                config) + int(getattr(config, "basis_import_buffer", 20))
             for _rd_sym in list(config.instruments.keys()):
                 try:
                     _rd_result = guardian_runtime.run(

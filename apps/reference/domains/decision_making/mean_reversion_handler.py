@@ -136,7 +136,8 @@ def _runtime_squeeze_expansion_veto(obj: Any) -> SqueezeExpansionVetoConfig:
     return SqueezeExpansionVetoConfig(
         enabled=bool(getattr(obj, "enabled")),
         squeeze_width_max=Decimal(str(getattr(obj, "squeeze_width_max"))),
-        post_squeeze_width_max=Decimal(str(getattr(obj, "post_squeeze_width_max"))),
+        post_squeeze_width_max=Decimal(
+            str(getattr(obj, "post_squeeze_width_max"))),
         expansion_ratio_min=Decimal(str(getattr(obj, "expansion_ratio_min"))),
         regimes=[str(regime) for regime in getattr(obj, "regimes", [])],
         sides=[str(side).upper() for side in getattr(obj, "sides", [])],
@@ -149,7 +150,8 @@ def _runtime_momentum_separation_veto(obj: Any) -> MomentumSeparationVetoConfig:
         enabled=bool(getattr(obj, "enabled")),
         lookback_bars=int(getattr(obj, "lookback_bars")),
         min_drift_pct=Decimal(str(getattr(obj, "min_drift_pct"))),
-        min_current_bb_width=Decimal(str(getattr(obj, "min_current_bb_width"))),
+        min_current_bb_width=Decimal(
+            str(getattr(obj, "min_current_bb_width"))),
         regimes=[str(regime) for regime in getattr(obj, "regimes", [])],
         sides=[str(side).upper() for side in getattr(obj, "sides", [])],
     )
@@ -1339,15 +1341,16 @@ class MeanReversionHandler:
         if not gate_cfg or not gate_cfg.enabled:
             return True  # Gate disabled / not configured -> Pass
 
-        # FAIL-CLOSED: Require explicit kappa when gate is enabled.
-        # No silent fallback - missing kappa is a contract violation.
+        # FAIL-CLOSED: Block signal when kappa missing (don't crash).
         kappa = self._liquidity_kappa_map.get(symbol)
         if kappa is None:
-            raise RuntimeError(
-                f"[{symbol}] Liquidity gate enabled but liquidity_kappa not found in cache. "
-                f"Ensure FeatureEngineering emits liquidity_kappa before MR decision. "
-                f"Gate config: enabled={gate_cfg.enabled}, kappa_min={gate_cfg.kappa_min}"
+            self.logger.warning(
+                "[%s] LIQUIDITY_GATE_FAIL_CLOSED: kappa not in cache. "
+                "FE must emit liquidity_kappa before MR decision. "
+                "gate_cfg: enabled=%s, kappa_min=%s",
+                symbol, gate_cfg.enabled, gate_cfg.kappa_min,
             )
+            return False  # Fail-closed: block signal, don't crash
         if kappa < Decimal(str(gate_cfg.kappa_min)):
             self.logger.info(
                 f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")

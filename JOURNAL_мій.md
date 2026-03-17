@@ -1,5 +1,52 @@
 # JOURNAL_мій
 
+## 2026-03-16
+
+### WARMUP-REGIME-SSOT-UNIFICATION — Corrective patch: profile=None residual fail-open
+
+**Незалежний аудит виявив залишковий баг:**
+- `profile is None -> basis_required = 0 -> gate вимкнений` — той самий клас fail-open, що й `except`, але через інший path
+- Чотири сайти у трьох файлах: `aurora_decision.py`, `aurora_handler.py`, `md_amr_handler.py` (двічі)
+
+**Виправлення:**
+- Кожен `int(_profile.basis_required_bars) if _profile else 0` → `if _profile is None: _readiness_contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"` + fail-closed return/block
+- `None` від `get_active_strategy_profile` тепер трактується однаково з exception: explicit block, жодного `0 required bars`
+
+**Тести:** 24/24 (включно з 5 новими regression tests для `profile=None` case). 1552 passed повний suite.
+
+**Вердикт:** Пакет WARMUP-REGIME-SSOT-UNIFICATION тепер справді завершений. Readiness contract fail-closed по обох шляхах: exception і None.
+
+---
+
+## 2026-03-15
+
+### WARMUP-REGIME-SSOT-UNIFICATION — Канонічний SSOT для bars + fail-closed хардінг хендлерів
+
+**Три незалежних truth-layers знайдено та ліквідовано:**
+1. YAML + Pydantic (правильний SSOT) — `sma_long_period=192`, `atr_period=14`, `atr_sma_length=288`
+2. `strategy_compatibility_matrix.py` з `getattr(sma_cfg, "sma_long_period", 192) or 192` — мовчки ковтало config-path failures
+3. Два hardcoded `320` у `startup_warmup.py:221` та `main.py:1365` — відв'язані від конфігу, неправильна математика
+
+**Критичний live-баг (RC-1):**
+- `aurora_decision.py` та `md_amr_handler.py` — trading path: `except Exception: _basis_required = 0`
+- Будь-який transient ImportError або ConfigContractError під час резолюції профілю → gate вимкнений → стратегія торгує без warmup перевірки
+- Тихий fail-open у виробничому trading path
+
+**Справжнє число:** `max(192, 14+288-1) = 301` (не 320). Startup = `301 + 20 = 321` (з буфером).
+
+**Що зроблено:**
+- `regime_detector_required_bars(config)` — єдина публічна функція з `ValueError` guard на `None` моделях
+- `basis_import_buffer: 20` — поле в YAML + Pydantic, більше жодних магічних чисел
+- Обидва `320` замінено формулою у `startup_warmup.py` та `main.py`
+- Aurora та md_amr trading path: fail-closed з `READINESS_CONTRACT_UNRESOLVED` + `return` замість `pass`
+- Diagnostics: fail-closed з `ready=False` + `block_reason` для всіх символів замість `ready=True`
+
+**Перевірка:**
+- 19/19 нових тестів: `test_warmup_ssot_alignment.py` (10) + `test_handler_fail_closed.py` (9)
+- Повний suite: 861 passed, 0 нових failures (1 pre-existing у `test_task28_hybrid_mode_config_contract.py`)
+
+**Звіт:** `reports/fixes/WARMUP_REGIME_SSOT_UNIFICATION_2026-03-15.md`
+
 ## 2026-03-15
 
 ### RUNTIME-RECOVERY-AND-MR-REGRESSION-AUDIT - live proof over synthetic confidence

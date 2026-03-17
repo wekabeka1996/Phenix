@@ -1,5 +1,31 @@
 # TODO
 
+## DM-EVT-ORDER-REJECTED-CONTRACT-HARDENING-PACK — completed 2026-03-16
+- [x] Canonical normalization `_normalize_order_reject_reason` in `md_amr_handler.py`
+- [x] Fix `reject_reason` vs `reason` payload mismatch (GTX retries were dead in production)
+- [x] 41 tests covering all payload variants, fail-closed on malformed
+- [x] Regression: 406/406 decision_making tests pass
+
+### Residual debt (deferred from this pack)
+- [ ] Add JSON schema for `EVT:ORDER_REJECTED` payload (verb_registry has `schema: null`)
+- [ ] Emitter-side: consider adding `reject_reason` as canonical field alongside `reason` for explicit contract
+- [ ] If `aurora_handler` gains its own `_on_order_rejected` listener, apply same normalization
+
+## WARMUP-REGIME-SSOT-UNIFICATION — residual debt (added 2026-03-15)
+
+### P2: HTF fallback hardening
+- [ ] Harden `_aurora_required_htf` HTF fallbacks (50/100/200) in aurora profiles — `backfill_cfg is None` should raise, not silently use hardcoded values. Deferred from SSOT unification (pillar backfill, not regime warmup critical path).
+
+### P2: md_amr local getattr hardening
+- [ ] Harden `md_amr_handler.py` local `getattr` fallbacks: `channel_window_bars=12`, `atr_window=14`, `atr_stats_window=64`. These fields may not be in Pydantic types — confirm and either add to schema or raise explicitly. Deferred from SSOT unification.
+
+### P3: Pre-existing test failure
+- [ ] Fix `tests/domains/decision_making/test_task28_hybrid_mode_config_contract.py` — test sets `system.yaml: hybrid_live_data_testnet_exec` and `trading.yaml.mode: testnet` which now causes MODE_SSOT hard-fail. Update test to use matching mode values. Pre-dates SSOT unification package.
+
+### P3: `_profile is None` residual edge case — CLOSED 2026-03-16
+- [x] ~~If `get_active_strategy_profile` returns `None`, `_basis_required = 0` → fail-open~~
+  **Fixed:** All 4 sites patched with `if _profile is None: _readiness_contract_error = "READINESS_CONTRACT_UNRESOLVED:PROFILE_NOT_FOUND"`. 5 regression tests added. 1552 total tests passing.
+
 ## Runtime recovery + MR regression follow-ups (added 2026-03-15)
 
 ### P1: Post-deploy live verification

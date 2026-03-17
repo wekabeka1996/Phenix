@@ -60,6 +60,58 @@ class ReadinessGates:
         self._degraded_context_critical_keys = degraded_context_critical_keys
         self._degraded_context_critical_keys_by_strategy = degraded_context_critical_keys_by_strategy
         self.logger = logger
+        self._warmup_diag_by_symbol: Dict[str, Dict[str, Any]] = {}
+
+    def _diag_for_symbol(self, symbol: str) -> Dict[str, Any]:
+        sym = str(symbol)
+        if sym not in self._warmup_diag_by_symbol:
+            self._warmup_diag_by_symbol[sym] = {
+                "blocked_by_fe_warmup": False,
+                "blocked_by_rd_warmup": False,
+                "blocked_by_both": False,
+                "last_blocking_reason_code": None,
+                "last_blocking_details": None,
+            }
+        return self._warmup_diag_by_symbol[sym]
+
+    def _record_warmup_block_diag(
+        self,
+        *,
+        symbol: str,
+        reason_code: str,
+        blocked_by_fe: bool,
+        blocked_by_rd: bool,
+        details: Optional[str],
+    ) -> None:
+        diag = self._diag_for_symbol(symbol)
+        diag["blocked_by_fe_warmup"] = bool(blocked_by_fe)
+        diag["blocked_by_rd_warmup"] = bool(blocked_by_rd)
+        diag["blocked_by_both"] = bool(blocked_by_fe and blocked_by_rd)
+        diag["last_blocking_reason_code"] = str(reason_code)
+        diag["last_blocking_details"] = details
+        self.logger.warning(
+            "[%s] DM_READINESS_BLOCKER reason=%s fe_block=%s rd_block=%s both=%s",
+            symbol,
+            reason_code,
+            bool(blocked_by_fe),
+            bool(blocked_by_rd),
+            bool(blocked_by_fe and blocked_by_rd),
+        )
+
+    def get_live_blocker_evidence(self, symbol: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """Return DM warmup blocker attribution: FE vs RD vs dual."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for sym, diag in self._warmup_diag_by_symbol.items():
+            if symbol is not None and str(sym) != str(symbol):
+                continue
+            out[str(sym)] = {
+                "blocked_by_fe_warmup": bool(diag.get("blocked_by_fe_warmup", False)),
+                "blocked_by_rd_warmup": bool(diag.get("blocked_by_rd_warmup", False)),
+                "blocked_by_both": bool(diag.get("blocked_by_both", False)),
+                "last_blocking_reason_code": diag.get("last_blocking_reason_code"),
+                "last_blocking_details": diag.get("last_blocking_details"),
+            }
+        return out
 
     # ── Utility ───────────────────────────────────────────────────────
 
@@ -105,31 +157,66 @@ class ReadinessGates:
             return False
 
         # BYPASS IF WARN_ONLY (config-driven, not hardcoded)
-        cfg_dm = self.config.domains.decision_making if hasattr(self.config.domains, "decision_making") else None
+        cfg_dm = self.config.domains.decision_making if hasattr(
+            self.config.domains, "decision_making") else None
         if cfg_dm and hasattr(cfg_dm, "warmup") and cfg_dm.warmup.enforcement_mode == "warn_only":
-            self.logger.debug(f"[{symbol}] WARMUP GATE BYPASS (warn_only mode)")
+            self.logger.debug(
+                f"[{symbol}] WARMUP GATE BYPASS (warn_only mode)")
             return False
 
         portfolio = self._get_portfolio()
         if not portfolio:
-            self.warmup_not_ready(symbol, "portfolio_missing", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(
+                symbol, "portfolio_missing", details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="portfolio_missing",
+                blocked_by_fe=False,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
 
         state = self._symbol_states.get(symbol) or {}
-        features_evt = state.get("features") if isinstance(state, dict) else None
+        features_evt = state.get("features") if isinstance(
+            state, dict) else None
         if not isinstance(features_evt, dict):
-            self.warmup_not_ready(symbol, "features_missing", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(symbol, "features_missing",
+                                  details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="features_missing",
+                blocked_by_fe=True,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
         if not self.features_ready(symbol, features_evt):
-            self.warmup_not_ready(symbol, "features_stale", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(symbol, "features_stale",
+                                  details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="features_stale",
+                blocked_by_fe=True,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
 
         risk_evt = state.get("risk") if isinstance(state, dict) else None
         if risk_evt is None:
-            self.warmup_not_ready(symbol, "risk_missing", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(symbol, "risk_missing",
+                                  details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="risk_missing",
+                blocked_by_fe=False,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
 
@@ -138,8 +225,23 @@ class ReadinessGates:
             warmup = self._per_symbol_regimes[symbol].get("warmup")
 
         warmup_dict = warmup if isinstance(warmup, dict) else None
+        fe_warmup = features_evt.get("warmup")
+        fe_warmup_dict = fe_warmup if isinstance(fe_warmup, dict) else None
+        rd_not_ready = (warmup_dict is None) or (
+            not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else False))
+        fe_not_ready = (fe_warmup_dict is None) or (not bool(
+            fe_warmup_dict["full_ready"] if "full_ready" in fe_warmup_dict else False))
+
         if warmup_dict is None:
-            self.warmup_not_ready(symbol, "regime_warmup_missing", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(
+                symbol, "regime_warmup_missing", details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="regime_warmup_missing",
+                blocked_by_fe=fe_not_ready,
+                blocked_by_rd=True,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
         if not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else False):
@@ -149,18 +251,39 @@ class ReadinessGates:
                 "regime_not_ready",
                 details=f"context={context} rid={rid} ticks_seen={ticks_seen}",
             )
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="regime_not_ready",
+                blocked_by_fe=fe_not_ready,
+                blocked_by_rd=True,
+                details=f"context={context} rid={rid} ticks_seen={ticks_seen}",
+            )
             self._record_blocked_intent(symbol)
             return True
 
         # FeatureEngineering warmup contract (optional field in EVT:FEATURES_CALCULATED).
-        fe_warmup = features_evt.get("warmup")
-        fe_warmup_dict = fe_warmup if isinstance(fe_warmup, dict) else None
         if fe_warmup_dict is None:
-            self.warmup_not_ready(symbol, "features_warmup_missing", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(
+                symbol, "features_warmup_missing", details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="features_warmup_missing",
+                blocked_by_fe=True,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
         if not bool(fe_warmup_dict["full_ready"] if "full_ready" in fe_warmup_dict else False):
-            self.warmup_not_ready(symbol, "features_not_ready", details=f"context={context} rid={rid}")
+            self.warmup_not_ready(
+                symbol, "features_not_ready", details=f"context={context} rid={rid}")
+            self._record_warmup_block_diag(
+                symbol=symbol,
+                reason_code="features_not_ready",
+                blocked_by_fe=True,
+                blocked_by_rd=False,
+                details=f"context={context} rid={rid}",
+            )
             self._record_blocked_intent(symbol)
             return True
 
@@ -191,10 +314,13 @@ class ReadinessGates:
 
         if is_bar:
             # BAR-AWARE TTL: Use lenient bar_ttl_ms and age_mode
-            sys_md = getattr(self.config.system, "market_data", None) if self.config.system else None
+            sys_md = getattr(self.config.system, "market_data",
+                             None) if self.config.system else None
             if sys_md:
-                bar_ttl_ms = float(getattr(sys_md, "bar_ttl_ms", 10000) or 10000)
-                age_mode = str(getattr(sys_md, "bar_event_age_mode", "received") or "received")
+                bar_ttl_ms = float(
+                    getattr(sys_md, "bar_ttl_ms", 10000) or 10000)
+                age_mode = str(
+                    getattr(sys_md, "bar_event_age_mode", "received") or "received")
             else:
                 bar_ttl_ms = 10000.0
                 age_mode = "received"
@@ -289,14 +415,16 @@ class ReadinessGates:
         _ = ctx.volatility
         _ = ctx.liquidity
 
-        missing_critical = {k: v for k, v in (ctx.missing_fields or {}).items() if k in critical_keys}
+        missing_critical = {k: v for k, v in (
+            ctx.missing_fields or {}).items() if k in critical_keys}
         if not missing_critical:
             return False
 
         now_ms = self._clock.now_ms()
         features_ts = int(features_evt["ts"] if "ts" in features_evt else 0)
         retry_prefix = f"ctx:{strategy_id}" if strategy_id else "ctx"
-        retry_key = self._stable_retry_key(prefix=retry_prefix, symbol=symbol, rid=rid, ts_ms=features_ts)
+        retry_key = self._stable_retry_key(
+            prefix=retry_prefix, symbol=symbol, rid=rid, ts_ms=features_ts)
 
         self.logger.warning(
             f"[{symbol}] DEFER degraded DecisionContext: missing_critical={missing_critical}"
@@ -354,9 +482,11 @@ class ReadinessGates:
                 )
                 return False
 
-            symbol_exposure = exposure_cache[symbol] if symbol in exposure_cache else {}
+            symbol_exposure = exposure_cache[symbol] if symbol in exposure_cache else {
+            }
             current_exposure = symbol_exposure["current_exposure_usd"] if "current_exposure_usd" in symbol_exposure else 0.0
-            max_exposure = symbol_exposure["max_exposure_usd"] if "max_exposure_usd" in symbol_exposure else float("inf")
+            max_exposure = symbol_exposure["max_exposure_usd"] if "max_exposure_usd" in symbol_exposure else float(
+                "inf")
 
             projected_exposure = current_exposure + notional_usd
 

@@ -45,7 +45,8 @@
     {"event_name": "EVT:PENDING_BRACKETS_CLEARED", "target_domains": ["monitoring"]},
     {"event_name": "ERR:OPEN", "target_domains": ["decision_making", "monitoring"]},
     {"event_name": "ERR:EXECUTION_FAILED", "target_domains": ["monitoring"]},
-    {"event_name": "ERR:FATAL_CONFIG_MISMATCH", "target_domains": ["monitoring"]}
+    {"event_name": "ERR:FATAL_CONFIG_MISMATCH", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:TRADE_EXECUTED", "target_domains": ["position_tracking", "monitoring"]}
   ],
   "components": [
     "ExecPosFSM",

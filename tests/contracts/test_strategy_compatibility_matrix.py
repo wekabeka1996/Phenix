@@ -109,12 +109,16 @@ def test_active_profiles_keep_single_aurora_truth() -> None:
 def test_regime_dependent_strategies_require_minimum_basis_bars() -> None:
     config = _config(aurora_scoring_version="quadratic")
     matrix = build_full_strategy_compatibility_matrix(config)
-    
+
     # structural regime requires max(192, 14 + 288 - 1) = 301 bars
     expected_min_bars = 301
-    
+
+    # md_amr tracks regime via warmup (needs_regime=True) but its basis_required_bars
+    # is decoupled from regime (Phase 6: md_amr only needs its own data bars).
+    decoupled_strategies = {"md_amr"}
+
     for profile in matrix.values():
-        if profile.needs_regime:
+        if profile.needs_regime and profile.profile_id not in decoupled_strategies:
             assert profile.basis_required_bars >= expected_min_bars, (
                 f"Profile {profile.profile_id} needs regime but only requests "
                 f"{profile.basis_required_bars} bars (expected >= {expected_min_bars})"

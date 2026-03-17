@@ -202,11 +202,56 @@ class MarketDataProxy:
                 "data_source": data.get("data_source") if data.get("data_source") is not None else "multiprocess_worker",
             }
 
-            self._fsm.emit(
-                event_name="EVT:MARKET_TICK_RECEIVED",
-                payload=payload,
-                why=f"Market tick for {symbol} from worker process"
-            )
+            def _emit(payload_to_emit: Dict[str, Any]) -> None:
+                self._fsm.emit(
+                    event_name="EVT:MARKET_TICK_RECEIVED",
+                    payload=payload_to_emit,
+                    why=f"Market tick for {symbol} from worker process"
+                )
+
+            try:
+                _emit(payload)
+            except Exception as emit_error:
+                err_text = str(emit_error)
+                # Legacy-compat fallback: some runtime schema snapshots still reject TASK31 additive fields.
+                if "Additional properties are not allowed" in err_text:
+                    legacy_payload = {
+                        "ts": data.get("ts"),
+                        "symbol": symbol,
+                        "price": data.get("price"),
+                        "bid": data.get("bid"),
+                        "ask": data.get("ask"),
+                        "mid": data.get("mid"),
+                        "bid_size": data.get("bid_size"),
+                        "ask_size": data.get("ask_size"),
+                        "buy_volume": data.get("buy_volume"),
+                        "sell_volume": data.get("sell_volume"),
+                        "data_type": "market_tick_aggregated",
+                        "data_source": data.get("data_source") if data.get("data_source") is not None else "multiprocess_worker",
+                    }
+                    try:
+                        _emit(legacy_payload)
+                        LOG.warning(
+                            "MARKET_TICK_RECEIVED emitted via legacy-compatible payload for symbol=%s",
+                            symbol,
+                        )
+                    except Exception as legacy_emit_error:
+                        legacy_err_text = str(legacy_emit_error)
+                        if "does not match '^[A-Z]{2,10}USDT$'" in legacy_err_text:
+                            LOG.warning(
+                                "Skipping tick for symbol=%s due to active runtime symbol pattern mismatch",
+                                symbol,
+                            )
+                            return
+                        raise
+                elif "does not match '^[A-Z]{2,10}USDT$'" in err_text:
+                    LOG.warning(
+                        "Skipping tick for symbol=%s due to active runtime symbol pattern mismatch",
+                        symbol,
+                    )
+                    return
+                else:
+                    raise
             self._ticks_emitted += 1
 
         except Exception as e:

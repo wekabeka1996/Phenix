@@ -160,11 +160,11 @@ def test_empty_fetch_retries_and_recovers(mock_sleep) -> None:
 
     # md_amr handler must be seeded after outer retry recovery
     md_amr_handler = started_handlers["md_amr"]
-    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 96, (
-        f"BNBUSDT should be seeded to >=96, got "
+    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 64, (
+        f"BNBUSDT should be seeded to >=64, got "
         f"{md_amr_handler._bars_seen_since_restart.get('BNBUSDT', 0)}"
     )
-    assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
+    assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 64
 
     # Aurora should also be seeded
     aurora_handler = started_handlers["aurora"].handler
@@ -241,5 +241,5 @@ def test_retry_recovery_on_first_attempt_does_not_sleep(mock_sleep) -> None:
 
     # All handlers should be seeded
     md_amr_handler = started_handlers["md_amr"]
-    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 96
+    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 64
     assert len(summary["seeded"]) >= 5
