@@ -1,0 +1,282 @@
+from __future__ import annotations
+
+import logging
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from apps.reference.contracts.strategy_compatibility_matrix import (
+    build_active_strategy_compatibility_profiles,
+)
+from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.feature_engineering.md_amr_strategy import (
+    MDAMRSignal,
+    MDAMRStrategyV11,
+)
+
+
+class _FSMStub:
+    def __init__(self) -> None:
+        self.listeners: list[tuple[str, object]] = []
+        self.emitted: list[tuple[str, dict, str | None, object]] = []
+
+    def listen(self, event: str, handler: object) -> None:
+        self.listeners.append((event, handler))
+
+    def emit(
+        self,
+        event_name: str,
+        payload: dict | None = None,
+        why: str | None = None,
+        data_ref: object = None,
+    ) -> None:
+        self.emitted.append((event_name, payload or {}, why, data_ref))
+
+    def get_domain(self, _name: str):
+        return None
+
+
+def _make_config(symbol: str = "BNBUSDT"):
+    asset_cfg = SimpleNamespace(
+        enabled=True,
+        cooldown_sec=60,
+        allowed_regimes=[
+            "MEAN_REVERSION",
+            "LOW_VOLATILITY",
+            "HIGH_VOLATILITY",
+            "FLAT_LOW",
+            "FLAT_HIGH",
+        ],
+        exit=SimpleNamespace(
+            sl_pct=0.005,
+            tp_rr=1.0,
+            regime_tpsl=None,
+        ),
+    )
+    md_amr_cfg = SimpleNamespace(
+        enabled=True,
+        timeframe_sec=900,
+        defer_ttl_sec=60,
+        channel_window_bars=12,
+        channel_robust_pct=0.05,
+        atr_window=14,
+        atr_stats_window=64,
+        hysteresis_mult=1.20,
+        threshold_z=2.20,
+        volatility_dampening_factor=0.50,
+        thr_base=0.55,
+        thr_floor=0.10,
+        alpha=0.25,
+        conf_min=0.22,
+        max_hold_bars=16,
+        atr_zscore_clamp=10.0,
+        atr_std_floor_pct=0.05,
+        fee_bps=4.0,
+        slippage_buffer_bps=2.0,
+        scaleout_fraction=0.50,
+        scaleout_cost_model="round_trip",
+        weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
+        objective=SimpleNamespace(enabled=False),
+        execution=SimpleNamespace(
+            gtx_retry_max=2, gtx_fallback_to_market=True),
+        llm_gate=SimpleNamespace(
+            enabled=False,
+            sentiment_block_threshold=-0.8,
+            block_ttl_sec=14_400,
+        ),
+        concentration_guard=SimpleNamespace(
+            enabled=False,
+            max_simultaneous_entries_per_bar=2,
+        ),
+        assets={symbol: asset_cfg},
+    )
+    return SimpleNamespace(
+        basis_import_buffer=20,
+        regime=SimpleNamespace(
+            models=SimpleNamespace(
+                sma_trend=SimpleNamespace(sma_long_period=64),
+                volatility=SimpleNamespace(atr_period=14, atr_sma_length=20),
+            )
+        ),
+        domains=SimpleNamespace(
+            decision_making=SimpleNamespace(
+                position_sizing=SimpleNamespace(
+                    min_position_size_usd=10,
+                    liquidity_based_cap_usd=10_000,
+                )
+            )
+        ),
+        strategies_registry=SimpleNamespace(assignments={symbol: ["md_amr"]}),
+        strategies=SimpleNamespace(md_amr=md_amr_cfg),
+    )
+
+
+def _make_handler(symbol: str = "BNBUSDT") -> tuple[MDAMRHandler, _FSMStub]:
+    fsm = _FSMStub()
+    handler = MDAMRHandler(fsm=fsm, config=_make_config(symbol))
+    return handler, fsm
+
+
+def _event_payload(symbol: str = "BNBUSDT") -> dict:
+    return {
+        "symbol": symbol,
+        "tf_sec": 900,
+        "warmup": {"full_ready": True},
+        "features": {},
+        "bar": {
+            "open": "100",
+            "high": "101",
+            "low": "99",
+            "close": "100",
+            "volume": "10",
+            "end_ts_ms": 1_700_000_000_000,
+        },
+    }
+
+
+def test_md_amr_handler_initializes_and_enables_for_assigned_symbol(caplog) -> None:
+    with caplog.at_level(logging.INFO):
+        handler, _fsm = _make_handler()
+
+    assert handler._enabled is True
+    assert handler._enabled_symbols == {"BNBUSDT"}
+    assert "MD_AMR_INIT" in caplog.text
+    assert "MD_AMR_ENABLED" in caplog.text
+
+
+def test_md_amr_registers_required_listeners(caplog) -> None:
+    handler, fsm = _make_handler()
+
+    with patch.object(MDAMRHandler, "_hydrate_state_from_rest", lambda self: None):
+        with caplog.at_level(logging.INFO):
+            handler.register()
+
+    assert [event for event, _handler in fsm.listeners] == [
+        "CMD:PROCESS_STRATEGY",
+        "EVT:FEATURES_CALCULATED",
+        "EVT:REGIME_DETECTED",
+        "EVT:TRADE_EXECUTED",
+        "EVT:ORDER_REJECTED",
+        "EVT:PORTFOLIO_STATE_UPDATED",
+        "EVT:EXPOSURE_SUMMARY_UPDATED",
+        "EVT:ORDER_STATE_CHANGED",
+        "EVT:TRADE_INTENT_REJECTED",
+    ]
+    assert "MD_AMR_REGISTERED" in caplog.text
+
+
+def test_md_amr_cold_start_reachability_thresholds_are_consistent() -> None:
+    profiles = build_active_strategy_compatibility_profiles(_make_config())
+    md_amr_profile = profiles["md_amr"]
+
+    assert md_amr_profile.required_basis_tf_sec == 900
+    assert md_amr_profile.needs_regime is True
+    assert md_amr_profile.needs_execution_context is True
+    assert md_amr_profile.local_hydration_contract == "md_amr_rest_hydration"
+    assert md_amr_profile.degraded_mode_allowance == "PROTECT_ONLY"
+    assert md_amr_profile.protect_only_capability is True
+    assert md_amr_profile.basis_required_bars == 96
+
+
+def test_md_amr_emits_observable_defer_reason_before_signal_ready(caplog) -> None:
+    handler, _fsm = _make_handler()
+    handler._strategies["BNBUSDT"] = SimpleNamespace(
+        on_bar=lambda **_kwargs: {"status": "DEFER",
+                                  "missing_fields": ["dir_score"]}
+    )
+
+    with patch(
+        "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+        return_value=SimpleNamespace(basis_required_bars=1),
+    ):
+        with caplog.at_level(logging.INFO):
+            handler._on_process_strategy(SimpleNamespace(pld=_event_payload()))
+
+    assert "BNBUSDT" in handler._deferred
+    assert "MD_AMR_DEFER" in caplog.text
+    assert "dir_score" in caplog.text
+
+
+def test_md_amr_first_entry_becomes_possible_after_required_history() -> None:
+    strategy = MDAMRStrategyV11(
+        channel_window_bars=12,
+        hysteresis_mult=1.20,
+        threshold_z=2.20,
+        volatility_dampening_factor=0.50,
+        thr_base=0.55,
+        alpha=0.25,
+        conf_min=0.22,
+        max_hold_bars=16,
+        fee_bps=4.0,
+        slippage_buffer_bps=2.0,
+        scaleout_fraction=0.50,
+        weights={"d1": 0.35, "h1": 0.30, "m30": 0.20, "m15": 0.15},
+        atr_zscore_clamp=10.0,
+        atr_std_floor_pct=0.05,
+        thr_floor=0.10,
+        scaleout_cost_model="round_trip",
+        atr_window=14,
+        atr_stats_window=64,
+    )
+
+    last_result = None
+    for _index in range(95):
+        last_result = strategy.on_bar(
+            bar={"open": "100", "high": "101", "low": "99", "close": "100"},
+            position_ctx={"qty_signed": 0.0, "bars_held": 0},
+        )
+
+    assert last_result == {"status": "DEFER", "missing_fields": ["dir_score"]}
+
+    signal_result = strategy.on_bar(
+        bar={"open": "100", "high": "101", "low": "90", "close": "90"},
+        position_ctx={"qty_signed": 0.0, "bars_held": 0},
+    )
+
+    assert signal_result["status"] == "SIGNAL"
+    signal = signal_result["signal"]
+    assert signal.intent_kind == "ENTRY"
+    assert signal.side == "BUY"
+
+
+def test_md_amr_runtime_logs_init_enable_and_signal_readiness(caplog) -> None:
+    with caplog.at_level(logging.INFO):
+        handler, fsm = _make_handler()
+        handler._regime["BNBUSDT"] = "MEAN_REVERSION"
+        handler._strategies["BNBUSDT"] = SimpleNamespace(
+            on_bar=lambda **_kwargs: {
+                "status": "SIGNAL",
+                "signal": MDAMRSignal(
+                    intent_kind="ENTRY",
+                    side="BUY",
+                    reason_code="MD_AMR_ENTRY_LONG",
+                    signal_score=0.9,
+                    conf_ratio=0.8,
+                    scaleout_fraction=None,
+                    price_ref=Decimal("100"),
+                    channel_state={"avg_high_12": 101.0,
+                                   "avg_low_12": 99.0, "avg_close_12": 100.0},
+                    atr=1.0,
+                    dir_score=0.1,
+                    trace={"conf_ratio": 0.8, "qty_base": 1.0, "qty_new": 1.0},
+                ),
+            }
+        )
+
+        with patch.object(MDAMRHandler, "_hydrate_state_from_rest", lambda self: None):
+            with patch(
+                "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+                return_value=SimpleNamespace(basis_required_bars=1),
+            ):
+                handler.register()
+                handler._on_process_strategy(
+                    SimpleNamespace(pld=_event_payload()))
+
+    emitted_events = [name for name, _payload, _why, _data_ref in fsm.emitted]
+    assert "EVT:STRATEGY_SIGNAL_PRODUCED" in emitted_events
+    assert "MD_AMR_INIT" in caplog.text
+    assert "MD_AMR_ENABLED" in caplog.text
+    assert "MD_AMR_REGISTERED" in caplog.text
+    assert "MD_AMR_BARS_PROGRESS" in caplog.text
+    assert "MD_AMR_SIGNAL_READY" in caplog.text
+    assert "MD_AMR_SIGNAL_EMITTED" in caplog.text

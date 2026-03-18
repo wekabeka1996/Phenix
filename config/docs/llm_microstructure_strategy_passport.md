@@ -1,22 +1,12 @@
 # LLM MICROSTRUCTURE STRATEGY PASSPORT
 ## Aurora / Phenix — external-intent profile, shadow ingress policy, and bridge-driven runtime
 
-> AUDIT SUMMARY
-> - Document path: config/docs/llm_microstructure_strategy_passport.md
-> - Audit date: 2026-03-13
-> - Audit mode: code-driven sync
-> - Total claims checked: 19
-> - Confirmed: 10
-> - Corrected: 7
-> - Removed as stale: 2
-> - Added as missing: 7
-> - Major drifts found:
->   1. The strategy is not a normal in-process handler; runtime is bridge-driven through shadow_telemetry, while the plugin is only a sentinel allowlist stub.
->   2. Profile `timeframe_sec=60` is not the emitted signal timeframe in the traced bridge path; the mapper currently hardcodes `tf_sec=300` in EVT:STRATEGY_SIGNAL_PRODUCED.
->   3. Admission control is split across two contracts: strategy profile in strategies/llm_microstructure.yaml and global `trading.llm_orchestration` policy in trading.yaml.
->   4. External intent order payload is pre-filtered by shadow API policy, but final execution order policy is still resolved downstream from `strategies.llm_microstructure.execution`.
->   5. `llm_microstructure.enabled` is typed, but no traced runtime gate was found that disables the bridge path or sentinel startup based on this flag alone.
-> - Overall confidence: HIGH
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/llm_microstructure_strategy_passport.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven sync
+> - **Major drifts found:** No structural drifts since the previous 2026-03-13 audit. The configuration in `llm_microstructure.yaml` perfectly matches the documented execution policies and safety gates. The registry assignment (`1000PEPEUSDT`) remains accurate.
+> - **Overall confidence:** HIGH
 
 ---
 

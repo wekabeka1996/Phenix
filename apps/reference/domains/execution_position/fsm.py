@@ -407,14 +407,23 @@ class ExecPosFSM(
                 ["execution", "fsm_periodic_cleanup_enabled"], default=True)
         )
 
-        # AGENT-PATCH: Safe event bus setup with LocalBus fallback
+        # BUS-FAILCLOSED-01: Fail-closed bus wiring.
+        # Silent LocalBus fallback caused production-invisible intent drops
+        # (TRADE_INTENT_PROPOSED emitted on FSMCore, ExecPosFSM on LocalBus).
         if self.fsm and hasattr(self.fsm, "listen") and hasattr(self.fsm, "emit"):
             self.bus = self.fsm
             LOG.debug("ExecPosFSM using FSMCore event bus")
-        else:
+        elif self.shadow_mode:
             self.bus = LocalBus()
-            LOG.debug(
-                "ExecPosFSM using LocalBus fallback (FSMCore not available)")
+            LOG.info(
+                "ExecPosFSM using LocalBus (shadow_mode=True, test-only)")
+        else:
+            raise RuntimeError(
+                "BUS-FAILCLOSED-01: ExecPosFSM requires a valid FSMCore bus. "
+                "Received fsm=%r. Silent LocalBus fallback is prohibited in "
+                "production to prevent invisible intent drops." % type(
+                    self.fsm)
+            )
 
         # Register event listeners on the bus
         self.bus.listen("EVT:PORTFOLIO_STATE_UPDATED",
@@ -1788,7 +1797,8 @@ class ExecPosFSM(
         try:
             # type: ignore[attr-defined]
             if hasattr(self.fsm, "order_index") and self.fsm.order_index:
-                self.fsm.order_index.cancel_reservation(str(rid))  # type: ignore[attr-defined]
+                self.fsm.order_index.cancel_reservation(
+                    str(rid))  # type: ignore[attr-defined]
         except Exception:
             pass
 
@@ -1850,7 +1860,8 @@ class ExecPosFSM(
             return None
 
         symbol = (msg.pld or {}).get("symbol", "")
-        local_state = str(getattr(getattr(manage_flow, "state", None), "value", "UNKNOWN"))
+        local_state = str(
+            getattr(getattr(manage_flow, "state", None), "value", "UNKNOWN"))
         portfolio_state = self._get_portfolio_state_for_symbol(symbol)
         divergence_detected = portfolio_state == "FLAT" and local_state != "FLAT"
         tracked_rid = self._last_lifecycle_rid_by_symbol.get(symbol)

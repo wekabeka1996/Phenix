@@ -2,13 +2,13 @@
 
 > **AUDIT SUMMARY**
 > - **Document path:** `config/docs/regime_passport.md`
-> - **Audit date:** 2026-03-12
+> - **Audit date:** 2026-03-18
 > - **Audit mode:** Code-driven deep sync
-> - **Total claims checked:** 28
-> - **Confirmed:** 23
+> - **Total claims checked:** 37
+> - **Confirmed:** 28
 > - **Corrected:** 4
 > - **Removed as stale:** 1 (hmm and features blocks officially removed)
-> - **Added as missing:** Detailed `system_stress` block documentation
+> - **Added as missing:** `basis_import_buffer`, detailed `models.volatility.*` parameters, `mean_reversion.confidence_multiplier`, and A4 preset circuit breaker fields in `system_stress.state_mapping`.
 > - **Major drifts found:** SMA and ATR periods updated to R2-winner defaults (`sma_short_period=48`, `sma_long_period=192`, `atr_sma_length=288`); explicit `SystemStressConfig` layer validated.
 > - **Overall confidence:** HIGH
 
@@ -60,6 +60,16 @@
 - **Actual Runtime Semantics:** Затримує вихід `EVT:REGIME_DETECTED` з прапорцем `changed=True` до підтвердження.
 - **Tuning Sensitivity:** Вище значення (напр. 3) = менше whipsaw перемикань, але більша затримка у визнанні нового тренду.
 - **Constraints / Invariants:** `1 <= value <= 10`
+- **Status:** `ACTIVE`
+
+### `basis_import_buffer`
+- **Type:** `int`
+- **Logic Owner:** `market_data_cache` / `regime_detector`
+- **Runtime Role:** Буфер додаткових барів для згладжування затримок завантаження історії.
+- **Mathematical / Behavioral Role:** Додається до `regime_detector_required_bars()`.
+- **Actual Runtime Semantics:** `Total import = required_bars + basis_import_buffer`.
+- **Tuning Sensitivity:** Вище значення дає більшу стабільність при мікро-гепах від API бінансу під час ініціалізації.
+- **Constraints / Invariants:** `>= 0`
 - **Status:** `ACTIVE`
 
 ---
@@ -144,12 +154,30 @@
 - **Constraints / Invariants:** `atr_period >= 1`, `atr_sma_length >= 10`.
 - **Status:** `ACTIVE`
 
-### `models.mean_reversion.threshold`
+### `models.volatility.allow_close_to_close_atr`
+- **Type:** `bool`
+- **Logic Owner:** `regime_detector`
+- **Runtime Role:** Дозволяє розрахунок ATR за цінами закриття при відсутності повної OHLCV свічки.
+- **Constraints / Invariants:** boolean, default `true`.
+- **Status:** `ACTIVE`
+
+### `models.volatility.multipliers` (`threshold_multiplier`, `low_vol_multiplier`, v-confidence)
+- **Type:** `float`
+- **Logic Owner:** `regime_detector`
+- **Runtime Role:** Пороги спрацювання волатильних станів.
+- **Mathematical / Behavioral Role:** 
+  - Якщо `vol_ratio >= threshold_multiplier` → `HIGH_VOLATILITY`.
+  - Якщо `vol_ratio <= low_vol_multiplier` → `LOW_VOLATILITY`.
+  - Впевненість скалюється через `high_vol_confidence_multiplier` та `low_vol_confidence_multiplier`.
+- **Constraints / Invariants:** Пороги `> 0`.
+- **Status:** `ACTIVE`
+
+### `models.mean_reversion.threshold` & `confidence_multiplier`
 - **Type:** `float`
 - **Logic Owner:** `regime_detector`
 - **Code Reference:** `apps/reference/domains/regime_detector/regime_detector.py`
-- **Runtime Role:** Поріг переходу в `MEAN_REVERSION`.
-- **Mathematical / Behavioral Role:** ПРІОРИТЕТ 2 (працює тільки якщо волатильність не спрацювала). Якщо розбіжності SMAs та Price < `threshold`, режим стає "MEAN_REVERSION".
+- **Runtime Role:** Поріг переходу в `MEAN_REVERSION` та сила впевненості.
+- **Mathematical / Behavioral Role:** ПРІОРИТЕТ 2 (працює тільки якщо волатильність не спрацювала). Якщо розбіжності SMAs та Price < `threshold`, режим стає "MEAN_REVERSION". Далі впевненість скалюється через `confidence_multiplier`.
 - **Actual Runtime Semantics:** Використовується для знаходження періодів консолідації (Flat).
 - **Constraints / Invariants:** `value >= 0.0`.
 - **Status:** `ACTIVE`
@@ -177,16 +205,18 @@
 - **Constraints / Invariants:** `extra='forbid'` в Pydantic.
 - **Status:** `ACTIVE`
 
-### `system_stress.state_mapping` (Actuator FSM)
+### `system_stress.state_mapping` (Actuator FSM & CB)
 - **Type:** `Object`
 - **Logic Owner:** `system_stress_overlay`
 - **Code Reference:** `apps/reference/domains/system_stress/system_stress_overlay.py`
-- **Runtime Role:** Перетворення `stress_level` у стани з гістерезисом.
+- **Runtime Role:** Перетворення `stress_level` у стани з гістерезисом і Circuit Breaker захистом.
 - **Mathematical / Behavioral Role:** 
   - `enter_stress` / `exit_stress`: пороги входу/виходу для STRESS.
   - `enter_extreme` / `exit_extreme`: пороги для EXTREME.
   - `consecutive_bars_enter` / `min_duration_bars`: anti-churn стабілізація.
-- **Actual Runtime Semantics:** Забезпечує, що стресові стани не блимають. Перехід підтверджується N барів і тримається мінімум M барів.
+  - `switch_window_bars` / `max_switches_per_window`: Circuit Breaker для виявлення "флапінгу" між станами.
+  - `circuit_breaker_mode`: `halt` (зупиняє торгівлю при флапінгу).
+- **Actual Runtime Semantics:** Забезпечує, що стресові стани не блимають. Перехід підтверджується N барів і тримається мінімум M барів. Аномальні перемикання захищені Circuit Breaker.
 - **Constraints / Invariants:** Сувора перевірка на порядок (`exit_stress < enter_stress < enter_extreme`).
 - **Status:** `ACTIVE`
 

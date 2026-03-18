@@ -1,5 +1,16 @@
 # 📄 Паспорт конфігурації: aurora/strategies/aurora.yaml (Strategy Profile SSOT)
 
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/AURORA_STRATEGY_CONFIG_PASSPORT.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven deep sync
+> - **Major drifts found:** 
+>   1. `signal_threshold` default shifted from `0.12` to `0.162`.
+>   2. `reentry_cooldown_sec` global default shifted from `60` to `900`.
+>   3. `anti_flat_sigma` shifted from `0.5` to `0.48` and `anti_fomo_sigma` from `4.0` to `10.0`.
+>   4. Phase 9 Quadratic Scoring Migration has deprecated older V2 surfaces, though legacy tick path notes are retained for context.
+> - **Overall confidence:** HIGH
+
 ## 🔍 Загальний опис блоку
 
 Блок `aurora` — це Single Source of Truth (SSOT) для стратегії Aurora. Містить глобальну політику сигналізації, параметри прийняття рішень та перевизначення для конкретних інструментів (ETHUSDT, SOLUSDT, BTCUSDT). Стратегія побудована на барах (5-хвилинних), використовує мультисигнальний alpha engine з режимною обізнаністю.
@@ -90,8 +101,8 @@
 
 ---
 
-### 5. `aurora.decision.signal_threshold: 0.12` (Поріг входу)
-* **Суть:** Глобальний нормалізований поріг сигналу для входу в позицію. Якщо `signal_score >= 0.12` → LONG, якщо `<= -0.12` → SHORT.
+### 5. `aurora.decision.signal_threshold: 0.162` (Поріг входу)
+* **Суть:** Глобальний нормалізований поріг сигналу для входу в позицію. Якщо `signal_score >= 0.162` → LONG, якщо `<= -0.162` → SHORT.
 * **Домен:** Decision Making (AuroraHandler + AuroraScoringKernel)
 * **Режими роботи:** Однаково для testnet/production (поки що)
 * **Code Trace:**
@@ -158,7 +169,7 @@
 
 ---
 
-### 8. `aurora.decision.reentry_cooldown_sec: 60` (Anti-Ping-Pong)
+### 8. `aurora.decision.reentry_cooldown_sec: 900` (Anti-Ping-Pong)
 * **Суть:** Після закриття позиції — чекати цю кількість секунд перед дозволом нового входу.
 * **Домен:** Decision Making (Ping-Pong Prevention)
 * **Code Trace:**
@@ -168,7 +179,7 @@
 * **Валідація:**
     * Модель: `DecisionConfig.reentry_cooldown_sec` (`Optional[int]`)
     * Обмеження: `ge=0, le=3600` (0 — 1 година)
-    * Default: 60s
+    * Default: 900s
 * **Тести:** ✅ `tests/domains/decision_making/test_aurora_reentry_cooldown.py`
 
 ---
@@ -179,8 +190,8 @@
     ```yaml
     gates:
       enabled: true
-      anti_flat_sigma: 0.5   # Блокує, якщо |pm_norm| < 0.5 (зупинено)
-      anti_fomo_sigma: 4.0   # Блокує, якщо |pm_norm| > 4.0 (крах)
+      anti_flat_sigma: 0.48  # Блокує ENTRY if |pm_norm| < 0.48 (dead market)
+      anti_fomo_sigma: 10.0  # Блокує ENTRY if |pm_norm| > 10.0 (extreme impulse)
       motion_window_sec: 300  # 5-хв вікно для обчислення нормалізованого руху
     ```
     
@@ -280,14 +291,14 @@
 
 ## 📊 Статусна таблиця (Status Summary)
 
-| Компонент | Статус | Примітка |
+| Komponent | Статус | Примітка |
 |-----------|--------|----------|
 | **Базові параметри** (enabled, type, timeframe) | 🟢 ACTIVE | Критичні, используются постійно |
-| **Signal Threshold** (0.12) | 🔴 CRITICAL OVERRIDE | PRODUCTION не мусить покладатися на це значення |
+| **Signal Threshold** (0.162) | 🔴 CRITICAL OVERRIDE | PRODUCTION не мусить покладатися на це значення |
 | **Execution Policy** (LIMIT+GTX) | 🟢 ACTIVE | Безпечна, добре протестована |
 | **Holding Period** (30s anti-HFT) | 🟢 ACTIVE | Phase 4 feature, добре протестована |
-| **Reentry Cooldown** (60s) | 🟢 ACTIVE | Простий, ефективний |
-| **Volatility Gates** (anti-flat/anti-FOMO) | 🟢 ACTIVE | Phase 3 fix, критично для заборони GG |
+| **Reentry Cooldown** (900s) | 🟢 ACTIVE | Простий, ефективний |
+| **Volatility Gates** (anti-flat 0.48 /anti-FOMO 10.0) | 🟢 ACTIVE | Phase 3 fix, критично для заборони GG |
 | **Legacy Tick Path** | 🟡 DEPRECATED | Почати міграцію на EventBus |
 | **Cooldown (global)** | 🟡 DEPRECATED | Використовуйте per-instrument замість цього |
 | **Per-Symbol Assets** (ETHUSDT, SOLUSDT, BTCUSDT) | 🟢 ACTIVE | Добре оптимізовані через Optuna |

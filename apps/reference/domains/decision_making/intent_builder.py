@@ -310,7 +310,7 @@ class IntentBuilder:
         try:
             intent_evt = Message(
                 op="EVT", verb="TRADE_INTENT_PROPOSED", src="decision_making",
-                dst="bridge", rid=str(rid), pld=trade_intent,
+                dst="execution_position", rid=str(rid), pld=trade_intent,
                 why=truncate_why("trade_intent") or "trade_intent",
                 data_ref=[str(x) for x in why_chain] if isinstance(
                     why_chain, list) else [],
@@ -470,10 +470,15 @@ class IntentBuilder:
                 return None, None, None
             tif = None
 
+
         # ── valid_for_ms (LIMIT only) ─────────────────────────
+        # Close-path exemption: reduce_only intents (position closes) must NOT
+        # be subject to pending-entry TTL semantics. Applying valid_for_ms to
+        # closes causes spurious rejections (no tf_sec → no valid_for_ms → reject)
+        # for regime-flip / stop-loss closes. Normal entry (reduce_only=False) unchanged.
         valid_for_ms: Optional[int] = None
-        if order_type_u == "LIMIT":
-            if tf_sec is None and not reduce_only:
+        if order_type_u == "LIMIT" and not reduce_only:
+            if tf_sec is None:
                 self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                              reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                              context="EP-01.3-INT: LIMIT requires tf_sec",
@@ -485,7 +490,7 @@ class IntentBuilder:
                     ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
                     if tf_sec in ttl_by_tf:
                         valid_for_ms = int(ttl_by_tf[tf_sec]) * 1000
-                    elif pe_ttl_cfg.reject_unknown_tf and not reduce_only:
+                    elif pe_ttl_cfg.reject_unknown_tf:
                         self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                                      reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                                      context=f"EP-01.3-INT: tf_sec={tf_sec} not in ttl_by_tf_sec",
@@ -506,3 +511,4 @@ class IntentBuilder:
                 return None, None, None
 
         return order_type_u, tif, valid_for_ms
+

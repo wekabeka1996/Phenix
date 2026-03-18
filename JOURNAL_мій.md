@@ -1,5 +1,13 @@
 # JOURNAL_мій
 
+## 2026-03-17
+
+### CLEAN-START-EXECUTION-RESTORE-UPGRADE — PROTECT_ONLY self-heal для mean_reversion
+- **Проблема:** `mean_reversion` залипав у `PROTECT_ONLY` після cold startup без snapshot, бо `execution_status=COLD` → `can_open_new_risk=False` на весь сеанс, навіть при `positions=[]`.
+- **Рішення:** Додано `upgrade_cold_execution_restore_if_clean_start()` в contract layer + `EVT:ACCOUNT_UPDATE_RECEIVED` listener в handler. Коли акаунт підтверджує zero positions, execution restore переходить з COLD → RESTORED.
+- **Fail-closed:** upgrade тільки при COLD execution state + live zero-positions proof. Non-empty positions, відсутній/malformed payload — не unlock-уються.
+- **Тести:** 13 контрактних + 11 handler-level = 24 нових тести. 762 passed regression.
+
 ## 2026-03-16
 
 ### WARMUP-REGIME-SSOT-UNIFICATION — Corrective patch: profile=None residual fail-open

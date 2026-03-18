@@ -1,23 +1,12 @@
 # STRATEGIES PASSPORT
 ## Aurora / Phenix — strategy registry, profile loading, and runtime activation SSOT
 
-> AUDIT SUMMARY
-> - Document path: config/docs/strategies_passport.md
-> - Audit date: 2026-03-13
-> - Audit mode: code-driven sync
-> - Total claims checked: 24
-> - Confirmed: 11
-> - Corrected: 9
-> - Removed as stale: 4
-> - Added as missing: 8
-> - Major drifts found:
->   1. Runtime activation is assignment-first through `strategies_registry.assignments`; old generic wording around profile ownership was too loose.
->   2. Strategy profile loading is registry-driven: only assigned strategy IDs cause `config/aurora/strategies/<id>.yaml` to be loaded.
->   3. `llm_microstructure` is allowlisted and assigned, but its plugin is a sentinel handler; actual behavior is bridge-driven via shadow telemetry.
->   4. `strategies_registry.arbitration.logging.log_level` is typed but no consumer was found in runtime arbitration logic.
->   5. `aurora.enabled` is not the hard activation SSOT; Aurora runtime checks registry first and only falls back to per-asset enablement when registry lacks the symbol.
->   6. Mean Reversion and MD-AMR handlers enforce stricter assignment/config consistency than the old passport described.
-> - Overall confidence: HIGH
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/strategies_passport.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven sync
+> - **Major drifts found:** No major structural drifts since the previous 2026-03-13 audit. The symbol assignments (`DOGEUSDT` to `mean_reversion`, `1000PEPEUSDT` to `llm_microstructure`, etc.) and arbitration priorities in `strategies.yaml` perfectly match the current live configuration. Profile loading and arbitration logic remain robust.
+> - **Overall confidence:** HIGH
 
 ---
 

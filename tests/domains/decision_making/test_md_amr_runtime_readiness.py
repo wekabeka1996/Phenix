@@ -41,7 +41,8 @@ def test_md_amr_process_strategy_blocks_cold_start_until_basis_bars_seen() -> No
     handler._is_duplicate_live_event = lambda symbol, ts_ms: False
     handler._expire_defer_if_needed = lambda symbol, now_ms: None
     handler._is_mandatory_live_warmup_active = lambda now_ms: False
-    handler._emit_trade_intent_rejected_gate = lambda **kwargs: rejections.append(kwargs)
+    handler._emit_trade_intent_rejected_gate = lambda **kwargs: rejections.append(
+        kwargs)
     handler._rid = lambda **_kwargs: "md-amr-bars-required"
 
     event = _Event(
@@ -95,14 +96,17 @@ def test_md_amr_seeded_basis_bars_bypass_cold_start_gate() -> None:
     handler._deferred = {}
     handler._strategies = {
         "BTCUSDT": SimpleNamespace(
-            on_bar=lambda **kwargs: on_bar_calls.append(kwargs) or {"status": "NO_SIGNAL"}
+            on_bar=lambda **kwargs: on_bar_calls.append(
+                kwargs) or {"status": "NO_SIGNAL"}
         )
     }
     handler._is_duplicate_live_event = lambda symbol, ts_ms: False
     handler._expire_defer_if_needed = lambda symbol, now_ms: None
     handler._is_mandatory_live_warmup_active = lambda now_ms: False
-    handler._emit_trade_intent_rejected_gate = lambda **kwargs: rejections.append(kwargs)
+    handler._emit_trade_intent_rejected_gate = lambda **kwargs: rejections.append(
+        kwargs)
     handler._rid = lambda **_kwargs: "md-amr-bars-seeded"
+    handler._signal_ready_logged = set()
     handler.seed_startup_bars("BTCUSDT", 5)
 
     event = _Event(

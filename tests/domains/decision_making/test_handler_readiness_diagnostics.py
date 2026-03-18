@@ -75,19 +75,19 @@ def test_aurora_diagnostics_includes_bars_seen() -> None:
 
 def test_md_amr_diagnostics_includes_bars_seen() -> None:
     """md_amr diagnostics must include bars_seen and bars_required."""
-    handler = _make_md_amr_handler(bars_seen={"ETHUSDT": 70})
+    handler = _make_md_amr_handler(bars_seen={"ETHUSDT": 96})
 
     with patch(
         "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
-        return_value=_mock_profile(basis_required=64),
+        return_value=_mock_profile(basis_required=96),
     ):
         results = handler.get_readiness_diagnostics()
 
     assert len(results) == 1
     diag = results[0]
-    assert diag["bars_seen"] == 70
-    assert diag["bars_required"] == 64
-    assert diag["ready"] is True  # 70 >= 64
+    assert diag["bars_seen"] == 96
+    assert diag["bars_required"] == 96
+    assert diag["ready"] is True  # 96 >= 96
 
 
 def test_aurora_diagnostics_after_full_seed() -> None:

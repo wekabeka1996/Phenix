@@ -48,7 +48,7 @@ def test_read_by_rid_extracts_payload_why_and_message_data_ref() -> None:
             op="EVT",
             verb="TRADE_INTENT_PROPOSED",
             src="decision_making",
-            dst="bridge",
+            dst="execution_position",
             rid=rid,
             why="trade_intent",
             data_ref=["a", "b"],

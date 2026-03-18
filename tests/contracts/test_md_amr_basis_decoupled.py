@@ -2,7 +2,7 @@
 Phase 6: md_amr Basis Decoupling — regime removed from md_amr basis_required_bars.
 
 Verifies:
-1. md_amr basis_required_bars == max(channel_window, atr_window, atr_stats_window) == 64
+1. md_amr basis_required_bars == max(channel_window, atr_window + atr_stats_window - 1, dir_score history) == 96
 2. md_amr needs_regime == True (regime tracked separately via warmup)
 3. aurora basis unchanged (still uses regime_detector_required_bars)
 4. MR restart_local_basis_counter unchanged
@@ -76,13 +76,13 @@ def _config(
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_md_amr_basis_equals_own_data_needs() -> None:
-    """md_amr basis_required_bars == max(12, 14, 64) == 64, NOT 301."""
+    """md_amr basis_required_bars == max(12, 14 + 64 - 1, 96) == 96, NOT 301."""
     cfg = _config()
     profiles = build_active_strategy_compatibility_profiles(cfg)
     md_amr_profile = profiles.get("md_amr")
     assert md_amr_profile is not None, "md_amr profile not found"
-    assert md_amr_profile.basis_required_bars == 64, (
-        f"Expected 64, got {md_amr_profile.basis_required_bars}. "
+    assert md_amr_profile.basis_required_bars == 96, (
+        f"Expected 96, got {md_amr_profile.basis_required_bars}. "
         "md_amr should NOT include regime_detector_required_bars."
     )
 

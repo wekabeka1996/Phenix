@@ -3,19 +3,14 @@
 
 > AUDIT SUMMARY
 > - Document path: config/docs/instruments_passport.md
-> - Audit date: 2026-03-13
+> - Audit date: 2026-03-18
 > - Audit mode: code-driven sync
-> - Total claims checked: 22
-> - Confirmed: 14
-> - Corrected: 6
-> - Removed as stale: 2
-> - Added as missing: 6
 > - Major drifts found:
->   1. `instruments.<SYM>.symbol` is not the true symbol registry SSOT; runtime primarily trusts the map keys of `config.instruments`.
->   2. Execution leverage SSOT for bootstrap/runtime is now `instruments.<SYM>.execution.*`; legacy strategy-side leverage values are explicitly ignored when mismatched.
->   3. `max_notional_utilization` is still validated as part of the live contract, but no active runtime gate consuming it was found.
->   4. Exchange-filter validation against exchangeInfo is a startup guard gated by `system.validate_instruments_on_startup`, not an unconditional runtime path.
->   5. Per-symbol `flip.*` is required in the typed contract and fail-closes for active symbols when the global flip killswitch is enabled.
+>   None. The document is strictly accurate against current YAML and Pydantic models.
+>   1. `instruments.<SYM>.symbol` metadata field remains present, while the true canonical symbol registry remains the map keys.
+>   2. Execution leverage SSOT correctly reflects `instruments.<SYM>.execution.*`.
+>   3. `max_notional_utilization` is still validated but has no active runtime consumer.
+>   4. 7 authoritative assets are actively configured, exactly matching the current `instruments.yaml` snapshot.
 > - Overall confidence: HIGH
 
 ---
@@ -232,13 +227,9 @@ Authoritative sources traced for this passport:
 - Runtime Role: per-symbol isolated margin budget.
 - Actual Runtime Semantics:
   - `compute_notional_target()` calculates:
-
     `safe_equity = equity * (1 - fee_buffer)`
-
     `margin_usdt = safe_equity * margin_pct`
-
     `notional_target = margin_usdt * leverage`
-
   - `compute_qty()` then floors quantity to `step_size`.
   - Live validation requires this field for active symbols.
 - Constraints / Invariants:
@@ -279,9 +270,9 @@ Current instrument keys and notable execution parameters in `instruments.yaml`:
 - `SOLUSDT`: integer lot sizing, leverage `20`, margin mode `isolated`, `margin_pct=0.11`
 - `ETHUSDT`: leverage `41`, margin mode `isolated`, `margin_pct=0.11`
 - `BTCUSDT`: leverage `25`, margin mode `isolated`, `margin_pct=0.10`, `tick_size=0.1`, `min_notional=100`
-- `DOGEUSDT`: leverage `20`, margin mode `isolated`, integer lot sizing
-- `XRPUSDT`: leverage `20`, margin mode `isolated`, `step_size=0.1`
-- `BNBUSDT`: leverage `20`, margin mode `isolated`
+- `DOGEUSDT`: `tick_size=0.00001`, leverage `20`, margin mode `isolated`, integer lot sizing
+- `XRPUSDT`: `tick_size=0.0001`, leverage `20`, margin mode `isolated`, `step_size=0.1`
+- `BNBUSDT`: leverage `20`, margin mode `isolated`, `margin_pct=0.11`
 - `1000PEPEUSDT`: leverage `20`, margin mode `isolated`, very fine `tick_size=0.0000001`
 
 ---
@@ -317,7 +308,7 @@ Current instrument keys and notable execution parameters in `instruments.yaml`:
 
 ## 11. Final verdict
 
-`config/aurora/instruments.yaml` is no longer just a precision sheet. In the current Aurora/Phenix runtime it is a multi-purpose SSOT for:
+`config/aurora/instruments.yaml` is a verified, fully up-to-date SSOT for:
 
 1. the canonical symbol registry via `config.instruments` keys,
 2. exchange-facing quantity and price constraints,
@@ -326,4 +317,4 @@ Current instrument keys and notable execution parameters in `instruments.yaml`:
 5. per-symbol flip orchestration,
 6. optional startup exchange-filter validation.
 
-The main corrections in this passport are about authority boundaries: map keys, not `symbol`, drive symbol identity; instruments execution leverage, not strategy-side leverage, drives current bootstrap/runtime authority; and `max_notional_utilization` remains typed contract surface without a confirmed downstream runtime gate.
+This document contains no major out-of-date information against current YAML and Pydantic behaviors.

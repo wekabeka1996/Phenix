@@ -163,6 +163,7 @@ class DecisionMaking:
         self._cfg = DMConfigResolver(
             self.config, self.strategies_registry, self._arb_signal_buffer,
             self._arb_window_winner, self.flip_global_enabled, self.logger)
+
         self._qos = QoSRateControl(
             self._clock, self._qos_state, self._qos_apply_to_strategies,
             self.qos_exposure_block_cooldown_sec, self.qos_max_intents_per_minute_per_symbol,
@@ -180,7 +181,12 @@ class DecisionMaking:
             self._degraded_context_critical_keys_by_strategy, self.logger)
         self._emitter = IntentEmitter(
             self.fsm, self._clock, self.config, self.alert_manager,
-            lambda: self.latest_portfolio, lambda **kw: self._propose_trade_intent(**kw), self.logger)
+            lambda: self.latest_portfolio,
+            lambda **kw: self._propose_trade_intent(**kw),
+            self.logger,
+            emit_reduce_only_close_fn=lambda **kw: self._emit_reduce_only_close(**kw),
+            registry_lookup_fn=self._get_registry_owners_for_symbol,
+        )
         self._flip = FlipOrchestrator(
             self._clock, self.config, self.fsm,
             self._get_position_state, self._get_portfolio_position_qty_signed,
@@ -220,6 +226,10 @@ class DecisionMaking:
         self._domain_bridge = DomainBridge("decision_making", bus=self.fsm)
         self._domain_bridge.register_health_fn(self.is_healthy)
         self._last_status_ts = 0.0
+
+    def start(self) -> None:
+        """Start the DecisionMaking component."""
+        self.logger.info("DecisionMaking component started.")
 
     def _safe_decimal(self, value: Any, default: Optional[Decimal] = None) -> Optional[Decimal]:
         if value is None:
@@ -460,6 +470,18 @@ class DecisionMaking:
     def _resolve_position_mode(self, *, symbol, source): return self._flip.resolve_position_mode(symbol=symbol, source=source)
     def _initiate_flip_close(self, symbol, intent_side, original_pld, source):
         return self._flip.initiate_flip_close(symbol, intent_side, original_pld, source)
+
+    def _get_registry_owners_for_symbol(self, symbol: str) -> list:
+        """Return strategy_ids assigned to symbol in strategies_registry.
+
+        Used by IntentEmitter.resolve_strategy_id_for_close for regime-flip closes.
+        Returns empty list if no registry.
+        """
+        reg = self.strategies_registry
+        if reg is None:
+            return []
+        assignments = getattr(reg, "assignments", {})
+        return list(assignments.get(symbol, []))
 
     # -- Lifecycle -------------------------------------------------------------
     def clear_internal_state_for_symbol(self, symbol: str) -> None:

@@ -110,8 +110,8 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
     assert plan.plans["aurora:BTCUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["aurora:ETHUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["aurora:SOLUSDT"].requirement.basis_required_bars == 301
-    assert plan.plans["md_amr:BNBUSDT"].requirement.basis_required_bars == 64
-    assert plan.plans["md_amr:XRPUSDT"].requirement.basis_required_bars == 64
+    assert plan.plans["md_amr:BNBUSDT"].requirement.basis_required_bars == 96
+    assert plan.plans["md_amr:XRPUSDT"].requirement.basis_required_bars == 96
     assert plan.plans["mean_reversion:DOGEUSDT"].requirement.basis_required_bars == 301
     assert any(
         action.action == "SEED_HANDLER_BASIS_COUNTER"
@@ -167,8 +167,8 @@ def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> 
     assert aurora_handler._bars_seen_since_restart["BTCUSDT"] >= 301
     assert aurora_handler._bars_seen_since_restart["ETHUSDT"] >= 301
     assert aurora_handler._bars_seen_since_restart["SOLUSDT"] >= 301
-    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 64
-    assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 64
+    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 96
+    assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
     assert summary["imports"]["BTCUSDT:300"] >= 301
-    assert summary["imports"]["BNBUSDT:900"] >= 64
+    assert summary["imports"]["BNBUSDT:900"] >= 96
     assert len(summary["seeded"]) == 5

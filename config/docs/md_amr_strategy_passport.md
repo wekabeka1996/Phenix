@@ -1,5 +1,12 @@
 # Code-Driven Configuration Passport: `config/aurora/strategies/md_amr.yaml`
 
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/md_amr_strategy_passport.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven deep sync
+> - **Major drifts found:** No structural drifts since the previous audit. The profile correctly documents that the strategy relies on both registry assignment (`XRPUSDT`, `BNBUSDT`) and `md_amr.yaml`. Constants and fail-closed contracts remain perfectly aligned with current active codebase logic.
+> - **Overall confidence:** HIGH
+
 Цей паспорт описує лише фактичний live/runtime контракт стратегії `md_amr`, підтверджений через YAML, Pydantic, composition root, handler, gateway та тести.
 
 Статус: production profile, але не вся декларативна поверхня YAML однаково підтверджена як end-to-end runtime SSOT.

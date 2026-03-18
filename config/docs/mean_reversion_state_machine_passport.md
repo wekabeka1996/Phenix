@@ -1,5 +1,15 @@
 # Code-Driven State Machine Passport: `config/aurora/strategies/mean_reversion.yaml`
 
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/mean_reversion_state_machine_passport.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven deep sync
+> - **Major drifts found:** 
+>   1. Missing strategy parameters like `bb_window`, `bb_num_std`, `rsi_window`, `entry_threshold`, RSI thresholds, and confidence scalars added for completeness.
+>   2. The assertion that DOGEUSDT is the only live symbol is verified via `strategies.yaml` assignments.
+>   3. `timeframe_sec=300` and config override structures verified and exactly match.
+> - **Overall confidence:** HIGH
+
 Цей паспорт описує лише поточний live/runtime контракт state machine для `mean_reversion`: де закінчується власне bar-based стратегія і де починаються handler overlays та downstream execution.
 
 Owner surface:
@@ -211,6 +221,76 @@ Objective Engine теж живе в handler, уже після формуван�
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Довший warmup ⇒ менше торгівлі на старті сесії (менше risk), але більше missed early moves.
     - 🔽 **Too Low:** Раніші сигнали ⇒ ризик торгувати на нестабільних індикаторах.
+
+---
+
+### `strategies.mean_reversion.strategy.bb_window`
+- **Type:** `int`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:463`
+- **Mathematical Role:**
+    > Довжина вікна для побудови Bollinger Bands (SMA та StdDev).
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Канал інертніший ⇒ повільніше адаптується до зміни ціни, сигнали рідші.
+    - 🔽 **Too Low:** Канал реактивний ⇒ сигнали частіші, більше хибних пробоїв.
+
+---
+
+### `strategies.mean_reversion.strategy.bb_num_std`
+- **Type:** `float`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:464`
+- **Mathematical Role:**
+    > Множник стандартного відхилення для ширини Bollinger Bands.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Ширший канал ⇒ ціна рідше торкається границь, менше сигналів (консервативно).
+    - 🔽 **Too Low:** Вужчий канал ⇒ ціна частіше пробиває границі, більше сигналів (агресивно).
+
+---
+
+### `strategies.mean_reversion.strategy.entry_threshold`
+- **Type:** `float`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:535`
+- **Mathematical Role:**
+    > Поріг індикатора `%B` для входу. Вхід, якщо `%B < entry_threshold` (LONG) або `%B > 1 - entry_threshold` (SHORT).
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Глибше входження або вхід ще до торкання межі ⇒ більше угод, нижча якість.
+    - 🔽 **Too Low:** Вхід тільки при сильному пробої межі ⇒ менше угод, вища якість.
+
+---
+
+### `strategies.mean_reversion.strategy.rsi_window`
+- **Type:** `int`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:469`
+- **Mathematical Role:**
+    > Довжина вікна для обчислення RSI (Relative Strength Index). Використовується для підтвердження oversold/overbought стану.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** RSI інертніший ⇒ менше екстремальних значень.
+    - 🔽 **Too Low:** RSI реактивніший ⇒ більше хибних розворотних сигналів.
+
+---
+
+### `strategies.mean_reversion.strategy.rsi_oversold` / `rsi_overbought`
+- **Type:** `int`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:548`
+- **Mathematical Role:**
+    > Пороги RSI для підтвердження. Якщо RSI перетинає поріг, додається `confidence_rsi_bonus`.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High (Oversold)** / 🔽 **Too Low (Overbought):** Більша зона для формування бонусу ⇒ вищий середній confidence.
+
+---
+
+### `strategies.mean_reversion.strategy.confidence_base` / `confidence_bb_slope` / `confidence_rsi_bonus`
+- **Type:** `float`
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:544-550`
+- **Mathematical Role:**
+    > Обчислює `confidence`: `base + |%B - threshold| * bb_slope + (rsi_bonus if rsi_confirms else 0)`.
+- **Tuning Sensitivity:**
+    - Scalars, що безпосередньо формують підсумковий `confidence` (clamped до 1.0), який впливає на Objective Engine/ downstream scoring.
 
 ---
 

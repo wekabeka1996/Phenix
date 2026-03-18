@@ -1,5 +1,23 @@
 # Engineering Journal
 
+## 2026-03-17: CLEAN-START-EXECUTION-RESTORE-UPGRADE (PROTECT_ONLY self-heal)
+
+**Task:** Fix production blocker where `mean_reversion` cannot open new positions due to sticky PROTECT_ONLY latch after cold startup without snapshot restore.
+
+**Root cause:** Startup restore path sets `execution_status=COLD` when `snapshot_loaded_successfully=False`. `combine_restore_permissions_live_first()` sees `execution_status != RESTORED` → forces `can_open_new_risk=False` for the entire session. No self-heal mechanism existed to upgrade execution restore even when live account confirmed zero open positions.
+
+**What was done:**
+- Added `upgrade_cold_execution_restore_if_clean_start()` to contract layer (`apps/reference/contracts/runtime_analytics_restore.py`) — pure function, reusable for any strategy.
+- Added `EVT:ACCOUNT_UPDATE_RECEIVED` listener to `MeanReversionHandler` (`_on_account_update_clean_start_check`) that upgrades COLD execution restore → RESTORED when live account confirms zero positions for managed symbols.
+- Fail-closed semantics preserved: upgrade only on COLD state, only with trustworthy live zero-positions confirmation, only per-symbol.
+- Structured observability via `MR_CLEAN_START_UPGRADE` domain log entry.
+
+**Tests added:**
+- `tests/contracts/test_clean_start_execution_restore_upgrade.py` — 13 contract-level tests
+- `tests/domains/decision_making/test_mean_reversion_clean_start_upgrade.py` — 11 handler-level integration tests
+
+**Regression:** 762 passed, 0 failed across contracts/bootstrap/decision_making domains.
+
 ## 2026-03-16: LIVE-SCHEMA-VALIDATION-HOTFIX (3 crashes)
 
 **Task:** Fix three P0 live runtime crashes caused by JSON schema validation mismatches after Phase 14C schema enforcement was activated.

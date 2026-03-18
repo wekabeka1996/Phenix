@@ -1,5 +1,15 @@
 # TODO
 
+## CLEAN-START-EXECUTION-RESTORE-UPGRADE — completed 2026-03-17
+- [x] Contract-level `upgrade_cold_execution_restore_if_clean_start()` added
+- [x] Handler-level `EVT:ACCOUNT_UPDATE_RECEIVED` → COLD→RESTORED upgrade for MR
+- [x] 24 new tests (13 contract + 11 handler), 762 regression passed
+
+### Follow-up (deferred from this pack)
+- [ ] Apply same clean-start upgrade path to `aurora` and `md_amr` handlers if needed
+- [ ] Consider global restore orchestrator that upgrades all strategy handlers on account confirmation (avoid per-handler duplication)
+- [ ] Re-enable snapshot subsystem for production reliability (snapshot_loaded path)
+
 ## DM-EVT-ORDER-REJECTED-CONTRACT-HARDENING-PACK — completed 2026-03-16
 - [x] Canonical normalization `_normalize_order_reject_reason` in `md_amr_handler.py`
 - [x] Fix `reject_reason` vs `reason` payload mismatch (GTX retries were dead in production)

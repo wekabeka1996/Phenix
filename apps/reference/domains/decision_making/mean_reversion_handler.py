@@ -30,6 +30,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     merge_restore_readiness_live_first,
     restore_execution_blocking_tokens,
     restore_status_to_readiness_status,
+    upgrade_cold_execution_restore_if_clean_start,
 )
 from apps.reference.bootstrap.startup_warmup import (
     apply_startup_warmup_permission_overlay,
@@ -330,6 +331,8 @@ class MeanReversionHandler:
                         self._on_order_state_changed)
         self.fsm.listen("EVT:TRADE_INTENT_REJECTED",
                         self._on_trade_intent_rejected)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
+                        self._on_portfolio_clean_start_check)
         self.mlog.info(
             "MR_REGISTER %s",
             json.dumps(
@@ -1254,6 +1257,89 @@ class MeanReversionHandler:
         self._objective_blocked_ts_ms.setdefault(symbol, deque()).append(
             int(pld.get("ts_ms") or get_clock().now_ms())
         )
+
+    # ------------------------------------------------------------------
+    # Clean-start execution restore upgrade (PROTECT_ONLY self-heal)
+    # ------------------------------------------------------------------
+
+    def _on_portfolio_clean_start_check(self, event: Message) -> None:
+        """Upgrade COLD execution restore → RESTORED when *canonical*
+        position-tracking state (PORTFOLIO_STATE_UPDATED) confirms zero
+        open positions for handler-managed symbols.
+
+        This intentionally listens to EVT:PORTFOLIO_STATE_UPDATED —
+        the reconciled output of PositionTracking — instead of the raw
+        EVT:ACCOUNT_UPDATE_RECEIVED, because the latter may carry a
+        partial WebSocket delta (only *changed* positions) where an
+        empty array means "no changes", not "no positions".
+
+        Fail-closed: upgrade only if positions list is present and every
+        managed symbol is absent from it (canonical zero position).
+        """
+        pld = event.pld or {}
+        if not isinstance(pld, dict):
+            return
+
+        positions_raw = pld.get("positions")
+        if not isinstance(positions_raw, list):
+            return  # fail-closed: missing positions payload
+
+        ts_ms = int(pld.get("positions_last_ts_ms") or pld.get("ts") or 0)
+        if ts_ms <= 0:
+            ts_ms = get_clock().now_ms()
+
+        # Build a set of symbols that have non-zero positions
+        # PORTFOLIO_STATE_UPDATED uses 'net_position' (string) not 'positionAmt'
+        active_symbols: set[str] = set()
+        for pos in positions_raw:
+            if not isinstance(pos, dict):
+                continue
+            sym = str(pos.get("symbol") or "").upper()
+            try:
+                qty = Decimal(str(pos.get("net_position") or "0"))
+            except Exception:
+                qty = Decimal("0")
+            if abs(qty) > Decimal("1e-9"):
+                active_symbols.add(sym)
+
+        for symbol in self._enabled_symbols:
+            sym_key = str(symbol).upper()
+            if sym_key in active_symbols:
+                continue  # has open position — no upgrade
+
+            snapshot = self._analytics_restore_snapshots.get(sym_key)
+            if snapshot is None:
+                continue
+
+            upgraded = upgrade_cold_execution_restore_if_clean_start(
+                snapshot,
+                updated_at=ts_ms,
+                source="position_tracking:canonical_zero_positions",
+                evidence_ref=f"portfolio_state:{sym_key}:{ts_ms}:zero_positions",
+            )
+            if upgraded is not None:
+                self._analytics_restore_snapshots[sym_key] = upgraded
+                self.logger.info(
+                    "[CLEAN_START_UPGRADE] %s execution restore upgraded "
+                    "COLD->RESTORED via canonical position-tracking "
+                    "zero-positions confirmation (ts_ms=%d)",
+                    sym_key,
+                    ts_ms,
+                )
+                self.mlog.info(
+                    "MR_CLEAN_START_UPGRADE %s",
+                    json.dumps(
+                        {
+                            "symbol": sym_key,
+                            "strategy_id": "mean_reversion",
+                            "ts_ms": ts_ms,
+                            "source": "canonical_zero_positions",
+                            "prev_execution_state": "COLD",
+                            "new_execution_state": "RESTORED",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
 
     def _on_features_calculated(self, event: Message) -> None:
         """Cache liquidity kappa from FE."""

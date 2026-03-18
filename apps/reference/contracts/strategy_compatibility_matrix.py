@@ -153,6 +153,20 @@ def _active_aurora_profile_id(config: Any) -> str:
     return "aurora_quadratic"
 
 
+def _md_amr_basis_required_bars(md_cfg: Any) -> int:
+    """Minimum md_amr history required before the core stops deferring."""
+    channel_window_bars = int(getattr(md_cfg, "channel_window_bars", 12) or 12)
+    atr_window = int(getattr(md_cfg, "atr_window", 14) or 14)
+    atr_stats_window = int(getattr(md_cfg, "atr_stats_window", 64) or 64)
+    atr_history_required_bars = atr_window + atr_stats_window - 1
+    dir_components_required_bars = 96
+    return max(
+        channel_window_bars,
+        atr_history_required_bars,
+        dir_components_required_bars,
+    )
+
+
 def active_aurora_profile_id(config: Any) -> str:
     return _active_aurora_profile_id(config)
 
@@ -241,11 +255,7 @@ def build_full_strategy_compatibility_matrix(
             active_symbols=_active_symbols(assignments, "md_amr"),
             required_basis_tf_sec=int(
                 getattr(md_cfg, "timeframe_sec", 900) or 900),
-            basis_required_bars=max(
-                int(getattr(md_cfg, "channel_window_bars", 12) or 12),
-                int(getattr(md_cfg, "atr_window", 14) or 14),
-                int(getattr(md_cfg, "atr_stats_window", 64) or 64),
-            ),
+            basis_required_bars=_md_amr_basis_required_bars(md_cfg),
             required_htf=(),
             needs_regime=True,
             needs_microstructure=False,

@@ -1,5 +1,15 @@
 # 📄 Semantic Configuration Passport: `config/aurora/system.yaml`
 
+> AUDIT SUMMARY
+> - Document path: config/docs/system_passport.md
+> - Audit date: 2026-03-18
+> - Audit mode: code-driven sync
+> - Major drifts found:
+>   1. `account_observer.poll_interval` has been removed from the codebase (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01). The passport was updated to reflect its DELETED status.
+>   2. Several sections are correctly marked as having no runtime consumers (`sequential_tests`, `hawkes`, `hardening`, `risk_core`, etc.).
+> - Overall confidence: HIGH
+> 
+> ---
 Цей паспорт описує **системні** налаштування, які визначають “фізику” процесу: таймінги, TTL, бекпрешер/черги, polling, а також секції метаданих (system_meta), які зберігаються для аудиту.
 
 **Критичні уточнення (підтверджено трасуванням коду):**
@@ -800,13 +810,11 @@
 ### `account_observer.poll_interval`
 - **Type:** `int` *(seconds)*
 - **Logic Owner:** `account_balance` (polling loop)
-- **Code Reference:** `apps/reference/config_models.py:2787` (model: `AccountObserverConfig`); `apps/reference/domains/account_balance/account_connector.py:50` (init); `apps/reference/domains/account_balance/account_connector.py:105` (func: `_monitor_loop`)
+- **Code Reference:** `apps/reference/config_models.py:3935` (module: `AccountObserverConfig` removed)
 - **Mathematical/Architectural Role:**
-    > **Частота REST polling** аккаунта: `time.sleep(poll_interval)` у фонового треда `AccountConnector`. Визначає, як часто емiтяться події:
-    > - `EVT:BALANCE_UPDATE_RECEIVED` (баланс) (`apps/reference/domains/account_balance/account_connector.py:221`)
-    > - `EVT:ACCOUNT_UPDATE_RECEIVED` (позиції/аккаунт) (`apps/reference/domains/account_balance/account_connector.py:339`)
+    > **REMOVED (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)**: The `account_observer` config section and its related `AccountObserverConfig` were removed from the codebase. The `account_observer.start()` call is currently commented out in `main.py`.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** Повільніші оновлення equity/позицій → більше шансів рішення/ліміти будуть опиратися на застарілий стан (але менше API навантаження).
-    - 🔽 **Too Low:** Частіші REST виклики → ризик rate-limit/бану та більше CPU/мережевого трафіку.
-- **Invariant/Constraints:** `int > 0`. Підбирати з урахуванням лімітів біржі та критичності “свіжості” стану.
+    - 🔼 **Too High:** *(N/A)*.
+    - 🔽 **Too Low:** *(N/A)*.
+- **Invariant/Constraints:** DELETED
 

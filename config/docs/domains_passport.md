@@ -1,5 +1,16 @@
 # Semantic Configuration Passport: `config/aurora/domains.yaml`
 
+> **AUDIT SUMMARY**
+> - **Document path:** `config/docs/domains_passport.md`
+> - **Audit date:** 2026-03-18
+> - **Audit mode:** Code-driven sync (auto-generated document)
+> - **Major drifts found:** 
+>   1. The `account_observer` domain has been completely removed from the codebase (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01), matching its absence in this document.
+>   2. `shadow_telemetry` and `objective_engine` domains are present in `domains.yaml` and actively used as Phase 2/3 subsystems, but are **missing from this auto-generated passport**.
+>   3. `domains.decision_making.qos` and `domains.decision_making.directional_sanity` parameters match the SSOT definition.
+>   4. `domains.feature_engineering.macro_resid` and `absorption` confirm Phase 9.
+> - **Overall confidence:** HIGH (with known generated omissions noted)
+
 Цей документ описує **`domains.yaml` як Active SSOT**: доменні параметри, які реально читаються runtime-кодом як `config.domains.*`.
 
 ## SSOT Supremacy — доказ трасуванням

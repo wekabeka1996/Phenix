@@ -125,7 +125,8 @@ class StrategyAnalyticsRestoreSnapshot:
     counts: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "blocking_reason_chain", _normalize_why_tokens(self.blocking_reason_chain))
+        object.__setattr__(self, "blocking_reason_chain",
+                           _normalize_why_tokens(self.blocking_reason_chain))
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -265,7 +266,8 @@ def lookup_restore_status(
 ) -> RuntimeAnalyticsRestoreStatus | None:
     if snapshot is None:
         return None
-    key = scope.value if isinstance(scope, RuntimeAnalyticsRestoreScope) else str(scope)
+    key = scope.value if isinstance(
+        scope, RuntimeAnalyticsRestoreScope) else str(scope)
     return snapshot.scopes.get(key)
 
 
@@ -396,7 +398,8 @@ def combine_restore_permissions_live_first(
     if execution_status is None or execution_status.state == RuntimeAnalyticsRestoreState.RESTORED:
         return base_permissions
     return make_permissions(
-        can_manage_existing_risk=bool(base_permissions.can_manage_existing_risk),
+        can_manage_existing_risk=bool(
+            base_permissions.can_manage_existing_risk),
         can_open_new_risk=False,
     )
 
@@ -432,6 +435,50 @@ def restore_execution_blocking_tokens(
     return ("execution_context_restore_cold",)
 
 
+def upgrade_cold_execution_restore_if_clean_start(
+    snapshot: StrategyAnalyticsRestoreSnapshot,
+    *,
+    updated_at: int,
+    source: str,
+    evidence_ref: str,
+) -> StrategyAnalyticsRestoreSnapshot | None:
+    """Upgrade execution_state from COLD → RESTORED on clean-start evidence.
+
+    Returns a new snapshot with RESTORED execution_state, or ``None`` when the
+    upgrade is not applicable (already RESTORED, PARTIAL, INVALIDATED, or
+    execution scope missing).
+
+    Caller is responsible for gating on trustworthy live zero-positions
+    confirmation before invoking this function.
+
+    Fail-closed: only COLD execution_state is eligible for upgrade.
+    """
+    execution_status = lookup_restore_status(
+        snapshot,
+        RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+    )
+    if execution_status is None:
+        return None
+    if execution_status.state != RuntimeAnalyticsRestoreState.COLD:
+        return None
+
+    new_scopes = dict(snapshot.scopes)
+    new_scopes[RuntimeAnalyticsRestoreScope.EXECUTION_STATE.value] = restored_restore_status(
+        why=["clean_start_zero_positions_confirmed"],
+        updated_at=updated_at,
+        source=source,
+        evidence_ref=evidence_ref,
+    )
+    return make_strategy_restore_snapshot(
+        strategy_id=snapshot.strategy_id,
+        symbol=snapshot.symbol,
+        updated_at=updated_at,
+        scopes=new_scopes,
+        source=snapshot.source,
+        has_open_position=False,
+    )
+
+
 def extract_strategy_restore_snapshot(
     payload: Mapping[str, Any] | None,
 ) -> StrategyAnalyticsRestoreSnapshot | None:
@@ -449,32 +496,42 @@ def extract_strategy_restore_snapshot(
                 continue
             try:
                 scopes[str(scope_name)] = make_restore_status(
-                    state=RuntimeAnalyticsRestoreState(str(status_raw.get("state", RuntimeAnalyticsRestoreState.COLD.value))),
+                    state=RuntimeAnalyticsRestoreState(
+                        str(status_raw.get("state", RuntimeAnalyticsRestoreState.COLD.value))),
                     why=status_raw.get("why"),
-                    updated_at=(int(status_raw["updated_at"]) if status_raw.get("updated_at") is not None else None),
+                    updated_at=(int(status_raw["updated_at"]) if status_raw.get(
+                        "updated_at") is not None else None),
                     source=str(status_raw.get("source") or "runtime:payload"),
-                    evidence_ref=(str(status_raw.get("evidence_ref")) if status_raw.get("evidence_ref") is not None else None),
+                    evidence_ref=(str(status_raw.get("evidence_ref")) if status_raw.get(
+                        "evidence_ref") is not None else None),
                 )
             except Exception:
                 continue
 
-    permissions_raw = raw.get("permissions") if isinstance(raw.get("permissions"), Mapping) else {}
+    permissions_raw = raw.get("permissions") if isinstance(
+        raw.get("permissions"), Mapping) else {}
     permissions = make_permissions(
-        can_manage_existing_risk=bool(permissions_raw.get("can_manage_existing_risk", False)),
-        can_open_new_risk=bool(permissions_raw.get("can_open_new_risk", False)),
+        can_manage_existing_risk=bool(
+            permissions_raw.get("can_manage_existing_risk", False)),
+        can_open_new_risk=bool(
+            permissions_raw.get("can_open_new_risk", False)),
     )
-    rollup_state_raw = str(raw.get("rollup_state") or _resolve_rollup_state(scopes).value)
+    rollup_state_raw = str(raw.get("rollup_state")
+                           or _resolve_rollup_state(scopes).value)
     rollup_state = RuntimeAnalyticsRestoreState(rollup_state_raw)
 
     return StrategyAnalyticsRestoreSnapshot(
-        strategy_id=str(raw.get("strategy_id") or payload.get("strategy_id") or ""),
+        strategy_id=str(raw.get("strategy_id")
+                        or payload.get("strategy_id") or ""),
         symbol=str(raw.get("symbol") or payload.get("symbol") or ""),
-        updated_at=(int(raw["updated_at"]) if raw.get("updated_at") is not None else None),
+        updated_at=(int(raw["updated_at"]) if raw.get(
+            "updated_at") is not None else None),
         scopes=scopes,
         source=str(raw.get("source") or "runtime:payload"),
         permissions=permissions,
         rollup_state=rollup_state,
-        blocking_reason_chain=_normalize_why_tokens(raw.get("blocking_reason_chain")),
+        blocking_reason_chain=_normalize_why_tokens(
+            raw.get("blocking_reason_chain")),
         counts={
             str(key): int(value)
             for key, value in (

@@ -1,5 +1,16 @@
 # Semantic Configuration Passport: `config/aurora/trading.yaml`
 
+> AUDIT SUMMARY
+> - Document path: config/docs/trading_passport.md
+> - Audit date: 2026-03-18
+> - Audit mode: code-driven sync
+> - Major drifts found:
+>   1. Missing documentation for `llm_orchestration` block, which has been added at the end of the document.
+>   2. `trading.market_data.macro_sync` and other legacy fields remain documented but accurately tagged as "legacy" or "no runtime consumer found".
+>   3. `trading.risk.*` legacy tags confirmed. `trading.execution.exposure` hard limits come from `domains.yaml` as stated.
+> - Overall confidence: HIGH
+> 
+> ---
 Цей паспорт описує **торгову логіку та ризик** на рівні `trading.yaml`: режим роботи, бюджет TCA/ризику, дані ринку, виконання (execution) та оперативні запобіжники.
 
 **Критичні уточнення (підтверджено трасуванням коду):**
@@ -1480,4 +1491,43 @@
     - 🔼 **Too High:** *(N/A без wiring)*.
     - 🔽 **Too Low:** *(N/A без wiring)*.
 - **Invariant/Constraints:** Якщо реалізовувати — потрібно визначити, як ризик бере mark prices (live ticks vs account markPrice).
+
+---
+
+## 11. LLM Orchestration (`trading.llm_orchestration`)
+
+Ця секція визначає поведінку зовнішньої генерації намірів (intents) за участю LLM (Phase 2).
+
+### `trading.llm_orchestration.mode`
+- **Type:** `string` *(enum, e.g., `hybrid_advisory`)*
+- **Mathematical/Architectural Role:**
+    > Визначає режим роботи пайплайну LLM-оркестрації.
+
+### `trading.llm_orchestration.llm_role`
+- **Type:** `string` *(enum, e.g., `advisory`)*
+- **Mathematical/Architectural Role:**
+    > Пасивний (advisory) або активний режим участі LLM у формуванні `TradeIntent`.
+
+### `trading.llm_orchestration.require_telemetry`
+- **Type:** `bool`
+- **Mathematical/Architectural Role:**
+    > Якщо `true`, генерація/обробка LLM-намірів вимагає активної телеметрії (traceability) для подальшого аналізу.
+
+### `trading.llm_orchestration.symbols_llm` / `trading.llm_orchestration.allowlist_symbols`
+- **Type:** `list[string]`
+- **Mathematical/Architectural Role:**
+    > Обмеження пулу символів, на яких дозволено LLM-оркестрацію (напр., `["1000PEPEUSDT"]`). Запобігає випадковому втручанню LLM у основні потоки (Aurora/BTC).
+
+### `trading.llm_orchestration.intent_policy.*`
+- **Type:** `object`
+- **Mathematical/Architectural Role:**
+    > Hard constraints для LLM-генерованих intents, що виконуються перед передачею в Decision Making / Execution:
+    > - `max_open_intents`: Максимальна кількість одночасних відкритих намірів (напр., 3).
+    > - `cooldown_sec`: Тайм-аут між генерацією нових намірів (напр., 30s).
+    > - `allow_limit_only`: Якщо `true`, забороняє `MARKET` ордери від LLM, форсуючи price discovery.
+    > - `require_tp_sl`: Вимагає явно заданих TP/SL брекетів у намірі (safety gate).
+    > - `max_notional_usd`: Жорсткий ліміт на notional розмір одного LLM-наміру (напр., 100.0 USD).
+    > - `max_qty`: Ліміт у базовій валюті есета.
+    > - `max_price_deviation_bps`: Максимально допустиме відхилення ціни Limit-ордера від поточного Mark Price (напр., 20 bps) для захисту від "fat-finger" LLM-галюцинацій.
+    > - `allowed_tif`: Список дозволених `timeInForce` (напр., `["GTC"]`).
 

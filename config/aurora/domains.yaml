@@ -353,8 +353,8 @@ feature_engineering:
       min_bars: 200             # Min D1 bars before ready
 
     weights:
-      tactician: 0.30           # M15 weight in pillar sum
-      operator: 0.40            # H4 weight (strongest signal)
+      tactician: 0.45           # M15 weight in pillar sum
+      operator: 0.25            # H4 weight (balanced signal)
       strategist: 0.30          # D1 weight in pillar sum
 
     backfill:

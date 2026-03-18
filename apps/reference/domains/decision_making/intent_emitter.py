@@ -5,11 +5,15 @@ Extracted from decision_making.py (Phase 14A decomposition).
 Manages intent lifecycle events: deferred, rejected, blocked/accepted counting.
 
 LOC budget: <=500 (Constitution S3).
+
+P0 PATCH (2026-03-19):
+  handle_regime_flip now uses canonical close path (emit_reduce_only_close_fn) and
+  explicit strategy resolution (resolve_strategy_id_for_close). No silent aurora default.
 """
 
 import decimal
 import logging
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, Tuple, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.contracts.runtime_regime_layers import (
@@ -40,6 +44,9 @@ class IntentEmitter:
         get_portfolio: Callable[[], Optional[Dict]],
         propose_trade_intent: Callable,
         logger: logging.Logger,
+        *,
+        emit_reduce_only_close_fn: Optional[Callable] = None,
+        registry_lookup_fn: Optional[Callable] = None,
     ) -> None:
         self._fsm = fsm
         self._clock = clock
@@ -48,6 +55,10 @@ class IntentEmitter:
         self._get_portfolio = get_portfolio
         self._propose_trade_intent = propose_trade_intent
         self.logger = logger
+        # Canonical close path for regime-flip (injected from facade — FlipOrchestrator.emit_reduce_only_close)
+        self._emit_reduce_only_close = emit_reduce_only_close_fn
+        # Registry owner lookup for strategy resolution (injected from facade — dm._get_registry_owners_for_symbol)
+        self._registry_lookup_fn = registry_lookup_fn
 
         # Counters for risk gate alert monitoring
         self.intents_seen_total: int = 0
@@ -102,8 +113,8 @@ class IntentEmitter:
         if context:
             payload["context"] = context
         self._fsm.emit(
-            "EVT:INTENT_DEFERRED", 
-            payload, 
+            "EVT:INTENT_DEFERRED",
+            payload,
             why=f"intent_deferred:{reason}",
             data_ref=why_chain or []
         )
@@ -162,8 +173,8 @@ class IntentEmitter:
             )
 
             self._fsm.emit(
-                "EVT:TRADE_INTENT_REJECTED", 
-                payload, 
+                "EVT:TRADE_INTENT_REJECTED",
+                payload,
                 why=f"intent_rejected:{reason_code}",
                 data_ref=list(why_chain or [])
             )
@@ -193,8 +204,8 @@ class IntentEmitter:
 
         self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
         self._fsm.emit(
-            "EVT:INTENT_DEFERRED", 
-            payload, 
+            "EVT:INTENT_DEFERRED",
+            payload,
             why=f"intent_deferred:{reason}",
             data_ref=["flip_orchestration_defer"]
         )
@@ -260,12 +271,57 @@ class IntentEmitter:
             except Exception as e:
                 self.logger.error(f"Error emitting risk gate alert: {e}")
 
+    # -- Strategy Resolution for Close Path --------------------------------
+
+    def resolve_strategy_id_for_close(
+        self,
+        symbol: str,
+        position_context: Optional[Dict],
+    ) -> Tuple[Optional[str], bool, str]:
+        """Resolve strategy_id for a regime-flip close. Fail-closed if ambiguous.
+
+        Resolution order:
+        1. position_context.get("strategy_id") — forward-compat guard only
+           (PositionData schema in schemas.py has no strategy_id field currently)
+        2. Registry single-owner check — if exactly one strategy assigned to symbol
+        3. Fail-closed: return (None, True, reason)
+
+        NOTE: PositionData schema (schemas.py) defines: symbol, positionAmt,
+        entryPrice, unRealizedProfit, leverage. No strategy_id field.
+        In production, resolution always proceeds to step 2 (registry).
+
+        Returns:
+            (strategy_id, is_ambiguous, reason)
+            is_ambiguous=True -> caller MUST fail-closed, never default to "aurora"
+        """
+        # 1. Position-context field (forward-compat; schema currently has no such field)
+        if isinstance(position_context, dict):
+            strat = position_context.get("strategy_id")
+            if strat and str(strat) not in ("", "None", "null"):
+                return str(strat), False, "position_field"
+
+        # 2. Registry single-owner resolution (only if exactly one owner)
+        if self._registry_lookup_fn is not None:
+            try:
+                owners = self._registry_lookup_fn(symbol)
+                if isinstance(owners, list) and len(owners) == 1:
+                    return str(owners[0]), False, "registry_single_owner"
+                if isinstance(owners, list) and len(owners) > 1:
+                    return None, True, f"registry_multi_owner:{owners}"
+            except Exception as e:
+                return None, True, f"registry_lookup_error:{e}"
+
+        return None, True, "strategy_unresolvable:no_registry"
+
     # -- Regime Flip Handling ----------------------------------------------
 
     def handle_regime_flip(self, symbol: str, regime_data: Any) -> None:
         """
-        Check if new regime conflicts with existing position and close if needed.
-        Enforces 'Immediate Closure' on regime flips.
+        Check if new regime conflicts with existing position; close via canonical path.
+
+        P0 FIX: Uses canonical emit_reduce_only_close path (not generic entry proposal).
+        Resolves strategy_id from registry (fail-closed if ambiguous).
+        No silent default to 'aurora' for non-aurora symbols.
         """
         try:
             if isinstance(regime_data, dict) and not is_structural_regime_payload(regime_data):
@@ -303,22 +359,68 @@ class IntentEmitter:
                 should_close = True
                 reason = "Position in UNCERTAIN regime"
 
-            if should_close:
-                self.logger.warning(f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")
+            if not should_close:
+                return
 
-                close_side = "SELL" if is_long else "BUY"
-                price = decimal.Decimal("0")
-                why_chain = ["regime_flip_enforcement", regime]
-                rid = f"rf-{int(self._clock.now_sec())}"
+            self.logger.warning(f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")
 
+            rid = f"rf-{int(self._clock.now_sec())}"
+            close_side = "SELL" if is_long else "BUY"
+
+            # P0 FIX: Resolve strategy_id explicitly from position context / registry.
+            # Fail-closed if ambiguous — never silently default to "aurora".
+            strategy_id, is_ambiguous, resolve_reason = self.resolve_strategy_id_for_close(
+                symbol=symbol,
+                position_context=curr_pos,
+            )
+
+            if is_ambiguous or strategy_id is None:
+                self.logger.error(
+                    f"[{symbol}] REGIME_FLIP_ENFORCEMENT: BLOCKED — strategy_id "
+                    f"unresolvable (reason={resolve_reason}). No silent default. Close NOT emitted."
+                )
+                # Use canonical reject helper: WAL write + FSM emit + telemetry
+                self.emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id="UNRESOLVED",
+                    side=close_side,
+                    rid=rid,
+                    reason_code="REGIME_FLIP_STRATEGY_UNRESOLVABLE",
+                    reason="DECISION",
+                    context=f"regime_flip:strategy_unresolvable:{resolve_reason}",
+                    why_chain=["regime_flip_enforcement", regime, resolve_reason],
+                )
+                return
+
+            # P0 FIX: Use canonical close path (FlipOrchestrator.emit_reduce_only_close).
+            # This avoids generic entry proposal semantics and entry TTL contamination.
+            if self._emit_reduce_only_close is not None:
+                emitted = self._emit_reduce_only_close(
+                    symbol=symbol,
+                    reason=f"regime_flip_{regime}",
+                    rid=rid,
+                    strategy_id=strategy_id,
+                )
+                if not emitted:
+                    self.logger.warning(
+                        f"[{symbol}] REGIME_FLIP_ENFORCEMENT: emit_reduce_only_close returned False "
+                        f"(position qty zero or invalid). strategy_id={strategy_id}"
+                    )
+            else:
+                # Should not occur in production — facade always injects this callable
+                self.logger.error(
+                    f"[{symbol}] REGIME_FLIP_ENFORCEMENT: emit_reduce_only_close_fn not injected! "
+                    f"Falling back to _propose_trade_intent (degraded path). strategy_id={strategy_id}"
+                )
                 self._propose_trade_intent(
                     symbol=symbol,
                     side=close_side,
                     qty=decimal.Decimal(str(abs(qty_val))),
-                    price=price,
-                    why_chain=why_chain,
+                    price=decimal.Decimal("0"),
+                    why_chain=["regime_flip_enforcement", regime],
                     rid=rid,
                     reduce_only=True,
+                    strategy_id=strategy_id,
                 )
         except Exception as e:
-            self.logger.warning(f"[{symbol}] Error in _handle_regime_flip: {e}")
+            self.logger.warning(f"[{symbol}] Error in handle_regime_flip: {e}")

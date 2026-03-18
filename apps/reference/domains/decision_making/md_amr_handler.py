@@ -99,6 +99,7 @@ class MDAMRHandler:
 
     _REST_HYDRATION_LIMIT = 100
     _MANDATORY_LIVE_WARMUP_SEC = 7200
+    _DIR_COMPONENTS_REQUIRED_BARS = 96
     _REGIME_ALIAS_MAP: Dict[str, str] = {
         "LOW_FLAT": "FLAT_LOW",
         "HIGH_FLAT": "FLAT_HIGH",
@@ -152,6 +153,7 @@ class MDAMRHandler:
         self._objective_reentry_ts_ms: Dict[str, deque[int]] = {}
         self._analytics_restore_snapshots: Dict[str,
                                                 StrategyAnalyticsRestoreSnapshot] = {}
+        self._signal_ready_logged: set[str] = set()
 
         self._position_queries = _maybe_build_position_queries(
             config=self.config,
@@ -162,6 +164,34 @@ class MDAMRHandler:
         self._parse_config()
         if self._enabled:
             self._init_strategies()
+
+    def _core_signal_history_required_bars(self) -> int:
+        if self._cfg is None:
+            return self._DIR_COMPONENTS_REQUIRED_BARS
+        atr_window = int(getattr(self._cfg, "atr_window", 14) or 14)
+        atr_stats_window = int(
+            getattr(self._cfg, "atr_stats_window", 64) or 64)
+        channel_window_bars = int(
+            getattr(self._cfg, "channel_window_bars", 12) or 12)
+        return max(
+            channel_window_bars,
+            atr_window + atr_stats_window - 1,
+            self._DIR_COMPONENTS_REQUIRED_BARS,
+        )
+
+    def _log_runtime_marker(self, marker: str, **payload: Any) -> None:
+        base_payload: Dict[str, Any] = {
+            "strategy_id": "md_amr",
+            "tf_sec": int(self.timeframe_sec),
+        }
+        for key, value in payload.items():
+            if value is not None:
+                base_payload[key] = value
+        self.mlog.info(
+            "%s %s",
+            marker,
+            json.dumps(base_payload, ensure_ascii=False, default=str),
+        )
 
     def apply_runtime_analytics_restore_snapshot(
         self,
@@ -280,8 +310,25 @@ class MDAMRHandler:
 
     def register(self) -> None:
         if not self._enabled:
+            self._log_runtime_marker(
+                "MD_AMR_REGISTERED",
+                enabled=False,
+                events=[],
+                enabled_symbols=sorted(self._enabled_symbols),
+            )
             return
         self._hydrate_state_from_rest()
+        events = [
+            "CMD:PROCESS_STRATEGY",
+            "EVT:FEATURES_CALCULATED",
+            "EVT:REGIME_DETECTED",
+            "EVT:TRADE_EXECUTED",
+            "EVT:ORDER_REJECTED",
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            "EVT:EXPOSURE_SUMMARY_UPDATED",
+            "EVT:ORDER_STATE_CHANGED",
+            "EVT:TRADE_INTENT_REJECTED",
+        ]
         self.fsm.listen("CMD:PROCESS_STRATEGY", self._on_process_strategy)
         self.fsm.listen("EVT:FEATURES_CALCULATED",
                         self._on_features_calculated)
@@ -302,6 +349,12 @@ class MDAMRHandler:
                 "EVT:REGIME_DETECTED", "EVT:TRADE_EXECUTED"],
             sorted(self._enabled_symbols),
             self.timeframe_sec,
+        )
+        self._log_runtime_marker(
+            "MD_AMR_REGISTERED",
+            enabled=True,
+            enabled_symbols=sorted(self._enabled_symbols),
+            events=events,
         )
 
     @staticmethod
@@ -592,12 +645,21 @@ class MDAMRHandler:
                 {
                     "strategy_id": "md_amr",
                     "enabled": self._enabled,
+                    "assigned_symbols": sorted(assigned),
                     "enabled_symbols": sorted(self._enabled_symbols),
                     "timeframe_sec": self.timeframe_sec,
                     "defer_ttl_sec": int(cfg.defer_ttl_sec),
+                    "signal_required_bars": self._core_signal_history_required_bars(),
                 },
                 ensure_ascii=False,
             ),
+        )
+        self._log_runtime_marker(
+            "MD_AMR_ENABLED",
+            enabled=self._enabled,
+            assigned_symbols=sorted(assigned),
+            enabled_symbols=sorted(self._enabled_symbols),
+            signal_required_bars=self._core_signal_history_required_bars(),
         )
 
     def _init_strategies(self) -> None:
@@ -980,6 +1042,13 @@ class MDAMRHandler:
             "expires_ts_ms": int(now_ms + int(self._cfg.defer_ttl_sec) * 1000),
             "missing_fields": [str(x) for x in missing_fields],
         }
+        self._log_runtime_marker(
+            "MD_AMR_DEFER",
+            symbol=symbol,
+            rid=rid,
+            missing_fields=[str(x) for x in missing_fields],
+            defer_ttl_sec=int(self._cfg.defer_ttl_sec),
+        )
 
     def _emit_feature_defer_expired(self, symbol: str, defer_state: Dict[str, Any], now_ms: int) -> None:
         assert self._cfg is not None
@@ -1127,6 +1196,12 @@ class MDAMRHandler:
             return
 
         if warmup.get("full_ready") is not True:
+            self._log_runtime_marker(
+                "MD_AMR_WARMUP_NOT_READY",
+                symbol=symbol,
+                bars_seen=self._bars_seen_since_restart.get(symbol, 0),
+                warmup_full_ready=warmup.get("full_ready"),
+            )
             rid = self._rid(symbol=symbol, side="BUY",
                             ts_ms=bar_close_ts, intent_kind="ENTRY")
             self._emit_trade_intent_rejected_gate(
@@ -1149,6 +1224,7 @@ class MDAMRHandler:
         _bars_seen = self._bars_seen_since_restart.get(symbol, 0)
         _basis_required = 0
         _readiness_contract_error: str | None = None
+        _signal_required = self._core_signal_history_required_bars()
         try:
             from apps.reference.contracts.strategy_compatibility_matrix import (
                 get_active_strategy_profile,
@@ -1161,6 +1237,14 @@ class MDAMRHandler:
                 _basis_required = int(_profile.basis_required_bars)
         except Exception as _exc:
             _readiness_contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
+        if _bars_seen <= max(_basis_required, _signal_required):
+            self._log_runtime_marker(
+                "MD_AMR_BARS_PROGRESS",
+                symbol=symbol,
+                bars_seen=_bars_seen,
+                basis_required_bars=_basis_required,
+                signal_required_bars=_signal_required,
+            )
         if _readiness_contract_error:
             self.mlog.error(
                 "MD_AMR sym=%s READINESS_CONTRACT_UNRESOLVED — blocking: %s",
@@ -1211,6 +1295,16 @@ class MDAMRHandler:
             return
 
         self._clear_defer(symbol)
+        if symbol not in self._signal_ready_logged:
+            self._signal_ready_logged.add(symbol)
+            self._log_runtime_marker(
+                "MD_AMR_SIGNAL_READY",
+                symbol=symbol,
+                bars_seen=_bars_seen,
+                basis_required_bars=_basis_required,
+                signal_required_bars=_signal_required,
+                result_status=str(result.get("status") or "NOOP"),
+            )
 
         if result.get("status") != "SIGNAL":
             return
@@ -1362,6 +1456,9 @@ class MDAMRHandler:
                     if trace.get("thr_buy") is None or trace.get("thr_sell") is None:
                         raise ValueError("OBJECTIVE_TRACE_THRESHOLD_MISSING")
 
+                    # Inject top-level atr from signal for objective engine
+                    # (FE emits atr nested under features["volatility"]["atr_14"])
+                    features.setdefault("atr", float(signal.atr))
                     objective_market = build_market_input(features=features)
                     signal_input = build_signal_input(
                         strategy_id="md_amr",
@@ -1708,6 +1805,15 @@ class MDAMRHandler:
             payload=payload,
             why=f"strategy_signal:md_amr:{signal.intent_kind}",
             data_ref=[f"md_amr_{rid}"],
+        )
+        self._log_runtime_marker(
+            "MD_AMR_SIGNAL_EMITTED",
+            symbol=symbol,
+            rid=rid,
+            intent_kind=str(signal.intent_kind),
+            side=str(signal.side).upper(),
+            reason_code=str(signal.reason_code),
+            bars_seen=_bars_seen,
         )
         self.mlog.info(
             "MD_AMR_SIGNAL %s",
