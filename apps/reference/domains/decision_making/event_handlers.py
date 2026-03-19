@@ -121,7 +121,7 @@ class DMEventHandlers:
                             tf_sec=int(tf_sec or 0) if tf_sec is not None else None,
                             reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                             stage="DECISION",
-                            why="Ignoring tick-level EVT:FEATURES_CALCULATED (bar-only strategies)",
+                            why="Ignoring tick-level feature event (bar-only strategies)",
                             src="decision_making",
                             ts_ms=now_ms,
                             rid=aget(event, "rid", None),

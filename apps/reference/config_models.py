@@ -3661,6 +3661,28 @@ class BracketHealthCheckConfig(BaseModel):
         default=2, ge=1, le=10, description="Max bracket placements per cycle.")
 
 
+class IntentBoundaryAuditConfig(BaseModel):
+    """Audit of TRADE_INTENT_PROPOSED progress across the execution boundary."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable background audit for TRADE_INTENT_PROPOSED routing.",
+    )
+    route_ttl_ms: int = Field(
+        default=2000,
+        ge=100,
+        le=60000,
+        description="Milliseconds allowed for a proposed intent to reach CMD:OPEN/CMD:CLOSE routing.",
+    )
+    downstream_ttl_ms: int = Field(
+        default=5000,
+        ge=100,
+        le=120000,
+        description="Milliseconds allowed after routing before a downstream execution event is observed.",
+    )
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -3712,6 +3734,10 @@ class ExecutionPositionDomainConfig(BaseModel):
         default_factory=GuardianConfig,
         description="OrderGuardian polling and cleanup configuration"
     )
+    intent_boundary_audit: IntentBoundaryAuditConfig = Field(
+        default_factory=IntentBoundaryAuditConfig,
+        description="Audit config for the TRADE_INTENT_PROPOSED -> execution boundary",
+    )
     bracket_health_check: Optional[BracketHealthCheckConfig] = Field(
         default=None,
         description="Current-native adapter config for bracket health reconciliation.",
@@ -3740,6 +3766,7 @@ class ShadowTelemetryIngestConfig(BaseModel):
         default_factory=lambda: [
             "EVT:BAR_CLOSED",
             "EVT:FEATURES_CALCULATED",
+            "EVT:TICK_FEATURES_CALCULATED",
             "EVT:RISK_ASSESSMENT_COMPLETED",
             "EVT:REGIME_DETECTED",
             "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -5049,7 +5076,7 @@ class SystemConfig(BaseModel):
     debug_event_listener_enabled: bool = Field(
         default=False,
         description=(
-            "Enable debug event listener (EVT:MARKET_TICK_RECEIVED, EVT:FEATURES_CALCULATED, etc.). "
+            "Enable debug event listener (EVT:MARKET_TICK_RECEIVED, EVT:FEATURES_CALCULATED, EVT:TICK_FEATURES_CALCULATED, etc.). "
             "DEV ONLY: do not enable in production (high-frequency logging)."
         ),
     )

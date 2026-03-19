@@ -74,6 +74,31 @@ class TestEventExportMonitoringHandlers:
                 assert len(call_kwargs["payload"]["scores"]) == 1
         assert found, "EVT:ALPHA_SCORE_CALCULATED was not emitted"
 
+    def test_tick_features_are_rejected_by_bar_only_guard(self, handlers, mock_fsm):
+        """
+        Prove that tick-level features do not flow through the bar-only DM handler.
+        """
+        handlers.symbol_states["BTCUSDT"] = {}
+        handlers._clock.now_ms.return_value = 1_700_000_000_000
+        payload = {
+            "symbol": "BTCUSDT",
+            "tf_sec": 0,
+            "features": {"price": 50000.0},
+        }
+        event = Message(
+            name="EVT:TICK_FEATURES_CALCULATED",
+            op="EVT",
+            verb="TICK_FEATURES_CALCULATED",
+            src="feature_engineering",
+            dst="decision_making",
+            pld=payload,
+        )
+
+        handlers.on_features(event)
+
+        handlers.alpha_registry.calculate_all_alpha.assert_not_called()
+        assert mock_fsm.emit.call_count == 0
+
     def test_decision_blocked_export(self, handlers, mock_fsm):
         """
         Prove that EVT:DECISION_BLOCKED is exported upon ConfigContractError.

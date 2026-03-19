@@ -11,7 +11,9 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import time
 from collections import deque
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
@@ -25,6 +27,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     restore_execution_blocking_tokens,
     restore_status_to_readiness_status,
     restored_restore_status,
+    upgrade_cold_execution_restore_if_clean_start,
 )
 from apps.reference.bootstrap.startup_warmup import (
     apply_startup_warmup_permission_overlay,
@@ -153,6 +156,9 @@ class MDAMRHandler:
         self._objective_reentry_ts_ms: Dict[str, deque[int]] = {}
         self._analytics_restore_snapshots: Dict[str,
                                                 StrategyAnalyticsRestoreSnapshot] = {}
+        # TICK-BAR-SPLIT-FIX-3: cooldown for tf_sec reject logging (300s per key)
+        self._tf_sec_reject_cooldown: Dict[str, float] = {}
+        self._TF_SEC_REJECT_COOLDOWN_SEC = 300
         self._signal_ready_logged: set[str] = set()
 
         self._position_queries = _maybe_build_position_queries(
@@ -191,6 +197,19 @@ class MDAMRHandler:
             "%s %s",
             marker,
             json.dumps(base_payload, ensure_ascii=False, default=str),
+        )
+
+    def _log_tf_sec_reject(self, symbol: str, stage: str, reason: str) -> None:
+        """Log tf_sec rejection with 300s cooldown per (symbol, reason) to avoid log storm."""
+        key = f"{symbol}:{stage}:{reason}"
+        now = time.monotonic()
+        last = self._tf_sec_reject_cooldown.get(key, 0.0)
+        if now - last < self._TF_SEC_REJECT_COOLDOWN_SEC:
+            return
+        self._tf_sec_reject_cooldown[key] = now
+        self.logger.warning(
+            "REJECTED md_amr %s for %s: %s (cooldown=%ds)",
+            stage, symbol, reason, self._TF_SEC_REJECT_COOLDOWN_SEC,
         )
 
     def apply_runtime_analytics_restore_snapshot(
@@ -808,10 +827,22 @@ class MDAMRHandler:
         tf_sec = pld.get("tf_sec")
         if symbol not in self._enabled_symbols:
             return
+
+        # TICK-BAR-SPLIT-FIX-3: explicit tf_sec guard with cooldown logging
+        if tf_sec is None:
+            self._log_tf_sec_reject(symbol, "features", "tf_sec_is_None")
+            return
         try:
             tf_sec_int = int(tf_sec)
-        except Exception:
+        except (TypeError, ValueError):
+            self._log_tf_sec_reject(
+                symbol, "features", f"tf_sec_invalid:{tf_sec!r}")
             return
+        if tf_sec_int <= 0:
+            self._log_tf_sec_reject(
+                symbol, "features", f"tf_sec_non_positive:{tf_sec_int}")
+            return
+
         if tf_sec_int != self.timeframe_sec:
             return
         event_ts_ms = self._extract_event_ts_ms(pld)
@@ -898,8 +929,70 @@ class MDAMRHandler:
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         pld = event.pld or {}
-        if isinstance(pld, dict):
-            self._latest_portfolio = pld
+        if not isinstance(pld, dict):
+            return
+        self._latest_portfolio = pld
+
+        positions_raw = pld.get("positions")
+        if not isinstance(positions_raw, list):
+            return
+
+        ts_ms = int(pld.get("positions_last_ts_ms") or pld.get("ts") or 0)
+        if ts_ms <= 0:
+            ts_ms = get_clock().now_ms()
+
+        active_symbols: set[str] = set()
+        for pos in positions_raw:
+            if not isinstance(pos, dict):
+                continue
+            sym = str(pos.get("symbol") or "").upper()
+            try:
+                qty = Decimal(str(pos.get("net_position") or "0"))
+            except Exception:
+                qty = Decimal("0")
+            if abs(qty) > Decimal("1e-9"):
+                active_symbols.add(sym)
+
+        for symbol in self._enabled_symbols:
+            sym_key = str(symbol).upper()
+            if sym_key in active_symbols:
+                continue
+
+            snapshot = self._analytics_restore_snapshots.get(sym_key)
+            if snapshot is None:
+                continue
+
+            upgraded = upgrade_cold_execution_restore_if_clean_start(
+                snapshot,
+                updated_at=ts_ms,
+                source="position_tracking:canonical_zero_positions",
+                evidence_ref=f"portfolio_state:{sym_key}:{ts_ms}:zero_positions",
+            )
+            if upgraded is None:
+                continue
+
+            self._analytics_restore_snapshots[sym_key] = upgraded
+            self.logger.info(
+                "[CLEAN_START_UPGRADE] %s execution restore upgraded "
+                "COLD->RESTORED via canonical position-tracking "
+                "zero-positions confirmation (ts_ms=%d)",
+                sym_key,
+                ts_ms,
+            )
+            self.mlog.info(
+                "MD_AMR_CLEAN_START_UPGRADE %s",
+                json.dumps(
+                    {
+                        "symbol": sym_key,
+                        "strategy_id": "md_amr",
+                        "ts_ms": ts_ms,
+                        "source": "canonical_zero_positions",
+                        "prev_execution_state": "COLD",
+                        "new_execution_state": "RESTORED",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
 
     def _on_exposure_summary_updated(self, event: Message) -> None:
         pld = event.pld or {}
@@ -1085,10 +1178,23 @@ class MDAMRHandler:
         if symbol not in self._enabled_symbols:
             return
         tf_sec = pld.get("tf_sec")
+
+        # TICK-BAR-SPLIT-FIX-3: explicit tf_sec guard with cooldown logging
+        if tf_sec is None:
+            self._log_tf_sec_reject(
+                symbol, "process_strategy", "tf_sec_is_None")
+            return
         try:
             tf_sec_int = int(tf_sec)
-        except Exception:
+        except (TypeError, ValueError):
+            self._log_tf_sec_reject(
+                symbol, "process_strategy", f"tf_sec_invalid:{tf_sec!r}")
             return
+        if tf_sec_int <= 0:
+            self._log_tf_sec_reject(
+                symbol, "process_strategy", f"tf_sec_non_positive:{tf_sec_int}")
+            return
+
         if tf_sec_int != self.timeframe_sec:
             return
 
@@ -1545,10 +1651,13 @@ class MDAMRHandler:
                             stage="strategy", reason_code="OBJECTIVE_GATE_BLOCKED")
                         return
 
-                    # Apply multiplier to conf_ratio and score
-                    signal.conf_ratio = float(
-                        signal.conf_ratio) * obj_score.multiplier
-                    signal.signal_score = obj_score.objective_score
+                    # MDAMRSignal is frozen; replace it so trace and payload stay aligned.
+                    signal = replace(
+                        signal,
+                        conf_ratio=float(signal.conf_ratio) *
+                        obj_score.multiplier,
+                        signal_score=obj_score.objective_score,
+                    )
 
                     trace["conf_ratio"] = float(signal.conf_ratio)
                     trace["objective"] = obj_score.trace.model_dump()

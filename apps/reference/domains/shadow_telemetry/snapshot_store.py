@@ -22,6 +22,10 @@ def _truncate_why(text: Optional[str], limit: int = 80) -> Optional[str]:
     return text[:limit]
 
 
+BAR_FEATURE_EVENT = "EVT:FEATURES_CALCULATED"
+TICK_FEATURE_EVENT = "EVT:TICK_FEATURES_CALCULATED"
+
+
 class SnapshotStore:
     """In-memory + JSONL snapshot store for Shadow Telemetry."""
 
@@ -43,8 +47,10 @@ class SnapshotStore:
         self.tick_snapshots_mode = str(tick_snapshots_mode)
         self.tick_sample_every_n = max(1, int(tick_sample_every_n))
         self.min_tf_sec_for_full = max(0, int(min_tf_sec_for_full))
-        trig = str(trigger_event or "EVT:FEATURES_CALCULATED")
+        trig = str(trigger_event or BAR_FEATURE_EVENT)
         self.trigger_event = trig if trig.startswith("EVT:") else f"EVT:{trig}"
+        self.tick_trigger_event = TICK_FEATURE_EVENT
+        self._feature_events = {self.trigger_event, self.tick_trigger_event}
 
         self.logger = logger or logging.getLogger(__name__)
 
@@ -77,8 +83,8 @@ class SnapshotStore:
         if symbol:
             self._update_context(event_name, symbol, payload)
 
-        if event_name == self.trigger_event:
-            self._build_snapshot(frame, payload)
+        if event_name in self._feature_events:
+            self._build_snapshot(frame, payload, event_name=event_name)
 
     def latest(self, symbol: Optional[str], tf_sec: Optional[int]) -> Optional[Dict[str, Any]]:
         with self._lock:
@@ -134,7 +140,7 @@ class SnapshotStore:
             elif event_name == "EVT:LLM_INTENT_RECEIVED_V1":
                 self._external_intent[symbol] = dict(payload)
 
-    def _build_snapshot(self, frame: Dict[str, Any], payload: Dict[str, Any]) -> None:
+    def _build_snapshot(self, frame: Dict[str, Any], payload: Dict[str, Any], *, event_name: str) -> None:
         symbol = str(payload.get("symbol") or "").upper()
         if not symbol:
             return
@@ -145,10 +151,10 @@ class SnapshotStore:
         except Exception:
             tf_sec = 0
 
-        if tf_sec >= self.min_tf_sec_for_full:
-            if not self.bar_snapshots_enabled:
-                return
-        else:
+        is_tick_event = event_name == self.tick_trigger_event
+        is_bar_event = event_name == self.trigger_event
+
+        if is_tick_event:
             if self.tick_snapshots_mode == "off":
                 return
             if self.tick_snapshots_mode == "sampled":
@@ -156,6 +162,15 @@ class SnapshotStore:
                 self._tick_counter[symbol] = c
                 if c % self.tick_sample_every_n != 0:
                     return
+            if tf_sec != 0:
+                return
+        elif is_bar_event:
+            if tf_sec < self.min_tf_sec_for_full:
+                return
+            if not self.bar_snapshots_enabled:
+                return
+        else:
+            return
 
         ts_ms_raw = payload.get("ts") or frame.get("captured_ts_ms")
         try:

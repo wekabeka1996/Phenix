@@ -2,15 +2,20 @@
 Feature Engineering Contracts.
 
 Pydantic models for type-safe validation of feature payloads.
-V1: Freezes the v1 feature contract (11 features) - Task FTR-00
+V1: Freezes the v1 feature catalog (11 features) - Task FTR-00
 V2: Adds O(1) optimized features (3 new) - Task FTR-03
 
-This module follows ADDITIVE-ONLY versioning: V2 extends V1.
+This module now splits the mixed feature payload into:
+- BarFeaturesCalculatedPayloadV1 for EVT:FEATURES_CALCULATED
+- TickFeaturesCalculatedPayloadV1 for EVT:TICK_FEATURES_CALCULATED
 """
 
 from decimal import Decimal
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict
+
+
+FeatureSourceMode = Literal["live", "replay", "warmup_import", "synthetic_repair"]
 
 
 class FeatureSetV1(BaseModel):
@@ -83,28 +88,137 @@ class FeatureSetV1(BaseModel):
     )
 
 
-class FeaturesCalculatedPayloadV1(BaseModel):
-    """
-    Full EVT:FEATURES_CALCULATED payload structure.
-    
-    Contains timestamp, symbol, and features dict.
-    """
-    model_config = ConfigDict(strict=True)
-    
+class TickFeaturesCalculatedPayloadV1(BaseModel):
+    """Tick-only payload for EVT:TICK_FEATURES_CALCULATED."""
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     ts: int = Field(..., description="Timestamp in milliseconds")
     symbol: str = Field(..., description="Trading symbol (e.g., BTCUSDT)")
+    tf_sec: Literal[0] = Field(
+        ...,
+        description="Tick contract sentinel. Tick features never carry a bar timeframe.",
+    )
     features: Dict[str, str] = Field(..., description="Feature values as strings")
-    warmup: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Optional warmup/readiness state for FeatureEngineering (TASK24 additive)",
+    warmup: Dict[str, Any] = Field(
+        ...,
+        description="Warmup/readiness state for FeatureEngineering",
     )
     price_motion: Optional[Dict[str, Any]] = Field(
-        default=None,
+        ...,
         description=(
-            "Additive-only price motion block (multi-window returns/vol proxy + pm_norm). "
-            "When insufficient history, fields are null; downstream consumers may fail-closed."
+            "Additive-only price motion block. Tick bad_dt emits null; normal tick path carries the block."
         ),
     )
+    bar: Literal[None] = Field(
+        ...,
+        description="Tick payload never carries OHLCV bar data; explicit null sentinel.",
+    )
+    source_mode: FeatureSourceMode = Field(
+        ...,
+        description="Tick source mode (normal tick path uses live; bad_dt follows the same tick contract).",
+    )
+    diagnostics: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional FE diagnostics snapshot for normal tick emission.",
+    )
+    data_quality: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional data-quality annotations (bad_dt path).",
+    )
+
+
+class BarFeaturesCalculatedPayloadV1(BaseModel):
+    """Bar-only payload for EVT:FEATURES_CALCULATED."""
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ts: int = Field(..., description="Timestamp in milliseconds")
+    symbol: str = Field(..., description="Trading symbol (e.g., BTCUSDT)")
+    tf_sec: int = Field(
+        ...,
+        ge=60,
+        le=3600,
+        description="Bar timeframe in seconds. Bar-only contract; tick features do not use this verb.",
+    )
+    features: Dict[str, str] = Field(..., description="Feature values as strings")
+    warmup: Dict[str, Any] = Field(
+        ...,
+        description="Warmup/readiness state for FeatureEngineering",
+    )
+    price_motion: Dict[str, Any] = Field(
+        ...,
+        description="Additive-only price motion block for bar features.",
+    )
+    bar: Dict[str, Any] = Field(
+        ...,
+        description="Raw OHLCV bar data for bar-only feature calculation.",
+    )
+    source_mode: FeatureSourceMode = Field(
+        ...,
+        description="Bar source mode (live, replay, warmup_import, synthetic_repair).",
+    )
+    regime: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional regime snapshot when upstream code attaches one. "
+            "FeatureEngineering does not require it for the bar feature contract."
+        ),
+    )
+    diagnostics: Dict[str, Any] = Field(
+        ...,
+        description="FE emission diagnostics snapshot.",
+    )
+    bar_identity: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Canonical bar identity. Present only when bar identity extraction succeeds.",
+    )
+    close_boundary_ts_ms: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Canonical close boundary timestamp in milliseconds epoch.",
+    )
+    replay_identity: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Replay identity envelope. Present only in replay mode.",
+    )
+    replay_generation: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Replay generation counter. Present only in replay mode.",
+    )
+    gap_state: Optional[str] = Field(
+        default=None,
+        description="Gap state for the bar contract.",
+    )
+    gap_policy_action: Optional[str] = Field(
+        default=None,
+        description="Gap policy action for the bar contract.",
+    )
+    gap_bars_skipped: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Number of skipped bars in the gap status.",
+    )
+    is_gap_bar: Optional[bool] = Field(
+        default=None,
+        description="True when the bar is a synthetic or repaired gap bar.",
+    )
+    gap: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Nested gap payload emitted by runtime gap policy.",
+    )
+
+
+FeaturesCalculatedPayloadV1 = BarFeaturesCalculatedPayloadV1
+
+
+def validate_tick_features_payload_v1(payload: Dict) -> TickFeaturesCalculatedPayloadV1:
+    """Validate a tick-only EVT:TICK_FEATURES_CALCULATED payload."""
+    return TickFeaturesCalculatedPayloadV1(**payload)
+
+
+def validate_bar_features_payload_v1(payload: Dict) -> BarFeaturesCalculatedPayloadV1:
+    """Validate a bar-only EVT:FEATURES_CALCULATED payload."""
+    return BarFeaturesCalculatedPayloadV1(**payload)
 
 
 def parse_features_v1(features: Dict[str, str]) -> FeatureSetV1:
@@ -154,20 +268,22 @@ def parse_features_v1(features: Dict[str, str]) -> FeatureSetV1:
     return FeatureSetV1(**parsed)
 
 
-def validate_features_payload_v1(payload: Dict) -> FeaturesCalculatedPayloadV1:
+def validate_features_payload_v1(payload: Dict) -> BarFeaturesCalculatedPayloadV1:
     """
     Validate full EVT:FEATURES_CALCULATED payload.
+
+    Backward-compatible alias for the bar-only contract.
     
     Args:
         payload: Raw event payload dict
         
     Returns:
-        FeaturesCalculatedPayloadV1: Validated payload
-        
+        BarFeaturesCalculatedPayloadV1: Validated payload
+    
     Raises:
         ValidationError: If payload structure is invalid
     """
-    return FeaturesCalculatedPayloadV1(**payload)
+    return validate_bar_features_payload_v1(payload)
 
 
 # Feature metadata for documentation and testing

@@ -510,7 +510,7 @@ aurora:
         trail_pct: 0.006
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # patched5: LOW_VOLATILITY removed (CUM Jun-Sep: n=29, -250.60 USDT, avg SL -28 USDT)
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
       signal_threshold:
         enabled: true
         value: 0.09
@@ -622,7 +622,7 @@ aurora:
         tp_high_ratio: 0.60
         partial_exit_pct: 0.31
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
 
       trailing_stop:
         enabled: true

@@ -1,5 +1,31 @@
 # Engineering Journal
 
+## 2026-03-19: NRR-046 FE TICK/BAR CONTRACT SPLIT
+
+**Task:** Split the mixed `EVT:FEATURES_CALCULATED` contract into a bar-only verb and a separate tick-only verb.
+
+**Root flaw:** One runtime contract was carrying both semantic classes. Tick-path payloads and bar-path payloads were flowing through the same verb, which made consumer ownership ambiguous and forced bar-only consumers to police tick semantics after the fact.
+
+**What was done:**
+- Introduced `EVT:TICK_FEATURES_CALCULATED` as the tick-level feature verb.
+- Kept `EVT:FEATURES_CALCULATED` as the bar-only verb.
+- Split the Python contracts and JSON schemas into bar and tick payload models.
+- Migrated the live FE tick emit path and the `bad_dt` emit path to the tick verb.
+- Kept bar emission on the bar verb and preserved the `CMD:PROCESS_STRATEGY` bar path.
+- Made `ShadowTelemetry` explicit: it now accepts both feature verbs, stores tick snapshots intentionally, and drops malformed old mixed payloads.
+- Kept the DM bar-only firewall (`NRR-046`) in place during migration instead of removing it early.
+
+**Tests added/updated:**
+- FE split emit-path tests
+- FE schema/model alignment guardrails
+- Verb registry coverage for the tick verb
+- DM tick-reject guard test
+- RegimeDetector tick-verb ignore test
+- ShadowTelemetry split snapshot test
+- Runtime FE correctness update for the new tick verb
+
+**Validation:** focused FE/DM/regime/shadow/registry/runtime suites passed after the split.
+
 ## 2026-03-17: CLEAN-START-EXECUTION-RESTORE-UPGRADE (PROTECT_ONLY self-heal)
 
 **Task:** Fix production blocker where `mean_reversion` cannot open new positions due to sticky PROTECT_ONLY latch after cold startup without snapshot restore.

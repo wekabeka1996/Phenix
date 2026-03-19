@@ -284,6 +284,14 @@
       ],
       "additionalProperties": true,
       "description": "Context around risk gating"
+    },
+    "trace": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true,
+      "description": "Strategy audit/debug trace produced by the objective engine or md_amr tracer. Present only when strategy_trace is non-null in IntentBuilder."
     }
   },
   "allOf": [

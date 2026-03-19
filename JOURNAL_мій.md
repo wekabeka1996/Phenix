@@ -1,5 +1,15 @@
 # JOURNAL_мій
 
+## 2026-03-19
+
+### NRR-046 FE tick/bar contract split - completed
+- **Root flaw:** `EVT:FEATURES_CALCULATED` mixed tick and bar semantics under one runtime contract.
+- **Decision:** split the contract with a new tick verb, `EVT:TICK_FEATURES_CALCULATED`, and keep the bar verb bar-only.
+- **ShadowTelemetry:** made explicit and intentional. It now ingests both feature verbs, keeps tick snapshots on purpose, and drops malformed old mixed payloads.
+- **bad_dt:** migrated to the tick verb. The bad_dt path no longer leaks into the bar-only semantic path.
+- **NRR-046:** kept as a temporary bar-only firewall during migration. It was not removed.
+- **Proof:** contract/schema alignment tests, split emit-path tests, DM guard tests, regime ignore tests, ShadowTelemetry snapshot tests, registry checks, and runtime FE correctness tests all passed.
+
 ## 2026-03-17
 
 ### CLEAN-START-EXECUTION-RESTORE-UPGRADE — PROTECT_ONLY self-heal для mean_reversion

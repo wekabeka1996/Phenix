@@ -456,9 +456,17 @@ class OpenExecutor:
                 rid=decision.rid,
                 pld={"symbol": symbol, "side": side, "qty": str(qty), "order_type": order_type,
                      "client_order_id": entry_id, "exchange_order_id": str(entry_resp.get("orderId")),
+                     "order_id": str(entry_resp.get("orderId")), "rid": decision.rid,
                      "ts_ms": get_clock().now_ms(), "corr_id": decision.corr_id},
                 why="order_placed")
             wal.append(order_placed_msg.model_dump())
+            if hasattr(self._fsm, "bus"):
+                self._fsm.bus.emit(
+                    "EVT:ORDER_PLACED",
+                    dict(order_placed_msg.pld or {}),
+                    order_placed_msg.why,
+                    [],
+                )
         except Exception as wal_e:
             LOG.warning(f"Failed to write EVT:ORDER_PLACED to WAL: {wal_e}")
 

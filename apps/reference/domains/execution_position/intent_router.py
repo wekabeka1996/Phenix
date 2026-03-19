@@ -23,6 +23,26 @@ class IntentRouter:
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
 
+    def _mark_intent_routed(
+        self,
+        *,
+        rid: str,
+        symbol: str,
+        route: str,
+        strategy_id: str | None,
+        side: str | None,
+    ) -> None:
+        audit = getattr(self._fsm, "_intent_boundary_audit", None)
+        if audit is None:
+            return
+        audit.mark_routed(
+            rid=rid,
+            symbol=symbol,
+            route=route,
+            strategy_id=strategy_id,
+            side=side,
+        )
+
     def on_trade_intent_proposed(self, msg: "Message") -> None:
         """
         Handle TRADE_INTENT_PROPOSED event from DecisionMaking directly (SSOT).
@@ -81,6 +101,13 @@ class IntentRouter:
                     data_ref=msg.data_ref
                 )
                 LOG.info(f"[{symbol}] Processing TRADE_INTENT (reduce_only) -> CMD:CLOSE")
+                self._mark_intent_routed(
+                    rid=intent_rid,
+                    symbol=str(symbol),
+                    route="CMD:CLOSE",
+                    strategy_id=str(strategy_id) if strategy_id else None,
+                    side=pld.get("side"),
+                )
                 result = self._fsm.handle(cmd_close)
 
             else:
@@ -157,6 +184,13 @@ class IntentRouter:
                 )
 
                 LOG.info(f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN (qty={cmd_payload['qty']} side={cmd_payload.get('side')} type={order_type})")
+                self._mark_intent_routed(
+                    rid=intent_rid,
+                    symbol=str(symbol),
+                    route="CMD:OPEN",
+                    strategy_id=str(strategy_id) if strategy_id else None,
+                    side=pld.get("side"),
+                )
                 result = self._fsm.handle(cmd_open)
 
             # Handle Result

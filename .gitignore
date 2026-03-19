@@ -63,10 +63,10 @@ instance/
 ops/wal/*
 # Scrapy stuff:
 .scrapy
-
+node_modules/*
 # Sphinx documentation
 docs/_build/
-
+node_modules
 # PyBuilder
 .pybuilder/
 target/

@@ -14,6 +14,7 @@
   ],
   "exports": [
     {"event_name": "EVT:FEATURES_CALCULATED", "target_domains": ["regime_detector", "decision_making"], "schema": "schemas/features_calculated_v1.json"},
+    {"event_name": "EVT:TICK_FEATURES_CALCULATED", "target_domains": ["shadow_telemetry"], "schema": "schemas/tick_features_calculated_v1.json", "notes": "tick-only feature contract; bar consumers must not subscribe"},
     {"event_name": "CMD:PROCESS_STRATEGY", "target_domains": ["decision_making"], "schema": "schemas/cmd_process_strategy_v1.json", "notes": "bar-driven trigger, tf_sec>=60, warmup-gated"},
     {"event_name": "EVT:PROCESS_STRATEGY_BLOCKED", "target_domains": ["observability"], "schema": "schemas/process_strategy_blocked_v1.json"}
   ],
@@ -46,6 +47,6 @@
     "normalization": "V1 base: native ranges; V1 phase1: [0,1]; V2 volume_zscore: tanh([0,1]); spread_bps: unbounded R+",
     "strategy_infra": "MR + MD-AMR strategy classes live in FE but are semantically owned by DM. DM production code uses decision_making/strategy_bridge.py facade. Direct DM imports from FE strategy files are forbidden (FE-DM-BOUNDARY-STABILIZATION 2026-03-15).",
     "duplicate_sma_atr": "regime_detector has independent SMA/ATR (Decimal, rolling buffers). Intentional — different precision/lifecycle",
-    "registry_verbs": "FEATURES_CALCULATED (active, owner), FUNDING_UPDATE (experimental, owner), PROCESS_STRATEGY_BLOCKED (active, owner). CMD:PROCESS_STRATEGY (owner: strategies, schema in FE)"
+    "registry_verbs": "FEATURES_CALCULATED (bar-only, active, owner), TICK_FEATURES_CALCULATED (tick-only, active, owner), FUNDING_UPDATE (experimental, owner), PROCESS_STRATEGY_BLOCKED (active, owner). CMD:PROCESS_STRATEGY (owner: strategies, schema in FE)"
   }
 }

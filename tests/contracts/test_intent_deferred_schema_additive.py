@@ -92,3 +92,57 @@ def test_retry_key_payload_requires_v1_fields(intent_deferred_schema):
             schema=intent_deferred_schema,
         )
 
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_legacy_payload_accepts_digit_prefixed_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "rid": "rid-digit-legacy",
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_digit_prefixed_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {"symbol": "1000PEPEUSDT", "side": "SELL"},
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_digit_prefixed_nested_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "1000PEPEUSDT",
+                    "side": "SELL",
+                    "price_ctx": {"entry_price": "0.0035100"},
+                },
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+

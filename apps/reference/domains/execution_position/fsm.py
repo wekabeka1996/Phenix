@@ -39,6 +39,7 @@ from .utils import (
 )
 from .aurora_log_adapter import AuroraLogAdapter
 from .metrics_collector import MetricsCollector
+from .intent_boundary_audit import IntentBoundaryAudit
 from apps.reference.telemetry.order_logger import order_logger
 
 # FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
@@ -424,6 +425,18 @@ class ExecPosFSM(
                 "production to prevent invisible intent drops." % type(
                     self.fsm)
             )
+
+        audit_cfg = None
+        try:
+            audit_cfg = self.config.domains.execution_position.intent_boundary_audit
+        except Exception:
+            audit_cfg = None
+        self._intent_boundary_audit = IntentBoundaryAudit(
+            bus=self.bus,
+            config=audit_cfg,
+            logger=LOG.getChild("IntentBoundaryAudit"),
+        )
+        self._intent_boundary_audit.register_bus_listeners()
 
         # Register event listeners on the bus
         self.bus.listen("EVT:PORTFOLIO_STATE_UPDATED",
@@ -1012,6 +1025,8 @@ class ExecPosFSM(
 
     def shutdown(self):
         """Shutdown the FSM and cleanup resources."""
+        if hasattr(self, '_intent_boundary_audit') and self._intent_boundary_audit:
+            self._intent_boundary_audit.stop()
         if hasattr(self, 'watchdog') and self.watchdog:
             self.watchdog.stop()
         if hasattr(self, 'order_guardian') and self.order_guardian:

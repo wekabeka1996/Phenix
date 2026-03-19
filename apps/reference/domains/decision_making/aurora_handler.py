@@ -15,11 +15,13 @@ Responsibilities:
 from __future__ import annotations
 
 import decimal
+import json
 import logging
 # DET-BT-11: Import for deterministic backtest
 from apps.reference.core.time import get_clock
 from apps.reference.contracts.runtime_analytics_restore import (
     StrategyAnalyticsRestoreSnapshot,
+    upgrade_cold_execution_restore_if_clean_start,
 )
 from apps.reference.contracts.runtime_regime_layers import (
     is_structural_regime_payload,
@@ -228,6 +230,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         # Config extraction
         self._load_config()
+        self._enabled_symbols = self._resolve_enabled_symbols()
         
         # Global kill-switch enforcement inside runtime handler
         aurora_cfg = getattr(self.config.strategies, "aurora", None) if hasattr(self.config, "strategies") else None
@@ -246,6 +249,39 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         symbol: str,
     ) -> StrategyAnalyticsRestoreSnapshot | None:
         return self._analytics_restore_snapshots.get(str(symbol))
+
+    def _resolve_enabled_symbols(self) -> set[str]:
+        explicit_symbols = getattr(self, "_enabled_symbols", None)
+        if explicit_symbols is not None:
+            return {
+                str(symbol).strip().upper()
+                for symbol in explicit_symbols
+                if str(symbol).strip()
+            }
+
+        resolved: set[str] = set()
+        registry = getattr(self.config, "strategies_registry", None)
+        assignments = getattr(registry, "assignments", {}) if registry else {}
+        if isinstance(assignments, dict):
+            for symbol, strategies in assignments.items():
+                if not isinstance(strategies, (list, tuple, set)):
+                    continue
+                normalized = {str(strategy).strip()
+                              for strategy in strategies if str(strategy).strip()}
+                if self.strategy_id in normalized:
+                    resolved.add(str(symbol).strip().upper())
+
+        if not resolved:
+            aurora_cfg = getattr(getattr(self.config, "strategies", None),
+                                 "aurora", None)
+            assets = getattr(aurora_cfg, "assets", {}) if aurora_cfg else {}
+            if isinstance(assets, dict):
+                for symbol, asset_cfg in assets.items():
+                    if bool(getattr(asset_cfg, "enabled", True)):
+                        resolved.add(str(symbol).strip().upper())
+
+        self._enabled_symbols = resolved
+        return resolved
 
     def seed_startup_bars(self, symbol: str, count: int) -> None:
         """Seed _bars_seen_since_restart counter after startup basis import.
@@ -287,7 +323,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                             "ready": False,
                             "block_reason": _contract_error,
                         }
-                        for sym in sorted(self._enabled_symbols)
+                        for sym in sorted(self._resolve_enabled_symbols())
                     ]
                 _basis_required = int(_profile.basis_required_bars)
             except Exception as _exc:
@@ -302,10 +338,10 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                         "ready": False,
                         "block_reason": _contract_error,
                     }
-                    for sym in sorted(self._enabled_symbols)
+                    for sym in sorted(self._resolve_enabled_symbols())
                 ]
         results: list[dict[str, object]] = []
-        for symbol in sorted(self._enabled_symbols):
+        for symbol in sorted(self._resolve_enabled_symbols()):
             bars_seen = self._bars_seen_since_restart.get(symbol, 0)
             ready = bars_seen >= _basis_required
             results.append({
@@ -531,8 +567,70 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         )
 
     def on_portfolio_state(self, event: Dict[str, Any]) -> None:
-        if isinstance(event, dict):
-            self._latest_portfolio = event
+        if not isinstance(event, dict):
+            return
+        self._latest_portfolio = event
+
+        positions_raw = event.get("positions")
+        if not isinstance(positions_raw, list):
+            return
+
+        ts_ms = int(event.get("positions_last_ts_ms") or event.get("ts") or 0)
+        if ts_ms <= 0:
+            ts_ms = int(self.wall_time_fn() * 1000)
+
+        active_symbols: set[str] = set()
+        for pos in positions_raw:
+            if not isinstance(pos, dict):
+                continue
+            sym = str(pos.get("symbol") or "").upper()
+            try:
+                qty = decimal.Decimal(str(pos.get("net_position") or "0"))
+            except Exception:
+                qty = decimal.Decimal("0")
+            if abs(qty) > decimal.Decimal("1e-9"):
+                active_symbols.add(sym)
+
+        for symbol in self._resolve_enabled_symbols():
+            sym_key = str(symbol).upper()
+            if sym_key in active_symbols:
+                continue
+
+            snapshot = self._analytics_restore_snapshots.get(sym_key)
+            if snapshot is None:
+                continue
+
+            upgraded = upgrade_cold_execution_restore_if_clean_start(
+                snapshot,
+                updated_at=ts_ms,
+                source="position_tracking:canonical_zero_positions",
+                evidence_ref=f"portfolio_state:{sym_key}:{ts_ms}:zero_positions",
+            )
+            if upgraded is None:
+                continue
+
+            self._analytics_restore_snapshots[sym_key] = upgraded
+            self.logger.info(
+                "[CLEAN_START_UPGRADE] %s execution restore upgraded "
+                "COLD->RESTORED via canonical position-tracking "
+                "zero-positions confirmation (ts_ms=%d)",
+                sym_key,
+                ts_ms,
+            )
+            self.logger.info(
+                "AURORA_CLEAN_START_UPGRADE %s",
+                json.dumps(
+                    {
+                        "symbol": sym_key,
+                        "strategy_id": self.strategy_id,
+                        "ts_ms": ts_ms,
+                        "source": "canonical_zero_positions",
+                        "prev_execution_state": "COLD",
+                        "new_execution_state": "RESTORED",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
 
     def on_exposure_summary(self, event: Dict[str, Any]) -> None:
         if not isinstance(event, dict):

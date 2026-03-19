@@ -1059,13 +1059,26 @@ class FeatureEngineering:
         return synthetic_tick
 
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> bool:
-        """Calculate tick-features and emit EVT:FEATURES_CALCULATED.
+        """Calculate tick-features and emit EVT:TICK_FEATURES_CALCULATED.
 
         FIX-TICK-FE-GATE-001: Tick-features do NOT depend on bars.
         Bar-features (OHLC-based) will be a separate pipeline (BAR-FEATURES-001).
         """
         # Tick-features: emit immediately, tf_sec=0 indicates tick-level data
         return self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
+
+    @staticmethod
+    def _feature_event_name_for_tf(tf_sec: int) -> str:
+        """Select the feature event verb from the semantic timeframe."""
+        return "EVT:TICK_FEATURES_CALCULATED" if int(tf_sec or 0) <= 0 else "EVT:FEATURES_CALCULATED"
+
+    def _emit_features_event(self, *, tf_sec: int, payload: dict, why: str) -> None:
+        """Emit the feature event using the tf_sec semantic split."""
+        self.fsm.emit(
+            self._feature_event_name_for_tf(tf_sec),
+            payload=payload,
+            why=why,
+        )
 
     @staticmethod
     def _pillar_json_scalar(value: Any) -> Optional[float]:
@@ -1272,7 +1285,7 @@ class FeatureEngineering:
         bar_data: Optional[Dict] = None,
         emit_events: bool = True,
     ) -> bool:
-        """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED (and CMD:PROCESS_STRATEGY if bar)."""
+        """Calculate all features for a specific tf_sec and emit the tf-scoped feature verb."""
         try:
             # Initialize symbol state if needed
             if symbol not in self.symbol_states:
@@ -1305,6 +1318,18 @@ class FeatureEngineering:
                 inc_data_quality_bad_dt(domain="feature_engineering")
                 inc_data_quality_drop(
                     domain="feature_engineering", reason="bad_dt")
+
+                # TICK-BAR-SPLIT-FIX-1: bar bad_dt must fail-closed (no emit).
+                # Emitting bar-semantic payload with bar=None violates
+                # BarFeaturesCalculatedPayloadV1 contract (bar: Dict required).
+                if tf_sec > 0:
+                    self.logger.warning(
+                        f"[{symbol}] bar bad_dt fail-closed: "
+                        f"time_diff={time_diff}ms tf_sec={tf_sec} — no event emitted")
+                    return False
+
+                # Tick bad_dt: emit degraded tick-semantic payload
+                # (bar=None is valid for TickFeaturesCalculatedPayloadV1).
                 warmup_bad_dt = {
                     "ticks_seen": int(self._ticks_seen[symbol]),
                     "full_ready": False,
@@ -1325,11 +1350,20 @@ class FeatureEngineering:
                     "tf_sec": tf_sec,
                     "features": features_bad_dt,
                     "warmup": warmup_bad_dt,
+                    "price_motion": None,
+                    "bar": None,
+                    "source_mode": str(
+                        current_tick.get("source_mode")
+                        or RuntimeBarSourceMode.LIVE.value
+                    ),
                     "data_quality": {"drops": ["bad_dt"], "notes": []},
                 }
                 if emit_events:
-                    self.fsm.emit(
-                        "EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
+                    self._emit_features_event(
+                        tf_sec=tf_sec,
+                        payload=payload_bad_dt,
+                        why="features_degraded_bad_dt",
+                    )
                 self.logger.warning(
                     f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
                 return False
@@ -1935,8 +1969,12 @@ class FeatureEngineering:
             self._log_features_to_file(symbol, features)
 
             # Emit event
-            self.fsm.emit("EVT:FEATURES_CALCULATED",
-                          payload=features_payload, why="features_calculated")
+            if emit_events:
+                self._emit_features_event(
+                    tf_sec=tf_sec,
+                    payload=features_payload,
+                    why="features_calculated",
+                )
 
             # T2B-03 + REC-01-FIX: EMIT CMD:PROCESS_STRATEGY (Bar-Driven Trigger)
             # FAIL-CLOSED CONDITIONS:

@@ -1,5 +1,16 @@
 # TODO
 
+## NRR-046 FE TICK/BAR CONTRACT SPLIT - completed 2026-03-19
+- [x] Split `EVT:FEATURES_CALCULATED` into bar-only semantics and introduced `EVT:TICK_FEATURES_CALCULATED` for tick-level feature emission.
+- [x] Migrated FE tick emit paths, including the `bad_dt` path, to the tick verb.
+- [x] Kept bar emission on `EVT:FEATURES_CALCULATED` and preserved the `CMD:PROCESS_STRATEGY` bar path.
+- [x] Made ShadowTelemetry handling explicit for both feature verbs.
+- [x] Aligned schemas, Python models, registry, and domain dictionaries for the split.
+
+### Residual debt (intentional, non-blocking)
+- [ ] Keep `NRR-046` in place until a broader cleanup proves it safe to remove.
+- [ ] Legacy bar-verb references remain in unrelated historical docs/tests outside the split package; do not treat them as tick leaks.
+
 ## CLEAN-START-EXECUTION-RESTORE-UPGRADE — completed 2026-03-17
 - [x] Contract-level `upgrade_cold_execution_restore_if_clean_start()` added
 - [x] Handler-level `EVT:ACCOUNT_UPDATE_RECEIVED` → COLD→RESTORED upgrade for MR

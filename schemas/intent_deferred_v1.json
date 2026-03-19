@@ -14,7 +14,7 @@
             "properties": {
                 "symbol": {
                     "type": "string",
-                    "pattern": "^[A-Z]+USDT$",
+                    "pattern": "^[A-Z0-9]{2,20}USDT$",
                     "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
                 },
                 "reason": {
@@ -49,7 +49,7 @@
                 },
                 "symbol": {
                     "type": "string",
-                    "pattern": "^[A-Z]+USDT$",
+                    "pattern": "^[A-Z0-9]{2,20}USDT$",
                     "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
                 },
                 "reason": {
@@ -117,7 +117,7 @@
                             "properties": {
                                 "symbol": {
                                     "type": "string",
-                                    "pattern": "^[A-Z]+USDT$"
+                                    "pattern": "^[A-Z0-9]{2,20}USDT$"
                                 },
                                 "side": {
                                     "type": "string",
@@ -223,6 +223,25 @@
             "why_chain": ["portfolio_unknown", "fail_closed"],
             "created_ts": 1702500100000,
             "context": "mr_gateway_flat_check"
+        },
+        {
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "1000PEPEUSDT",
+                    "side": "SELL",
+                    "strategy_id": "llm_microstructure"
+                }
+            },
+            "why_chain": ["risk_skew", "defer_count:1"],
+            "created_ts": 1702500200000,
+            "context": "strategy_signal_gateway:risk_skew"
         }
     ]
 }

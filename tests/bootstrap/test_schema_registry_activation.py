@@ -97,3 +97,43 @@ def test_fsm_emit_graceful_without_registry() -> None:
 
     # Even an empty payload should not raise (no validation)
     fsm.emit("CMD:PROCESS_STRATEGY", payload={"symbol": "test"}, why="test")
+
+
+def test_fsm_emit_accepts_digit_prefixed_intent_deferred_payload() -> None:
+    """Real FSM emit path must accept 1000PEPEUSDT and deliver EVT:INTENT_DEFERRED."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:INTENT_DEFERRED", lambda msg: observed.append(msg.pld))
+
+    payload = {
+        "retry_key": "llm:1000PEPEUSDT:1702500200000",
+        "symbol": "1000PEPEUSDT",
+        "reason": "NRR-RISK-STALE",
+        "next_allowed_ts": 1702500205000,
+        "attempt": 1,
+        "max_attempts": 3,
+        "retry_policy": {
+            "attempt": 1,
+            "max_attempts": 3,
+            "backoff_ms": 2000,
+            "ttl_ms": 5000,
+        },
+        "original_event": {
+            "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+            "payload_min": {
+                "symbol": "1000PEPEUSDT",
+                "side": "SELL",
+                "strategy_id": "llm_microstructure",
+            },
+        },
+        "why_chain": ["risk_skew", "defer_count:1"],
+        "created_ts": 1702500200000,
+        "context": "strategy_signal_gateway:risk_skew",
+    }
+
+    fsm.emit("EVT:INTENT_DEFERRED", payload=payload, why="test")
+
+    assert observed
+    assert observed[0]["symbol"] == "1000PEPEUSDT"
+    assert observed[0]["original_event"]["payload_min"]["symbol"] == "1000PEPEUSDT"

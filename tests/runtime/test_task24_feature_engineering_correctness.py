@@ -170,10 +170,10 @@ def test_feature_engineering_zero_price_increments_data_quality_drop(monkeypatch
     fe.on_market_tick(SimpleNamespace(pld=tick2))
 
     assert any(domain == "feature_engineering" and reason == "volatility_state_not_ready" for domain, reason in drops)
-    assert any(evt == "EVT:FEATURES_CALCULATED" and isinstance(pld.get("warmup"), dict) for evt, pld, *_ in fsm.emitted)
+    assert any(evt == "EVT:TICK_FEATURES_CALCULATED" and isinstance(pld.get("warmup"), dict) for evt, pld, *_ in fsm.emitted)
 
     # FIX-TICK-FE-GATE-001: Tick-features use tf_sec=0 (tick-level), not bar tf_sec
-    features_events = [pld for evt, pld, *_ in fsm.emitted if evt == "EVT:FEATURES_CALCULATED"]
+    features_events = [pld for evt, pld, *_ in fsm.emitted if evt == "EVT:TICK_FEATURES_CALCULATED"]
     tick_features = [p for p in features_events if p.get("tf_sec") == 0]
     assert len(tick_features) > 0, f"Expected at least one tick feature event (tf_sec=0), got {features_events}"
     assert tick_features[-1].get("tf_sec") == 0

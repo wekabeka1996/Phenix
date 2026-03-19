@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tick_features_calculated_v1.json",
+  "title": "Tick Features Calculated Event",
+  "description": "Schema for EVT:TICK_FEATURES_CALCULATED event payload (tick-only contract)",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp of tick feature calculation in milliseconds epoch"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "const": 0,
+      "description": "Tick-level contract sentinel. Tick features never use a bar timeframe."
+    },
+    "warmup": {
+      "type": "object",
+      "description": "Warmup/readiness state for feature engineering.",
+      "properties": {
+        "full_ready": {
+          "type": "boolean"
+        },
+        "ticks_seen": {
+          "type": "integer"
+        },
+        "ready": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "full_ready",
+        "ticks_seen"
+      ],
+      "additionalProperties": true
+    },
+    "features": {
+      "type": "object",
+      "description": "Tick feature object",
+      "properties": {
+        "obi": {
+          "type": "string"
+        },
+        "tfi": {
+          "type": "string"
+        },
+        "delta_price": {
+          "type": "string"
+        },
+        "absorption": {
+          "type": "string"
+        },
+        "price": {
+          "type": "string"
+        },
+        "liquidity_kappa": {
+          "type": "string"
+        },
+        "ema_bias": {
+          "type": "string"
+        },
+        "volume_spike": {
+          "type": "string"
+        },
+        "volatility_state": {
+          "type": "string"
+        },
+        "depth_imbalance": {
+          "type": "string"
+        },
+        "macro_sync": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "obi",
+        "tfi",
+        "delta_price",
+        "absorption"
+      ],
+      "additionalProperties": true
+    },
+    "price_motion": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Additive-only tick price motion block (null for bad_dt, object for normal tick paths).",
+      "properties": {
+        "ret_10s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ret_60s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ret_300s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vol_pct_10s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "vol_pct_60s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "vol_pct_300s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "pm_norm_10s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pm_norm_60s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pm_norm_300s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ret_10s",
+        "ret_60s",
+        "ret_300s"
+      ]
+    },
+    "bar": {
+      "type": "null",
+      "description": "Tick payload never carries OHLCV bar data; explicit null sentinel."
+    },
+    "source_mode": {
+      "type": "string",
+      "description": "Tick source mode (live, replay, warmup_import, synthetic_repair)",
+      "enum": [
+        "live",
+        "replay",
+        "warmup_import",
+        "synthetic_repair"
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "Optional FE internal diagnostics snapshot.",
+      "additionalProperties": true
+    },
+    "data_quality": {
+      "type": "object",
+      "description": "Optional data-quality annotations, used by bad_dt and similar tick drops.",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "ts",
+    "symbol",
+    "tf_sec",
+    "warmup",
+    "features",
+    "price_motion",
+    "bar",
+    "source_mode"
+  ],
+  "additionalProperties": false
+}

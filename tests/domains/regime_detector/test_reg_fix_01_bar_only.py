@@ -99,6 +99,23 @@ class TestRegimeBarOnlyFilter:
         call_args = mock_fsm.emit.call_args
         assert call_args[0][0] == "EVT:REGIME_DETECTED"
 
+    def test_tick_verb_is_ignored(self, mock_fsm, mock_config, mock_message):
+        """Tick verb must be ignored by the bar-only regime detector."""
+        from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+        clock = MockClock(start_ms=1000000)
+        detector = RegimeDetector(mock_config, mock_fsm, clock=clock)
+
+        tick_event = mock_message("TICK_FEATURES_CALCULATED", {
+            "symbol": "BTCUSDT",
+            "ts": 1000000,
+            "tf_sec": 0,
+            "features": {"price": "50000"},
+        })
+        detector.handle_event(tick_event)
+
+        assert mock_fsm.emit.call_count == 0, "Tick verb should not trigger regime emission"
+
     def test_no_double_clocking_at_bar_close(self, mock_fsm, mock_config, mock_message):
         """Only one regime update per bar, even if multiple events arrive."""
         from apps.reference.domains.regime_detector.regime_detector import RegimeDetector

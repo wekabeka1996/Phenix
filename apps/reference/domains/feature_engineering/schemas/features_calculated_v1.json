@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "features_calculated_v1.json",
-  "title": "Features Calculated Event",
-  "description": "Schema for EVT:FEATURES_CALCULATED event payload",
+  "title": "Bar Features Calculated Event",
+  "description": "Schema for EVT:FEATURES_CALCULATED event payload (bar-only contract)",
   "type": "object",
   "properties": {
     "ts": {
@@ -15,9 +15,9 @@
     },
     "tf_sec": {
       "type": "integer",
-      "minimum": 0,
+      "minimum": 60,
       "maximum": 3600,
-      "description": "Timeframe in seconds for bar aggregation (e.g., 180 for 3m bars), or 0 for tick-level features"
+      "description": "Bar timeframe in seconds for bar aggregation (e.g., 180 for 3m bars). Tick features use EVT:TICK_FEATURES_CALCULATED."
     },
     "warmup": {
       "type": "object",
@@ -186,57 +186,50 @@
       ]
     },
     "bar": {
-      "description": "Raw OHLCV bar data (null for tick-level features). Shape from bar_closed_v1.json.",
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "symbol",
-            "timeframe_sec",
-            "start_ts_ms",
-            "end_ts_ms",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume"
-          ],
-          "properties": {
-            "symbol": {
-              "type": "string"
-            },
-            "timeframe_sec": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "start_ts_ms": {
-              "type": "integer"
-            },
-            "end_ts_ms": {
-              "type": "integer"
-            },
-            "open": {
-              "type": "string"
-            },
-            "high": {
-              "type": "string"
-            },
-            "low": {
-              "type": "string"
-            },
-            "close": {
-              "type": "string"
-            },
-            "volume": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": true
+      "type": "object",
+      "description": "Raw OHLCV bar data required by the bar-only feature contract. Shape from bar_closed_v1.json.",
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "start_ts_ms",
+        "end_ts_ms",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string"
         },
-        {
-          "type": "null"
+        "timeframe_sec": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start_ts_ms": {
+          "type": "integer"
+        },
+        "end_ts_ms": {
+          "type": "integer"
+        },
+        "open": {
+          "type": "string"
+        },
+        "high": {
+          "type": "string"
+        },
+        "low": {
+          "type": "string"
+        },
+        "close": {
+          "type": "string"
+        },
+        "volume": {
+          "type": "string"
         }
-      ]
+      },
+      "additionalProperties": true
     },
     "source_mode": {
       "type": "string",
@@ -247,6 +240,14 @@
         "warmup_import",
         "synthetic_repair"
       ]
+    },
+    "regime": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Optional regime snapshot attached by upstream code. FeatureEngineering does not require it for bar feature emission.",
+      "additionalProperties": true
     },
     "diagnostics": {
       "type": "object",
@@ -306,7 +307,13 @@
   "required": [
     "ts",
     "symbol",
-    "features"
+    "tf_sec",
+    "features",
+    "warmup",
+    "price_motion",
+    "bar",
+    "source_mode",
+    "diagnostics"
   ],
   "additionalProperties": false
 }

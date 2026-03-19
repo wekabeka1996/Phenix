@@ -280,6 +280,7 @@ def debug_event_listener(event: Any) -> None:
             )
         elif event.verb in [
             "FEATURES_CALCULATED",
+            "TICK_FEATURES_CALCULATED",
             "RISK_ASSESSMENT_COMPLETED",
             "PORTFOLIO_STATE_UPDATED",
         ]:
@@ -708,6 +709,22 @@ def main() -> None:
                 " InFlightReconciler not started: async loop is not running")
     except Exception as e:
         LOG.warning(f" InFlightReconciler disabled (init failed): {e}")
+
+    try:
+        boundary_audit = getattr(execution_position, "_intent_boundary_audit", None)
+        if (
+            boundary_audit is not None
+            and getattr(boundary_audit, "enabled", False)
+            and guardian_runtime is not None
+            and guardian_loop is not None
+            and guardian_loop.is_running()
+        ):
+            guardian_runtime.submit(boundary_audit.run_forever())
+            LOG.info(" IntentBoundaryAudit started")
+        elif boundary_audit is not None and getattr(boundary_audit, "enabled", False):
+            LOG.warning(" IntentBoundaryAudit not started: async loop is not running")
+    except Exception as e:
+        LOG.warning(f" IntentBoundaryAudit disabled (init failed): {e}")
 
     # RetryScheduler binding restored (PHASE2-DEAD-DEFER-FIX)
     retry_scheduler = None

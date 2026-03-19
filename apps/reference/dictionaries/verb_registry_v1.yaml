@@ -178,6 +178,12 @@ registry:
   schema: apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json
   since: '2026-01-08'
 - op: EVT
+  verb: TICK_FEATURES_CALCULATED
+  owner: feature_engineering
+  status: active
+  schema: apps/reference/domains/feature_engineering/schemas/tick_features_calculated_v1.json
+  since: '2026-03-19'
+- op: EVT
   verb: FILL
   owner: unknown
   status: deprecated

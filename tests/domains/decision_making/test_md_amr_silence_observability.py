@@ -5,6 +5,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
+from apps.reference.contracts.runtime_analytics_restore import (
+    RuntimeAnalyticsRestoreScope,
+    make_strategy_restore_snapshot,
+    restored_restore_status,
+)
 from apps.reference.contracts.strategy_compatibility_matrix import (
     build_active_strategy_compatibility_profiles,
 )
@@ -280,3 +287,228 @@ def test_md_amr_runtime_logs_init_enable_and_signal_readiness(caplog) -> None:
     assert "MD_AMR_BARS_PROGRESS" in caplog.text
     assert "MD_AMR_SIGNAL_READY" in caplog.text
     assert "MD_AMR_SIGNAL_EMITTED" in caplog.text
+
+
+def test_md_amr_objective_multiplier_keeps_payload_and_trace_aligned() -> None:
+    handler, fsm = _make_handler()
+    handler.config.domains.objective_engine = SimpleNamespace(
+        enabled=True,
+        data_requirements=SimpleNamespace(strict_fail_closed=True),
+        components={
+            "cost": SimpleNamespace(
+                enabled=True,
+                parameters={
+                    "base_fee_bps": 4.0,
+                    "slippage_from_spread_ratio": 0.5,
+                },
+            ),
+            "behavior": SimpleNamespace(
+                enabled=True,
+                parameters={"window_sec": 60.0},
+            ),
+        },
+    )
+    handler.config.strategies.md_amr.objective = SimpleNamespace(enabled=True)
+    handler._latest_portfolio = {
+        "positions_last_ts_ms": 1_700_000_000_000,
+        "equity_free_usdt": "1000",
+        "positions": [],
+    }
+    handler._latest_exposure_summary = {}
+    handler._regime["BNBUSDT"] = "MEAN_REVERSION"
+    handler._regime_ts_ms["BNBUSDT"] = 1_700_000_000_000
+    handler._regime_confidence["BNBUSDT"] = 0.85
+    handler._strategies["BNBUSDT"] = SimpleNamespace(
+        on_bar=lambda **_kwargs: {
+            "status": "SIGNAL",
+            "signal": MDAMRSignal(
+                intent_kind="ENTRY",
+                side="BUY",
+                reason_code="MD_AMR_ENTRY_LONG",
+                signal_score=0.9,
+                conf_ratio=0.8,
+                scaleout_fraction=None,
+                price_ref=Decimal("100"),
+                channel_state={"avg_high_12": 101.0, "avg_low_12": 99.0},
+                atr=1.0,
+                dir_score=0.1,
+                trace={
+                    "conf_ratio": 0.8,
+                    "qty_base": 1.0,
+                    "qty_new": 1.0,
+                    "thr_buy": 0.55,
+                    "thr_sell": 0.55,
+                },
+            ),
+        }
+    )
+
+    objective_trace = {
+        "trace_id": "obj-md-amr-1",
+        "multiplier": 0.5,
+        "objective_score": 0.42,
+    }
+
+    with (
+        patch(
+            "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+            return_value=SimpleNamespace(basis_required_bars=1),
+        ),
+        patch.object(
+            MDAMRHandler,
+            "_compute_tpsl",
+            return_value={
+                "stop_price": Decimal("99"),
+                "target_price": Decimal("101"),
+                "tpsl_ctx": {
+                    "regime_used": "MEAN_REVERSION",
+                    "sl_pct_eff": 0.01,
+                    "tp_rr_eff": 1.0,
+                },
+            },
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_market_input",
+            return_value=SimpleNamespace(spread_bps=2.0),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_signal_input",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_structure_input_from_prices",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.compute_projected_order_notional",
+            return_value=100.0,
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_exposure_input",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_behavior_input",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_execution_input",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.build_objective_input",
+            return_value=SimpleNamespace(),
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.adapters.compute_readiness_completeness",
+            return_value=1.0,
+        ),
+        patch(
+            "apps.reference.domains.objective_engine.engine.evaluate_objective",
+            return_value=SimpleNamespace(
+                is_blocked=False,
+                multiplier=0.5,
+                objective_score=0.42,
+                trace=SimpleNamespace(model_dump=lambda: dict(objective_trace)),
+            ),
+        ),
+    ):
+        handler._on_process_strategy(
+            SimpleNamespace(
+                pld={
+                    **_event_payload(),
+                    "warmup": {"full_ready": True, "ready": {}},
+                    "features": {"price": "100.0"},
+                }
+            )
+        )
+
+    produced = [
+        payload
+        for name, payload, _why, _data_ref in fsm.emitted
+        if name == "EVT:STRATEGY_SIGNAL_PRODUCED"
+    ]
+    assert len(produced) == 1
+    payload = produced[0]
+    assert payload["trace"]["conf_ratio"] == pytest.approx(0.4)
+    assert payload["score"] == pytest.approx(0.42)
+    assert payload["trace"]["objective"]["trace_id"] == "obj-md-amr-1"
+    assert payload["scoring"]["objective"]["objective_score"] == pytest.approx(0.42)
+
+
+def test_md_amr_restored_execution_snapshot_allows_open_new_risk_on_signal() -> None:
+    handler, fsm = _make_handler()
+    restore_snapshot = make_strategy_restore_snapshot(
+        strategy_id="md_amr",
+        symbol="BNBUSDT",
+        updated_at=1_700_000_000_000,
+        scopes={
+            scope.value: restored_restore_status(
+                why=[f"{scope.value}_restored"],
+                updated_at=1_700_000_000_000,
+                source="startup:test",
+                evidence_ref=f"{scope.value}:BNBUSDT:1700000000000",
+            )
+            for scope in RuntimeAnalyticsRestoreScope
+        },
+        source="startup:test",
+        has_open_position=False,
+    )
+    handler.apply_runtime_analytics_restore_snapshot(restore_snapshot)
+    handler._latest_portfolio = {
+        "positions_last_ts_ms": 1_700_000_000_000,
+        "equity_free_usdt": "1000",
+        "positions": [],
+    }
+    handler._latest_exposure_summary = {}
+    handler._regime["BNBUSDT"] = "MEAN_REVERSION"
+    handler._regime_ts_ms["BNBUSDT"] = 1_700_000_000_000
+    handler._regime_confidence["BNBUSDT"] = 0.9
+    handler._strategies["BNBUSDT"] = SimpleNamespace(
+        on_bar=lambda **_kwargs: {
+            "status": "SIGNAL",
+            "signal": MDAMRSignal(
+                intent_kind="ENTRY",
+                side="BUY",
+                reason_code="MD_AMR_ENTRY_LONG",
+                signal_score=0.9,
+                conf_ratio=0.8,
+                scaleout_fraction=None,
+                price_ref=Decimal("100"),
+                channel_state={"avg_high_12": 101.0, "avg_low_12": 99.0},
+                atr=1.0,
+                dir_score=0.1,
+                trace={
+                    "conf_ratio": 0.8,
+                    "qty_base": 1.0,
+                    "qty_new": 1.0,
+                    "thr_buy": 0.55,
+                    "thr_sell": 0.55,
+                },
+            ),
+        }
+    )
+
+    with patch(
+        "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+        return_value=SimpleNamespace(basis_required_bars=1),
+    ):
+        handler._on_process_strategy(
+            SimpleNamespace(
+                pld={
+                    **_event_payload(),
+                    "warmup": {"full_ready": True, "ready": {}},
+                    "features": {"price": "100.0"},
+                }
+            )
+        )
+
+    produced = [
+        payload
+        for name, payload, _why, _data_ref in fsm.emitted
+        if name == "EVT:STRATEGY_SIGNAL_PRODUCED"
+    ]
+    assert len(produced) == 1
+    payload = produced[0]
+    assert payload["runtime_permissions"]["can_open_new_risk"] is True
+    assert payload["runtime_permissions"]["mode"] == "OPEN_AND_MANAGE"

@@ -72,7 +72,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
         "ingest": {
             "source": "ipc_tap",
             "ipc_endpoint": "tcp://127.0.0.1:7101",
-            "allowlist_events": ["EVT:FEATURES_CALCULATED"],
+            "allowlist_events": ["EVT:FEATURES_CALCULATED", "EVT:TICK_FEATURES_CALCULATED"],
             "queue_maxsize": 100,
             "overflow_policy": "fail_closed",
         },
@@ -157,7 +157,7 @@ def test_llm_ingress_bridge_rejects_baseline_mode(tmp_path: Path) -> None:
     assert fsm.emitted[0]["payload"]["reason_code"] == "LLM_MODE_DISABLED"
 
 
-def test_llm_ingress_bridge_maps_owned_symbol_to_strategy_signal(tmp_path: Path) -> None:
+def test_llm_ingress_bridge_maps_owned_symbol_to_cmd_open(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
     config = ConfigLoader(config_dir=cfg_dir).load_config()
@@ -170,9 +170,32 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_strategy_signal(tmp_path: Path)
     event_names = [event["event"] for event in fsm.emitted]
     assert "EVT:LLM_INTENT_ACCEPTED_V1" in event_names
     assert "CMD:LLM_INTENT_SUBMIT_V1" in event_names
-    assert "EVT:STRATEGY_SIGNAL_PRODUCED" in event_names
+    assert "CMD:OPEN" in event_names
+    assert "EVT:STRATEGY_SIGNAL_PRODUCED" not in event_names
 
-    strategy_event = next(event for event in fsm.emitted if event["event"] == "EVT:STRATEGY_SIGNAL_PRODUCED")
-    assert strategy_event["payload"]["strategy_id"] == "llm_microstructure"
-    assert strategy_event["payload"]["symbol"] == "BNBUSDT"
-    assert strategy_event["payload"]["price_ctx"]["entry_price"] == "100.0"
+    open_event = next(event for event in fsm.emitted if event["event"] == "CMD:OPEN")
+    payload = open_event["payload"]
+    assert payload["strategy"] == "llm_microstructure"
+    assert payload["symbol"] == "BNBUSDT"
+    assert payload["side"] == "BUY"
+    assert payload["qty"] == "0.5"
+    assert payload["price"] == "100.0"
+    assert payload["order_type"] == "LIMIT"
+    assert payload["tif"] == "GTC"
+    assert payload["rid"] == "intent-1"
+    assert payload["stop_price"] == "99.0"
+    assert payload["target_price"] == "101.0"
+    assert "llm_microstructure" in payload["metadata"]["strategy_id"]
+
+def test_llm_direct_cmd_open_carries_idempotency_key(tmp_path: Path) -> None:
+    fsm = _StubFSM()
+    register_llm_command_mapper(fsm)
+
+    # Mock the internal SUBMIT emit
+    fsm.emit(
+        "CMD:LLM_INTENT_SUBMIT_V1",
+        payload=_llm_cmd_payload()
+    )
+
+    open_event = next(event for event in fsm.emitted if event["event"] == "CMD:OPEN")
+    assert open_event["payload"]["idempotent_key"] == "idem-key-1234"

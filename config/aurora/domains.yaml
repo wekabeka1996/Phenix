@@ -89,8 +89,8 @@ decision_making:
     min_confidence: 0.0
     # FIX-CONF-GATE-01: Separate regime confidence gate.
     # Blocks entries when regime_confidence < threshold (low/mid confidence = noise).
-    # 0.0 = disabled, 0.85 = recommended (only high-confidence regime signals).
-    min_regime_confidence: 0.65
+    # 0.0 = disabled; 0.42 = current tuned threshold for the expanded regime model.
+    min_regime_confidence: 0.42
     # FIX-NRR026: Reduced from 2 to 1 for bar-driven replay.
     # With 5m bars, requiring 2 consecutive bars (10 min) for trend confirmation
     # is too restrictive. Single bar direction is sufficient for bar-based trading.
@@ -586,6 +586,10 @@ execution_position:
     cleanup_ttl_ms: 6000
     # Cooldown after symbol tidy before next cleanup attempt (ms)
     symbol_cooldown_ms: 4000
+  intent_boundary_audit:
+    enabled: true
+    route_ttl_ms: 2000
+    downstream_ttl_ms: 5000
 
 shadow_telemetry:
   # Phase 2 subsystem: tracked in runtime and enabled for llm_microstructure shadow flow.
@@ -597,6 +601,7 @@ shadow_telemetry:
     allowlist_events:
       - EVT:BAR_CLOSED
       - EVT:FEATURES_CALCULATED
+      - EVT:TICK_FEATURES_CALCULATED
       - EVT:RISK_ASSESSMENT_COMPLETED
       - EVT:REGIME_DETECTED
       - EVT:STRATEGY_SIGNAL_PRODUCED
