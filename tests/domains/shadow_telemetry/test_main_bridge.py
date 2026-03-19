@@ -157,7 +157,7 @@ def test_llm_ingress_bridge_rejects_baseline_mode(tmp_path: Path) -> None:
     assert fsm.emitted[0]["payload"]["reason_code"] == "LLM_MODE_DISABLED"
 
 
-def test_llm_ingress_bridge_maps_owned_symbol_to_cmd_open(tmp_path: Path) -> None:
+def test_llm_ingress_bridge_maps_owned_symbol_to_external_open_request(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
     config = ConfigLoader(config_dir=cfg_dir).load_config()
@@ -170,12 +170,14 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_cmd_open(tmp_path: Path) -> Non
     event_names = [event["event"] for event in fsm.emitted]
     assert "EVT:LLM_INTENT_ACCEPTED_V1" in event_names
     assert "CMD:LLM_INTENT_SUBMIT_V1" in event_names
-    assert "CMD:OPEN" in event_names
+    assert "CMD:EXTERNAL_OPEN_REQUEST_V1" in event_names
+    assert "CMD:OPEN" not in event_names
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" not in event_names
 
-    open_event = next(event for event in fsm.emitted if event["event"] == "CMD:OPEN")
-    payload = open_event["payload"]
-    assert payload["strategy"] == "llm_microstructure"
+    ext_event = next(event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+    payload = ext_event["payload"]
+    assert payload["source"] == "external_llm"
+    assert payload["intent_id"] == "intent-1"
     assert payload["symbol"] == "BNBUSDT"
     assert payload["side"] == "BUY"
     assert payload["qty"] == "0.5"
@@ -185,9 +187,8 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_cmd_open(tmp_path: Path) -> Non
     assert payload["rid"] == "intent-1"
     assert payload["stop_price"] == "99.0"
     assert payload["target_price"] == "101.0"
-    assert "llm_microstructure" in payload["metadata"]["strategy_id"]
 
-def test_llm_direct_cmd_open_carries_idempotency_key(tmp_path: Path) -> None:
+def test_llm_direct_external_open_carries_idempotency_key(tmp_path: Path) -> None:
     fsm = _StubFSM()
     register_llm_command_mapper(fsm)
 
@@ -197,5 +198,5 @@ def test_llm_direct_cmd_open_carries_idempotency_key(tmp_path: Path) -> None:
         payload=_llm_cmd_payload()
     )
 
-    open_event = next(event for event in fsm.emitted if event["event"] == "CMD:OPEN")
-    assert open_event["payload"]["idempotent_key"] == "idem-key-1234"
+    ext_event = next(event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+    assert ext_event["payload"]["idempotent_key"] == "idem-key-1234"

@@ -90,7 +90,7 @@ class DecisionMaking:
             try:
                 self.alert_manager = _AlertManager(config=config, logger=self.logger.getChild("alerts"))
             except Exception:
-                pass
+                self.logger.warning("AlertManager init failed", exc_info=True)
 
         self.alpha_registry = None
         if ALPHA_MODELS_AVAILABLE:
@@ -227,9 +227,6 @@ class DecisionMaking:
         self._domain_bridge.register_health_fn(self.is_healthy)
         self._last_status_ts = 0.0
 
-    def start(self) -> None:
-        """Start the DecisionMaking component."""
-        self.logger.info("DecisionMaking component started.")
 
     def _safe_decimal(self, value: Any, default: Optional[Decimal] = None) -> Optional[Decimal]:
         if value is None:
@@ -238,7 +235,7 @@ class DecisionMaking:
             return value if value.is_finite() else default
         try:
             d = Decimal(str(value))
-        except Exception:
+        except (decimal.InvalidOperation, TypeError, ValueError):
             return default
         return d if d.is_finite() else default
 
@@ -355,7 +352,7 @@ class DecisionMaking:
         try:
             self.fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace, why="decision_trace", data_ref=why_chain)
         except Exception:
-            pass
+            self.logger.debug("EVT:DECISION_TRACE_EMITTED emit failed", exc_info=True)
         side_u = str(side).upper() if str(side).upper() in ("BUY", "SELL") else "NONE"
         try:
             order_logger.write({
@@ -365,7 +362,7 @@ class DecisionMaking:
                 "metadata": {"reject_reason": "SAFETY_GATES_DENY", "deny_reason": sg.deny_reason},
             })
         except Exception:
-            pass
+            self.logger.debug("order_logger.write failed in _handle_safety_deny", exc_info=True)
         self._record_blocked_intent(symbol)
 
     def _get_risk_skew_config(self, key: str) -> Any:
@@ -432,8 +429,8 @@ class DecisionMaking:
             if symbol and state in ("NORMAL", "STRESS", "EXTREME"):
                 self._system_stress_states[symbol] = state
                 self.logger.debug(f"[{symbol}] SystemStress state cached: {state}")
-        except Exception as exc:
-            self.logger.warning(f"_on_system_stress: unexpected error: {exc}")
+        except Exception:
+            self.logger.warning("_on_system_stress: unexpected error", exc_info=True)
 
     # -- Readiness stubs -------------------------------------------------------
     def _features_ready(self, symbol, features_data): return self._readiness.features_ready(symbol, features_data)

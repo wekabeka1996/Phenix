@@ -524,7 +524,9 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 ts_ms=ts_ms,
             )
         except Exception:
-            pass  # Best-effort WAL write, don't fail on observability
+            self.logger.debug(  # Best-effort WAL write, don't fail on observability
+                "write_trade_intent_rejected failed", exc_info=True,
+            )
 
     def on_regime_detected(self, event: Dict[str, Any]) -> None:
         """
@@ -586,8 +588,12 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             sym = str(pos.get("symbol") or "").upper()
             try:
                 qty = decimal.Decimal(str(pos.get("net_position") or "0"))
-            except Exception:
-                qty = decimal.Decimal("0")
+            except (decimal.InvalidOperation, TypeError, ValueError):
+                self.logger.warning(
+                    "Invalid net_position for %s: %r — skipping (not treating as flat)",
+                    sym, pos.get("net_position"),
+                )
+                continue
             if abs(qty) > decimal.Decimal("1e-9"):
                 active_symbols.add(sym)
 
@@ -664,6 +670,8 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         )
 
     def on_system_stress(self, event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
         symbol = event.get("symbol")
         state_str = event.get("state")
         if symbol and state_str:

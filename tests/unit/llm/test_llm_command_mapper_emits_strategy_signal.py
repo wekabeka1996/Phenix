@@ -1,18 +1,14 @@
 """
 test_llm_command_mapper_emits_strategy_signal.py
 
-Tests the CMD:LLM_INTENT_SUBMIT_V1 -> EVT:STRATEGY_SIGNAL_PRODUCED mapper.
+Tests the CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1 mapper.
 
-AUDIT FINDINGS verified:
-  - mapper hardcodes tf_sec=300 (profile declares timeframe_sec=60) — DRIFT
-  - strategy_id is "llm_microstructure"
-  - readiness.warmup_ok=True (hardcoded bypass)
-  - price_ctx.entry_price = cmd.order.limit_price
+Updated: mapper no longer emits EVT:STRATEGY_SIGNAL_PRODUCED.
+It now emits CMD:EXTERNAL_OPEN_REQUEST_V1 with flat payload + honest provenance.
 """
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 from typing import Any, Dict
 
 
@@ -53,9 +49,7 @@ def _make_cmd_payload(
 
 
 class TestLLMCommandMapper:
-    """
-    AUDIT: Proves mapper behavior for CMD:LLM_INTENT_SUBMIT_V1.
-    """
+    """Tests mapper CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1."""
 
     def _build_fsm_and_run_mapper(self, cmd_payload: Dict[str, Any]):
         """Helper: register mapper on mock FSM and dispatch command."""
@@ -71,7 +65,6 @@ class TestLLMCommandMapper:
 
         fsm.emit.side_effect = fake_emit
 
-        # Capture the listener handler
         registered_handler = {}
 
         def fake_listen(event_name: str, handler) -> None:
@@ -81,12 +74,9 @@ class TestLLMCommandMapper:
 
         register_llm_command_mapper(fsm)
 
-        assert "CMD:LLM_INTENT_SUBMIT_V1" in registered_handler, (
-            "Mapper must register listener for CMD:LLM_INTENT_SUBMIT_V1"
-        )
+        assert "CMD:LLM_INTENT_SUBMIT_V1" in registered_handler
         handler = registered_handler["CMD:LLM_INTENT_SUBMIT_V1"]
 
-        # Build event
         evt = Message(
             op="CMD",
             verb="LLM_INTENT_SUBMIT_V1",
@@ -100,87 +90,55 @@ class TestLLMCommandMapper:
         handler(evt)
         return captured_events
 
-    def test_mapper_emits_strategy_signal_produced(self):
+    def test_mapper_emits_external_open_request_v1(self):
         cmd = _make_cmd_payload()
         events = self._build_fsm_and_run_mapper(cmd)
 
-        signal_events = [e for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"]]
-        assert len(signal_events) == 1, (
-            f"Expected exactly 1 EVT:STRATEGY_SIGNAL_PRODUCED, got {len(signal_events)}"
+        ext_events = [e for e in events if e["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1"]
+        assert len(ext_events) == 1, (
+            f"Expected exactly 1 CMD:EXTERNAL_OPEN_REQUEST_V1, got {len(ext_events)}"
         )
 
-    def test_mapper_hardcodes_tf_sec_300_not_profile_60(self):
-        """
-        AUDIT FINDING H1 — CONFIRMED DRIFT:
-        Mapper hardcodes tf_sec=300. Profile declares timeframe_sec=60.
-        This is a semantic error (not a runtime blocker since ttl_by_tf_sec has 300:1200)
-        but creates valid_for_ms=1200s instead of the ~300s expected for a 60s timeframe.
-        """
+    def test_mapper_does_not_emit_strategy_signal_produced(self):
         cmd = _make_cmd_payload()
         events = self._build_fsm_and_run_mapper(cmd)
         signal_events = [e for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"]]
-        assert len(signal_events) == 1
+        assert len(signal_events) == 0, "Mapper must NOT emit EVT:STRATEGY_SIGNAL_PRODUCED"
 
-        pld = signal_events[0]["payload"]
-        tf_sec = pld.get("tf_sec")
-
-        # CONFIRMED DRIFT: mapper emits 300, not 60 (the profile value)
-        assert tf_sec == 300, (
-            f"AUDIT: Mapper emits tf_sec={tf_sec!r} but profile declares timeframe_sec=60. "
-            "This is a semantic drift. The fix is to align mapper tf_sec with profile."
-        )
-        # Document what the correct value should be:
-        assert tf_sec != 60, (
-            "If this fails, mapper was already fixed to use profile value. Update test."
-        )
-
-    def test_mapper_sets_strategy_id_llm_microstructure(self):
+    def test_mapper_does_not_emit_cmd_open(self):
         cmd = _make_cmd_payload()
         events = self._build_fsm_and_run_mapper(cmd)
-        pld = next(e["payload"] for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"])
+        open_events = [e for e in events if e["event"] == "CMD:OPEN"]
+        assert len(open_events) == 0, "Mapper must NOT emit CMD:OPEN directly"
 
-        assert pld["strategy_id"] == "llm_microstructure", (
-            f"Expected strategy_id='llm_microstructure' but got {pld['strategy_id']!r}"
-        )
-
-    def test_mapper_sets_warmup_ok_true(self):
-        """Mapper hardcodes warmup_ok=True to bypass warmup gate for external intents."""
+    def test_mapper_sets_source_external_llm(self):
         cmd = _make_cmd_payload()
         events = self._build_fsm_and_run_mapper(cmd)
-        pld = next(e["payload"] for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"])
+        pld = next(e["payload"] for e in events if e["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+        assert pld["source"] == "external_llm"
 
-        readiness = pld.get("readiness", {})
-        assert readiness.get("warmup_ok") is True, (
-            f"Expected warmup_ok=True in signal payload, got {readiness!r}"
-        )
-
-    def test_mapper_carries_price_ctx_from_cmd(self):
-        cmd = _make_cmd_payload(
-            limit_price="0.012345",
-            sl_price="0.011000",
-            tp_price="0.014000",
-        )
+    def test_mapper_sets_intent_id(self):
+        cmd = _make_cmd_payload(intent_id="test-intent-xyz")
         events = self._build_fsm_and_run_mapper(cmd)
-        pld = next(e["payload"] for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"])
-
-        price_ctx = pld.get("price_ctx", {})
-        assert price_ctx.get("entry_price") == "0.012345"
-        assert price_ctx.get("stop_price") == "0.011000"
-        assert price_ctx.get("target_price") == "0.014000"
+        pld = next(e["payload"] for e in events if e["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+        assert pld["intent_id"] == "test-intent-xyz"
 
     def test_mapper_preserves_symbol_and_side(self):
         cmd = _make_cmd_payload(symbol="1000PEPEUSDT", side="BUY")
         events = self._build_fsm_and_run_mapper(cmd)
-        pld = next(e["payload"] for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"])
-
+        pld = next(e["payload"] for e in events if e["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
         assert pld["symbol"] == "1000PEPEUSDT"
         assert pld["side"] == "BUY"
 
-    def test_mapper_preserves_rid_from_intent_id(self):
-        cmd = _make_cmd_payload(intent_id="test-intent-xyz")
-        events = self._build_fsm_and_run_mapper(cmd)
-        pld = next(e["payload"] for e in events if "STRATEGY_SIGNAL_PRODUCED" in e["event"])
-
-        assert pld["rid"] == "test-intent-xyz", (
-            f"Expected rid=intent_id='test-intent-xyz', got {pld['rid']!r}"
+    def test_mapper_carries_order_fields_flat(self):
+        cmd = _make_cmd_payload(
+            limit_price="0.012345",
+            qty="1000",
+            time_in_force="GTC",
         )
+        events = self._build_fsm_and_run_mapper(cmd)
+        pld = next(e["payload"] for e in events if e["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+        assert pld["price"] == "0.012345"
+        assert pld["qty"] == "1000"
+        assert pld["order_type"] == "LIMIT"
+        assert pld["tif"] == "GTC"

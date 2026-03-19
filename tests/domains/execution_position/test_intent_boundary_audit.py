@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+from apps.reference.config_loader import get_config
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from vfoundation.core.protocol import Message
+from vfoundation.core.fsm_core import FSMCore
+from vfoundation.core.schema_registry import init_global_registry
 
 from apps.reference.domains.execution_position.intent_boundary_audit import (
     IntentBoundaryAudit,
@@ -148,3 +155,110 @@ def test_intent_router_marks_open_intents_as_routed(fsm_harness) -> None:
     pending = fsm._intent_boundary_audit.get_pending("RID-ROUTED-OPEN")
     assert pending is not None
     assert pending.routed_via == "CMD:OPEN"
+
+
+class _AllowSafetyGate:
+    outcome = "ALLOW"
+    intent_side = "LONG"
+    trace_ts_ms = 1_700_000_000_000
+    why_short = "boundary_hardening"
+    signal_score = 0.91
+    regime = "TREND_UP"
+    regime_confidence = 0.87
+    trend_dir = "1"
+    delta_price = 0
+    pm_norm_10s = 0
+    pm_norm_60s = 0
+    pm_norm_300s = 0
+    vol_pct_10s = 0
+    vol_pct_60s = 0
+    vol_pct_300s = 0
+
+
+def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_execpos_routing() -> None:
+    init_global_registry(project_root=".")
+    cfg = get_config()
+    bus = FSMCore()
+    observed_intents: list[dict] = []
+    observed_open: list[dict] = []
+    bus.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed_intents.append(msg.pld))
+    original_emit = bus.emit
+
+    def _emit_with_dec_open_capture(event_name, payload=None, why="", data_ref=None, rid=None):
+        if event_name == "DEC:OPEN":
+            observed_open.append(dict(payload or {}))
+            return None
+        return original_emit(event_name, payload=payload, why=why, data_ref=data_ref, rid=rid)
+
+    bus.emit = _emit_with_dec_open_capture  # type: ignore[method-assign]
+
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), \
+         patch("apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"), \
+         patch("apps.reference.domains.execution_position.fsm.MetricsCollector"), \
+         patch("apps.reference.domains.execution_position.fsm.read_pending_brackets_from_wal", return_value={}):
+        from apps.reference.domains.execution_position.fsm import ExecPosFSM
+
+        ep = ExecPosFSM(config=cfg, fsm=bus, shadow_mode=True)
+        ep.log_adapter = MagicMock()
+        portfolio_state = {
+            "positions_last_ts_ms": 9_999_999_999_999,
+            "equity_free_usdt": "10000",
+            "open_positions_margin_usd": "0",
+            "positions": [],
+        }
+        ep._latest_portfolio_state = dict(portfolio_state)
+        ep.exposure_guard.on_portfolio(dict(portfolio_state))
+
+        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm._builder._warmup_gate = lambda **_kw: False
+        dm._builder._tca_prefs = {
+            "max_slippage_bps": 10,
+            "max_latency_ms": 100,
+            "maker_preference": False,
+        }
+        dm._builder._risk_budgets = {
+            "trade_cvar95_max_bps": 50,
+            "session_cvar95_max_bps": 100,
+        }
+        dm._builder._resolve_order_policy = MagicMock(return_value=("MARKET", None, None))
+        dm._builder._check_strategy_arbitration = MagicMock(return_value={"allowed": True})
+
+        strategy_trace = {
+            "objective": {"score": 0.93, "winner": "aurora"},
+            "model": "aurora",
+        }
+
+        with patch(
+            "apps.reference.domains.decision_making.decision_making.apply_safety_gates",
+            return_value=_AllowSafetyGate(),
+        ), patch(
+            "apps.reference.domains.decision_making.intent_builder.wal.append",
+            return_value="wal-ok",
+        ), patch(
+            "apps.reference.domains.decision_making.intent_builder.order_logger.write",
+        ), patch(
+            "apps.reference.domains.decision_making.intent_builder.print",
+        ):
+            dm._propose_trade_intent(
+                symbol="BTCUSDT",
+                side="BUY",
+                qty=Decimal("0.01"),
+                price=Decimal("50000"),
+                why_chain=["boundary_hardening"],
+                rid="RID-TRACE-BOUNDARY",
+                reduce_only=False,
+                strategy_id="aurora",
+                decision_ts_ms=1_700_000_000_000,
+                strategy_trace=strategy_trace,
+            )
+
+    assert observed_intents
+    assert observed_intents[0]["trace"] == strategy_trace
+    pending = ep._intent_boundary_audit.get_pending("RID-TRACE-BOUNDARY")
+    assert pending is not None
+    assert pending.routed_via == "CMD:OPEN"
+    assert observed_open
+    assert observed_open[0]["rid"] == "RID-TRACE-BOUNDARY"
+    assert observed_open[0]["symbol"] == "BTCUSDT"
+    assert observed_open[0]["order_type"] == "MARKET"
+    assert "trace" not in observed_open[0]

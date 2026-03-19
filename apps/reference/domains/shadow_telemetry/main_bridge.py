@@ -200,7 +200,7 @@ class LLMIntentIngressBridge:
 
 
 def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = None) -> None:
-    """Register CMD:LLM_INTENT_SUBMIT_V1 -> CMD:OPEN mapper (bypassing decision_making)."""
+    """Register CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1 mapper."""
 
     lg = logger or logging.getLogger(__name__)
 
@@ -209,39 +209,34 @@ def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = Non
             pld = event.pld if isinstance(event.pld, dict) else {}
             cmd = CmdLlmIntentSubmitV1.model_validate(pld)
 
-            # Direct mapping to CMD:OPEN for execution_position
-            # bypassing StrategyGateway, limits/filters in decision_making
-            cmd_open_payload = {
+            ext_payload = {
                 "rid": str(cmd.intent_id),
+                "intent_id": str(cmd.intent_id),
                 "symbol": str(cmd.symbol).upper(),
                 "side": str(cmd.side).upper(),
                 "qty": str(cmd.order.qty),
-                "order_type": "LIMIT",
+                "order_type": str(cmd.order.type),
                 "price": str(cmd.order.limit_price),
-                "tif": str(cmd.order.time_in_force) if cmd.order.time_in_force else "GTC",
-                "stop_price": str(cmd.brackets.sl_price) if cmd.brackets else None,
-                "target_price": str(cmd.brackets.tp_price) if cmd.brackets else None,
-                "valid_for_ms": None,  # EP manages TTLs locally if desired via order setup
+                "tif": str(cmd.order.time_in_force),
+                "stop_price": str(cmd.brackets.sl_price) if cmd.brackets and cmd.brackets.sl_price else None,
+                "target_price": str(cmd.brackets.tp_price) if cmd.brackets and cmd.brackets.tp_price else None,
+                "valid_for_ms": None,
                 "idempotent_key": str(cmd.idempotency_key) if cmd.idempotency_key else None,
-                "strategy": "llm_microstructure",
-                "metadata": {
-                    "strategy_id": "llm_microstructure",
-                    "source": "external_llm",
-                    "snapshot_ref": cmd.snapshot_ref.model_dump() if cmd.snapshot_ref else None,
-                    "why_short": truncate_why(str(cmd.why_short), 80),
-                },
+                "source": "external_llm",
+                "snapshot_ref": cmd.snapshot_ref.model_dump() if cmd.snapshot_ref else None,
+                "why_short": truncate_why(str(cmd.why_short), 80),
             }
 
             fsm.emit(
-                "CMD:OPEN",
-                payload=cmd_open_payload,
-                why="llm_direct_execution",
+                "CMD:EXTERNAL_OPEN_REQUEST_V1",
+                payload=ext_payload,
+                why="llm_external_open_request",
             )
-            lg.info("LLM_DIRECT: rid=%s side=%s qty=%s price=%s -> CMD:OPEN",
-                    cmd.intent_id, cmd.side, cmd.order.qty, cmd.order.limit_price)
+            lg.info("LLM_EXTERNAL: intent_id=%s rid=%s side=%s qty=%s price=%s -> CMD:EXTERNAL_OPEN_REQUEST_V1",
+                    cmd.intent_id, cmd.intent_id, cmd.side, cmd.order.qty, cmd.order.limit_price)
         except Exception as e:
             lg.error("LLM command mapper failed: %s", e, exc_info=True)
 
     fsm.listen("CMD:LLM_INTENT_SUBMIT_V1", _handler)
-    lg.info("Registered LLM command mapper: CMD:LLM_INTENT_SUBMIT_V1 -> CMD:OPEN (bypass decision_making)")
+    lg.info("Registered LLM command mapper: CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1")
 

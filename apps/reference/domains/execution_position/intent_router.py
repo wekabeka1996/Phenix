@@ -284,6 +284,248 @@ class IntentRouter:
                 except Exception as emit_e:
                     LOG.error(f"Failed to emit exception rejection: {emit_e}")
 
+    # ---------------------------------------------------------------
+    # External LLM intake  (CMD:EXTERNAL_OPEN_REQUEST_V1)
+    # ---------------------------------------------------------------
+
+    def on_external_open_request(self, msg: "Message") -> None:
+        """
+        Handle CMD:EXTERNAL_OPEN_REQUEST_V1 from shadow_telemetry mapper.
+
+        Validates external-specific fields, resolves valid_for_ms,
+        builds CMD:OPEN Message, and delegates to existing handle() chain.
+        Never emits EVT:TRADE_INTENT_REJECTED — uses dedicated reject verb.
+        """
+        from vfoundation.core.fsm_emit_compat import Message
+
+        pld = msg.pld or {}
+        symbol = pld.get("symbol") or "unknown"
+        intent_id = pld.get("intent_id")
+        rid = str(pld.get("rid") or msg.rid or f"ext-{int(time.time() * 1000)}")
+
+        try:
+            # GATE 1: intent_id must be present (forensic traceability)
+            if not intent_id:
+                self._emit_external_rejection(
+                    reason_code="NRR-EXT-MISSING-INTENT-ID",
+                    symbol=symbol, intent_id=None, rid=rid,
+                    reason_text="intent_id absent from external request",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            # GATE 2: source must be "external_llm" (fail-closed)
+            if pld.get("source") != "external_llm":
+                self._emit_external_rejection(
+                    reason_code="NRR-EXT-SOURCE-INVALID",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text=f"source={pld.get('source')!r} != 'external_llm'",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            # GATE 3: order_type must be LIMIT (v1 policy)
+            if pld.get("order_type") != "LIMIT":
+                self._emit_external_rejection(
+                    reason_code="NRR-EXT-ORDER-TYPE-NOT-LIMIT",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text=f"order_type={pld.get('order_type')!r} not LIMIT",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            # GATE 4: tif must be present (no silent GTC fallback)
+            tif = pld.get("tif")
+            if not tif or tif not in ("GTC", "GTX", "IOC", "FOK"):
+                self._emit_external_rejection(
+                    reason_code="NRR-EXT-MISSING-TIF",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text=f"tif={tif!r} missing or invalid",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            # GATE 5: price must be present (LIMIT v1 requires it)
+            price = pld.get("price")
+            if not price:
+                self._emit_external_rejection(
+                    reason_code="NRR-EXT-MISSING-PRICE",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text="price absent for LIMIT order",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            # GATE 6: resolve valid_for_ms — explicit precedence, separate reject codes
+            valid_for_ms = pld.get("valid_for_ms")
+            if valid_for_ms is not None:
+                if valid_for_ms < 1000:
+                    self._emit_external_rejection(
+                        reason_code="NRR-EXT-MISSING-VALID-FOR-MS",
+                        symbol=symbol, intent_id=intent_id, rid=rid,
+                        reason_text=f"request valid_for_ms={valid_for_ms} < 1000",
+                        data_ref=msg.data_ref,
+                    )
+                    return
+            else:
+                try:
+                    config_ttl = self._fsm.config.strategies.llm_microstructure.pending_entry_ttl_ms
+                except (AttributeError, KeyError):
+                    self._emit_external_rejection(
+                        reason_code="NRR-EXT-CONFIG-MISSING",
+                        symbol=symbol, intent_id=intent_id, rid=rid,
+                        reason_text="llm_microstructure.pending_entry_ttl_ms unreachable",
+                        data_ref=msg.data_ref,
+                    )
+                    return
+                if config_ttl is not None and config_ttl >= 1000:
+                    valid_for_ms = config_ttl
+                elif config_ttl is not None:
+                    self._emit_external_rejection(
+                        reason_code="NRR-EXT-CONFIG-INVALID",
+                        symbol=symbol, intent_id=intent_id, rid=rid,
+                        reason_text=f"pending_entry_ttl_ms={config_ttl} < 1000",
+                        data_ref=msg.data_ref,
+                    )
+                    return
+                else:
+                    self._emit_external_rejection(
+                        reason_code="NRR-EXT-MISSING-VALID-FOR-MS",
+                        symbol=symbol, intent_id=intent_id, rid=rid,
+                        reason_text="no valid_for_ms in request and config default is None",
+                        data_ref=msg.data_ref,
+                    )
+                    return
+
+            # Build CMD:OPEN payload (same shape CmdOpenPayload expects)
+            cmd_payload: Dict[str, Any] = {
+                "rid": rid,
+                "symbol": symbol,
+                "side": pld.get("side"),
+                "qty": pld.get("qty"),
+                "order_type": "LIMIT",
+                "price": price,
+                "tif": tif,
+                "valid_for_ms": valid_for_ms,
+                "stop_price": pld.get("stop_price"),
+                "target_price": pld.get("target_price"),
+                "idempotent_key": pld.get("idempotent_key"),
+                "price_ref": price,
+                "strategy": "llm_microstructure",
+                "metadata": {
+                    "strategy_id": "llm_microstructure",
+                    "source": "external_llm",
+                    "source_intent_id": intent_id,
+                    "snapshot_ref": pld.get("snapshot_ref"),
+                    "why_short": pld.get("why_short"),
+                },
+            }
+
+            cmd_open = Message(
+                op="CMD",
+                verb="OPEN",
+                src="execution_position",
+                dst="execution_position",
+                rid=rid,
+                pld=cmd_payload,
+                why=f"external_open_request:{rid}",
+                data_ref=msg.data_ref,
+            )
+
+            LOG.info(
+                "[%s] External open request -> CMD:OPEN (intent_id=%s rid=%s qty=%s side=%s)",
+                symbol, intent_id, rid, pld.get("qty"), pld.get("side"),
+            )
+            self._mark_intent_routed(
+                rid=rid,
+                symbol=str(symbol),
+                route="CMD:OPEN",
+                strategy_id="llm_microstructure",
+                side=pld.get("side"),
+            )
+            result = self._fsm.handle(cmd_open)
+
+            # Route result to bus (same pattern as on_trade_intent_proposed)
+            if result:
+                LOG.info("[%s] External open request processed: %s:%s", symbol, result.op, result.verb)
+
+                if hasattr(self._fsm, "bus"):
+                    out_pld = dict(result.pld or {})
+                    if result.rid:
+                        out_pld.setdefault("rid", result.rid)
+                    self._fsm.bus.emit(
+                        f"{result.op}:{result.verb}",
+                        out_pld,
+                        result.why,
+                        result.data_ref,
+                    )
+
+                if result.op == "ERR":
+                    LOG.warning("[%s] External open rejected by EP guard: %s", symbol, result.why)
+                    self._emit_external_rejection(
+                        reason_code="NRR-EXECUTION-REJECTED",
+                        symbol=symbol, intent_id=intent_id, rid=rid,
+                        reason_text=result.why[:240] if result.why else "execution_rejected",
+                        details={"rid": rid, "idempotent_key": pld.get("idempotent_key")},
+                        data_ref=msg.data_ref,
+                    )
+            else:
+                LOG.warning("[%s] External open processed but no result from handle()", symbol)
+                self._emit_external_rejection(
+                    reason_code="NRR-EXECUTION-INTERNAL-ERROR",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text="execution_no_result",
+                    data_ref=msg.data_ref,
+                )
+
+        except Exception as e:
+            LOG.error("Failed to process CMD:EXTERNAL_OPEN_REQUEST_V1: %s", e, exc_info=True)
+            try:
+                self._emit_external_rejection(
+                    reason_code="NRR-EXECUTION-EXCEPTION",
+                    symbol=symbol, intent_id=intent_id, rid=rid,
+                    reason_text=f"EXCEPTION: {str(e)}"[:240],
+                    details={"error_type": type(e).__name__, "rid": rid},
+                    data_ref=msg.data_ref,
+                )
+            except Exception as emit_e:
+                LOG.error("Failed to emit external exception rejection: %s", emit_e)
+
+    def _emit_external_rejection(
+        self,
+        *,
+        reason_code: str,
+        symbol: str,
+        intent_id: Optional[str],
+        rid: str,
+        reason_text: str,
+        details: Optional[Dict[str, Any]] = None,
+        data_ref: Any = None,
+    ) -> None:
+        """Emit EVT:EXTERNAL_OPEN_REQUEST_REJECTED_V1 — never EVT:TRADE_INTENT_REJECTED."""
+        LOG.warning(
+            "EXTERNAL_OPEN_REJECTED: %s symbol=%s intent_id=%s rid=%s reason=%s",
+            reason_code, symbol, intent_id, rid, reason_text,
+        )
+        if hasattr(self._fsm, "bus"):
+            self._fsm.bus.emit(
+                "EVT:EXTERNAL_OPEN_REQUEST_REJECTED_V1",
+                {
+                    "ts_ms": int(time.time() * 1000),
+                    "rid": rid,
+                    "intent_id": intent_id,
+                    "symbol": symbol,
+                    "reason_code": reason_code,
+                    "reason_text": str(reason_text)[:240],
+                    "source": "external_llm",
+                    "strategy": "llm_microstructure",
+                    "stage": "EXTERNAL_INTAKE",
+                    "details": details,
+                },
+                f"external_reject:{reason_code}",
+                data_ref,
+            )
+
     def on_trade_intent_rejected(self, msg: "Message") -> None:
         """
         Handle TRADE_INTENT_REJECTED event from DecisionMaking.

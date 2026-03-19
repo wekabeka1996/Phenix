@@ -331,7 +331,8 @@ class IntentBuilder:
                            why="trade_intent", data_ref=why_chain)
         except Exception as emit_e:
             self.logger.error(
-                f"[{symbol}] CRITICAL: FSM EMIT FAILED. RID={rid}: {emit_e}")
+                f"[{symbol}] CRITICAL: FSM EMIT FAILED for EVT:TRADE_INTENT_PROPOSED. "
+                f"RID={rid}. reason={emit_e}")
             return
 
         # ── Arbitration final commit ───────────────────────────

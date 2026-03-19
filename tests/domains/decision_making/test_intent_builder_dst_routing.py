@@ -35,10 +35,13 @@ class _FakeSG:
 
 
 def _make_builder(*, arb_fn=None) -> IntentBuilder:
+    clock = MagicMock()
+    clock.now_ms.return_value = 1700000000000
+    clock.now_sec.return_value = 1700000000
     return IntentBuilder(
         logger=MagicMock(),
         fsm=MagicMock(),
-        clock=MagicMock(),
+        clock=clock,
         config=MagicMock(),
         tca_prefs={"max_slippage_bps": 10, "max_latency_ms": 100,
                    "maker_preference": False},
@@ -46,8 +49,8 @@ def _make_builder(*, arb_fn=None) -> IntentBuilder:
                       "session_cvar95_max_bps": 100},
         safe_decimal_fn=lambda x, default: decimal.Decimal(
             x) if x else default,
-        check_strategy_arbitration_fn=arb_fn or (
-            lambda *a, **kw: {"allowed": True}),
+        check_strategy_arbitration_fn=arb_fn or MagicMock(
+            return_value={"allowed": True}),
         warmup_gate_fn=lambda **kw: False,
         emit_rejected_fn=MagicMock(),
         record_blocked_fn=MagicMock(),
@@ -70,6 +73,13 @@ _COMMON_KWARGS = dict(
     risk_score=None, strategy_trace=None,
     sg=_FakeSG(),
 )
+
+
+@pytest.fixture(autouse=True)
+def _side_effect_sinks():
+    with patch("apps.reference.domains.decision_making.intent_builder.order_logger.write") as mock_order_write, \
+         patch("apps.reference.domains.decision_making.intent_builder.print"):
+        yield mock_order_write
 
 
 # ---------------------------------------------------------------------------
@@ -143,3 +153,99 @@ class TestIntentBuilderDstRouting:
         assert wal_dict["src"] == "decision_making"
         assert wal_dict["op"] == "EVT"
         assert wal_dict["verb"] == "TRADE_INTENT_PROPOSED"
+
+    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    def test_emit_failure_keeps_pre_emit_artifacts_and_stops_post_emit_work(
+        self,
+        mock_policy,
+        mock_wal,
+        _side_effect_sinks,
+    ):
+        """Emit failure must occur after accepted metrics/WAL and before post-emit bookkeeping."""
+        mock_policy.return_value = ("LIMIT", "GTC", 10000)
+
+        call_order: list[str] = []
+        arb_fn = MagicMock(
+            side_effect=lambda *_, commit=False, **__: (
+                call_order.append(f"arb_commit_{commit}"),
+                {"allowed": True},
+            )[1]
+        )
+        builder = _make_builder(arb_fn=arb_fn)
+        builder._record_accepted.side_effect = lambda symbol: call_order.append(
+            f"accepted:{symbol}"
+        )
+        mock_wal.side_effect = lambda _payload: (
+            call_order.append("wal_append"),
+            "wal-ok",
+        )[1]
+
+        def _emit_side_effect(event_name, *args, **kwargs):
+            if event_name == "EVT:DECISION_TRACE_EMITTED":
+                call_order.append("decision_trace_emit")
+                return None
+            if event_name == "EVT:TRADE_INTENT_PROPOSED":
+                call_order.append("intent_emit")
+                raise RuntimeError(
+                    "Payload validation failed for EVT:TRADE_INTENT_PROPOSED: "
+                    "Additional properties are not allowed ('trace' was unexpected)"
+                )
+            raise AssertionError(f"Unexpected emit call: {event_name}")
+
+        builder._fsm.emit.side_effect = _emit_side_effect
+
+        builder.build_and_emit(
+            **{
+                **_COMMON_KWARGS,
+                "strategy_trace": {"objective": {"score": 0.9}, "model": "aurora"},
+            }
+        )
+
+        assert call_order == [
+            "arb_commit_False",
+            "decision_trace_emit",
+            "accepted:BTCUSDT",
+            "wal_append",
+            "intent_emit",
+        ]
+        assert arb_fn.call_count == 1
+        _side_effect_sinks.assert_not_called()
+
+    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    def test_emit_failure_log_includes_event_rid_and_validation_reason(
+        self,
+        mock_policy,
+        mock_wal,
+    ):
+        """Emit-failure log must be self-diagnosing for the execution-critical boundary."""
+        mock_policy.return_value = ("LIMIT", "GTC", 10000)
+        mock_wal.return_value = "wal-ok"
+
+        builder = _make_builder()
+
+        def _emit_side_effect(event_name, *args, **kwargs):
+            if event_name == "EVT:DECISION_TRACE_EMITTED":
+                return None
+            if event_name == "EVT:TRADE_INTENT_PROPOSED":
+                raise RuntimeError(
+                    "Payload validation failed for EVT:TRADE_INTENT_PROPOSED: "
+                    "Additional properties are not allowed ('trace' was unexpected)"
+                )
+            raise AssertionError(f"Unexpected emit call: {event_name}")
+
+        builder._fsm.emit.side_effect = _emit_side_effect
+
+        builder.build_and_emit(
+            **{
+                **_COMMON_KWARGS,
+                "strategy_trace": {"objective": {"score": 0.5}},
+            }
+        )
+
+        assert builder.logger.error.call_count == 1
+        log_line = builder.logger.error.call_args[0][0]
+        assert "EVT:TRADE_INTENT_PROPOSED" in log_line
+        assert "RID=rid-dst-001" in log_line
+        assert "Additional properties are not allowed" in log_line

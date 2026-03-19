@@ -3,6 +3,7 @@ llm_microstructure:
   type: external_intent
   description: "External LLM intent strategy (contract-first ingress, fail-closed gates)"
   timeframe_sec: 60
+  pending_entry_ttl_ms: 120000   # 2 min TTL for external LIMIT orders
   execution:
     entry_order_type: "LIMIT"
     entry_tif: "GTC"

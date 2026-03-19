@@ -159,6 +159,20 @@ registry:
   status: active
   schema: apps/reference/domains/execution_position/schemas/execution_tidy_performed_v1.json
   since: '2026-03-13'
+- op: CMD
+  verb: EXTERNAL_OPEN_REQUEST_V1
+  owner: execution_position
+  status: experimental
+  schema: apps/reference/domains/execution_position/schemas/cmd_external_open_request_v1.json
+  since: '2026-03-19'
+  note: "External LLM intent intake — bypasses decision_making, reuses EP guard chain"
+- op: EVT
+  verb: EXTERNAL_OPEN_REQUEST_REJECTED_V1
+  owner: execution_position
+  status: experimental
+  schema: schemas/external_open_request_rejected_v1.json
+  since: '2026-03-19'
+  note: "Rejection event for external open requests (separate provenance from TRADE_INTENT_REJECTED)"
 - op: EVT
   verb: EXIT_MATCH_ATTEMPTED
   owner: execution_position

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "external_open_request_rejected_v1.json",
+  "title": "EVT:EXTERNAL_OPEN_REQUEST_REJECTED_V1 payload schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts_ms", "symbol", "reason_code", "stage", "source"],
+  "properties": {
+    "ts_ms":        { "type": "integer" },
+    "rid":          { "type": "string" },
+    "intent_id":    { "anyOf": [{"type": "string"}, {"type": "null"}], "description": "External intent identity from request; null when intent_id itself is missing (NRR-EXT-MISSING-INTENT-ID)" },
+    "symbol":       { "type": "string" },
+    "reason_code":  { "type": "string" },
+    "reason_text":  { "type": "string", "maxLength": 240 },
+    "source":       { "type": "string", "const": "external_llm" },
+    "strategy":     { "type": "string" },
+    "stage":        { "type": "string", "const": "EXTERNAL_INTAKE" },
+    "idempotent_key": { "anyOf": [{"type": "string"}, {"type": "null"}] },
+    "details":      { "type": "object", "additionalProperties": true }
+  }
+}

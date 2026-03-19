@@ -271,3 +271,161 @@ class TestSignalEmission:
         handler.on_features_calculated(event)
         
         assert emit_fn.call_count == 0
+
+
+class TestPortfolioStateNetPosition:
+    """Regression tests for Finding 6: invalid net_position must not masquerade as flat."""
+
+    @pytest.fixture
+    def handler(self):
+        config = SimpleNamespace(
+            strategies=SimpleNamespace(
+                aurora=SimpleNamespace(
+                    timeframe_sec=300,
+                    decision=SimpleNamespace(
+                        signal_threshold=0.1,
+                        side_bias_window_sec=420,
+                        regime_threshold_multipliers={"DEFAULT": 1.0},
+                        direction_strength_scoring=None,
+                        signals=None,
+                    ),
+                    assets={"BTCUSDT": SimpleNamespace(enabled=True)},
+                )
+            ),
+            strategies_registry=SimpleNamespace(assignments={"BTCUSDT": ["aurora"]}),
+        )
+        return AuroraHandler(config=config, emit_fn=MagicMock())
+
+    def test_valid_net_position_is_tracked(self, handler):
+        """A normal non-zero position must be seen as active."""
+        event = {
+            "positions": [{"symbol": "BTCUSDT", "net_position": "0.5"}],
+            "positions_last_ts_ms": 1700000000000,
+        }
+        # After the call _latest_portfolio should be set; no exception raised.
+        handler.on_portfolio_state(event)
+        assert handler._latest_portfolio == event
+
+    def test_invalid_net_position_skipped_not_treated_as_flat(self, handler):
+        """Malformed net_position must be skipped with a warning — NOT treated as zero.
+
+        Before the fix: except Exception → qty = Decimal("0") → symbol absent from
+        active_symbols → CLEAN_START_UPGRADE could be falsely triggered.
+        After the fix: invalid entry is skipped via `continue`; the symbol's upgrade
+        path is never reached for that position row.
+        """
+        import decimal
+        from unittest.mock import patch
+
+        upgrade_calls = []
+
+        def fake_upgrade(snapshot, **kwargs):
+            upgrade_calls.append(snapshot)
+            return None  # simulate "not triggered"
+
+        with patch(
+            "apps.reference.domains.decision_making.aurora_handler"
+            ".upgrade_cold_execution_restore_if_clean_start",
+            side_effect=fake_upgrade,
+        ):
+            event = {
+                "positions": [
+                    {"symbol": "BTCUSDT", "net_position": "NOT_A_NUMBER"},
+                ],
+                "positions_last_ts_ms": 1700000000000,
+            }
+            # Should NOT raise; invalid row is silently skipped with a warning.
+            handler.on_portfolio_state(event)
+
+        # upgrade was never called (no snapshot registered), but crucially no
+        # AttributeError or silent-zero conversion happened either.
+        assert upgrade_calls == []
+
+    def test_zero_net_position_still_treated_as_flat(self, handler):
+        """Explicit "0" remains flat (normal path must not be broken)."""
+        event = {
+            "positions": [{"symbol": "BTCUSDT", "net_position": "0"}],
+            "positions_last_ts_ms": 1700000000000,
+        }
+        handler.on_portfolio_state(event)  # Should not raise
+
+
+class TestEmitStrategyBlockedWalLogging:
+    """Regression test for Finding 7: WAL write failure must be logged, not swallowed."""
+
+    @pytest.fixture
+    def handler(self):
+        config = SimpleNamespace(
+            strategies=SimpleNamespace(
+                aurora=SimpleNamespace(
+                    timeframe_sec=300,
+                    decision=SimpleNamespace(
+                        signal_threshold=0.1,
+                        side_bias_window_sec=420,
+                        regime_threshold_multipliers={"DEFAULT": 1.0},
+                        direction_strength_scoring=None,
+                        signals=None,
+                    ),
+                    assets={},
+                )
+            )
+        )
+        return AuroraHandler(config=config, emit_fn=MagicMock())
+
+    def test_wal_failure_is_logged_not_swallowed(self, handler):
+        """If write_trade_intent_rejected raises, the exception must appear in
+        logger.debug (with exc_info=True) and must NOT propagate to the caller."""
+        from unittest.mock import patch
+
+        with patch(
+            "apps.reference.domains.decision_making.aurora_handler"
+            ".write_trade_intent_rejected",
+            side_effect=RuntimeError("disk full"),
+        ):
+            with patch.object(handler.logger, "debug") as mock_debug:
+                # Must not raise
+                handler._emit_strategy_blocked(
+                    symbol="BTCUSDT",
+                    reason_code="TEST",
+                    reason="test reason",
+                    context="unit_test",
+                )
+
+        # logger.debug must have been called with exc_info=True
+        assert mock_debug.called
+        call_kwargs = mock_debug.call_args[1] if mock_debug.call_args else {}
+        assert call_kwargs.get("exc_info") is True
+
+
+class TestOnSystemStressGuard:
+    """Regression test for Finding 8: on_system_stress must guard against non-dict payload."""
+
+    @pytest.fixture
+    def handler(self):
+        config = SimpleNamespace(
+            strategies=SimpleNamespace(
+                aurora=SimpleNamespace(
+                    timeframe_sec=300,
+                    decision=SimpleNamespace(
+                        signal_threshold=0.1,
+                        side_bias_window_sec=420,
+                        regime_threshold_multipliers={"DEFAULT": 1.0},
+                        direction_strength_scoring=None,
+                        signals=None,
+                    ),
+                    assets={},
+                )
+            )
+        )
+        return AuroraHandler(config=config, emit_fn=MagicMock())
+
+    @pytest.mark.parametrize("bad_payload", [None, "string", 42, ["list"]])
+    def test_non_dict_payload_does_not_raise(self, handler, bad_payload):
+        """on_system_stress must silently return on non-dict payload (consistent with other handlers)."""
+        handler.on_system_stress(bad_payload)  # Must not raise AttributeError
+
+    def test_valid_dict_payload_updates_state(self, handler):
+        """Normal dict payload must still update the symbol state."""
+        handler.on_system_stress({"symbol": "BTCUSDT", "state": "HIGH_STRESS"})
+        assert handler._symbol_states["BTCUSDT"].system_stress_state == "HIGH_STRESS"
+

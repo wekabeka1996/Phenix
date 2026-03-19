@@ -113,7 +113,15 @@ class AuroraTpslMixin:
         tp_cfg = getattr(instr_cfg, "take_profit", None)
 
         # Resolve effective regime (prefer effective from anti-churn if enabled)
-        state = self._symbol_states[symbol]
+        state = self._symbol_states.get(symbol)
+        if state is None:
+            self.logger.warning("[%s] Unknown symbol for regime TP/SL", symbol)
+            return None
+        if entry_price <= 0:
+            self.logger.error(
+                "[%s] Invalid entry_price for TP/SL: %s", symbol, entry_price
+            )
+            return None
         regime_used = regime or "DEFAULT"
         if getattr(self, "anti_churn_enabled", False) and state.regime_effective:
             regime_used = state.regime_effective
@@ -341,12 +349,23 @@ class AuroraTpslMixin:
         min_dist_bps = int(getattr(regime_tpsl_cfg, "min_dist_bps", 15))
 
         # Calculate actual SL distance
-        if side.upper() == "BUY":
+        if entry_price <= 0:
+            self.logger.error(
+                "[%s] Invalid entry_price for TP/SL guardrails: %s", symbol, entry_price
+            )
+            return None
+        side_upper = side.upper()
+        if side_upper == "BUY":
             sl_dist_pct = (entry_price - stop_price) / entry_price
             tp_dist_pct = (target_price - entry_price) / entry_price
-        else:
+        elif side_upper == "SELL":
             sl_dist_pct = (stop_price - entry_price) / entry_price
             tp_dist_pct = (entry_price - target_price) / entry_price
+        else:
+            self.logger.error(
+                "[%s] Invalid side for TP/SL guardrails: %r", symbol, side
+            )
+            return None
 
         # Validate SL on correct side
         if sl_dist_pct <= 0:
@@ -394,8 +413,8 @@ class AuroraTpslMixin:
         # Telemetry: capture RR before RR clamp (post SL clamp).
         try:
             tpsl_ctx["rr_pre"] = float(current_rr)
-        except Exception:
-            pass
+        except (decimal.InvalidOperation, OverflowError, ValueError):
+            self.logger.debug("Failed to serialize rr_pre for %s", symbol, exc_info=True)
 
         # Clamp RR to min/max (adjusts TP, not SL)
         if current_rr < min_tp_rr:

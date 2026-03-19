@@ -291,7 +291,8 @@
         "null"
       ],
       "additionalProperties": true,
-      "description": "Strategy audit/debug trace produced by the objective engine or md_amr tracer. Present only when strategy_trace is non-null in IntentBuilder."
+      "$comment": "Canonical optional execution-boundary field. Producer/schema co-evolution tests must keep this additive contract aligned.",
+      "description": "Strategy audit/debug trace produced by the objective engine or md_amr tracer. Optional top-level field for execution-boundary diagnostics; present only when strategy_trace is non-null in IntentBuilder."
     }
   },
   "allOf": [
