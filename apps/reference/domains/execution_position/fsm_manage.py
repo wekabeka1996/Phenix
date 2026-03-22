@@ -26,6 +26,10 @@ from apps.reference.domains.execution_position.utils import (
     generate_client_order_id,
     quantize_stop_price,
 )
+from apps.reference.telemetry.shadow_journal import (
+    get_shadow_journal,
+    snapshot_manage_flow_state,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -168,6 +172,10 @@ class ManageFlowFSM:
             "fsm_errors_total": 0,
         }
         self._observability_hook: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        self._shadow_journal: Optional[Any] = None
+
+    def set_shadow_journal(self, journal: Any) -> None:
+        self._shadow_journal = journal
 
     # =========================================================================
     # Phase 0: Per-Instrument Aurora Configuration Helpers
@@ -644,149 +652,158 @@ class ManageFlowFSM:
         Returns:
             DEC:ADJUST if rules trigger, None otherwise.
         """
-        # Kill-switch: check if auto-manage is disabled
-        if not self._auto_manage_enabled:
-            inc_manage_skipped()
-            # Emit MANAGE_SKIPPED event for observability
-            pld_symbol = msg.pld.get("symbol") if isinstance(
-                msg.pld, dict) else None
-            return Message(
-                op="EVT",
-                verb="MANAGE_SKIPPED",
-                src="execution_position",
-                dst="any",
-                rid=aget(msg, "rid", None) or "",
-                why="manage_disabled",
-                pld={
-                    "symbol": pld_symbol,
-                    "reason": "auto_manage_disabled",
-                },
-                data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
-            )
-
-        if msg.op not in ("EVT", "UPD"):
-            return None
-
-        # WAIT_MODE handling: skip actions until TTL expires
+        journal = get_shadow_journal(self)
+        before = snapshot_manage_flow_state(self) if journal is not None else None
+        result: Optional[Message] = None
         try:
-            pld = msg.pld or {}
-            ts_value = pld.get("ts") if isinstance(pld, dict) else None
-            now_ts = int(ts_value) if ts_value else get_clock().now_ms()
-        except (ValueError, TypeError, AttributeError) as e:
-            LOG.debug(f"Failed to parse timestamp from message: {e}")
-            now_ts = get_clock().now_ms()
-
-        if self.state == ManageState.WAIT_MODE:
-            if now_ts < self._wait_mode_until_ts:
+            if not self._auto_manage_enabled:
+                inc_manage_skipped()
                 pld_symbol = msg.pld.get("symbol") if isinstance(
                     msg.pld, dict) else None
-                return Message(
+                result = Message(
                     op="EVT",
                     verb="MANAGE_SKIPPED",
                     src="execution_position",
                     dst="any",
                     rid=aget(msg, "rid", None) or "",
-                    why="wait_mode_active",
-                    pld={"symbol": pld_symbol, "reason": "wait_mode"},
+                    why="manage_disabled",
+                    pld={
+                        "symbol": pld_symbol,
+                        "reason": "auto_manage_disabled",
+                    },
                     data_ref=msg.data_ref.copy() if msg.data_ref else [],
                 )
-            else:
+                return result
+
+            if msg.op not in ("EVT", "UPD"):
+                return None
+
+            try:
+                pld = msg.pld or {}
+                ts_value = pld.get("ts") if isinstance(pld, dict) else None
+                now_ts = int(ts_value) if ts_value else get_clock().now_ms()
+            except (ValueError, TypeError, AttributeError) as e:
+                LOG.debug(f"Failed to parse timestamp from message: {e}")
+                now_ts = get_clock().now_ms()
+
+            if self.state == ManageState.WAIT_MODE:
+                if now_ts < self._wait_mode_until_ts:
+                    pld_symbol = msg.pld.get("symbol") if isinstance(
+                        msg.pld, dict) else None
+                    result = Message(
+                        op="EVT",
+                        verb="MANAGE_SKIPPED",
+                        src="execution_position",
+                        dst="any",
+                        rid=aget(msg, "rid", None) or "",
+                        why="wait_mode_active",
+                        pld={"symbol": pld_symbol, "reason": "wait_mode"},
+                        data_ref=msg.data_ref.copy() if msg.data_ref else [],
+                    )
+                    return result
                 self.state = ManageState.TRACKING
 
-        # State transition: FLAT  BRACKETS_PENDING on PARTIAL_FILL or FILL
-        if self.state == ManageState.FLAT and msg.verb in (
-            "PARTIAL_FILL",
-            "FILL",
-            "TRADE_EXECUTED",
-        ):
-            #  CRITICAL FIX: Distinguish between ENTRY and EXIT fills
-            # If this is an EXIT order (TP/SL), position is CLOSING, not opening!
-            pld = msg.pld or {}
-            order_type = pld.get("order_type") or (pld["type"] if "type" in pld else "")
-            close_position = (
-                str(pld["closePosition"] if "closePosition" in pld else "").lower() == "true"
-                or str(pld["cp"] if "cp" in pld else "").lower() == "true"
-            )
-            is_reduce_only = str(pld["reduceOnly"] if "reduceOnly" in pld else "").lower() == "true"
-
-            #  DIAGNOSTIC: Log all FILL events in FLAT state
-            LOG.debug(f"FILL event in FLAT: verb={msg.verb}, "
-                      f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
-                      f"pld_keys={list(pld.keys())}")
-
-            # EXIT orders: TAKE_PROFIT_MARKET, STOP_MARKET, or LIMIT with closePosition=true
-            is_exit_order = self._is_exit_fill_payload(pld)
-
-            if is_exit_order:
-                #  Position is CLOSING via TP/SL - do NOT create new TP/SL!
-                LOG.info(
-                    f"EXIT fill detected ({order_type}), position closing, NOT placing brackets")
-                self._clear_lifecycle_tracking(
-                    reason="flat_exit_fill",
-                    clear_symbol=True,
+            if self.state == ManageState.FLAT and msg.verb in (
+                "PARTIAL_FILL",
+                "FILL",
+                "TRADE_EXECUTED",
+            ):
+                pld = msg.pld or {}
+                order_type = pld.get("order_type") or (pld["type"] if "type" in pld else "")
+                close_position = (
+                    str(pld["closePosition"] if "closePosition" in pld else "").lower() == "true"
+                    or str(pld["cp"] if "cp" in pld else "").lower() == "true"
                 )
-                self.state = ManageState.FLAT
-                # Stay in FLAT, return without placing new brackets
-                return None
-            else:
-                # ENTRY fill - position is opening
-                # HOTFIX: Auto-clear closing flag on ENTRY (we're opening, not closing)
+                is_reduce_only = str(pld["reduceOnly"] if "reduceOnly" in pld else "").lower() == "true"
+
+                LOG.debug(
+                    f"FILL event in FLAT: verb={msg.verb}, "
+                    f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
+                    f"pld_keys={list(pld.keys())}"
+                )
+
+                is_exit_order = self._is_exit_fill_payload(pld)
+
+                if is_exit_order:
+                    LOG.info(
+                        f"EXIT fill detected ({order_type}), position closing, NOT placing brackets")
+                    self._clear_lifecycle_tracking(
+                        reason="flat_exit_fill",
+                        clear_symbol=True,
+                    )
+                    self.state = ManageState.FLAT
+                    return None
+
                 if self._closing_position:
                     self._closing_position = False
                     LOG.info("[BRK] ENTRY detected  closing_flag=False")
 
-                LOG.info(
-                    f"ENTRY fill - creating position from {msg.verb}")
+                LOG.info(f"ENTRY fill - creating position from {msg.verb}")
                 self._on_fill(msg)
-                self.state = (
-                    ManageState.BRACKETS_PENDING
-                )  # Place brackets after position opens
-                LOG.info(
-                    f"Position opened, placing brackets on {msg.verb}")
-                # Place bracket orders immediately
-                return self._place_brackets(msg)
+                self.state = ManageState.BRACKETS_PENDING
+                LOG.info(f"Position opened, placing brackets on {msg.verb}")
+                result = self._place_brackets(msg)
+                return result
 
-        if self.state in (
-            ManageState.OPENED,
-            ManageState.TRACKING,
-            ManageState.BRACKETS_PENDING,
-            ManageState.BRACKETS_PLACED,
-            ManageState.EMIT_DEC_ADJUST,
-            ManageState.ERROR,
-            ManageState.EMERGENCY,
-        ) and msg.verb in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED"):
-            pld = msg.pld or {}
-            order_id = pld.get("orderId")
-            client_order_id = self._client_order_id_from_payload(pld)
-            if (
-                (order_id or client_order_id)
-                and
-                not self._is_exit_fill_payload(pld)
-                and not self._matches_tracked_entry(order_id, client_order_id)
-                and not self._matches_tracked_bracket(order_id, client_order_id)
-            ):
-                LOG.error(
-                    "[ManageFlowFSM] blocking entry-like fill over active lifecycle: "
-                    f"state={self.state.value} symbol={pld.get('symbol')} order_id={order_id}"
+            if self.state in (
+                ManageState.OPENED,
+                ManageState.TRACKING,
+                ManageState.BRACKETS_PENDING,
+                ManageState.BRACKETS_PLACED,
+                ManageState.EMIT_DEC_ADJUST,
+                ManageState.ERROR,
+                ManageState.EMERGENCY,
+            ) and msg.verb in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED"):
+                pld = msg.pld or {}
+                order_id = pld.get("orderId")
+                client_order_id = self._client_order_id_from_payload(pld)
+                if (
+                    (order_id or client_order_id)
+                    and
+                    not self._is_exit_fill_payload(pld)
+                    and not self._matches_tracked_entry(order_id, client_order_id)
+                    and not self._matches_tracked_bracket(order_id, client_order_id)
+                ):
+                    LOG.error(
+                        "[ManageFlowFSM] blocking entry-like fill over active lifecycle: "
+                        f"state={self.state.value} symbol={pld.get('symbol')} order_id={order_id}"
+                    )
+                    self._emit_guard_blocked_event(
+                        msg,
+                        "stale_local_lifecycle_conflict",
+                    )
+                    result = self._emit_manage_guard_fail(
+                        msg,
+                        "stale_local_lifecycle_conflict",
+                    )
+                    return result
+
+            if self.state == ManageState.BRACKETS_PENDING and msg.verb == "ORDER_UPDATED":
+                result = self._on_bracket_placed(msg)
+                return result
+
+            if self.state in (ManageState.TRACKING, ManageState.BRACKETS_PLACED):
+                result = self._check_rules(msg)
+                return result
+
+            return None
+        finally:
+            if journal is not None:
+                notes = []
+                if result is not None:
+                    notes.append(f"result={result.op}:{result.verb}")
+                journal.record_transition(
+                    event_name=f"{msg.op}:{msg.verb}",
+                    source_component="execution_position.fsm_manage",
+                    source_path="execution:manage_flow_handle",
+                    event_origin_type="execution",
+                    truth_owner="ManageFlowFSM",
+                    payload=msg.pld or {},
+                    rid=getattr(msg, "rid", None),
+                    before=before,
+                    after=snapshot_manage_flow_state(self),
+                    notes=notes,
                 )
-                self._emit_guard_blocked_event(
-                    msg,
-                    "stale_local_lifecycle_conflict",
-                )
-                return self._emit_manage_guard_fail(
-                    msg,
-                    "stale_local_lifecycle_conflict",
-                )
-
-        # Handle bracket order confirmations
-        if self.state == ManageState.BRACKETS_PENDING and msg.verb == "ORDER_UPDATED":
-            return self._on_bracket_placed(msg)
-
-        # Check rules in TRACKING/BRACKETS_PLACED states
-        if self.state in (ManageState.TRACKING, ManageState.BRACKETS_PLACED):
-            return self._check_rules(msg)
-
-        return None
 
     def _on_fill(self, msg: Message):
         """Update position state on fill event."""

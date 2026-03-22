@@ -1,9 +1,11 @@
 import logging
+from pathlib import Path
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian, InMemoryStore
+import apps.reference.domains.execution_position.order_guardian as order_guardian_module
 
 
 @pytest.mark.asyncio
@@ -49,3 +51,16 @@ async def test_emit_failure_logged_not_swallowed(caplog: pytest.LogCaptureFixtur
         await guardian.reconcile_symbol("BTCUSDT", rid="rid-1")
 
     assert "CRITICAL: Failed to emit EVT:SYMBOL_TIDY" in caplog.text
+
+
+def test_order_guardian_logs_to_root_logs_dir() -> None:
+    expected_log_file = Path(__file__).resolve(
+    ).parents[2] / "logs" / "order_guardian.log"
+
+    handler_paths = [
+        Path(handler.baseFilename)
+        for handler in order_guardian_module.LOG.handlers
+        if hasattr(handler, "baseFilename")
+    ]
+
+    assert expected_log_file in handler_paths

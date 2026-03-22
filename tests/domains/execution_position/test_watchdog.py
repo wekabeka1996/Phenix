@@ -146,8 +146,15 @@ async def test_poll_order_statuses_filled(watchdog):
         
         get_order_fn.assert_called_once_with("BTC", "o1")
         emit_fn.assert_called_once_with("EVT:TRADE_EXECUTED", {
-            "orderId": "o1", "symbol": "BTC", "quantity": 1.0, 
-            "price": 50000.0, "client_order_id": "c1", "rid": None
+            "orderId": "o1",
+            "symbol": "BTC",
+            "quantity": 1.0,
+            "qty": 1.0,
+            "price": 50000.0,
+            "clientOrderId": "c1",
+            "client_order_id": "c1",
+            "rid": None,
+            "ts_ms": 10000,
         })
         
         # Should mark handled
@@ -169,7 +176,20 @@ async def test_poll_order_statuses_cancelled(watchdog):
         await watchdog._poll_order_statuses()
         
         emit_fn.assert_called_once_with("EVT:ORDER_STATE_CHANGED", {
-            "orderId": "o2", "symbol": "BTC", "status": "CANCELED", "client_order_id": "c1", "rid": None
+            "orderId": "o2",
+            "symbol": "BTC",
+            "status": "CANCELED",
+            "client_order_id": "c1",
+            "rid": None,
+            "clientOrderId": "c1",
+            "order_id": "o2",
+            "event_ts_ms": 10000,
+            "ts_ms": 10000,
+            "terminal_non_fill": True,
+            "terminal_state_kind": "CANCELED",
+            "identity_quality": "order_identity_exact",
+            "canonical_identity_key": "evt:order_state_changed:symbol=BTC:order_id=o2:client_order_id=c1:terminal_state=CANCELED",
+            "compatibility_aliases_retained": True,
         })
         
         assert "o2" not in watchdog.acked_orders

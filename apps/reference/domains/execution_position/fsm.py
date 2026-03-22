@@ -38,6 +38,7 @@ from .utils import (
     BoundedEventDeduper,
 )
 from .aurora_log_adapter import AuroraLogAdapter
+from .terminal_order_contracts import normalize_order_rejected_payload
 from .metrics_collector import MetricsCollector
 from .intent_boundary_audit import IntentBoundaryAudit
 from apps.reference.telemetry.order_logger import order_logger
@@ -80,6 +81,17 @@ from apps.reference.domains.execution_position.event_handlers import EPEventHand
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
+from apps.reference.telemetry.shadow_journal import (
+    attach_shadow_journal,
+    get_shadow_journal,
+    snapshot_execpos_state,
+)
+from apps.reference.domains.execution_position.truth_hardening import (
+    attach_execution_truth_hardening,
+    build_position_signature,
+    get_execution_truth_hardening,
+    normalize_close_qty,
+)
 
 # Phase 14.2: Additional Strangler Fig micro-extractions
 from apps.reference.domains.execution_position.config_resolver import ConfigResolverMixin
@@ -425,6 +437,11 @@ class ExecPosFSM(
                 "production to prevent invisible intent drops." % type(
                     self.fsm)
             )
+        self._shadow_journal = attach_shadow_journal(self.fsm, self.config)
+        self._execution_truth_hardening = attach_execution_truth_hardening(
+            self.fsm,
+            self.config,
+        )
 
         audit_cfg = None
         try:
@@ -452,6 +469,9 @@ class ExecPosFSM(
                         self._on_trade_intent_proposed)
         self.bus.listen("EVT:TRADE_INTENT_REJECTED",
                         self._on_trade_intent_rejected)
+        # LLM external intent path: wire CMD:EXTERNAL_OPEN_REQUEST_V1
+        self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
+                        self._on_external_open_request)
 
         # Phase 14D: DomainBridge for orphan domains
         self._domain_bridge = DomainBridge("execution_position", bus=self.bus)
@@ -1007,6 +1027,10 @@ class ExecPosFSM(
         """Phase 14A: Delegated to IntentRouter."""
         self._intent_router.on_trade_intent_rejected(msg)
 
+    def _on_external_open_request(self, msg: Message) -> None:
+        """Phase 14A: Delegated to IntentRouter (LLM external intent path)."""
+        self._intent_router.on_external_open_request(msg)
+
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_portfolio_state_updated(event)
@@ -1483,11 +1507,19 @@ class ExecPosFSM(
                     self.manage_flows[symbol].set_observability_hook(
                         self._emit_execution_bus_event,
                     )
+                if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
+                    self.manage_flows[symbol].set_shadow_journal(self._shadow_journal)
                 self.close_flows[symbol] = CloseFlowFSM()
+                if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
+                    self.close_flows[symbol].set_shadow_journal(self._shadow_journal)
             elif hasattr(self.manage_flows[symbol], "set_observability_hook"):
                 self.manage_flows[symbol].set_observability_hook(
                     self._emit_execution_bus_event,
                 )
+            if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
+                self.manage_flows[symbol].set_shadow_journal(self._shadow_journal)
+            if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
+                self.close_flows[symbol].set_shadow_journal(self._shadow_journal)
 
             return (
                 self.open_flows[symbol],
@@ -1502,172 +1534,217 @@ class ExecPosFSM(
             LOG.error("HYDRATION_ERROR: position_data is missing 'symbol'")
             return
 
+        journal = get_shadow_journal(self)
+        before = snapshot_execpos_state(self, symbol) if journal is not None else None
         _, manage_flow, close_flow = self._get_or_create_flows(symbol)
 
         LOG.info(f"Hydrating FSMs for symbol {symbol} from snapshot.")
         manage_flow.hydrate(position_data)
         close_flow.hydrate(position_data)
+        if journal is not None:
+            journal.record_transition(
+                event_name="RESTORE:EXECUTION_POSITION_HYDRATE",
+                source_component="execution_position.fsm",
+                source_path="restore:execution_position_hydrate",
+                event_origin_type="restore",
+                truth_owner="ExecPosFSM",
+                payload=position_data,
+                rid=str(position_data.get("rid")) if position_data.get("rid") is not None else None,
+                before=before,
+                after=snapshot_execpos_state(self, symbol),
+                restore_marker=True,
+            )
 
     def handle(self, msg: Message) -> Optional[Message]:
         """Route message to the appropriate flow and handle execution decisions."""
+        journal = get_shadow_journal(self)
         pld = msg.pld or {}
-
-        # Handle portfolio state updates BEFORE symbol check (they don't need symbol)
-        if msg.verb == "PORTFOLIO_STATE_UPDATED":
-            # Handle portfolio state updates (trigger post-fill hold release)
-            self._on_portfolio_state_updated(msg)
-            return None
-
-        symbol = pld.get("symbol")
-        if not symbol:
-            LOG.warning(
-                f"ExecPosFSM received message without symbol: {msg.verb}, pld_keys={list(pld.keys()) if pld else 'EMPTY'}, msg_type={type(msg)}, pld_type={type(pld)}")
-            return None
-
-        open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
+        symbol_hint = pld.get("symbol")
+        before = snapshot_execpos_state(self, symbol_hint) if journal is not None else None
         result = None
+        try:
+            if msg.verb == "PORTFOLIO_STATE_UPDATED":
+                self._on_portfolio_state_updated(msg)
+                return None
 
-        # Route to the correct FSM based on the message verb
-        if msg.verb == "OPEN":
-            # Post-close cooldown: prevent immediate re-entry after any position closes (global).
-            now = get_clock().now_sec()
-            last_close = float(self._last_any_position_closed_ts or 0.0)
-            if last_close > 0 and self._cooldown_after_close_sec > 0 and (now - last_close) < self._cooldown_after_close_sec:
-                remaining = max(
-                    0.0, self._cooldown_after_close_sec - (now - last_close))
-                return Message(
-                    op="ERR",
-                    verb="OPEN",
-                    src=msg.dst,
-                    dst=msg.src,
-                    rid=msg.rid,
-                    why="OPEN_GUARD_FAIL",
-                    pld={
-                        "reason": "cooldown_after_close active",
-                        "cooldown_remaining_sec": round(remaining, 3),
-                    },
-                )
+            symbol = pld.get("symbol")
+            if not symbol:
+                LOG.warning(
+                    f"ExecPosFSM received message without symbol: {msg.verb}, pld_keys={list(pld.keys()) if pld else 'EMPTY'}, msg_type={type(msg)}, pld_type={type(pld)}")
+                return None
 
-            local_guard_err = self._local_open_guard(msg, manage_flow)
-            if local_guard_err is not None:
-                self._cancel_entry_reservation(str(msg.rid))
-                return local_guard_err
+            open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
 
-            # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
-            exposure_err = self._check_exposure_fail_closed(msg)
-            if exposure_err is not None:
-                # TASK49/TASK40: If DecisionMaking reserved ENTRY_INTENT in OrderIndex,
-                # ensure we clear it when OPEN is blocked fail-closed (no order will be placed).
-                self._cancel_entry_reservation(str(msg.rid))
-                return exposure_err
-            result = open_flow.handle(msg)
+            if msg.verb == "OPEN":
+                now = get_clock().now_sec()
+                last_close = float(self._last_any_position_closed_ts or 0.0)
+                if last_close > 0 and self._cooldown_after_close_sec > 0 and (now - last_close) < self._cooldown_after_close_sec:
+                    remaining = max(
+                        0.0, self._cooldown_after_close_sec - (now - last_close))
+                    result = Message(
+                        op="ERR",
+                        verb="OPEN",
+                        src=msg.dst,
+                        dst=msg.src,
+                        rid=msg.rid,
+                        why="OPEN_GUARD_FAIL",
+                        pld={
+                            "reason": "cooldown_after_close active",
+                            "cooldown_remaining_sec": round(remaining, 3),
+                        },
+                    )
+                    return result
 
-            # If guards rejected CMD:OPEN, clear ENTRY_INTENT reservation so DM doesn't get stuck
-            # deferring with NRR-ORDER-IN-FLIGHT.
-            if result is not None and getattr(result, "op", None) == "ERR":
-                self._cancel_entry_reservation(str(msg.rid))
+                local_guard_err = self._local_open_guard(msg, manage_flow)
+                if local_guard_err is not None:
+                    self._cancel_entry_reservation(str(msg.rid))
+                    result = local_guard_err
+                    return result
 
-            # PHASE A2 FIX: Capture TP/SL intent data if present
-            if result and result.op == "DEC" and result.verb == "OPEN":
-                try:
-                    pld = result.pld or {}
-                    # Helper to check for real values (not None, not "None" string)
+                exposure_err = self._check_exposure_fail_closed(msg)
+                if exposure_err is not None:
+                    self._cancel_entry_reservation(str(msg.rid))
+                    result = exposure_err
+                    return result
+                result = open_flow.handle(msg)
 
-                    def _is_real_value(v) -> bool:
-                        return v is not None and str(v).strip().lower() != "none"
+                if result is not None and getattr(result, "op", None) == "ERR":
+                    self._cancel_entry_reservation(str(msg.rid))
 
-                    # Extract values
-                    raw_stop = pld.get("stop_price")
-                    raw_target = pld.get("target_price")
-                    raw_sl_pct = pld.get("sl_pct")
+                if result and result.op == "DEC" and result.verb == "OPEN":
+                    try:
+                        pld = result.pld or {}
 
-                    # Only cache if at least one value is real (not None/"None")
-                    if _is_real_value(raw_stop) or _is_real_value(raw_target) or _is_real_value(raw_sl_pct):
-                        intent_data = {
-                            "stop_price": raw_stop if _is_real_value(raw_stop) else None,
-                            "target_price": raw_target if _is_real_value(raw_target) else None,
-                            "sl_pct": raw_sl_pct if _is_real_value(raw_sl_pct) else None,
-                            "timestamp": get_clock().now_sec()
-                        }
-                        self._pending_intent_data[result.rid] = intent_data
-                        LOG.info(
-                            f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
-                    else:
-                        LOG.debug(
-                            f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
-                except Exception as e:
-                    LOG.error(f"Failed to capture intent data: {e}")
-        elif msg.verb == "TRADE_EXECUTED":
-            #  POLLING FIX: Watchdog emits EVT:TRADE_EXECUTED on REST-detected fills.
-            # Treat it as a fill for OrderIndex terminalization to unblock the one-open-order guard.
-            self._on_order_fill(msg)
-            result = manage_flow.handle(msg)
-        elif msg.verb == "ORDER_STATE_CHANGED":
-            # Handle cancel/expire from Watchdog REST polling
-            self._handle_cancel_event(msg)
+                        def _is_real_value(v) -> bool:
+                            return v is not None and str(v).strip().lower() != "none"
 
-        elif msg.verb == "ORDER_CANCELLED":
-            # EXP-FIX: Handle order cancellation for exposure summary update
-            self._handle_cancel_event(msg)
+                        raw_stop = pld.get("stop_price")
+                        raw_target = pld.get("target_price")
+                        raw_sl_pct = pld.get("sl_pct")
 
-        elif msg.verb == "CLOSE":
-            #  FIX: Set closing flag immediately on CMD:CLOSE to prevent bracket race
-            symbol = msg.pld.get("symbol") if msg.pld else None
-            if symbol:
-                manage = self.manage_flows.get(symbol)
-                if manage:
-                    manage._closing_position = True
-                    manage._closing_position_ts = get_clock().now_sec()
-                    print(
-                        f" [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
-            result = close_flow.handle(msg)
-        else:
-            result = manage_flow.handle(msg)
+                        if _is_real_value(raw_stop) or _is_real_value(raw_target) or _is_real_value(raw_sl_pct):
+                            intent_data = {
+                                "stop_price": raw_stop if _is_real_value(raw_stop) else None,
+                                "target_price": raw_target if _is_real_value(raw_target) else None,
+                                "sl_pct": raw_sl_pct if _is_real_value(raw_sl_pct) else None,
+                                "timestamp": get_clock().now_sec()
+                            }
+                            self._pending_intent_data[result.rid] = intent_data
+                            LOG.info(
+                                f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
+                        else:
+                            LOG.debug(
+                                f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
+                    except Exception as e:
+                        LOG.error(f"Failed to capture intent data: {e}")
+            elif msg.verb == "TRADE_EXECUTED":
+                self._on_order_fill(msg)
+                result = manage_flow.handle(msg)
+            elif msg.verb == "ORDER_STATE_CHANGED":
+                self._handle_cancel_event(msg)
+            elif msg.verb == "ORDER_CANCELLED":
+                self._handle_cancel_event(msg)
+            elif msg.verb == "CLOSE":
+                symbol = msg.pld.get("symbol") if msg.pld else None
+                hardening = get_execution_truth_hardening(self)
+                if symbol and hardening is not None:
+                    close_decision = hardening.evaluate_close_command(
+                        symbol=symbol,
+                        requested_qty=(msg.pld or {}).get("qty"),
+                        position_signature=self._get_portfolio_position_signature(symbol),
+                        rid=getattr(msg, "rid", None),
+                    )
+                    if close_decision.suppress:
+                        LOG.warning(
+                            "[CMD:CLOSE] Suppressed duplicate close propagation for %s: %s (%s)",
+                            symbol,
+                            close_decision.reason,
+                            close_decision.key,
+                        )
+                        if journal is not None:
+                            journal.record_transition(
+                                event_name="HARDENING:CMD_CLOSE_SUPPRESSED",
+                                source_component="execution_position.fsm",
+                                source_path="execution:close_source_guard",
+                                event_origin_type="execution",
+                                truth_owner="ExecPosFSM",
+                                payload=msg.pld or {},
+                                rid=getattr(msg, "rid", None),
+                                before=before,
+                                after=snapshot_execpos_state(self, symbol),
+                                notes=[
+                                    close_decision.reason,
+                                    f"guard_key={close_decision.key}",
+                                    f"requested_qty={normalize_close_qty((msg.pld or {}).get('qty'))}",
+                                ],
+                            )
+                        return None
+                if symbol:
+                    manage = self.manage_flows.get(symbol)
+                    if manage:
+                        manage._closing_position = True
+                        manage._closing_position_ts = get_clock().now_sec()
+                        print(
+                            f" [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
+                result = close_flow.handle(msg)
+            else:
+                result = manage_flow.handle(msg)
 
-        # If a decision was made, log it and execute if not in shadow mode
-        if result and result.op == "DEC":
-            if result.verb == "BATCH":
-                # Handle batch decisions (e.g. OCO brackets)
-                batch_pld = result.pld or {}
-                messages = batch_pld["messages"] if "messages" in batch_pld else [
-                ]
-                for msg_data in messages:
-                    if isinstance(msg_data, dict):
-                        # Reconstruct Message from dict
-                        try:
-                            sub_msg = Message(**msg_data)
-                        except Exception as e:
-                            LOG.error(
-                                f"Failed to reconstruct BATCH message: {e}")
-                            continue
-                    else:
-                        sub_msg = msg_data
+            if result and result.op == "DEC":
+                if result.verb == "BATCH":
+                    batch_pld = result.pld or {}
+                    messages = batch_pld["messages"] if "messages" in batch_pld else []
+                    for msg_data in messages:
+                        if isinstance(msg_data, dict):
+                            try:
+                                sub_msg = Message(**msg_data)
+                            except Exception as e:
+                                LOG.error(
+                                    f"Failed to reconstruct BATCH message: {e}")
+                                continue
+                        else:
+                            sub_msg = msg_data
 
-                    wal.append(sub_msg.model_dump())
-                    if (not self.shadow_mode and self.adapter) or (sub_msg.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
+                        wal.append(sub_msg.model_dump())
+                        if (not self.shadow_mode and self.adapter) or (sub_msg.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
+                            loop = self._get_async_loop()
+                            if loop:
+                                self._submit_async(
+                                    self._execute_decision(sub_msg), loop)
+                else:
+                    wal.append(result.model_dump())
+                    if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                         loop = self._get_async_loop()
+                        LOG.info(
+                            f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
                         if loop:
                             self._submit_async(
-                                self._execute_decision(sub_msg), loop)
-            else:
-                wal.append(result.model_dump())
-                #  FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
-                if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
-                    # Asynchronously execute the trade decision
-                    loop = self._get_async_loop()
-                    LOG.info(
-                        f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
-                    if loop:
-                        self._submit_async(
-                            self._execute_decision(result), loop)
+                                self._execute_decision(result), loop)
+                        else:
+                            LOG.error(
+                                f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
                     else:
-                        LOG.error(
-                            f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
-                else:
-                    LOG.info(
-                        f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
+                        LOG.info(
+                            f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
 
-        return result
+            return result
+        finally:
+            if journal is not None:
+                notes = []
+                if result is not None:
+                    notes.append(f"result={result.op}:{result.verb}")
+                journal.record_transition(
+                    event_name=f"{msg.op}:{msg.verb}",
+                    source_component="execution_position.fsm",
+                    source_path="execution:execpos_handle",
+                    event_origin_type="execution",
+                    truth_owner="ExecPosFSM",
+                    payload=msg.pld or {},
+                    rid=getattr(msg, "rid", None),
+                    before=before,
+                    after=snapshot_execpos_state(self, (msg.pld or {}).get("symbol")),
+                    notes=notes,
+                )
 
     async def _execute_decision(self, decision: Message):
         """Phase 14A: Thin dispatcher  delegates to sub-module executors."""
@@ -1709,6 +1786,48 @@ class ExecPosFSM(
                 return
 
             if decision.verb in ("CLOSE", "CLOSE_POSITION"):
+                decision_pld = decision.pld or {}
+                symbol = decision_pld.get("symbol")
+                trigger = str(decision_pld.get("trigger") or "")
+                hardening = get_execution_truth_hardening(self)
+                if (
+                    symbol
+                    and hardening is not None
+                    and trigger != "CMD:CLOSE"
+                ):
+                    close_decision = hardening.evaluate_non_cmd_close_decision(
+                        symbol=symbol,
+                        requested_qty=decision_pld.get("qty"),
+                        position_signature=self._get_portfolio_position_signature(symbol),
+                        rid=getattr(decision, "rid", None),
+                    )
+                    if close_decision.suppress:
+                        LOG.warning(
+                            "[DEC:CLOSE] Suppressed non-CMD duplicate close execution for %s: %s (%s)",
+                            symbol,
+                            close_decision.reason,
+                            close_decision.key,
+                        )
+                        journal = get_shadow_journal(self)
+                        if journal is not None:
+                            journal.record_transition(
+                                event_name="HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED",
+                                source_component="execution_position.fsm",
+                                source_path="execution:non_cmd_close_guard",
+                                event_origin_type="execution",
+                                truth_owner="ExecPosFSM",
+                                payload=decision_pld,
+                                rid=getattr(decision, "rid", None),
+                                before=snapshot_execpos_state(self, symbol),
+                                after=snapshot_execpos_state(self, symbol),
+                                notes=[
+                                    close_decision.reason,
+                                    f"guard_key={close_decision.key}",
+                                    f"decision_why={decision.why}",
+                                    f"requested_qty={normalize_close_qty(decision_pld.get('qty'))}",
+                                ],
+                            )
+                        return
                 await self._close_exec.execute_close(decision)
                 return
 
@@ -1753,15 +1872,20 @@ class ExecPosFSM(
             })
 
             try:
+                reject_payload = normalize_order_rejected_payload(
+                    {"symbol": decision_pld.get("symbol", ""),
+                     "side": decision_pld.get("side", "NONE"),
+                     "reason_code": "ADAPTER_ERROR",
+                     "reason_text": str(e)[:200],
+                     "exception_class": type(e).__name__,
+                     "ts_ms": get_clock().now_ms()},
+                    fallback_rid=decision.rid,
+                    fallback_ts_ms=get_clock().now_ms(),
+                )
                 order_rejected_msg = Message(
                     op="EVT", verb="ORDER_REJECTED", src="execution_position",
                     dst="observability", rid=decision.rid,
-                    pld={"symbol": decision_pld.get("symbol", ""),
-                         "side": decision_pld.get("side", "NONE"),
-                         "reason_code": "ADAPTER_ERROR",
-                         "reason_text": str(e)[:200],
-                         "exception_class": type(e).__name__,
-                         "ts_ms": get_clock().now_ms()},
+                    pld=reject_payload,
                     why="adapter_execution_failed")
                 wal.append(order_rejected_msg.model_dump())
             except Exception as wal_e:
@@ -1842,6 +1966,11 @@ class ExecPosFSM(
             return "LONG" if qty > 0 else "SHORT"
 
         return "FLAT"
+
+    def _get_portfolio_position_signature(self, symbol: str) -> str:
+        """Close-guard state basis derived from current portfolio truth."""
+        signature = build_position_signature(self._latest_portfolio_state or {}, symbol)
+        return str(signature or "UNKNOWN")
 
     def _emit_execution_bus_event(self, topic: str, payload: Dict[str, Any]) -> None:
         why = str(payload.get("why") or "execution:observability")

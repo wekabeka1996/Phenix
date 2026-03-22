@@ -33,6 +33,8 @@ import threading
 from apps.reference.utils.accessors import aget
 
 # Lazy imports for infra layer (resolved at first use to avoid circular deps)
+
+
 def _get_ledger_store():
     from apps.reference.domains.execution_position.infra.ledger_store_adapter import LedgerStoreAdapter
     from apps.reference.domains.execution_position.infra.order_ledger import OrderLedger
@@ -59,9 +61,10 @@ LOG = logging.getLogger("order_guardian")
 LOG.setLevel(logging.INFO)
 
 # Create file handler for order_guardian.log
-log_dir = os.path.join(os.path.dirname(__file__), "../../../logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "order_guardian.log")
+project_root = Path(__file__).resolve().parents[4]
+log_dir = project_root / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / "order_guardian.log"
 
 file_handler = logging.FileHandler(log_file)
 file_handler.setFormatter(logging.Formatter(
@@ -189,7 +192,8 @@ class OrderGuardian:
             except Exception:
                 trading = None
 
-        trading_exec = getattr(trading, "execution", None) if trading is not None else None
+        trading_exec = getattr(trading, "execution",
+                               None) if trading is not None else None
         if trading_exec is not None:
             og = getattr(trading_exec, "order_guardian", None)
             if og is not None and (isinstance(og, dict) or isinstance(og, str)):
@@ -220,7 +224,8 @@ class OrderGuardian:
         config: Optional[Any] = None,
     ):
         if isinstance(config, dict):
-            raise TypeError("OrderGuardian requires typed config object, got dict")
+            raise TypeError(
+                "OrderGuardian requires typed config object, got dict")
 
         self.adapter = adapter
         self.clock = clock or time
@@ -841,7 +846,8 @@ class OrderGuardian:
                 },
             )
         except Exception as exc:
-            LOG.error("[%s] CRITICAL: Failed to emit tidy events: %s", symbol, exc)
+            LOG.error(
+                "[%s] CRITICAL: Failed to emit tidy events: %s", symbol, exc)
 
     def _emit_close_reconciled_event(
         self,
@@ -875,7 +881,8 @@ class OrderGuardian:
                 },
             )
         except Exception as exc:
-            LOG.error("[%s] CRITICAL: Failed to emit close reconcile event: %s", symbol, exc)
+            LOG.error(
+                "[%s] CRITICAL: Failed to emit close reconcile event: %s", symbol, exc)
 
     async def cleanup_orphans(
         self,
@@ -906,11 +913,14 @@ class OrderGuardian:
                 for pos in positions:
                     if hasattr(pos, 'symbol'):
                         pos_symbol = pos.symbol  # type: ignore[union-attr]
-                        pos_amt = float(pos.position_amount)  # type: ignore[union-attr]
+                        # type: ignore[union-attr]
+                        pos_amt = float(pos.position_amount)
                     else:
-                        pos_symbol = pos.get("symbol", "")  # type: ignore[union-attr]
+                        # type: ignore[union-attr]
+                        pos_symbol = pos.get("symbol", "")
                         pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                        or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                                        # type: ignore[union-attr]
+                                        or pos.get("positionAmt") or 0)
 
                     if pos_symbol == symbol:
                         position_amt = pos_amt
@@ -918,10 +928,12 @@ class OrderGuardian:
             else:
                 for pos in positions:
                     if hasattr(pos, 'position_amount'):
-                        pos_amt = float(pos.position_amount)  # type: ignore[union-attr]
+                        # type: ignore[union-attr]
+                        pos_amt = float(pos.position_amount)
                     else:
                         pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                        or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                                        # type: ignore[union-attr]
+                                        or pos.get("positionAmt") or 0)
                     position_amt += pos_amt
 
             has_position = abs(position_amt) >= 1e-10
@@ -977,12 +989,16 @@ class OrderGuardian:
                     if symbol:
                         for pos in positions:
                             if hasattr(pos, 'symbol'):
-                                pos_symbol = pos.symbol  # type: ignore[union-attr]
-                                pos_amt = float(pos.position_amount)  # type: ignore[union-attr]
+                                # type: ignore[union-attr]
+                                pos_symbol = pos.symbol
+                                # type: ignore[union-attr]
+                                pos_amt = float(pos.position_amount)
                             else:
-                                pos_symbol = pos.get("symbol", "")  # type: ignore[union-attr]
+                                # type: ignore[union-attr]
+                                pos_symbol = pos.get("symbol", "")
                                 pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                                or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                                                # type: ignore[union-attr]
+                                                or pos.get("positionAmt") or 0)
 
                             if pos_symbol == symbol:
                                 position_amt = pos_amt
@@ -990,10 +1006,12 @@ class OrderGuardian:
                     else:
                         for pos in positions:
                             if hasattr(pos, 'position_amount'):
-                                pos_amt = float(pos.position_amount)  # type: ignore[union-attr]
+                                # type: ignore[union-attr]
+                                pos_amt = float(pos.position_amount)
                             else:
                                 pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                                or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                                                # type: ignore[union-attr]
+                                                or pos.get("positionAmt") or 0)
                             position_amt += pos_amt
 
                     has_position = abs(position_amt) >= 1e-10
@@ -1164,7 +1182,8 @@ class OrderGuardian:
         Returns count of cancelled orders.
         """
         if not self.adapter:
-            LOG.debug("No adapter available, skipping cleanup_other_brackets_for_symbol")
+            LOG.debug(
+                "No adapter available, skipping cleanup_other_brackets_for_symbol")
             return 0
 
         cancelled_count = 0
@@ -1200,7 +1219,8 @@ class OrderGuardian:
                     else bool(is_close_position_raw)
                 )
 
-                guardian_like = self._is_guardian_client_order_id(client_order_id)
+                guardian_like = self._is_guardian_client_order_id(
+                    client_order_id)
 
                 order_meta = self.store.get(f"order:{order_id}")
                 if not order_meta and (is_reduce_only or is_close_position or guardian_like):
@@ -1252,7 +1272,8 @@ class OrderGuardian:
                             f"[GUARD] Failed to cancel old bracket {order_id}, result: {result}"
                         )
                 except Exception as e:
-                    is_unknown_error = isinstance(e, BinanceAPIError) and getattr(e, "code", None) == -2011
+                    is_unknown_error = isinstance(
+                        e, BinanceAPIError) and getattr(e, "code", None) == -2011
                     if not is_unknown_error and "unknown order" not in str(e).lower():
                         LOG.warning(
                             f"[GUARD] Exception cancelling old bracket {order_id}: {e}"
@@ -1307,11 +1328,14 @@ class OrderGuardian:
             for pos in positions:
                 if hasattr(pos, 'symbol'):
                     pos_symbol = pos.symbol  # type: ignore[union-attr]
-                    pos_amt = float(pos.position_amount)  # type: ignore[union-attr]
+                    # type: ignore[union-attr]
+                    pos_amt = float(pos.position_amount)
                 else:
-                    pos_symbol = pos.get("symbol", "")  # type: ignore[union-attr]
+                    # type: ignore[union-attr]
+                    pos_symbol = pos.get("symbol", "")
                     pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                    or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                                    # type: ignore[union-attr]
+                                    or pos.get("positionAmt") or 0)
 
                 if pos_symbol == symbol:
                     position_amt = pos_amt

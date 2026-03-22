@@ -180,17 +180,9 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
     cfg = get_config()
     bus = FSMCore()
     observed_intents: list[dict] = []
-    observed_open: list[dict] = []
+    observed_open: list[Message] = []
     bus.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed_intents.append(msg.pld))
-    original_emit = bus.emit
-
-    def _emit_with_dec_open_capture(event_name, payload=None, why="", data_ref=None, rid=None):
-        if event_name == "DEC:OPEN":
-            observed_open.append(dict(payload or {}))
-            return None
-        return original_emit(event_name, payload=payload, why=why, data_ref=data_ref, rid=rid)
-
-    bus.emit = _emit_with_dec_open_capture  # type: ignore[method-assign]
+    bus.listen("DEC:OPEN", lambda msg: observed_open.append(msg))
 
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), \
          patch("apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"), \
@@ -244,6 +236,8 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
                 side="BUY",
                 qty=Decimal("0.01"),
                 price=Decimal("50000"),
+                stop_price=Decimal("49000"),
+                target_price=Decimal("51000"),
                 why_chain=["boundary_hardening"],
                 rid="RID-TRACE-BOUNDARY",
                 reduce_only=False,
@@ -258,7 +252,8 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
     assert pending is not None
     assert pending.routed_via == "CMD:OPEN"
     assert observed_open
-    assert observed_open[0]["rid"] == "RID-TRACE-BOUNDARY"
-    assert observed_open[0]["symbol"] == "BTCUSDT"
-    assert observed_open[0]["order_type"] == "MARKET"
-    assert "trace" not in observed_open[0]
+    assert observed_open[0].rid == "RID-TRACE-BOUNDARY"
+    assert observed_open[0].pld["symbol"] == "BTCUSDT"
+    assert observed_open[0].pld["order_type"] == "MARKET"
+    assert "rid" not in (observed_open[0].pld or {})
+    assert "trace" not in (observed_open[0].pld or {})

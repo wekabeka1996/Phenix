@@ -115,12 +115,18 @@ class AuroraDecisionMixin:
             "pillar_strategist": features.get("pillar_strategist"),
             "pillar_contribs": dict(features.get("pillar_contribs", {}) or {}),
             "raw_sum": psi.get("s_linear"),
+            "raw_score": psi.get("s_linear"),
             "score_multiplier": psi.get("multiplier", getattr(self, "score_multiplier", 1.0)),
+            "admission_mode": psi.get("admission_mode", getattr(self, "decision_admission_mode", "quadratic")),
+            "sizing_mode": psi.get("sizing_mode", getattr(self, "decision_sizing_mode", "quadratic")),
             "s_scaled_raw": psi.get("s_scaled_raw"),
             "s_clamped": psi.get("s_clamped"),
             "raw_exposure": psi.get("raw_exposure"),
             "shield_multiplier": psi.get("shield_multiplier", float(result.shield_multiplier or 1.0)),
+            "admission_shield_multiplier": psi.get("admission_shield_multiplier", float(getattr(result, "admission_shield_multiplier", 1.0))),
             "shield_reasons": shield_reasons,
+            "decision_score": psi.get("decision_score", float(getattr(result, "decision_score", getattr(result, "score", 0.0)))),
+            "sizing_score": psi.get("sizing_score", float(getattr(result, "sizing_score", getattr(result, "score", 0.0)))),
             "final_score": psi.get("final_score", float(getattr(result, "score", 0.0))),
             "final_exposure": psi.get("final_exposure", float(getattr(result, "score", 0.0))),
             "thr_buy": psi.get("thr_buy", float(getattr(result, "thr_buy", 0.0))),
@@ -131,6 +137,7 @@ class AuroraDecisionMixin:
                 float(getattr(result, "threshold_factor", 1.0)),
             ),
             "side": getattr(result, "side", ""),
+            "admission_result": "side" if getattr(result, "side", "") else "neutral",
             "deferred": bool(getattr(result, "deferred", False)),
             "defer_reason": getattr(result, "defer_reason", None),
             "side_why": psi.get("side_why"),
@@ -145,12 +152,19 @@ class AuroraDecisionMixin:
         keys = (
             "regime",
             "raw_sum",
+            "raw_score",
+            "admission_mode",
+            "sizing_mode",
             "raw_exposure",
             "shield_multiplier",
+            "admission_shield_multiplier",
+            "decision_score",
+            "sizing_score",
             "final_score",
             "thr_buy",
             "thr_sell",
             "threshold_factor",
+            "admission_result",
             "side",
             "deferred",
             "defer_reason",
@@ -182,7 +196,7 @@ class AuroraDecisionMixin:
         warmup = cmd.get("warmup", {})
         warmup_readiness = warmup.get("ready", {})
 
-        # System-level warmup state is now exclusively controlled by the StrategyGateway 
+        # System-level warmup state is now exclusively controlled by the StrategyGateway
         # (see readiness_gates.py). Handlers only track it for diagnostics, not fail-closed gates.
         state = self._symbol_states[symbol]
         state.warmup_full_ready = bool(warmup.get("full_ready", False))
@@ -428,6 +442,13 @@ class AuroraDecisionMixin:
             normalize_mode=self.normalize_signals_mode,
             neutral_threshold=effective_neutral,
             current_side=current_side,
+            admission_mode=getattr(
+                self, "decision_admission_mode", "quadratic"),
+            admission_power=getattr(self, "decision_admission_power", None),
+            sizing_mode=getattr(self, "decision_sizing_mode", "quadratic"),
+            sizing_power=getattr(self, "decision_sizing_power", None),
+            admission_shield_floor=getattr(
+                self, "decision_admission_shield_floor", 0.0),
         )
         decision_cfg = getattr(
             getattr(getattr(self.config, "strategies", None), "aurora", None),
@@ -495,9 +516,11 @@ class AuroraDecisionMixin:
         # so the operator can see it in logs and downstream sinks.
         compact_trace = self._compact_quadratic_decision_trace(decision_trace)
         self.logger.info(
-            "[%s] QUADRATIC_DECISION_TRACE score=%.6f side=%s deferred=%s regime=%s",
+            "[%s] QUADRATIC_DECISION_TRACE score=%.6f decision_score=%.6f sizing_score=%.6f side=%s deferred=%s regime=%s",
             symbol,
             float(result.score),
+            float(getattr(result, "decision_score", result.score)),
+            float(getattr(result, "sizing_score", result.score)),
             result.side,
             result.deferred,
             state.regime,
@@ -509,13 +532,19 @@ class AuroraDecisionMixin:
                 "symbol": symbol,
                 "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
                 "score": float(result.score),
+                "raw_score": float(getattr(result, "raw_score", 0.0)),
+                "decision_score": float(getattr(result, "decision_score", result.score)),
+                "sizing_score": float(getattr(result, "sizing_score", result.score)),
                 "side": str(result.side),
                 "deferred": bool(result.deferred),
                 "defer_reason": str(result.defer_reason) if result.defer_reason else None,
                 "regime": str(state.regime),
                 "shield_multiplier": float(result.shield_multiplier or 1.0),
+                "admission_shield_multiplier": float(getattr(result, "admission_shield_multiplier", result.shield_multiplier or 1.0)),
                 "thr_buy": str(result.thr_buy) if result.thr_buy is not None else None,
                 "thr_sell": str(result.thr_sell) if result.thr_sell is not None else None,
+                "admission_mode": str(getattr(self, "decision_admission_mode", "quadratic")),
+                "sizing_mode": str(getattr(self, "decision_sizing_mode", "quadratic")),
                 "quadratic_path_reached": True,
                 "compact_trace": compact_trace,
                 "ts_ms": int(self.wall_time_fn() * 1000),
@@ -526,13 +555,18 @@ class AuroraDecisionMixin:
         # Kernel visibility log
         _psi = result.psi_vector or {}
         self.logger.info(
-            "[%s] KERNEL_DIAG: engine=%s s_linear=%.4f score=%.6f "
-            "shield_mult=%.3f deferred=%s defer_reason=%s side=%s thr_buy=%s thr_sell=%s",
+            "[%s] KERNEL_DIAG: engine=%s admission=%s sizing=%s s_linear=%.4f decision_score=%.6f sizing_score=%.6f "
+            "shield_mult=%.3f admission_shield_mult=%.3f deferred=%s defer_reason=%s side=%s thr_buy=%s thr_sell=%s",
             symbol,
             _psi.get("scoring_engine", "?"),
+            _psi.get("admission_mode", "quadratic"),
+            _psi.get("sizing_mode", "quadratic"),
             float(_psi.get("s_linear", 0.0)),
-            float(result.score),
+            float(getattr(result, "decision_score", result.score)),
+            float(getattr(result, "sizing_score", result.score)),
             float(result.shield_multiplier or 1.0),
+            float(getattr(result, "admission_shield_multiplier",
+                  result.shield_multiplier or 1.0)),
             result.deferred,
             result.defer_reason or "-",
             result.side,
@@ -1398,11 +1432,19 @@ class AuroraDecisionMixin:
             },
             "scoring": {
                 "score": float(result.score),
+                "raw_score": float(getattr(result, "raw_score", 0.0)),
+                "decision_score": float(getattr(result, "decision_score", result.score)),
+                "sizing_score": float(getattr(result, "sizing_score", result.score)),
                 "thr_buy": float(result.thr_buy),
                 "thr_sell": float(result.thr_sell),
                 "regime": result.regime,
                 "psi_vector": result.psi_vector,
                 "objective": (result.psi_vector or {}).get("objective"),
+                "admission_mode": str(getattr(self, "decision_admission_mode", "quadratic")),
+                "sizing_mode": str(getattr(self, "decision_sizing_mode", "quadratic")),
+                "shield_multiplier_total": float(result.shield_multiplier or 1.0),
+                "admission_shield_multiplier": float(getattr(result, "admission_shield_multiplier", result.shield_multiplier or 1.0)),
+                "admission_result": "side" if side else "neutral",
             },
             "sizing": {
                 "margin_pct_mult": float(micro_fraction),
@@ -1457,7 +1499,8 @@ class AuroraDecisionMixin:
                     leverage_cfg, "max_notional_value", None) or decimal.Decimal("1000000")
 
                 q_pos = quantize_exposure(
-                    exposure=float(result.score),
+                    exposure=float(
+                        getattr(result, "sizing_score", result.score)),
                     price=entry_price,
                     max_notional=max_notional_cap,
                     leverage=target_leverage,

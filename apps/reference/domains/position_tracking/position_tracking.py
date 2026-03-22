@@ -18,6 +18,14 @@ from apps.reference.config_loader import AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.core.time import get_clock
+from apps.reference.telemetry.shadow_journal import (
+    attach_shadow_journal,
+    get_shadow_journal,
+    snapshot_position_tracking_state,
+)
+from apps.reference.domains.execution_position.truth_hardening import (
+    attach_execution_truth_hardening,
+)
 
 # Import AlertManager for manual intervention alerts
 try:
@@ -76,6 +84,11 @@ class PositionTracking:
         if isinstance(config, dict):
             raise TypeError("PositionTracking requires AuroraConfig, got dict")
         self.config = config
+        self._shadow_journal = attach_shadow_journal(self.fsm, self.config)
+        self._execution_truth_hardening = attach_execution_truth_hardening(
+            self.fsm,
+            self.config,
+        )
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
         # Subscribe to events
@@ -216,6 +229,10 @@ class PositionTracking:
         Args:
             event: FSM event with trade payload
         """
+        journal = get_shadow_journal(self)
+        initial_payload = event.pld or {}
+        initial_symbol = initial_payload.get("symbol")
+        before = snapshot_position_tracking_state(self, initial_symbol) if journal is not None else None
         self.logger.info("Handling EVT:TRADE_EXECUTED...")
 
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
@@ -301,6 +318,19 @@ class PositionTracking:
             payload=portfolio_payload,
             why=f"Portfolio updated after trade execution for {symbol}.",
         )
+
+        if journal is not None:
+            journal.record_transition(
+                event_name="EVT:TRADE_EXECUTED",
+                source_component="position_tracking",
+                source_path="portfolio:on_trade_executed",
+                event_origin_type="portfolio",
+                truth_owner="PositionTracking",
+                payload=payload,
+                rid=str(payload.get("rid")) if payload.get("rid") is not None else getattr(event, "rid", None),
+                before=before,
+                after=snapshot_position_tracking_state(self, symbol),
+            )
 
         self.logger.info(f"Emitted portfolio update after trade for {symbol}.")
 
@@ -1170,6 +1200,8 @@ class PositionTracking:
         Returns:
             bool: True if load succeeded, False otherwise.
         """
+        journal = get_shadow_journal(self)
+        before = snapshot_position_tracking_state(self, None) if journal is not None else None
         try:
             state_to_load = snapshot_data["state"]
             state_hash_field = snapshot_data["state_hash"] if "state_hash" in snapshot_data else ""
@@ -1240,6 +1272,23 @@ class PositionTracking:
                 f"Successfully loaded state from snapshot created at {snapshot_ts}. "
                 f"Restored {len(self._positions)} positions."
             )
+
+            if journal is not None:
+                journal.record_transition(
+                    event_name="RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD",
+                    source_component="position_tracking",
+                    source_path="restore:position_tracking_snapshot_load",
+                    event_origin_type="restore",
+                    truth_owner="PositionTracking",
+                    payload={
+                        "restore_marker": True,
+                        "positions_count": len(self._positions),
+                        "snapshot_timestamp_utc": snapshot_ts,
+                    },
+                    before=before,
+                    after=snapshot_position_tracking_state(self, None),
+                    restore_marker=True,
+                )
 
             return True
 

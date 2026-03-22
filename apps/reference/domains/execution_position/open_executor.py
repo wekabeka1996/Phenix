@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, Optional
+from urllib.parse import parse_qs, urlsplit
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
@@ -20,6 +21,9 @@ from apps.reference.domains.execution_position.utils import (
 )
 from apps.reference.domains.execution_position.qty_normalizer import normalize_qty
 from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_stored
+from apps.reference.domains.execution_position.terminal_order_contracts import (
+    normalize_order_rejected_payload,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
@@ -42,8 +46,106 @@ except ImportError:
 class OpenExecutor:
     """Executes DEC:OPEN verb — full entry lifecycle."""
 
+    _LIMIT_ROUNDING_TRACE_REF_PREFIX = "obs://execution_position/limit_rounding?"
+
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    @classmethod
+    def _extract_limit_rounding_trace(cls, decision: "Message") -> Dict[str, Optional[str]]:
+        data_ref = getattr(decision, "data_ref", None)
+        if not isinstance(data_ref, list):
+            return {
+                "price_before_rounding": None,
+                "price_after_rounding": None,
+                "tick_size": None,
+                "rounding_mode": None,
+            }
+
+        for ref in reversed(data_ref):
+            if not isinstance(ref, str) or not ref.startswith(cls._LIMIT_ROUNDING_TRACE_REF_PREFIX):
+                continue
+            params = parse_qs(urlsplit(ref).query)
+            return {
+                "price_before_rounding": params.get("before", [None])[0],
+                "price_after_rounding": params.get("after", [None])[0],
+                "tick_size": params.get("tick", [None])[0],
+                "rounding_mode": params.get("mode", [None])[0],
+            }
+
+        return {
+            "price_before_rounding": None,
+            "price_after_rounding": None,
+            "tick_size": None,
+            "rounding_mode": None,
+        }
+
+    async def _collect_limit_submit_trace(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        side: str,
+        price: Any,
+        qty: Any,
+        tif: Optional[str],
+    ) -> Dict[str, Any]:
+        rounding_trace = self._extract_limit_rounding_trace(decision)
+        trace: Dict[str, Any] = {
+            "rid": decision.rid,
+            "event_type": "ORDER_INTENT",
+            "symbol": symbol,
+            "side": side,
+            "quantity": float(qty),
+            "price": float(price),
+            "source_fsm": "ExecPosFSM",
+            "metadata": {
+                "trace_kind": "LIMIT_SUBMIT_TRACE",
+                "tif": tif,
+                "price_before_rounding": rounding_trace.get("price_before_rounding"),
+                "price_after_rounding": rounding_trace.get("price_after_rounding") or str(price),
+                "tick_size": rounding_trace.get("tick_size"),
+                "rounding_mode": rounding_trace.get("rounding_mode"),
+                "book_context": "UNAVAILABLE",
+            },
+        }
+
+        adapter = getattr(self._fsm, "adapter", None)
+        if adapter is None or not hasattr(adapter, "get_book_ticker"):
+            return trace
+
+        try:
+            book_ticker = await adapter.get_book_ticker(symbol)
+        except Exception as exc:
+            trace["metadata"]["book_context"] = f"UNAVAILABLE:{type(exc).__name__}"
+            return trace
+
+        def _pick_decimal(payload: Dict[str, Any], *keys: str) -> Optional[Decimal]:
+            for key in keys:
+                value = payload.get(key)
+                if value not in (None, ""):
+                    return Decimal(str(value))
+            return None
+
+        best_bid = _pick_decimal(book_ticker, "bidPrice", "bid", "bestBid")
+        best_ask = _pick_decimal(book_ticker, "askPrice", "ask", "bestAsk")
+        submit_price = Decimal(str(price))
+
+        metadata = trace["metadata"]
+        metadata["book_context"] = "AVAILABLE"
+        if best_bid is not None:
+            metadata["best_bid"] = str(best_bid)
+        if best_ask is not None:
+            metadata["best_ask"] = str(best_ask)
+        if best_bid is not None and best_ask is not None:
+            spread = best_ask - best_bid
+            metadata["spread"] = str(spread)
+            if side == "BUY":
+                metadata["distance_to_touch"] = str(best_ask - submit_price)
+            else:
+                metadata["distance_to_touch"] = str(submit_price - best_bid)
+
+        return trace
 
     async def execute_open(self, decision: "Message") -> None:
         """Execute the OPEN entry flow."""
@@ -79,11 +181,16 @@ class OpenExecutor:
             order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
                 "symbol": symbol, "side": side, "quantity": str(raw_qty),
                 "nrr_code": "NRR-INSTRUMENT-CONFIG-MISSING", "why": err})
+            reject_payload = normalize_order_rejected_payload(
+                {"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
+                 "reason": "NRR-INSTRUMENT-CONFIG-MISSING", "details": err},
+                fallback_rid=decision.rid,
+                fallback_ts_ms=get_clock().now_ms(),
+            )
             await emit_compat(self._fsm.fsm, Message(
                 op="EVT", verb="ORDER_REJECTED", src="execution_position",
                 dst="decision_making", rid=decision.rid,
-                pld={"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
-                     "reason": "NRR-INSTRUMENT-CONFIG-MISSING", "details": err},
+                pld=reject_payload,
                 why="NRR-INSTRUMENT-CONFIG-MISSING"), logger=LOG)
             return
 
@@ -100,11 +207,16 @@ class OpenExecutor:
             order_logger.write({"rid": decision.rid, "event_type": "QTY_NORMALIZE_REJECTED",
                 "symbol": symbol, "side": side, "quantity": str(raw_qty),
                 "nrr_code": norm_result.why, "adapter_response": norm_result.to_dict()})
+            reject_payload = normalize_order_rejected_payload(
+                {"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
+                 "reason": norm_result.why, "norm_result": norm_result.to_dict()},
+                fallback_rid=decision.rid,
+                fallback_ts_ms=get_clock().now_ms(),
+            )
             await emit_compat(self._fsm.fsm, Message(
                 op="EVT", verb="ORDER_REJECTED", src="execution_position",
                 dst="decision_making", rid=decision.rid,
-                pld={"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
-                     "reason": norm_result.why, "norm_result": norm_result.to_dict()},
+                pld=reject_payload,
                 why=norm_result.why), logger=LOG)
             return
         qty = str(norm_result.qty)
@@ -312,10 +424,15 @@ class OpenExecutor:
             loop = self._fsm._get_async_loop()
             if loop:
                 async def _do_reject():
+                    reject_payload = normalize_order_rejected_payload(
+                        {"symbol": symbol, "side": side, "reason": nrr_code, "details": details},
+                        fallback_rid=decision.rid,
+                        fallback_ts_ms=get_clock().now_ms(),
+                    )
                     await emit_compat(self._fsm.fsm, Message(
                         op="EVT", verb="ORDER_REJECTED", src="execution_position",
                         dst="decision_making", rid=decision.rid,
-                        pld={"symbol": symbol, "side": side, "reason": nrr_code, "details": details},
+                        pld=reject_payload,
                         why=nrr_code), logger=LOG)
                 self._fsm._submit_async(_do_reject(), loop)
 
@@ -349,6 +466,31 @@ class OpenExecutor:
         """Place LIMIT entry, handle GTX rejection. Returns resp or None."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
+        submit_trace = await self._collect_limit_submit_trace(
+            decision=decision,
+            symbol=symbol,
+            side=side,
+            price=price,
+            qty=qty,
+            tif=tif,
+        )
+        order_logger.write(submit_trace)
+        submit_meta = submit_trace.get("metadata", {})
+        LOG.info(
+            "LIMIT_SUBMIT_TRACE: symbol=%s side=%s tif=%s before=%s after=%s tick=%s mode=%s best_bid=%s best_ask=%s spread=%s distance_to_touch=%s rid=%s",
+            symbol,
+            side,
+            tif,
+            submit_meta.get("price_before_rounding"),
+            submit_meta.get("price_after_rounding"),
+            submit_meta.get("tick_size"),
+            submit_meta.get("rounding_mode"),
+            submit_meta.get("best_bid"),
+            submit_meta.get("best_ask"),
+            submit_meta.get("spread"),
+            submit_meta.get("distance_to_touch"),
+            decision.rid,
+        )
         LOG.info(f"Placing LIMIT entry: {symbol} {side} {qty} @ {price}, tif={tif}")
         try:
             entry_resp = await self._fsm.adapter.place_limit_entry(
@@ -363,9 +505,14 @@ class OpenExecutor:
                 order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
                     "symbol": symbol, "side": side, "quantity": float(qty),
                     "nrr_code": "NRR-018", "why": MAKER_ONLY_REJECT, "source_fsm": "ExecPosFSM"})
+                reject_payload = normalize_order_rejected_payload(
+                    {"symbol": symbol, "side": side, "reason": MAKER_ONLY_REJECT, "error_code": err_code},
+                    fallback_rid=decision.rid,
+                    fallback_ts_ms=get_clock().now_ms(),
+                )
                 reject_msg = Message(op="EVT", verb="ORDER_REJECTED", src="execution_position",
                     dst="decision_making", rid=decision.rid,
-                    pld={"symbol": symbol, "side": side, "reason": MAKER_ONLY_REJECT, "error_code": err_code},
+                    pld=reject_payload,
                     why=MAKER_ONLY_REJECT)
                 try:
                     wal.append(reject_msg.model_dump())

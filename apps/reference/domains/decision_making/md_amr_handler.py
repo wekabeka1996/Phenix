@@ -1048,11 +1048,17 @@ class MDAMRHandler:
     def _normalize_order_reject_reason(pld: dict) -> str:
         """Canonical normalization for EVT:ORDER_REJECTED payload reason.
 
-        Priority: reject_reason > reason > reason_code+reason_text.
+        Priority: reject_reason_normalized > reject_reason > reason > reason_code+reason_text.
         Returns UPPER-CASED trimmed string, or "" if unresolvable.
         Empty / malformed payloads yield "" which is fail-closed:
         no POST_ONLY/MAKER_ONLY substring match → no unsafe retry/fallback.
         """
+        raw = pld.get("reject_reason_normalized")
+        if raw is not None:
+            val = str(raw).strip().upper()
+            if val:
+                return val
+
         # 1. reject_reason (legacy / test contract)
         raw = pld.get("reject_reason")
         if raw is not None:

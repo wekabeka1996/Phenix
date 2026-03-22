@@ -38,6 +38,10 @@ class ScoringResult:
     side: str  # "buy", "sell", or ""
     thr_buy: decimal.Decimal
     thr_sell: decimal.Decimal
+    decision_score: decimal.Decimal = decimal.Decimal("0")
+    sizing_score: decimal.Decimal = decimal.Decimal("0")
+    raw_score: decimal.Decimal = decimal.Decimal("0")
+    admission_shield_multiplier: decimal.Decimal = decimal.Decimal("1.0")
 
     # Explainability
     why_chain: List[str] = field(default_factory=list)
@@ -148,6 +152,11 @@ class QuadraticScoringKernel:
         score_multiplier: float = 1.0,
         linear_score: Optional[float] = None,
         regime_smoother: Optional[Any] = None,
+        admission_mode: str = "quadratic",
+        admission_power: Optional[float] = None,
+        sizing_mode: str = "quadratic",
+        sizing_power: Optional[float] = None,
+        admission_shield_floor: float = 0.0,
     ) -> ScoringResult:
         """
         Compute quadratic signal score.
@@ -191,6 +200,7 @@ class QuadraticScoringKernel:
             result.deferred = True
             result.defer_reason = "LINEAR_SCORE_NAN_INF"
             return result
+        result.raw_score = decimal.Decimal(str(round(s_linear, 8)))
 
         # ─── Step 2: Scale & Clamp (Sensitivity) ──────────────────
         # Formula: S_scaled = clamp(S_linear * M, -1, 1)
@@ -199,27 +209,44 @@ class QuadraticScoringKernel:
         # SAFETY CAP: Enforce [-1, 1] invariant before squaring
         s_clamped = max(-1.0, min(1.0, s_scaled_raw))
 
-        # ─── Step 3: Quadratic Transform ──────────────────────────
-        # Exposure = sign(S_clamped) * (S_clamped)²
-        sign = 1.0 if s_clamped >= 0 else -1.0
-        # Determine magnitude from the clamped value
-        final_exposure = sign * (s_clamped ** 2)
+        # ─── Step 3: Admission / Sizing transforms ───────────────
+        admission_pre_shield = _transform_signed_score(
+            s_clamped, mode=admission_mode, power=admission_power
+        )
+        sizing_pre_shield = _transform_signed_score(
+            s_clamped, mode=sizing_mode, power=sizing_power
+        )
 
         # ─── Step 4: Shield Cascade ──────────────────────────────
         shield_mult, shield_reasons = _shield(
-            symbol, features, s_linear, final_exposure)
+            symbol, features, s_linear, sizing_pre_shield)
         shield_mult = max(0.0, min(1.0, shield_mult))
 
-        final_score_val = final_exposure * shield_mult
+        if shield_mult == 0.0:
+            admission_shield_mult = 0.0
+        else:
+            admission_shield_mult = max(
+                shield_mult,
+                max(0.0, min(1.0, admission_shield_floor)),
+            )
+
+        decision_score_val = admission_pre_shield * admission_shield_mult
+        sizing_score_val = sizing_pre_shield * shield_mult
 
         # ─── Step 5: Output & Explainability ─────────────────────
-        result.score = decimal.Decimal(str(round(final_score_val, 8)))
+        result.decision_score = decimal.Decimal(
+            str(round(decision_score_val, 8)))
+        result.sizing_score = decimal.Decimal(str(round(sizing_score_val, 8)))
+        result.score = result.decision_score
+        result.admission_shield_multiplier = decimal.Decimal(
+            str(round(admission_shield_mult, 8))
+        )
 
         quad_ctx = QuadraticContext(
             pillar_sum=s_linear,
-            raw_exposure=final_exposure,
+            raw_exposure=sizing_pre_shield,
             shield_multiplier=shield_mult,
-            final_exposure=final_score_val,
+            final_exposure=sizing_score_val,
             pillar_contribs=dict(pillar_contribs or {}),
             shield_reasons=list(shield_reasons),
         )
@@ -232,7 +259,17 @@ class QuadraticScoringKernel:
             "s_scaled_raw": s_scaled_raw,
             "s_clamped": s_clamped,
             "clamped": s_scaled_raw != s_clamped,
-            "final_exposure": final_score_val,
+            "admission_mode": admission_mode,
+            "admission_power": admission_power,
+            "sizing_mode": sizing_mode,
+            "sizing_power": sizing_power,
+            "admission_shield_floor": admission_shield_floor,
+            "admission_pre_shield": admission_pre_shield,
+            "sizing_pre_shield": sizing_pre_shield,
+            "decision_score": decision_score_val,
+            "sizing_score": sizing_score_val,
+            "admission_shield_multiplier": admission_shield_mult,
+            "final_exposure": sizing_score_val,
             "shield_multiplier": shield_mult,
             "shield_reasons": list(shield_reasons),
         }
@@ -241,8 +278,11 @@ class QuadraticScoringKernel:
         result.shield_multiplier = decimal.Decimal(str(shield_mult))
         result.shield_breakdown = {
             "reasons": list(shield_reasons),
-            "raw_exposure": final_exposure,
+            "raw_exposure": sizing_pre_shield,
             "s_linear": s_linear,
+            "decision_score": decision_score_val,
+            "sizing_score": sizing_score_val,
+            "admission_shield_multiplier": admission_shield_mult,
         }
 
         # ─── Step 6: Threshold calculation ───────────────────────
@@ -270,13 +310,13 @@ class QuadraticScoringKernel:
         # ─── Step 7: Side determination with hysteresis ──────────
         thr_neutral = neutral_threshold if neutral_threshold is not None else thr_buy
         result.side, side_why = _determine_side(
-            final_score_val, thr_buy, thr_sell, thr_neutral, current_side,
+            result.decision_score, thr_buy, thr_sell, thr_neutral, current_side,
         )
         result.why_chain.append(side_why)
         result.psi_vector.update(
             {
-                "raw_exposure": final_exposure,
-                "final_score": final_score_val,
+                "raw_exposure": sizing_pre_shield,
+                "final_score": decision_score_val,
                 "threshold_factor": float(factor),
                 "thr_buy": float(thr_buy),
                 "thr_sell": float(thr_sell),
@@ -383,3 +423,23 @@ def _determine_side(
             return "sell", f"enter:sell:score={float(score):.4f}<=-thr_sell={float(thr_sell):.4f}"
         else:
             return "", f"neutral:score={float(score):.4f}"
+
+
+def _transform_signed_score(
+    value: float,
+    *,
+    mode: str,
+    power: Optional[float],
+) -> float:
+    sign = 1.0 if value >= 0 else -1.0
+    magnitude = abs(value)
+
+    if mode == "quadratic":
+        return sign * (magnitude ** 2)
+    if mode == "linear":
+        return value
+    if mode == "soft_power":
+        if power is None:
+            raise ValueError("soft_power transform requires explicit power")
+        return sign * (magnitude ** float(power))
+    raise ValueError(f"unsupported transform mode: {mode}")

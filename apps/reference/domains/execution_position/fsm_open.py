@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
+from urllib.parse import urlencode
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
@@ -36,19 +37,19 @@ from pydantic import model_validator
 class CmdOpenPayload(BaseModel):
     """
     EP-01.4-INT-A: Strict Pydantic model for CMD:OPEN payload validation.
-    
+
     FAIL-CLOSED: Unknown fields are rejected (extra='forbid').
     This ensures contract integrity for CMD:OPEN commands.
     """
     model_config = ConfigDict(extra='forbid')
-    
+
     # Required fields
     symbol: str = Field(..., min_length=1, description="Trading symbol (e.g., BTCUSDT)")
     side: Literal["BUY", "SELL"] = Field(..., description="Order side")
     qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$", description="Order quantity (string-encoded)")
     # ORDER-POLICY-01: REQUIRED. No silent defaults.
     order_type: Literal["MARKET", "LIMIT"] = Field(..., description="Order type. REQUIRED.")
-    
+
     # Optional fields
     price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
     price_ref: Optional[str] = Field(default=None, description="Reference price for checks")
@@ -67,7 +68,7 @@ class CmdOpenPayload(BaseModel):
         default=None,
         description="Optional structured metadata (e.g., strategy/tca/risk context).",
     )
-    
+
     @field_validator('tif', mode='before')
     @classmethod
     def normalize_tif(cls, v):
@@ -108,9 +109,10 @@ class OpenFlowFSM:
 
     Shadow-mode: validates contracts, generates DEC, but no live orders.
     Guards (fail-closed): min_notional, qty/price steps, cooldown.
-    
+
     TASK47c-E: Leverage verification before DEC:OPEN.
     """
+    _LIMIT_ROUNDING_TRACE_REF_PREFIX = "obs://execution_position/limit_rounding?"
 
     def __init__(
         self,
@@ -124,7 +126,7 @@ class OpenFlowFSM:
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
         self.guard_enabled = guard_enabled
-        
+
         if isinstance(config, dict):
             raise TypeError("OpenFlowFSM requires typed AuroraConfig, got dict")
         if config is None:
@@ -143,24 +145,24 @@ class OpenFlowFSM:
             "fsm_errors_total": 0,
         }
         self.idempotency_store: Dict[str, float] = {}
-        
+
         # TASK47c-E: LeverageService integration
         self.leverage_service = leverage_service
         self.is_live_execution = is_live_execution
-        
+
         # Fail-closed: LIVE mode requires leverage_service
         if is_live_execution and leverage_service is None:
             raise RuntimeError(
                 "LeverageService is required for LIVE execution mode. "
                 "Pass leverage_service to OpenFlowFSM or set is_live_execution=False for shadow/dev."
             )
-        
+
         if leverage_service is None:
             self.logger.warning(
                 "TASK47c-E: OpenFlowFSM initialized without LeverageService. "
                 "Leverage verification will be SKIPPED (shadow/dev mode only)."
             )
-        
+
         # Idempotency window from config - SSOT: domains.execution_position.fsm_open (FAIL-CLOSED)
         try:
             if not hasattr(self.config, 'domains') or not hasattr(self.config.domains, 'execution_position'):
@@ -175,9 +177,38 @@ class OpenFlowFSM:
                 "Check domains.yaml has execution_position.fsm_open.idempotency_window_sec"
             ) from e
 
+    @staticmethod
+    def _round_limit_price_to_tick(price: Decimal, tick_size: Decimal, side: str) -> tuple[Decimal, str]:
+        """Round LIMIT price in a side-aware passive direction."""
+        side_upper = str(side).upper()
+        rounding_mode = ROUND_FLOOR if side_upper == "BUY" else ROUND_CEILING
+        rounding_label = "floor" if side_upper == "BUY" else "ceil"
+        rounded = (
+            (price / tick_size).to_integral_value(rounding=rounding_mode) * tick_size
+        ).quantize(tick_size)
+        return rounded, rounding_label
+
+    @classmethod
+    def _build_limit_rounding_trace_ref(
+        cls,
+        *,
+        price_before_rounding: Decimal,
+        price_after_rounding: Decimal,
+        tick_size: Decimal,
+        rounding_mode: str,
+    ) -> str:
+        query = urlencode(
+            {
+                "before": str(price_before_rounding),
+                "after": str(price_after_rounding),
+                "tick": str(tick_size),
+                "mode": str(rounding_mode),
+            }
+        )
+        return f"{cls._LIMIT_ROUNDING_TRACE_REF_PREFIX}{query}"
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config.
-        
+
         CFG-INSTRUMENTS-STEP-03-EXECUTION-PRECISION:
         Uses canonical config.instruments (SSOT from config/aurora/instruments.yaml).
         """
@@ -361,13 +392,14 @@ class OpenFlowFSM:
                             msg, "OPEN_GUARD_FAIL", "LIMIT order requires price"
                         )
 
-                    # Round price to tick_size
-                    price_rounded = ((price_dec // tick_size) * tick_size).quantize(
-                        tick_size
+                    # Round LIMIT price in a passive direction for the requested side.
+                    price_before_rounding = price_dec
+                    price_rounded, rounding_label = self._round_limit_price_to_tick(
+                        price_dec, tick_size, side
                     )
                     if price_rounded != price_dec:
                         self.logger.warning(
-                            f"GUARD_ADJUST: Price rounded to tick - original={price_dec}, rounded={price_rounded}, tick={tick_size}, rid={msg.rid}"
+                            f"GUARD_ADJUST: Price rounded to tick - side={side}, mode={rounding_label}, original={price_dec}, rounded={price_rounded}, tick={tick_size}, rid={msg.rid}"
                         )
                         price_dec = price_rounded
 
@@ -444,6 +476,17 @@ class OpenFlowFSM:
                     f"GUARD_PASSED: All guards OK - symbol={symbol}, side={side}, qty={qty_dec}, price={price_dec}, order_type={order_type}, rid={msg.rid}"
                 )
 
+                data_ref = msg.data_ref.copy() if msg.data_ref else []
+                if order_type == "LIMIT" and price_dec is not None:
+                    data_ref.append(
+                        self._build_limit_rounding_trace_ref(
+                            price_before_rounding=price_before_rounding,
+                            price_after_rounding=price_dec,
+                            tick_size=tick_size,
+                            rounding_mode=rounding_label,
+                        )
+                    )
+
                 dec = Message(
                     op="DEC",
                     verb="OPEN",
@@ -454,7 +497,7 @@ class OpenFlowFSM:
                     pld=dec_pld,
                     corr_id=str(uuid.uuid4()),
                     oco_group_id=str(uuid.uuid4()),
-                    data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
+                    data_ref=data_ref,
                 )
 
                 # Record metrics
@@ -522,39 +565,39 @@ class OpenFlowFSM:
     # =========================================================================
     # TASK47c-E: Async Handle with Leverage Verification
     # =========================================================================
-    
+
     async def handle_async(self, msg: Message) -> Optional[Message]:
         """Async handler that performs leverage verification before DEC:OPEN.
-        
+
         TASK47c-E: Wire leverage verification into production flow.
-        
+
         1. Check leverage via LeverageService (if configured)
         2. If leverage check fails → return ERR (no DEC:OPEN)
         3. If leverage check passes → delegate to sync handle()
-        
+
         Args:
             msg: CMD:OPEN message
-            
+
         Returns:
             DEC:OPEN if all checks pass, ERR if any check fails
         """
         if msg.op != "CMD" or msg.verb != "OPEN":
             return self.handle(msg)
-        
+
         symbol = msg.pld.get("symbol", "")
-        
+
         # TASK47c-E: Leverage verification before DEC:OPEN
         if self.leverage_service is not None:
             # Get per-instrument execution config
             instruments = self.config.instruments or {}
             specs = instruments.get(symbol)
             execution_config = getattr(specs, "execution", None) if specs else None
-            
+
             if execution_config is not None:
                 leverage_policy = execution_config.leverage_policy
                 expected_leverage = execution_config.target_leverage
                 expected_margin_mode = execution_config.margin_mode
-                
+
                 # Call appropriate method based on policy
                 if leverage_policy == "set_and_verify":
                     result = await self.leverage_service.set_and_verify(
@@ -564,7 +607,7 @@ class OpenFlowFSM:
                     result = await self.leverage_service.verify(
                         symbol, expected_leverage, expected_margin_mode
                     )
-                
+
                 # If verification failed, reject
                 if not result.ok:
                     self.logger.error(
@@ -576,7 +619,7 @@ class OpenFlowFSM:
                         f"LEVERAGE_FAIL:{result.error_code or 'UNKNOWN'}",
                         f"leverage verification failed: {result.why[:60]}",
                     )
-                
+
                 self.logger.info(
                     f"LEVERAGE_GATE_PASS: {symbol} leverage={result.actual_leverage} "
                     f"margin_mode={result.actual_margin_mode}"
@@ -584,6 +627,6 @@ class OpenFlowFSM:
             else:
                 # No execution config for this symbol - log but proceed (for non-trading symbols)
                 self.logger.debug(f"No execution config for {symbol}, skipping leverage check")
-        
+
         # All leverage checks passed (or skipped), proceed with sync handler
         return self.handle(msg)

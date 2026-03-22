@@ -13,6 +13,9 @@ from enum import Enum
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.terminal_order_contracts import (
+    normalize_order_state_changed_payload,
+)
 
 from apps.reference.utils.accessors import dget
 
@@ -390,13 +393,27 @@ class OrderTimeoutWatchdog:
                             self._rest_detected_fills_total += 1
 
                             # Emit TRADE_EXECUTED event instead of direct FSM call
+                            deadline = None
+                            if order_id in self.pending_orders:
+                                deadline = self.pending_orders.get(order_id)
+                            elif order_id in self.acked_orders:
+                                deadline = self.acked_orders.get(order_id)
                             fill_payload = {
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "quantity": executed_qty,
+                                "qty": executed_qty,
                                 "price": float(dget(order_status, "avgPrice", 0)),
-                                "client_order_id": dget(order_status, "clientOrderId", ""),
-                                "rid": None  # Will be looked up from correlation store
+                                "clientOrderId": (
+                                    dget(order_status, "clientOrderId", "")
+                                    or getattr(deadline, "client_order_id", "")
+                                ),
+                                "client_order_id": (
+                                    dget(order_status, "clientOrderId", "")
+                                    or getattr(deadline, "client_order_id", "")
+                                ),
+                                "rid": getattr(deadline, "rid", None),
+                                "ts_ms": current_time_ms,
                             }
 
                             if self.emit_fn:
@@ -424,13 +441,13 @@ class OrderTimeoutWatchdog:
                             self._rest_detected_cancels_total += 1
 
                             # Emit ORDER_STATE_CHANGED event for symmetry with TRADE_EXECUTED
-                            cancel_payload = {
+                            cancel_payload = normalize_order_state_changed_payload({
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "status": status,
                                 "client_order_id": dget(order_status, "clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
-                            }
+                            }, fallback_ts_ms=get_clock().now_ms())
 
                             if self.emit_fn:
                                 await self.emit_fn("EVT:ORDER_STATE_CHANGED", cancel_payload)

@@ -12,6 +12,10 @@ import logging
 import threading
 import time
 from typing import Dict, Optional, Any
+from apps.reference.domains.execution_position.terminal_order_contracts import (
+    normalize_order_rejected_payload,
+    normalize_order_state_changed_payload,
+)
 
 # Try to import metrics and audit logger, provide mocks if missing
 try:
@@ -334,11 +338,16 @@ class BinanceWebSocketClient:
                 "rid": order_ref.rid,
                 "idempotent_key": order_ref.idempotent_key,
                 "clientOrderId": client_order_id,
+                "client_order_id": client_order_id,
                 "exchangeOrderId": exchange_order_id,
                 "orderId": exchange_order_id,
+                "tradeId": str(order_data.get("t", "")),
+                "trade_id": str(order_data.get("t", "")),
                 "side": side,
                 "order_type": order_type,
                 "qty": filled_qty,
+                "quantity": filled_qty,
+                "price": str(order_data.get("ap", order_data.get("p", "0"))),
                 "time_in_force": time_in_force,  # EP-01.5: Include tif
                 "ts_ms": msg.get("T", int(time.time() * 1000)),
             }
@@ -389,6 +398,19 @@ class BinanceWebSocketClient:
                 else:
                     event_name = "EVT:ORDER_STATE_CHANGED"
                     logger.info(f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
+
+                if event_name == "EVT:ORDER_REJECTED":
+                    payload = normalize_order_rejected_payload(
+                        payload,
+                        fallback_rid=order_ref.rid,
+                        fallback_ts_ms=payload.get("ts_ms"),
+                    )
+                elif event_name == "EVT:ORDER_STATE_CHANGED":
+                    payload = normalize_order_state_changed_payload(
+                        payload,
+                        fallback_rid=order_ref.rid,
+                        fallback_ts_ms=payload.get("ts_ms"),
+                    )
 
                 self._safe_emit(event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}")
 

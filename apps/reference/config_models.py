@@ -1040,6 +1040,64 @@ class ScoringEngineConfig(BaseModel):
 # ══════════════════════════════════════════════════════════════
 
 
+class DecisionGeometryConfig(BaseModel):
+    """Aurora admission/sizing geometry contract.
+
+    Purpose:
+    - make admission math explicit and config-gated
+    - preserve backward-safe baseline quadratic mode
+    - allow decoupling admission geometry from sizing geometry without hidden constants
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    admission_mode: Literal["quadratic", "soft_power", "linear"] = Field(
+        default="quadratic",
+        description="Transform used for admission score and side resolution.",
+    )
+    admission_power: Optional[float] = Field(
+        default=None,
+        description="Exponent for soft_power admission. Required only when admission_mode=soft_power.",
+    )
+    sizing_mode: Literal["quadratic", "soft_power", "linear"] = Field(
+        default="quadratic",
+        description="Transform used for sizing_score / quantization semantics.",
+    )
+    sizing_power: Optional[float] = Field(
+        default=None,
+        description="Exponent for soft_power sizing. Required only when sizing_mode=soft_power.",
+    )
+    admission_shield_floor: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Admission-only lower bound for shield attenuation. "
+            "Does not override explicit hard vetoes when shield multiplier is 0."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def _validate_geometry(self) -> 'DecisionGeometryConfig':
+        for mode_field, power_field in (
+            ("admission_mode", "admission_power"),
+            ("sizing_mode", "sizing_power"),
+        ):
+            mode = getattr(self, mode_field)
+            power = getattr(self, power_field)
+            if mode == "soft_power":
+                if power is None:
+                    raise ValueError(
+                        f"{power_field} is required when {mode_field}=soft_power")
+                if not (1.0 < float(power) < 2.0):
+                    raise ValueError(
+                        f"{power_field} must be in (1, 2) for soft_power")
+            elif power is not None:
+                raise ValueError(
+                    f"{power_field} must be omitted unless {mode_field}=soft_power")
+        return self
+
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
 
@@ -1124,6 +1182,11 @@ class DecisionConfig(BaseModel):
     # Phase 9: Sensitivity Tuning
     score_multiplier: float = Field(
         default=1.0, description="Multiplier for linear score before quadratic transform")
+
+    decision_geometry: Optional["DecisionGeometryConfig"] = Field(
+        default=None,
+        description="Explicit admission/sizing geometry contract for Aurora decision math.",
+    )
 
     # ══════════════ Phase 9: Quadratic Brain Config ══════════════
     scoring_engine: Optional["ScoringEngineConfig"] = Field(
@@ -1850,6 +1913,13 @@ class DirectionalSanityConfig(BaseModel):
         le=1.0,
         description='Minimum regime_confidence required to open position (0.0 = disabled). '
                     'Separate from min_confidence which blends regime+trend. FIX-CONF-GATE-01.'
+    )
+    hard_veto_consecutive_bars: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        description='Trailing same-sign filtered delta bars required before directional_sanity emits hard countertrend veto (NRR-027). '
+                    'Keeps single-bar trend context for tracing while avoiding hard veto on one-bar countertrend blips.'
     )
     consecutive_bars: int = Field(
         ge=1,  # FIX-NRR026-BACKTEST: Allow 1 for bar-based backtest (was ge=2)
@@ -3342,6 +3412,28 @@ class EventDedupConfig(BaseModel):
         default=100000, description="Max number of events to track")
     ttl_ms: int = Field(
         default=86400000, description="Event TTL in milliseconds (24h)")
+    warm_state: "EventDedupWarmStateConfig" = Field(
+        default_factory=lambda: EventDedupWarmStateConfig(),
+        description="Restart-seeded warm-state for recent exact terminal fill identities",
+    )
+
+
+class EventDedupWarmStateConfig(BaseModel):
+    """Restart-seeded warm-state configuration for exact terminal fill identities."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable restart-seeded warm-state for exact terminal fill identity continuity",
+    )
+    storage_path: Optional[str] = Field(
+        default="logs/execution_truth_warm_state_v1.json",
+        description="Atomic JSON path for bounded warm-state seed persistence",
+    )
+    max_entries: int = Field(
+        default=2000,
+        description="Max exact terminal fill identities retained in warm-state snapshot",
+    )
 
 
 class DriftAwayConfig(BaseModel):
@@ -5014,6 +5106,63 @@ class AlertsConfig(BaseModel):
     )
 
 
+class ShadowCriticalEventJournalConfig(BaseModel):
+    """Shadow-only critical event journal configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable append-only shadow journal for critical decision/execution events.",
+    )
+    path: str = Field(
+        default="logs/shadow_critical_event_journal_v1.jsonl",
+        description="Append-only JSONL sink for the shadow critical event journal.",
+    )
+    schema_version: str = Field(
+        default="1.0.0",
+        description="Schema version written into each journal record.",
+    )
+    instrumentation_version: str = Field(
+        default="1.0.0",
+        description="Instrumentation package version written into each journal record.",
+    )
+    critical_events: List[str] = Field(
+        default_factory=lambda: list((
+            "EVT:TRADE_INTENT_PROPOSED",
+            "CMD:OPEN",
+            "DEC:OPEN",
+            "EVT:ORDER_ACK",
+            "EVT:ORDER_REJECTED",
+            "EVT:ORDER_STATE_CHANGED",
+            "EVT:ORDER_PLACED",
+            "EVT:TRADE_EXECUTED",
+            "DEC:BATCH",
+            "CMD:CLOSE",
+            "DEC:CLOSE",
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            "EVT:EXPOSURE_SUMMARY_UPDATED",
+            "RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD",
+            "RESTORE:EXECUTION_POSITION_HYDRATE",
+            "ORDER_INDEX:RESERVE_ENTRY",
+            "ORDER_INDEX:UPSERT_OPEN",
+            "ORDER_INDEX:ATTACH_EXCHANGE_ID",
+            "ORDER_INDEX:MARK_TERMINAL",
+            "ORDER_INDEX:CANCEL_RESERVATION",
+            "HARDENING:TRADE_EXECUTED_SUPPRESSED",
+            "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED",
+            "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT",
+            "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+            "HARDENING:CMD_CLOSE_SUPPRESSED",
+            "HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED",
+            "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
+            "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED",
+            "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
+            "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED",
+        )),
+        description="Critical events/transitions captured by the shadow journal.",
+    )
+
+
 class ObservabilityConfig(BaseModel):
     """Root observability configuration (logging, metrics, tracing)."""
     model_config = ConfigDict(extra='forbid')
@@ -5024,6 +5173,9 @@ class ObservabilityConfig(BaseModel):
         default_factory=ObservabilityLoggingConfig, description='Logging configuration')
     alerts: AlertsConfig = Field(
         default_factory=AlertsConfig, description='Alert manager configuration')
+    shadow_journal: ShadowCriticalEventJournalConfig = Field(
+        default_factory=ShadowCriticalEventJournalConfig,
+        description='Shadow-only critical event journal configuration')
     # Future: metrics, tracing
 
 

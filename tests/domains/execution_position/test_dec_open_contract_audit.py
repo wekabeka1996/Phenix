@@ -65,12 +65,32 @@ def _cmd_open_message(rid: str = "RID-DEC-OPEN-AUDIT") -> Message:
     )
 
 
+def _cmd_open_limit_message(rid: str = "RID-DEC-OPEN-LIMIT-AUDIT") -> Message:
+    return Message(
+        op="CMD",
+        verb="OPEN",
+        src="execution_position",
+        dst="execution_position",
+        rid=rid,
+        pld={
+            "rid": rid,
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "qty": "0.1",
+            "order_type": "LIMIT",
+            "price": "1000.005",
+            "tif": "GTX",
+            "valid_for_ms": 60_000,
+            "idempotent_key": f"KEY-{rid}",
+        },
+        why="dec_open_limit_contract_audit",
+    )
+
+
 def test_real_dec_open_producer_payload_matches_registered_schema() -> None:
     """Real OpenFlow producer payload must validate before any bus re-emit enrichment."""
     init_global_registry(project_root=".")
     fsm, bus = _build_execpos_with_real_bus()
-    observed: list[dict] = []
-    bus.listen("DEC:OPEN", lambda msg: observed.append(msg.pld))
 
     with patch("apps.reference.domains.execution_position.fsm.wal.append", return_value="wal-ok"):
         result = fsm.handle(_cmd_open_message())
@@ -86,11 +106,59 @@ def test_real_dec_open_producer_payload_matches_registered_schema() -> None:
     assert validator is not None
     validator.validate(result.pld)
 
-    bus.emit("DEC:OPEN", payload=dict(result.pld or {}), why=result.why, data_ref=result.data_ref)
+
+def test_real_limit_dec_open_payload_matches_registered_schema_without_trace_drift() -> None:
+    """LIMIT DEC:OPEN must stay schema-valid while trace-only rounding metadata lives outside payload."""
+    init_global_registry(project_root=".")
+    fsm, _ = _build_execpos_with_real_bus()
+
+    with patch("apps.reference.domains.execution_position.fsm.wal.append", return_value="wal-ok"):
+        result = fsm.handle(_cmd_open_limit_message())
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "OPEN"
+    assert result.pld["order_type"] == "LIMIT"
+    assert result.pld["price"] == "1000.1"
+    assert "price_before_rounding" not in (result.pld or {})
+    assert "price_after_rounding" not in (result.pld or {})
+    assert "tick_size" not in (result.pld or {})
+    assert "rounding_mode" not in (result.pld or {})
+    assert any(
+        isinstance(ref, str) and ref.startswith("obs://execution_position/limit_rounding?")
+        for ref in (result.data_ref or [])
+    )
+
+    registry = get_global_registry()
+    assert registry is not None
+    validator = registry.get_validator("DEC", "OPEN")
+    assert validator is not None
+    validator.validate(result.pld)
+
+def test_dec_open_reemit_preserves_envelope_rid_without_payload_rid() -> None:
+    """Aligned re-emit must keep rid in envelope metadata while preserving strict payload schema."""
+    init_global_registry(project_root=".")
+    fsm, bus = _build_execpos_with_real_bus()
+    observed: list[Message] = []
+    bus.listen("DEC:OPEN", lambda msg: observed.append(msg))
+
+    with patch("apps.reference.domains.execution_position.fsm.wal.append", return_value="wal-ok"):
+        result = fsm.handle(_cmd_open_message(rid="RID-DEC-OPEN-REEMIT"))
+
+    assert result is not None
+    bus.emit(
+        "DEC:OPEN",
+        payload=dict(result.pld or {}),
+        why=result.why,
+        data_ref=result.data_ref,
+        rid=result.rid,
+    )
 
     assert observed
-    assert observed[0]["symbol"] == "BTCUSDT"
-    assert observed[0]["order_type"] == "MARKET"
+    assert observed[0].rid == "RID-DEC-OPEN-REEMIT"
+    assert "rid" not in (observed[0].pld or {})
+    assert observed[0].pld["symbol"] == "BTCUSDT"
+    assert observed[0].pld["order_type"] == "MARKET"
 
 
 def test_dec_open_reemit_with_payload_rid_fails_before_listener_dispatch() -> None:

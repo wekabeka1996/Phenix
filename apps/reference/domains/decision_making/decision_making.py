@@ -342,7 +342,7 @@ class DecisionMaking:
             "symbol": symbol, "ts": _g("trace_ts_ms"), "intent_side": _g("intent_side"),
             "signal_score": _g("signal_score"), "regime": _g("regime"),
             "regime_confidence": _g("regime_confidence"), "trend_dir": _g("trend_dir"),
-            "delta_price": _g("delta_price"), "pm_norm_10s": _g("pm_norm_10s"),
+            "trend_run_length": _g("trend_run_length"), "delta_price": _g("delta_price"), "pm_norm_10s": _g("pm_norm_10s"),
             "pm_norm_60s": _g("pm_norm_60s"), "pm_norm_300s": _g("pm_norm_300s"),
             "vol_pct_10s": _g("vol_pct_10s"), "vol_pct_60s": _g("vol_pct_60s"),
             "vol_pct_300s": _g("vol_pct_300s"),

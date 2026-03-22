@@ -8,6 +8,9 @@ from typing import Dict, List, Callable, Any, Optional
 import logging
 import threading
 from .protocol import Message
+from apps.reference.domains.execution_position.terminal_order_contracts import (
+    normalize_terminal_order_event_payload,
+)
 
 
 class InvalidMessagePayloadError(ValueError):
@@ -79,6 +82,12 @@ class FSMCore:
 
         if payload is None:
             payload = {}
+        elif event_name in ("EVT:ORDER_REJECTED", "EVT:ORDER_STATE_CHANGED") and isinstance(payload, dict):
+            payload = normalize_terminal_order_event_payload(
+                event_name,
+                payload,
+                fallback_rid=rid,
+            )
 
         # Phase 14C: Message Schema Validation (Fail-Fast)
         try:
@@ -108,6 +117,116 @@ class FSMCore:
 
         with self._lock:
             callbacks = list(self.listeners.get(event_name, []))
+
+        shadow_journal = getattr(self, "_shadow_journal", None)
+        if shadow_journal is not None:
+            try:
+                shadow_journal.record_bus_emit(
+                    event_name=event_name,
+                    payload=payload,
+                    why=why,
+                    data_ref=data_ref,
+                    rid=rid,
+                )
+            except Exception as e:
+                self.logger.error("Shadow journal emit capture failed for %s: %s", event_name, e)
+
+        hardening = getattr(self, "_execution_truth_hardening", None)
+        if hardening is not None and event_name == "EVT:TRADE_EXECUTED":
+            try:
+                decision = hardening.evaluate_trade_executed(
+                    payload,
+                    order_index=getattr(self, "order_index", None),
+                )
+                why_l = (why or "").lower()
+                if why.startswith("WS_") or "websocket" in why_l:
+                    source_component = "binance_ws_client"
+                    source_path = "websocket:user_data_stream"
+                    event_origin_type = "websocket"
+                elif "polling" in why_l or "watchdog" in why_l:
+                    source_component = "execution_position.watchdog"
+                    source_path = "watchdog:rest_poll"
+                    event_origin_type = "watchdog"
+                else:
+                    source_component = "vfoundation.fsm_core"
+                    source_path = "execution:trade_executed_dedupe"
+                    event_origin_type = "execution"
+
+                if shadow_journal is not None and decision.degraded_identity:
+                    notes = [decision.identity_quality]
+                    if decision.trade_id_present:
+                        notes.append("trade_id_present_not_used_for_shared_key")
+                    for field in decision.missing_fields:
+                        notes.append(f"missing_{field}")
+                    shadow_journal.record_transition(
+                        event_name="HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED",
+                        source_component=source_component,
+                        source_path=source_path,
+                        event_origin_type=event_origin_type,
+                        truth_owner="FSMCore",
+                        payload=payload,
+                        rid=rid,
+                        notes=notes,
+                    )
+
+                if shadow_journal is not None and decision.warm_state_miss:
+                    shadow_journal.record_transition(
+                        event_name="HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+                        source_component=source_component,
+                        source_path=source_path,
+                        event_origin_type=event_origin_type,
+                        truth_owner="FSMCore",
+                        payload=payload,
+                        rid=rid,
+                        notes=[
+                            "warm_state_exact_identity_not_seeded",
+                            f"fill_key={decision.key}",
+                            decision.identity_quality,
+                        ],
+                    )
+
+                if decision.suppress:
+                    if shadow_journal is not None:
+                        if decision.warm_state_hit:
+                            shadow_journal.record_transition(
+                                event_name="HARDENING:TRADE_EXECUTED_WARM_STATE_HIT",
+                                source_component=source_component,
+                                source_path=source_path,
+                                event_origin_type=event_origin_type,
+                                truth_owner="FSMCore",
+                                payload=payload,
+                                rid=rid,
+                                notes=[
+                                    "restart_seeded_terminal_identity_hit",
+                                    f"fill_key={decision.key}",
+                                    decision.identity_quality,
+                                ],
+                            )
+                        shadow_journal.record_transition(
+                            event_name="HARDENING:TRADE_EXECUTED_SUPPRESSED",
+                            source_component=source_component,
+                            source_path=source_path,
+                            event_origin_type=event_origin_type,
+                            truth_owner="FSMCore",
+                            payload=payload,
+                            rid=rid,
+                            notes=[
+                                decision.reason,
+                                f"fill_key={decision.key}",
+                                decision.identity_quality,
+                                "exact_identity" if decision.exact_identity else "non_exact_identity",
+                                "warm_state_hit" if decision.warm_state_hit else "process_local_hit",
+                                *[f"missing_{field}" for field in decision.missing_fields],
+                            ],
+                        )
+                    self.logger.warning(
+                        "Suppressed duplicate EVT:TRADE_EXECUTED: %s (%s)",
+                        decision.reason,
+                        decision.key,
+                    )
+                    return
+            except Exception as e:
+                self.logger.exception("TRADE_EXECUTED hardening failed open for %s: %s", event_name, e)
 
         if callbacks:
             # Build Message kwargs — pass rid through if provided

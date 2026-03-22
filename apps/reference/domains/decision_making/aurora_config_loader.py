@@ -259,6 +259,27 @@ class AuroraConfigLoaderMixin:
             sm_raw = getattr(decision, "score_multiplier", 1.0)
             self.score_multiplier = float(sm_raw)
 
+            geometry_cfg = getattr(decision, "decision_geometry", None)
+            self.decision_admission_mode = str(
+                getattr(geometry_cfg, "admission_mode", "quadratic")
+            )
+            self.decision_admission_power = (
+                float(getattr(geometry_cfg, "admission_power"))
+                if getattr(geometry_cfg, "admission_power", None) is not None
+                else None
+            )
+            self.decision_sizing_mode = str(
+                getattr(geometry_cfg, "sizing_mode", "quadratic")
+            )
+            self.decision_sizing_power = (
+                float(getattr(geometry_cfg, "sizing_power"))
+                if getattr(geometry_cfg, "sizing_power", None) is not None
+                else None
+            )
+            self.decision_admission_shield_floor = float(
+                getattr(geometry_cfg, "admission_shield_floor", 0.0) or 0.0
+            )
+
             # REGIME-KILL-SWITCH-01: Optional config-driven regime blocklist.
             blocked = getattr(decision, "blocked_regimes", None)
             try:

@@ -24,7 +24,13 @@ def fsm_config():
     event_dedup = MagicMock()
     event_dedup.max_size = 100000
     event_dedup.ttl_ms = 86400000
-    
+    warm_state = MagicMock()
+    warm_state.enabled = True
+    warm_state.storage_path = "logs/test_execpos_recovery_warm_state.json"
+    warm_state.max_entries = 2000
+    event_dedup.warm_state = warm_state
+    cfg.domains.execution_position.event_dedup = event_dedup
+
     # Idempotent cancel config - SSOT: fail-closed
     idempotent_cancel = MagicMock()
     idempotent_cancel.max_retries = 2

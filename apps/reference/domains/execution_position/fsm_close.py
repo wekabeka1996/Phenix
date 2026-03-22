@@ -1,7 +1,7 @@
 """
 FSMP-P1-T02: Close Flow FSM for execution_position domain.
 
-States: OPENED → CLOSE_COND → EMIT_DEC_CLOSE → DONE
+States: OPENED -> CLOSE_COND -> EMIT_DEC_CLOSE -> DONE
 Rules (stubs): exit_by_rule (time/event-driven)
 Output: DEC:CLOSE(reduce_only=true)
 
@@ -12,11 +12,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-# T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
-
+from apps.reference.telemetry.shadow_journal import (
+    get_shadow_journal,
+    snapshot_close_flow_state,
+)
 from vfoundation.core.protocol import Message
 
 
@@ -38,30 +40,34 @@ class CloseFlowFSM:
     Role:
     1. Execution: Processes CMD:CLOSE from Decision Making.
     2. Technical: Handles REJECTED/EXPIRED events.
-    
+
     Note: Autonomous failsafe closing (max_hold_sec) was removed in P2.
-    This domain follows the "soldier" pattern — only executes explicit CMD:CLOSE.
+    This domain follows the "soldier" pattern - only executes explicit CMD:CLOSE.
     """
 
     def __init__(self):
         self.state = CloseState.FLAT
         self.position_open_ts: float = 0.0
         self.position_active = False
+        self._shadow_journal: Optional[Any] = None
         self._metrics: Dict[str, int] = {
             "fsm_close_decisions_total": 0,
             "fsm_errors_total": 0,
         }
+
+    def set_shadow_journal(self, journal: Any) -> None:
+        self._shadow_journal = journal
 
     def hydrate(self, position_data: Dict[str, Any]):
         """
         Hydrate the FSM state from a position snapshot.
         """
         try:
-            # If a position exists, the FSM should be active.
             self.state = CloseState.OPENED
             self.position_active = True
             self.position_open_ts = float(
-                position_data["open_ts"] if "open_ts" in position_data else get_clock().now_sec())
+                position_data["open_ts"] if "open_ts" in position_data else get_clock().now_sec()
+            )
 
             print(
                 f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}"
@@ -71,7 +77,8 @@ class CloseFlowFSM:
             self.state = CloseState.ERROR
             self._metrics["fsm_errors_total"] += 1
             print(
-                f"[CloseFlowFSM] HYDRATION_ERROR: Failed to hydrate state: {e}")
+                f"[CloseFlowFSM] HYDRATION_ERROR: Failed to hydrate state: {e}"
+            )
 
     def handle(self, msg: Message) -> Optional[Message]:
         """
@@ -83,55 +90,71 @@ class CloseFlowFSM:
         Returns:
             DEC:CLOSE if rules trigger, None otherwise.
         """
-        # Handle manual close commands
-        if msg.op == "CMD" and msg.verb == "CLOSE":
-            # Always emit DEC:CLOSE on CMD:CLOSE; actual position existence is verified
-            # downstream (adapter/open-positions check) for idempotent safety.
-            cmd_pld = msg.pld or {}
-            return self._emit_close(
-                msg,
-                "MANUAL_CLOSE",
-                {
-                    "trigger": "CMD:CLOSE",
-                    "reason": cmd_pld.get("reason"),
-                    "qty": cmd_pld.get("qty"),
-                    "trace": cmd_pld.get("trace"),
-                },
-            )
+        journal = get_shadow_journal(self)
+        before = snapshot_close_flow_state(self) if journal is not None else None
+        result: Optional[Message] = None
+        try:
+            if msg.op == "CMD" and msg.verb == "CLOSE":
+                cmd_pld = msg.pld or {}
+                result = self._emit_close(
+                    msg,
+                    "MANUAL_CLOSE",
+                    {
+                        "trigger": "CMD:CLOSE",
+                        "reason": cmd_pld.get("reason"),
+                        "qty": cmd_pld.get("qty"),
+                        "trace": cmd_pld.get("trace"),
+                    },
+                )
+                return result
 
-        if msg.op not in ("EVT", "UPD"):
+            if msg.op not in ("EVT", "UPD"):
+                return None
+
+            if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
+                pld = msg.pld or {}
+                qty_raw = pld.get("qty", 0)
+                qty = Decimal(str(qty_raw)) if qty_raw else Decimal("0")
+                if qty > 0:
+                    self.position_active = True
+                    self.position_open_ts = get_clock().now_sec()
+                    self.state = CloseState.OPENED
+                    transition_reason = (
+                        "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "TRADE_EXECUTED"
+                    )
+                    print(
+                        f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, qty={qty}"
+                    )
+                    result = self._check_close_conditions(msg)
+                    return result
+
+            if self.state == CloseState.OPENED:
+                result = self._check_close_conditions(msg)
+                return result
+
             return None
-
-        # State transition: FLAT → OPENED on FILL or PARTIAL_FILL
-        if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
-            # Check if this actually opened a position (qty > 0)
-            pld = msg.pld or {}
-            qty_raw = pld.get("qty", 0)
-            qty = Decimal(str(qty_raw)) if qty_raw else Decimal("0")
-            if qty > 0:
-                self.position_active = True
-                self.position_open_ts = get_clock().now_sec()
-                self.state = CloseState.OPENED
-                # Log the transition reason
-                transition_reason = (
-                    "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "TRADE_EXECUTED"
+        finally:
+            if journal is not None:
+                notes = []
+                if result is not None:
+                    notes.append(f"result={result.op}:{result.verb}")
+                journal.record_transition(
+                    event_name=f"{msg.op}:{msg.verb}",
+                    source_component="execution_position.fsm_close",
+                    source_path="execution:close_flow_handle",
+                    event_origin_type="execution",
+                    truth_owner="CloseFlowFSM",
+                    payload=msg.pld or {},
+                    rid=getattr(msg, "rid", None),
+                    before=before,
+                    after=snapshot_close_flow_state(self),
+                    notes=notes,
                 )
-                print(
-                    f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, qty={qty}"
-                )
-                # Immediately check close conditions on the fill event itself
-                return self._check_close_conditions(msg)
-
-        # Check close conditions in OPENED state
-        if self.state == CloseState.OPENED:
-            return self._check_close_conditions(msg)
-
-        return None
 
     def _check_close_conditions(self, msg: Message) -> Optional[Message]:
         """
         Check stub close rules.
-        
+
         NOTE: Autonomous closing rules (max_hold_sec, REJECTED, EXPIRED) are disabled
         per "soldier" pattern requirements. This domain only executes CMD:CLOSE.
 
@@ -161,10 +184,9 @@ class CloseFlowFSM:
                 **({"symbol": symbol} if symbol else {}),
                 **details,
             },
-            data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
+            data_ref=msg.data_ref.copy() if msg.data_ref else [],
         )
 
-        # Update state
         self.state = CloseState.DONE
         self.position_active = False
         return dec

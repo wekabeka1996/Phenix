@@ -70,6 +70,34 @@ def test_openflow_rounds_qty_and_price_by_specs(fsm_config):
     assert dec.op == "DEC" and dec.verb == "OPEN"
     assert dec.pld["qty"] == "0.001"
     assert dec.pld["price"] == "10000.00"
+    assert "price_before_rounding" not in dec.pld
+    assert "price_after_rounding" not in dec.pld
+    assert "tick_size" not in dec.pld
+    assert "rounding_mode" not in dec.pld
+    assert any(
+        isinstance(ref, str) and ref.startswith("obs://execution_position/limit_rounding?")
+        for ref in dec.data_ref
+    )
+
+
+def test_openflow_rounds_sell_limit_price_up_to_tick(fsm_config):
+    fsm = OpenFlowFSM(cooldown_sec=0.0, guard_enabled=True, config=fsm_config)
+
+    msg = _cmd_open(side="SELL", qty="0.0014", price="10000.005", order_type="LIMIT")
+    dec = fsm.handle(msg)
+
+    assert dec is not None
+    assert dec.op == "DEC" and dec.verb == "OPEN"
+    assert dec.pld["qty"] == "0.001"
+    assert dec.pld["price"] == "10000.01"
+    assert "price_before_rounding" not in dec.pld
+    assert "price_after_rounding" not in dec.pld
+    assert "tick_size" not in dec.pld
+    assert "rounding_mode" not in dec.pld
+    assert any(
+        isinstance(ref, str) and "mode=ceil" in ref
+        for ref in dec.data_ref
+    )
 
 
 def test_openflow_rejects_limit_notional_below_min(fsm_config):

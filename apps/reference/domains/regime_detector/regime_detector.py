@@ -363,16 +363,6 @@ class RegimeDetector:
         last_boundary_ts_ms = int(
             self._last_basis_close_boundary_ts_ms.get(symbol, 0) or 0
         )
-        if close_boundary_ts_ms > 0 and last_boundary_ts_ms > 0 and close_boundary_ts_ms <= last_boundary_ts_ms:
-            self.logger.debug(
-                "[%s] RegimeDetector: duplicate basis bar ignored boundary=%s last=%s",
-                symbol,
-                close_boundary_ts_ms,
-                last_boundary_ts_ms,
-            )
-            return
-
-        self._ticks_seen[symbol] += 1
 
         # REG-FIX-01: Clock abstraction for deterministic testing
         # Wall-clock for freshness/latency, monotonic for liveness heartbeat.
@@ -393,7 +383,7 @@ class RegimeDetector:
         data_drops: list[str] = []
         data_notes: list[str] = []
 
-        # P0-1 FIX: Check for stale features BEFORE any buffer updates
+        # P0-1 FIX: Check for stale features BEFORE duplicate guard and buffer updates
         is_stale = False
         if ttl_ms > 0 and (now_wall_ms - ts_ms) > ttl_ms:
             data_drops.append("stale_features")
@@ -416,6 +406,7 @@ class RegimeDetector:
 
         # P0-1 FIX: Do NOT update buffers with stale data - emit UNCERTAIN and return early
         if is_stale:
+            self._ticks_seen[symbol] += 1
             conf_min = Decimal(str(self.model_config.confidence_min))
             warmup = {
                 "ticks_seen": int(self._ticks_seen.get(symbol, 0)),
@@ -461,6 +452,18 @@ class RegimeDetector:
             )
             self._last_emitted_regime[symbol] = "UNCERTAIN"
             return
+
+        # Duplicate boundary guard (only for non-stale events)
+        if close_boundary_ts_ms > 0 and last_boundary_ts_ms > 0 and close_boundary_ts_ms <= last_boundary_ts_ms:
+            self.logger.debug(
+                "[%s] RegimeDetector: duplicate basis bar ignored boundary=%s last=%s",
+                symbol,
+                close_boundary_ts_ms,
+                last_boundary_ts_ms,
+            )
+            return
+
+        self._ticks_seen[symbol] += 1
 
         if close_boundary_ts_ms > 0:
             self._last_basis_close_boundary_ts_ms[symbol] = close_boundary_ts_ms

@@ -79,6 +79,9 @@ class TestNormalizeOrderRejectReason:
     norm = staticmethod(MDAMRHandler._normalize_order_reject_reason)
 
     # --- 1. reject_reason only ---
+    def test_reject_reason_normalized_field_used_first(self):
+        assert self.norm({"reject_reason_normalized": "maker_only_reject"}) == "MAKER_ONLY_REJECT"
+
     def test_reject_reason_field_used(self):
         assert self.norm({"reject_reason": "POST_ONLY_REJECT"}
                          ) == "POST_ONLY_REJECT"

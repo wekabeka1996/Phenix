@@ -72,9 +72,10 @@ def test_trade_intent_uses_payload_rid_for_downstream_trace() -> None:
     assert captured["cmd"].rid == intent_rid
     assert captured["cmd"].pld.get("rid") == intent_rid
 
-    # Downstream bus emission must carry rid in payload (since Message.rid is not stable on the bus).
+    # Downstream bus emission must preserve rid in the envelope, not mutate DEC:OPEN payload.
     assert bus.events
-    topic, args, _kwargs = bus.events[0]
+    topic, args, kwargs = bus.events[0]
     assert topic == "DEC:OPEN"
     assert args and isinstance(args[0], dict)
-    assert args[0].get("rid") == intent_rid
+    assert "rid" not in args[0]
+    assert kwargs["rid"] == intent_rid

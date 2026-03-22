@@ -303,13 +303,13 @@ registry:
   verb: ORDER_REJECTED
   owner: execution_position
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/order_rejected_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_STATE_CHANGED
   owner: execution_position
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/order_state_changed_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: ORDER_TIMEOUT

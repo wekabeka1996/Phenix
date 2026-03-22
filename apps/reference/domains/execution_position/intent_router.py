@@ -199,13 +199,12 @@ class IntentRouter:
 
                 if hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
-                    if result.rid:
-                        out_pld.setdefault("rid", result.rid)
                     self._fsm.bus.emit(
                         f"{result.op}:{result.verb}",
                         out_pld,
                         result.why,
-                        result.data_ref
+                        result.data_ref,
+                        rid=result.rid,
                     )
 
                 if result.op == "ERR":
@@ -451,13 +450,12 @@ class IntentRouter:
 
                 if hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
-                    if result.rid:
-                        out_pld.setdefault("rid", result.rid)
                     self._fsm.bus.emit(
                         f"{result.op}:{result.verb}",
                         out_pld,
                         result.why,
                         result.data_ref,
+                        rid=result.rid,
                     )
 
                 if result.op == "ERR":

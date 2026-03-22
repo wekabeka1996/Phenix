@@ -101,9 +101,19 @@ class TestGtxExpiredMakerOnlyReject:
         assert call_args[0][0] == "EVT:ORDER_REJECTED"
         payload = call_args[0][1]
         assert payload["reason"] == "MAKER_ONLY_REJECT"
+        assert payload["reject_reason"] == "MAKER_ONLY_REJECT"
+        assert payload["reject_reason_normalized"] == "MAKER_ONLY_REJECT"
+        assert payload["reject_reason_source"] == "reason"
         assert payload["fallback"] == "NONE"
         assert payload["time_in_force"] == "GTX"
         assert payload["status"] == "EXPIRED"
+        assert payload["terminal_non_fill"] is True
+        assert payload["terminal_state_kind"] == "REJECTED"
+        assert payload["identity_quality"] == "order_identity_exact"
+        assert payload["order_id"] == "12345678"
+        assert payload["client_order_id"] == "ENTRY_BTC_123"
+        assert payload["event_ts_ms"] == payload["ts_ms"]
+        assert payload["compatibility_aliases_retained"] is True
 
 
 # ============================================================================

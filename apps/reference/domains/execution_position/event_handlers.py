@@ -15,6 +15,10 @@ from apps.reference.contracts.runtime_regime_layers import (
     normalize_structural_regime_label,
     should_apply_global_execution_regime,
 )
+from apps.reference.domains.execution_position.truth_hardening import (
+    build_position_signature,
+    get_execution_truth_hardening,
+)
 from apps.reference.utils.accessors import aget, dget
 
 if TYPE_CHECKING:
@@ -182,6 +186,17 @@ class EPEventHandlers:
             epsilon = 1e-10
             all_syms = set(self._fsm._prev_position_amts.keys()
                            ) | set(current_amts.keys())
+            hardening = get_execution_truth_hardening(self._fsm)
+            if hardening is not None:
+                portfolio_payload = self._fsm._latest_portfolio_state or {}
+                for sym in all_syms:
+                    hardening.observe_portfolio_state(
+                        symbol=sym,
+                        position_signature=build_position_signature(
+                            portfolio_payload,
+                            sym,
+                        ),
+                    )
             for sym in all_syms:
                 prev_amt = float(self._fsm._prev_position_amts.get(sym, 0.0))
                 now_amt = float(current_amts.get(sym, 0.0))

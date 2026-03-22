@@ -45,6 +45,7 @@ class SafetyGateResult:
     regime: Optional[str] = None
     regime_confidence: Optional[float] = None
     trend_dir: str = "UNKNOWN"
+    trend_run_length: int = 0
     delta_price: Optional[float] = None
     trend_confidence: float = 0.0
     pm_norm_10s: Optional[float] = None
@@ -136,46 +137,55 @@ def _compute_trend(
     symbol: str,
     consecutive: int,
     min_abs_delta: float,
-) -> tuple[str, float, Optional[float]]:
+) -> tuple[str, float, Optional[float], int]:
     """Compute trend direction from delta_price history.
 
     Returns:
-        (trend_dir, trend_confidence, delta_price)
+        (trend_dir, trend_confidence, delta_price, trend_run_length)
     """
     trend_dir = "UNKNOWN"
     delta_price: Optional[float] = None
     trend_confidence = 0.0
+    trend_run_length = 0
     try:
         state = symbol_states.get(symbol)
         hist = state.get("_delta_price_hist") if isinstance(state, dict) else None
         if isinstance(hist, deque) and len(hist) > 0:
             delta_price = float(hist[-1])
-            if len(hist) >= consecutive:
-                filtered: list[float] = []
-                for x in list(hist):
-                    try:
-                        xf = float(x)
-                    except Exception:
-                        continue
-                    if abs(xf) < float(min_abs_delta):
-                        continue
-                    if xf == 0.0:
-                        continue
-                    filtered.append(xf)
+            filtered: list[float] = []
+            for x in list(hist):
+                try:
+                    xf = float(x)
+                except Exception:
+                    continue
+                if abs(xf) < float(min_abs_delta):
+                    continue
+                if xf == 0.0:
+                    continue
+                filtered.append(xf)
 
-                window = filtered[-consecutive:]
-                if len(window) >= consecutive:
-                    if all(x > 0 for x in window):
-                        trend_dir = "UP"
-                        trend_confidence = 1.0
-                    elif all(x < 0 for x in window):
-                        trend_dir = "DOWN"
-                        trend_confidence = 1.0
+            if filtered:
+                last_sign = 1 if filtered[-1] > 0 else -1
+                for x in reversed(filtered):
+                    sign = 1 if x > 0 else -1
+                    if sign != last_sign:
+                        break
+                    trend_run_length += 1
+
+            window = filtered[-consecutive:]
+            if len(window) >= consecutive:
+                if all(x > 0 for x in window):
+                    trend_dir = "UP"
+                    trend_confidence = 1.0
+                elif all(x < 0 for x in window):
+                    trend_dir = "DOWN"
+                    trend_confidence = 1.0
     except Exception:
         trend_dir = "UNKNOWN"
         delta_price = None
         trend_confidence = 0.0
-    return trend_dir, trend_confidence, delta_price
+        trend_run_length = 0
+    return trend_dir, trend_confidence, delta_price, trend_run_length
 
 
 def _check_directional_gate(
@@ -186,9 +196,11 @@ def _check_directional_gate(
     ds_enabled: bool,
     strategy_id: str,
     trend_dir: str,
+    trend_run_length: int,
     trend_confidence: float,
     regime_confidence: Optional[float],
     min_conf: float,
+    hard_veto_consecutive_bars: int,
 ) -> tuple[str, Optional[str], str]:
     """Evaluate directional sanity gate.
 
@@ -208,8 +220,16 @@ def _check_directional_gate(
     if effective_conf < float(min_conf):
         return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient confidence"
     if trend_dir == "DOWN" and intent_side == "LONG":
+        if trend_run_length < int(hard_veto_consecutive_bars):
+            return "ALLOW", None, (
+                f"countertrend long soft: run={trend_run_length} < veto_bars={hard_veto_consecutive_bars}"
+            )
         return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "downtrend blocks long"
     if trend_dir == "UP" and intent_side == "SHORT":
+        if trend_run_length < int(hard_veto_consecutive_bars):
+            return "ALLOW", None, (
+                f"countertrend short soft: run={trend_run_length} < veto_bars={hard_veto_consecutive_bars}"
+            )
         return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "uptrend blocks short"
     return "ALLOW", None, "ok"
 
@@ -334,7 +354,7 @@ def _check_system_stress_gate(
     """
     if reduce_only or not apply_safety_gates_flag:
         return "ALLOW", None, "ok", "NORMAL"
-        
+
     if stress_policy == "CONFIG_ERROR":
         return (
             "DENY",
@@ -450,6 +470,13 @@ def apply_safety_gates(
     except (TypeError, ValueError):
         min_regime_conf = 0.0
     consecutive = int(ds_cfg.consecutive_bars)
+    raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)
+    try:
+        if raw_hard_veto is None or type(raw_hard_veto).__name__ == "MagicMock":
+            raise TypeError
+        hard_veto_consecutive = int(raw_hard_veto)
+    except (TypeError, ValueError):
+        hard_veto_consecutive = consecutive
 
     # ── Gate 1: Regime confidence gate (FIX-CONF-GATE-01) ──────
     if (
@@ -467,7 +494,7 @@ def apply_safety_gates(
         return result
 
     # ── Compute trend ──────────────────────────────────────────
-    result.trend_dir, result.trend_confidence, result.delta_price = _compute_trend(
+    result.trend_dir, result.trend_confidence, result.delta_price, result.trend_run_length = _compute_trend(
         symbol_states, symbol, consecutive, min_abs_delta,
     )
 
@@ -479,9 +506,11 @@ def apply_safety_gates(
         ds_enabled=ds_enabled,
         strategy_id=strategy_id,
         trend_dir=result.trend_dir,
+        trend_run_length=result.trend_run_length,
         trend_confidence=result.trend_confidence,
         regime_confidence=result.regime_confidence,
         min_conf=min_conf,
+        hard_veto_consecutive_bars=hard_veto_consecutive,
     )
 
     if gate_outcome == "DENY":

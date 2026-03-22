@@ -54,6 +54,38 @@ class OrderIndex:
         self._by_rid: Dict[str, OrderRef] = {}
         self._by_client: Dict[str, OrderRef] = {}
         self._by_exchange: Dict[str, OrderRef] = {}
+        self._shadow_journal: Optional[Any] = None
+
+    def attach_shadow_journal(self, journal: Any) -> None:
+        self._shadow_journal = journal
+
+    def _record_shadow_transition(
+        self,
+        *,
+        event_name: str,
+        rid: Optional[str],
+        payload: Dict[str, Any],
+        before: Dict[str, Any],
+        after: Dict[str, Any],
+        notes: Optional[list[str]] = None,
+    ) -> None:
+        if self._shadow_journal is None:
+            return
+        try:
+            self._shadow_journal.record_transition(
+                event_name=event_name,
+                source_component="execution_position.order_index",
+                source_path="execution:order_index",
+                event_origin_type="execution",
+                truth_owner="OrderIndex",
+                payload=payload,
+                rid=rid,
+                before=before,
+                after=after,
+                notes=notes,
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _is_entry_ref(ref: OrderRef) -> bool:
@@ -92,13 +124,37 @@ class OrderIndex:
             OrderRef instance
         """
         with self._lock:
+            before = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
             ref = self._by_rid.get(rid) or OrderRef(rid=rid, idempotent_key=idempotent_key)
             ref.clientOrderId = clientOrderId or ref.clientOrderId
             ref.symbol, ref.side, ref.order_type = symbol, side, order_type
             self._by_rid[rid] = ref
             if ref.clientOrderId:
                 self._by_client[ref.clientOrderId] = ref
-            return ref
+            after = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+                "rid_ref": ref,
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:UPSERT_OPEN",
+            rid=rid,
+            payload={
+                "symbol": symbol,
+                "side": side,
+                "order_type": order_type,
+                "clientOrderId": clientOrderId,
+                "idempotent_key": idempotent_key,
+            },
+            before=before,
+            after=after,
+        )
+        return ref
 
     def attach_exchange_id(
         self, *, clientOrderId: Optional[str], exchangeOrderId: Optional[str]
@@ -114,11 +170,33 @@ class OrderIndex:
             OrderRef if found and updated, None otherwise
         """
         with self._lock:
+            before = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
             ref = (clientOrderId and self._by_client.get(clientOrderId)) or None
             if ref and exchangeOrderId:
                 ref.exchangeOrderId = exchangeOrderId
                 self._by_exchange[exchangeOrderId] = ref
-            return ref
+            after = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+                "rid_ref": ref,
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:ATTACH_EXCHANGE_ID",
+            rid=str(ref.rid) if ref else None,
+            payload={
+                "clientOrderId": clientOrderId,
+                "orderId": exchangeOrderId,
+                "symbol": ref.symbol if ref else None,
+            },
+            before=before,
+            after=after,
+        )
+        return ref
 
     def get(
         self, *, rid: str = None, clientOrderId: str = None, exchangeOrderId: str = None
@@ -151,7 +229,27 @@ class OrderIndex:
             ref: OrderRef to mark as terminal
         """
         with self._lock:
+            before = {
+                "rid_ref": ref,
+                "size_by_rid": len(self._by_rid),
+            }
             ref.terminal = True
+            after = {
+                "rid_ref": ref,
+                "size_by_rid": len(self._by_rid),
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:MARK_TERMINAL",
+            rid=ref.rid,
+            payload={
+                "symbol": ref.symbol,
+                "clientOrderId": ref.clientOrderId,
+                "orderId": ref.exchangeOrderId,
+                "side": ref.side,
+            },
+            before=before,
+            after=after,
+        )
 
     def has_in_flight_entry(self, symbol: str) -> bool:
         """Return True if there's a non-terminal ENTRY order for this symbol.
@@ -204,6 +302,11 @@ class OrderIndex:
 
         with self._lock:
             now = time()
+            before = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
             # Check: Is there already an in-flight ENTRY for this symbol?
             for ref in self._by_rid.values():
                 if ref.terminal:
@@ -218,6 +321,18 @@ class OrderIndex:
                     # Guard is best-effort; never block indefinitely due to missing terminal updates.
                     continue
 
+                self._record_shadow_transition(
+                    event_name="ORDER_INDEX:RESERVE_ENTRY",
+                    rid=rid,
+                    payload={"symbol": symbol, "reason": "reservation_denied_existing_entry"},
+                    before=before,
+                    after={
+                        "size_by_rid": len(self._by_rid),
+                        "size_by_client": len(self._by_client),
+                        "size_by_exchange": len(self._by_exchange),
+                    },
+                    notes=["reservation_denied"],
+                )
                 return False  # Deny: another ENTRY in-flight
 
             # Reserve: Create ENTRY_INTENT placeholder immediately
@@ -229,7 +344,20 @@ class OrderIndex:
                 order_type="ENTRY_INTENT",
             )
             self._by_rid[rid] = ref
-            return True  # Grant: reservation successful
+            after = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+                "rid_ref": ref,
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:RESERVE_ENTRY",
+            rid=rid,
+            payload={"symbol": symbol, "order_type": "ENTRY_INTENT"},
+            before=before,
+            after=after,
+        )
+        return True  # Grant: reservation successful
 
     def cancel_reservation(self, rid: str) -> bool:
         """
@@ -249,12 +377,32 @@ class OrderIndex:
         rid = str(rid)
 
         with self._lock:
+            before = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
             ref = self._by_rid.get(rid)
             if ref and str(ref.order_type or "").upper() == "ENTRY_INTENT" and not ref.clientOrderId:
                 # Only cancel if it's an uncommitted reservation (no clientOrderId yet)
                 self._by_rid.pop(rid, None)
-                return True
-            return False
+                cancelled = True
+            else:
+                cancelled = False
+            after = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:CANCEL_RESERVATION",
+            rid=rid,
+            payload={"rid": rid},
+            before=before,
+            after=after,
+            notes=["reservation_cancelled"] if cancelled else ["reservation_cancel_noop"],
+        )
+        return cancelled
 
     def expire(self) -> int:
         """

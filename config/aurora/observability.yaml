@@ -10,90 +10,127 @@
 config_version: "1.0.0"
 
 logging:
-  # 
+  #
   # Global Defaults
-  # 
+  #
   default_level: INFO      # DEBUG | INFO | WARNING | ERROR
   default_format: text     # text | json
-  
-  # 
+
+  #
   # Rotation Settings (applied to all file handlers unless overridden)
-  # 
+  #
   rotation:
     max_bytes: 10485760    # 10 MB
-    backup_count: 5
-  
-  # 
+    backup_count: 50
+
+  #
   # Console Sink
-  # 
+  #
   console:
     enabled: true
     level: INFO
     format: text
     colorize: false        # Future: ANSI color support
-  
-  # 
+
+  #
   # Core File Sink (aurora_core.log)
-  # 
+  #
   core:
     enabled: true
     path: logs/aurora_core.log
     level: DEBUG           # Log everything to file
     format: text
     max_bytes: 10485760    # 10 MB
-    backup_count: 5
-  
-  # 
+    backup_count: 50
+
+  #
   # Domain-Specific Sinks
   # Each domain gets its own log file for easier debugging.
-  # 
+  #
   domains:
     feature_engineering:
       enabled: true
       level: DEBUG
       max_bytes: 5242880   # 5 MB
-      backup_count: 3
-    
+      backup_count: 30
+
     risk_management:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 30
+
     decision_making:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 30
+
     execution_position:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 30
+
     regime_detector:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-    
+      backup_count: 30
+
     mean_reversion:
       enabled: true
       level: DEBUG
       max_bytes: 5242880
-      backup_count: 3
-  
-  # 
+      backup_count: 30
+
+  #
   # Structured Event Chain (JSON format for forensics)
-  # 
+  #
   event_chain:
     enabled: true
     path: logs/event_chain.log
     level: INFO
     format: json
     max_bytes: 10485760
-    backup_count: 5
+    backup_count: 50
+
+shadow_journal:
+  enabled: true
+  path: logs/shadow_critical_event_journal_v1.jsonl
+  schema_version: "1.0.0"
+  instrumentation_version: "1.0.0"
+  critical_events:
+    - EVT:TRADE_INTENT_PROPOSED
+    - CMD:OPEN
+    - DEC:OPEN
+    - EVT:ORDER_ACK
+    - EVT:ORDER_REJECTED
+    - EVT:ORDER_STATE_CHANGED
+    - EVT:ORDER_PLACED
+    - EVT:TRADE_EXECUTED
+    - DEC:BATCH
+    - CMD:CLOSE
+    - DEC:CLOSE
+    - EVT:PORTFOLIO_STATE_UPDATED
+    - EVT:EXPOSURE_SUMMARY_UPDATED
+    - RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD
+    - RESTORE:EXECUTION_POSITION_HYDRATE
+    - ORDER_INDEX:RESERVE_ENTRY
+    - ORDER_INDEX:UPSERT_OPEN
+    - ORDER_INDEX:ATTACH_EXCHANGE_ID
+    - ORDER_INDEX:MARK_TERMINAL
+    - ORDER_INDEX:CANCEL_RESERVATION
+    - HARDENING:TRADE_EXECUTED_SUPPRESSED
+    - HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED
+    - HARDENING:TRADE_EXECUTED_WARM_STATE_HIT
+    - HARDENING:TRADE_EXECUTED_WARM_STATE_MISS
+    - HARDENING:CMD_CLOSE_SUPPRESSED
+    - HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED
+    - RESTORE:EXECUTION_TRUTH_HARDENING_RESET
+    - RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED
+    - RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY
+    - RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED
 
 # =============================================================================
 # FUTURE: Metrics & Tracing (placeholders)
@@ -101,7 +138,7 @@ logging:
 # metrics:
 #   enabled: false
 #   prometheus_port: 9090
-#   
+#
 # tracing:
 #   enabled: false
 #   otlp_endpoint: http://localhost:4317

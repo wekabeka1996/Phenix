@@ -285,7 +285,7 @@ class IntentBuilder:
             "symbol": symbol, "ts": trace_ts_ms, "intent_side": intent_side,
             "signal_score": sg.signal_score, "regime": sg.regime,
             "regime_confidence": sg.regime_confidence,
-            "trend_dir": sg.trend_dir, "delta_price": sg.delta_price,
+            "trend_dir": sg.trend_dir, "trend_run_length": sg.trend_run_length, "delta_price": sg.delta_price,
             "pm_norm_10s": sg.pm_norm_10s, "pm_norm_60s": sg.pm_norm_60s,
             "pm_norm_300s": sg.pm_norm_300s,
             "vol_pct_10s": sg.vol_pct_10s, "vol_pct_60s": sg.vol_pct_60s,
