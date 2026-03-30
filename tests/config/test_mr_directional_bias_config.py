@@ -99,19 +99,22 @@ def test_clamp_min_exceeds_clamp_max_rejected():
 
 def test_funding_shift_magnitude_negative_rejected():
     with pytest.raises(ValidationError):
-        MRDirectionalBiasConfig(**_valid_bias_kwargs(funding_shift_magnitude=-0.01))
+        MRDirectionalBiasConfig(
+            **_valid_bias_kwargs(funding_shift_magnitude=-0.01))
 
 
 def test_funding_shift_magnitude_too_large_rejected():
     with pytest.raises(ValidationError):
-        MRDirectionalBiasConfig(**_valid_bias_kwargs(funding_shift_magnitude=0.3))
+        MRDirectionalBiasConfig(
+            **_valid_bias_kwargs(funding_shift_magnitude=0.3))
 
 
 # ── 6. funding_normalization_scale > 0 ───────────────────────────────────────
 
 def test_funding_normalization_zero_rejected():
     with pytest.raises(ValidationError):
-        MRDirectionalBiasConfig(**_valid_bias_kwargs(funding_normalization_scale=0.0))
+        MRDirectionalBiasConfig(
+            **_valid_bias_kwargs(funding_normalization_scale=0.0))
 
 
 # ── 7. funding_deadband bounds ───────────────────────────────────────────────
@@ -146,7 +149,8 @@ def test_yaml_wires_directional_bias():
         assets=dict(DOGEUSDT=dict(
             enabled=True, position_mode="STRICT", allowed_regimes=["FLAT_LOW"],
         )),
-        regime_sizing=dict(FLAT_LOW=dict(sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
+        regime_sizing=dict(FLAT_LOW=dict(
+            sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
         directional_bias=_valid_bias_kwargs(),
     )
     cfg = MeanReversion1mStrategyConfig(**data)
@@ -173,7 +177,8 @@ def test_yaml_without_directional_bias():
         assets=dict(DOGEUSDT=dict(
             enabled=True, position_mode="STRICT", allowed_regimes=["FLAT_LOW"],
         )),
-        regime_sizing=dict(FLAT_LOW=dict(sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
+        regime_sizing=dict(FLAT_LOW=dict(
+            sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
     )
     cfg = MeanReversion1mStrategyConfig(**data)
     assert cfg.directional_bias is None
