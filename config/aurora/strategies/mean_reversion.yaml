@@ -275,7 +275,7 @@ mean_reversion:
     absorption_wick_ratio_min: 0.4          # Wick >= 40% of range = absorption
     absorption_rebound_threshold: 0.0005    # 0.05% favorable move = rebound
     readiness_min_bars: 5                   # Min bars before veto engages
-    missing_policy: "block"                 # "block" = fail-closed on missing TFI
+    missing_policy: "block"                 # Only "block" accepted (fail-closed); "skip" removed in R1 hardening
 
   #
   # Vector 2: Directional Bias Threshold Modulation

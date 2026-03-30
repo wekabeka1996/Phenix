@@ -96,8 +96,8 @@ def test_cmd_process_strategy_emits_quadratic_signal(monkeypatch):
     assert psi["final_exposure"] == pytest.approx(0.384, abs=1e-3)
 
 
-def test_cmd_process_strategy_missing_pillar_sum_blocks_fail_closed():
-    """Current architecture must fail-closed when pillar_sum is absent (no signal emission)."""
+def test_cmd_process_strategy_missing_pillar_sum_emits_anomaly_deferred():
+    """Missing pillar_sum is an aurora kernel anomaly: no signal, canonical INTENT_DEFERRED."""
     handler, emitted = _build_handler()
 
     handler.on_process_strategy(
@@ -130,9 +130,13 @@ def test_cmd_process_strategy_missing_pillar_sum_blocks_fail_closed():
     )
 
     produced = [p for name, p in emitted if name == "EVT:STRATEGY_SIGNAL_PRODUCED"]
+    deferred = [p for name, p in emitted if name == "EVT:INTENT_DEFERRED"]
     blocked = [p for name, p in emitted if name == "EVT:STRATEGY_DECISION_BLOCKED"]
 
     assert not produced, "Signal must not be emitted when pillar_sum is missing"
-    assert blocked, "Fail-closed path must emit EVT:STRATEGY_DECISION_BLOCKED"
-    assert blocked[-1]["reason_code"] == "AURORA_KERNEL_DEFERRED"
-    assert blocked[-1]["details"]["defer_reason"] == "PILLAR_WARMUP"
+    assert not blocked, "Aurora kernel anomaly defer should not be relabeled as blocked"
+    assert deferred, "Fail-closed aurora kernel anomaly must emit EVT:INTENT_DEFERRED"
+    assert deferred[-1]["reason"] == "NRR-DATA-NOT-READY"
+    assert deferred[-1]["reason_code"] == "NRR-DATA-NOT-READY"
+    assert deferred[-1]["raw_reason"] == "PILLAR_WARMUP"
+    assert deferred[-1]["details"]["decision_trace"]["defer_reason"] == "PILLAR_WARMUP"

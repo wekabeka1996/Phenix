@@ -81,7 +81,7 @@ def _build_handler(*, emit_fn, scoring_result: ScoringResult) -> AuroraHandler:
 
 
 def test_quadratic_decision_trace_logs_on_deferred_path(caplog) -> None:
-    blocked: list[dict] = []
+    emitted: list[tuple[str, dict]] = []
     scoring_result = ScoringResult(
         score=decimal.Decimal("0"),
         side="",
@@ -108,8 +108,10 @@ def test_quadratic_decision_trace_logs_on_deferred_path(caplog) -> None:
         defer_reason="PILLAR_WARMUP",
         shield_multiplier=decimal.Decimal("0"),
     )
-    handler = _build_handler(emit_fn=lambda *_args, **_kwargs: None, scoring_result=scoring_result)
-    handler._emit_strategy_blocked = lambda **kwargs: blocked.append(kwargs)
+    handler = _build_handler(
+        emit_fn=lambda name, payload: emitted.append((name, payload)),
+        scoring_result=scoring_result,
+    )
 
     with caplog.at_level(logging.DEBUG, logger="aurora_handler.aurora"):
         handler._process_decision(
@@ -131,9 +133,13 @@ def test_quadratic_decision_trace_logs_on_deferred_path(caplog) -> None:
         )
 
     assert "QUADRATIC_DECISION_TRACE" in caplog.text
-    assert blocked[0]["reason_code"] == "AURORA_KERNEL_DEFERRED"
-    assert blocked[0]["details"]["decision_trace"]["defer_reason"] == "PILLAR_WARMUP"
-    assert blocked[0]["details"]["decision_trace"]["raw_sum"] == 0.2
+    blocked = [payload for name, payload in emitted if name == "EVT:STRATEGY_DECISION_BLOCKED"]
+    deferred = [payload for name, payload in emitted if name == "EVT:INTENT_DEFERRED"]
+    assert not blocked
+    assert deferred[0]["reason_code"] == "NRR-DATA-NOT-READY"
+    assert deferred[0]["raw_reason"] == "PILLAR_WARMUP"
+    assert deferred[0]["details"]["decision_trace"]["defer_reason"] == "PILLAR_WARMUP"
+    assert deferred[0]["details"]["decision_trace"]["raw_sum"] == 0.2
 
 
 def test_execution_gate_block_includes_compact_decision_trace() -> None:

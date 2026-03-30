@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
 from apps.reference.domains.decision_making.decision_truth_artifacts import (
+    canonicalize_intent_deferred_reason,
     write_strategy_decision_blocked,
 )
 from apps.reference.domains.decision_making.intent_emitter import IntentEmitter
@@ -95,6 +96,24 @@ def test_intent_emitter_writes_intent_deferred_truth(monkeypatch) -> None:
     assert rows, "Expected WAL append for deferred truth"
     assert rows[0]["verb"] == "INTENT_DEFERRED"
     assert rows[0]["pld"]["reason_code"] == "NRR-DATA-NOT-READY"
+
+
+def test_canonicalize_intent_deferred_reason_accepts_aurora_kernel_fail_closed_reasons() -> None:
+    assert canonicalize_intent_deferred_reason("PILLAR_WARMUP") == (
+        "NRR-DATA-NOT-READY",
+        "NRR-DATA-NOT-READY",
+        "PILLAR_WARMUP",
+    )
+    assert canonicalize_intent_deferred_reason("LINEAR_SCORE_NAN_INF") == (
+        "NRR-DATA-NOT-READY",
+        "NRR-DATA-NOT-READY",
+        "LINEAR_SCORE_NAN_INF",
+    )
+    assert canonicalize_intent_deferred_reason("MISSING_REGIME_THRESHOLD:bull") == (
+        "NRR-DATA-NOT-READY",
+        "NRR-DATA-NOT-READY",
+        "MISSING_REGIME_THRESHOLD:bull",
+    )
 
 
 def test_aurora_handler_blocked_helper_emits_blocked_truth(monkeypatch) -> None:

@@ -345,6 +345,30 @@
       "type": "object",
       "description": "FE emission diagnostics snapshot: counters, warmup state, anchor intake.",
       "additionalProperties": true
+    },
+    "price_motion": {
+      "description": "MR-V1-WIRING: Multi-window returns/volatility proxy for microstructure veto price-reaction logic.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ret_10s": { "type": ["number", "null"] },
+            "ret_60s": { "type": ["number", "null"] },
+            "ret_300s": { "type": ["number", "null"] },
+            "vol_pct_10s": { "type": ["number", "null"], "minimum": 0 },
+            "vol_pct_60s": { "type": ["number", "null"], "minimum": 0 },
+            "vol_pct_300s": { "type": ["number", "null"], "minimum": 0 },
+            "pm_norm_10s": { "type": ["number", "null"] },
+            "pm_norm_60s": { "type": ["number", "null"] },
+            "pm_norm_300s": { "type": ["number", "null"] }
+          },
+          "required": ["ret_10s", "ret_60s", "ret_300s"],
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

@@ -103,11 +103,17 @@ def test_absorption_rebound_exceeds_continuation_rejected():
         ))
 
 
-# ── Test: missing_policy only accepts valid literals ─────────────────────────
+# ── Test: missing_policy only accepts "block" (skip removed in R1) ────────────
 
 def test_missing_policy_invalid_value_rejected():
     with pytest.raises(ValidationError):
         MRMicrostructureVetoConfig(**_valid_veto_kwargs(missing_policy="ignore"))
+
+
+def test_missing_policy_skip_rejected():
+    """\"skip\" was removed in R1 hardening — no fail-open path allowed."""
+    with pytest.raises(ValidationError):
+        MRMicrostructureVetoConfig(**_valid_veto_kwargs(missing_policy="skip"))
 
 
 # ── Test: readiness_min_bars >= 1 ────────────────────────────────────────────

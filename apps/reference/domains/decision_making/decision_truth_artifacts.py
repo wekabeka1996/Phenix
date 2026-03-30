@@ -39,6 +39,10 @@ def canonicalize_intent_deferred_reason(raw_reason: str) -> tuple[str, str, Opti
         NormalizedRejectReasons.DATA_NOT_READY: ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
         "RISK_SCORE_MISSING": ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
         "RISK_SCORE_INVALID": ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
+        # Aurora quadratic kernel anomaly/fail-closed reasons.
+        "PILLAR_WARMUP": ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
+        "LINEAR_SCORE_INVALID": ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
+        "LINEAR_SCORE_NAN_INF": ("NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY"),
         "NRR-PORTFOLIO-UNKNOWN": ("NRR-PORTFOLIO-UNKNOWN", "NRR-PORTFOLIO-UNKNOWN"),
         "NRR-PORTFOLIO-STALE": ("NRR-PORTFOLIO-STALE", "NRR-PORTFOLIO-STALE"),
         "NRR-RISK-STALE": ("NRR-RISK-STALE", "NRR-RISK-STALE"),
@@ -59,6 +63,9 @@ def canonicalize_intent_deferred_reason(raw_reason: str) -> tuple[str, str, Opti
         canonical_reason, reason_code = explicit_map[raw_upper]
         raw_reason_value = raw_clean if raw_clean != canonical_reason else None
         return canonical_reason, reason_code, raw_reason_value
+
+    if raw_upper.startswith("MISSING_REGIME_THRESHOLD:"):
+        return "NRR-DATA-NOT-READY", "NRR-DATA-NOT-READY", raw_clean
 
     normalized = NormalizedRejectReasons.normalize(raw_clean)
     if normalized == NormalizedRejectReasons.DATA_NOT_READY:

@@ -2,7 +2,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "$id": "intent_deferred_v1.json",
     "title": "EVT:INTENT_DEFERRED",
-    "description": "Intent deferral event. During migration, this schema is additive: it accepts both legacy payloads (v0) and v1 payloads. Reliable retry/idempotency is guaranteed only for v1 payloads that include retry_key + original_event.",
+    "description": "Intent deferral event. During migration, this schema is additive: it accepts both legacy payloads (v0) and v1 payloads. Reliable retry/idempotency is guaranteed only for v1 payloads that include retry_key + original_event. On the Aurora quadratic path this event is currently reserved for anomaly/fail-closed defer outcomes after the kernel is reached; ordinary live no-trade states are expected to use STRATEGY_DECISION_BLOCKED instead.",
     "oneOf": [
         { "$ref": "#/$defs/legacy_v0" },
         { "$ref": "#/$defs/v1" }

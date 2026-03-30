@@ -254,7 +254,12 @@ Authoritative sources traced for this passport:
   `raw_exposure = sign(s_clamped) * s_clamped^2`
   `final_score = raw_exposure * shield_multiplier`
 - Actual Runtime Semantics:
-  - Missing `pillar_sum` without explicit `linear_score` defers with `PILLAR_WARMUP`.
+  - Missing `pillar_sum` without explicit `linear_score` enters the aurora kernel's
+    anomaly/fail-closed defer path (`PILLAR_WARMUP` raw reason, canonical
+    `INTENT_DEFERRED` reason `NRR-DATA-NOT-READY`).
+  - This is not the dominant live Aurora "cannot trade now" semantic. Normal live
+    no-trade outcomes are expected to surface as `STRATEGY_DECISION_BLOCKED` through
+    explicit policy gates outside the kernel.
   - Threshold factor, side bias, and hysteresis semantics are then applied to the squared score.
 - Status: ACTIVE
 

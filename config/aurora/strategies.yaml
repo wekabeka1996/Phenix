@@ -37,8 +37,8 @@ assignments:
   # New symbols  added with data 2023-06..2024-03
   #BNBUSDT:
 
-  #DOGEUSDT:
-
+  DOGEUSDT:
+      - mean_reversion
   1000PEPEUSDT:
     - llm_microstructure
 

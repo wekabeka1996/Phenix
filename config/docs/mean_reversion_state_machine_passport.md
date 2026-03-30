@@ -36,11 +36,12 @@ Owner surface:
 - `MeanReversionHandler._parse_config()` бере фінальний universe як `assigned ∩ assets.enabled`
 
 Поточний live assignment set:
-- порожній
+- `DOGEUSDT → mean_reversion` (strategies.yaml line 41)
 
 Поточний live наслідок цього стану:
-- `ConfigLoader` не live-loadить `config.strategies.mean_reversion`
-- `StrategyRuntime` не стартує `MeanReversionPlugin`
+- `ConfigLoader` live-loadить `config.strategies.mean_reversion`
+- `StrategyRuntime` стартує `MeanReversionPlugin` для DOGEUSDT
+- `MeanReversionHandler` активний для DOGEUSDT (assigned ∩ assets.DOGEUSDT.enabled=true)
 
 Fail-closed інваріанти, якщо `mean_reversion` буде reassigned:
 - якщо `config.strategies.mean_reversion` відсутній, handler падає
@@ -76,7 +77,7 @@ Fail-closed інваріанти, якщо `mean_reversion` буде reassigned:
 
 ## 4. Реальний trigger path
 
-Описаний нижче trigger path є code/runtime contract path після reassignment. У поточному verified live config він не активний, бо `mean_reversion` handler не стартує без assignment.
+Описаний нижче trigger path є code/runtime contract path. У поточному verified live config він активний для DOGEUSDT через assignment у strategies.yaml.
 
 Поточний primary entrypoint для decision path:
 - тільки `CMD:PROCESS_STRATEGY`
@@ -89,9 +90,14 @@ Fail-closed інваріанти, якщо `mean_reversion` буде reassigned:
 - пропускає symbol, який не входить у `enabled_symbols`
 - будує `Bar` з payload
 - кешує `features` для volatility/liquidity propagation
+- кешує `price_motion` з top-level CMD payload (dedicated per-symbol cache, NOT inside features)
 - встановлює regime з payload або з внутрішнього кешу
-- викликає `strategy.on_bar(symbol, bar, ts_ms)`
-- якщо signal actionable і liquidity gate проходить, емить `EVT:STRATEGY_SIGNAL_PRODUCED`
+- застосовує Vector 2 Directional Bias (якщо enabled)
+- викликає `strategy.on_bar(symbol, bar, ts_ms)` (з `finally` для R3 threshold clearing)
+- якщо signal actionable:
+  - застосовує Vector 1 Microstructure Veto (якщо enabled)
+  - перевіряє liquidity gate
+  - якщо обидва пройдені, емить `EVT:STRATEGY_SIGNAL_PRODUCED`
 
 Отже, стара tick-driven ментальна модель більше не є SSOT. У файлах ще є історичні сліди старого шляху, але live contract зараз bar-driven через `CMD:PROCESS_STRATEGY`.
 
@@ -190,8 +196,10 @@ Objective Engine теж живе в handler, уже після формуван�
 - `execution.entry_order_type=MARKET`
 - `safety_gates.enabled=false`
 - `objective.enabled=true`
-- live assignments для `mean_reversion` відсутні
-- `DOGEUSDT.strategy.min_bb_width=0.005` лишається в dormant profile на диску
+- live assignment: `DOGEUSDT → mean_reversion` (strategies.yaml)
+- `DOGEUSDT.strategy.min_bb_width=0.005` активний у live profile
+- `microstructure_veto.enabled=false` (V1 dormant)
+- `directional_bias.enabled=false` (V2 dormant)
 
 Для incident context це важливо:
 - strategy-level вхід у squeeze breakout лишається «правильним за кодом», якщо `bb_width > 0.005`, але цей path зараз не live-active
@@ -202,6 +210,10 @@ Objective Engine теж живе в handler, уже після формуван�
 - Імена та comments у codebase частково застарілі: `MeanReversion1mStrategy`, `Mean Reversion 3m strategy`, старі Phase B/T2B описи. Live TF SSOT зараз 300s.
 - Старий integration файл `tests/integration/test_mean_reversion_handler_event_contract_v1.py` позначений `skip` і досі прив'язаний до старого tick-based path. Це не слід використовувати як джерело істини.
 - Старий паспорт переоцінював “strategy-owned” зони і недостатньо чітко відділяв їх від execution FSM layer.
+- **STALE (corrected 2026-03-31):** Previous passport stated “live assignments для mean_reversion відсутні”. This was stale — `DOGEUSDT` IS assigned to `mean_reversion` in `strategies.yaml` line 41.
+- **STALE (corrected 2026-03-31):** `MRDirectionalBiasConfig` Pydantic docstring (config_models.py:600-601) had inverted semantics: stated “positive funding → SHORT stricter, LONG easier” which is backwards. Code formula is correct (positive funding → LONG harder, SHORT easier). Docstring corrected.
+- **STALE (corrected 2026-03-30):** V1 `missing_policy` previously allowed `”skip”`. R1 hardening removed it; only `”block”` accepted (Literal constraint).
+- **STALE (corrected 2026-03-30):** V2 handler comments had inverse trigger semantics. R2 fixed all comments/docstrings to match code formula.
 
 ## 12. Підсумок
 
@@ -215,6 +227,46 @@ Objective Engine теж живе в handler, уже після формуван�
 - `MeanReversion1mStrategy` = math/state
 - `MeanReversionHandler` = activation + contract gates + enrichment + emission
 - `ExecPosFSM/ManageFlowFSM` = execution/state reconciliation, де й живуть incident-класи типу `ORDER_UPDATED` desync
+
+---
+
+### `strategies.mean_reversion.strategy.score_multiplier`
+- **Type:** `float`
+- **Logic Owner:** `MeanReversionHandler` (signal scoring)
+- **Code Reference:** `apps/reference/config_models.py:399`
+- **Default:** `1.0` (Pydantic default; NOT in YAML)
+- **Category:** **Pydantic default** — always uses 1.0 because no YAML knob exists
+- **Mathematical Role:**
+    > Multiplier applied to signal score before emission. At 1.0 it is a no-op.
+- **Fallback:** None. Pydantic default always used. Operator cannot override without adding YAML field.
+
+---
+
+### `strategies.mean_reversion.strategy.sl_buffer_pct`
+- **Type:** `float` *(ratio; 0.002 = +0.20%)*
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:171`
+- **Default:** `0` (dataclass default; can be set in per-asset override YAML)
+- **Category:** **Pydantic/dataclass default** — 0 means no extra buffer
+- **Mathematical Role:**
+    > Additive buffer on top of ATR-based SL distance: `final_sl = atr_sl + entry_price * sl_buffer_pct`. Widens SL beyond what `sl_atr_mult * stop_mult` alone provides.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** SL pushed further away → less stop-outs but higher risk per trade.
+    - 🔽 **Zero:** Default. Pure ATR-based SL.
+
+---
+
+### `strategies.mean_reversion.strategy.tp_buffer_pct`
+- **Type:** `float` *(ratio; 0.002 = +0.20%)*
+- **Logic Owner:** `MeanReversion1mStrategy`
+- **Code Reference:** `apps/reference/domains/feature_engineering/mean_reversion_strategy.py:173`
+- **Default:** `0` (dataclass default; can be set in per-asset override YAML)
+- **Category:** **Pydantic/dataclass default** — 0 means no extra buffer
+- **Mathematical Role:**
+    > Additive buffer on top of BB-based TP distance: `final_tp = bb_tp + entry_price * tp_buffer_pct`. Pushes TP further from entry.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** TP pushed further → lower winrate, higher R:R.
+    - 🔽 **Zero:** Default. Pure BB-based TP.
 
 ---
 
@@ -466,3 +518,345 @@ Objective Engine теж живе в handler, уже після формуван�
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Більший TF ⇒ менше барів/сигналів, більший lag, менше noise.
     - 🔽 **Too Low:** Менший TF ⇒ більше сигналів, більше noise і навантаження.
+
+---
+
+## 13. Vector 1: Microstructure Veto Overlay
+
+> **Added:** 2026-03-30 (PACK-1/2/3)
+> **Hardened:** 2026-03-30 (PACK-R1: strict fail-closed)
+> **Runtime Wiring:** 2026-03-30 (MR-V1-WIRING: price_motion pipeline fix + E2E proof)
+> **Status:** Code complete, tests passing, `enabled: false` in YAML
+
+### Purpose
+Handler-level bivariate overlay that blocks toxic continuation signals while allowing absorption setups. Applied between `strategy.on_bar()` signal output and `_emit_signal()`.
+
+### Architecture
+- **Logic Owner:** `MeanReversionHandler._check_microstructure_veto()`
+- **Config SSOT:** `config/aurora/strategies/mean_reversion.yaml → microstructure_veto`
+- **Pydantic Model:** `apps/reference/config_models.py::MRMicrostructureVetoConfig`
+- **NRR Code:** `NRR-060` (`MICROSTRUCTURE_VETO`)
+
+### Decision Logic (Bivariate)
+
+```
+1. If veto disabled → ALLOW
+2. If TFI missing → BLOCK (fail-closed, unconditional)
+3. If TFI not numeric → BLOCK (fail-closed)
+4. Compute tfi_ema via EMA smoothing (span = tfi_ema_span)
+5. If insufficient bars (< readiness_min_bars) → BLOCK (warmup)
+6. If |tfi_ema| < tfi_adverse_threshold → ALLOW (no adverse flow)
+7. If adverse TFI detected:
+   a. If OBI confirm enabled AND OBI NOT adverse → ALLOW (book doesn't confirm)
+   b. Check price reaction (bar geometry + price_motion returns):
+      - If wick_ratio ≥ absorption_wick_ratio_min → absorption → ALLOW
+      - If price rebound ≥ absorption_rebound_threshold → absorption → ALLOW
+      - If adverse continuation ≥ price_continuation_threshold → BLOCK (toxic)
+      - Otherwise → BLOCK (ambiguous, fail-closed)
+```
+
+### Key Invariants
+- OBI is **confirm-only**, never sole veto driver
+- Missing TFI → fail-closed unconditionally (no policy branch; `"skip"` removed in R1 hardening)
+- Zero-range bar → always blocked (cannot compute wick ratio)
+- Absorption evidence (wick OR rebound) overrides adverse TFI
+
+### YAML Config Fields
+
+| Field | Type | Default | Role |
+|---|---|---|---|
+| `enabled` | bool | false | Master switch |
+| `tfi_ema_span` | int | 5 | EMA smoothing window for raw TFI |
+| `tfi_adverse_threshold` | float | 0.3 | \|TFI\| > this = adverse flow |
+| `obi_confirm_enabled` | bool | false | Enable OBI as confirming factor |
+| `obi_adverse_threshold` | float | 0.3 | \|OBI\| > this = adverse book state |
+| `price_reaction_lookback_sec` | int | 60 | Price continuation window |
+| `price_continuation_threshold` | float | 0.001 | Adverse price move = toxic |
+| `absorption_wick_ratio_min` | float | 0.4 | Wick ≥ 40% range = absorption |
+| `absorption_rebound_threshold` | float | 0.0005 | Favorable price move = rebound |
+| `readiness_min_bars` | int | 5 | Bars before veto engages |
+| `missing_policy` | "block" | "block" | Always fail-closed (R1: "skip" removed) |
+
+### Price Motion Contract (MR-V1-WIRING)
+
+The veto reads price reaction data from `_last_cmd_price_motion[symbol]`, a per-symbol cache populated from the **top-level** `price_motion` field in `CMD:PROCESS_STRATEGY`. This field is:
+- **Computed by:** `feature_engineering.py` (lines 1769-1793, `pm_block`)
+- **Emitted at:** `cmd_payload["price_motion"]` (NOT nested inside `features`)
+- **Schema:** `cmd_process_strategy_v1.json` (property `price_motion`)
+- **Required keys:** `ret_10s`, `ret_60s`, `ret_300s` (numeric or null)
+
+If `price_motion` is absent from the CMD payload, the veto has no continuation/rebound evidence and blocks conservatively (ambiguous block).
+
+### Test Coverage
+- 16 helper-level tests in `tests/domains/decision_making/test_mr_microstructure_veto.py`
+- 15 config contract tests in `tests/config/test_mr_microstructure_veto_config.py`
+- 11 E2E tests in `tests/integration/test_mr_v1_e2e_price_motion.py` (through `_on_process_strategy`)
+
+---
+
+## 14. Vector 2: Directional Bias Threshold Modulation
+
+> **Added:** 2026-03-30 (PACK-4/5/6)
+> **Hardened:** 2026-03-30 (PACK-R2: semantics fix, PACK-R3: isolation proof)
+> **Status:** Code complete, tests passing, `enabled: false` in YAML
+
+### Purpose
+Splits symmetric `entry_threshold` into `base_long_threshold` and `base_short_threshold`. Funding rate dynamically modulates these thresholds per bar.
+
+### Architecture
+- **Logic Owner:** `MeanReversionHandler._apply_directional_bias()`
+- **Config SSOT:** `config/aurora/strategies/mean_reversion.yaml → directional_bias`
+- **Pydantic Model:** `apps/reference/config_models.py::MRDirectionalBiasConfig`
+- **Strategy Side:** `MRStrategyConfig.entry_threshold_long` / `entry_threshold_short` (transient overrides)
+
+### Formula
+
+```python
+norm_funding = clamp(funding_rate / funding_normalization_scale, -1, 1)
+if |norm_funding| < funding_deadband: norm_funding = 0
+
+eff_long  = clamp(base_long  - norm_funding * shift_magnitude, clamp_min, clamp_max)
+eff_short = clamp(base_short + norm_funding * shift_magnitude, clamp_min, clamp_max)
+```
+
+**Interpretation (trigger geometry, not just threshold value):**
+- `LONG fires when: pct_b < long_threshold` → lower threshold = harder (needs more oversold)
+- `SHORT fires when: pct_b > (1 - short_threshold)` → higher short_threshold = lower boundary = easier
+- Positive funding (longs pay) → LONG harder, SHORT easier (fade the crowd)
+- Negative funding (shorts pay) → LONG easier, SHORT harder (fade the crowd)
+
+### Key Invariants
+- Missing `funding_rate` → graceful degradation to static split thresholds (NO fail-closed)
+- Non-numeric `funding_rate` → fallback to static thresholds
+- Thresholds always clamped to `[clamp_min, clamp_max]`
+- When bias not configured → overrides cleared to `None` → legacy symmetric `entry_threshold` used
+- Transient: values recomputed every bar, cleared in `finally` block after `on_bar()` (R3 hardening)
+- Per-symbol isolation: each symbol has its own `MeanReversion1mStrategy` + `MRStrategyConfig` instance
+
+### YAML Config Fields
+
+| Field | Type | Default | Role |
+|---|---|---|---|
+| `enabled` | bool | false | Master switch |
+| `base_long_threshold` | float | 0.115 | Static %B for LONG |
+| `base_short_threshold` | float | 0.115 | Static %B for SHORT |
+| `funding_shift_magnitude` | float | 0.02 | Max threshold shift per unit normalized funding |
+| `funding_normalization_scale` | float | 0.0003 | Normalizer: funding / this = [-1, 1] |
+| `funding_deadband` | float | 0.1 | \|norm\| < this → zero (noise suppression) |
+| `threshold_clamp_min` | float | 0.01 | Floor: prevents degenerate entries |
+| `threshold_clamp_max` | float | 0.3 | Ceiling: prevents unreachable entries |
+
+### Pydantic Validators
+- `clamp_min < clamp_max` enforced
+- `base_long_threshold` and `base_short_threshold` must be within `[clamp_min, clamp_max]`
+- `extra='forbid'` prevents stray fields
+
+### Test Coverage
+- 19 tests in `tests/domains/decision_making/test_mr_directional_bias.py`
+- 16 config contract tests in `tests/config/test_mr_directional_bias_config.py`
+
+### Contract Ratification (R4, 2026-03-30)
+
+The implemented Vector 2 contract is a **symmetric simplified model**:
+- Single `funding_shift_magnitude` applies uniformly to both LONG and SHORT sides
+- Single `funding_normalization_scale` and `funding_deadband` for all directions
+- Symmetric clamp `[clamp_min, clamp_max]` for both sides
+
+This is explicitly ratified as the canonical V2 contract for the following reasons:
+1. No live calibration data exists to justify per-side/per-direction differentiation
+2. The simplified model correctly implements "fade the crowd" economic logic
+3. Adding per-side sensitivity without data would create unjustified complexity
+4. The model can be extended additively to a richer contract when calibration data is available
+
+**Rejected (deferred) extensions**:
+- `funding_shift_magnitude_long` / `funding_shift_magnitude_short` (per-side sensitivity)
+- `positive_funding_sensitivity` / `negative_funding_sensitivity` (per-direction sensitivity)
+- Per-side clamp controls (`clamp_min_long`, `clamp_max_short`, etc.)
+
+These may be added in a future package when live trading data supports calibration.
+
+---
+
+## 14a. Strategy-Level Veto: FLAT_LOW SHORT BB Width Gate
+
+> **Added:** Per-asset hardening for narrow-band FLAT_LOW short fades
+
+### Purpose
+Optional additional BB width floor that applies ONLY to SHORT signals in FLAT_LOW regime. Prevents fading into a narrow channel where fee-churn risk dominates.
+
+### Architecture
+- **Logic Owner:** `MeanReversion1mStrategy._evaluate_signal()` (line 505-518)
+- **Config SSOT:** `config/aurora/strategies/mean_reversion.yaml → assets.<SYM>.strategy.flat_low_short_min_bb_width`
+- **Dataclass Field:** `MRStrategyConfig.flat_low_short_min_bb_width: Optional[Decimal] = None`
+
+### Decision Logic
+```
+if regime == FLAT_LOW
+   AND candidate_side == SHORT
+   AND flat_low_short_min_bb_width is not None
+   AND bb_width < flat_low_short_min_bb_width
+   → NEUTRAL (veto: "flat_low_short_bb_width_too_narrow")
+```
+
+### Fallback
+- `None` → gate disabled; generic `min_bb_width` still applies
+- **Category:** Runtime fallback (None = skip gate)
+
+---
+
+## 14b. Strategy-Level Veto: Squeeze Expansion Veto
+
+> **Added:** Per-asset breakout-from-squeeze fade trap protection
+
+### Purpose
+Blocks counter-trend MR fades when the BB channel is rapidly expanding out of a squeeze. Prevents entry into a breakout that looks like a BB touch but is actually a directional expansion.
+
+### Architecture
+- **Logic Owner:** `MeanReversion1mStrategy._squeeze_expansion_veto_reason()` (lines 679-718)
+- **Config SSOT:** `config/aurora/strategies/mean_reversion.yaml → assets.<SYM>.strategy.squeeze_expansion_veto`
+- **Pydantic Model:** `apps/reference/config_models.py::MRSqueezeExpansionVetoConfig`
+- **Dataclass Field:** `MRStrategyConfig.squeeze_expansion_veto: Optional[SqueezeExpansionVetoConfig] = None`
+
+### Decision Logic
+```
+1. If veto config is None or not enabled → PASS
+2. If no candidate signal → PASS
+3. If current flat_regime not in configured regimes → PASS
+4. If candidate_side not in configured sides → PASS
+5. Compute previous_bb_width from prior completed window (recomputes BB from closes[:-1])
+6. If previous_bb_width is None or <= 0 → PASS (insufficient data)
+7. If previous_bb_width > squeeze_width_max → PASS (wasn't in squeeze)
+8. If current_bb_width > post_squeeze_width_max → PASS (already fully expanded)
+9. expansion_ratio = current_bb_width / previous_bb_width
+10. If expansion_ratio < expansion_ratio_min → PASS (not expanding enough)
+11. → VETO: "squeeze_expansion_veto:{side}:{prev_width}->{curr_width}"
+```
+
+### YAML Config Fields
+
+| Field | Type | Constraint | Role |
+|---|---|---|---|
+| `enabled` | bool | — | Master switch |
+| `squeeze_width_max` | float | >0 | Previous BB width must be ≤ this (squeeze definition) |
+| `post_squeeze_width_max` | float | >0, ≥ squeeze_width_max | Current BB width must be ≤ this (still expanding) |
+| `expansion_ratio_min` | float | >1.0 | current/previous width ratio to trigger veto |
+| `regimes` | list[str] | min_length=1 | Flat regimes where veto applies |
+| `sides` | list["LONG"/"SHORT"] | min_length=1 | Signal sides where veto applies |
+
+### Validators
+- `post_squeeze_width_max >= squeeze_width_max` enforced by Pydantic `@model_validator`
+
+### Fallback
+- Per-asset only (no global). `None` → veto disabled.
+- **Category:** Runtime fallback (None = skip)
+
+---
+
+## 14c. Strategy-Level Veto: Momentum Separation Veto
+
+> **Added:** Per-asset late-drift counter-trend fade protection
+
+### Purpose
+Blocks MR fades when price has already drifted significantly in the same direction as the candidate trade. Prevents fading into a strong directional move that has already separated from the mean.
+
+### Architecture
+- **Logic Owner:** `MeanReversion1mStrategy._momentum_separation_veto_reason()` (lines 733-775)
+- **Config SSOT:** `config/aurora/strategies/mean_reversion.yaml → assets.<SYM>.strategy.momentum_separation_veto`
+- **Pydantic Model:** `apps/reference/config_models.py::MRMomentumSeparationVetoConfig`
+- **Dataclass Field:** `MRStrategyConfig.momentum_separation_veto: Optional[MomentumSeparationVetoConfig] = None`
+
+### Decision Logic
+```
+1. If veto config is None or not enabled → PASS
+2. If no candidate signal → PASS
+3. If current flat_regime not in configured regimes → PASS
+4. If candidate_side not in configured sides → PASS
+5. If current_bb_width < min_current_bb_width → PASS (channel not wide enough)
+6. If len(closes) < lookback_bars + 1 → PASS (insufficient data)
+7. drift_pct = (current_close - reference_close) / reference_close
+8. If candidate_side == SHORT and drift_pct < min_drift_pct → PASS (no strong upward drift)
+9. If candidate_side == LONG and drift_pct > -min_drift_pct → PASS (no strong downward drift)
+10. → VETO: "momentum_separation_veto:{side}:{drift_pct}%"
+```
+
+### YAML Config Fields
+
+| Field | Type | Constraint | Role |
+|---|---|---|---|
+| `enabled` | bool | — | Master switch |
+| `lookback_bars` | int | ≥1 | Bars to measure drift |
+| `min_drift_pct` | float | >0 | Min cumulative drift to trigger veto |
+| `min_current_bb_width` | float | >0 | BB width floor before veto engages |
+| `regimes` | list[str] | min_length=1 | Flat regimes where veto applies |
+| `sides` | list["LONG"/"SHORT"] | min_length=1 | Signal sides where veto applies |
+
+### Fallback
+- Per-asset only (no global). `None` → veto disabled.
+- **Category:** Runtime fallback (None = skip)
+
+### Key Invariant
+- Momentum separation checks **opposite direction** to candidate: SHORT veto triggers on upward drift, LONG veto triggers on downward drift. This is the "don't fade a strong directional move" logic.
+
+---
+
+## 15. Defaults vs Fallbacks vs Hardcoded Policies
+
+> Full matrix: `reports/MR_DEFAULTS_FALLBACKS_MATRIX.md`
+
+### Summary of Category Distribution
+
+| Category | Count | Examples |
+|---|---|---|
+| **YAML default** (operator-configurable) | ~30 core params + per-asset | `bb_window`, `entry_threshold`, `timeframe_sec` |
+| **Pydantic default** (configurable, has fallback) | 6 | `confidence_base`, `confidence_bb_slope`, `confidence_rsi_bonus`, `system_stress_policy`, `score_multiplier`, `tfi_ema_span` |
+| **Required / no default** | ~15 | `enabled`, `timeframe_sec`, `bb_window`, `entry_threshold`, `allowed_regimes` |
+| **Runtime fallback** | 5 | Per-asset strategy overrides (`None` → global), per-asset liquidity/veto/bias (`None` → global) |
+| **Graceful degradation** | 2 | Missing funding → static split thresholds; invalid funding → same |
+| **Fail-closed** | 6 | Missing TFI, invalid TFI, zero-range bar, ambiguous case, missing OBI (when enabled), missing price_motion + adverse TFI |
+| **Hardcoded policy** | 8 | OBI confirm-only, EMA formula, return key selection, absorption OR logic, clamp formula, per-symbol isolation, transient clearing, price_motion top-level contract |
+| **Dormant default** | 4 | `microstructure_veto.enabled: false`, `directional_bias.enabled: false`, disabled assets (BTC/XRP/ETH/SOL) |
+
+### Key Distinctions for Operators
+
+1. **"Missing funding" is graceful degradation, NOT fail-closed.** V2 continues with static thresholds. No error, no reject.
+2. **"Missing TFI" is fail-closed, NOT graceful degradation.** V1 blocks unconditionally. There is no "skip" policy anymore.
+3. **OBI confirm-only is a code policy, NOT a config knob.** `obi_confirm_enabled` controls whether OBI is consulted, but OBI can never be the sole veto driver regardless of config.
+4. **Per-asset overrides are runtime fallbacks.** `None` in per-asset means "use global". This is not a default — it's a two-level resolution chain.
+5. **`MRStrategyConfig` dataclass defaults are test-only.** Production never uses them; handler always injects explicit YAML values.
+
+---
+
+## 16. Dormant vs Enabled Runtime Truth
+
+> **Date of verification:** 2026-03-31
+
+| Component | Status | Evidence |
+|---|---|---|
+| `mean_reversion` strategy | **ACTIVE** for DOGEUSDT | strategies.yaml:41, `mean_reversion.enabled: true`, `DOGEUSDT.enabled: true` |
+| `mean_reversion` strategy for BTCUSDT | **DORMANT** | `BTCUSDT.enabled: false` in mean_reversion.yaml:193 |
+| `mean_reversion` strategy for XRPUSDT | **DORMANT** | `XRPUSDT.enabled: false` |
+| `mean_reversion` strategy for ETHUSDT | **DORMANT** | `ETHUSDT.enabled: false` |
+| `mean_reversion` strategy for SOLUSDT | **DORMANT** | `SOLUSDT.enabled: false` |
+| Vector 1 (Microstructure Veto) | **DORMANT** | `microstructure_veto.enabled: false` |
+| Vector 2 (Directional Bias) | **DORMANT** | `directional_bias.enabled: false` |
+| Safety gates | **OFF** | `safety_gates.enabled: false` (MR is counter-trend) |
+| Objective engine | **ON** (OBSERVE mode) | `objective.enabled: true`, all gates `enforcement_mode: "OBSERVE"` |
+
+### What "Dormant" means operationally
+
+- **Code is deployed** — all V1/V2 logic is in the handler and tested.
+- **Config exists on disk** — all YAML fields are present with validated values.
+- **Not running** — `enabled: false` means the handler skips the subsystem entirely.
+- **Zero risk** — dormant code does not affect live trading until operator sets `enabled: true`.
+
+---
+
+## 17. Stale Statements Corrected in This Actualization
+
+| Statement | Location | Correction |
+|---|---|---|
+| "live assignments для mean_reversion відсутні" | passport Sections 2, 10 | DOGEUSDT IS assigned (strategies.yaml:41) |
+| "ConfigLoader не live-loadить config.strategies.mean_reversion" | passport Section 2 | It IS loaded; DOGEUSDT is active |
+| V1 decision logic "If TFI missing & policy=block" | passport Section 13 | `policy` is always `"block"` (R1 Literal constraint); conditional language removed |
+| V1 decision logic ordering (TFI check after readiness) | passport Section 13 | TFI check is BEFORE readiness check in actual code (handler.py:670-692) |
+| V2 Pydantic docstring "positive funding → SHORT stricter, LONG easier" | config_models.py:600 | Inverted; corrected to "LONG harder, SHORT easier" |

@@ -6,6 +6,11 @@ Extracted from aurora_handler.py (Phase 14A Decomposition).
 Provides:
   - _process_decision: Core scoring kernel invocation + gates
   - _emit_signal: EVT:STRATEGY_SIGNAL_PRODUCED payload builder
+
+Aurora semantic note:
+  - Normal live no-trade outcomes are expressed as STRATEGY_DECISION_BLOCKED.
+  - EVT:INTENT_DEFERRED on this path is reserved for anomaly/fail-closed kernel
+    defer outcomes after the quadratic path is reached.
 """
 from __future__ import annotations
 
@@ -563,6 +568,10 @@ class AuroraDecisionMixin:
             result.thr_sell,
         )
 
+        # Aurora-specific semantics: once the quadratic path has been reached,
+        # deferred is reserved for anomaly/fail-closed kernel outcomes.
+        # Normal live policy denials should already have surfaced as
+        # STRATEGY_DECISION_BLOCKED via explicit gates.
         if result.deferred:
             self.logger.debug(
                 f"[{symbol}] Kernel deferred: {result.defer_reason}")

@@ -117,6 +117,15 @@ QoS rate control, and reject normalization (NRR).
 | EVT:TRADE_INTENT_PROPOSED | intent_builder.py |
 | EVT:TRADE_INTENT_REJECTED | intent_emitter.py, md_amr_handler.py |
 
+## Aurora Semantic Note
+For Aurora, the current proven semantics are:
+
+- `EVT:STRATEGY_DECISION_BLOCKED` is the dominant live no-trade class for ordinary
+  policy/readiness outcomes such as regime allowlist denial or cold-start bars gating.
+- `EVT:INTENT_DEFERRED` remains valid on the Aurora path, but it is currently a
+  narrow anomaly/fail-closed class after the quadratic path is reached, not the
+  dominant live "cannot trade now" outcome.
+
 ## Supplemental Docs
 The `docs/` subdirectory contains auto-generated analysis documents from earlier audits.
 Some reference deleted files and are partially stale. Treat the **this README** as the

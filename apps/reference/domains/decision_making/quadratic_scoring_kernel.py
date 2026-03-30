@@ -20,6 +20,12 @@ Integration:
 Shield:
 - Accepts optional shield_fn that can veto/attenuate signal
 - NullShield (default) passes everything through but is forbidden in production (fail-closed)
+
+Deferred-output note:
+- For Aurora, `deferred=True` is reserved for anomaly/fail-closed input or config
+  conditions inside the kernel.
+- Ordinary live "cannot trade now" outcomes are expected to surface as
+  `STRATEGY_DECISION_BLOCKED` via explicit strategy policy gates outside the kernel.
 """
 from __future__ import annotations
 

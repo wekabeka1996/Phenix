@@ -755,8 +755,9 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
     rejected_wal.assert_called_once()
 
 
-def test_aurora_seeded_basis_bars_bypass_cold_start_gate() -> None:
+def test_aurora_seeded_basis_bars_bypass_cold_start_gate_into_anomaly_deferred() -> None:
     blocked: list[dict] = []
+    emitted: list[tuple[str, dict]] = []
 
     scoring_result = ScoringResult(
         score=Decimal("0"),
@@ -774,7 +775,6 @@ def test_aurora_seeded_basis_bars_bypass_cold_start_gate() -> None:
 
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
-        patch("apps.reference.domains.decision_making.aurora_decision.write_trade_intent_rejected"),
         patch(
             "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
             return_value=SimpleNamespace(state="NOT_REQUESTED"),
@@ -790,7 +790,7 @@ def test_aurora_seeded_basis_bars_bypass_cold_start_gate() -> None:
                 regime_shift_inception=None,
                 instruments=None,
             ),
-            emit_fn=lambda *_args, **_kwargs: None,
+            emit_fn=lambda name, payload: emitted.append((name, payload)),
             monotonic_fn=lambda: 1_700_000_000.0,
             wall_time_fn=lambda: 1_700_000_000.0,
         )
@@ -840,8 +840,11 @@ def test_aurora_seeded_basis_bars_bypass_cold_start_gate() -> None:
         },
     )
 
-    assert blocked
-    assert blocked[0]["reason_code"] == "AURORA_KERNEL_DEFERRED"
+    deferred = [payload for name, payload in emitted if name == "EVT:INTENT_DEFERRED"]
+    assert not blocked
+    assert deferred
+    assert deferred[0]["reason_code"] == "NRR-DATA-NOT-READY"
+    assert deferred[0]["raw_reason"] == "PILLAR_WARMUP"
 
 
 def test_aurora_objective_missing_exposure_summary_blocks_explicitly() -> None:

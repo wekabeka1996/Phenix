@@ -48,13 +48,23 @@ def _make_handler(
     symbol: str = "DOGEUSDT",
     veto_cfg: MRMicrostructureVetoConfig | None = None,
     features: Dict[str, Any] | None = None,
+    price_motion: Dict[str, Any] | None = None,
     tfi_ema_init: float | None = None,
     tfi_bar_count: int = 10,
 ) -> MeanReversionHandler:
-    """Build minimal MR handler for microstructure veto testing."""
+    """Build minimal MR handler for microstructure veto testing.
+
+    price_motion is stored in the dedicated _last_cmd_price_motion cache,
+    matching the real runtime contract where price_motion is a top-level
+    CMD:PROCESS_STRATEGY field separate from features.
+
+    For backward compat: if features contains a 'price_motion' key and
+    no explicit price_motion arg is given, extract it automatically.
+    """
     handler = object.__new__(MeanReversionHandler)
     handler.logger = logging.getLogger("test.mr.microstructure_veto")
     handler._last_cmd_features = {}
+    handler._last_cmd_price_motion = {}
     handler._tfi_ema = {}
     handler._tfi_bar_count = {}
     handler._microstructure_veto_configs = {}
@@ -63,7 +73,13 @@ def _make_handler(
         handler._microstructure_veto_configs[symbol] = veto_cfg
 
     if features is not None:
+        # Extract price_motion from features if present (legacy test compat)
+        if price_motion is None and "price_motion" in features:
+            price_motion = features.pop("price_motion")
         handler._last_cmd_features[symbol] = features
+
+    if price_motion is not None:
+        handler._last_cmd_price_motion[symbol] = price_motion
 
     if tfi_ema_init is not None:
         handler._tfi_ema[symbol] = tfi_ema_init
@@ -178,7 +194,7 @@ def test_absorption_short_allows():
 # ── 5. missing_tfi fail-closed ──────────────────────────────────────────────
 
 def test_missing_tfi_blocks_when_policy_block():
-    """Missing TFI in features → fail-closed (block) when missing_policy='block'."""
+    """Missing TFI in features → fail-closed (block) — the only valid policy."""
     cfg = _valid_veto_cfg(missing_policy="block")
     features = {"obi": "0.1"}  # TFI absent
     handler = _make_handler(veto_cfg=cfg, features=features)
@@ -190,16 +206,11 @@ def test_missing_tfi_blocks_when_policy_block():
     assert "TFI_MISSING" in reason
 
 
-def test_missing_tfi_allows_when_policy_skip():
-    """Missing TFI → allowed when missing_policy='skip' (fail-open)."""
-    cfg = _valid_veto_cfg(missing_policy="skip")
-    features = {"obi": "0.1"}  # TFI absent
-    handler = _make_handler(veto_cfg=cfg, features=features)
-    bar = _make_bar()
-
-    allowed, reason = handler._check_microstructure_veto(
-        "DOGEUSDT", "LONG", bar)
-    assert allowed is True
+def test_skip_policy_rejected_at_config_level():
+    """missing_policy='skip' is no longer accepted — Pydantic rejects it."""
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _valid_veto_cfg(missing_policy="skip")
 
 
 # ── 6. missing_obi fail-closed when confirm enabled ────────────────────────
@@ -342,7 +353,7 @@ def test_rebound_allows_despite_adverse_tfi():
 
 
 def test_no_features_cached_blocks():
-    """No features cached for symbol → TFI missing → fail-closed."""
+    """No features cached for symbol → TFI missing → fail-closed unconditionally."""
     cfg = _valid_veto_cfg(missing_policy="block")
     handler = _make_handler(veto_cfg=cfg, features=None)
     bar = _make_bar()
@@ -351,6 +362,19 @@ def test_no_features_cached_blocks():
         "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "TFI_MISSING" in reason
+
+
+def test_invalid_tfi_blocks_unconditionally():
+    """Non-numeric TFI → fail-closed (no policy branch, always block)."""
+    cfg = _valid_veto_cfg()
+    features = {"tfi": "not_a_number", "obi": "0.1"}
+    handler = _make_handler(veto_cfg=cfg, features=features)
+    bar = _make_bar()
+
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
+    assert allowed is False
+    assert "TFI_INVALID" in reason
 
 
 def test_zero_range_bar_blocks():

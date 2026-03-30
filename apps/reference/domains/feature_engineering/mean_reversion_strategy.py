@@ -196,6 +196,12 @@ class MRStrategyConfig:
     confidence_rsi_bonus: Decimal = Decimal(
         "0.2")   # Bonus when RSI confirms signal
 
+    # Vector 2: Optional directional threshold overrides (set by handler before on_bar)
+    # When set, these REPLACE entry_threshold for the respective side.
+    # None = use legacy symmetric entry_threshold for both sides.
+    entry_threshold_long: Optional[Decimal] = None
+    entry_threshold_short: Optional[Decimal] = None
+
 
 # Maximum bars to keep in memory per symbol (prevents memory leak)
 MAX_BARS_PER_SYMBOL = 1000
@@ -490,13 +496,16 @@ class MeanReversion1mStrategy:
 
         # Evaluate signal based on %B
         pct_b = Decimal(str(bb.pct_b))
+        # Vector 2: Use directional thresholds if set, else legacy symmetric
         entry_threshold = Decimal(str(self.config.entry_threshold))
+        long_threshold = self.config.entry_threshold_long if self.config.entry_threshold_long is not None else entry_threshold
+        short_threshold = self.config.entry_threshold_short if self.config.entry_threshold_short is not None else entry_threshold
         flat_low_short_min_bb_width = self.config.flat_low_short_min_bb_width
 
         if (
             flat_regime == FlatRegime.FLAT_LOW
             and flat_low_short_min_bb_width is not None
-            and pct_b > (Decimal("1") - entry_threshold)
+            and pct_b > (Decimal("1") - short_threshold)
             and bb_width < flat_low_short_min_bb_width
         ):
             return self._neutral_signal(
@@ -509,9 +518,9 @@ class MeanReversion1mStrategy:
             )
 
         candidate_side = None
-        if pct_b < entry_threshold:
+        if pct_b < long_threshold:
             candidate_side = "LONG"
-        elif pct_b > (Decimal("1") - entry_threshold):
+        elif pct_b > (Decimal("1") - short_threshold):
             candidate_side = "SHORT"
 
         squeeze_veto_reason = self._squeeze_expansion_veto_reason(
@@ -551,10 +560,10 @@ class MeanReversion1mStrategy:
         why_parts = []
 
         # LONG: price below lower band
-        if pct_b < entry_threshold:
+        if pct_b < long_threshold:
             signal_type = MRSignalType.LONG
             confidence = self.config.confidence_base + \
-                (entry_threshold - pct_b) * self.config.confidence_bb_slope
+                (long_threshold - pct_b) * self.config.confidence_bb_slope
             why_parts.append(f"price_below_lower_bb:pct_b={pct_b:.3f}")
 
             # RSI confirmation
@@ -563,10 +572,10 @@ class MeanReversion1mStrategy:
                 why_parts.append(f"rsi_oversold:{rsi:.1f}")
 
         # SHORT: price above upper band
-        elif pct_b > (1 - entry_threshold):
+        elif pct_b > (Decimal("1") - short_threshold):
             signal_type = MRSignalType.SHORT
             confidence = self.config.confidence_base + \
-                (pct_b - (1 - entry_threshold)) * \
+                (pct_b - (Decimal("1") - short_threshold)) * \
                 self.config.confidence_bb_slope
             why_parts.append(f"price_above_upper_bb:pct_b={pct_b:.3f}")
 

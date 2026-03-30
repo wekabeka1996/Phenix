@@ -2179,6 +2179,8 @@ class FeatureEngineering:
                         # REG-FIX-01: Injected regime
                         "regime": self.last_regime.get(symbol),
                         "source_mode": source_mode,
+                        # MR-V1-WIRING: price_motion for microstructure veto price-reaction logic
+                        "price_motion": pm_block,
                     }
                     if bar_identity is not None:
                         cmd_payload["bar_identity"] = bar_identity.to_payload()

@@ -270,6 +270,10 @@ class MeanReversionHandler:
         # Stores cmd.features from last CMD:PROCESS_STRATEGY per symbol
         self._last_cmd_features: Dict[str, Dict[str, Any]] = {}
 
+        # MR-V1-WIRING: Per-symbol price_motion cache from CMD:PROCESS_STRATEGY
+        # Top-level field in CMD payload, NOT nested inside features dict.
+        self._last_cmd_price_motion: Dict[str, Dict[str, Any]] = {}
+
         # Block reason throttling (avoid per-tick spam)
         self._last_block_reason: Dict[str, str] = {}
         self._last_block_ts_ms: Dict[str, int] = {}
@@ -291,6 +295,22 @@ class MeanReversionHandler:
                 veto_cfg = per_asset_veto if per_asset_veto is not None else global_veto
                 if veto_cfg is not None and veto_cfg.enabled:
                     self._microstructure_veto_configs[sym] = veto_cfg
+
+        # Vector 2: Directional Bias config resolution (global -> per-asset override)
+        self._directional_bias_configs: Dict[str, Any] = {}
+        # Per-symbol funding rate cache (updated from features / market data)
+        self._funding_rate: Dict[str, float] = {}
+        if self._mr_config:
+            global_bias = self._mr_config.directional_bias
+            for sym in self._enabled_symbols:
+                asset_cfg = self._mr_config.assets.get(sym)
+                per_asset_bias = None
+                if asset_cfg and asset_cfg.strategy:
+                    per_asset_bias = getattr(
+                        asset_cfg.strategy, "directional_bias", None)
+                bias_cfg = per_asset_bias if per_asset_bias is not None else global_bias
+                if bias_cfg is not None and bias_cfg.enabled:
+                    self._directional_bias_configs[sym] = bias_cfg
 
         self.logger.info(
             f"MeanReversionHandler initialized: enabled={self._enabled}, "
@@ -650,16 +670,12 @@ class MeanReversionHandler:
         features = self._last_cmd_features.get(symbol, {})
         tfi_raw = features.get("tfi")
         if tfi_raw is None:
-            if veto_cfg.missing_policy == "block":
-                return False, "MICROSTRUCTURE_VETO:TFI_MISSING"
-            return True, ""
+            return False, "MICROSTRUCTURE_VETO:TFI_MISSING"
 
         try:
             tfi_val = float(tfi_raw)
         except (ValueError, TypeError):
-            if veto_cfg.missing_policy == "block":
-                return False, "MICROSTRUCTURE_VETO:TFI_INVALID"
-            return True, ""
+            return False, "MICROSTRUCTURE_VETO:TFI_INVALID"
 
         # --- Update TFI EMA ---
         prev_ema = self._tfi_ema.get(symbol)
@@ -731,8 +747,8 @@ class MeanReversionHandler:
             wick_ratio = upper_wick / bar_range
 
         # Price rebound (favorable move):
-        # Look at recent return from features (ret_60s preferred)
-        price_motion = features.get("price_motion", {})
+        # MR-V1-WIRING: Read price_motion from dedicated cache (top-level CMD field)
+        price_motion = self._last_cmd_price_motion.get(symbol, {})
         lookback = veto_cfg.price_reaction_lookback_sec
         # Select the closest matching return horizon
         ret_key = "ret_60s"
@@ -774,6 +790,72 @@ class MeanReversionHandler:
         # Ambiguous: flow is adverse, no absorption evidence, no clear continuation
         # Conservative: block (fail-closed for unclear situations)
         return False, "MICROSTRUCTURE_VETO:TOXIC_FLOW_AMBIGUOUS"
+
+    # ── Vector 2: Directional Bias Threshold Modulation ──────────────────────
+
+    def _apply_directional_bias(
+        self,
+        symbol: str,
+        strategy: "MeanReversion1mStrategy",
+    ) -> None:
+        """Compute and set effective long/short thresholds from funding rate.
+
+        Sets transient overrides on strategy.config.entry_threshold_long/short.
+        If directional_bias is not configured or funding is missing, clears
+        the overrides (strategy falls back to legacy symmetric entry_threshold).
+
+        No fail-closed on missing funding — graceful degradation to static split.
+        """
+        bias_cfg = self._directional_bias_configs.get(symbol)
+        if bias_cfg is None:
+            # Not configured → clear any previous overrides
+            strategy.config.entry_threshold_long = None
+            strategy.config.entry_threshold_short = None
+            return
+
+        # Extract funding rate from cached features
+        features = self._last_cmd_features.get(symbol, {})
+        funding_raw = features.get("funding_rate")
+
+        if funding_raw is None:
+            # Missing funding → static split thresholds (graceful degradation)
+            strategy.config.entry_threshold_long = Decimal(
+                str(bias_cfg.base_long_threshold))
+            strategy.config.entry_threshold_short = Decimal(
+                str(bias_cfg.base_short_threshold))
+            return
+
+        try:
+            funding_rate = float(funding_raw)
+        except (ValueError, TypeError):
+            # Invalid funding → degrade to static
+            strategy.config.entry_threshold_long = Decimal(
+                str(bias_cfg.base_long_threshold))
+            strategy.config.entry_threshold_short = Decimal(
+                str(bias_cfg.base_short_threshold))
+            return
+
+        # Normalize funding: clamp to [-1, 1]
+        norm_funding = funding_rate / bias_cfg.funding_normalization_scale
+        norm_funding = max(-1.0, min(1.0, norm_funding))
+
+        # Deadband: suppress noise
+        if abs(norm_funding) < bias_cfg.funding_deadband:
+            norm_funding = 0.0
+
+        # Compute effective thresholds:
+        # positive funding → longs pay → fade the crowd →
+        #   LONG harder (lower threshold = needs more extreme pct_b < threshold),
+        #   SHORT easier (higher threshold = trigger boundary 1-threshold drops)
+        eff_long = bias_cfg.base_long_threshold - norm_funding * bias_cfg.funding_shift_magnitude
+        eff_short = bias_cfg.base_short_threshold + norm_funding * bias_cfg.funding_shift_magnitude
+
+        # Clamp to legal range
+        eff_long = max(bias_cfg.threshold_clamp_min, min(bias_cfg.threshold_clamp_max, eff_long))
+        eff_short = max(bias_cfg.threshold_clamp_min, min(bias_cfg.threshold_clamp_max, eff_short))
+
+        strategy.config.entry_threshold_long = Decimal(str(round(eff_long, 6)))
+        strategy.config.entry_threshold_short = Decimal(str(round(eff_short, 6)))
 
     def _emit_strategy_blocked(
         self,
@@ -1795,6 +1877,15 @@ class MeanReversionHandler:
             except Exception:
                 pass
 
+            # MR-V1-WIRING: Cache price_motion from top-level CMD payload
+            try:
+                pm_payload = pld.get("price_motion") if isinstance(
+                    pld, dict) else getattr(pld, "price_motion", None)
+                if isinstance(pm_payload, dict):
+                    self._last_cmd_price_motion[symbol] = pm_payload
+            except Exception:
+                pass
+
             # Get strategy for symbol
             strategy = self._strategies.get(symbol)
             if not strategy:
@@ -1813,8 +1904,17 @@ class MeanReversionHandler:
                 if regime:
                     strategy.set_regime(symbol, regime)
 
+            # Vector 2: Directional Bias — compute effective thresholds from funding
+            self._apply_directional_bias(symbol, strategy)
+
             # Process bar through strategy (T2B-03: CMD is the ONLY trigger)
-            signal = strategy.on_bar(symbol, bar, ts_ms)
+            try:
+                signal = strategy.on_bar(symbol, bar, ts_ms)
+            finally:
+                # R3 hardening: clear transient overrides immediately after on_bar,
+                # preventing any stale threshold from persisting beyond the current bar.
+                strategy.config.entry_threshold_long = None
+                strategy.config.entry_threshold_short = None
 
             if signal:
                 print(

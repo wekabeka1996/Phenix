@@ -559,11 +559,13 @@ class MRMicrostructureVetoConfig(BaseModel):
     )
 
     # --- Missing-data policy ---
-    missing_policy: Literal["block", "skip"] = Field(
+    missing_policy: Literal["block"] = Field(
         default="block",
         description=(
             'Policy when required microstructure features (tfi) are missing: '
-            '"block" = fail-closed (veto trade), "skip" = bypass veto (fail-open, not recommended)'
+            '"block" = fail-closed (veto trade). '
+            'NOTE: "skip" was removed in R1 hardening — fail-open is not permitted '
+            'in the active runtime contract.'
         ),
     )
 
@@ -595,8 +597,8 @@ class MRDirectionalBiasConfig(BaseModel):
                                 threshold_clamp_min, threshold_clamp_max)
 
     Semantics:
-        positive funding (longs pay shorts) → SHORT stricter, LONG easier or unchanged
-        negative funding (shorts pay longs) → LONG stricter, SHORT easier or unchanged
+        positive funding (longs pay shorts) → LONG harder (threshold lowered), SHORT easier (threshold raised)
+        negative funding (shorts pay longs) → SHORT harder (threshold lowered), LONG easier (threshold raised)
         missing funding → static split thresholds (graceful degradation, NO fail-closed)
     """
     model_config = ConfigDict(extra='forbid')
