@@ -579,6 +579,84 @@ class MRMicrostructureVetoConfig(BaseModel):
         return self
 
 
+class MRDirectionalBiasConfig(BaseModel):
+    """Vector 2: Directional Bias Injection for MR threshold asymmetry.
+
+    Splits the symmetric entry_threshold into base_long_threshold and
+    base_short_threshold, then modulates them dynamically via funding_rate.
+
+    Math contract:
+        normalized_funding = clamp(funding_rate / funding_normalization_scale, -1, 1)
+        if |normalized_funding| < funding_deadband: normalized_funding = 0
+
+        effective_long  = clamp(base_long_threshold  - normalized_funding * funding_shift_magnitude,
+                                threshold_clamp_min, threshold_clamp_max)
+        effective_short = clamp(base_short_threshold + normalized_funding * funding_shift_magnitude,
+                                threshold_clamp_min, threshold_clamp_max)
+
+    Semantics:
+        positive funding (longs pay shorts) → SHORT stricter, LONG easier or unchanged
+        negative funding (shorts pay longs) → LONG stricter, SHORT easier or unchanged
+        missing funding → static split thresholds (graceful degradation, NO fail-closed)
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable directional bias modulation')
+
+    # --- Split thresholds ---
+    base_long_threshold: float = Field(
+        gt=0.0, le=0.5,
+        description='Static %B threshold for LONG entries (lower = stricter)',
+    )
+    base_short_threshold: float = Field(
+        gt=0.0, le=0.5,
+        description='Static %B threshold for SHORT entries (lower = stricter)',
+    )
+
+    # --- Funding modulation ---
+    funding_shift_magnitude: float = Field(
+        default=0.02, ge=0.0, le=0.2,
+        description='Max threshold shift per unit of normalized funding',
+    )
+    funding_normalization_scale: float = Field(
+        default=0.0003, gt=0.0,
+        description='Funding rate is divided by this before clamping to [-1,1]',
+    )
+    funding_deadband: float = Field(
+        default=0.1, ge=0.0, le=1.0,
+        description='Normalized funding within this band is treated as zero (noise suppression)',
+    )
+
+    # --- Clamp bounds ---
+    threshold_clamp_min: float = Field(
+        default=0.01, ge=0.0, le=0.5,
+        description='Minimum legal threshold (prevents degenerate entries)',
+    )
+    threshold_clamp_max: float = Field(
+        default=0.3, ge=0.0, le=0.5,
+        description='Maximum legal threshold (prevents unreachable entries)',
+    )
+
+    @model_validator(mode="after")
+    def _validate_clamp_range(self) -> "MRDirectionalBiasConfig":
+        if self.threshold_clamp_min >= self.threshold_clamp_max:
+            raise ValueError(
+                f"threshold_clamp_min ({self.threshold_clamp_min}) "
+                f"must be < threshold_clamp_max ({self.threshold_clamp_max})"
+            )
+        if not (self.threshold_clamp_min <= self.base_long_threshold <= self.threshold_clamp_max):
+            raise ValueError(
+                f"base_long_threshold ({self.base_long_threshold}) "
+                f"must be within [{self.threshold_clamp_min}, {self.threshold_clamp_max}]"
+            )
+        if not (self.threshold_clamp_min <= self.base_short_threshold <= self.threshold_clamp_max):
+            raise ValueError(
+                f"base_short_threshold ({self.base_short_threshold}) "
+                f"must be within [{self.threshold_clamp_min}, {self.threshold_clamp_max}]"
+            )
+        return self
+
+
 class MRStrategyOverrideConfig(BaseModel):
     """Per-asset strategy parameter overrides for MR.
 
@@ -607,6 +685,10 @@ class MRStrategyOverrideConfig(BaseModel):
     microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
         default=None,
         description='Optional Vector 1 microstructure veto overlay (per-asset override)',
+    )
+    directional_bias: Optional[MRDirectionalBiasConfig] = Field(
+        default=None,
+        description='Optional Vector 2 directional bias threshold modulation (per-asset override)',
     )
     entry_threshold: Optional[float] = Field(
         default=None, description='Entry distance threshold')
@@ -765,6 +847,12 @@ class MeanReversion1mStrategyConfig(BaseModel):
     microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
         default=None,
         description="Global microstructure veto overlay config (can be overridden per-asset)",
+    )
+
+    # Vector 2: Directional Bias threshold modulation (global default)
+    directional_bias: Optional[MRDirectionalBiasConfig] = Field(
+        default=None,
+        description="Global directional bias config (can be overridden per-asset)",
     )
 
 

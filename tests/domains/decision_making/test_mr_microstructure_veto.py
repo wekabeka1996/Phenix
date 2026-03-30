@@ -98,7 +98,8 @@ def test_toxic_flow_down_blocks_long():
     )
     bar = _make_bar(open_=100.0, high=100.2, low=99.5, close=99.6)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "TOXIC_FLOW" in reason
 
@@ -120,7 +121,8 @@ def test_toxic_flow_up_blocks_short():
     )
     bar = _make_bar(open_=100.0, high=100.8, low=100.0, close=100.7)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "SHORT", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "SHORT", bar)
     assert allowed is False
     assert "TOXIC_FLOW" in reason
 
@@ -144,7 +146,8 @@ def test_absorption_long_allows():
     # Lower wick = min(100.2, 100.5) - 98 = 2.2, range = 101-98 = 3.0, ratio = 0.73
     bar = _make_bar(open_=100.2, high=101.0, low=98.0, close=100.5)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True
 
 
@@ -167,7 +170,8 @@ def test_absorption_short_allows():
     # Upper wick = 103 - max(100.2, 100.0) = 2.8, range = 103-99.5 = 3.5, ratio = 0.8
     bar = _make_bar(open_=100.2, high=103.0, low=99.5, close=100.0)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "SHORT", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "SHORT", bar)
     assert allowed is True
 
 
@@ -180,7 +184,8 @@ def test_missing_tfi_blocks_when_policy_block():
     handler = _make_handler(veto_cfg=cfg, features=features)
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "TFI_MISSING" in reason
 
@@ -192,7 +197,8 @@ def test_missing_tfi_allows_when_policy_skip():
     handler = _make_handler(veto_cfg=cfg, features=features)
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True
 
 
@@ -214,7 +220,8 @@ def test_missing_obi_blocks_when_confirm_enabled():
     )
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "OBI_MISSING" in reason
 
@@ -232,7 +239,8 @@ def test_warmup_not_ready_blocks():
     handler = _make_handler(veto_cfg=cfg, features=features)
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "NOT_READY" in reason
 
@@ -255,7 +263,8 @@ def test_obi_confirm_only_not_sole_driver():
     )
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True  # OBI didn't confirm → not toxic
 
 
@@ -274,7 +283,8 @@ def test_obi_confirms_adverse_flow_blocks():
     )
     bar = _make_bar(open_=100.0, high=100.1, low=99.3, close=99.4)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "TOXIC_FLOW" in reason
 
@@ -295,7 +305,8 @@ def test_non_adverse_tfi_allows():
     )
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True
 
 
@@ -304,7 +315,8 @@ def test_veto_disabled_always_allows():
     handler = _make_handler(veto_cfg=None)
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True
     assert reason == ""
 
@@ -324,7 +336,8 @@ def test_rebound_allows_despite_adverse_tfi():
     )
     bar = _make_bar(open_=99.5, high=100.5, low=99.0, close=100.3)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is True
 
 
@@ -334,7 +347,8 @@ def test_no_features_cached_blocks():
     handler = _make_handler(veto_cfg=cfg, features=None)
     bar = _make_bar()
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "TFI_MISSING" in reason
 
@@ -353,6 +367,7 @@ def test_zero_range_bar_blocks():
     )
     bar = _make_bar(open_=100.0, high=100.0, low=100.0, close=100.0)
 
-    allowed, reason = handler._check_microstructure_veto("DOGEUSDT", "LONG", bar)
+    allowed, reason = handler._check_microstructure_veto(
+        "DOGEUSDT", "LONG", bar)
     assert allowed is False
     assert "ZERO_RANGE" in reason

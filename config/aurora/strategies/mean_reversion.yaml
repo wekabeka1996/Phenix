@@ -278,6 +278,23 @@ mean_reversion:
     missing_policy: "block"                 # "block" = fail-closed on missing TFI
 
   #
+  # Vector 2: Directional Bias Threshold Modulation
+  #
+  # Splits symmetric entry_threshold into base_long and base_short.
+  # Funding rate modulates thresholds dynamically.
+  # Missing funding degrades to static split thresholds (no fail-closed).
+  #
+  directional_bias:
+    enabled: false                          # Disabled by default until validated
+    base_long_threshold: 0.115              # Static %B for LONG (matches legacy entry_threshold)
+    base_short_threshold: 0.115             # Static %B for SHORT (matches legacy entry_threshold)
+    funding_shift_magnitude: 0.02           # Max threshold shift per unit normalized funding
+    funding_normalization_scale: 0.0003     # funding_rate / this = normalized [-1, 1]
+    funding_deadband: 0.1                   # |norm_funding| < 0.1 = zero (noise)
+    threshold_clamp_min: 0.01               # Floor: prevents degenerate entries
+    threshold_clamp_max: 0.3                # Ceiling: prevents unreachable entries
+
+  #
   # Regime Sizing Multipliers
   #
   # Adjust position size based on FLAT regime type
