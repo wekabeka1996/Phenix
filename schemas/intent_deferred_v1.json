@@ -36,6 +36,7 @@
                 "retry_key",
                 "symbol",
                 "reason",
+                "reason_code",
                 "next_allowed_ts",
                 "attempt",
                 "max_attempts",
@@ -54,6 +55,11 @@
                 },
                 "reason": {
                     "type": "string",
+                    "minLength": 1,
+                    "description": "Canonical deferred reason label for operators and logs."
+                },
+                "reason_code": {
+                    "type": "string",
                     "enum": [
                         "NRR-DATA-NOT-READY",
                         "NRR-PORTFOLIO-UNKNOWN",
@@ -61,12 +67,14 @@
                         "NRR-RISK-STALE",
                         "NRR-RISK-SKEW-UNTIL-REFRESH",
                         "FLIP_CLOSE_PENDING",
-                        "COOLDOWN",
+                        "NRR-FLIP-CLOSE-QTY-INVALID",
+                        "NRR-ORDER-IN-FLIGHT",
+                        "NRR-ORDER-INDEX-FAIL",
                         "QOS_BLOCKED",
-                        "EXPOSURE_EXCEEDED",
+                        "COOLDOWN",
                         "REGIME_BLOCKED"
                     ],
-                    "description": "Reason code for deferral (NRR = No Reliable Reason)"
+                    "description": "Machine-stable canonical reason code for deferred truth."
                 },
                 "retry_policy": {
                     "type": "object",
@@ -111,8 +119,7 @@
                         "payload_min": {
                             "type": "object",
                             "required": [
-                                "symbol",
-                                "side"
+                                "symbol"
                             ],
                             "properties": {
                                 "symbol": {
@@ -177,6 +184,23 @@
                 "context": {
                     "type": "string",
                     "description": "Additional context string for debugging (optional)"
+                },
+                "rid": {
+                    "type": "string",
+                    "description": "Correlation id when available."
+                },
+                "span_id": {
+                    "type": "string",
+                    "description": "Tracing span id when available."
+                },
+                "raw_reason": {
+                    "type": "string",
+                    "description": "Original pre-normalization defer reason when canonicalized."
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Optional forensic details for deferred truth."
                 }
             },
             "additionalProperties": false

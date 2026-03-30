@@ -231,6 +231,7 @@ def test_fsm_emit_accepts_digit_prefixed_intent_deferred_payload() -> None:
         "retry_key": "llm:1000PEPEUSDT:1702500200000",
         "symbol": "1000PEPEUSDT",
         "reason": "NRR-RISK-STALE",
+        "reason_code": "NRR-RISK-STALE",
         "next_allowed_ts": 1702500205000,
         "attempt": 1,
         "max_attempts": 3,

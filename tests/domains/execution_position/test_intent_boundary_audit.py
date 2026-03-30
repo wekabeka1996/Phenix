@@ -121,6 +121,42 @@ def test_boundary_audit_emits_no_downstream_reject_when_routed_but_stalled() -> 
     assert audit.pending_count == 0
 
 
+def test_boundary_audit_clears_pending_after_trade_executed_without_order_placed() -> None:
+    bus = _DispatchingBus()
+    audit = IntentBoundaryAudit(
+        bus=bus,
+        config=type("Cfg", (), {"enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+    )
+    audit.register_bus_listeners()
+
+    proposal = _proposal_payload(rid="RID-FILL-DOWNSTREAM")
+    bus.emit("EVT:TRADE_INTENT_PROPOSED", proposal, "test")
+    audit.mark_routed(
+        rid="RID-FILL-DOWNSTREAM",
+        symbol="BTCUSDT",
+        route="CMD:OPEN",
+        strategy_id="aurora",
+        side="BUY",
+    )
+    bus.emit(
+        "EVT:TRADE_EXECUTED",
+        {
+            "rid": "RID-FILL-DOWNSTREAM",
+            "symbol": "BTCUSDT",
+            "side": "buy",
+            "price": "50000",
+            "quantity": "0.01",
+            "ts": 1_700_000_000_500,
+            "venue": "binance",
+        },
+        "WS_ORDER_UPDATE_FILLED",
+    )
+
+    assert audit.pending_count == 0
+    rejects = [event for event in bus.events if event[0] == "EVT:TRADE_INTENT_REJECTED"]
+    assert rejects == []
+
+
 def test_intent_router_marks_open_intents_as_routed(fsm_harness) -> None:
     fsm, _bus, _cfg = fsm_harness
     portfolio_state = {
@@ -166,6 +202,7 @@ class _AllowSafetyGate:
     regime = "TREND_UP"
     regime_confidence = 0.87
     trend_dir = "1"
+    trend_run_length = 0
     delta_price = 0
     pm_norm_10s = 0
     pm_norm_60s = 0

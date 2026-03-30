@@ -258,6 +258,26 @@ mean_reversion:
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
   #
+  # Vector 1: Microstructure Veto Overlay
+  #
+  # Bivariate logic using TFI (Trade Flow Imbalance) + price reaction.
+  # Blocks toxic continuation, allows absorption.
+  # Fail-closed when required features are missing.
+  #
+  microstructure_veto:
+    enabled: false                          # Disabled by default until validated
+    tfi_ema_span: 5                         # EMA smoothing for raw TFI
+    tfi_adverse_threshold: 0.3              # |TFI| > 0.3 = adverse flow
+    obi_confirm_enabled: false              # OBI is confirm-only, not sole driver
+    obi_adverse_threshold: 0.3              # |OBI| > 0.3 = adverse book state
+    price_reaction_lookback_sec: 60         # 60s window for price continuation
+    price_continuation_threshold: 0.001     # 0.1% adverse move = toxic continuation
+    absorption_wick_ratio_min: 0.4          # Wick >= 40% of range = absorption
+    absorption_rebound_threshold: 0.0005    # 0.05% favorable move = rebound
+    readiness_min_bars: 5                   # Min bars before veto engages
+    missing_policy: "block"                 # "block" = fail-closed on missing TFI
+
+  #
   # Regime Sizing Multipliers
   #
   # Adjust position size based on FLAT regime type

@@ -151,10 +151,14 @@ async def test_poll_order_statuses_filled(watchdog):
             "quantity": 1.0,
             "qty": 1.0,
             "price": 50000.0,
+            "status": "FILLED",
             "clientOrderId": "c1",
             "client_order_id": "c1",
             "rid": None,
+            "side": None,
+            "ts": 10000,
             "ts_ms": 10000,
+            "venue": "binance",
         })
         
         # Should mark handled

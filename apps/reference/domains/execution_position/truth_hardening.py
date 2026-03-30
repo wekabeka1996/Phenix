@@ -576,11 +576,17 @@ def resolve_trade_executed_identity(
             missing_fields=tuple(missing_fields),
         )
 
+    # FILL-PIPELINE-FIX-AUDIT: trade_id suffix for partial fill dedup.
+    # Each Binance partial fill has a unique trade_id ("t"), so including it
+    # in the key allows multiple fills for the same order to pass through.
+    # When trade_id is absent (e.g. REST polling), key stays backward-compatible.
+    _tid_suffix = f":trade_id={trade_id}" if trade_id else ""
+
     if client_order_id:
         return TradeExecutedIdentity(
             key=(
                 f"trade_executed:{symbol}:order_id={order_id}:"
-                f"client_order_id={client_order_id}"
+                f"client_order_id={client_order_id}{_tid_suffix}"
             ),
             symbol=symbol,
             order_id=order_id,
@@ -597,7 +603,7 @@ def resolve_trade_executed_identity(
         return TradeExecutedIdentity(
             key=(
                 f"trade_executed:{symbol}:order_id={order_id}:"
-                f"lifecycle_anchor={anchor}"
+                f"lifecycle_anchor={anchor}{_tid_suffix}"
             ),
             symbol=symbol,
             order_id=order_id,
@@ -610,7 +616,7 @@ def resolve_trade_executed_identity(
         )
 
     return TradeExecutedIdentity(
-        key=f"trade_executed:{symbol}:order_id={order_id}",
+        key=f"trade_executed:{symbol}:order_id={order_id}{_tid_suffix}",
         symbol=symbol,
         order_id=order_id,
         client_order_id=client_order_id,

@@ -54,7 +54,7 @@ class NormalizedRejectReasons:
     FEATURES_NOT_READY = "NRR-031"
     FEATURES_MISSING = "NRR-032"
     LIQUIDITY_LOW = "NRR-033"
-    LIQUIDITY_NOT_READY = "NRR-034" # If kappa missing entirely
+    LIQUIDITY_NOT_READY = "NRR-034"  # If kappa missing entirely
     REGIME_UNSUPPORTED = "NRR-035"
     # Direction/Strength scoring hardening
     NORMALIZE_LEGACY_FORBIDDEN_LIVE = "NRR-036"
@@ -93,8 +93,9 @@ class NormalizedRejectReasons:
     STRUCTURAL_GATE_BLOCKED = "NRR-058"
     # Phase 0.5: System Stress Overlay gate (EXTREME state blocks new entries)
     SYSTEM_STRESS_ENTRY_BLOCKED = "NRR-059"
+    # Vector 1: Microstructure Veto (MR handler overlay)
+    MICROSTRUCTURE_VETO = "NRR-060"
     UNKNOWN_ERROR = "NRR-999"
-
 
     # Regex patterns for normalization
     PATTERNS = {
@@ -380,6 +381,5 @@ class NormalizedRejectReasons:
             cls.CONFIG_SAFETY_GATES_MISSING: "Strategy safety_gates.enabled config missing (fail-closed)",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
-
 
         return descriptions.get(nrr_code)

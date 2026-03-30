@@ -11,6 +11,12 @@ from .protocol import Message
 from apps.reference.domains.execution_position.terminal_order_contracts import (
     normalize_terminal_order_event_payload,
 )
+from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+    normalize_trade_intent_rejected_payload,
+)
+from apps.reference.domains.execution_position.trade_executed_contracts import (
+    normalize_trade_executed_payload,
+)
 
 
 class InvalidMessagePayloadError(ValueError):
@@ -88,12 +94,23 @@ class FSMCore:
                 payload,
                 fallback_rid=rid,
             )
+        elif event_name == "EVT:TRADE_INTENT_REJECTED" and isinstance(payload, dict):
+            payload = normalize_trade_intent_rejected_payload(
+                payload,
+                fallback_rid=rid,
+            )
+        elif event_name == "EVT:TRADE_EXECUTED" and isinstance(payload, dict):
+            payload = normalize_trade_executed_payload(
+                payload,
+                fallback_rid=rid,
+                order_index=getattr(self, "order_index", None),
+            )
 
         # Phase 14C: Message Schema Validation (Fail-Fast)
         try:
             from .schema_registry import get_global_registry
             from jsonschema.exceptions import ValidationError
-            
+
             registry = get_global_registry()
             if registry:
                 parts = event_name.split(":", 1)
@@ -155,7 +172,7 @@ class FSMCore:
                 if shadow_journal is not None and decision.degraded_identity:
                     notes = [decision.identity_quality]
                     if decision.trade_id_present:
-                        notes.append("trade_id_present_not_used_for_shared_key")
+                        notes.append("trade_id_included_in_shared_key")
                     for field in decision.missing_fields:
                         notes.append(f"missing_{field}")
                     shadow_journal.record_transition(

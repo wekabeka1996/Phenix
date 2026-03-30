@@ -28,18 +28,16 @@ assignments:
   SOLUSDT:
     - aurora
 
-  DOGEUSDT:
-    - mean_reversion
+  #XRPUSDT:
 
-  XRPUSDT:
-    - md_amr
 
   BTCUSDT:
     - aurora
 
   # New symbols  added with data 2023-06..2024-03
-  BNBUSDT:
-    - md_amr
+  #BNBUSDT:
+
+  #DOGEUSDT:
 
   1000PEPEUSDT:
     - llm_microstructure

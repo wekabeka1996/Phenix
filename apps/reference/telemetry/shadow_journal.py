@@ -16,6 +16,10 @@ LOG = logging.getLogger(__name__)
 
 DEFAULT_CRITICAL_EVENTS = (
     "EVT:TRADE_INTENT_PROPOSED",
+    "EVT:TRADE_INTENT_REJECTED",
+    "EVT:INTENT_DEFERRED",
+    "EVT:DECISION_BLOCKED",
+    "EVT:STRATEGY_DECISION_BLOCKED",
     "CMD:OPEN",
     "DEC:OPEN",
     "EVT:ORDER_ACK",
@@ -424,6 +428,10 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "terminal_state_kind",
         "identity_quality",
         "canonical_identity_key",
+        "stage",
+        "why",
+        "context",
+        "why_chain",
         "reason",
         "reject_reason",
         "reject_reason_normalized",
@@ -508,6 +516,15 @@ def infer_emit_source(
         return ("execution_position.watchdog", "watchdog:rest_poll", "watchdog")
     if event_name == "EVT:TRADE_INTENT_PROPOSED":
         return ("decision_making.intent_builder", "decision:intent_builder", "decision")
+    if event_name == "EVT:TRADE_INTENT_REJECTED":
+        stage = str(payload.get("stage") or "").upper()
+        if stage == "EXECUTION":
+            return ("execution_position", "execution:trade_intent_reject", "execution")
+        return ("decision_making", "decision:trade_intent_reject", "decision")
+    if event_name == "EVT:INTENT_DEFERRED":
+        return ("decision_making", "decision:intent_deferred", "decision")
+    if event_name in ("EVT:DECISION_BLOCKED", "EVT:STRATEGY_DECISION_BLOCKED"):
+        return ("decision_making", "decision:blocked_truth", "decision")
     if event_name in ("EVT:PORTFOLIO_STATE_UPDATED", "EVT:EXPOSURE_SUMMARY_UPDATED"):
         return ("position_tracking", "portfolio:state_update", "portfolio")
     if event_name.startswith("CMD:"):

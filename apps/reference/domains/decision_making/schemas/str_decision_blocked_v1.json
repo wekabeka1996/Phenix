@@ -16,10 +16,31 @@
             "type": "string",
             "description": "The description block for why the order/intent was blocked."
         },
+        "stage": {
+            "type": "string",
+            "enum": ["STRATEGY"],
+            "description": "Truth-class stage for strategy-side blocked decisions."
+        },
         "context": {
             "type": "string"
         },
+        "why": {
+            "type": "string",
+            "description": "Compact human explanation for forensic reconstruction."
+        },
         "ts_ms": {
+            "type": "integer"
+        },
+        "rid": {
+            "type": "string"
+        },
+        "span_id": {
+            "type": "string"
+        },
+        "tf_sec": {
+            "type": "integer"
+        },
+        "bar_close_ts": {
             "type": "integer"
         },
         "why_chain": {
@@ -37,9 +58,10 @@
         "symbol",
         "reason_code",
         "reason",
+        "stage",
         "context",
+        "why",
         "ts_ms",
         "why_chain"
-    ],
-    "additionalProperties": true
+    ]
 }

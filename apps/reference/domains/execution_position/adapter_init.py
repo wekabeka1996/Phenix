@@ -5,6 +5,7 @@ Encapsulates BinanceAdapter bootstrap logic used by ExecPosFSM.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, TYPE_CHECKING
 
@@ -105,3 +106,38 @@ class AdapterInitMixin:
         self.adapter.exec_fsm = self  # Direct reference to ExecPosFSM for handle() calls
         # Keep for backwards compatibility (event bus)
         self.adapter.fsm_core = self.fsm
+
+        # ── FILL-PIPELINE-FIX: Start WebSocket User Data Stream ─────
+        # Primary fill detection path; REST polling in watchdog is fallback.
+        # FILL-PIPELINE-FIX-AUDIT: Stop existing WS client before creating new (F-4)
+        if hasattr(self, 'ws_client') and self.ws_client is not None:
+            try:
+                self.ws_client.stop()
+                LOG.info("Stopped previous BinanceWebSocketClient before re-init")
+            except Exception:
+                pass
+        self.ws_client = None
+        try:
+            from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
+
+            use_testnet = mode != "live"
+            # Capture the running event loop for thread-safe event delivery
+            try:
+                main_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                main_loop = None
+
+            self.ws_client = BinanceWebSocketClient(
+                api_key=api_key,
+                base_url=rest_url,
+                use_testnet=use_testnet,
+                fsm_core=self.fsm,
+                main_loop=main_loop,
+            )
+            self.ws_client.start()
+            LOG.info("BinanceWebSocketClient started for USER_DATA_STREAM fill detection")
+        except Exception as e:
+            LOG.warning(
+                f"Failed to start BinanceWebSocketClient (REST polling fallback active): {e}"
+            )
+            self.ws_client = None

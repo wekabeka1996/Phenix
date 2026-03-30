@@ -13,6 +13,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+    emit_canonical_trade_intent_rejected_event,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -31,9 +34,19 @@ class PendingTradeIntent:
 class IntentBoundaryAudit:
     """Audits TRADE_INTENT_PROPOSED -> execution progress."""
 
-    def __init__(self, *, bus: Any, config: Any = None, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        bus: Any,
+        config: Any = None,
+        logger: logging.Logger | None = None,
+        lifecycle: Any = None,
+        write_wal: bool = False,
+    ) -> None:
         self._bus = bus
         self._logger = logger or LOG
+        self._trade_lifecycle = lifecycle
+        self._write_wal = bool(write_wal)
         self._enabled = self._coerce_bool(
             getattr(config, "enabled", True) if config is not None else True,
             default=True,
@@ -72,6 +85,7 @@ class IntentBoundaryAudit:
         self._bus.listen("EVT:ORDER_STATE_CHANGED", self._on_terminal_event)
         self._bus.listen("EVT:ORDER_ACK", self._on_terminal_event)
         self._bus.listen("EVT:ORDER_FILL", self._on_terminal_event)
+        self._bus.listen("EVT:TRADE_EXECUTED", self._on_terminal_event)
 
     def mark_routed(
         self,
@@ -225,11 +239,20 @@ class IntentBoundaryAudit:
             reason_code,
             entry.routed_via,
         )
-        self._bus.emit(
-            "EVT:TRADE_INTENT_REJECTED",
-            payload,
-            why,
-            ["trade_intent_boundary_audit", reason_code],
+        emit_canonical_trade_intent_rejected_event(
+            fsm=self._bus,
+            payload=payload,
+            rid=entry.rid,
+            src="execution_position",
+            why=why,
+            logger=self._logger,
+            lifecycle=self._trade_lifecycle,
+            write_wal=self._write_wal,
+            fallback_symbol=entry.symbol,
+            fallback_reason_code=reason_code,
+            fallback_stage="EXECUTION",
+            fallback_why=why,
+            data_ref=["trade_intent_boundary_audit", reason_code],
         )
 
     @staticmethod

@@ -171,14 +171,21 @@ def test_trade_executed_order_only_identity_is_observable_as_degraded(tmp_path):
     seen = []
     fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
 
-    payload = {"symbol": "BTCUSDT", "orderId": "4444"}
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": "buy",
+        "price": "50000",
+        "quantity": "0.01",
+        "orderId": "4444",
+        "venue": "binance",
+    }
     fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="polling_fill", rid="rid-weak")
 
     assert seen == ["4444"]
     records = _read_jsonl(path)
     degraded = [r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED"]
     assert len(degraded) == 1
-    assert "order_only_identity_degraded" in degraded[0]["notes"]
+    assert any(note.endswith("_identity_degraded") for note in degraded[0]["notes"])
     assert "missing_client_order_id" in degraded[0]["notes"]
 
 
@@ -195,9 +202,13 @@ def test_restart_reset_is_explicit_and_previous_fill_dedupe_state_is_not_reused(
 
     payload = {
         "symbol": "BTCUSDT",
+        "side": "buy",
+        "price": "50000",
+        "quantity": "0.01",
         "orderId": "5555",
         "clientOrderId": "ENTRY-BTCUSDT-RST",
         "client_order_id": "ENTRY-BTCUSDT-RST",
+        "venue": "binance",
     }
 
     fsm_a = FSMCore()

@@ -102,6 +102,10 @@ shadow_journal:
   instrumentation_version: "1.0.0"
   critical_events:
     - EVT:TRADE_INTENT_PROPOSED
+    - EVT:TRADE_INTENT_REJECTED
+    - EVT:INTENT_DEFERRED
+    - EVT:DECISION_BLOCKED
+    - EVT:STRATEGY_DECISION_BLOCKED
     - CMD:OPEN
     - DEC:OPEN
     - EVT:ORDER_ACK

@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 class DecisionBlockedPayload(BaseModel):
@@ -20,3 +22,7 @@ class DecisionBlockedPayload(BaseModel):
     # Debug details
     path: str = Field(description="Config path or resource involved")
     why: str = Field(description="Short explanation (<80 chars)")
+    rid: str | None = Field(default=None, description="Correlation id when available")
+    span_id: str | None = Field(default=None, description="Tracing span id when available")
+    why_chain: list[str] = Field(default_factory=list, description="Decision ancestry for forensics")
+    details: dict[str, Any] | None = Field(default=None, description="Structured forensic details")

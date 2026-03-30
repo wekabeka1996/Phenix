@@ -38,7 +38,9 @@ from .utils import (
     BoundedEventDeduper,
 )
 from .aurora_log_adapter import AuroraLogAdapter
-from .terminal_order_contracts import normalize_order_rejected_payload
+from .terminal_order_contracts import (
+    emit_canonical_terminal_order_event,
+)
 from .metrics_collector import MetricsCollector
 from .intent_boundary_audit import IntentBoundaryAudit
 from apps.reference.telemetry.order_logger import order_logger
@@ -442,6 +444,8 @@ class ExecPosFSM(
             self.fsm,
             self.config,
         )
+        self._trade_lifecycle = _trade_lifecycle
+        self._emit_trade_intent_reject_wal = True
 
         audit_cfg = None
         try:
@@ -452,6 +456,8 @@ class ExecPosFSM(
             bus=self.bus,
             config=audit_cfg,
             logger=LOG.getChild("IntentBoundaryAudit"),
+            lifecycle=self._trade_lifecycle,
+            write_wal=self._emit_trade_intent_reject_wal,
         )
         self._intent_boundary_audit.register_bus_listeners()
 
@@ -459,6 +465,7 @@ class ExecPosFSM(
         self.bus.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
+        self.bus.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
         self.bus.listen("EVT:FEATURES_CALCULATED",
                         self._on_features_calculated)
@@ -529,6 +536,7 @@ class ExecPosFSM(
             f"ExecPosFSM TTL config: ack_ttl_ms={ack_ttl_ms}, fill_ttl_ms={fill_ttl_ms}, source={ttl_source}")
 
         # Optional override from trading.orders.default_ttl_seconds (Balanced profile)
+        # FILL-PIPELINE-FIX: guard against silent downward override that kills LIMIT orders
         try:
             orders_cfg = self._get_config_value(["trading", "orders"])
             if not orders_cfg:
@@ -543,10 +551,16 @@ class ExecPosFSM(
                         orders_cfg, "default_ttl_seconds", None)
 
                 if default_ttl_seconds is not None:
-                    ttl_ms = int(default_ttl_seconds) * 1000
-                    fill_ttl_ms = ttl_ms
-                    LOG.info(
-                        f"ExecPosFSM: applying default_ttl_seconds override -> fill_ttl_ms={fill_ttl_ms}")
+                    candidate_ms = int(default_ttl_seconds) * 1000
+                    if candidate_ms < fill_ttl_ms:
+                        LOG.warning(
+                            f"ExecPosFSM: IGNORING default_ttl_seconds={default_ttl_seconds} "
+                            f"(would reduce fill_ttl_ms from {fill_ttl_ms} to {candidate_ms}). "
+                            f"fill_ttl_ms from watchdog config is SSOT.")
+                    else:
+                        fill_ttl_ms = candidate_ms
+                        LOG.info(
+                            f"ExecPosFSM: applying default_ttl_seconds override -> fill_ttl_ms={fill_ttl_ms}")
         except Exception as e:
             LOG.warning(f"ExecPosFSM: failed to read default_ttl_seconds: {e}")
         self.watchdog: OrderTimeoutWatchdog = OrderTimeoutWatchdog(
@@ -1039,6 +1053,10 @@ class ExecPosFSM(
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_order_ack(event)
 
+    def _on_trade_executed(self, event: Message) -> None:
+        """Phase 14A: Delegated to EPEventHandlers."""
+        self._evt_handlers.on_trade_executed(event)
+
     def _on_order_fill(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_order_fill(event)
@@ -1057,6 +1075,12 @@ class ExecPosFSM(
             loop = self._get_async_loop()
             if loop:
                 self._submit_async(self.order_guardian.stop(), loop)
+        # FILL-PIPELINE-FIX-AUDIT: Stop WS client on shutdown (F-4)
+        if hasattr(self, 'ws_client') and self.ws_client is not None:
+            try:
+                self.ws_client.stop()
+            except Exception:
+                pass
         LOG.info("ExecPosFSM shutdown complete")
 
     async def start_order_guardian(self):
@@ -1455,7 +1479,11 @@ class ExecPosFSM(
 
         if placed:
             manage_flow = self.manage_flows.get(symbol)
-            if manage_flow is not None:
+            # GUARD: Only sync bracket IDs into ManageFlowFSM when a real lifecycle
+            # is active (state != FLAT). Injecting bracket IDs into a FLAT FSM corrupts
+            # has_active_lifecycle() truth, causing a self-reinforcing OPEN_GUARD_FAIL loop.
+            # The bracket IDs remain in _symbol_brackets for external observability.
+            if manage_flow is not None and manage_flow.state != ManageState.FLAT:
                 brackets = self._symbol_brackets.get(symbol, {})
                 manage_flow.set_bracket_ids(
                     brackets.get("sl_order_id"),
@@ -1872,25 +1900,27 @@ class ExecPosFSM(
             })
 
             try:
-                reject_payload = normalize_order_rejected_payload(
-                    {"symbol": decision_pld.get("symbol", ""),
-                     "side": decision_pld.get("side", "NONE"),
-                     "reason_code": "ADAPTER_ERROR",
-                     "reason_text": str(e)[:200],
-                     "exception_class": type(e).__name__,
-                     "ts_ms": get_clock().now_ms()},
-                    fallback_rid=decision.rid,
+                await emit_canonical_terminal_order_event(
+                    fsm=self.fsm,
+                    event_name="EVT:ORDER_REJECTED",
+                    payload={
+                        "symbol": decision_pld.get("symbol", ""),
+                        "side": decision_pld.get("side", "NONE"),
+                        "reason_code": "ADAPTER_ERROR",
+                        "reason_text": str(e)[:200],
+                        "exception_class": type(e).__name__,
+                        "ts_ms": get_clock().now_ms(),
+                    },
+                    rid=decision.rid,
+                    src="execution_position",
+                    dst="observability",
+                    why="adapter_execution_failed",
+                    logger=LOG,
+                    write_wal=True,
                     fallback_ts_ms=get_clock().now_ms(),
                 )
-                order_rejected_msg = Message(
-                    op="EVT", verb="ORDER_REJECTED", src="execution_position",
-                    dst="observability", rid=decision.rid,
-                    pld=reject_payload,
-                    why="adapter_execution_failed")
-                wal.append(order_rejected_msg.model_dump())
-            except Exception as wal_e:
-                LOG.warning(
-                    f"Failed to write EVT:ORDER_REJECTED to WAL: {wal_e}")
+            except Exception as emit_e:
+                LOG.warning("Failed to emit EVT:ORDER_REJECTED canonical seam: %s", emit_e)
 
             exec_failed_msg = Message(
                 op="ERR", verb="EXECUTION_FAILED", src="execution_position",

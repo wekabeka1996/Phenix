@@ -388,24 +388,35 @@ class ManageFlowFSM:
         LOG.debug(f" Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
 
     def has_active_lifecycle(self) -> bool:
-        """Return True when local execution state still owns a lifecycle for the symbol."""
+        """Return True when local execution state still owns a lifecycle for the symbol.
+
+        Contract:
+        - state != FLAT is authoritative: always True.
+        - _closing_position flag: always True (mid-close race condition guard).
+        - position_qty: direct evidence of an open position.
+        - Bracket IDs (sl_order_id, tp_order_id, etc.) are only counted as active
+          lifecycle evidence when accompanied by entry-side evidence (entry_order_id
+          or position_entry_price). Bracket-only metadata injected by health-check
+          paths on a FLAT FSM is NOT sufficient to constitute an active lifecycle.
+        """
         if self.state != ManageState.FLAT:
             return True
         if self._closing_position:
             return True
         if self.position_qty not in (None, Decimal("0")):
             return True
-        return any(
-            (
-                self.position_entry_price,
-                self.entry_order_id,
-                self.entry_client_order_id,
-                self.sl_order_id,
-                self.tp_order_id,
-                self.tp1_order_id,
-                self.tp2_order_id,
-            )
+        # Entry-side evidence is independently sufficient to constitute an active lifecycle.
+        # Health-check brackets placed while FLAT are NOT sufficient without entry evidence.
+        # This separation prevents bracket-only IDs from blocking new valid open intents.
+        has_entry_evidence = bool(
+            self.position_entry_price
+            or self.entry_order_id
+            or self.entry_client_order_id
         )
+        if has_entry_evidence:
+            return True
+        # Bracket IDs (sl/tp) without any entry evidence = health-check artifact, not lifecycle.
+        return False
 
     def _client_order_id_from_payload(self, payload: Dict[str, Any]) -> str:
         return str(payload.get("clientOrderId") or payload.get("client_order_id") or "")

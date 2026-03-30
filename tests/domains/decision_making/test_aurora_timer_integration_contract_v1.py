@@ -266,6 +266,61 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
     assert produced[0]["side"] == "SELL"
 
 
+def test_kernel_deferred_emits_intent_deferred_not_strategy_blocked() -> None:
+    clock = DeterministicClock(start_ts=3000.0)
+    symbol = "BTCUSDT"
+
+    decision = AuroraDecisionCfg(
+        reentry_cooldown_sec=0.0,
+        holding_period=HoldingPeriodCfg(enabled=False),
+        anti_churn=None,
+    )
+    cfg = _build_config(symbol=symbol, decision=decision)
+
+    events: list[tuple[str, dict]] = []
+    handler = AuroraHandler(
+        config=cfg,
+        emit_fn=lambda t, p: events.append((t, p)),
+        monotonic_fn=clock.now,
+        wall_time_fn=clock.now,
+    )
+    handler._basis_required_bars_override = 0
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states[symbol].regime = "FLAT_NORMAL"
+
+    handler.scoring_kernel_cls = QueueKernel
+    QueueKernel.queue = [
+        ScoringResult(
+            score=Decimal("0.0"),
+            side="",
+            thr_buy=Decimal("0.1"),
+            thr_sell=Decimal("0.1"),
+            deferred=True,
+            defer_reason="REGIME_BLOCKED",
+        ),
+    ]
+
+    event = {
+        "symbol": symbol,
+        "features": {"price": 100},
+        "tf_sec": 60,
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now() * 1000),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
+        "regime": {"regime": "FLAT_NORMAL"},
+        "rid": "rid-kernel-defer",
+    }
+
+    handler.on_process_strategy(event)
+
+    assert "EVT:INTENT_DEFERRED" in _types(events)
+    assert "EVT:STRATEGY_DECISION_BLOCKED" not in _types(events)
+    deferred = _payloads(events, "EVT:INTENT_DEFERRED")[0]
+    assert deferred["reason"] == "REGIME_BLOCKED"
+    assert deferred["reason_code"] == "REGIME_BLOCKED"
+    assert deferred["original_event"]["event_name"] == "CMD:PROCESS_STRATEGY"
+
+
 def test_timer_integration_time_multipliers_and_regime_inertia_do_not_break_timers() -> None:
     clock = DeterministicClock(start_ts=1000.0)
     symbol = "BTCUSDT"

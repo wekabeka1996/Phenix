@@ -45,7 +45,8 @@ class BinanceWebSocketClient:
     Standalone WebSocket client for Binance Futures User Data Stream.
     """
 
-    def __init__(self, api_key: str, base_url: str, use_testnet: bool, fsm_core: Any):
+    def __init__(self, api_key: str, base_url: str, use_testnet: bool, fsm_core: Any,
+                 main_loop: Optional[asyncio.AbstractEventLoop] = None):
         """
         Initialize Binance WebSocket Client.
 
@@ -54,6 +55,7 @@ class BinanceWebSocketClient:
             base_url: Base URL for REST API (to get listen key).
             use_testnet: Whether to use testnet URLs.
             fsm_core: FSM instance for event emission and order correlation.
+            main_loop: Main asyncio event loop for thread-safe event delivery.
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -66,13 +68,16 @@ class BinanceWebSocketClient:
         self.ws_reconnect_delay = 1.0
         self.ws_max_reconnect_delay = 60.0
         self.listen_key_last_refresh = 0.0
-        
-        # ADPT-FIX-01: Capture event loop for thread-safe emission
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            logger.warning("[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
-            self._loop = None
+
+        # FILL-PIPELINE-FIX: Accept main loop explicitly instead of guessing
+        if main_loop is not None:
+            self._loop = main_loop
+        else:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                logger.warning("[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
+                self._loop = None
 
     def _safe_emit(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
         """
@@ -155,9 +160,9 @@ class BinanceWebSocketClient:
 
             logger.info(f"[BinanceWS] Connecting to WebSocket: {ws_url}")
 
-            # Create event loop for async WebSocket
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # FILL-PIPELINE-FIX: Use a dedicated loop for the WS thread,
+            # but deliver events to self._loop (main thread) via _safe_emit
+            ws_loop = asyncio.new_event_loop()
 
             async def ws_handler():
                 try:
@@ -187,7 +192,11 @@ class BinanceWebSocketClient:
                     raise
 
             # Run WebSocket handler
-            loop.run_until_complete(ws_handler())
+            # FILL-PIPELINE-FIX-AUDIT: close event loop on reconnect to prevent leak (F-5)
+            try:
+                ws_loop.run_until_complete(ws_handler())
+            finally:
+                ws_loop.close()
 
         except Exception as e:
             logger.error(f"[BinanceWS] Failed to establish WebSocket connection: {e}")
@@ -304,7 +313,7 @@ class BinanceWebSocketClient:
             except Exception:
                 # Fallback: check clientOrderId for "ENTRY" (legacy, EP-01.5)
                 is_entry_order = "ENTRY" in client_order_id.upper() if client_order_id else False
-            
+
             # EP-01.6: Decimal-safe parser for filled_qty (no float() cast)
             filled_qty_is_zero = False
             try:
@@ -319,8 +328,8 @@ class BinanceWebSocketClient:
             except (InvalidOperation, ValueError) as e:
                 logger.warning(f"[BinanceWS] Failed to parse filled_qty={filled_qty!r}: {e}, fail-closed")
                 filled_qty_is_zero = False
-            
-            if (standardized_status == "EXPIRED" 
+
+            if (standardized_status == "EXPIRED"
                 and time_in_force == "GTX"
                 and is_entry_order
                 and filled_qty_is_zero):
@@ -349,7 +358,12 @@ class BinanceWebSocketClient:
                 "quantity": filled_qty,
                 "price": str(order_data.get("ap", order_data.get("p", "0"))),
                 "time_in_force": time_in_force,  # EP-01.5: Include tif
+                "ts": msg.get("T", int(time.time() * 1000)),
                 "ts_ms": msg.get("T", int(time.time() * 1000)),
+                "venue": "binance",
+                "commission": str(order_data.get("n", "0")),
+                "commissionAsset": order_data.get("N", ""),
+                "realizedPnl": str(order_data.get("rp", "0")),
             }
 
             # EP-01.5: Add MAKER_ONLY_REJECT reason if detected
@@ -381,6 +395,7 @@ class BinanceWebSocketClient:
             inc_order_state(standardized_status)
 
             # For terminal states, mark as terminal and observe lifecycle
+            # FILL-PIPELINE-FIX: PARTIALLY_FILLED is NOT terminal (more fills expected)
             if standardized_status in ["FILLED", "CANCELED", "REJECTED", "EXPIRED"]:
                 self.fsm_core.order_index.mark_terminal(order_ref)
                 duration_sec = time.time() - order_ref.created_ts
@@ -388,9 +403,20 @@ class BinanceWebSocketClient:
 
             # Emit appropriate event based on status
             if self.fsm_core:
-                if standardized_status == "FILLED":
+                # FILL-PIPELINE-FIX: Treat PARTIALLY_FILLED the same as FILLED
+                # Binance sends PARTIALLY_FILLED for each incremental fill; only the
+                # final chunk is FILLED.  Both must route to EVT:TRADE_EXECUTED.
+                if standardized_status in ("FILLED", "PARTIALLY_FILLED"):
+                    # Use last filled qty ("l") for incremental amount, "z" is cumulative
+                    last_fill_qty = str(order_data.get("l", order_data.get("z", "0")))
+                    payload["qty"] = last_fill_qty
+                    payload["quantity"] = last_fill_qty
+                    payload["last_fill_qty"] = last_fill_qty
+                    payload["cumulative_qty"] = str(order_data.get("z", "0"))
                     event_name = "EVT:TRADE_EXECUTED"
-                    logger.info(f"[BinanceWS] ✅ ORDER FILLED - Emitting EVT:TRADE_EXECUTED for {symbol}")
+                    logger.info(
+                        f"[BinanceWS] ✅ ORDER {'FILLED' if standardized_status == 'FILLED' else 'PARTIAL_FILL'} "
+                        f"- Emitting EVT:TRADE_EXECUTED for {symbol} (last_qty={last_fill_qty})")
                 elif is_maker_only_reject:
                     # EP-01.5: Emit special rejection event for MAKER_ONLY_REJECT
                     event_name = "EVT:ORDER_REJECTED"

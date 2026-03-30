@@ -2,15 +2,15 @@
 
 > **AUDIT SUMMARY**
 > - **Document path:** `config/docs/mean_reversion_state_machine_passport.md`
-> - **Audit date:** 2026-03-18
+> - **Audit date:** 2026-03-29
 > - **Audit mode:** Code-driven deep sync
-> - **Major drifts found:** 
+> - **Major drifts found:**
 >   1. Missing strategy parameters like `bb_window`, `bb_num_std`, `rsi_window`, `entry_threshold`, RSI thresholds, and confidence scalars added for completeness.
->   2. The assertion that DOGEUSDT is the only live symbol is verified via `strategies.yaml` assignments.
->   3. `timeframe_sec=300` and config override structures verified and exactly match.
+>   2. The previous assertion that `DOGEUSDT` is the only live MR symbol is stale; current `strategies.yaml` has no `mean_reversion` assignments.
+>   3. `timeframe_sec=300` and the dormant DOGE-specific override block in `mean_reversion.yaml` are still present on disk, but they are not live-loaded while `mean_reversion` is unassigned.
 > - **Overall confidence:** HIGH
 
-Цей паспорт описує лише поточний live/runtime контракт state machine для `mean_reversion`: де закінчується власне bar-based стратегія і де починаються handler overlays та downstream execution.
+Цей паспорт описує code/runtime контракт state machine для `mean_reversion`, але у поточному перевіреному registry state ця стратегія не має live assignment і не стартує у runtime. Нижче зафіксовано, що саме лишається істинним для dormant profile на диску і який handler/state-machine path активується, якщо `mean_reversion` буде reassigned пізніше.
 
 Owner surface:
 - Strategy state machine: `apps/reference/domains/feature_engineering/mean_reversion_strategy.py`
@@ -22,12 +22,12 @@ Owner surface:
 
 Старий документ застряг у змішаній термінології `1m/3m/Phase 8`, але поточний live YAML задає:
 - `timeframe_sec: 300`
-- registry assignment для `mean_reversion` зараз лише на `DOGEUSDT`
+- registry assignments для `mean_reversion` зараз відсутні
 
 Тобто поточний live path такий:
 - клас усе ще називається `MeanReversion1mStrategy`
 - деякі handler/docstring comments усе ще кажуть `1m` або `3m`
-- але реально активний runtime profile зараз 5m (`300s`), і саме він є live TF SSOT
+- профіль на диску лишається 5m (`300s`), але live activation зараз відсутня через registry-level disable
 
 ## 2. Activation SSOT
 
@@ -35,10 +35,14 @@ Owner surface:
 - `config/aurora/strategies.yaml` визначає, які symbols assigned до `mean_reversion`
 - `MeanReversionHandler._parse_config()` бере фінальний universe як `assigned ∩ assets.enabled`
 
-Поточний live assignment:
-- `DOGEUSDT`
+Поточний live assignment set:
+- порожній
 
-Fail-closed інваріанти при assignment:
+Поточний live наслідок цього стану:
+- `ConfigLoader` не live-loadить `config.strategies.mean_reversion`
+- `StrategyRuntime` не стартує `MeanReversionPlugin`
+
+Fail-closed інваріанти, якщо `mean_reversion` буде reassigned:
 - якщо `config.strategies.mean_reversion` відсутній, handler падає
 - якщо `mean_reversion.enabled=false`, але symbol assigned, handler падає
 - якщо assigned symbol відсутній у `mean_reversion.assets` або `enabled=false`, handler падає
@@ -71,6 +75,8 @@ Fail-closed інваріанти при assignment:
 Це критично для incident analysis: split-brain із `ManageFlowFSM` не є behavior самого MR state machine.
 
 ## 4. Реальний trigger path
+
+Описаний нижче trigger path є code/runtime contract path після reassignment. У поточному verified live config він не активний, бо `mean_reversion` handler не стартує без assignment.
 
 Поточний primary entrypoint для decision path:
 - тільки `CMD:PROCESS_STRATEGY`
@@ -184,11 +190,11 @@ Objective Engine теж живе в handler, уже після формуван�
 - `execution.entry_order_type=MARKET`
 - `safety_gates.enabled=false`
 - `objective.enabled=true`
-- `DOGEUSDT` є єдиним live symbol через assignment
-- `DOGEUSDT.strategy.min_bb_width=0.005`
+- live assignments для `mean_reversion` відсутні
+- `DOGEUSDT.strategy.min_bb_width=0.005` лишається в dormant profile на диску
 
 Для incident context це важливо:
-- strategy-level вхід у squeeze breakout справді може бути «правильним за кодом», якщо `bb_width > 0.005`
+- strategy-level вхід у squeeze breakout лишається «правильним за кодом», якщо `bb_width > 0.005`, але цей path зараз не live-active
 - downstream execution split-brain після цього вже не є частиною MR state machine
 
 ## 11. Drift, виявлений аудитом
@@ -199,11 +205,11 @@ Objective Engine теж живе в handler, уже після формуван�
 
 ## 12. Підсумок
 
-Поточна `mean_reversion` state machine є bar-driven mean-reversion логікою, яка:
-- працює на live 5m bars
+Поточна `mean_reversion` state machine в коді є bar-driven mean-reversion логікою, яка:
+- працює на 5m bars у своєму profile contract
 - приймає рішення через `%B`, BB width, flat regime mapping, cooldown та confidence boosts
 - не володіє execution lifecycle
-- передає downstream уже збагачений handler-ом payload
+- передає downstream уже збагачений handler-ом payload, якщо strategy reassigned і handler активований
 
 Правильна ментальна модель така:
 - `MeanReversion1mStrategy` = math/state

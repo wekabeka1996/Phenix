@@ -113,7 +113,7 @@ registry:
   verb: DECISION_BLOCKED
   owner: decision_making
   status: experimental
-  schema: null
+  schema: apps/reference/domains/decision_making/schemas/decision_blocked_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: DECISION_TRACE_EMITTED

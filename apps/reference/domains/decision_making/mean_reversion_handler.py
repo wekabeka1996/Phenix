@@ -65,6 +65,9 @@ from apps.reference.contracts.runtime_readiness import (
 )
 from vfoundation.core.protocol import Message
 from apps.reference.utils.accessors import aget
+from apps.reference.domains.decision_making.decision_truth_artifacts import (
+    write_strategy_decision_blocked,
+)
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
 
@@ -270,6 +273,24 @@ class MeanReversionHandler:
         # Block reason throttling (avoid per-tick spam)
         self._last_block_reason: Dict[str, str] = {}
         self._last_block_ts_ms: Dict[str, int] = {}
+
+        # Vector 1: Microstructure Veto state
+        # Per-symbol TFI EMA buffer (smoothed trade flow imbalance)
+        self._tfi_ema: Dict[str, float] = {}
+        self._tfi_bar_count: Dict[str, int] = {}
+        # Resolve per-symbol microstructure veto config (global -> per-asset override)
+        self._microstructure_veto_configs: Dict[str, Any] = {}
+        if self._mr_config:
+            global_veto = self._mr_config.microstructure_veto
+            for sym in self._enabled_symbols:
+                asset_cfg = self._mr_config.assets.get(sym)
+                per_asset_veto = None
+                if asset_cfg and asset_cfg.strategy:
+                    per_asset_veto = getattr(
+                        asset_cfg.strategy, "microstructure_veto", None)
+                veto_cfg = per_asset_veto if per_asset_veto is not None else global_veto
+                if veto_cfg is not None and veto_cfg.enabled:
+                    self._microstructure_veto_configs[sym] = veto_cfg
 
         self.logger.info(
             f"MeanReversionHandler initialized: enabled={self._enabled}, "
@@ -595,6 +616,165 @@ class MeanReversionHandler:
         """Check if MR is enabled for specific symbol."""
         return self._enabled and symbol in self._enabled_symbols
 
+    # ── Vector 1: Microstructure Veto ────────────────────────────────────────
+
+    def _check_microstructure_veto(
+        self,
+        symbol: str,
+        signal_side: str,
+        bar: Any,
+    ) -> tuple[bool, str]:
+        """Evaluate microstructure veto overlay for an actionable MR signal.
+
+        Returns:
+            (allowed, reason):
+                allowed=True  → signal may proceed
+                allowed=False → signal is vetoed (reason explains why)
+
+        Logic (bivariate):
+            1. If veto not configured/enabled for this symbol → ALLOW
+            2. Extract TFI from cached features → missing → fail-closed (block)
+            3. Update TFI EMA → not enough bars → ALLOW (warmup)
+            4. If smoothed TFI is NOT adverse → ALLOW (no flow problem)
+            5. If OBI confirm enabled, check OBI → missing → fail-closed
+            6. Measure price reaction (continuation vs absorption):
+               - Toxic continuation (adverse price move) → BLOCK
+               - Absorption (wick/rebound evidence) → ALLOW
+               - Neutral → BLOCK (conservative)
+        """
+        veto_cfg = self._microstructure_veto_configs.get(symbol)
+        if veto_cfg is None:
+            return True, ""
+
+        # --- Extract TFI from cached features ---
+        features = self._last_cmd_features.get(symbol, {})
+        tfi_raw = features.get("tfi")
+        if tfi_raw is None:
+            if veto_cfg.missing_policy == "block":
+                return False, "MICROSTRUCTURE_VETO:TFI_MISSING"
+            return True, ""
+
+        try:
+            tfi_val = float(tfi_raw)
+        except (ValueError, TypeError):
+            if veto_cfg.missing_policy == "block":
+                return False, "MICROSTRUCTURE_VETO:TFI_INVALID"
+            return True, ""
+
+        # --- Update TFI EMA ---
+        prev_ema = self._tfi_ema.get(symbol)
+        alpha = 2.0 / (veto_cfg.tfi_ema_span + 1)
+        if prev_ema is None:
+            smoothed_tfi = tfi_val
+        else:
+            smoothed_tfi = alpha * tfi_val + (1.0 - alpha) * prev_ema
+        self._tfi_ema[symbol] = smoothed_tfi
+        self._tfi_bar_count[symbol] = self._tfi_bar_count.get(symbol, 0) + 1
+
+        # --- Readiness check (warmup) ---
+        if self._tfi_bar_count[symbol] < veto_cfg.readiness_min_bars:
+            return False, "MICROSTRUCTURE_VETO:NOT_READY"
+
+        # --- Determine adverse direction ---
+        # LONG signal: adverse flow = strongly negative TFI (selling pressure)
+        # SHORT signal: adverse flow = strongly positive TFI (buying pressure)
+        if signal_side == "LONG":
+            is_adverse_tfi = smoothed_tfi < -veto_cfg.tfi_adverse_threshold
+        else:
+            is_adverse_tfi = smoothed_tfi > veto_cfg.tfi_adverse_threshold
+
+        if not is_adverse_tfi:
+            return True, ""
+
+        # --- OBI confirmation (optional, never sole driver) ---
+        if veto_cfg.obi_confirm_enabled:
+            obi_raw = features.get("obi")
+            if obi_raw is None:
+                return False, "MICROSTRUCTURE_VETO:OBI_MISSING"
+            try:
+                obi_val = float(obi_raw)
+            except (ValueError, TypeError):
+                return False, "MICROSTRUCTURE_VETO:OBI_INVALID"
+
+            if signal_side == "LONG":
+                is_adverse_obi = obi_val < -veto_cfg.obi_adverse_threshold
+            else:
+                is_adverse_obi = obi_val > veto_cfg.obi_adverse_threshold
+
+            if not is_adverse_obi:
+                # Flow is adverse but book does NOT confirm → not toxic
+                return True, ""
+
+        # --- Price reaction: continuation vs absorption ---
+        # Use bar geometry (wick ratio) and recent return from features
+        try:
+            bar_high = float(getattr(bar, "high", 0))
+            bar_low = float(getattr(bar, "low", 0))
+            bar_open = float(getattr(bar, "open", 0))
+            bar_close = float(getattr(bar, "close", 0))
+        except (ValueError, TypeError):
+            return False, "MICROSTRUCTURE_VETO:BAR_INVALID"
+
+        bar_range = bar_high - bar_low
+        if bar_range <= 0:
+            # Zero-range bar: no price information → conservative block
+            return False, "MICROSTRUCTURE_VETO:TOXIC_FLOW_ZERO_RANGE"
+
+        # Wick ratio: how much of the bar is wick (rejection) vs body
+        if signal_side == "LONG":
+            # For LONG: lower wick = absorption of selling pressure
+            lower_wick = min(bar_open, bar_close) - bar_low
+            wick_ratio = lower_wick / bar_range
+        else:
+            # For SHORT: upper wick = absorption of buying pressure
+            upper_wick = bar_high - max(bar_open, bar_close)
+            wick_ratio = upper_wick / bar_range
+
+        # Price rebound (favorable move):
+        # Look at recent return from features (ret_60s preferred)
+        price_motion = features.get("price_motion", {})
+        lookback = veto_cfg.price_reaction_lookback_sec
+        # Select the closest matching return horizon
+        ret_key = "ret_60s"
+        if lookback <= 15:
+            ret_key = "ret_10s"
+        elif lookback >= 250:
+            ret_key = "ret_300s"
+        recent_ret = None
+        if isinstance(price_motion, dict):
+            recent_ret = price_motion.get(ret_key)
+
+        # Determine absorption vs continuation
+        has_absorption_wick = wick_ratio >= veto_cfg.absorption_wick_ratio_min
+
+        has_favorable_rebound = False
+        has_adverse_continuation = False
+        if recent_ret is not None:
+            try:
+                ret_val = float(recent_ret)
+                if signal_side == "LONG":
+                    # For LONG: positive return = favorable rebound
+                    has_favorable_rebound = ret_val >= veto_cfg.absorption_rebound_threshold
+                    has_adverse_continuation = ret_val <= -veto_cfg.price_continuation_threshold
+                else:
+                    # For SHORT: negative return = favorable rebound
+                    has_favorable_rebound = ret_val <= -veto_cfg.absorption_rebound_threshold
+                    has_adverse_continuation = ret_val >= veto_cfg.price_continuation_threshold
+            except (ValueError, TypeError):
+                pass
+
+        # Absorption override: adverse flow absorbed by market
+        if has_absorption_wick or has_favorable_rebound:
+            return True, ""
+
+        # Toxic continuation: adverse flow + adverse price direction
+        if has_adverse_continuation:
+            return False, "MICROSTRUCTURE_VETO:TOXIC_FLOW_CONTINUATION"
+
+        # Ambiguous: flow is adverse, no absorption evidence, no clear continuation
+        # Conservative: block (fail-closed for unclear situations)
+        return False, "MICROSTRUCTURE_VETO:TOXIC_FLOW_AMBIGUOUS"
+
     def _emit_strategy_blocked(
         self,
         *,
@@ -615,18 +795,18 @@ class MeanReversionHandler:
         self._last_block_reason[symbol] = reason_code
         self._last_block_ts_ms[symbol] = now_ms
 
-        payload: Dict[str, Any] = {
-            "schema_version": 1,
-            "strategy_id": "mean_reversion",
-            "symbol": symbol,
-            "reason_code": str(reason_code),
-            "reason": str(reason),
-            "context": str(context),
-            "ts_ms": now_ms,
-            "why_chain": list(why_chain or []),
-        }
-        if details:
-            payload["details"] = details
+        payload = write_strategy_decision_blocked(
+            strategy_id="mean_reversion",
+            symbol=symbol,
+            reason_code=str(reason_code),
+            reason=str(reason),
+            context=str(context),
+            src="mean_reversion_handler:_emit_strategy_blocked",
+            ts_ms=now_ms,
+            why=context,
+            why_chain=why_chain,
+            details=details,
+        )
         self.fsm.emit("EVT:STRATEGY_DECISION_BLOCKED",
                       payload, why=f"mr_blocked:{reason_code}")
 
@@ -1650,7 +1830,37 @@ class MeanReversionHandler:
                 self._log_bar(signal)
 
                 if signal.is_signal:
-                    if self._check_liquidity_gate(symbol):
+                    # Vector 1: Microstructure Veto (handler overlay)
+                    # Executes after actionable signal, before liquidity gate
+                    signal_side = "LONG" if signal.signal_type == MRSignalType.LONG else "SHORT"
+                    veto_allowed, veto_reason = self._check_microstructure_veto(
+                        symbol, signal_side, bar)
+                    if not veto_allowed:
+                        self.logger.info(
+                            f"[{symbol}] MR Signal BLOCKED by Microstructure Veto: {veto_reason}")
+                        write_trade_intent_rejected(
+                            symbol=str(symbol),
+                            tf_sec=int(tf_sec) if tf_sec is not None else None,
+                            bar_close_ts=int(
+                                bar_close_ts) if bar_close_ts else None,
+                            reason_code=NormalizedRejectReasons.MICROSTRUCTURE_VETO,
+                            stage="STRATEGY",
+                            why=f"Microstructure veto blocked MR signal: {veto_reason}",
+                            src="mean_reversion",
+                            ts_ms=int(bar_close_ts) if bar_close_ts else None,
+                        )
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code=veto_reason,
+                            reason="MICROSTRUCTURE",
+                            context="mean_reversion_handler:_on_process_strategy",
+                            details={
+                                "tfi_ema": str(round(self._tfi_ema.get(symbol, 0.0), 6)),
+                                "signal_side": signal_side,
+                            },
+                            why_chain=["MICROSTRUCTURE_VETO", veto_reason],
+                        )
+                    elif self._check_liquidity_gate(symbol):
                         self._emit_signal(
                             signal,
                             bar_identity=bar_identity,

@@ -34,6 +34,65 @@
       "description": "Trading fees paid for this trade (optional, defaults to 0) (string-encoded Decimal for precision)",
       "default": "0.0"
     },
+    "rid": {
+      "type": "string"
+    },
+    "idempotent_key": {
+      "type": "string"
+    },
+    "clientOrderId": {
+      "type": "string"
+    },
+    "client_order_id": {
+      "type": "string"
+    },
+    "exchangeOrderId": {
+      "type": "string"
+    },
+    "orderId": {
+      "type": "string"
+    },
+    "tradeId": {
+      "type": "string"
+    },
+    "trade_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "order_type": {
+      "type": "string"
+    },
+    "time_in_force": {
+      "type": "string"
+    },
+    "qty": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "ts_ms": {
+      "type": "integer"
+    },
+    "last_fill_qty": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "cumulative_qty": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "commission": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "commissionAsset": {
+      "type": "string"
+    },
+    "realizedPnl": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
     "venue": {
       "type": "string",
       "description": "Trading venue/exchange where the trade was executed"

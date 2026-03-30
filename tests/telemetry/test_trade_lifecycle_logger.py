@@ -80,3 +80,39 @@ def test_execpos_portfolio_close_triggers_trade_lifecycle_close(tmp_path, monkey
     assert row["status"] == "CLOSED"
     assert row["close_reason"] == "POSITION_CLOSED_DETECTED"
     assert float(row["close_price"]) == 123.45
+
+
+def test_trade_lifecycle_reconciles_boundary_reject_after_late_order_and_fill(tmp_path):
+    from apps.reference.telemetry.trade_lifecycle_logger import TradeLifecycleLogger
+
+    log_path = tmp_path / "trade_lifecycle.jsonl"
+    logger = TradeLifecycleLogger(log_file=str(log_path), orphan_ttl_sec=3600)
+
+    rid = "RID-RACE-1"
+    logger.on_intent(rid=rid, symbol="ETHUSDT", side="SELL", strategy_id="aurora")
+    logger.on_reject(
+        rid=rid,
+        reject_reason="trade_intent_boundary_audit:no_downstream_event",
+        reject_reason_code="NRR-EXECUTION-NO-DOWNSTREAM-EVENT",
+        reject_stage="EXECUTION",
+    )
+    logger.on_order_placed(rid=rid, order_id="8617505424", price=2176.61)
+    logger.on_fill(rid=rid, fill_price=2176.61, fill_qty=0.01, fees=0.02)
+    logger.on_close(rid=rid, close_price=2175.10, close_reason="POSITION_CLOSED_DETECTED")
+
+    rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2
+
+    assert rows[0]["rid"] == rid
+    assert rows[0]["status"] == "REJECTED"
+    assert rows[0]["reject_reason_code"] == "NRR-EXECUTION-NO-DOWNSTREAM-EVENT"
+    assert rows[0]["reject_stage"] == "EXECUTION"
+
+    assert rows[1]["rid"] == rid
+    assert rows[1]["status"] == "CLOSED"
+    assert rows[1]["order_id"] == "8617505424"
+    assert rows[1]["prior_terminal_status"] == "REJECTED"
+    assert rows[1]["prior_terminal_reason"] == "trade_intent_boundary_audit:no_downstream_event"
+    assert rows[1]["reconciliation_source"] == "order_placed"
+    assert rows[1]["close_reason"] == "POSITION_CLOSED_DETECTED"
+    assert not any(row["status"] == "ORPHANED_TTL" for row in rows)

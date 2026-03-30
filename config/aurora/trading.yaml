@@ -149,11 +149,17 @@ trading:
         callbackRate: '0.5'
     watchdog:
       ack_ttl_ms: 8000
-      fill_ttl_ms: 300000
+      # FILL-PIPELINE-FIX: fill_ttl_ms is the WATCHDOG safety-net timeout.
+      # Must be >= max(pending_entry_ttl) so watchdog never races the per-TF TTL system.
+      # Per-order lifetime is controlled by domains.yaml pending_entry_ttl (600/1200/1800s).
+      fill_ttl_ms: 3600000
       check_interval_ms: 1000
       rps_limit: 10
     orders:
-      default_ttl_seconds: 15
+      # FILL-PIPELINE-FIX: removed default_ttl_seconds: 15
+      # It silently overrode fill_ttl_ms via fsm.py:551-553, reducing watchdog timeout
+      # from 300s to 15s — causing 100% TTL_EXPIRED on all LIMIT orders.
+      # fill_ttl_ms (above) is now the SSOT for watchdog timeout.
     preflight_backoff_ms:
     - 120
     - 250

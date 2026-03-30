@@ -3,9 +3,9 @@
 
 > **AUDIT SUMMARY**
 > - **Document path:** `config/docs/strategies_passport.md`
-> - **Audit date:** 2026-03-18
+> - **Audit date:** 2026-03-29
 > - **Audit mode:** Code-driven sync
-> - **Major drifts found:** No major structural drifts since the previous 2026-03-13 audit. The symbol assignments (`DOGEUSDT` to `mean_reversion`, `1000PEPEUSDT` to `llm_microstructure`, etc.) and arbitration priorities in `strategies.yaml` perfectly match the current live configuration. Profile loading and arbitration logic remain robust.
+> - **Major drifts found:** `DOGEUSDT -> mean_reversion` is no longer present in `strategies.yaml`. The current live assigned strategy set is `aurora`, `md_amr`, and `llm_microstructure`; `mean_reversion.yaml` remains on disk but is not live-loaded because `mean_reversion` is unassigned. Registry-driven profile loading and arbitration logic remain structurally unchanged.
 > - **Overall confidence:** HIGH
 
 ---
@@ -61,6 +61,7 @@ Authoritative sources traced for this passport:
   - Loaded profile data is attached under:
 
     `config.strategies.<strategy_id>`
+  - Current live assignments resolve to `aurora`, `md_amr`, and `llm_microstructure`; `mean_reversion.yaml` is currently dormant on disk and is not loaded into `config.strategies.mean_reversion`.
 
 - Constraints / Invariants:
   - Unassigned profiles are not required for startup.
@@ -96,7 +97,6 @@ Authoritative sources traced for this passport:
   - Current assignments:
     - `ETHUSDT -> [aurora]`
     - `SOLUSDT -> [aurora]`
-    - `DOGEUSDT -> [mean_reversion]`
     - `XRPUSDT -> [md_amr]`
     - `BTCUSDT -> [aurora]`
     - `BNBUSDT -> [md_amr]`
@@ -256,12 +256,12 @@ Authoritative sources traced for this passport:
 - Logic Owner: mean_reversion profile + MeanReversionHandler
 - Runtime Role: bar-based Bollinger/%B strategy profile.
 - Actual Runtime Semantics:
-  - Current profile exists and is loaded because `mean_reversion` is assigned.
-  - Handler derives assigned symbols from registry.
+  - Current profile remains on disk, but it is not live-loaded because `mean_reversion` is currently unassigned in `strategies.yaml`.
+  - If `mean_reversion` is re-assigned, the handler derives assigned symbols from registry.
   - If MR is assigned but profile is missing: fail-closed error.
   - If MR is assigned but `mean_reversion.enabled=false`: fail-closed error.
   - If assigned symbols are missing from `mean_reversion.assets` or have `enabled=false`: fail-closed error.
-- Status: ACTIVE
+- Status: DORMANT (UNASSIGNED)
 
 ### strategies.md_amr
 - Type: MDAMRStrategyConfig

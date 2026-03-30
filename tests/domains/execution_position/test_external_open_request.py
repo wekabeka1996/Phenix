@@ -65,7 +65,7 @@ def _build_router(*, config_ttl: Optional[int] = 120000, config_reachable: bool 
 
     emitted_events = []
 
-    def capture_emit(event_name, payload, why="", data_ref=None):
+    def capture_emit(event_name, payload, why="", data_ref=None, **kwargs):
         emitted_events.append({"event": event_name, "payload": payload, "why": why})
 
     fsm.bus.emit.side_effect = capture_emit

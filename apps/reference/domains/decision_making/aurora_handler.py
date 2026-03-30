@@ -59,7 +59,9 @@ from apps.reference.config_models import (
     OperationalMode,
     DashboardConfig,
 )
-from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
+from apps.reference.domains.decision_making.decision_truth_artifacts import (
+    write_strategy_decision_blocked,
+)
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.domains.decision_making.operational_mode import ModeManager
 from apps.reference.domains.decision_making.dashboard import DashboardMetrics, TradeOutcome
@@ -491,42 +493,34 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         reason_code: str,
         reason: str,
         context: str,
+        rid: str | None = None,
+        why: str | None = None,
         details: dict | None = None,
         why_chain: list[str] | None = None,
+        tf_sec: int | None = None,
+        bar_close_ts: int | None = None,
+        span_id: str | None = None,
     ) -> None:
         ts_ms = int(self.wall_time_fn() * 1000)
-        payload: Dict[str, Any] = {
-            "schema_version": 1,
-            "strategy_id": self.strategy_id,
-            "symbol": symbol,
-            "reason_code": str(reason_code),
-            "reason": str(reason),
-            "context": str(context),
-            "ts_ms": ts_ms,
-            "why_chain": list(why_chain or []),
-        }
-        if details:
-            payload["details"] = details
+        payload = write_strategy_decision_blocked(
+            strategy_id=self.strategy_id,
+            symbol=symbol,
+            reason_code=reason_code,
+            reason=reason,
+            context=context,
+            src="aurora_handler:_emit_strategy_blocked",
+            ts_ms=ts_ms,
+            rid=rid,
+            why=why,
+            why_chain=why_chain,
+            details=details,
+            tf_sec=tf_sec,
+            bar_close_ts=bar_close_ts,
+            span_id=span_id,
+        )
         state = self._symbol_states[symbol]
         state.objective_blocked_ts_ms.append(ts_ms)
         self.emit_fn("EVT:STRATEGY_DECISION_BLOCKED", payload)
-
-        # P1-OBSERVABILITY: Write to WAL for audit trail (post-mortem analysis)
-        try:
-            write_trade_intent_rejected(
-                symbol=symbol,
-                tf_sec=self.timeframe_sec,
-                bar_close_ts=None,
-                reason_code=reason_code,
-                stage="STRATEGY",
-                why=f"{context}: {reason}",
-                src="aurora_handler:_emit_strategy_blocked",
-                ts_ms=ts_ms,
-            )
-        except Exception:
-            self.logger.debug(  # Best-effort WAL write, don't fail on observability
-                "write_trade_intent_rejected failed", exc_info=True,
-            )
 
     def on_regime_detected(self, event: Dict[str, Any]) -> None:
         """

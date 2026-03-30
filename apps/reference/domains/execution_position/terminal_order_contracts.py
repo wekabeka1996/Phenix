@@ -8,8 +8,12 @@ Additive-only contract seam hardening for:
 
 from __future__ import annotations
 
+import inspect
+import logging
 import time
 from typing import Any, Dict, Mapping, Optional, Tuple
+
+from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
 IDENTITY_EXACT = "order_identity_exact"
 IDENTITY_DEGRADED = "order_identity_degraded"
@@ -251,3 +255,72 @@ def normalize_terminal_order_event_payload(
             fallback_ts_ms=fallback_ts_ms,
         )
     return dict(payload)
+
+
+async def emit_canonical_terminal_order_event(
+    *,
+    fsm: Any,
+    event_name: str,
+    payload: Mapping[str, Any],
+    rid: Optional[str],
+    src: str,
+    dst: str,
+    why: str,
+    logger: Optional[logging.Logger] = None,
+    write_wal: bool = False,
+    fallback_ts_ms: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Emit a canonical terminal-order event through the primary bus seam.
+
+    The runtime defect package needs deterministic WAL + local shadow parity on
+    selected active terminal paths. Prefer the primary `emit(Message)` seam so
+    `FSMCore.emit()` can normalize, validate, and record to the local shadow
+    journal in one place. Fall back to `emit_compat()` only when the bus cannot
+    accept the Message API directly.
+    """
+
+    normalized = normalize_terminal_order_event_payload(
+        event_name,
+        payload,
+        fallback_rid=rid,
+        fallback_ts_ms=fallback_ts_ms,
+    )
+    op, verb = event_name.split(":", 1)
+    msg = Message(
+        op=op,
+        verb=verb,
+        src=src,
+        dst=dst,
+        rid=rid,
+        pld=normalized,
+        why=why,
+    )
+
+    if write_wal:
+        try:
+            from vfoundation.dr import wal
+
+            wal.append(msg.model_dump())
+        except Exception as exc:
+            if logger is not None:
+                logger.warning("Failed to write %s to WAL: %s", event_name, exc)
+
+    emit = getattr(fsm, "emit", None)
+    if emit is not None:
+        try:
+            result = emit(msg)
+            if inspect.isawaitable(result):
+                await result
+            return normalized
+        except TypeError:
+            pass
+        except Exception as exc:
+            if logger is not None:
+                logger.debug(
+                    "Direct emit(Message) failed for %s, falling back to emit_compat: %r",
+                    event_name,
+                    exc,
+                )
+
+    await emit_compat(fsm, msg, logger=logger)
+    return normalized

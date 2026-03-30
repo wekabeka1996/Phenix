@@ -27,6 +27,7 @@ from apps.reference.contracts.runtime_regime_layers import (
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
 
+from .decision_truth_artifacts import write_decision_blocked
 from .normalized_reject_reasons import NormalizedRejectReasons
 from .trade_intent_reject_wal import write_trade_intent_rejected
 from .schemas_decision_blocked import DecisionBlockedPayload
@@ -210,6 +211,20 @@ class DMEventHandlers:
                     why=str(e.why),
                     stage="on_features",
                     ts_ms=self._clock.now_ms(),
+                    why_chain=["config_contract_violation"],
+                    details={"path": e.path, "why": e.why},
+                )
+                write_decision_blocked(
+                    symbol=payload_obj.symbol,
+                    reason_code=payload_obj.reason_code,
+                    reason=payload_obj.reason,
+                    path=payload_obj.path,
+                    why=payload_obj.why,
+                    stage=payload_obj.stage,
+                    src="decision_making:event_handlers",
+                    ts_ms=payload_obj.ts_ms,
+                    why_chain=payload_obj.why_chain,
+                    details=payload_obj.details,
                 )
                 self._fsm.emit("EVT:DECISION_BLOCKED", payload_obj.model_dump(), why=f"decision_blocked:{nrr_code}")
                 inc_decision_blocked(stage="on_features", reason_code=nrr_code)

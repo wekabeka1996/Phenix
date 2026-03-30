@@ -498,6 +498,87 @@ class MRMomentumSeparationVetoConfig(BaseModel):
     )
 
 
+class MRMicrostructureVetoConfig(BaseModel):
+    """Vector 1: Microstructure Veto overlay for MR handler.
+
+    Bivariate logic: adverse TFI (+ optional OBI confirm) AND continued adverse
+    price response = toxic flow → veto.  Adverse flow WITH absorption evidence
+    (wick/rebound) = allowed.
+
+    Fail-closed when required microstructure inputs are missing (configurable).
+    OBI is confirm-only — never sole veto driver.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable microstructure veto overlay')
+
+    # --- Flow signal (TFI = Trade Flow Imbalance) ---
+    tfi_ema_span: int = Field(
+        default=5, ge=2, le=50,
+        description='EMA smoothing span applied to raw TFI before veto evaluation',
+    )
+    tfi_adverse_threshold: float = Field(
+        default=0.3, gt=0.0, le=1.0,
+        description='Absolute TFI value beyond which flow is classified as adverse',
+    )
+
+    # --- OBI confirmation (optional, never sole veto driver) ---
+    obi_confirm_enabled: bool = Field(
+        default=False,
+        description='When true, adverse TFI must also be confirmed by adverse OBI',
+    )
+    obi_adverse_threshold: float = Field(
+        default=0.3, gt=0.0, le=1.0,
+        description='Absolute OBI value beyond which book state confirms adverse flow',
+    )
+
+    # --- Price-reaction thresholds ---
+    price_reaction_lookback_sec: int = Field(
+        default=60, ge=10, le=600,
+        description='Seconds of recent price action used to measure continuation vs rebound',
+    )
+    price_continuation_threshold: float = Field(
+        default=0.001, gt=0.0, le=0.05,
+        description='Min adverse price move (as fraction) to confirm toxic continuation',
+    )
+
+    # --- Absorption detection ---
+    absorption_wick_ratio_min: float = Field(
+        default=0.4, ge=0.0, le=1.0,
+        description='Min wick/range ratio on the current bar signaling absorption',
+    )
+    absorption_rebound_threshold: float = Field(
+        default=0.0005, ge=0.0, le=0.05,
+        description='Min favorable price move (as fraction) signaling rebound / absorption',
+    )
+
+    # --- Readiness ---
+    readiness_min_bars: int = Field(
+        default=5, ge=1, le=100,
+        description='Min bars of TFI data before veto can engage (warmup)',
+    )
+
+    # --- Missing-data policy ---
+    missing_policy: Literal["block", "skip"] = Field(
+        default="block",
+        description=(
+            'Policy when required microstructure features (tfi) are missing: '
+            '"block" = fail-closed (veto trade), "skip" = bypass veto (fail-open, not recommended)'
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_absorption_consistency(self) -> "MRMicrostructureVetoConfig":
+        """Absorption rebound must be <= continuation threshold (otherwise
+        every continuation would also be classified as rebound)."""
+        if self.absorption_rebound_threshold >= self.price_continuation_threshold:
+            raise ValueError(
+                f"absorption_rebound_threshold ({self.absorption_rebound_threshold}) "
+                f"must be < price_continuation_threshold ({self.price_continuation_threshold})"
+            )
+        return self
+
+
 class MRStrategyOverrideConfig(BaseModel):
     """Per-asset strategy parameter overrides for MR.
 
@@ -522,6 +603,10 @@ class MRStrategyOverrideConfig(BaseModel):
     momentum_separation_veto: Optional[MRMomentumSeparationVetoConfig] = Field(
         default=None,
         description='Optional late-drift veto for counter-trend fade traps after expansion',
+    )
+    microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
+        default=None,
+        description='Optional Vector 1 microstructure veto overlay (per-asset override)',
     )
     entry_threshold: Optional[float] = Field(
         default=None, description='Entry distance threshold')
@@ -674,6 +759,12 @@ class MeanReversion1mStrategyConfig(BaseModel):
     objective: Optional["StrategyObjectiveConfig"] = Field(
         default=None,
         description="Strategy objective configuration"
+    )
+
+    # Vector 1: Microstructure Veto overlay (global default)
+    microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
+        default=None,
+        description="Global microstructure veto overlay config (can be overridden per-asset)",
     )
 
 
@@ -5129,6 +5220,10 @@ class ShadowCriticalEventJournalConfig(BaseModel):
     critical_events: List[str] = Field(
         default_factory=lambda: list((
             "EVT:TRADE_INTENT_PROPOSED",
+            "EVT:TRADE_INTENT_REJECTED",
+            "EVT:INTENT_DEFERRED",
+            "EVT:DECISION_BLOCKED",
+            "EVT:STRATEGY_DECISION_BLOCKED",
             "CMD:OPEN",
             "DEC:OPEN",
             "EVT:ORDER_ACK",

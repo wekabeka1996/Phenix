@@ -274,6 +274,14 @@ def execute_startup_basis_hydration(
 
     imported_counts: dict[tuple[str, int], int] = {}
     skipped: list[str] = []
+    seeded_records: list[StartupBasisSeedRecord] = []
+    seeded_record_lookup: dict[tuple[str, str, int], StartupBasisSeedRecord] = {}
+
+    seed_requirements_by_import_key: dict[tuple[str, int], list[tuple[str, str, int, int]]] = {}
+    for strategy_id, symbol, tf_sec, required_bars in seed_requirements:
+        seed_requirements_by_import_key.setdefault((symbol, tf_sec), []).append(
+            (strategy_id, symbol, tf_sec, required_bars)
+        )
 
     if import_needs:
         if bar_aggregator is None or backfill_adapter is None:
@@ -351,6 +359,30 @@ def execute_startup_basis_hydration(
                         "STARTUP_BASIS_IMPORTED symbol=%s tf=%ds imported=%d/%d attempts=%d",
                         symbol, tf_sec, _imported, required_bars, _attempt,
                     )
+                    # Seed handler-local cold-start counters immediately after a
+                    # symbol/timeframe import completes so early-imported
+                    # symbols do not wait for the entire startup executor.
+                    for (
+                        strategy_id,
+                        seed_symbol,
+                        seed_tf_sec,
+                        seed_required_bars,
+                    ) in seed_requirements_by_import_key.get((symbol, tf_sec), []):
+                        seeded_bars = min(int(_imported), seed_required_bars)
+                        record = _seed_handler_counter(
+                            strategy_id=strategy_id,
+                            symbol=seed_symbol,
+                            tf_sec=seed_tf_sec,
+                            required_bars=seed_required_bars,
+                            seeded_bars=seeded_bars,
+                            source="startup_replay_import",
+                            started_strategy_handlers=started_strategy_handlers,
+                        )
+                        if record is not None:
+                            key = (record.strategy_id, record.symbol, record.timeframe_sec)
+                            if key not in seeded_record_lookup:
+                                seeded_records.append(record)
+                            seeded_record_lookup[key] = record
                 else:
                     _emit_bootstrap_lifecycle(
                         "STARTUP_BASIS_IMPORT_EXHAUSTED",
@@ -369,8 +401,9 @@ def execute_startup_basis_hydration(
                         _BASIS_IMPORT_MAX_ATTEMPTS, _last_error,
                     )
 
-    seeded_records: list[StartupBasisSeedRecord] = []
     for strategy_id, symbol, tf_sec, required_bars in seed_requirements:
+        if (strategy_id, symbol, tf_sec) in seeded_record_lookup:
+            continue
         imported_key = (symbol, tf_sec)
         seeded_bars = 0
         source = ""
@@ -413,6 +446,7 @@ def execute_startup_basis_hydration(
         )
         if record is not None:
             seeded_records.append(record)
+            seeded_record_lookup[(record.strategy_id, record.symbol, record.timeframe_sec)] = record
 
     # Emit per-strategy readiness state after seeding
     _seeded_lookup: dict[tuple[str, str, int], int] = {}

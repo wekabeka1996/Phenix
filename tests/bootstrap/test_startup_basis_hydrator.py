@@ -76,6 +76,26 @@ class _BackfillAdapter:
         ]
 
 
+class _SequentialSeedAssertAdapter:
+    def __init__(self, seed_spy: "_SeedSpy") -> None:
+        self.seed_spy = seed_spy
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def get_klines(self, symbol: str, interval: str, limit: int):
+        self.calls.append((symbol, interval, limit))
+        if symbol == "ETHUSDT":
+            assert self.seed_spy.calls == [
+                ("BTCUSDT", 5)
+            ], "BTCUSDT should be seeded before the second import starts"
+        tf_map = {"5m": 300_000, "15m": 900_000}
+        tf_ms = tf_map[interval]
+        base = 1_700_000_000_000
+        return [
+            [base + index * tf_ms, "1", "2", "0.5", "1.5", "10"]
+            for index in range(limit)
+        ]
+
+
 class TestHydrateBasisBars:
     def test_returns_count_of_injected_bars(self):
         """hydrate_basis_bars returns the number of bars successfully injected."""
@@ -272,3 +292,49 @@ def test_execute_startup_basis_hydration_seeds_from_restored_bars_without_replay
     assert seed_spy.calls == [("BTCUSDT", 301)]
     assert summary["imports"] == {}
     assert summary["seeded"][0]["source"] == "restore_snapshot_bars"
+
+
+def test_execute_startup_basis_hydration_seeds_each_symbol_before_next_import() -> None:
+    from apps.reference.domains.market_data.bar_aggregator import BarAggregator
+
+    aurora_seed = _SeedSpy()
+    agg = BarAggregator(timeframes_sec=[300], emit_fn=MagicMock())
+    hydration_plan = SimpleNamespace(
+        plans={
+            "aurora:BTCUSDT": SimpleNamespace(
+                strategy_id="aurora",
+                symbol="BTCUSDT",
+                requirement=SimpleNamespace(basis_tf_sec=300, basis_required_bars=5),
+                actions=(
+                    SimpleNamespace(action="RESTORE_OR_REPLAY_BASIS_BARS"),
+                    SimpleNamespace(action="SEED_HANDLER_BASIS_COUNTER"),
+                ),
+            ),
+            "aurora:ETHUSDT": SimpleNamespace(
+                strategy_id="aurora",
+                symbol="ETHUSDT",
+                requirement=SimpleNamespace(basis_tf_sec=300, basis_required_bars=5),
+                actions=(
+                    SimpleNamespace(action="RESTORE_OR_REPLAY_BASIS_BARS"),
+                    SimpleNamespace(action="SEED_HANDLER_BASIS_COUNTER"),
+                ),
+            ),
+        }
+    )
+
+    summary = execute_startup_basis_hydration(
+        hydration_plan=hydration_plan,
+        restore_report=StartupAnalyticsRestoreReport(
+            updated_at=1,
+            source="tests",
+            snapshots={},
+        ),
+        started_strategy_handlers={"aurora": _AuroraWrapper(aurora_seed)},
+        bar_aggregator=agg,
+        backfill_adapter=_SequentialSeedAssertAdapter(aurora_seed),
+        guardian_runtime=_GuardianRuntime(),
+    )
+
+    assert aurora_seed.calls == [("BTCUSDT", 5), ("ETHUSDT", 5)]
+    assert summary["imports"]["BTCUSDT:300"] == 5
+    assert summary["imports"]["ETHUSDT:300"] == 5

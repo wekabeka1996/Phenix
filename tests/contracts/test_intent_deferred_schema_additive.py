@@ -41,6 +41,7 @@ def test_v1_payload_is_valid(intent_deferred_schema):
             "retry_key": "flip:BTCUSDT:1702500000000",
             "symbol": "BTCUSDT",
             "reason": "FLIP_CLOSE_PENDING",
+            "reason_code": "FLIP_CLOSE_PENDING",
             "next_allowed_ts": 1702500005000,
             "attempt": 1,
             "max_attempts": 5,
@@ -60,6 +61,7 @@ def test_v1_payload_accepts_nested_price_ctx_object(intent_deferred_schema):
             "retry_key": "flip:BTCUSDT:1702500000000",
             "symbol": "BTCUSDT",
             "reason": "FLIP_CLOSE_PENDING",
+            "reason_code": "FLIP_CLOSE_PENDING",
             "next_allowed_ts": 1702500005000,
             "attempt": 1,
             "max_attempts": 5,
@@ -112,6 +114,7 @@ def test_v1_payload_accepts_digit_prefixed_symbol(intent_deferred_schema):
             "retry_key": "llm:1000PEPEUSDT:1702500200000",
             "symbol": "1000PEPEUSDT",
             "reason": "NRR-RISK-STALE",
+            "reason_code": "NRR-RISK-STALE",
             "next_allowed_ts": 1702500205000,
             "attempt": 1,
             "max_attempts": 3,
@@ -131,6 +134,7 @@ def test_v1_payload_accepts_digit_prefixed_nested_symbol(intent_deferred_schema)
             "retry_key": "llm:1000PEPEUSDT:1702500200000",
             "symbol": "1000PEPEUSDT",
             "reason": "NRR-RISK-STALE",
+            "reason_code": "NRR-RISK-STALE",
             "next_allowed_ts": 1702500205000,
             "attempt": 1,
             "max_attempts": 3,
@@ -140,6 +144,33 @@ def test_v1_payload_accepts_digit_prefixed_nested_symbol(intent_deferred_schema)
                     "symbol": "1000PEPEUSDT",
                     "side": "SELL",
                     "price_ctx": {"entry_price": "0.0035100"},
+                },
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_cmd_process_strategy_without_side(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "aurora-kernel:BTCUSDT:1702500200000",
+            "symbol": "BTCUSDT",
+            "reason": "REGIME_BLOCKED",
+            "reason_code": "REGIME_BLOCKED",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "CMD:PROCESS_STRATEGY",
+                "payload_min": {
+                    "symbol": "BTCUSDT",
+                    "tf_sec": 300,
+                    "bar_close_ts": 1702500200000,
+                    "features": {"price": "65000"},
+                    "warmup": {"full_ready": True},
+                    "regime": {"regime": "TREND_UP"},
                 },
             },
         },

@@ -57,9 +57,12 @@ from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     ScoringResult,
     QuadraticScoringKernel,
 )
+from apps.reference.domains.decision_making.decision_truth_artifacts import (
+    canonicalize_intent_deferred_reason,
+    write_intent_deferred,
+)
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
-from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.domains.decision_making.instrument_quantizer import (
     quantize_exposure,
@@ -204,24 +207,17 @@ class AuroraDecisionMixin:
         # DM-CRITICAL-PATCHES-02: Regime liveness guard
         liveness_block = self._check_regime_liveness(symbol, state)
         if liveness_block is not None:
-            write_trade_intent_rejected(
-                symbol=symbol,
-                tf_sec=int(cmd.get("tf_sec") or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
-                reason_code=liveness_block["reason_code"],
-                stage="STRATEGY",
-                why=liveness_block["why"],
-                src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
-            )
             self._emit_strategy_blocked(
                 symbol=symbol,
                 reason_code=liveness_block["reason_code"],
                 reason="LIVENESS",
                 context="aurora_handler:regime_liveness_guard",
+                rid=cmd.get("rid"),
+                why=liveness_block["why"],
                 details=liveness_block.get("details", {}),
                 why_chain=["LIVENESS", liveness_block["reason_code"]],
+                tf_sec=int(cmd.get("tf_sec") or 0),
+                bar_close_ts=cmd.get("bar_close_ts"),
             )
             return
 
@@ -266,22 +262,13 @@ class AuroraDecisionMixin:
                 "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal (quadratic path NOT reached)",
                 symbol, _bars_seen, _basis_required,
             )
-            write_trade_intent_rejected(
-                symbol=symbol,
-                tf_sec=int(cmd.get("tf_sec") or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
-                reason_code="BARS_REQUIRED_COLD_START",
-                stage="STRATEGY",
-                why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
-                src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
-            )
             self._emit_strategy_blocked(
                 symbol=symbol,
                 reason_code="BARS_REQUIRED_COLD_START",
                 reason="READINESS",
                 context="aurora_handler:bars_required_gate",
+                rid=cmd.get("rid"),
+                why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
                 details={
                     "bars_seen": _bars_seen,
                     "basis_required_bars": _basis_required,
@@ -292,6 +279,8 @@ class AuroraDecisionMixin:
                     f"bars_seen:{_bars_seen}",
                     f"basis_required:{_basis_required}",
                 ],
+                tf_sec=int(cmd.get("tf_sec") or 0),
+                bar_close_ts=cmd.get("bar_close_ts"),
             )
             return
 
@@ -577,25 +566,58 @@ class AuroraDecisionMixin:
         if result.deferred:
             self.logger.debug(
                 f"[{symbol}] Kernel deferred: {result.defer_reason}")
-            defer_reason = str(result.defer_reason or "UNKNOWN")
-            reason_code = "AURORA_KERNEL_DEFERRED"
-            reason = "READINESS"
-            if (warmup_readiness.get("spread_bps") is False) or ("spread" in defer_reason.lower()):
-                reason = "SPREAD"
-                reason_code = "SPREAD_NOT_READY"
-            self._emit_strategy_blocked(
-                symbol=symbol,
-                reason_code=reason_code,
-                reason=reason,
-                context="aurora_handler:kernel_deferred",
-                details={
-                    "defer_reason": defer_reason,
-                    "decision_trace": self._compact_quadratic_decision_trace(
-                        decision_trace
-                    ),
-                },
-                why_chain=["KERNEL_DEFERRED", defer_reason],
+            defer_reason_raw = str(result.defer_reason or "NRR-DATA-NOT-READY")
+            canonical_reason, reason_code, raw_reason = canonicalize_intent_deferred_reason(
+                defer_reason_raw
             )
+            created_ts = int(self.wall_time_fn() * 1000)
+            original_event_payload = {
+                "symbol": symbol,
+                "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+                "bar_close_ts": cmd.get("bar_close_ts"),
+                "bar": dict(cmd.get("bar") or {}),
+                "features": dict(cmd.get("features") or {}),
+                "warmup": dict(cmd.get("warmup") or {}),
+                "rid": cmd.get("rid"),
+                "strategy_id": self.strategy_id,
+            }
+            if isinstance(cmd.get("regime"), dict):
+                original_event_payload["regime"] = dict(cmd.get("regime") or {})
+            elif cmd.get("regime") is not None:
+                original_event_payload["regime"] = cmd.get("regime")
+            if raw_reason:
+                original_event_payload["raw_defer_reason"] = raw_reason
+            retry_payload = write_intent_deferred(
+                symbol=symbol,
+                reason=canonical_reason,
+                reason_code=reason_code,
+                retry_key=f"aurora-kernel:{symbol}:{cmd.get('bar_close_ts') or created_ts}",
+                next_allowed_ts=created_ts + 1000,
+                attempt=1,
+                max_attempts=3,
+                original_event={
+                    "event_name": "CMD:PROCESS_STRATEGY",
+                    "payload_min": original_event_payload,
+                },
+                src="aurora_handler",
+                ts_ms=created_ts,
+                rid=cmd.get("rid"),
+                why_chain=["KERNEL_DEFERRED", canonical_reason],
+                context="aurora_handler:kernel_deferred",
+                retry_policy={
+                    "attempt": 1,
+                    "max_attempts": 3,
+                    "backoff_ms": 1000,
+                    "ttl_ms": 5000,
+                },
+                raw_reason=raw_reason,
+            )
+            retry_payload["details"] = {
+                "decision_trace": self._compact_quadratic_decision_trace(
+                    decision_trace
+                )
+            }
+            self.emit_fn("EVT:INTENT_DEFERRED", retry_payload)
             return
 
         current_position_side = state.position_side

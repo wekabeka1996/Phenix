@@ -11,6 +11,10 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+    emit_canonical_trade_intent_rejected_event,
+)
+
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
 
@@ -197,7 +201,23 @@ class IntentRouter:
             if result:
                 LOG.info(f"[{symbol}] TRADE_INTENT processed: {result.op}:{result.verb}")
 
-                if hasattr(self._fsm, "bus"):
+                if result.op == "EVT" and result.verb == "TRADE_INTENT_REJECTED":
+                    emit_canonical_trade_intent_rejected_event(
+                        fsm=self._fsm.bus,
+                        payload=result.pld or {},
+                        rid=result.rid or intent_rid,
+                        src="execution_position",
+                        why=result.why or "execution_rejected",
+                        logger=LOG,
+                        lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
+                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        fallback_symbol=symbol,
+                        fallback_reason_code="NRR-EXECUTION-REJECTED",
+                        fallback_stage="EXECUTION",
+                        fallback_why=result.why or "execution_rejected",
+                        data_ref=list(result.data_ref or []),
+                    )
+                elif hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
                     self._fsm.bus.emit(
                         f"{result.op}:{result.verb}",
@@ -209,52 +229,58 @@ class IntentRouter:
 
                 if result.op == "ERR":
                     LOG.warning(f"[{symbol}] Execution Rejected: {result.why}")
-                    reject_evt = Message(
-                        op="EVT",
-                        verb="TRADE_INTENT_REJECTED",
-                        src="execution_position",
-                        dst="*",
-                        rid=intent_rid,
-                        pld={
-                            "ts_ms": int(time.time() * 1000),
-                            "symbol": symbol,
-                            "reason_code": "NRR-EXECUTION-REJECTED",
-                            "reason": result.why[:240] if result.why else "execution_rejected",
-                            "stage": "EXECUTION",
-                            "why": result.why[:240] if result.why else "execution_rejected",
-                            "details": {
-                                "original_verification_key": pld.get("idempotent_key"),
-                                "rid": intent_rid,
-                            },
-                        },
-                        why="execution_rejected",
-                        data_ref=msg.data_ref,
-                    )
                     if hasattr(self._fsm, "bus"):
-                        self._fsm.bus.emit(
-                            "EVT:TRADE_INTENT_REJECTED",
-                            reject_evt.pld,
-                            reject_evt.why,
-                            reject_evt.data_ref
+                        emit_canonical_trade_intent_rejected_event(
+                            fsm=self._fsm.bus,
+                            payload={
+                                "ts_ms": int(time.time() * 1000),
+                                "symbol": symbol,
+                                "reason_code": "NRR-EXECUTION-REJECTED",
+                                "stage": "EXECUTION",
+                                "why": result.why[:240] if result.why else "execution_rejected",
+                                "details": {
+                                    "original_verification_key": pld.get("idempotent_key"),
+                                    "rid": intent_rid,
+                                },
+                            },
+                            rid=intent_rid,
+                            src="execution_position",
+                            why="execution_rejected",
+                            logger=LOG,
+                            lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
+                            write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                            fallback_symbol=symbol,
+                            fallback_reason_code="NRR-EXECUTION-REJECTED",
+                            fallback_stage="EXECUTION",
+                            fallback_why=result.why[:240] if result.why else "execution_rejected",
+                            data_ref=list(msg.data_ref or []),
                         )
             else:
                 LOG.warning(f"[{symbol}] TRADE_INTENT processed but no result returned from handle()")
                 if hasattr(self._fsm, "bus"):
-                    self._fsm.bus.emit(
-                        "EVT:TRADE_INTENT_REJECTED",
-                        {
+                    emit_canonical_trade_intent_rejected_event(
+                        fsm=self._fsm.bus,
+                        payload={
                             "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-INTERNAL-ERROR",
-                            "reason": "execution_no_result",
                             "stage": "EXECUTION",
                             "why": "execution_no_result",
                             "details": {
                                 "rid": intent_rid
                             }
                         },
-                        "execution_no_result",
-                        msg.data_ref,
+                        rid=intent_rid,
+                        src="execution_position",
+                        why="execution_no_result",
+                        logger=LOG,
+                        lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
+                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        fallback_symbol=symbol,
+                        fallback_reason_code="NRR-EXECUTION-INTERNAL-ERROR",
+                        fallback_stage="EXECUTION",
+                        fallback_why="execution_no_result",
+                        data_ref=list(msg.data_ref or []),
                     )
 
         except Exception as e:
@@ -263,22 +289,31 @@ class IntentRouter:
                 try:
                     pld = msg.pld or {}
                     symbol = pld.get("instrument") or pld.get("symbol") or "unknown"
-                    self._fsm.bus.emit(
-                        "EVT:TRADE_INTENT_REJECTED",
-                        {
+                    intent_rid = str(pld.get("rid") or msg.rid or "unknown")
+                    emit_canonical_trade_intent_rejected_event(
+                        fsm=self._fsm.bus,
+                        payload={
                             "ts_ms": int(time.time() * 1000),
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-EXCEPTION",
-                            "reason": f"EXCEPTION: {str(e)}"[:240],
                             "stage": "EXECUTION",
                             "why": f"EXCEPTION: {str(e)}"[:240],
                             "details": {
                                 "error_type": type(e).__name__,
-                                "rid": str(pld.get("rid") or msg.rid or "unknown"),
+                                "rid": intent_rid,
                             }
                         },
-                        "execution_exception",
-                        msg.data_ref,
+                        rid=intent_rid,
+                        src="execution_position",
+                        why="execution_exception",
+                        logger=LOG,
+                        lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
+                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        fallback_symbol=symbol,
+                        fallback_reason_code="NRR-EXECUTION-EXCEPTION",
+                        fallback_stage="EXECUTION",
+                        fallback_why=f"EXCEPTION: {str(e)}"[:240],
+                        data_ref=list(msg.data_ref or []),
                     )
                 except Exception as emit_e:
                     LOG.error(f"Failed to emit exception rejection: {emit_e}")
@@ -539,8 +574,8 @@ class IntentRouter:
                 rid=msg.rid or "unknown",
                 symbol=symbol,
                 side=pld.get("side", "unknown"),
-                guard_type=pld.get("reason", "DECISION_REJECT"),
-                reason=pld.get("context") or pld.get("details", "") or "Strategy rejection",
+                guard_type=pld.get("reason_code") or pld.get("reason") or "DECISION_REJECT",
+                reason=pld.get("why") or pld.get("context") or pld.get("details", "") or "Strategy rejection",
                 strategy_id=pld.get("strategy_id")
             )
         except Exception as e:

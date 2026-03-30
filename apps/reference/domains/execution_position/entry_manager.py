@@ -193,6 +193,7 @@ class EntryManager:
         """Handle a timed-out order with NRR-019 logging and idempotent cancellation."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
         from apps.reference.utils.accessors import aget
+        from .terminal_order_contracts import emit_canonical_terminal_order_event
 
         LOG.warning(
             f"Order timeout: {deadline.order_id} ({deadline.symbol}) - {deadline.timeout_type.value}, "
@@ -235,6 +236,27 @@ class EntryManager:
                         "adapter_response": cancel_result,
                         "timestamp": get_clock().now_ms()
                     })
+                    self._fsm.watchdog.on_order_cancel(deadline.order_id)
+                    await emit_canonical_terminal_order_event(
+                        fsm=self._fsm.fsm,
+                        event_name="EVT:ORDER_STATE_CHANGED",
+                        payload={
+                            "symbol": deadline.symbol,
+                            "orderId": deadline.order_id,
+                            "client_order_id": deadline.client_order_id,
+                            "status": "CANCELED",
+                            "reason": "timeout_cancellation",
+                            "timeout_type": deadline.timeout_type.value,
+                            "corr_id": deadline.corr_id,
+                        },
+                        rid=deadline.rid,
+                        src="execution_position",
+                        dst="monitoring",
+                        why="timeout_cancellation",
+                        logger=aget(self._fsm, "logger", None),
+                        write_wal=True,
+                        fallback_ts_ms=get_clock().now_ms(),
+                    )
                 else:
                     status = str(
                         cancel_result["status"]
@@ -270,6 +292,27 @@ class EntryManager:
                         "timeout_type": deadline.timeout_type.value,
                         "timestamp": get_clock().now_ms()
                     })
+                    self._fsm.watchdog.on_order_cancel(deadline.order_id)
+                    await emit_canonical_terminal_order_event(
+                        fsm=self._fsm.fsm,
+                        event_name="EVT:ORDER_STATE_CHANGED",
+                        payload={
+                            "symbol": deadline.symbol,
+                            "orderId": deadline.order_id,
+                            "client_order_id": deadline.client_order_id,
+                            "status": "CANCELED",
+                            "reason": "timeout_cancel_idempotent",
+                            "timeout_type": deadline.timeout_type.value,
+                            "corr_id": deadline.corr_id,
+                        },
+                        rid=deadline.rid,
+                        src="execution_position",
+                        dst="monitoring",
+                        why="timeout_cancel_idempotent",
+                        logger=aget(self._fsm, "logger", None),
+                        write_wal=True,
+                        fallback_ts_ms=get_clock().now_ms(),
+                    )
                 else:
                     LOG.warning(
                         f"Failed to cancel timed-out order {deadline.order_id}: {e}")

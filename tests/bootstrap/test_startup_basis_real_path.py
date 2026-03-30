@@ -112,7 +112,7 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
     assert plan.plans["aurora:SOLUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["md_amr:BNBUSDT"].requirement.basis_required_bars == 96
     assert plan.plans["md_amr:XRPUSDT"].requirement.basis_required_bars == 96
-    assert plan.plans["mean_reversion:DOGEUSDT"].requirement.basis_required_bars == 301
+    assert all(not key.startswith("mean_reversion:") for key in plan.plans)
     assert any(
         action.action == "SEED_HANDLER_BASIS_COUNTER"
         for action in plan.plans["aurora:BTCUSDT"].actions
@@ -121,16 +121,13 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
         action.action == "SEED_HANDLER_BASIS_COUNTER"
         for action in plan.plans["md_amr:BNBUSDT"].actions
     )
-    assert all(
-        action.action != "SEED_HANDLER_BASIS_COUNTER"
-        for action in plan.plans["mean_reversion:DOGEUSDT"].actions
-    )
 
 
 def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> None:
     config = _load_live_config()
     bus = _Bus()
     started_handlers = _build_started_handlers(config, bus)
+    assert "mean_reversion" not in started_handlers
     report = build_startup_analytics_restore_report(
         config=config,
         snapshot_data={"timestamp_utc": "2026-03-15T09:09:15+00:00"},

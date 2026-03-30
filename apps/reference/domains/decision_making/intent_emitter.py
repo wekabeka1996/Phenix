@@ -20,6 +20,10 @@ from apps.reference.contracts.runtime_regime_layers import (
     is_structural_regime_payload,
     normalize_structural_regime_label,
 )
+from .decision_truth_artifacts import (
+    canonicalize_intent_deferred_reason,
+    write_intent_deferred,
+)
 from .trade_intent_reject_wal import write_trade_intent_rejected
 
 if TYPE_CHECKING:
@@ -82,6 +86,9 @@ class IntentEmitter:
         context: str | None = None,
     ) -> None:
         now_ms = self._clock.now_ms()
+        canonical_reason, reason_code, raw_reason = canonicalize_intent_deferred_reason(
+            reason
+        )
         try:
             ttl_ms = int(self.config.strategies.aurora.decision.retry_ttl_ms)
         except AttributeError as e:
@@ -93,7 +100,8 @@ class IntentEmitter:
         payload: Dict[str, Any] = {
             "retry_key": retry_key,
             "symbol": symbol,
-            "reason": reason,
+            "reason": canonical_reason,
+            "reason_code": reason_code,
             "next_allowed_ts": int(next_allowed_ts),
             "attempt": int(attempt),
             "max_attempts": int(max_attempts),
@@ -112,10 +120,29 @@ class IntentEmitter:
         }
         if context:
             payload["context"] = context
+        if raw_reason:
+            payload["raw_reason"] = raw_reason
+        write_intent_deferred(
+            symbol=symbol,
+            reason=canonical_reason,
+            reason_code=reason_code,
+            retry_key=retry_key,
+            next_allowed_ts=int(next_allowed_ts),
+            attempt=int(attempt),
+            max_attempts=int(max_attempts),
+            original_event=payload["original_event"],
+            src="decision_making",
+            ts_ms=now_ms,
+            rid=original_payload_min.get("rid"),
+            why_chain=why_chain or [],
+            context=context,
+            retry_policy=payload["retry_policy"],
+            raw_reason=raw_reason,
+        )
         self._fsm.emit(
             "EVT:INTENT_DEFERRED",
             payload,
-            why=f"intent_deferred:{reason}",
+            why=f"intent_deferred:{reason_code}",
             data_ref=why_chain or []
         )
 
@@ -190,24 +217,23 @@ class IntentEmitter:
         payload = {
             "retry_key": f"flip-{symbol}-{int(self._clock.now_sec())}",
             "symbol": symbol,
-            "reason": reason,
             "next_allowed_ts": next_ts,
             "attempt": 1,
             "max_attempts": int(getattr(self.config.strategies.aurora.decision, "retry_max_count", 3)),
-            "original_event": {
-                "event_name": "EVT:TRADE_INTENT_PROPOSED",
-                "payload_min": original_context,
-            },
-            "created_ts": self._clock.now_ms(),
-            "why_chain": ["flip_orchestration_defer"],
         }
 
         self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
-        self._fsm.emit(
-            "EVT:INTENT_DEFERRED",
-            payload,
-            why=f"intent_deferred:{reason}",
-            data_ref=["flip_orchestration_defer"]
+        self.emit_intent_deferred_v1(
+            symbol=symbol,
+            reason=reason,
+            retry_key=payload["retry_key"],
+            next_allowed_ts=next_ts,
+            original_event_name="EVT:TRADE_INTENT_PROPOSED",
+            original_payload_min=original_context,
+            attempt=1,
+            max_attempts=payload["max_attempts"],
+            why_chain=["flip_orchestration_defer"],
+            context="flip_orchestration_defer",
         )
 
     # -- Intent Counting ---------------------------------------------------

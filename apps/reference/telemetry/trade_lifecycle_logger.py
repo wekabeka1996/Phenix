@@ -90,11 +90,17 @@ class TradeRecord:
     close_ts_ms: int = 0
     pnl_pct: Optional[float] = None
     pnl_usdt: Optional[float] = None
+    reject_reason_code: str = ""
+    reject_stage: str = ""
 
     # Status
     status: str = "INTENT"       # INTENT → ORDERED → FILLED → CLOSED / CANCELLED
     created_ts_ms: int = 0
     updated_ts_ms: int = 0
+    prior_terminal_status: str = ""
+    prior_terminal_reason: str = ""
+    reconciliation_source: str = ""
+    reconciliation_ts_ms: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -124,24 +130,61 @@ class TradeLifecycleLogger:
         self._auto_sweep_interval_sec = max(1, int(auto_sweep_interval_sec))
         self._next_sweep_at = time.time() + self._auto_sweep_interval_sec
         self._trades: "OrderedDict[str, TradeRecord]" = OrderedDict()
+        self._recent_terminal: "OrderedDict[str, TradeRecord]" = OrderedDict()
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
 
-    def _get_or_create(self, rid: str) -> TradeRecord:
+    def _create_record(self, rid: str) -> TradeRecord:
+        now_ms = self._now_ms()
+        rec = TradeRecord(
+            rid=rid,
+            created_ts_ms=now_ms,
+            updated_ts_ms=now_ms,
+        )
+        self._trades[rid] = rec
+        return rec
+
+    def _reopen_terminal_if_needed(self, rid: str, *, source: str) -> Optional[TradeRecord]:
+        prior = self._recent_terminal.get(rid)
+        if prior is None or prior.status != "REJECTED":
+            return None
+        now_ms = self._now_ms()
+        restored = TradeRecord(**asdict(prior))
+        restored.status = "INTENT"
+        restored.close_price = None
+        restored.close_reason = ""
+        restored.close_ts_ms = 0
+        restored.pnl_pct = None
+        restored.pnl_usdt = None
+        restored.updated_ts_ms = now_ms
+        restored.prior_terminal_status = prior.status
+        restored.prior_terminal_reason = prior.close_reason
+        restored.reconciliation_source = source
+        restored.reconciliation_ts_ms = now_ms
+        self._trades[rid] = restored
+        self._trades.move_to_end(rid)
+        return restored
+
+    def _get_or_create(self, rid: str, *, source: str = "") -> TradeRecord:
         self._maybe_sweep()
         if rid not in self._trades:
-            now_ms = self._now_ms()
-            self._trades[rid] = TradeRecord(
-                rid=rid,
-                created_ts_ms=now_ms,
-                updated_ts_ms=now_ms,
-            )
+            reopened = None
+            if source in {"order_placed", "fill", "close"}:
+                reopened = self._reopen_terminal_if_needed(rid, source=source)
+            if reopened is None:
+                self._create_record(rid)
         rec = self._trades[rid]
         rec.updated_ts_ms = self._now_ms()
         self._trades.move_to_end(rid)
         self._enforce_capacity()
         return rec
+
+    def _remember_terminal(self, rec: TradeRecord) -> None:
+        self._recent_terminal[rec.rid] = TradeRecord(**asdict(rec))
+        self._recent_terminal.move_to_end(rec.rid)
+        while len(self._recent_terminal) > self._max_open_trades:
+            self._recent_terminal.popitem(last=False)
 
     def _maybe_sweep(self) -> None:
         now = time.time()
@@ -184,6 +227,7 @@ class TradeLifecycleLogger:
         rec = self._trades.pop(rid, None)
         if rec is None:
             return
+        self._remember_terminal(rec)
         try:
             line = json.dumps(rec.to_dict(), ensure_ascii=False, default=str)
             with open(self._log_file, "a", encoding="utf-8") as f:
@@ -218,7 +262,7 @@ class TradeLifecycleLogger:
         entry_type: str = "",
     ) -> None:
         """Record trade intent emission."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="intent")
         rec.symbol = symbol
         rec.side = side
         rec.regime = regime
@@ -237,7 +281,7 @@ class TradeLifecycleLogger:
         price: Optional[float] = None,
     ) -> None:
         """Record order placement."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="order_placed")
         rec.order_id = order_id
         rec.order_price = price
         rec.order_ts_ms = self._now_ms()
@@ -252,7 +296,7 @@ class TradeLifecycleLogger:
         fees: Optional[float] = None,
     ) -> None:
         """Record order fill."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="fill")
         rec.fill_price = fill_price
         rec.fill_qty = fill_qty
         rec.fill_fees = fees
@@ -269,7 +313,7 @@ class TradeLifecycleLogger:
         tp_pct: Optional[float] = None,
     ) -> None:
         """Record SL/TP brackets."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="brackets")
         if sl_price is not None:
             rec.sl_price = sl_price
         if tp_price is not None:
@@ -289,7 +333,7 @@ class TradeLifecycleLogger:
         pnl_usdt: Optional[float] = None,
     ) -> None:
         """Record trade close and flush to JSONL."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="close")
         rec.close_price = close_price
         rec.close_reason = close_reason
         rec.close_ts_ms = self._now_ms()
@@ -305,11 +349,28 @@ class TradeLifecycleLogger:
         cancel_reason: str = "",
     ) -> None:
         """Record order cancellation and flush to JSONL."""
-        rec = self._get_or_create(rid)
+        rec = self._get_or_create(rid, source="cancel")
         rec.close_reason = cancel_reason
         rec.close_ts_ms = self._now_ms()
         rec.updated_ts_ms = rec.close_ts_ms
         rec.status = "CANCELLED"
+        self._flush(rid)
+
+    def on_reject(
+        self,
+        rid: str,
+        reject_reason: str = "",
+        reject_reason_code: str = "",
+        reject_stage: str = "",
+    ) -> None:
+        """Record trade intent rejection and flush to JSONL."""
+        rec = self._get_or_create(rid, source="reject")
+        rec.close_reason = reject_reason
+        rec.reject_reason_code = reject_reason_code
+        rec.reject_stage = reject_stage
+        rec.close_ts_ms = self._now_ms()
+        rec.updated_ts_ms = rec.close_ts_ms
+        rec.status = "REJECTED"
         self._flush(rid)
 
     def flush_all(self) -> int:

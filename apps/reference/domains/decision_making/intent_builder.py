@@ -165,12 +165,23 @@ class IntentBuilder:
             except Exception as e:
                 self.logger.error(
                     f"[{symbol}] OrderIndex access failed: {e}", exc_info=True)
-                self._fsm.emit("EVT:INTENT_DEFERRED", {
-                    "symbol": symbol, "rid": rid,
-                    "reason": "NRR-ORDER-INDEX-FAIL",
-                    "next_allowed_ts": None,
-                    "original_context": "decision_making:_propose_trade_intent",
-                })
+                self._emit_deferred(
+                    symbol=symbol,
+                    reason="NRR-ORDER-INDEX-FAIL",
+                    retry_key=f"order_index_fail:{symbol}:{rid}",
+                    next_allowed_ts=self._clock.now_ms() + 1000,
+                    original_event_name="EVT:TRADE_INTENT_PROPOSED",
+                    original_payload_min={
+                        "symbol": symbol,
+                        "side": side,
+                        "rid": rid,
+                        "strategy_id": strategy_id,
+                    },
+                    attempt=1,
+                    max_attempts=3,
+                    why_chain=(why_chain or []) + ["order_index_failure"],
+                    context="decision_making:order_index_failure",
+                )
                 self._record_blocked(symbol)
                 return
 

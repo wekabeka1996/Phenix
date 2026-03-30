@@ -31,8 +31,8 @@ def test_missing_order_type_rejected(fsm_harness):
     
     rejects = [e for e in bus.events if e[0] == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
-    reason = rejects[0][1][0].get("reason", "")
-    assert "NRR-INTENT-MISSING-ORDER_TYPE" in reason
+    why = rejects[0][1][0].get("why", "")
+    assert "NRR-INTENT-MISSING-ORDER_TYPE" in why
 
 def test_limit_missing_price_rejected(fsm_harness):
     fsm, bus, _ = fsm_harness
@@ -47,7 +47,7 @@ def test_limit_missing_price_rejected(fsm_harness):
     
     rejects = [e for e in bus.events if e[0] == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
-    assert "NRR-INTENT-MISSING-PRICE" in rejects[0][1][0]["reason"]
+    assert "NRR-INTENT-MISSING-PRICE" in rejects[0][1][0]["why"]
 
 def test_limit_missing_tif_rejected(fsm_harness):
     fsm, bus, _ = fsm_harness
@@ -62,7 +62,7 @@ def test_limit_missing_tif_rejected(fsm_harness):
     
     rejects = [e for e in bus.events if e[0] == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
-    assert "NRR-INTENT-MISSING-TIF" in rejects[0][1][0]["reason"]
+    assert "NRR-INTENT-MISSING-TIF" in rejects[0][1][0]["why"]
 
 def test_market_with_tif_rejected(fsm_harness):
     fsm, bus, _ = fsm_harness
@@ -76,7 +76,7 @@ def test_market_with_tif_rejected(fsm_harness):
     
     rejects = [e for e in bus.events if e[0] == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
-    assert "NRR-INTENT-INVALID-TIF" in rejects[0][1][0]["reason"]
+    assert "NRR-INTENT-INVALID-TIF" in rejects[0][1][0]["why"]
 
 def test_valid_market_success(fsm_harness):
     fsm, bus, _cfg = fsm_harness

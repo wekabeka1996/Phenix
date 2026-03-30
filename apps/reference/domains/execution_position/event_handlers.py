@@ -397,6 +397,35 @@ class EPEventHandlers:
         except Exception as e:
             LOG.warning(f"[ACK] Failed to notify watchdog for {order_id}: {e}")
 
+    def on_trade_executed(self, event: "Message") -> None:
+        """Mirror canonical fill truth into lifecycle telemetry on the actual hot path."""
+        payload = event.pld or {}
+        symbol = payload.get("symbol")
+        rid = payload.get("rid") or event.rid or payload.get("orderId")
+        if not rid:
+            return
+
+        try:
+            if symbol:
+                self._fsm._last_lifecycle_rid_by_symbol[symbol] = str(rid)
+                if payload.get("price") is not None:
+                    self._fsm._last_lifecycle_fill_price_by_symbol[symbol] = float(payload.get("price"))
+        except Exception:
+            pass
+
+        if _trade_lifecycle is not None:
+            try:
+                _trade_lifecycle.on_fill(
+                    rid=str(rid),
+                    fill_price=float(payload.get("price", 0)) if payload.get("price") else None,
+                    fill_qty=float(payload.get("quantity", 0)) if payload.get("quantity") else None,
+                    fees=float(payload.get("fees", payload.get("commission", 0))) if (
+                        payload.get("fees") or payload.get("commission")
+                    ) else None,
+                )
+            except Exception:
+                pass
+
     def on_order_fill(self, event: "Message") -> None:
         """Handle EVT:ORDER_FILL events from adapter."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
@@ -430,7 +459,10 @@ class EPEventHandlers:
 
         self._fsm._pending_entry_meta.pop(str(order_id), None)
 
-        event_key = f"fill_{order_id}_{symbol}"
+        # FILL-PIPELINE-FIX-AUDIT: include trade_id in dedup key so multiple
+        # partial fills (each with unique Binance trade_id "t") are not suppressed.
+        _trade_id = str(payload.get("tradeId") or payload.get("trade_id") or "")
+        event_key = f"fill_{order_id}_{_trade_id}_{symbol}" if _trade_id else f"fill_{order_id}_{symbol}"
         if not self._fsm._mark_processed_event(event_key):
             LOG.debug(
                 f"[FILL] Skipping duplicate FILL for {symbol} order {order_id}")
@@ -527,35 +559,47 @@ class EPEventHandlers:
             except Exception:
                 pass
 
+        # FILL-PIPELINE-FIX-AUDIT: Only remove from watchdog tracking on final FILLED.
+        # PARTIALLY_FILLED means more fills are expected — keep the order tracked.
+        _fill_status = str(payload.get("status") or "").upper()
         try:
             if hasattr(self._fsm, "watchdog") and self._fsm.watchdog is not None:
-                self._fsm.watchdog.on_order_fill(order_id)
+                if _fill_status != "PARTIALLY_FILLED":
+                    self._fsm.watchdog.on_order_fill(order_id)
+                else:
+                    # Extend fill deadline for partially filled orders
+                    if order_id in self._fsm.watchdog.acked_orders:
+                        self._fsm.watchdog.acked_orders[order_id].deadline_ms = (
+                            get_clock().now_ms() + self._fsm.watchdog.fill_ttl_ms)
+                    LOG.info("PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", order_id)
         except Exception as e:
             LOG.warning(
                 f"[FILL] Failed to notify watchdog for {order_id}: {e}")
 
         # TASK40: Mark entry order terminal in OrderIndex
-        try:
-            if hasattr(self._fsm.fsm, "order_index") and self._fsm.fsm.order_index:
-                ref = None
-                ref = self._fsm.fsm.order_index.get(
-                    exchangeOrderId=str(order_id))
-                if ref is None and client_order_id:
+        # FILL-PIPELINE-FIX-AUDIT: only for final FILLED, not PARTIALLY_FILLED
+        if _fill_status != "PARTIALLY_FILLED":
+            try:
+                if hasattr(self._fsm.fsm, "order_index") and self._fsm.fsm.order_index:
+                    ref = None
                     ref = self._fsm.fsm.order_index.get(
-                        clientOrderId=str(client_order_id))
-                if ref is None and rid:
-                    ref = self._fsm.fsm.order_index.get(rid=str(rid))
-                if ref is not None:
-                    self._fsm.fsm.order_index.mark_terminal(ref)
-                    # PHASE 1: Cache lifecycle_id for ORDER_FILLED and POSITION_CLOSED correlation
-                    if ref.idempotent_key and symbol:
-                        try:
-                            self._fsm._last_lifecycle_ikey_by_symbol[symbol] = str(
-                                ref.idempotent_key)
-                        except Exception:
-                            pass
-        except Exception:
-            pass
+                        exchangeOrderId=str(order_id))
+                    if ref is None and client_order_id:
+                        ref = self._fsm.fsm.order_index.get(
+                            clientOrderId=str(client_order_id))
+                    if ref is None and rid:
+                        ref = self._fsm.fsm.order_index.get(rid=str(rid))
+                    if ref is not None:
+                        self._fsm.fsm.order_index.mark_terminal(ref)
+                        # PHASE 1: Cache lifecycle_id for ORDER_FILLED and POSITION_CLOSED correlation
+                        if ref.idempotent_key and symbol:
+                            try:
+                                self._fsm._last_lifecycle_ikey_by_symbol[symbol] = str(
+                                    ref.idempotent_key)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
 
         # PHASE 2: Cache exchange tradeId (all fills) and entry side (ENTRY fills only).
         # tradeId always wins with the most-recent fill's value.

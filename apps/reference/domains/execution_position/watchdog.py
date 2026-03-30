@@ -38,6 +38,7 @@ class OrderDeadline:
     timeout_type: OrderTimeoutType
     corr_id: Optional[str] = None
     rid: Optional[str] = None
+    side: Optional[str] = None
     # EP-01.3-INT: Per-order fill TTL override (ms). If set, used instead of global fill_ttl_ms.
     fill_ttl_override_ms: Optional[int] = None
 
@@ -196,7 +197,7 @@ class OrderTimeoutWatchdog:
     def disable(self) -> None:
         """
         DET-BT-09: Disable watchdog permanently (for backtest mode).
-        
+
         Once disabled, start() and ensure_started() become no-ops.
         Use this in backtest to prevent race conditions.
         """
@@ -211,11 +212,12 @@ class OrderTimeoutWatchdog:
         symbol: str,
         corr_id: Optional[str] = None,
         rid: Optional[str] = None,
+        side: Optional[str] = None,
         # EP-01.3-INT: Per-order fill TTL override (ms)
         fill_ttl_override_ms: Optional[int] = None,
     ):
         """Track a newly placed order for ACK timeout.
-        
+
         Args:
             fill_ttl_override_ms: If provided, overrides global fill_ttl_ms for this order.
                                   Used for pending entry TTL based on timeframe.
@@ -230,6 +232,7 @@ class OrderTimeoutWatchdog:
             timeout_type=OrderTimeoutType.ACK_TIMEOUT,
             corr_id=corr_id,
             rid=rid,
+            side=str(side).lower() if side is not None else None,
             fill_ttl_override_ms=fill_ttl_override_ms,  # EP-01.3-INT
         )
 
@@ -244,7 +247,7 @@ class OrderTimeoutWatchdog:
         if order_id in self.acked_orders:
             LOG.debug(f"Order {order_id} already ACKed, skipping duplicate")
             return
-        
+
         if order_id not in self.pending_orders:
             # WD-001: Demote to DEBUG - SL/TP orders are not tracked, this is expected
             LOG.debug(f"ACK received for untracked order {order_id} (SL/TP or external)")
@@ -380,7 +383,8 @@ class OrderTimeoutWatchdog:
                         executed_qty = float(
                             dget(order_status, "executedQty", 0))
 
-                        if status == "FILLED" and executed_qty > 0:
+                        # FILL-PIPELINE-FIX: detect both FILLED and PARTIALLY_FILLED
+                        if status in ("FILLED", "PARTIALLY_FILLED") and executed_qty > 0:
                             # Check if already processed (idempotency)
                             if bool(dget(meta, "terminal", False)):
                                 LOG.debug(
@@ -389,7 +393,7 @@ class OrderTimeoutWatchdog:
 
                             # Order was filled! Notify via event emission
                             LOG.info(
-                                f"🔧 POLLING DETECTED FILL: {order_id} ({symbol}) qty={executed_qty}")
+                                f"🔧 POLLING DETECTED FILL: {order_id} ({symbol}) qty={executed_qty} status={status}")
                             self._rest_detected_fills_total += 1
 
                             # Emit TRADE_EXECUTED event instead of direct FSM call
@@ -404,6 +408,7 @@ class OrderTimeoutWatchdog:
                                 "quantity": executed_qty,
                                 "qty": executed_qty,
                                 "price": float(dget(order_status, "avgPrice", 0)),
+                                "status": status,
                                 "clientOrderId": (
                                     dget(order_status, "clientOrderId", "")
                                     or getattr(deadline, "client_order_id", "")
@@ -413,17 +418,27 @@ class OrderTimeoutWatchdog:
                                     or getattr(deadline, "client_order_id", "")
                                 ),
                                 "rid": getattr(deadline, "rid", None),
+                                "side": getattr(deadline, "side", None),
+                                "ts": current_time_ms,
                                 "ts_ms": current_time_ms,
+                                "venue": "binance",
                             }
 
                             if self.emit_fn:
                                 await self.emit_fn("EVT:TRADE_EXECUTED", fill_payload)
 
-                            # BUG FIX: Stop timeout tracking immediately!
-                            self.on_order_fill(order_id)
-
-                            # Mark as terminal to prevent duplicate processing
-                            meta['terminal'] = True
+                            # FILL-PIPELINE-FIX-AUDIT: Only remove from tracking on final FILLED.
+                            # PARTIALLY_FILLED means more fills expected — keep tracking.
+                            if status == "FILLED":
+                                self.on_order_fill(order_id)
+                                meta['terminal'] = True
+                            else:
+                                # Extend deadline so watchdog doesn't timeout mid-fill-sequence
+                                if order_id in self.acked_orders:
+                                    self.acked_orders[order_id].deadline_ms = current_time_ms + self.fill_ttl_ms
+                                LOG.info(
+                                    "PARTIAL_FILL_TRACKING_RETAINED: %s still tracked (qty=%s)",
+                                    order_id, executed_qty)
                             # Reset backoff on success
                             meta['attempts'] = 0
                             meta['backoff_ms'] = 1000

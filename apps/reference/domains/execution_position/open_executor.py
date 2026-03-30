@@ -22,6 +22,7 @@ from apps.reference.domains.execution_position.utils import (
 from apps.reference.domains.execution_position.qty_normalizer import normalize_qty
 from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_stored
 from apps.reference.domains.execution_position.terminal_order_contracts import (
+    emit_canonical_terminal_order_event,
     normalize_order_rejected_payload,
 )
 
@@ -464,8 +465,6 @@ class OpenExecutor:
 
     async def _place_limit_entry(self, decision, symbol, side, price, qty, tif, entry_id, wal):
         """Place LIMIT entry, handle GTX rejection. Returns resp or None."""
-        from vfoundation.core.fsm_emit_compat import Message, emit_compat
-
         submit_trace = await self._collect_limit_submit_trace(
             decision=decision,
             symbol=symbol,
@@ -476,6 +475,63 @@ class OpenExecutor:
         )
         order_logger.write(submit_trace)
         submit_meta = submit_trace.get("metadata", {})
+
+        # ── FILL-PIPELINE-FIX: Pre-submit GTX spread guard ──────────────
+        # Ensure LIMIT GTX price is on the passive side of the book.
+        # If crossing, adjust to passive side.
+        if tif == "GTX" and submit_meta.get("book_context") == "AVAILABLE":
+            best_bid_s = submit_meta.get("best_bid")
+            best_ask_s = submit_meta.get("best_ask")
+            if best_bid_s and best_ask_s:
+                # FILL-PIPELINE-FIX-AUDIT: wrap Decimal parsing in try/except (F-2)
+                try:
+                    best_bid = Decimal(best_bid_s)
+                    best_ask = Decimal(best_ask_s)
+                    submit_price = Decimal(str(price))
+                except (Exception) as exc:
+                    LOG.warning(
+                        "GTX_SPREAD_GUARD_SKIP: %s Decimal parse error: %s (bid=%r ask=%r price=%r)",
+                        symbol, exc, best_bid_s, best_ask_s, price)
+                    best_bid = None
+                else:
+                    original_price = submit_price
+
+                    # FILL-PIPELINE-FIX-AUDIT: crossed book guard (F-3)
+                    if best_bid >= best_ask:
+                        LOG.warning(
+                            "GTX_SPREAD_GUARD_SKIP: %s crossed/zero-spread book bid=%s >= ask=%s, "
+                            "proceeding with unadjusted price",
+                            symbol, best_bid, best_ask)
+                    elif side == "BUY" and submit_price >= best_ask:
+                        # BUY crossing ask → adjust to best_bid (passive)
+                        submit_price = best_bid
+                        price = str(submit_price)
+                        LOG.warning(
+                            "GTX_SPREAD_GUARD: %s BUY adjusted %s → %s (was >= ask %s)",
+                            symbol, original_price, submit_price, best_ask)
+                    elif side == "SELL" and submit_price <= best_bid:
+                        # SELL crossing bid → adjust to best_ask (passive)
+                        submit_price = best_ask
+                        price = str(submit_price)
+                        LOG.warning(
+                            "GTX_SPREAD_GUARD: %s SELL adjusted %s → %s (was <= bid %s)",
+                            symbol, original_price, submit_price, best_bid)
+
+                    if submit_price != original_price:
+                        order_logger.write({
+                            "rid": decision.rid,
+                            "event_type": "LIMIT_PRICE_ADJUSTED",
+                            "symbol": symbol,
+                            "side": side,
+                            "original_price": str(original_price),
+                            "adjusted_price": str(submit_price),
+                            "best_bid": str(best_bid),
+                            "best_ask": str(best_ask),
+                            "reason": "GTX_SPREAD_GUARD",
+                            "timestamp": get_clock().now_ms(),
+                        })
+        # ── end spread guard ────────────────────────────────────────────
+
         LOG.info(
             "LIMIT_SUBMIT_TRACE: symbol=%s side=%s tif=%s before=%s after=%s tick=%s mode=%s best_bid=%s best_ask=%s spread=%s distance_to_touch=%s rid=%s",
             symbol,
@@ -505,20 +561,23 @@ class OpenExecutor:
                 order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
                     "symbol": symbol, "side": side, "quantity": float(qty),
                     "nrr_code": "NRR-018", "why": MAKER_ONLY_REJECT, "source_fsm": "ExecPosFSM"})
-                reject_payload = normalize_order_rejected_payload(
-                    {"symbol": symbol, "side": side, "reason": MAKER_ONLY_REJECT, "error_code": err_code},
-                    fallback_rid=decision.rid,
+                await emit_canonical_terminal_order_event(
+                    fsm=self._fsm.fsm,
+                    event_name="EVT:ORDER_REJECTED",
+                    payload={
+                        "symbol": symbol,
+                        "side": side,
+                        "reason": MAKER_ONLY_REJECT,
+                        "error_code": err_code,
+                    },
+                    rid=decision.rid,
+                    src="execution_position",
+                    dst="decision_making",
+                    why=MAKER_ONLY_REJECT,
+                    logger=LOG,
+                    write_wal=True,
                     fallback_ts_ms=get_clock().now_ms(),
                 )
-                reject_msg = Message(op="EVT", verb="ORDER_REJECTED", src="execution_position",
-                    dst="decision_making", rid=decision.rid,
-                    pld=reject_payload,
-                    why=MAKER_ONLY_REJECT)
-                try:
-                    wal.append(reject_msg.model_dump())
-                except Exception:
-                    pass
-                await emit_compat(self._fsm.fsm, reject_msg, logger=LOG)
                 return None
             else:
                 LOG.error(f"LIMIT entry failed: {e}")
@@ -570,6 +629,7 @@ class OpenExecutor:
         self._fsm.watchdog.track_order_placed(
             order_id=str(entry_resp["orderId"]), client_order_id=entry_id,
             symbol=symbol, corr_id=decision.corr_id, rid=decision.rid,
+            side=side,
             fill_ttl_override_ms=valid_for_ms)
 
         # Order logger

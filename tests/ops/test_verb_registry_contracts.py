@@ -98,6 +98,27 @@ def test_trade_intent_proposed_registered_with_schema() -> None:
     assert (_repo_root() / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
 
+def test_decision_blocked_registered_with_schema() -> None:
+    data = _load_registry()
+    registry = data.get("registry")
+    if not isinstance(registry, list):
+        raise AssertionError("verb registry: expected top-level 'registry' list")
+
+    entry = next(
+        (
+            e
+            for e in registry
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "DECISION_BLOCKED"
+        ),
+        None,
+    )
+    assert entry is not None, "Expected EVT:DECISION_BLOCKED to be registered"
+
+    schema = entry.get("schema")
+    assert schema == "apps/reference/domains/decision_making/schemas/decision_blocked_v1.json"
+    assert (_repo_root() / schema).exists(), f"Missing schema file referenced by registry: {schema}"
+
+
 def test_tick_features_calculated_registered_with_schema() -> None:
     data = _load_registry()
     registry = data.get("registry")
