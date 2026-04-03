@@ -1,23 +1,12 @@
-"""
-InstrumentQuantizer — Phase 9: Exposure → Position Size.
+"""Pure sizing helpers for exchange-constrained decision payloads.
 
-Converts the abstract exposure level from the quadratic kernel
-into exchange-compliant position sizes.
+This module has three distinct responsibilities:
+- quantize_exposure(): convert Aurora exposure into exchange-valid qty/notional;
+- compute_risk_adjusted_notional(): derive a target notional from a risk budget;
+- compute_structural_stop(): derive a standalone ATR-based stop distance.
 
-Flow:
-    exposure ∈ [-1, +1] → notional → qty (floored to step_size)
-
-Key formulas:
-    notional = |exposure| × max_notional
-    qty = floor(notional / price, step_size)
-
-The quantizer respects:
-- Exchange min_qty / min_notional constraints
-- Step size rounding (always floor, never round up)
-- Maximum notional cap
-- Fee buffer to prevent insufficient balance
-
-Pure functions, no state, no I/O.
+The helpers are stateless and perform no I/O. The active Aurora signal-emission
+path uses quantize_exposure(); the other helpers remain pure library surfaces.
 """
 from __future__ import annotations
 
@@ -29,14 +18,17 @@ from typing import Optional, Union
 
 @dataclass
 class InstrumentSpec:
-    """Exchange instrument specification.
+    """Lightweight runtime mirror of exchange precision constraints.
 
-    These values come from exchange info (symbol filters).
+    The broader config layer already validates these values as positive
+    decimals. This dataclass keeps only the fields the quantizer needs at
+    runtime and does not re-validate them locally.
     """
     step_size: Decimal          # LOT_SIZE stepSize (e.g. 0.001)
     min_qty: Decimal            # LOT_SIZE minQty (e.g. 0.001)
     min_notional: Decimal       # MIN_NOTIONAL (e.g. 5.0 USDT)
-    tick_size: Decimal           # PRICE_FILTER tickSize (e.g. 0.01)
+    # PRICE_FILTER tickSize (kept for contract parity)
+    tick_size: Decimal
 
 
 @dataclass
@@ -49,7 +41,8 @@ class QuantizedPosition:
         notional: Quantity × price (USDT)
         exposure_abs: |exposure| used for sizing
         margin_required: Estimated margin (notional / leverage)
-        reject_reason: If set, position is invalid (min_qty, min_notional)
+        reject_reason: If set, the caller must treat the position as unusable.
+            qty/notional may still carry the post-floor values for diagnostics.
     """
     side: str
     qty: Decimal
@@ -60,12 +53,15 @@ class QuantizedPosition:
 
 
 def _d(v) -> Decimal:
-    """Safe Decimal conversion."""
+    """Convert a numeric-ish value to Decimal via string normalization."""
     return Decimal(str(v))
 
 
 def floor_to_step(qty: Decimal, step_size: Decimal) -> Decimal:
-    """Floor quantity to step size (never round up)."""
+    """Floor quantity to step size without ever rounding up.
+
+    Non-positive qty or step_size collapses to 0 instead of raising.
+    """
     if step_size <= 0 or qty <= 0:
         return Decimal("0")
     return (qty / step_size).to_integral_value(
@@ -84,7 +80,7 @@ def quantize_exposure(
     exposure_cap: float = 1.0,
 ) -> QuantizedPosition:
     """
-    Convert abstract exposure to exchange-valid position.
+    Convert abstract exposure into an exchange-valid position candidate.
 
     Args:
         exposure: Quadratic kernel output ∈ [-1, +1].
@@ -98,8 +94,13 @@ def quantize_exposure(
 
     Returns:
         QuantizedPosition with exchange-valid qty, or reject_reason.
+
+    Notes:
+        - neutral exposure short-circuits to an empty-side zero position;
+        - the fee buffer is applied before qty flooring;
+        - exchange violations return reject_reason strings instead of raising.
     """
-    # Determine side
+    # Side is derived only from the sign; all sizing below is magnitude-based.
     if exposure > 0:
         side = "buy"
     elif exposure < 0:
@@ -110,16 +111,16 @@ def quantize_exposure(
             exposure_abs=0.0, margin_required=Decimal("0"),
         )
 
-    # Clamp |exposure| to [0, cap]
+    # Clamp conviction to the caller-provided cap before translating into notional.
     exposure_abs = min(abs(exposure), exposure_cap)
 
-    # Compute notional: |exposure| × max_notional
+    # max_notional is already the full-conviction ceiling from the caller.
     notional = _d(exposure_abs) * max_notional
 
-    # Apply fee buffer
+    # Reduce target notional up front so the floored qty stays inside balance headroom.
     notional = notional * (Decimal("1") - fee_buffer)
 
-    # Compute quantity
+    # Price is the hard precondition for translating notional into quantity.
     if price <= 0:
         return QuantizedPosition(
             side=side, qty=Decimal("0"), notional=Decimal("0"),
@@ -131,9 +132,13 @@ def quantize_exposure(
     qty = floor_to_step(raw_qty, spec.step_size)
 
     actual_notional = qty * price
-    margin_required = actual_notional / _d(leverage) if leverage > 0 else actual_notional
+    # leverage only affects the estimated margin requirement here; it does not
+    # change the requested notional or qty.
+    margin_required = actual_notional / \
+        _d(leverage) if leverage > 0 else actual_notional
 
-    # Validate exchange constraints
+    # Rejects are data returns rather than exceptions so the caller can surface
+    # a blocked event with the computed diagnostics.
     if qty <= 0:
         return QuantizedPosition(
             side=side, qty=Decimal("0"), notional=Decimal("0"),
@@ -172,22 +177,23 @@ def compute_risk_adjusted_notional(
     notional_cap: Optional[Decimal] = None,
 ) -> Decimal:
     """
-    Risk-based sizing: position size derived from risk budget.
+    Derive target notional from an explicit risk budget.
 
     Formula:
         risk_amount = equity × risk_per_trade_pct × |exposure|
-        notional = risk_amount / stop_distance_pct × leverage
+        raw_notional = risk_amount / stop_distance_pct
+        notional = min(raw_notional, equity × leverage) when leverage > 1
 
     This ensures that a stop-loss hit loses exactly risk_per_trade_pct
-    of equity (scaled by exposure conviction).
+    of equity (scaled by exposure conviction) before any explicit caps.
 
     Args:
         equity: Account equity in USDT.
         exposure_abs: |exposure| from quadratic kernel (0-1).
         risk_per_trade_pct: Max risk per trade as fraction (e.g. 0.01 = 1%).
         stop_distance_pct: Expected SL distance as fraction (e.g. 0.005 = 0.5%).
-        leverage: Exchange leverage.
-        notional_cap: Hard cap on notional.
+        leverage: Exchange leverage used only as a buying-power ceiling.
+        notional_cap: Additional hard cap on notional.
 
     Returns:
         Target notional value.
@@ -198,11 +204,12 @@ def compute_risk_adjusted_notional(
     risk_amount = equity * risk_per_trade_pct * _d(exposure_abs)
     notional = risk_amount / stop_distance_pct
 
-    # Apply leverage
+    # The risk budget defines the raw target; leverage only limits how much
+    # notional can be deployed from the available equity.
     if leverage > 1:
         notional = min(notional, equity * _d(leverage))
 
-    # Apply cap
+    # Caller-provided caps win last.
     if notional_cap is not None and notional > notional_cap:
         notional = notional_cap
 
@@ -220,7 +227,7 @@ def compute_structural_stop(
     min_stop_bps: int = 15,
 ) -> Decimal:
     """
-    Structural stop-loss scaled by pillar conviction.
+    Compute a standalone ATR-based stop-loss distance from conviction.
 
     Formula:
         atr_mult = base_atr_mult - confidence_scale × |pillar_confidence|
@@ -232,7 +239,7 @@ def compute_structural_stop(
     Args:
         price: Current price.
         atr: ATR value.
-        side: "buy" or "sell".
+        side: "buy" or "sell". Any other value returns price unchanged.
         pillar_confidence: |pillar_sum| (0-1).
         base_atr_mult: ATR multiplier at zero confidence.
         confidence_scale: How much to tighten per unit confidence.
@@ -241,14 +248,14 @@ def compute_structural_stop(
     Returns:
         Stop-loss price (Decimal).
     """
-    # Scale ATR multiplier by conviction
+    # Clamp confidence before it tightens the ATR multiple.
     confidence = min(1.0, max(0.0, pillar_confidence))
     atr_mult = base_atr_mult - confidence_scale * _d(confidence)
     atr_mult = max(atr_mult, Decimal("0.5"))  # Never below 0.5 ATR
 
     stop_distance = atr * atr_mult
 
-    # Enforce minimum stop distance
+    # The bps floor prevents unrealistically tight stops on tiny ATR values.
     min_distance = price * _d(min_stop_bps) / Decimal("10000")
     stop_distance = max(stop_distance, min_distance)
 

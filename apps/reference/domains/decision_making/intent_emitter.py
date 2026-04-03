@@ -1,14 +1,12 @@
-"""
-IntentEmitter — Rejection/defer emission, alert monitoring, and regime flip handling.
+"""IntentEmitter for defer/reject lifecycle events and regime-flip closes.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Manages intent lifecycle events: deferred, rejected, blocked/accepted counting.
+The helper centralizes three boundary concerns that must stay aligned:
+- canonical deferred and rejected event emission
+- coarse blocked-vs-seen monitoring for risk-gate alerts
+- regime-flip enforcement for reduce-only close paths
 
-LOC budget: <=500 (Constitution S3).
-
-P0 PATCH (2026-03-19):
-  handle_regime_flip now uses canonical close path (emit_reduce_only_close_fn) and
-  explicit strategy resolution (resolve_strategy_id_for_close). No silent aurora default.
+It is intentionally thin: it normalizes payloads, persists truth artifacts, and
+delegates actual open/close proposals back to injected facade helpers.
 """
 
 import decimal
@@ -32,11 +30,10 @@ if TYPE_CHECKING:
 
 
 class IntentEmitter:
-    """
-    Emission helpers for trade intent lifecycle events.
+    """Emission helpers for intent lifecycle side effects.
 
-    Owns blocked/seen counters and alert-checking logic.
-    FSM and propose_trade_intent are injected from the facade.
+    The facade injects the FSM, portfolio access, and close/open proposal hooks;
+    this class keeps only the normalization, persistence, and monitoring logic.
     """
 
     def __init__(
@@ -85,10 +82,13 @@ class IntentEmitter:
         why_chain: list[str] | None = None,
         context: str | None = None,
     ) -> None:
+        """Emit the canonical INTENT_DEFERRED payload and matching truth row."""
         now_ms = self._clock.now_ms()
         canonical_reason, reason_code, raw_reason = canonicalize_intent_deferred_reason(
             reason
         )
+        # Deferred-open retry TTL is strict config: missing SSOT must block the
+        # helper rather than silently creating an unbounded retry contract.
         try:
             ttl_ms = int(self.config.strategies.aurora.decision.retry_ttl_ms)
         except AttributeError as e:
@@ -122,6 +122,8 @@ class IntentEmitter:
             payload["context"] = context
         if raw_reason:
             payload["raw_reason"] = raw_reason
+        # Persist the truth artifact before the public FSM emit so forensic WAL
+        # rows exist even if the live event path is not observed downstream.
         write_intent_deferred(
             symbol=symbol,
             reason=canonical_reason,
@@ -161,7 +163,12 @@ class IntentEmitter:
         why_chain: list[str] | None = None,
         details: Dict[str, Any] | None = None,
     ) -> None:
-        """Emit + persist an explicit rejection event so blocks are observable."""
+        """Emit + persist a canonical reject event.
+
+        This helper is intentionally best-effort: the decision loop should not
+        crash while trying to report a rejection, even though that means a WAL
+        or FSM failure can suppress the reject artifact.
+        """
         try:
             ts_ms = self._clock.now_ms()
 
@@ -211,7 +218,7 @@ class IntentEmitter:
     # -- Retry Scheduling --------------------------------------------------
 
     def schedule_open_retry(self, symbol: str, original_context: dict, cooldown_ms: int, reason: str) -> None:
-        """Emit EVT:INTENT_DEFERRED to schedule retry after close."""
+        """Emit INTENT_DEFERRED for flip-orchestration reopen attempts."""
         next_ts = self._clock.now_ms() + cooldown_ms
 
         payload = {
@@ -222,7 +229,8 @@ class IntentEmitter:
             "max_attempts": int(getattr(self.config.strategies.aurora.decision, "retry_max_count", 3)),
         }
 
-        self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
+        self.logger.info(
+            f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
         self.emit_intent_deferred_v1(
             symbol=symbol,
             reason=reason,
@@ -272,6 +280,8 @@ class IntentEmitter:
         if self.intents_seen_total < min_intents:
             return
 
+        # Counters are cumulative over the current process lifetime; this alert
+        # is a coarse health signal, not a per-symbol or sliding-window metric.
         blocked_pct = (self.intents_blocked_total /
                        self.intents_seen_total) * 100
 
@@ -350,23 +360,29 @@ class IntentEmitter:
         No silent default to 'aurora' for non-aurora symbols.
         """
         try:
+            # Only structural regime updates are allowed to trigger forced close
+            # logic; transient/non-structural payloads are ignored here.
             if isinstance(regime_data, dict) and not is_structural_regime_payload(regime_data):
                 return
             regime = normalize_structural_regime_label(
-                regime_data.get("regime") if isinstance(regime_data, dict) else regime_data
+                regime_data.get("regime") if isinstance(
+                    regime_data, dict) else regime_data
             )
 
             portfolio = self._get_portfolio()
             if not portfolio:
                 return
 
-            pos_list = portfolio["positions"] if "positions" in portfolio else []
-            curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
+            pos_list = portfolio["positions"] if "positions" in portfolio else [
+            ]
+            curr_pos = next(
+                (p for p in pos_list if p.get("symbol") == symbol), None)
 
             if not curr_pos:
                 return
 
-            qty_val = float(curr_pos["positionAmt"] if "positionAmt" in curr_pos else 0)
+            qty_val = float(curr_pos["positionAmt"]
+                            if "positionAmt" in curr_pos else 0)
             if abs(qty_val) < 1e-9:
                 return
 
@@ -388,7 +404,8 @@ class IntentEmitter:
             if not should_close:
                 return
 
-            self.logger.warning(f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")
+            self.logger.warning(
+                f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")
 
             rid = f"rf-{int(self._clock.now_sec())}"
             close_side = "SELL" if is_long else "BUY"
@@ -414,7 +431,8 @@ class IntentEmitter:
                     reason_code="REGIME_FLIP_STRATEGY_UNRESOLVABLE",
                     reason="DECISION",
                     context=f"regime_flip:strategy_unresolvable:{resolve_reason}",
-                    why_chain=["regime_flip_enforcement", regime, resolve_reason],
+                    why_chain=["regime_flip_enforcement",
+                               regime, resolve_reason],
                 )
                 return
 

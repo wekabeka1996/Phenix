@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
-"""
-Calibrate Aurora `signal_weights` from historical recorder data.
+"""Research-only calibration of legacy Aurora weight surfaces.
 
-Goal
-----
-Use `data/recorder/{YYYY-MM-DD}/{SYMBOL}_{TF}.csv` (bars + feat_*) to:
-  1) build a supervised dataset (features -> forward return),
-  2) fit direction weights (ridge),
-  3) fit strength weights (non-negative least squares on |return|),
-  4) evaluate vs current config weights with a simple threshold strategy,
-  5) print YAML snippets you can paste into `config/aurora/strategies/aurora.yaml`.
+This script explores deprecated Aurora scoring surfaces:
+- signal_weights
+- direction_strength_scoring
+- feature_neutrals
 
-Notes
------
-- We replicate the *core* transforms used by production scoring:
-  - delta_price normalization via `delta_price_cap_pct`
-  - `signed_v2` transforms for directional features (neutral 0.5 -> rescale, neutral 0 -> clamp)
-- Recorder currently stores `regime=PENDING` in CSV; this script does NOT use regime gating.
+It is not the active Aurora production calibration path.
+Current live Aurora calibration is threshold-surface only via calibrate_aurora_thresholds.py.
+
+Recorder data is used here to fit legacy direction and strength weights for research overlays.
+The script does not prove promotability, does not replay live regime gating, and does not write canonical YAML.
 """
 
 from __future__ import annotations
@@ -31,12 +25,6 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.linear_model import Ridge
-
-try:
-    from scipy.optimize import nnls  # type: ignore
-except Exception as e:  # pragma: no cover
-    raise SystemExit(f"scipy is required for NNLS strength fit. Import error: {e}")
 
 
 @dataclass(frozen=True)
@@ -50,6 +38,24 @@ class AuroraScoreCfg:
     delta_price_cap_pct: float
     strength_alpha: float
     strength_cap: float
+
+
+def _require_ml_deps() -> tuple[Any, Any]:
+    try:
+        from sklearn.linear_model import Ridge  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise SystemExit(
+            f"scikit-learn is required for legacy Aurora direction fitting. Import error: {exc}"
+        ) from exc
+
+    try:
+        from scipy.optimize import nnls  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise SystemExit(
+            f"scipy is required for legacy Aurora strength fitting. Import error: {exc}"
+        ) from exc
+
+    return Ridge, nnls
 
 
 def _parse_date(s: str) -> date:
@@ -103,16 +109,19 @@ def _load_recorder(paths: Iterable[Path]) -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
     if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce").astype("Int64")
+        df["timestamp"] = pd.to_numeric(
+            df["timestamp"], errors="coerce").astype("Int64")
     if "tf_sec" in df.columns:
-        df["tf_sec"] = pd.to_numeric(df["tf_sec"], errors="coerce").astype("Int64")
+        df["tf_sec"] = pd.to_numeric(
+            df["tf_sec"], errors="coerce").astype("Int64")
     return df
 
 
 def _load_aurora_yaml(path: Path) -> dict[str, Any]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or "aurora" not in raw:
-        raise SystemExit(f"Invalid aurora strategy YAML (expected top-level 'aurora'): {path}")
+        raise SystemExit(
+            f"Invalid aurora strategy YAML (expected top-level 'aurora'): {path}")
     aurora = raw["aurora"]
     if not isinstance(aurora, dict):
         raise SystemExit(f"Invalid aurora strategy YAML structure: {path}")
@@ -143,9 +152,11 @@ def _pick_effective_weights_neutrals(aurora: dict[str, Any], symbol: str) -> tup
     n = asset.get("feature_neutrals") or decision.get("feature_neutrals") or {}
 
     if not isinstance(w, dict) or not w:
-        raise SystemExit(f"Missing weights for {symbol} (aurora.assets.{symbol}.weights or aurora.decision.signal_weights)")
+        raise SystemExit(
+            f"Missing weights for {symbol} (aurora.assets.{symbol}.weights or aurora.decision.signal_weights)")
     if not isinstance(n, dict) or not n:
-        raise SystemExit("Missing feature_neutrals (aurora.decision.feature_neutrals)")
+        raise SystemExit(
+            "Missing feature_neutrals (aurora.decision.feature_neutrals)")
 
     return {str(k): float(v) for k, v in w.items()}, {str(k): float(v) for k, v in n.items()}
 
@@ -157,9 +168,11 @@ def _load_score_cfg(aurora: dict[str, Any], symbol: str) -> AuroraScoreCfg:
 
     weights, neutrals = _pick_effective_weights_neutrals(aurora, symbol)
 
-    directional_features = [str(x) for x in (ds.get("directional_features") or [])]
+    directional_features = [str(x)
+                            for x in (ds.get("directional_features") or [])]
     strength_features = [str(x) for x in (ds.get("strength_features") or [])]
-    essential_features = set(str(x) for x in (decision.get("essential_features") or []))
+    essential_features = set(str(x)
+                             for x in (decision.get("essential_features") or []))
     normalize_mode = str((signals.get("normalize_signals_mode") or "off"))
 
     delta_price_cap_pct = float(signals.get("delta_price_cap_pct") or 0.0)
@@ -232,7 +245,8 @@ def _build_xy(
     required_cols = {"symbol", "timestamp", "close", "ready"}
     missing = required_cols - set(df.columns)
     if missing:
-        raise SystemExit(f"Recorder CSV missing required columns: {sorted(missing)}")
+        raise SystemExit(
+            f"Recorder CSV missing required columns: {sorted(missing)}")
 
     df = df.copy()
     df = df[df["tf_sec"].astype(int) == int(tf_sec)]
@@ -247,7 +261,8 @@ def _build_xy(
     df["close"] = pd.to_numeric(df["close"], errors="coerce").astype(float)
     df = df.dropna(subset=["close"])
 
-    df = df.sort_values(["symbol", "timestamp"], kind="mergesort").reset_index(drop=True)
+    df = df.sort_values(["symbol", "timestamp"],
+                        kind="mergesort").reset_index(drop=True)
 
     # Forward return in bps (per symbol)
     fwd = df.groupby("symbol", sort=False)["close"].shift(-horizon_bars)
@@ -266,26 +281,35 @@ def _build_xy(
         col = f"feat_{feat}"
         if feat == "delta_price":
             if "feat_delta_price" not in df.columns:
-                raise SystemExit("Recorder CSV missing feat_delta_price for delta_price weight")
-            dp_raw = pd.to_numeric(df["feat_delta_price"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
-            raw = _delta_price_norm(price=price, dp_raw=dp_raw, cap_pct=cfg.delta_price_cap_pct)
+                raise SystemExit(
+                    "Recorder CSV missing feat_delta_price for delta_price weight")
+            dp_raw = pd.to_numeric(df["feat_delta_price"], errors="coerce").fillna(
+                0.0).to_numpy(dtype=float)
+            raw = _delta_price_norm(
+                price=price, dp_raw=dp_raw, cap_pct=cfg.delta_price_cap_pct)
         elif feat == "absorption":
             # P2: Recorder older slices may have feat_absorption missing or all zeros (mode=disabled).
             # Recompute a proxy consistent with production FE math (without dedup).
             raw_abs: np.ndarray | None = None
             if "feat_absorption" in df.columns:
-                raw_abs = pd.to_numeric(df["feat_absorption"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+                raw_abs = pd.to_numeric(df["feat_absorption"], errors="coerce").fillna(
+                    0.0).to_numpy(dtype=float)
 
             recompute = raw_abs is None or float(np.nanstd(raw_abs)) < 1e-12
             if recompute:
                 if "feat_tfi" not in df.columns:
-                    raise SystemExit("Recorder CSV missing feat_tfi required to reconstruct absorption")
+                    raise SystemExit(
+                        "Recorder CSV missing feat_tfi required to reconstruct absorption")
                 if "feat_delta_price" not in df.columns:
-                    raise SystemExit("Recorder CSV missing feat_delta_price required to reconstruct absorption")
+                    raise SystemExit(
+                        "Recorder CSV missing feat_delta_price required to reconstruct absorption")
 
-                tfi_raw = pd.to_numeric(df["feat_tfi"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
-                dp_raw = pd.to_numeric(df["feat_delta_price"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
-                dp_norm = _delta_price_norm(price=price, dp_raw=dp_raw, cap_pct=cfg.delta_price_cap_pct)
+                tfi_raw = pd.to_numeric(df["feat_tfi"], errors="coerce").fillna(
+                    0.0).to_numpy(dtype=float)
+                dp_raw = pd.to_numeric(df["feat_delta_price"], errors="coerce").fillna(
+                    0.0).to_numpy(dtype=float)
+                dp_norm = _delta_price_norm(
+                    price=price, dp_raw=dp_raw, cap_pct=cfg.delta_price_cap_pct)
 
                 conflict = (tfi_raw * dp_norm) < 0.0
                 raw = np.zeros_like(tfi_raw, dtype=float)
@@ -299,7 +323,8 @@ def _build_xy(
                 raw = raw_abs
         else:
             if col not in df.columns:
-                raise SystemExit(f"Recorder CSV missing required feature column: {col}")
+                raise SystemExit(
+                    f"Recorder CSV missing required feature column: {col}")
             raw = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
 
         neutral = float(cfg.neutrals.get(feat, 0.0))
@@ -409,6 +434,7 @@ def _net_pnl_series(
 
 
 def _fit_direction_ridge(X: np.ndarray, y: np.ndarray, *, alpha: float) -> np.ndarray:
+    Ridge, _ = _require_ml_deps()
     model = Ridge(alpha=float(alpha), fit_intercept=False)
     model.fit(X, y)
     return np.asarray(model.coef_, dtype=float)
@@ -431,19 +457,46 @@ def _fmt_weights_yaml(weights: dict[str, float], *, indent: int = 6) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Calibrate Aurora signal weights from data/recorder CSVs")
-    ap.add_argument("--aurora-yaml", default="config/aurora/strategies/aurora.yaml", help="Aurora strategy SSOT YAML")
-    ap.add_argument("--recorder-dir", default="data/recorder", help="Recorder root dir")
-    ap.add_argument("--symbols", nargs="*", default=["BTCUSDT", "ETHUSDT", "SOLUSDT"], help="Symbols to calibrate")
-    ap.add_argument("--tf-sec", type=int, default=300, help="Timeframe seconds (e.g., 300)")
-    ap.add_argument("--start", type=_parse_date, default=None, help="Start date inclusive (YYYY-MM-DD)")
-    ap.add_argument("--end", type=_parse_date, default=None, help="End date exclusive (YYYY-MM-DD)")
-    ap.add_argument("--train-frac", type=float, default=0.7, help="Train fraction by unique days (chronological). Remainder is test.")
-    ap.add_argument("--horizon-bars", type=int, default=1, help="Forward return horizon in bars")
-    ap.add_argument("--ridge-alpha", type=float, default=25.0, help="Ridge alpha for direction fit")
-    ap.add_argument("--cost-bps", type=float, default=4.0, help="Round-trip transaction cost in bps (for eval)")
-    ap.add_argument("--threshold", type=float, default=None, help="Fixed threshold for eval (default: per-symbol cfg or global)")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Research-only Aurora legacy weight calibrator for deprecated signal_weights, "
+            "direction_strength_scoring, and feature_neutrals surfaces."
+        ),
+        epilog=(
+            "Active production Aurora calibration is threshold-surface only via "
+            "tools/calibration/calibrate_aurora_thresholds.py. Outputs from this script "
+            "are not directly promotable and never mutate canonical YAML."
+        ),
+    )
+    ap.add_argument("--aurora-yaml", default="config/aurora/strategies/aurora.yaml",
+                    help="Aurora strategy SSOT YAML")
+    ap.add_argument("--recorder-dir", default="data/recorder",
+                    help="Recorder root dir")
+    ap.add_argument("--symbols", nargs="*",
+                    default=["BTCUSDT", "ETHUSDT", "SOLUSDT"], help="Symbols to calibrate")
+    ap.add_argument("--tf-sec", type=int, default=300,
+                    help="Timeframe seconds (e.g., 300)")
+    ap.add_argument("--start", type=_parse_date, default=None,
+                    help="Start date inclusive (YYYY-MM-DD)")
+    ap.add_argument("--end", type=_parse_date, default=None,
+                    help="End date exclusive (YYYY-MM-DD)")
+    ap.add_argument("--train-frac", type=float, default=0.7,
+                    help="Train fraction by unique days (chronological). Remainder is test.")
+    ap.add_argument("--horizon-bars", type=int, default=1,
+                    help="Forward return horizon in bars")
+    ap.add_argument("--ridge-alpha", type=float, default=25.0,
+                    help="Ridge alpha for direction fit")
+    ap.add_argument("--cost-bps", type=float, default=4.0,
+                    help="Round-trip transaction cost in bps (for eval)")
+    ap.add_argument("--threshold", type=float, default=None,
+                    help="Fixed threshold for eval (default: per-symbol cfg or global)")
     args = ap.parse_args()
+
+    _, nnls = _require_ml_deps()
+
+    print("WARNING: research-only Aurora legacy calibrator.")
+    print("WARNING: active production Aurora calibration is threshold-surface only via calibrate_aurora_thresholds.py.")
+    print("WARNING: outputs from this script are advisory legacy overlays and are not directly promotable.")
 
     aurora = _load_aurora_yaml(Path(args.aurora_yaml))
     recorder_dir = Path(args.recorder_dir)
@@ -457,7 +510,8 @@ def main() -> int:
         tf_sec=int(args.tf_sec),
     )
     if not paths:
-        raise SystemExit("No recorder CSV files found for the requested range/symbols.")
+        raise SystemExit(
+            "No recorder CSV files found for the requested range/symbols.")
 
     df_all = _load_recorder(paths)
 
@@ -469,14 +523,18 @@ def main() -> int:
         # Out-of-sample split by day (chronological).
         train_frac = float(args.train_frac)
         if not (0.0 < train_frac < 1.0):
-            raise SystemExit("--train-frac must be between 0 and 1 (exclusive).")
+            raise SystemExit(
+                "--train-frac must be between 0 and 1 (exclusive).")
 
-        days = sorted(set(df_sym.get("day", pd.Series(dtype=str)).astype(str).tolist()))
+        days = sorted(
+            set(df_sym.get("day", pd.Series(dtype=str)).astype(str).tolist()))
         if len(days) < 2:
             # Fail soft: not enough unique days to split. Fall back to all-in-one.
-            df_sym, centered, y = _build_xy(df_sym, cfg=cfg, tf_sec=int(args.tf_sec), horizon_bars=int(args.horizon_bars))
+            df_sym, centered, y = _build_xy(df_sym, cfg=cfg, tf_sec=int(
+                args.tf_sec), horizon_bars=int(args.horizon_bars))
             if df_sym.empty:
-                print(f"[{symbol}] SKIP: no usable rows after filtering (ready+forward return).")
+                print(
+                    f"[{symbol}] SKIP: no usable rows after filtering (ready+forward return).")
                 continue
             df_train, centered_train, y_train = df_sym, centered, y
             df_test, centered_test, y_test = pd.DataFrame(), {}, np.array([], dtype=float)
@@ -488,8 +546,10 @@ def main() -> int:
             train_days = set(days[:split_idx])
             test_days = set(days[split_idx:])
 
-            df_train_raw = df_sym[df_sym["day"].astype(str).isin(train_days)].copy()
-            df_test_raw = df_sym[df_sym["day"].astype(str).isin(test_days)].copy()
+            df_train_raw = df_sym[df_sym["day"].astype(
+                str).isin(train_days)].copy()
+            df_test_raw = df_sym[df_sym["day"].astype(
+                str).isin(test_days)].copy()
 
             df_train, centered_train, y_train = _build_xy(
                 df_train_raw, cfg=cfg, tf_sec=int(args.tf_sec), horizon_bars=int(args.horizon_bars)
@@ -499,26 +559,34 @@ def main() -> int:
             )
 
             if df_train.empty:
-                print(f"[{symbol}] SKIP: train split has no usable rows after filtering.")
+                print(
+                    f"[{symbol}] SKIP: train split has no usable rows after filtering.")
                 continue
             if df_test.empty:
-                print(f"[{symbol}] SKIP: test split has no usable rows after filtering.")
+                print(
+                    f"[{symbol}] SKIP: test split has no usable rows after filtering.")
                 continue
 
         # Split feature sets
         dir_feats = [f for f in cfg.directional_features if f in cfg.weights]
         str_feats = [f for f in cfg.strength_features if f in cfg.weights]
 
-        X_dir = np.stack([centered_train[f] for f in dir_feats], axis=1) if dir_feats else np.zeros((len(y_train), 0))
-        X_str = np.stack([centered_train[f] for f in str_feats], axis=1) if str_feats else np.zeros((len(y_train), 0))
+        X_dir = np.stack([centered_train[f] for f in dir_feats],
+                         axis=1) if dir_feats else np.zeros((len(y_train), 0))
+        X_str = np.stack([centered_train[f] for f in str_feats],
+                         axis=1) if str_feats else np.zeros((len(y_train), 0))
 
         # Direction fit: ridge on signed forward return
-        w_dir0 = np.array([cfg.weights[f] for f in dir_feats], dtype=float) if dir_feats else np.array([], dtype=float)
-        coef_dir = _fit_direction_ridge(X_dir, y_train, alpha=float(args.ridge_alpha)) if dir_feats else np.array([], dtype=float)
-        coef_dir = _normalize_like_baseline(coef_dir, w_dir0) if dir_feats else coef_dir
+        w_dir0 = np.array([cfg.weights[f] for f in dir_feats],
+                          dtype=float) if dir_feats else np.array([], dtype=float)
+        coef_dir = _fit_direction_ridge(X_dir, y_train, alpha=float(
+            args.ridge_alpha)) if dir_feats else np.array([], dtype=float)
+        coef_dir = _normalize_like_baseline(
+            coef_dir, w_dir0) if dir_feats else coef_dir
 
         # Strength fit: NNLS on absolute forward return
-        w_str0 = np.array([cfg.weights[f] for f in str_feats], dtype=float) if str_feats else np.array([], dtype=float)
+        w_str0 = np.array([cfg.weights[f] for f in str_feats],
+                          dtype=float) if str_feats else np.array([], dtype=float)
         coef_str = np.array([], dtype=float)
         if str_feats:
             coef_str, _ = nnls(X_str, np.abs(y_train))
@@ -531,13 +599,18 @@ def main() -> int:
             new_weights[f] = float(c)
 
         # Evaluate baseline vs calibrated (train/test)
-        _, _, score0_train = _compute_dir_strength_scores(centered=centered_train, cfg=cfg, weights_override=cfg.weights)
-        _, _, score1_train = _compute_dir_strength_scores(centered=centered_train, cfg=cfg, weights_override=new_weights)
-        _, _, score0_test = _compute_dir_strength_scores(centered=centered_test, cfg=cfg, weights_override=cfg.weights)
-        _, _, score1_test = _compute_dir_strength_scores(centered=centered_test, cfg=cfg, weights_override=new_weights)
+        _, _, score0_train = _compute_dir_strength_scores(
+            centered=centered_train, cfg=cfg, weights_override=cfg.weights)
+        _, _, score1_train = _compute_dir_strength_scores(
+            centered=centered_train, cfg=cfg, weights_override=new_weights)
+        _, _, score0_test = _compute_dir_strength_scores(
+            centered=centered_test, cfg=cfg, weights_override=cfg.weights)
+        _, _, score1_test = _compute_dir_strength_scores(
+            centered=centered_test, cfg=cfg, weights_override=new_weights)
 
         # Eval threshold: prefer CLI override, else per-symbol block if present, else global decision.signal_threshold
-        threshold = float(args.threshold) if args.threshold is not None else None
+        threshold = float(
+            args.threshold) if args.threshold is not None else None
         if threshold is None:
             # Some symbols have `aurora.assets.<sym>.signal_threshold.value`
             sym_block = (aurora.get("assets") or {}).get(symbol) or {}
@@ -578,13 +651,17 @@ def main() -> int:
         )
 
         # Sharpe (annualized) for quick comparison
-        pnl0_train = _net_pnl_series(score=score0_train, fwd_ret_bps=y_train, threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
-        pnl1_train = _net_pnl_series(score=score1_train, fwd_ret_bps=y_train, threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
+        pnl0_train = _net_pnl_series(score=score0_train, fwd_ret_bps=y_train,
+                                     threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
+        pnl1_train = _net_pnl_series(score=score1_train, fwd_ret_bps=y_train,
+                                     threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
         sr0_train = _annualized_sharpe(pnl0_train, tf_sec=int(args.tf_sec))
         sr1_train = _annualized_sharpe(pnl1_train, tf_sec=int(args.tf_sec))
 
-        pnl0_test = _net_pnl_series(score=score0_test, fwd_ret_bps=y_test, threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
-        pnl1_test = _net_pnl_series(score=score1_test, fwd_ret_bps=y_test, threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
+        pnl0_test = _net_pnl_series(score=score0_test, fwd_ret_bps=y_test,
+                                    threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
+        pnl1_test = _net_pnl_series(score=score1_test, fwd_ret_bps=y_test,
+                                    threshold=threshold, cost_bps_roundtrip=float(args.cost_bps))
         sr0_test = _annualized_sharpe(pnl0_test, tf_sec=int(args.tf_sec))
         sr1_test = _annualized_sharpe(pnl1_test, tf_sec=int(args.tf_sec))
 
@@ -594,16 +671,22 @@ def main() -> int:
             f"rows_train={len(df_train):,} rows_test={len(df_test):,}  "
             f"horizon={int(args.horizon_bars)} bars  tf={int(args.tf_sec)}s"
         )
-        print(f"  eval_threshold={threshold:.6g}  eval_cost_bps_rt={float(args.cost_bps):.3g}")
+        print(
+            f"  eval_threshold={threshold:.6g}  eval_cost_bps_rt={float(args.cost_bps):.3g}")
         print("-" * 80)
-        print(f"  TRAIN BASELINE: trades={sim0_train['trades']:.0f}  total_pnl_bps={sim0_train['total_pnl_bps']:.2f}  avg_pnl_bps={sim0_train['avg_pnl_bps']:.4f}  sharpe~={sr0_train:.2f}")
-        print(f"  TRAIN CALIBR.:  trades={sim1_train['trades']:.0f}  total_pnl_bps={sim1_train['total_pnl_bps']:.2f}  avg_pnl_bps={sim1_train['avg_pnl_bps']:.4f}  sharpe~={sr1_train:.2f}")
+        print(
+            f"  TRAIN BASELINE: trades={sim0_train['trades']:.0f}  total_pnl_bps={sim0_train['total_pnl_bps']:.2f}  avg_pnl_bps={sim0_train['avg_pnl_bps']:.4f}  sharpe~={sr0_train:.2f}")
+        print(
+            f"  TRAIN CALIBR.:  trades={sim1_train['trades']:.0f}  total_pnl_bps={sim1_train['total_pnl_bps']:.2f}  avg_pnl_bps={sim1_train['avg_pnl_bps']:.4f}  sharpe~={sr1_train:.2f}")
         print("-" * 80)
-        print(f"  TEST  BASELINE: trades={sim0_test['trades']:.0f}  total_pnl_bps={sim0_test['total_pnl_bps']:.2f}  avg_pnl_bps={sim0_test['avg_pnl_bps']:.4f}  sharpe~={sr0_test:.2f}")
-        print(f"  TEST  CALIBR.:  trades={sim1_test['trades']:.0f}  total_pnl_bps={sim1_test['total_pnl_bps']:.2f}  avg_pnl_bps={sim1_test['avg_pnl_bps']:.4f}  sharpe~={sr1_test:.2f}")
+        print(
+            f"  TEST  BASELINE: trades={sim0_test['trades']:.0f}  total_pnl_bps={sim0_test['total_pnl_bps']:.2f}  avg_pnl_bps={sim0_test['avg_pnl_bps']:.4f}  sharpe~={sr0_test:.2f}")
+        print(
+            f"  TEST  CALIBR.:  trades={sim1_test['trades']:.0f}  total_pnl_bps={sim1_test['total_pnl_bps']:.2f}  avg_pnl_bps={sim1_test['avg_pnl_bps']:.4f}  sharpe~={sr1_test:.2f}")
         print("-" * 80)
-        print("  Suggested weights YAML (paste into aurora.assets.<SYMBOL>.weights):")
-        print(_fmt_weights_yaml({k: new_weights[k] for k in sorted(new_weights.keys())}, indent=8))
+        print("  Suggested research-only legacy weights YAML (candidate overlay only; not direct production calibration):")
+        print(_fmt_weights_yaml(
+            {k: new_weights[k] for k in sorted(new_weights.keys())}, indent=8))
 
     return 0
 

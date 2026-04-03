@@ -1,0 +1,246 @@
+﻿{
+  "baseline": {
+    "name": "baseline",
+    "weights": {
+      "atr": 0.3,
+      "vol": 0.3,
+      "gap": 0.2,
+      "range": 0.2
+    },
+    "metrics": {
+      "rows": 5653.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "balanced_accuracy": 0.5,
+      "f1": 0.0,
+      "alert_rate": 0.0,
+      "label_rate": 0.09729347249248187
+    },
+    "alignment": {
+      "aligned_share": 0.0,
+      "orphan_rate": 0.0,
+      "confirm_share": 0.0,
+      "follow_share": 0.0
+    },
+    "state": {
+      "stress_rate": 0.0,
+      "extreme_rate": 0.0,
+      "state_switches_per_1000": 0.0
+    },
+    "delta": {
+      "balanced_accuracy": 0.0,
+      "f1": 0.0,
+      "aligned_share": 0.0,
+      "orphan_rate": 0.0,
+      "state_switches_per_1000": 0.0,
+      "stress_rate": 0.0,
+      "extreme_rate": 0.0
+    }
+  },
+  "selected": null,
+  "top_candidates": [
+    {
+      "name": "vol_up",
+      "weights": {
+        "atr": 0.2,
+        "vol": 0.4,
+        "gap": 0.2,
+        "range": 0.2
+      },
+      "metrics": {
+        "rows": 5653.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "alert_rate": 0.0,
+        "label_rate": 0.09729347249248187
+      },
+      "alignment": {
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "confirm_share": 0.0,
+        "follow_share": 0.0
+      },
+      "state": {
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0,
+        "state_switches_per_1000": 0.0
+      },
+      "delta": {
+        "balanced_accuracy": 0.0,
+        "f1": 0.0,
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "state_switches_per_1000": 0.0,
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0
+      }
+    },
+    {
+      "name": "vol_gap_up",
+      "weights": {
+        "atr": 0.2,
+        "vol": 0.4,
+        "gap": 0.3,
+        "range": 0.1
+      },
+      "metrics": {
+        "rows": 5653.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "alert_rate": 0.0,
+        "label_rate": 0.09729347249248187
+      },
+      "alignment": {
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "confirm_share": 0.0,
+        "follow_share": 0.0
+      },
+      "state": {
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0,
+        "state_switches_per_1000": 0.0
+      },
+      "delta": {
+        "balanced_accuracy": 0.0,
+        "f1": 0.0,
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "state_switches_per_1000": 0.0,
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0
+      }
+    },
+    {
+      "name": "vol_gap_harder",
+      "weights": {
+        "atr": 0.1,
+        "vol": 0.5,
+        "gap": 0.3,
+        "range": 0.1
+      },
+      "metrics": {
+        "rows": 5653.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "alert_rate": 0.0,
+        "label_rate": 0.09729347249248187
+      },
+      "alignment": {
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "confirm_share": 0.0,
+        "follow_share": 0.0
+      },
+      "state": {
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0,
+        "state_switches_per_1000": 0.0
+      },
+      "delta": {
+        "balanced_accuracy": 0.0,
+        "f1": 0.0,
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "state_switches_per_1000": 0.0,
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0
+      }
+    },
+    {
+      "name": "vol_strong",
+      "weights": {
+        "atr": 0.2,
+        "vol": 0.5,
+        "gap": 0.2,
+        "range": 0.1
+      },
+      "metrics": {
+        "rows": 5653.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "alert_rate": 0.0,
+        "label_rate": 0.09729347249248187
+      },
+      "alignment": {
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "confirm_share": 0.0,
+        "follow_share": 0.0
+      },
+      "state": {
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0,
+        "state_switches_per_1000": 0.0
+      },
+      "delta": {
+        "balanced_accuracy": 0.0,
+        "f1": 0.0,
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "state_switches_per_1000": 0.0,
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0
+      }
+    },
+    {
+      "name": "gap_up",
+      "weights": {
+        "atr": 0.2,
+        "vol": 0.3,
+        "gap": 0.3,
+        "range": 0.2
+      },
+      "metrics": {
+        "rows": 5653.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "alert_rate": 0.0,
+        "label_rate": 0.09729347249248187
+      },
+      "alignment": {
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "confirm_share": 0.0,
+        "follow_share": 0.0
+      },
+      "state": {
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0,
+        "state_switches_per_1000": 0.0
+      },
+      "delta": {
+        "balanced_accuracy": 0.0,
+        "f1": 0.0,
+        "aligned_share": 0.0,
+        "orphan_rate": 0.0,
+        "state_switches_per_1000": 0.0,
+        "stress_rate": 0.0,
+        "extreme_rate": 0.0
+      }
+    }
+  ],
+  "flow_baseline": {
+    "matched_orders": 19,
+    "would_block_count": 0,
+    "would_block_notional": 0.0,
+    "would_attenuate_count": 0,
+    "would_attenuate_notional_delta": 0.0,
+    "deferred_count": 0
+  },
+  "flow_selected": null,
+  "notes": {
+    "deferred_semantics": "Current system_stress runtime has no defer branch. STRESS attenuates size for aurora, EXTREME blocks entries.",
+    "doge_scope": "DOGEUSDT excluded because mean_reversion safety_gates are disabled and system_stress_policy is off."
+  }
+}

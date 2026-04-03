@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+"""Production Aurora threshold calibrator for active runtime surfaces only.
+
+Calibration class
+-----------------
+production
+
+Current production scope
+------------------------
+- assets.<SYMBOL>.signal_threshold.value
+- assets.<SYMBOL>.regime_thresholds
+
+Research and legacy exclusions
+------------------------------
+- signal_weights
+- direction_strength_scoring
+- feature_neutrals
+- neutral_threshold
+- cooldown, reentry, and holding-period tuning
+
+Operational contract
+--------------------
+- emit overlay artifacts only; never mutate canonical YAML
+- recorder-features-v2 is the production-aligned evidence path
+- aurora-logs is retained as a research and diagnostic evidence path only
+"""
 from __future__ import annotations
 
 import argparse
@@ -23,6 +48,42 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+CALIBRATION_STANDARD = "CALIBRATION_STANDARD_V1"
+CALIBRATION_CLASS = "production"
+PRODUCTION_INPUT_SOURCE = "recorder-features-v2"
+RESEARCH_INPUT_SOURCE = "aurora-logs"
+RECOMMENDED_ARTIFACTS = (
+    "candidate_threshold_overlay.yaml",
+    "run_manifest.json",
+    "baseline_metrics.json",
+    "candidate_metrics.json",
+    "report.md",
+)
+THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY = "asset-override-only"
+THRESHOLD_SOURCE_MODE_LIVE_EFFECTIVE = "live-effective"
+AURORA_ACTIVE_SURFACES = (
+    "assets.<SYMBOL>.signal_threshold.value",
+    "assets.<SYMBOL>.regime_thresholds",
+)
+AURORA_NON_GOALS = (
+    "signal_weights",
+    "direction_strength_scoring",
+    "feature_neutrals",
+    "neutral_threshold",
+    "cooldown tuning",
+    "reentry tuning",
+    "holding-period tuning",
+    "canonical YAML writeback",
+)
+AURORA_RUNTIME_TRUTH_ANCHORS = (
+    "QuadraticScoringKernel is the active Aurora scoring path.",
+    "Aurora live threshold resolution uses assets.<SYMBOL>.signal_threshold.value only when the per-symbol override is enabled; otherwise it falls back to decision.signal_threshold.",
+    "Per-symbol regime_thresholds override the global regime threshold map in live runtime when present; otherwise live falls back to decision.regime_threshold_multipliers.",
+    "signal_weights, feature_neutrals, and direction_strength_scoring are legacy compatibility surfaces for live Aurora math.",
+    "Shield cascade is active runtime surface for Quadratic Aurora production mode.",
+)
+
+
 TRACE_PATTERN = re.compile(
     r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}).*?"
     r"\[(?P<symbol>[A-Z0-9_]+)\] QUADRATIC_DECISION_TRACE "
@@ -42,6 +103,10 @@ class ThresholdSurface:
     symbol: str
     signal_threshold_value: float
     regime_thresholds: dict[str, float]
+    signal_threshold_source: str
+    signal_threshold_path: str
+    regime_threshold_source: str
+    regime_threshold_path: str
 
 
 @dataclass(frozen=True)
@@ -176,13 +241,25 @@ class CandidateEvaluation:
 @dataclass(frozen=True)
 class V2SymbolCalibration:
     symbol: str
+    surface: ThresholdSurface
     split_date: date
     recorder_bar_count: int
     feature_log_audit: FeatureLogAudit
     current_train_metrics: ReplayMetrics
     current_validation_metrics: ReplayMetrics
     candidate: CandidateEvaluation | None
+    candidate_blockers: list[str]
     warnings: list[str]
+
+
+@dataclass(frozen=True)
+class CalibrationRunOutputs:
+    overlay: dict[str, Any]
+    report_text: str
+    verdict: str
+    baseline_metrics: dict[str, Any]
+    candidate_metrics: dict[str, Any]
+    run_manifest: dict[str, Any]
 
 
 class _ReplayClock:
@@ -248,14 +325,29 @@ def _parse_quantile_grid(values: Sequence[str]) -> list[float]:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Calibrate Aurora live per-symbol thresholds from observed runtime traces "
-            "or from recorder/features offline replay."
-        )
+            "Production Aurora threshold calibrator for active runtime surfaces only. "
+            "Use --input-source recorder-features-v2 for production-aligned candidate validation; "
+            "aurora-logs is retained as a research and diagnostic evidence path only."
+        ),
     )
     parser.add_argument(
         "--aurora-yaml",
         default="config/aurora/strategies/aurora.yaml",
         help="Aurora strategy YAML containing live per-symbol threshold surface.",
+    )
+    parser.add_argument(
+        "--threshold-source-mode",
+        choices=[
+            THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY,
+            THRESHOLD_SOURCE_MODE_LIVE_EFFECTIVE,
+        ],
+        default=THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY,
+        help=(
+            "Threshold baseline resolution contract. "
+            "asset-override-only preserves the legacy per-symbol-only calibrator path; "
+            "live-effective resolves the same threshold source that live Aurora currently uses "
+            "(asset override when enabled, otherwise decision.signal_threshold)."
+        ),
     )
     parser.add_argument(
         "--symbols",
@@ -279,7 +371,10 @@ def _parse_args() -> argparse.Namespace:
         "--input-source",
         choices=["aurora-logs", "recorder-features-v2"],
         default="aurora-logs",
-        help="Observed runtime evidence source.",
+        help=(
+            "Observed runtime evidence source. aurora-logs is research-only diagnostic evidence; "
+            "recorder-features-v2 is the production-aligned replay path."
+        ),
     )
     parser.add_argument(
         "--log-glob",
@@ -347,7 +442,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         default=None,
-        help="Output directory for candidate_threshold_overlay.yaml and report.md.",
+        help=(
+            "Output directory for candidate_threshold_overlay.yaml, run_manifest.json, "
+            "baseline_metrics.json, candidate_metrics.json, and report.md."
+        ),
     )
     parser.add_argument(
         "--min-samples",
@@ -370,12 +468,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--emit-overlay",
         action="store_true",
-        help="Write candidate_threshold_overlay.yaml artifact.",
+        help="Write candidate_threshold_overlay.yaml overlay artifact only; never mutate canonical YAML.",
     )
     parser.add_argument(
         "--emit-report",
         action="store_true",
-        help="Write report.md artifact.",
+        help="Write report.md artifact. JSON manifest and metrics artifacts are always emitted with the run directory.",
     )
     args = parser.parse_args()
 
@@ -404,6 +502,13 @@ def _parse_args() -> argparse.Namespace:
     if not (0.0 < args.max_daily_activation_rate <= 1.0):
         raise SystemExit(
             "--max-daily-activation-rate must satisfy 0 < rate <= 1")
+    if (
+        args.threshold_source_mode == THRESHOLD_SOURCE_MODE_LIVE_EFFECTIVE
+        and args.input_source != PRODUCTION_INPUT_SOURCE
+    ):
+        raise SystemExit(
+            "--threshold-source-mode=live-effective is supported only with --input-source=recorder-features-v2"
+        )
     args.quantile_grid = _parse_quantile_grid(args.quantile_grid)
     if not args.emit_overlay and not args.emit_report:
         args.emit_overlay = True
@@ -430,11 +535,46 @@ def _load_typed_runtime_config(aurora_yaml_path: Path) -> Any:
     return ConfigLoader(config_dir=config_dir).load_config()
 
 
+def _parse_positive_surface_value(raw: Any, *, path: str) -> float:
+    if raw is None:
+        raise CalibrationError(f"Missing {path}")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise CalibrationError(f"Invalid {path}: {raw!r}") from exc
+    if not math.isfinite(value) or value <= 0.0:
+        raise CalibrationError(f"Non-positive {path}: {value}")
+    return value
+
+
+def _parse_positive_regime_thresholds(raw: Any, *, path: str) -> dict[str, float]:
+    if not isinstance(raw, dict) or not raw:
+        raise CalibrationError(f"Missing {path}")
+
+    parsed: dict[str, float] = {}
+    for regime_name, regime_raw in raw.items():
+        regime_path = f"{path}.{regime_name}"
+        parsed[str(regime_name)] = _parse_positive_surface_value(
+            regime_raw,
+            path=regime_path,
+        )
+
+    if "DEFAULT" not in parsed:
+        raise CalibrationError(f"Missing {path}.DEFAULT")
+    return parsed
+
+
 def _extract_live_threshold_surface(
     aurora: dict[str, Any],
     *,
     symbol: str,
+    threshold_source_mode: str,
 ) -> ThresholdSurface:
+    decision_cfg = aurora.get("decision")
+    if not isinstance(decision_cfg, dict):
+        raise CalibrationError(
+            "Aurora decision map missing or invalid in aurora.yaml")
+
     assets = aurora.get("assets")
     if not isinstance(assets, dict):
         raise CalibrationError(
@@ -447,62 +587,53 @@ def _extract_live_threshold_surface(
         )
 
     signal_threshold_cfg = asset_cfg.get("signal_threshold")
-    if not isinstance(signal_threshold_cfg, dict):
-        raise CalibrationError(
-            f"Symbol {symbol} missing assets.{symbol}.signal_threshold runtime surface"
+    if isinstance(signal_threshold_cfg, dict) and signal_threshold_cfg.get("enabled") is True:
+        signal_threshold_path = f"assets.{symbol}.signal_threshold.value"
+        signal_threshold_value = _parse_positive_surface_value(
+            signal_threshold_cfg.get("value"),
+            path=signal_threshold_path,
         )
-
-    enabled = signal_threshold_cfg.get("enabled")
-    if enabled is not True:
+        signal_threshold_source = "asset_override"
+    elif threshold_source_mode == THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY:
         raise CalibrationError(
             f"Symbol {symbol} requires assets.{symbol}.signal_threshold.enabled=true for this calibrator"
         )
-
-    value = signal_threshold_cfg.get("value")
-    if value is None:
-        raise CalibrationError(
-            f"Symbol {symbol} missing assets.{symbol}.signal_threshold.value"
+    else:
+        signal_threshold_path = "decision.signal_threshold"
+        signal_threshold_value = _parse_positive_surface_value(
+            decision_cfg.get("signal_threshold"),
+            path=signal_threshold_path,
         )
-    try:
-        signal_threshold_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise CalibrationError(
-            f"Invalid signal_threshold.value for {symbol}: {value!r}"
-        ) from exc
-    if not math.isfinite(signal_threshold_value) or signal_threshold_value <= 0.0:
-        raise CalibrationError(
-            f"Non-positive assets.{symbol}.signal_threshold.value for {symbol}: {signal_threshold_value}"
-        )
+        signal_threshold_source = "global_decision"
 
     regime_thresholds_raw = asset_cfg.get("regime_thresholds")
-    if not isinstance(regime_thresholds_raw, dict) or not regime_thresholds_raw:
+    if isinstance(regime_thresholds_raw, dict) and regime_thresholds_raw:
+        regime_threshold_path = f"assets.{symbol}.regime_thresholds"
+        regime_thresholds = _parse_positive_regime_thresholds(
+            regime_thresholds_raw,
+            path=regime_threshold_path,
+        )
+        regime_threshold_source = "asset_override"
+    elif threshold_source_mode == THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY:
         raise CalibrationError(
             f"Symbol {symbol} missing assets.{symbol}.regime_thresholds runtime surface"
         )
-
-    regime_thresholds: dict[str, float] = {}
-    for regime_name, raw_value in regime_thresholds_raw.items():
-        try:
-            parsed = float(raw_value)
-        except (TypeError, ValueError) as exc:
-            raise CalibrationError(
-                f"Invalid regime threshold for {symbol} regime {regime_name}: {raw_value!r}"
-            ) from exc
-        if not math.isfinite(parsed) or parsed <= 0.0:
-            raise CalibrationError(
-                f"Non-positive regime threshold for {symbol} regime {regime_name}: {parsed}"
-            )
-        regime_thresholds[str(regime_name)] = parsed
-
-    if "DEFAULT" not in regime_thresholds:
-        raise CalibrationError(
-            f"Symbol {symbol} missing assets.{symbol}.regime_thresholds.DEFAULT"
+    else:
+        regime_threshold_path = "decision.regime_threshold_multipliers"
+        regime_thresholds = _parse_positive_regime_thresholds(
+            decision_cfg.get("regime_threshold_multipliers"),
+            path=regime_threshold_path,
         )
+        regime_threshold_source = "global_decision"
 
     return ThresholdSurface(
         symbol=symbol,
         signal_threshold_value=signal_threshold_value,
         regime_thresholds=regime_thresholds,
+        signal_threshold_source=signal_threshold_source,
+        signal_threshold_path=signal_threshold_path,
+        regime_threshold_source=regime_threshold_source,
+        regime_threshold_path=regime_threshold_path,
     )
 
 
@@ -739,14 +870,232 @@ def _format_bps(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+def _ordered_regime_thresholds(regime_thresholds: dict[str, float]) -> dict[str, float]:
+    ordered: dict[str, float] = {}
+    if "DEFAULT" in regime_thresholds:
+        ordered["DEFAULT"] = _round_metric(float(regime_thresholds["DEFAULT"]))
+    for regime_name, factor in sorted(regime_thresholds.items()):
+        if regime_name == "DEFAULT":
+            continue
+        ordered[regime_name] = _round_metric(float(factor))
+    return ordered
+
+
+def _surface_payload_from_values(
+    *,
+    symbol: str,
+    signal_threshold_value: float,
+    regime_thresholds: dict[str, float],
+    signal_threshold_source: str | None = None,
+    signal_threshold_path: str | None = None,
+    regime_threshold_source: str | None = None,
+    regime_threshold_path: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "symbol": symbol,
+        "signal_threshold": {"value": _round_metric(signal_threshold_value)},
+        "regime_thresholds": _ordered_regime_thresholds(regime_thresholds),
+    }
+    if signal_threshold_source is not None:
+        payload["signal_threshold_source"] = signal_threshold_source
+    if signal_threshold_path is not None:
+        payload["signal_threshold_path"] = signal_threshold_path
+    if regime_threshold_source is not None:
+        payload["regime_threshold_source"] = regime_threshold_source
+    if regime_threshold_path is not None:
+        payload["regime_threshold_path"] = regime_threshold_path
+    return payload
+
+
+def _surface_payload(surface: ThresholdSurface) -> dict[str, Any]:
+    return _surface_payload_from_values(
+        symbol=surface.symbol,
+        signal_threshold_value=surface.signal_threshold_value,
+        regime_thresholds=surface.regime_thresholds,
+        signal_threshold_source=surface.signal_threshold_source,
+        signal_threshold_path=surface.signal_threshold_path,
+        regime_threshold_source=surface.regime_threshold_source,
+        regime_threshold_path=surface.regime_threshold_path,
+    )
+
+
+def _replay_metrics_payload(metrics: ReplayMetrics) -> dict[str, Any]:
+    return {
+        "eligible_bars": int(metrics.eligible_bars),
+        "active_bars": int(metrics.active_bars),
+        "buy_count": int(metrics.buy_count),
+        "sell_count": int(metrics.sell_count),
+        "activation_rate": _round_metric(metrics.activation_rate),
+        "max_daily_activation_rate": _round_metric(metrics.max_daily_activation_rate),
+        "mean_forward_bps_1": _round_metric(metrics.mean_forward_bps_1) if metrics.mean_forward_bps_1 is not None else None,
+        "mean_forward_bps_3": _round_metric(metrics.mean_forward_bps_3) if metrics.mean_forward_bps_3 is not None else None,
+        "hit_rate_1": _round_metric(metrics.hit_rate_1) if metrics.hit_rate_1 is not None else None,
+        "hit_rate_3": _round_metric(metrics.hit_rate_3) if metrics.hit_rate_3 is not None else None,
+        "p50_abs_score": _round_metric(metrics.p50_abs_score) if metrics.p50_abs_score is not None else None,
+        "p75_abs_score": _round_metric(metrics.p75_abs_score) if metrics.p75_abs_score is not None else None,
+        "p80_abs_score": _round_metric(metrics.p80_abs_score) if metrics.p80_abs_score is not None else None,
+        "p90_abs_score": _round_metric(metrics.p90_abs_score) if metrics.p90_abs_score is not None else None,
+        "regime_counts": dict(metrics.regime_counts),
+    }
+
+
+def _build_v1_baseline_metrics(calibrations: Sequence[SymbolCalibration]) -> dict[str, Any]:
+    return {
+        "input_source": RESEARCH_INPUT_SOURCE,
+        "evidence_tier": "research-only",
+        "symbols": {
+            calibration.symbol: {
+                "surface": _surface_payload(calibration.surface),
+                "sample_counts": {
+                    "total": int(calibration.total_samples),
+                    "non_deferred": int(calibration.non_deferred_samples),
+                    "deferred": int(calibration.deferred_samples),
+                    "neutral": int(calibration.neutral_samples),
+                    "side_bearing": int(calibration.side_bearing_samples),
+                },
+                "regime_counts": dict(calibration.regime_counts),
+                "estimated_activation_rate": _round_metric(calibration.current_estimated_activation_rate),
+                "abs_score_percentiles": {
+                    "p50": _round_metric(calibration.p50_abs_score),
+                    "p75": _round_metric(calibration.p75_abs_score),
+                    "p80": _round_metric(calibration.p80_abs_score),
+                    "p90": _round_metric(calibration.p90_abs_score),
+                },
+            }
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_v1_candidate_metrics(calibrations: Sequence[SymbolCalibration]) -> dict[str, Any]:
+    return {
+        "input_source": RESEARCH_INPUT_SOURCE,
+        "evidence_tier": "research-only",
+        "symbols": {
+            calibration.symbol: {
+                "surface": _surface_payload_from_values(
+                    symbol=calibration.symbol,
+                    signal_threshold_value=calibration.proposed_signal_threshold_value,
+                    regime_thresholds=calibration.proposed_regime_thresholds,
+                ),
+                "estimated_activation_rate": _round_metric(calibration.proposed_estimated_activation_rate),
+                "warnings": list(calibration.warnings),
+                "regime_breakdown": [
+                    {
+                        "regime": regime_summary.regime,
+                        "sample_count": int(regime_summary.sample_count),
+                        "neutral_count": int(regime_summary.neutral_count),
+                        "side_count": int(regime_summary.side_count),
+                        "current_factor": _round_metric(regime_summary.current_factor),
+                        "current_effective_threshold": _round_metric(regime_summary.current_effective_threshold),
+                        "proposed_factor": _round_metric(regime_summary.proposed_factor) if regime_summary.proposed_factor is not None else None,
+                        "proposed_effective_threshold": _round_metric(regime_summary.proposed_effective_threshold) if regime_summary.proposed_effective_threshold is not None else None,
+                    }
+                    for regime_summary in calibration.regime_summaries
+                ],
+            }
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_v2_baseline_metrics(calibrations: Sequence[V2SymbolCalibration]) -> dict[str, Any]:
+    return {
+        "input_source": PRODUCTION_INPUT_SOURCE,
+        "evidence_tier": "production-aligned",
+        "symbols": {
+            calibration.symbol: {
+                "surface": _surface_payload(calibration.surface),
+                "calibration_target_supported": not calibration.candidate_blockers,
+                "calibration_target_blockers": list(calibration.candidate_blockers),
+                "split_date": calibration.split_date.isoformat(),
+                "recorder_bar_count": int(calibration.recorder_bar_count),
+                "feature_log_audit": {
+                    "exists": calibration.feature_log_audit.exists,
+                    "file_size_mb": _round_metric(calibration.feature_log_audit.file_size_mb),
+                    "sampled_lines": int(calibration.feature_log_audit.sampled_lines),
+                    "sampled_keys": list(calibration.feature_log_audit.sampled_keys),
+                    "has_timestamp_fields": calibration.feature_log_audit.has_timestamp_fields,
+                    "warnings": list(calibration.feature_log_audit.warnings),
+                },
+                "train": _replay_metrics_payload(calibration.current_train_metrics),
+                "validation": _replay_metrics_payload(calibration.current_validation_metrics),
+            }
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_v2_candidate_metrics(calibrations: Sequence[V2SymbolCalibration]) -> dict[str, Any]:
+    return {
+        "input_source": PRODUCTION_INPUT_SOURCE,
+        "evidence_tier": "production-aligned",
+        "symbols": {
+            calibration.symbol: {
+                "candidate_present": calibration.candidate is not None,
+                "quantile": _round_metric(calibration.candidate.quantile) if calibration.candidate is not None else None,
+                "surface": _surface_payload(calibration.candidate.surface) if calibration.candidate is not None else None,
+                "train": _replay_metrics_payload(calibration.candidate.train_metrics) if calibration.candidate is not None else None,
+                "validation": _replay_metrics_payload(calibration.candidate.validation_metrics) if calibration.candidate is not None else None,
+                "train_guardrails_ok": calibration.candidate.train_guardrails_ok if calibration.candidate is not None else False,
+                "validation_guardrails_ok": calibration.candidate.validation_guardrails_ok if calibration.candidate is not None else False,
+                "guardrail_failures": list(calibration.candidate.guardrail_failures) if calibration.candidate is not None else list(calibration.candidate_blockers or ["candidate_missing"]),
+                "candidate_blockers": list(calibration.candidate_blockers),
+                "warnings": list(calibration.warnings),
+            }
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_run_manifest(
+    *,
+    args: argparse.Namespace,
+    ordered_symbols: Sequence[str],
+    threshold_surfaces: dict[str, ThresholdSurface],
+    verdict: str,
+    evidence_tier: str,
+) -> dict[str, Any]:
+    production_aligned = str(args.input_source) == PRODUCTION_INPUT_SOURCE
+    return {
+        "standard": CALIBRATION_STANDARD,
+        "calibrator_class": CALIBRATION_CLASS,
+        "strategy_id": "aurora",
+        "input_source": str(args.input_source),
+        "evidence_tier": evidence_tier,
+        "production_aligned": production_aligned,
+        "verdict": verdict,
+        "promotion_eligible": production_aligned and verdict == "GO_FOR_TESTNET_RESTART",
+        "writes_canonical_yaml": False,
+        "threshold_source_mode": str(args.threshold_source_mode),
+        "candidate_surface_policy": "per-asset-only",
+        "active_runtime_surfaces": list(AURORA_ACTIVE_SURFACES),
+        "non_goals": list(AURORA_NON_GOALS),
+        "runtime_truth_anchors": list(AURORA_RUNTIME_TRUTH_ANCHORS),
+        "recommended_artifacts": list(RECOMMENDED_ARTIFACTS),
+        "symbols": list(ordered_symbols),
+        "threshold_surfaces": {
+            symbol: {
+                "signal_threshold_source": surface.signal_threshold_source,
+                "signal_threshold_path": surface.signal_threshold_path,
+                "regime_threshold_source": surface.regime_threshold_source,
+                "regime_threshold_path": surface.regime_threshold_path,
+            }
+            for symbol, surface in threshold_surfaces.items()
+        },
+        "date_window": {
+            "from_date": args.from_date.isoformat(),
+            "to_date": args.to_date.isoformat(),
+        },
+        "artifacts": {},
+    }
+
+
 def _build_overlay_from_v1(calibrations: list[SymbolCalibration]) -> dict[str, Any]:
     assets: dict[str, Any] = {}
     for calibration in calibrations:
-        ordered_regime_thresholds = {"DEFAULT": 1.0}
-        for regime_name, factor in calibration.proposed_regime_thresholds.items():
-            if regime_name == "DEFAULT":
-                continue
-            ordered_regime_thresholds[regime_name] = _round_metric(factor)
+        ordered_regime_thresholds = _ordered_regime_thresholds(
+            calibration.proposed_regime_thresholds)
         assets[calibration.symbol] = {
             "signal_threshold": {
                 "value": _round_metric(calibration.proposed_signal_threshold_value),
@@ -764,15 +1113,25 @@ def _render_v1_report(
     data_source_description: str,
     log_paths: list[Path],
 ) -> str:
+    verdict = "NO_GO_RESEARCH_ONLY"
     lines: list[str] = []
     lines.append("# Aurora Threshold Calibration Report")
     lines.append("")
+    lines.append("## Verdict")
+    lines.append(f"- {verdict}")
+    lines.append("")
     lines.append("## Scope")
     lines.append(
-        "- Objective: calibrate only live per-symbol Aurora threshold surface for signal_threshold.value and regime_thresholds."
+        "- Calibration class: production calibrator operating on active Aurora threshold surfaces only."
     )
     lines.append(
-        "- Non-goals: no weights, no neutral_threshold, no cooldown, no holding period, no business-logic mutation."
+        "- Objective: calibrate only live per-symbol Aurora threshold surface for assets.<SYMBOL>.signal_threshold.value and assets.<SYMBOL>.regime_thresholds."
+    )
+    lines.append(
+        "- Evidence tier for this run: research-only diagnostic mode because input-source=aurora-logs does not replay live RegimeDetector, shield cascade, or validation holdout."
+    )
+    lines.append(
+        "- Non-goals: no weights, no direction_strength_scoring, no feature_neutrals, no neutral_threshold, no cooldown, no holding period, no business-logic mutation, no canonical YAML writeback."
     )
     lines.append(
         f"- Symbols: {', '.join(calibration.symbol for calibration in calibrations)}")
@@ -780,13 +1139,10 @@ def _render_v1_report(
         f"- Date window: {args.from_date.isoformat()} through {args.to_date.isoformat()} inclusive"
     )
     lines.append("")
-    lines.append("## Data Source")
-    lines.append(f"- Input source: {data_source_description}")
-    lines.append(f"- Log files matched: {len(log_paths)}")
-    for log_path in log_paths:
-        lines.append(f"- {log_path.as_posix()}")
-    lines.append("")
     lines.append("## Runtime Truth Anchors")
+    lines.append(
+        "- FACT: active Aurora live math is QuadraticScoringKernel with shield cascade on the production path."
+    )
     lines.append(
         "- FACT: per-symbol signal_threshold.value is read in Aurora decision path before kernel invocation when assets.<SYMBOL>.signal_threshold.enabled=true."
     )
@@ -794,13 +1150,44 @@ def _render_v1_report(
         "- FACT: per-symbol assets.<SYMBOL>.regime_thresholds override the global regime threshold map in live runtime."
     )
     lines.append(
-        "- FACT: v1 calibrator intentionally excludes neutral_threshold and hold/exit hysteresis surfaces."
+        "- FACT: signal_weights, direction_strength_scoring, and feature_neutrals are legacy surfaces for current Aurora live math."
     )
     lines.append(
         "- FACT: this tool does not write back into aurora.yaml; it emits artifact-only overlay and report files."
     )
     lines.append("")
-    lines.append("## Symbol Summaries")
+    lines.append("## Dataset Audit")
+    lines.append(f"- Input source: {data_source_description}")
+    lines.append(f"- Log files matched: {len(log_paths)}")
+    for log_path in log_paths:
+        lines.append(f"- {log_path.as_posix()}")
+    lines.append("")
+    lines.append("## Candidate Search Method")
+    lines.append(
+        "- Method: fit candidate signal_threshold.value from the chosen |score| quantile across non-deferred QUADRATIC_DECISION_TRACE samples."
+    )
+    lines.append(
+        "- Method: emit regime-specific factors only when per-regime non-deferred sample coverage clears min-regime-samples."
+    )
+    lines.append(
+        "- Limitation: this mode does not replay RegimeDetector, shield cascade, side-bias state, or validation holdout; therefore it cannot yield a production GO verdict."
+    )
+    lines.append("")
+    lines.append("## Guardrails")
+    lines.append(
+        f"- min_samples={int(args.min_samples)}"
+    )
+    lines.append(
+        f"- min_regime_samples={int(args.min_regime_samples)}"
+    )
+    lines.append(
+        f"- target_quantile={float(args.target_quantile):.2f}"
+    )
+    lines.append(
+        "- Fail-closed rule: log-only evidence remains NO_GO_RESEARCH_ONLY even when a candidate overlay is emitted."
+    )
+    lines.append("")
+    lines.append("## Baseline vs Candidate")
     for calibration in calibrations:
         lines.append("")
         lines.append(f"### {calibration.symbol}")
@@ -893,9 +1280,17 @@ def _render_v1_report(
         "- UNKNOWN: whether other time windows would suggest different regime factors for ETHUSDT and SOLUSDT."
     )
     lines.append("")
-    lines.append("## What Remains Unproven")
+    lines.append("## Risks")
     lines.append(
-        "- This v1 tool does not prove that the proposed thresholds are optimal, only that they are aligned to observed runtime score distributions and emitted via the correct live config surface."
+        "- Risk: log-derived score quantiles can mask regime reconstruction, shield attenuation, and side-bias effects that materially alter live activation quality."
+    )
+    lines.append(
+        "- Risk: promoting a log-only candidate directly would overstate evidence quality and violate fail-closed calibration governance."
+    )
+    lines.append("")
+    lines.append("## Next Action")
+    lines.append(
+        "- Next action: rerun this calibrator with --input-source recorder-features-v2 before treating any threshold overlay as production-aligned."
     )
     return "\n".join(lines) + "\n"
 
@@ -1065,18 +1460,23 @@ def _build_scoring_features(bar: RecorderBar, regime_payload: dict[str, Any]) ->
         "low": bar.low if bar.low is not None else bar.close,
         "bar_close_ts": bar.timestamp_ms,
     }
+    pillar_contribs: dict[str, float] = {}
     if bar.pillar_sum is not None:
         features["pillar_sum"] = bar.pillar_sum
     if bar.pillar_operator is not None:
         features["pillar_operator"] = bar.pillar_operator
+        pillar_contribs["operator"] = bar.pillar_operator
     if bar.pillar_strategist is not None:
         features["pillar_strategist"] = bar.pillar_strategist
+        pillar_contribs["strategist"] = bar.pillar_strategist
     if bar.spread_bps is not None:
         features["spread_bps"] = bar.spread_bps
     if bar.volatility_state is not None:
         features["volatility_state"] = bar.volatility_state
     if bar.price_motion_norm is not None:
         features["price_motion_norm"] = bar.price_motion_norm
+    if pillar_contribs:
+        features["pillar_contribs"] = pillar_contribs
 
     regime = str(regime_payload.get("regime") or "UNCERTAIN")
     features["regime"] = regime
@@ -1180,6 +1580,30 @@ def _build_shield_cascade(decision_cfg: Any, mode_manager: Any) -> tuple[Any, An
         shields.append(memory_shield)
 
     return ShieldCascade(shields), memory_shield
+
+
+def _resolve_aurora_basis_required_bars(typed_config: Any) -> int:
+    from apps.reference.contracts.strategy_compatibility_matrix import get_active_strategy_profile
+
+    profile = get_active_strategy_profile(typed_config, "aurora")
+    if profile is None:
+        raise CalibrationError(
+            "Active Aurora compatibility profile is missing; cannot resolve basis_required_bars"
+        )
+    return int(profile.basis_required_bars)
+
+
+def _candidate_blockers_for_surface(surface: ThresholdSurface) -> list[str]:
+    blockers: list[str] = []
+    if surface.signal_threshold_source != "asset_override":
+        blockers.append(
+            f"Current live signal threshold resolves via {surface.signal_threshold_path}; candidate emission remains limited to assets.<SYMBOL>.signal_threshold.value and is therefore disabled in this mode."
+        )
+    if surface.regime_threshold_source != "asset_override":
+        blockers.append(
+            f"Current live regime thresholds resolve via {surface.regime_threshold_path}; candidate emission remains limited to assets.<SYMBOL>.regime_thresholds and is therefore disabled in this mode."
+        )
+    return blockers
 
 
 def _prune_history(history: deque[int], cutoff_ms: int) -> None:
@@ -1312,6 +1736,7 @@ def _replay_symbol(
     mode_manager = ModeManager(op_mode)
     shield_fn, memory_shield = _build_shield_cascade(
         decision_cfg, mode_manager)
+    basis_required_bars = _resolve_aurora_basis_required_bars(typed_config)
 
     clock = _ReplayClock(now_ms=bars[0].timestamp_ms)
     fsm = _ReplayFsm()
@@ -1320,6 +1745,7 @@ def _replay_symbol(
     current_side = ""
     buy_history_ms: deque[int] = deque()
     sell_history_ms: deque[int] = deque()
+    bars_seen_since_restart = 0
     neutral_threshold = decimal.Decimal(
         str(getattr(decision_cfg, "neutral_threshold", "0.0")))
     delta_price_cap_pct = decimal.Decimal(
@@ -1334,11 +1760,36 @@ def _replay_symbol(
 
     observations: list[ReplayObservation] = []
     for index, bar in enumerate(bars):
+        bars_seen_since_restart += 1
         clock.set_now_ms(bar.timestamp_ms)
         detector.handle_event(_build_detector_event(symbol, bar))
         regime_payload = fsm.latest_regime_payload(symbol)
         features = _build_scoring_features(bar, regime_payload)
         split = "validation" if bar.timestamp.date() >= split_date else "train"
+
+        if basis_required_bars > 0 and bars_seen_since_restart < basis_required_bars:
+            observations.append(
+                ReplayObservation(
+                    timestamp=bar.timestamp,
+                    symbol=symbol,
+                    split=split,
+                    eligible=False,
+                    regime=str(features.get("regime") or "UNCERTAIN"),
+                    regime_confidence=_safe_float(
+                        regime_payload.get("confidence")),
+                    score=None,
+                    side="",
+                    deferred=False,
+                    shield_multiplier=None,
+                    threshold_factor=None,
+                    thr_buy=None,
+                    thr_sell=None,
+                    forward_bps_1=None,
+                    forward_bps_3=None,
+                )
+            )
+            continue
+
         eligible = _bar_is_eligible(bar)
 
         if not eligible:
@@ -1385,8 +1836,8 @@ def _replay_symbol(
             current_side=current_side,
             normalize_mode=normalize_mode,
             shield_fn=shield_fn,
+            pillar_contribs=features.get("pillar_contribs", {}),
             score_multiplier=score_multiplier,
-            linear_score=bar.pillar_sum,
         )
 
         current_side = result.side
@@ -1473,6 +1924,10 @@ def _surface_from_observations(
         symbol=symbol,
         signal_threshold_value=base_threshold,
         regime_thresholds=proposed,
+        signal_threshold_source="asset_override",
+        signal_threshold_path=f"assets.{symbol}.signal_threshold.value",
+        regime_threshold_source="asset_override",
+        regime_threshold_path=f"assets.{symbol}.regime_thresholds",
     )
 
 
@@ -1544,6 +1999,22 @@ def _fit_v2_symbol_calibration(
             f"Symbol {symbol} has only {current_train.eligible_bars} train bars after replay; requires at least {int(args.min_samples)}"
         )
 
+    candidate_blockers = _candidate_blockers_for_surface(surface)
+    if candidate_blockers:
+        warnings.extend(candidate_blockers)
+        return V2SymbolCalibration(
+            symbol=symbol,
+            surface=surface,
+            split_date=split_date,
+            recorder_bar_count=len(bars),
+            feature_log_audit=feature_log_audit,
+            current_train_metrics=current_train,
+            current_validation_metrics=current_validation,
+            candidate=None,
+            candidate_blockers=candidate_blockers,
+            warnings=warnings,
+        )
+
     best_candidate: CandidateEvaluation | None = None
     for quantile in args.quantile_grid:
         candidate_surface = _surface_from_observations(
@@ -1589,12 +2060,14 @@ def _fit_v2_symbol_calibration(
 
     return V2SymbolCalibration(
         symbol=symbol,
+        surface=surface,
         split_date=split_date,
         recorder_bar_count=len(bars),
         feature_log_audit=feature_log_audit,
         current_train_metrics=current_train,
         current_validation_metrics=current_validation,
         candidate=best_candidate,
+        candidate_blockers=[],
         warnings=warnings,
     )
 
@@ -1605,11 +2078,8 @@ def _build_overlay_from_v2(calibrations: list[V2SymbolCalibration]) -> dict[str,
         if calibration.candidate is None:
             continue
         surface = calibration.candidate.surface
-        ordered_regime_thresholds = {"DEFAULT": 1.0}
-        for regime_name, factor in sorted(surface.regime_thresholds.items()):
-            if regime_name == "DEFAULT":
-                continue
-            ordered_regime_thresholds[regime_name] = _round_metric(factor)
+        ordered_regime_thresholds = _ordered_regime_thresholds(
+            surface.regime_thresholds)
         assets[calibration.symbol] = {
             "signal_threshold": {"value": _round_metric(surface.signal_threshold_value)},
             "regime_thresholds": ordered_regime_thresholds,
@@ -1655,7 +2125,16 @@ def _render_v2_report(
     lines.append("")
     lines.append("## Scope")
     lines.append(
+        "- Calibration class: production."
+    )
+    lines.append(
         "- Objective: calibrate only live per-symbol Aurora threshold surface for assets.<SYMBOL>.signal_threshold.value and assets.<SYMBOL>.regime_thresholds."
+    )
+    lines.append(
+        f"- Threshold source mode: {args.threshold_source_mode}"
+    )
+    lines.append(
+        "- Evidence tier for this run: production-aligned because the replay reuses live RegimeDetector, QuadraticScoringKernel, shield cascade, and validation holdout."
     )
     lines.append(
         "- Non-goals: no neutral_threshold tuning, no weight tuning, no cooldown/reentry/holding-period changes, no writeback into base YAML."
@@ -1677,7 +2156,13 @@ def _render_v2_report(
         "- FACT: this V2 replay reuses live RegimeDetector, QuadraticScoringKernel, live side-bias parameters, and live shield config."
     )
     lines.append(
+        "- FACT: in live-effective mode the baseline threshold source follows live Aurora runtime semantics: use assets.<SYMBOL>.signal_threshold.value only when the per-symbol override is enabled, otherwise fall back to decision.signal_threshold."
+    )
+    lines.append(
         "- FACT: per-symbol signal_threshold.value and per-symbol regime_thresholds are the only tuned surfaces emitted by this tool."
+    )
+    lines.append(
+        "- FACT: signal_weights, direction_strength_scoring, and feature_neutrals are legacy Aurora surfaces and are not tuned here."
     )
     lines.append(
         "- FACT: feature logs are audited for schema evidence, but recorder is the only auditable timestamp backbone because sampled feature-log keys expose no explicit timestamp field."
@@ -1703,7 +2188,21 @@ def _render_v2_report(
             for warning in audit.warnings:
                 lines.append(f"- WARNING: {warning}")
     lines.append("")
-    lines.append("## Candidate Search Guardrails")
+    lines.append("## Candidate Search Method")
+    lines.append(
+        "- Method: replay the current surface first, then fit candidate thresholds from train-split absolute score quantiles."
+    )
+    lines.append(
+        "- Method: replay each candidate surface through live RegimeDetector, live shield cascade, and QuadraticScoringKernel using identical recorder bars."
+    )
+    lines.append(
+        "- Fail-closed rule: when the current live baseline resolves through a global decision threshold or global regime-threshold map, candidate emission is disabled because this tool still emits per-asset overlay surfaces only."
+    )
+    lines.append(
+        "- Candidate ranking objective: maximize validation-proxy desirability by train metrics tuple (mean_forward_bps_3, hit_rate_3, active_bars) after guardrail filtering."
+    )
+    lines.append("")
+    lines.append("## Guardrails")
     lines.append(
         f"- min_activation_rate={float(args.min_activation_rate):.4f}")
     lines.append(
@@ -1716,7 +2215,7 @@ def _render_v2_report(
     lines.append(
         f"- quantile_grid={list(float(value) for value in args.quantile_grid)}")
     lines.append("")
-    lines.append("## Symbol Evaluations")
+    lines.append("## Baseline vs Candidate")
     for calibration in calibrations:
         lines.append("")
         lines.append(f"### {calibration.symbol}")
@@ -1730,6 +2229,25 @@ def _render_v2_report(
             "current/train", calibration.current_train_metrics))
         lines.append(_render_metrics_table_row(
             "current/validation", calibration.current_validation_metrics))
+        lines.append(
+            f"- Current signal_threshold.value: {calibration.surface.signal_threshold_value:.6f}"
+        )
+        lines.append(
+            f"- Current signal_threshold source: {calibration.surface.signal_threshold_source} ({calibration.surface.signal_threshold_path})"
+        )
+        lines.append(
+            f"- Current regime_thresholds: {calibration.surface.regime_thresholds}"
+        )
+        lines.append(
+            f"- Current regime_threshold source: {calibration.surface.regime_threshold_source} ({calibration.surface.regime_threshold_path})"
+        )
+        lines.append(
+            f"- Candidate target supported: {not calibration.candidate_blockers}"
+        )
+        if calibration.candidate_blockers:
+            lines.append("- Candidate blockers:")
+            for blocker in calibration.candidate_blockers:
+                lines.append(f"  - {blocker}")
         if calibration.candidate is not None:
             lines.append(_render_metrics_table_row(
                 "candidate/train", calibration.candidate.train_metrics))
@@ -1797,6 +2315,24 @@ def _render_v2_report(
     lines.append(
         "- UNKNOWN: whether BTCUSDT control would suggest the same quantile family under the same date window if audited separately."
     )
+    lines.append("")
+    lines.append("## Risks")
+    lines.append(
+        "- Risk: offline replay still excludes full execution-routing, fill-quality, and objective-stack behavior, so GO_FOR_TESTNET_RESTART is bounded to threshold-surface restart testing, not direct production promotion."
+    )
+    lines.append(
+        "- Risk: sparse regime coverage can produce DEFAULT-only overlays that are operationally safer than overfit regime factors but may miss true per-regime opportunities."
+    )
+    lines.append("")
+    lines.append("## Next Action")
+    if verdict == "GO_FOR_TESTNET_RESTART":
+        lines.append(
+            "- Next action: treat the emitted overlay as a restart candidate for threshold-surface testing only, with promotion still gated by downstream validation outside this script."
+        )
+    else:
+        lines.append(
+            "- Next action: keep the emitted overlay in candidate-only status and investigate the failing guardrails before any restart or promotion decision."
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1810,7 +2346,7 @@ def _run_v1(
     args: argparse.Namespace,
     ordered_symbols: list[str],
     threshold_surfaces: dict[str, ThresholdSurface],
-) -> tuple[dict[str, Any], str]:
+) -> CalibrationRunOutputs:
     log_paths = _iter_log_paths(args.log_glob)
     if not log_paths:
         raise CalibrationError(
@@ -1849,6 +2385,7 @@ def _run_v1(
         )
 
     overlay = _build_overlay_from_v1(calibrations)
+    verdict = "NO_GO_RESEARCH_ONLY"
     report_text = _render_v1_report(
         calibrations=calibrations,
         args=args,
@@ -1866,7 +2403,20 @@ def _run_v1(
             f"proposed={_format_ratio(calibration.proposed_estimated_activation_rate)})"
         )
 
-    return overlay, report_text
+    return CalibrationRunOutputs(
+        overlay=overlay,
+        report_text=report_text,
+        verdict=verdict,
+        baseline_metrics=_build_v1_baseline_metrics(calibrations),
+        candidate_metrics=_build_v1_candidate_metrics(calibrations),
+        run_manifest=_build_run_manifest(
+            args=args,
+            ordered_symbols=ordered_symbols,
+            threshold_surfaces=threshold_surfaces,
+            verdict=verdict,
+            evidence_tier="research-only",
+        ),
+    )
 
 
 def _run_v2(
@@ -1874,7 +2424,7 @@ def _run_v2(
     ordered_symbols: list[str],
     threshold_surfaces: dict[str, ThresholdSurface],
     aurora_yaml_path: Path,
-) -> tuple[dict[str, Any], str]:
+) -> CalibrationRunOutputs:
     typed_config = _load_typed_runtime_config(aurora_yaml_path)
     recorder_dir = Path(args.recorder_dir)
     feature_log_dir = Path(args.feature_log_dir)
@@ -1906,6 +2456,7 @@ def _run_v2(
         )
 
     overlay = _build_overlay_from_v2(calibrations)
+    verdict = _v2_verdict(calibrations)
     report_text = _render_v2_report(
         calibrations=calibrations,
         args=args,
@@ -1913,7 +2464,7 @@ def _run_v2(
         typed_config=typed_config,
     )
 
-    print(f"Verdict: {_v2_verdict(calibrations)}")
+    print(f"Verdict: {verdict}")
     for calibration in calibrations:
         candidate = calibration.candidate
         if candidate is None:
@@ -1927,7 +2478,20 @@ def _run_v2(
             f"validation_guardrails_ok={candidate.validation_guardrails_ok}"
         )
 
-    return overlay, report_text
+    return CalibrationRunOutputs(
+        overlay=overlay,
+        report_text=report_text,
+        verdict=verdict,
+        baseline_metrics=_build_v2_baseline_metrics(calibrations),
+        candidate_metrics=_build_v2_candidate_metrics(calibrations),
+        run_manifest=_build_run_manifest(
+            args=args,
+            ordered_symbols=ordered_symbols,
+            threshold_surfaces=threshold_surfaces,
+            verdict=verdict,
+            evidence_tier="production-aligned",
+        ),
+    )
 
 
 def main() -> int:
@@ -1944,15 +2508,18 @@ def main() -> int:
             seen_symbols.add(symbol)
 
     threshold_surfaces = {
-        symbol: _extract_live_threshold_surface(aurora, symbol=symbol)
+        symbol: _extract_live_threshold_surface(
+            aurora,
+            symbol=symbol,
+            threshold_source_mode=str(args.threshold_source_mode),
+        )
         for symbol in ordered_symbols
     }
 
     if args.input_source == "aurora-logs":
-        overlay, report_text = _run_v1(
-            args, ordered_symbols, threshold_surfaces)
+        outputs = _run_v1(args, ordered_symbols, threshold_surfaces)
     elif args.input_source == "recorder-features-v2":
-        overlay, report_text = _run_v2(
+        outputs = _run_v2(
             args, ordered_symbols, threshold_surfaces, aurora_yaml_path)
     else:
         raise CalibrationError(
@@ -1962,18 +2529,49 @@ def main() -> int:
         ordered_symbols)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    baseline_metrics_path = out_dir / "baseline_metrics.json"
+    baseline_metrics_path.write_text(
+        json.dumps(outputs.baseline_metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"Baseline metrics written to {baseline_metrics_path}")
+
+    candidate_metrics_path = out_dir / "candidate_metrics.json"
+    candidate_metrics_path.write_text(
+        json.dumps(outputs.candidate_metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"Candidate metrics written to {candidate_metrics_path}")
+
+    manifest = dict(outputs.run_manifest)
+    manifest["artifacts"] = {
+        "candidate_threshold_overlay": str((out_dir / "candidate_threshold_overlay.yaml").as_posix()),
+        "run_manifest": str((out_dir / "run_manifest.json").as_posix()),
+        "baseline_metrics": str(baseline_metrics_path.as_posix()),
+        "candidate_metrics": str(candidate_metrics_path.as_posix()),
+        "report": str((out_dir / "report.md").as_posix()),
+    }
+
     if args.emit_overlay:
         overlay_path = out_dir / "candidate_threshold_overlay.yaml"
         overlay_path.write_text(
-            yaml.safe_dump(overlay, sort_keys=False, allow_unicode=False),
+            yaml.safe_dump(outputs.overlay, sort_keys=False,
+                           allow_unicode=False),
             encoding="utf-8",
         )
         print(f"Overlay written to {overlay_path}")
 
     if args.emit_report:
         report_path = out_dir / "report.md"
-        report_path.write_text(report_text, encoding="utf-8")
+        report_path.write_text(outputs.report_text, encoding="utf-8")
         print(f"Report written to {report_path}")
+
+    manifest_path = out_dir / "run_manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"Run manifest written to {manifest_path}")
 
     return 0
 

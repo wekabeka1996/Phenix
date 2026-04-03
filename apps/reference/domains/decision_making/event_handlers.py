@@ -1,16 +1,14 @@
+"""Stateful ingress handlers for the DecisionMaking domain.
+
+This module owns the FSM listeners that cache feature, risk, portfolio, and
+regime payloads into shared mutable state. It also emits alpha-score side
+channel events and normalizes config-contract failures into
+``EVT:DECISION_BLOCKED``.
 """
-DMEventHandlers — FSM event listeners for DecisionMaking domain.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Handles: on_features, on_risk, on_portfolio, on_regime, update_exposure_cache.
-
-LOC budget: <=500 (Constitution S3).
-"""
-
-import json
 import logging
 from collections import deque
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.utils.accessors import aget
@@ -33,17 +31,6 @@ from .trade_intent_reject_wal import write_trade_intent_rejected
 from .schemas_decision_blocked import DecisionBlockedPayload
 from .dm_log_adapter import DecisionLog
 
-# Alpha models (optional, graceful degrade)
-try:
-    from apps.reference.domains.alpha_search import (
-        AlphaModelRegistry,
-        MomentumAlphaModel,
-        VolatilityAlphaModel,
-    )
-    ALPHA_MODELS_AVAILABLE = True
-except ImportError:
-    ALPHA_MODELS_AVAILABLE = False
-
 if TYPE_CHECKING:
     from apps.reference.config_models import AuroraConfig
     from apps.reference.core.time.clock import Clock
@@ -53,7 +40,9 @@ class DMEventHandlers:
     """FSM event listeners for the DecisionMaking domain.
 
     Mutates shared state dicts (symbol_states, per_symbol_regimes) and
-    the ``shared_state`` dict for reassignable scalars.
+    the ``shared_state`` dict for reassignable scalars. The handler is not a
+    pure adapter: it stores payloads by reference, annotates freshness data in
+    place, and delegates regime-flip side effects to injected collaborators.
     """
 
     def __init__(
@@ -89,21 +78,34 @@ class DMEventHandlers:
         self._behavior_state = behavior_state
         self.logger = logger
 
+    def _ensure_symbol_state(self, symbol: str) -> Dict[str, Any]:
+        """Return the mutable per-symbol cache, creating it on first event."""
+        return self.symbol_states.setdefault(symbol, {})
+
     # -- on_features --------------------------------------------------------
 
     def on_features(self, event: Message) -> None:
+        """Cache feature payloads and emit alpha or blocked side-channel events.
+
+        The cached payload is annotated in place with ``_received_ts`` because
+        downstream freshness checks read that marker from symbol state.
+        """
         try:
             try:
                 if isinstance(event.pld, dict):
                     symbol = event.pld["symbol"] if "symbol" in event.pld else "unknown"
                 elif hasattr(event, 'pld') and event.pld:
-                    symbol = event.pld.symbol if hasattr(event.pld, 'symbol') else "unknown"
+                    symbol = event.pld.symbol if hasattr(
+                        event.pld, 'symbol') else "unknown"
                 else:
                     symbol = "unknown"
             except (AttributeError, TypeError):
                 symbol = "unknown"
 
-            # LEGACY-02-INT (bar-only law): ignore tick-level feature events
+            state = self._ensure_symbol_state(symbol)
+
+            # This listener is bar-driven; tick-level feature events are rejected
+            # and only produce a throttled forensic record.
             tf_sec = None
             try:
                 if isinstance(event.pld, dict):
@@ -112,14 +114,16 @@ class DMEventHandlers:
                 tf_sec = None
             if tf_sec is not None and int(tf_sec or 0) <= 0:
                 now_ms = self._clock.now_ms()
-                state = self.symbol_states[symbol]
-                last_ms = int(state.get("_tick_features_reject_last_ts_ms", 0) or 0)
+                last_ms = int(
+                    state.get("_tick_features_reject_last_ts_ms", 0) or 0)
+                # Throttle repeated reject WAL writes to once per 5 minutes per symbol.
                 if (now_ms - last_ms) >= 300_000:
                     state["_tick_features_reject_last_ts_ms"] = now_ms
                     try:
                         write_trade_intent_rejected(
                             symbol=symbol,
-                            tf_sec=int(tf_sec or 0) if tf_sec is not None else None,
+                            tf_sec=int(
+                                tf_sec or 0) if tf_sec is not None else None,
                             reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                             stage="DECISION",
                             why="Ignoring tick-level feature event (bar-only strategies)",
@@ -132,38 +136,41 @@ class DMEventHandlers:
                         pass
                 return
 
-            self.logger.debug(f"on_features() accepted for {symbol} tf_sec={tf_sec}")
-            if symbol not in self.symbol_states:
-                self.symbol_states[symbol] = {}
+            self.logger.debug(
+                f"on_features() accepted for {symbol} tf_sec={tf_sec}")
 
-            self.symbol_states[symbol]["features"] = event.pld
-            self.symbol_states[symbol]["features"]["_received_ts"] = self._clock.now_ms()
+            state["features"] = event.pld
+            state["features"]["_received_ts"] = self._clock.now_ms()
 
-            # Commit 5: Clear risk-skew until-refresh state on data refresh
+            # A fresh feature snapshot clears the temporary risk-skew latch that
+            # blocks trading until new market data arrives.
             try:
-                guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+                guard = state.get("risk_skew_guard") or {}
                 if guard.get("until_refresh"):
-                    self.symbol_states[symbol]["risk_skew_guard"] = {
+                    state["risk_skew_guard"] = {
                         "defer_count": 0,
                         "window_start_ms": self._clock.now_ms(),
                         "until_refresh": False,
                     }
-                    self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
+                    self.logger.info(
+                        f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
             except Exception:
                 pass
 
-            # Extract features for alpha / delta_price
+            # The handler accepts legacy payload objects, so feature extraction is
+            # intentionally defensive before alpha scoring and delta-price history.
             try:
                 if isinstance(event.pld, dict):
                     feats = (event.pld or {}).get("features") or {}
                 elif hasattr(event, 'pld') and event.pld:
-                    feats = event.pld.features if hasattr(event.pld, 'features') else {}
+                    feats = event.pld.features if hasattr(
+                        event.pld, 'features') else {}
                 else:
                     feats = {}
             except (AttributeError, TypeError):
                 feats = {}
 
-            # DM-DIR-FORENSIC-01: Capture delta_price history
+            # Keep a short delta_price history for downstream directional forensics.
             try:
                 dp_raw = feats.get("delta_price")
                 dp_val = float(dp_raw) if dp_raw not in (None, "") else None
@@ -171,12 +178,12 @@ class DMEventHandlers:
                 dp_val = None
 
             if dp_val is not None:
-                hist = self.symbol_states[symbol].get("_delta_price_hist")
+                hist = state.get("_delta_price_hist")
                 if not isinstance(hist, deque):
                     hist = deque(maxlen=20)
-                    self.symbol_states[symbol]["_delta_price_hist"] = hist
+                    state["_delta_price_hist"] = hist
                 hist.append(dp_val)
-                self.symbol_states[symbol]["_last_delta_price"] = dp_val
+                state["_last_delta_price"] = dp_val
 
             self.dlog.write(
                 "FEATURES_RX",
@@ -184,11 +191,9 @@ class DMEventHandlers:
                 {"symbol": symbol, "keys": list(feats.keys())},
             )
 
-            # Alpha scores calculation (optional)
+            # Alpha scoring is optional and only runs when the registry is wired.
             if self.alpha_registry and feats:
                 self._compute_alpha_scores(symbol, feats)
-
-            pass  # No fallback trigger (P0-6 Safety Audit)
 
         except ConfigContractError as e:
             reason = normalize_config_error(e)
@@ -197,12 +202,16 @@ class DMEventHandlers:
             if "CFG_INVALID" in reason:
                 nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_INVALID
 
-            inc_config_contract_violation(path=e.path or "unknown", symbol=caught_symbol or "unknown")
-            self.logger.critical(f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
+            inc_config_contract_violation(
+                path=e.path or "unknown", symbol=caught_symbol or "unknown")
+            self.logger.critical(
+                f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
             if caught_symbol:
                 self._record_blocked(caught_symbol)
 
             try:
+                # Emit a typed blocked payload instead of letting contract errors
+                # surface as generic runtime failures.
                 payload_obj = DecisionBlockedPayload(
                     symbol=caught_symbol or "unknown",
                     reason=reason,
@@ -226,14 +235,19 @@ class DMEventHandlers:
                     why_chain=payload_obj.why_chain,
                     details=payload_obj.details,
                 )
-                self._fsm.emit("EVT:DECISION_BLOCKED", payload_obj.model_dump(), why=f"decision_blocked:{nrr_code}")
+                self._fsm.emit("EVT:DECISION_BLOCKED", payload_obj.model_dump(
+                ), why=f"decision_blocked:{nrr_code}")
                 inc_decision_blocked(stage="on_features", reason_code=nrr_code)
             except Exception as ex:
                 self.logger.error(f"Failed to emit DECISION_BLOCKED: {ex}")
             return
 
     def _compute_alpha_scores(self, symbol: str, feats: dict) -> None:
-        """Compute and emit alpha scores (extracted helper for on_features)."""
+        """Compute alpha scores for a feature snapshot and emit them best-effort.
+
+        ``ConfigContractError`` is re-raised so ``on_features`` can normalize it
+        into ``EVT:DECISION_BLOCKED``. Other failures are logged and suppressed.
+        """
         try:
             alpha_scores = self.alpha_registry.calculate_all_alpha(
                 symbol, {"current_price": feats.get("price")}, feats
@@ -248,10 +262,12 @@ class DMEventHandlers:
                     "EVT:ALPHA_SCORE_CALCULATED",
                     payload=alpha_payload,
                     why="alpha_scores_calculated",
-                    data_ref=[f"model_{score.model_name}" for score in alpha_scores],
+                    data_ref=[
+                        f"model_{score.model_name}" for score in alpha_scores],
                 )
 
-                # WAL traceability
+                # WAL gets JSON-safe copies because model payloads can contain
+                # Decimal or datetime values that are not natively serializable.
                 try:
                     from decimal import Decimal as Dec
                     from datetime import datetime as dt
@@ -272,7 +288,8 @@ class DMEventHandlers:
                         "verb": "ALPHA_SCORE_CALCULATED",
                         "symbol": symbol,
                         "scores": [
-                            {k: json_safe_value(v) for k, v in score.dict().items()}
+                            {k: json_safe_value(v)
+                             for k, v in score.dict().items()}
                             for score in alpha_scores
                         ],
                         "timestamp": self._clock.now_ms(),
@@ -280,49 +297,61 @@ class DMEventHandlers:
                     }
                     wal.append(wal_record)
                 except Exception as wal_e:
-                    self.logger.warning(f"Failed to write alpha scores to WAL: {wal_e}")
+                    self.logger.warning(
+                        f"Failed to write alpha scores to WAL: {wal_e}")
 
-                self.logger.info(f"Alpha scores calculated for {symbol}: {len(alpha_scores)} models")
+                self.logger.info(
+                    f"Alpha scores calculated for {symbol}: {len(alpha_scores)} models")
             else:
-                self.logger.debug(f"No alpha scores calculated for {symbol} - missing required features")
+                self.logger.debug(
+                    f"No alpha scores calculated for {symbol} - missing required features")
         except ConfigContractError:
             raise
         except Exception as e:
-            self.logger.error(f"Error calculating alpha scores for {symbol}: {e}")
+            self.logger.error(
+                f"Error calculating alpha scores for {symbol}: {e}")
 
     # -- on_risk ------------------------------------------------------------
 
     def on_risk(self, event: Message) -> None:
+        """Cache the latest risk payload for a symbol.
+
+        The raw payload is stored by reference because downstream gates inspect
+        nested ``risk_parameters`` without an intermediate normalization layer.
+        """
         try:
             if isinstance(event.pld, dict):
                 symbol = event.pld["symbol"] if "symbol" in event.pld else "unknown"
             elif hasattr(event, 'pld') and event.pld:
-                symbol = event.pld.symbol if hasattr(event.pld, 'symbol') else "unknown"
+                symbol = event.pld.symbol if hasattr(
+                    event.pld, 'symbol') else "unknown"
             else:
                 symbol = "unknown"
         except (AttributeError, TypeError):
             symbol = "unknown"
 
-        self.logger.info(f"on_risk() called for {symbol}. Risk params: {event.pld}")
-        self.symbol_states[symbol]["risk"] = event.pld
+        state = self._ensure_symbol_state(symbol)
+        self.logger.info(
+            f"on_risk() called for {symbol}. Risk params: {event.pld}")
+        state["risk"] = event.pld
 
-        # Commit 5: Clear risk-skew until-refresh state on data refresh
+        # A new risk snapshot also clears the temporary risk-skew latch.
         try:
-            guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+            guard = state.get("risk_skew_guard") or {}
             if guard.get("until_refresh"):
-                self.symbol_states[symbol]["risk_skew_guard"] = {
+                state["risk_skew_guard"] = {
                     "defer_count": 0,
                     "window_start_ms": self._clock.now_ms(),
                     "until_refresh": False,
                 }
-                self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on risk refresh")
+                self.logger.info(
+                    f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on risk refresh")
         except Exception as e:
-            self.logger.warning(f"Error extracting symbol from feature event: {e}")
+            self.logger.warning(
+                f"Error updating risk skew guard from risk event: {e}")
 
-        if symbol not in self.symbol_states:
-            self.symbol_states[symbol] = {}
-        self.symbol_states[symbol]["_cached_risk"] = event.pld
-        self.symbol_states[symbol]["_last_risk_time"] = self._clock.now_sec()
+        state["_cached_risk"] = event.pld
+        state["_last_risk_time"] = self._clock.now_sec()
 
         try:
             if isinstance(event.pld, dict):
@@ -347,10 +376,12 @@ class DMEventHandlers:
     # -- on_portfolio -------------------------------------------------------
 
     def on_portfolio(self, event: Message) -> None:
+        """Cache the latest portfolio snapshot and selected equity mirrors."""
         self.logger.info("on_portfolio() called - portfolio state received!")
         portfolio_data = event.pld
 
-        # Cache equity_free_usdt
+        # Keep the last non-zero equity snapshot; zero/None leaves the prior
+        # cache untouched for downstream consumers that read shared state.
         try:
             if hasattr(portfolio_data, 'equity_free_usdt'):
                 equity_free_usdt = portfolio_data.equity_free_usdt
@@ -365,7 +396,7 @@ class DMEventHandlers:
             self._shared["cached_equity_free_usdt"] = equity_free_usdt
             self.logger.info(f"   Cached equity_free_usdt: {equity_free_usdt}")
 
-        # Cache equity_cross_usdt
+        # Mirror the cross-margin equity snapshot under the same non-zero rule.
         try:
             if hasattr(portfolio_data, 'equity_cross_usdt'):
                 equity_cross_usdt = portfolio_data.equity_cross_usdt
@@ -380,7 +411,8 @@ class DMEventHandlers:
             self._shared["cached_equity_cross_usdt"] = equity_cross_usdt
 
         self._shared["latest_portfolio"] = portfolio_data
-        positions = portfolio_data["positions"] if isinstance(portfolio_data, dict) and "positions" in portfolio_data else []
+        positions = portfolio_data["positions"] if isinstance(
+            portfolio_data, dict) and "positions" in portfolio_data else []
         self.logger.info(
             f"   Equity: {portfolio_data.get('equity') if isinstance(portfolio_data, dict) else None}, Positions: {len(positions)}"
         )
@@ -400,9 +432,14 @@ class DMEventHandlers:
     # -- on_regime ----------------------------------------------------------
 
     def on_regime(self, event: Message) -> None:
+        """Cache structural regime updates and notify the flip coordinator."""
         pld = event.pld if isinstance(event.pld, dict) else {}
+        # DecisionMaking only consumes structural regime events on this path.
         if not is_structural_regime_payload(pld):
             return
+
+        # Preserve the legacy shared-state mirrors while building the richer
+        # per-symbol regime snapshot used by downstream logic.
         self._shared["latest_regime"] = {
             "deprecated_last_writer_wins": True,
             "layer": pld.get("regime_layer", "structural"),
@@ -424,10 +461,12 @@ class DMEventHandlers:
                 regime_val = normalize_structural_regime_label(
                     event.pld.get("regime") or event.pld.get("overall_regime")
                 )
-                latest_structural_regimes = self._shared.setdefault("latest_structural_regime_by_symbol", {})
+                latest_structural_regimes = self._shared.setdefault(
+                    "latest_structural_regime_by_symbol", {})
                 if isinstance(latest_structural_regimes, dict):
                     latest_structural_regimes[symbol] = dict(event.pld)
-                latest_structural_warmup = self._shared.setdefault("latest_structural_warmup_by_symbol", {})
+                latest_structural_warmup = self._shared.setdefault(
+                    "latest_structural_warmup_by_symbol", {})
                 if isinstance(latest_structural_warmup, dict):
                     latest_structural_warmup[symbol] = warmup
                 ts_ms = event.pld.get("ts_ms") or event.pld.get("ts")
@@ -446,8 +485,12 @@ class DMEventHandlers:
                 self.logger.debug(
                     f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"
                 )
-                self._handle_regime_flip(symbol, self._per_symbol_regimes[symbol])
+                # The coordinator owns any close/flip side effects; this module
+                # only persists the normalized regime snapshot and forwards it.
+                self._handle_regime_flip(
+                    symbol, self._per_symbol_regimes[symbol])
 
+            # This handler only reports warmup state; it does not enforce it.
             full_ready = (
                 bool(warmup["full_ready"] if "full_ready" in warmup else False)
                 if self.arming_require_regime_warmup
@@ -460,7 +503,8 @@ class DMEventHandlers:
                     f"samples={ticks_seen})"
                 )
 
-        # Minimal behavior FSM mapping
+        # Best-effort behavior overlay; it does not participate in regime
+        # persistence and is intentionally isolated from the main cache path.
         if self._behavior_enabled and event and event.pld:
             try:
                 symbol = event.pld.get("symbol")
@@ -475,10 +519,15 @@ class DMEventHandlers:
     # -- update_exposure_cache ----------------------------------------------
 
     def update_exposure_cache(self, event: Message) -> None:
-        """Update exposure cache from EVT:EXPOSURE_SUMMARY_UPDATED events."""
+        """Cache exposure summaries for downstream fail-closed safety checks.
+
+        Malformed payloads are logged and ignored instead of raising back into
+        the FSM listener loop.
+        """
         try:
             payload = event.pld or {}
-            exposure_summary = payload["exposure_summary"] if "exposure_summary" in payload else {}
+            exposure_summary = payload["exposure_summary"] if "exposure_summary" in payload else {
+            }
             if exposure_summary:
                 self._shared["exposure_cache"] = exposure_summary
                 self._shared["exposure_cache_timestamp"] = self._clock.now_sec()

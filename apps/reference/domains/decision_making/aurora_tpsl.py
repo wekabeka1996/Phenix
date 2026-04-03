@@ -1,12 +1,8 @@
-"""
-Aurora TP/SL Computation Mixin.
+"""Compute optional regime-aware TP/SL candidates for Aurora signals.
 
-Extracted from aurora_handler.py (Phase 14A Decomposition).
-
-Provides regime-based TP/SL calculation:
-  - pct_mult mode: percentage × regime multiplier
-  - atr mode: volatility-based ATR × regime coefficients
-  - Guardrails: min/max SL%, min/max RR, min distance bps
+This mixin only derives candidate stop/target prices plus TP/SL telemetry. It
+does not place orders and it does not decide on its own whether a missing TP/SL
+result should block signal emission; that decision stays with the caller.
 """
 from __future__ import annotations
 
@@ -21,14 +17,16 @@ logger = logging.getLogger("aurora_handler")
 
 
 class AuroraTpslMixin:
-    """
-    Mixin: regime-based TP/SL computation for AuroraHandler.
+    """Provide regime-aware TP/SL computation helpers for AuroraHandler.
 
-    Self-attributes used (provided by AuroraHandler):
-      - self.logger
-      - self._symbol_states
-      - self.anti_churn_enabled
-      - self._get_volatility_strict()
+    Host contract:
+    - ``self.logger`` is available for diagnostics.
+    - ``self._symbol_states`` stores per-symbol regime state.
+    - ``self.anti_churn_enabled`` controls whether regime_effective overrides
+      the raw regime passed by the caller.
+
+    Side effects are limited to logging; successful methods return computed
+    prices and telemetry dictionaries.
     """
 
     # ------------------------------------------------------------------
@@ -41,18 +39,22 @@ class AuroraTpslMixin:
         features: Dict[str, Any],
     ) -> Optional[decimal.Decimal]:
         """
-        Get ATR volatility (STRICT: no fallbacks, fail-closed).
+        Return ATR as Decimal using the Aurora feature contract.
 
         Reads from:
         1. features["volatility"]["atr_14"] (canonical FE output)
         2. features["atr"] (backward compatibility)
 
-        Returns None if ATR is missing → caller MUST abort signal emission.
-        This is fail-closed behavior: prefer no trade over a bad trade.
+        Returns None when ATR is missing or invalid.
+
+        Important: this helper is strict about data extraction, but the caller
+        decides whether missing ATR is fatal for the whole signal or only for
+        TP/SL injection.
         """
         atr = None
 
-        # Primary path: nested volatility.atr_14 (from FeatureEngineering)
+        # Canonical FE output lives under volatility.atr_14. The top-level key
+        # remains only for older fixtures and compatibility paths.
         volatility_block = features.get("volatility")
         if isinstance(volatility_block, dict):
             atr = volatility_block.get("atr_14")
@@ -71,7 +73,8 @@ class AuroraTpslMixin:
         try:
             return decimal.Decimal(str(atr))
         except (decimal.InvalidOperation, ValueError) as e:
-            self.logger.error(f"[{symbol}] ATR_INVALID: Cannot convert atr={atr!r} to Decimal: {e}")
+            self.logger.error(
+                f"[{symbol}] ATR_INVALID: Cannot convert atr={atr!r} to Decimal: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -88,16 +91,19 @@ class AuroraTpslMixin:
         features: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """
-        Compute regime-based TP/SL for Aurora signal.
+        Compute regime-based TP/SL for a candidate Aurora entry.
 
         Returns dict with:
         - stop_price: Decimal
         - target_price: Decimal
         - tpsl_ctx: dict (telemetry)
 
-        Returns None if regime_tpsl is disabled or config missing.
+        Returns None when TP/SL injection is disabled, config is incomplete,
+        symbol state is unavailable, ATR is unusable for atr mode, or the
+        resulting geometry is rejected by guardrails.
 
-        AURORA_REGIME_TP_SL_PLAN: Strategy-provided TP/SL injection point.
+        This method only computes candidate prices. Downstream code decides
+        whether a None result means "emit without TP/SL" or "block signal".
         """
         if instr_cfg is None:
             return None
@@ -112,7 +118,8 @@ class AuroraTpslMixin:
 
         tp_cfg = getattr(instr_cfg, "take_profit", None)
 
-        # Resolve effective regime (prefer effective from anti-churn if enabled)
+        # TP/SL follows the same effective regime that anti-churn can pin for
+        # entry/exit decisions, not just the raw detector regime.
         state = self._symbol_states.get(symbol)
         if state is None:
             self.logger.warning("[%s] Unknown symbol for regime TP/SL", symbol)
@@ -148,13 +155,16 @@ class AuroraTpslMixin:
                 features=features,
             )
         else:
-            self.logger.warning(f"[{symbol}] Unknown regime_tpsl mode: {mode}, skipping")
+            self.logger.warning(
+                f"[{symbol}] Unknown regime_tpsl mode: {mode}, skipping")
             return None
 
         if result is None:
             return None
 
-        # Apply guardrails
+        # Guardrails normalize the candidate prices into an emit-safe geometry.
+        # A None return here means "no TP/SL payload", not necessarily a hard
+        # abort for the whole decision path.
         result = self._apply_tpsl_guardrails(
             symbol=symbol,
             entry_price=entry_price,
@@ -192,7 +202,8 @@ class AuroraTpslMixin:
             return None
         sl_pct_base = float(sl_pct_raw)
 
-        tp_low_ratio_raw = getattr(tp_cfg, "tp_low_ratio", None) if tp_cfg else None
+        tp_low_ratio_raw = getattr(
+            tp_cfg, "tp_low_ratio", None) if tp_cfg else None
         if tp_low_ratio_raw is None:
             self.logger.error(
                 "TPSL_CONFIG_ERROR: take_profit.tp_low_ratio is required for regime_tpsl pct_mult mode. "
@@ -262,15 +273,18 @@ class AuroraTpslMixin:
         SL = entry ± (atr_pct × sl_k_atr[regime])
         TP = entry ± (sl_dist × rr_by_regime[regime])
 
-        FAIL-CLOSED: Requires ATR feature and explicit config maps.
+        FAIL-CLOSED at the TP/SL layer: requires ATR input and explicit config
+        maps. Missing ATR disables TP/SL injection for this path.
         """
         # Get ATR (strict, no fallbacks)
         atr = self._get_volatility_strict(symbol, features)
         if atr is None or atr == 0:
-            self.logger.warning(f"[{symbol}] ATR missing for regime_tpsl atr mode, skipping TP/SL injection")
+            self.logger.warning(
+                f"[{symbol}] ATR missing for regime_tpsl atr mode, skipping TP/SL injection")
             return None
 
-        # ATR as percentage of entry price
+        # Normalizing ATR by entry keeps the regime coefficients dimensionless
+        # across symbols with very different price scales.
         atr_pct = atr / entry_price
 
         # Get coefficients (FAIL-CLOSED: DEFAULT key required)
@@ -290,7 +304,8 @@ class AuroraTpslMixin:
             )
             return None
 
-        sl_k = decimal.Decimal(str(sl_k_map.get(regime_used, sl_k_map["DEFAULT"])))
+        sl_k = decimal.Decimal(
+            str(sl_k_map.get(regime_used, sl_k_map["DEFAULT"])))
         rr = decimal.Decimal(str(rr_map.get(regime_used, rr_map["DEFAULT"])))
 
         # Calculate SL distance
@@ -329,23 +344,28 @@ class AuroraTpslMixin:
         regime_tpsl_cfg: Any,
     ) -> Optional[Dict[str, Any]]:
         """
-        Apply guardrails to computed TP/SL values.
+        Apply final TP/SL guardrails to already computed candidate prices.
 
-        Validates:
-        - SL/TP on correct side of entry
-        - min/max SL%
-        - min/max TP RR
-        - min distance in bps
+        Order matters:
+        - reject wrong-side geometry immediately;
+        - clamp SL distance into the configured band;
+        - recompute effective RR against the post-SL geometry;
+        - clamp TP RR if needed;
+        - finally reject setups that still violate min_dist_bps.
         """
         stop_price = result["stop_price"]
         target_price = result["target_price"]
         tpsl_ctx = result["tpsl_ctx"]
 
         # Guardrail params
-        min_sl_pct = decimal.Decimal(str(getattr(regime_tpsl_cfg, "min_sl_pct", 0.003)))
-        max_sl_pct = decimal.Decimal(str(getattr(regime_tpsl_cfg, "max_sl_pct", 0.06)))
-        min_tp_rr = decimal.Decimal(str(getattr(regime_tpsl_cfg, "min_tp_rr", 0.3)))
-        max_tp_rr = decimal.Decimal(str(getattr(regime_tpsl_cfg, "max_tp_rr", 3.0)))
+        min_sl_pct = decimal.Decimal(
+            str(getattr(regime_tpsl_cfg, "min_sl_pct", 0.003)))
+        max_sl_pct = decimal.Decimal(
+            str(getattr(regime_tpsl_cfg, "max_sl_pct", 0.06)))
+        min_tp_rr = decimal.Decimal(
+            str(getattr(regime_tpsl_cfg, "min_tp_rr", 0.3)))
+        max_tp_rr = decimal.Decimal(
+            str(getattr(regime_tpsl_cfg, "max_tp_rr", 3.0)))
         min_dist_bps = int(getattr(regime_tpsl_cfg, "min_dist_bps", 15))
 
         # Calculate actual SL distance
@@ -408,13 +428,15 @@ class AuroraTpslMixin:
             tpsl_ctx["guardrail_sl_clamp"] = "max"
 
         # Calculate RR (Risk:Reward ratio) = TP distance / SL distance
-        current_rr = tp_dist_pct / sl_dist_pct if sl_dist_pct > 0 else decimal.Decimal("1.0")
+        current_rr = tp_dist_pct / \
+            sl_dist_pct if sl_dist_pct > 0 else decimal.Decimal("1.0")
 
         # Telemetry: capture RR before RR clamp (post SL clamp).
         try:
             tpsl_ctx["rr_pre"] = float(current_rr)
         except (decimal.InvalidOperation, OverflowError, ValueError):
-            self.logger.debug("Failed to serialize rr_pre for %s", symbol, exc_info=True)
+            self.logger.debug(
+                "Failed to serialize rr_pre for %s", symbol, exc_info=True)
 
         # Clamp RR to min/max (adjusts TP, not SL)
         if current_rr < min_tp_rr:
@@ -442,8 +464,10 @@ class AuroraTpslMixin:
             tpsl_ctx["guardrail_rr_clamp"] = "max"
             current_rr = max_tp_rr
 
-        # Check min distance in bps (after all clamps)
-        min_dist_dec = decimal.Decimal(str(min_dist_bps)) / decimal.Decimal("10000")
+        # min_dist_bps is evaluated on the final post-clamp geometry because it
+        # is a contract on the emitted prices, not on intermediate values.
+        min_dist_dec = decimal.Decimal(
+            str(min_dist_bps)) / decimal.Decimal("10000")
         if sl_dist_pct < min_dist_dec:
             self.logger.error(
                 f"[{symbol}] TPSL_GUARDRAIL_FAIL: SL distance {float(sl_dist_pct)*10000:.1f} bps "

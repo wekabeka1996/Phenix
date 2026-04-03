@@ -1,14 +1,13 @@
-"""
-QoSRateControl — Rate limiting, cooldowns, and exposure block logic.
+"""Maintain QoS cooldown and rate-window state for DecisionMaking.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Manages per-strategy, per-symbol QoS state partitions.
-
-LOC budget: ≤500 (Constitution §3).
+The helper is intentionally narrow: it evaluates and updates per-strategy,
+per-symbol QoS partitions that the strategy gateway consults before building
+trade intents. It does not decide exposure itself; it only records the local
+cooldown timestamp after an exposure-related block has already been detected.
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 from .normalized_reject_reasons import NormalizedRejectReasons
 
@@ -17,11 +16,12 @@ if TYPE_CHECKING:
 
 
 class QoSRateControl:
-    """
-    QoS rate-limiting for DecisionMaking domain.
+    """Apply strategy-partitioned QoS checks and state updates.
 
-    State is partitioned by strategy_id to prevent cross-strategy rate-limiting.
-    Shared mutable dicts (qos_state) are passed by reference from facade.
+    The facade owns ``qos_state`` and passes it here by reference. Each
+    strategy partition is expected to expose ``symbol_cooldowns``,
+    ``symbol_intent_counts``, and ``last_exposure_block`` in the same shape as
+    DecisionMaking's defaultdict-based factory.
     """
 
     def __init__(
@@ -34,6 +34,7 @@ class QoSRateControl:
         get_symbol_cooldown: Callable[[str, str], int],
         logger: logging.Logger,
     ) -> None:
+        """Store the shared QoS state and static limits used by gateway checks."""
         self._clock = clock
         self._qos_state = qos_state
         self._apply_to_strategies = apply_to_strategies
@@ -45,7 +46,7 @@ class QoSRateControl:
     # ── Strategy Filter ──────────────────────────────────────────────
 
     def qos_enabled_for_strategy(self, strategy_id: str) -> bool:
-        """Return True if QoS should be applied for this strategy_id in the strategy gateway."""
+        """Return whether the strategy gateway should apply QoS to ``strategy_id``."""
         if not self._apply_to_strategies:
             return True
         return str(strategy_id) in self._apply_to_strategies
@@ -54,20 +55,26 @@ class QoSRateControl:
 
     def qos_allow(
         self, symbol: str, strategy_id: str = "aurora", is_exposure_block: bool = False
-    ) -> tuple:
-        """
-        Check if decision is allowed based on QoS rules (PACK EXP-4).
-        Partitioned by strategy_id (v7) to prevent cross-strategy rate-limiting.
+    ) -> tuple[bool, str | None]:
+        """Return whether QoS currently allows another decision for ``symbol``.
 
-        Returns:
-            Tuple of (allowed: bool, reject_reason: Optional[str])
+        Gate order is fixed:
+        1. exposure-block cooldown when ``is_exposure_block`` is true;
+        2. per-symbol cooldown;
+        3. per-minute intent-rate window.
+
+        The returned reason is the normalized reject code used by the gateway,
+        while the logger keeps the more detailed human-readable explanation.
         """
         current_time = self._clock.now_sec()
-        strat_state = self._qos_state[strategy_id]  # auto-creates via defaultdict
+        # DecisionMaking passes a defaultdict-style state map here; direct
+        # callers must provide the same partition-on-access behavior.
+        strat_state = self._qos_state[strategy_id]
 
         # Check exposure block cooldown (only for exposure-related checks)
         if is_exposure_block:
-            last_exposure_block: float = float(strat_state.get("last_exposure_block", 0.0))
+            last_exposure_block: float = float(
+                strat_state.get("last_exposure_block", 0.0))
             time_since_last_block = current_time - last_exposure_block
             if time_since_last_block < self.exposure_block_cooldown_sec:
                 remaining = self.exposure_block_cooldown_sec - time_since_last_block
@@ -78,7 +85,8 @@ class QoSRateControl:
                 return False, NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
 
         # Check symbol cooldown (prevents rapid-fire decisions for same symbol)
-        symbol_cooldowns: dict[str, Any] = strat_state.get("symbol_cooldowns", {})
+        symbol_cooldowns: dict[str, Any] = strat_state.get(
+            "symbol_cooldowns", {})
         last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
         time_since_last_decision = current_time - last_decision
         symbol_cooldown_limit = self._get_symbol_cooldown(symbol, strategy_id)
@@ -89,8 +97,10 @@ class QoSRateControl:
             return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
-        symbol_intent_counts: dict[str, Any] = strat_state.get("symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(symbol, {"count": 0, "window_start": current_time})
+        symbol_intent_counts: dict[str, Any] = strat_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": current_time})
         window_start = intent_data.get("window_start", current_time)
         window_elapsed = current_time - window_start
 
@@ -111,10 +121,7 @@ class QoSRateControl:
     # ── State Updates ────────────────────────────────────────────────
 
     def update_symbol_cooldown(self, symbol: str, strategy_id: str = "aurora") -> None:
-        """Update cooldown timestamp for symbol (prevents rapid-fire decisions).
-
-        T2B-08: Uses injected Clock for deterministic testing.
-        """
+        """Record the latest accepted-decision timestamp for ``symbol``."""
         current_time = self._clock.now_sec()
         strat_state = self._qos_state[strategy_id]
         if "symbol_cooldowns" not in strat_state:
@@ -124,7 +131,7 @@ class QoSRateControl:
             f"[{symbol}] QoS cooldown updated: ts={current_time} strategy={strategy_id}")
 
     def update_intent_count(self, symbol: str, strategy_id: str = "aurora") -> None:
-        """Update intent count for rate limiting (partitioned by strategy_id)."""
+        """Increment the current partition's stored intent counter for ``symbol``."""
         strat_state = self._qos_state[strategy_id]
         if "symbol_intent_counts" not in strat_state:
             strat_state["symbol_intent_counts"] = {}
@@ -132,7 +139,8 @@ class QoSRateControl:
 
         if symbol not in symbol_intent_counts:
             # T2B-08: Use Clock for rate-limit window start
-            symbol_intent_counts[symbol] = {"count": 0, "window_start": self._clock.now_sec()}
+            symbol_intent_counts[symbol] = {
+                "count": 0, "window_start": self._clock.now_sec()}
         intent_data = symbol_intent_counts[symbol]
         intent_data["count"] = intent_data.get("count", 0) + 1
         self.logger.debug(
@@ -140,10 +148,10 @@ class QoSRateControl:
         )
 
     def calculate_next_allowed_time(self, symbol: str, strategy_id: str = "aurora") -> int:
-        """Calculate next allowed timestamp for symbol based on QoS rules.
+        """Return the next allowed wall-clock time for ``symbol`` in epoch ms.
 
-        T2B-08: Uses injected Clock for deterministic testing.
-        QOS-SPLIT-BRAIN-FIX: Now strategy-aware (reads from correct partition).
+        This is an absolute timestamp, not a relative delay. The gateway uses it
+        when QoS is configured to defer instead of immediately reject.
         """
         current_time = self._clock.now_sec()
         next_allowed = current_time
@@ -152,7 +160,8 @@ class QoSRateControl:
         strat_state = self._qos_state[strategy_id]
 
         # Check symbol cooldown (uses per-symbol resolver)
-        symbol_cooldowns: dict[str, Any] = strat_state.get("symbol_cooldowns", {})
+        symbol_cooldowns: dict[str, Any] = strat_state.get(
+            "symbol_cooldowns", {})
         last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
         cooldown_duration = self._get_symbol_cooldown(symbol, strategy_id)
 
@@ -160,8 +169,10 @@ class QoSRateControl:
         next_allowed = max(next_allowed, cooldown_end)
 
         # Check rate limit window
-        symbol_intent_counts: dict[str, Any] = strat_state.get("symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(symbol, {"count": 0, "window_start": current_time})
+        symbol_intent_counts: dict[str, Any] = strat_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": current_time})
         window_start = float(intent_data.get("window_start", current_time))
         window_end: float = window_start + 60
         intent_count: int = int(intent_data.get("count", 0))
@@ -171,9 +182,10 @@ class QoSRateControl:
         return int(next_allowed * 1000)  # Convert to milliseconds
 
     def update_qos_state(self, symbol: str, strategy_id: str = "aurora") -> None:
-        """Update QoS state after making a decision.
+        """Advance cooldown and rate-window state after an accepted decision.
 
-        T2B-08: Uses injected Clock for deterministic testing.
+        This combined helper assumes the current strategy partition already has
+        the canonical QoS keys that the facade's default factory provides.
         """
         current_time = self._clock.now_sec()
 
@@ -186,10 +198,12 @@ class QoSRateControl:
         # Update rate limit counters
         symbol_intent_counts = strategy_state["symbol_intent_counts"]
         if symbol not in symbol_intent_counts:
-            symbol_intent_counts[symbol] = {"count": 0, "window_start": current_time}
+            symbol_intent_counts[symbol] = {
+                "count": 0, "window_start": current_time}
 
         intent_data: dict[str, Any] = symbol_intent_counts[symbol]
-        window_start: float = float(intent_data.get("window_start", current_time))
+        window_start: float = float(
+            intent_data.get("window_start", current_time))
         window_end: float = window_start + 60
 
         if current_time >= window_end:
@@ -205,10 +219,11 @@ class QoSRateControl:
     # ── Exposure Block ───────────────────────────────────────────────
 
     def handle_exposure_block(self, symbol: str, strategy_id: str = "aurora") -> None:
-        """Handle exposure block event by updating QoS state.
+        """Record that an exposure-related block happened for this partition.
 
-        T2B-08: Uses injected Clock for deterministic testing.
-        QOS-SPLIT-BRAIN-FIX: Now writes to strategy-partitioned state.
+        The actual exposure decision is made elsewhere; this helper only updates
+        the timestamp that ``qos_allow()`` later checks when exposure cooldowns
+        are in scope.
         """
         current_time = self._clock.now_sec()
         strat_state = self._qos_state[strategy_id]

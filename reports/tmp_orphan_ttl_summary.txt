@@ -1,0 +1,547 @@
+RID: rid-4c44c9b4e85b0009
+  lifecycle_line: 2
+  symbol: DOGEUSDT strategy_id: mean_reversion side: SHORT regime: LOW_VOLATILITY conf: 0.3253294824876364
+  intent_ts_ms: 1774905903621 order_id: 762701737 order_ts_ms: 1774905904336 fill_ts_ms: None close_ts_ms: 1774911904812 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774905903567 [shadow] line 6278 RESERVE_ENTRY status= order_id= why=
+    - 1774905903586 [shadow] line 6279 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774905903617 [shadow] line 6280 OPEN status= order_id= why=
+    - 1774905903620 [shadow] line 6281 OPEN status= order_id= why=
+    - 1774905903621 [order] line 40 ORDER_INTENT status= order_id= why=
+    - 1774905904325 [shadow] line 6284 UPSERT_OPEN status= order_id= why=
+    - 1774905904326 [shadow] line 6285 ATTACH_EXCHANGE_ID status= order_id=762701737 why=
+    - 1774905904335 [order] line 41 ORDER_PLACED status= order_id=762701737 why=
+    - 1774905904350 [shadow] line 6286 ORDER_PLACED status= order_id=762701737 why=
+
+RID: aurora_BTCUSDT_1774907700267
+  lifecycle_line: 3
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: LOW_VOLATILITY conf: 0.6803009551103433
+  intent_ts_ms: 1774907700345 order_id: 13012973969 order_ts_ms: 1774907701219 fill_ts_ms: 1774907703345 close_ts_ms: 1774911904812 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774907700278 [shadow] line 6935 RESERVE_ENTRY status= order_id= why=
+    - 1774907700297 [shadow] line 6936 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774907700338 [shadow] line 6937 OPEN status= order_id= why=
+    - 1774907700344 [shadow] line 6938 OPEN status= order_id= why=
+    - 1774907700346 [order] line 44 ORDER_INTENT status= order_id= why=
+    - 1774907700919 [order] line 45 ORDER_INTENT status= order_id= why=
+    - 1774907700922 [order] line 46 LIMIT_PRICE_ADJUSTED status= order_id= why=GTX_SPREAD_GUARD
+    - 1774907701200 [shadow] line 6940 UPSERT_OPEN status= order_id= why=
+    - 1774907701202 [shadow] line 6941 ATTACH_EXCHANGE_ID status= order_id=13012973969 why=
+    - 1774907701217 [order] line 47 ORDER_PLACED status= order_id=13012973969 why=
+    - 1774907701256 [shadow] line 6942 ORDER_PLACED status= order_id=13012973969 why=
+    - 1774907703253 [events] line 1 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-40f5940807aa why=websocket_update
+    - 1774907703256 [shadow] line 6943 MARK_TERMINAL status= order_id=13012973969 why=
+    - 1774907703261 [shadow] line 6944 TRADE_EXECUTED status= order_id=13012973969 why=
+    - 1774907703268 [shadow] line 6945 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13012973969 why=
+    - 1774907703342 [shadow] line 6948 TRADE_EXECUTED status= order_id=13012973969 why=
+
+RID: rid-2aec3be5c5b62d7d
+  lifecycle_line: 4
+  symbol: DOGEUSDT strategy_id: mean_reversion side: LONG regime: LOW_VOLATILITY conf: 0.3318183583029066
+  intent_ts_ms: 1774911904814 order_id: 762784661 order_ts_ms: 1774911905397 fill_ts_ms: None close_ts_ms: 1774918201030 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774911904759 [shadow] line 8464 RESERVE_ENTRY status= order_id= why=
+    - 1774911904783 [shadow] line 8465 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774911904808 [shadow] line 8466 OPEN status= order_id= why=
+    - 1774911904812 [shadow] line 8467 OPEN status= order_id= why=
+    - 1774911904814 [order] line 51 ORDER_INTENT status= order_id= why=
+    - 1774911905384 [shadow] line 8470 UPSERT_OPEN status= order_id= why=
+    - 1774911905385 [shadow] line 8471 ATTACH_EXCHANGE_ID status= order_id=762784661 why=
+    - 1774911905396 [order] line 52 ORDER_PLACED status= order_id=762784661 why=
+    - 1774911905419 [shadow] line 8472 ORDER_PLACED status= order_id=762784661 why=
+
+RID: aurora_ETHUSDT_1774914001604
+  lifecycle_line: 5
+  symbol: ETHUSDT strategy_id: aurora side: SHORT regime: TREND_DOWN conf: 0.8195930055345889
+  intent_ts_ms: 1774914001671 order_id: 8627862390 order_ts_ms: 1774914002520 fill_ts_ms: 1774914208913 close_ts_ms: 1774918201030 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774914001610 [shadow] line 9216 RESERVE_ENTRY status= order_id= why=
+    - 1774914001638 [shadow] line 9217 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774914001667 [shadow] line 9218 OPEN status= order_id= why=
+    - 1774914001670 [shadow] line 9219 OPEN status= order_id= why=
+    - 1774914001671 [order] line 61 ORDER_INTENT status= order_id= why=
+    - 1774914002218 [order] line 62 ORDER_INTENT status= order_id= why=
+    - 1774914002506 [shadow] line 9222 UPSERT_OPEN status= order_id= why=
+    - 1774914002507 [shadow] line 9223 ATTACH_EXCHANGE_ID status= order_id=8627862390 why=
+    - 1774914002519 [order] line 63 ORDER_PLACED status= order_id=8627862390 why=
+    - 1774914002553 [shadow] line 9224 ORDER_PLACED status= order_id=8627862390 why=
+    - 1774914003283 [shadow] line 9225 TRADE_EXECUTED status= order_id=8627862390 why=
+    - 1774914003287 [events] line 2 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b673510b0a2f why=websocket_update
+    - 1774914003287 [shadow] line 9226 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=8627862390 why=
+    - 1774914003326 [shadow] line 9229 TRADE_EXECUTED status= order_id=8627862390 why=
+    - 1774914007405 [events] line 3 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b673510b0a2f why=websocket_update
+    - 1774914007422 [shadow] line 9232 TRADE_EXECUTED status= order_id=8627862390 why=
+    - 1774914007426 [shadow] line 9233 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=8627862390 why=
+    - 1774914007475 [shadow] line 9236 TRADE_EXECUTED status= order_id=8627862390 why=
+    - 1774914208858 [shadow] line 9307 MARK_TERMINAL status= order_id=8627862390 why=
+    - 1774914208862 [shadow] line 9308 TRADE_EXECUTED status= order_id=8627862390 why=
+    - 1774914208866 [events] line 4 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-b673510b0a2f why=websocket_update
+    - 1774914208867 [shadow] line 9309 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=8627862390 why=
+    - 1774914208911 [shadow] line 9312 TRADE_EXECUTED status= order_id=8627862390 why=
+
+RID: rid-d866f7ca1e390571
+  lifecycle_line: 6
+  symbol: DOGEUSDT strategy_id: mean_reversion side: SHORT regime: LOW_VOLATILITY conf: 0.3340596788401214
+  intent_ts_ms: 1774918201032 order_id: 762849386 order_ts_ms: 1774918201667 fill_ts_ms: None close_ts_ms: 1774927504674 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774918200938 [shadow] line 10725 RESERVE_ENTRY status= order_id= why=
+    - 1774918200976 [shadow] line 10726 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774918201024 [shadow] line 10727 OPEN status= order_id= why=
+    - 1774918201028 [shadow] line 10728 OPEN status= order_id= why=
+    - 1774918201032 [order] line 75 ORDER_INTENT status= order_id= why=
+    - 1774918201653 [shadow] line 10731 UPSERT_OPEN status= order_id= why=
+    - 1774918201654 [shadow] line 10732 ATTACH_EXCHANGE_ID status= order_id=762849386 why=
+    - 1774918201666 [order] line 76 ORDER_PLACED status= order_id=762849386 why=
+    - 1774918201701 [shadow] line 10733 ORDER_PLACED status= order_id=762849386 why=
+
+RID: rid-d652490152b41863
+  lifecycle_line: 7
+  symbol: DOGEUSDT strategy_id: mean_reversion side: SHORT regime: LOW_VOLATILITY conf: 0.39731959209299417
+  intent_ts_ms: 1774920302887 order_id: 762870259 order_ts_ms: 1774920303546 fill_ts_ms: 1774920303623 close_ts_ms: 1774927504674 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774920302808 [shadow] line 11487 RESERVE_ENTRY status= order_id= why=
+    - 1774920302840 [shadow] line 11488 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774920302879 [shadow] line 11489 OPEN status= order_id= why=
+    - 1774920302882 [shadow] line 11490 OPEN status= order_id= why=
+    - 1774920302888 [order] line 83 ORDER_INTENT status= order_id= why=
+    - 1774920303524 [shadow] line 11493 UPSERT_OPEN status= order_id= why=
+    - 1774920303525 [shadow] line 11494 ATTACH_EXCHANGE_ID status= order_id=762870259 why=
+    - 1774920303530 [shadow] line 11495 ORDER_STATE_CHANGED status= order_id=762870259 why=
+    - 1774920303538 [events] line 5 ORDER_STATE_CHANGED status=NEW order_id=ENTRY-debf9ab8c7d2 why=websocket_update
+    - 1774920303538 [events] line 6 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-debf9ab8c7d2 why=websocket_update
+    - 1774920303545 [order] line 84 ORDER_PLACED status= order_id=762870259 why=
+    - 1774920303545 [shadow] line 11496 MARK_TERMINAL status= order_id=762870259 why=
+    - 1774920303548 [shadow] line 11497 TRADE_EXECUTED status= order_id=762870259 why=
+    - 1774920303553 [shadow] line 11498 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=762870259 why=
+    - 1774920303591 [shadow] line 11499 ORDER_PLACED status= order_id=762870259 why=
+    - 1774920303621 [shadow] line 11502 TRADE_EXECUTED status= order_id=762870259 why=
+
+RID: rid-9e015bd410455284
+  lifecycle_line: 8
+  symbol: DOGEUSDT strategy_id: mean_reversion side: LONG regime: MEAN_REVERSION conf: 0.30132898287965854
+  intent_ts_ms: 1774927504676 order_id: 762995235 order_ts_ms: 1774927505359 fill_ts_ms: None close_ts_ms: 1774931703665 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774927504584 [shadow] line 14109 RESERVE_ENTRY status= order_id= why=
+    - 1774927504621 [shadow] line 14110 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774927504671 [shadow] line 14111 OPEN status= order_id= why=
+    - 1774927504673 [shadow] line 14112 OPEN status= order_id= why=
+    - 1774927504676 [order] line 86 ORDER_INTENT status= order_id= why=
+    - 1774927505344 [shadow] line 14115 UPSERT_OPEN status= order_id= why=
+    - 1774927505346 [shadow] line 14116 ATTACH_EXCHANGE_ID status= order_id=762995235 why=
+    - 1774927505358 [order] line 87 ORDER_PLACED status= order_id=762995235 why=
+    - 1774927505395 [shadow] line 14117 ORDER_PLACED status= order_id=762995235 why=
+
+RID: aurora_BTCUSDT_1774931703505
+  lifecycle_line: 9
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.5581152708665025
+  intent_ts_ms: 1774931703667 order_id: 13015285371 order_ts_ms: 1774931704562 fill_ts_ms: 1774931752690 close_ts_ms: 1774938305351 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774931703514 [shadow] line 15610 RESERVE_ENTRY status= order_id= why=
+    - 1774931703583 [shadow] line 15611 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774931703656 [shadow] line 15612 OPEN status= order_id= why=
+    - 1774931703663 [shadow] line 15613 OPEN status= order_id= why=
+    - 1774931703667 [order] line 102 ORDER_INTENT status= order_id= why=
+    - 1774931704264 [order] line 103 ORDER_INTENT status= order_id= why=
+    - 1774931704267 [order] line 104 LIMIT_PRICE_ADJUSTED status= order_id= why=GTX_SPREAD_GUARD
+    - 1774931704544 [shadow] line 15616 UPSERT_OPEN status= order_id= why=
+    - 1774931704547 [shadow] line 15617 ATTACH_EXCHANGE_ID status= order_id=13015285371 why=
+    - 1774931704561 [order] line 105 ORDER_PLACED status= order_id=13015285371 why=
+    - 1774931704625 [shadow] line 15618 ORDER_PLACED status= order_id=13015285371 why=
+    - 1774931752620 [shadow] line 15635 MARK_TERMINAL status= order_id=13015285371 why=
+    - 1774931752625 [shadow] line 15636 TRADE_EXECUTED status= order_id=13015285371 why=
+    - 1774931752630 [shadow] line 15637 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13015285371 why=
+    - 1774931752641 [events] line 7 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-e5632c802655 why=websocket_update
+    - 1774931752689 [shadow] line 15640 TRADE_EXECUTED status= order_id=13015285371 why=
+
+RID: rid-d38a93e3c667b0d7
+  lifecycle_line: 10
+  symbol: DOGEUSDT strategy_id: mean_reversion side: LONG regime: LOW_VOLATILITY conf: 0.42653716638270095
+  intent_ts_ms: 1774933500711 order_id: 763098610 order_ts_ms: 1774933501375 fill_ts_ms: 1774933501450 close_ts_ms: 1774938305351 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774933500546 [shadow] line 16266 RESERVE_ENTRY status= order_id= why=
+    - 1774933500626 [shadow] line 16267 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774933500706 [shadow] line 16268 OPEN status= order_id= why=
+    - 1774933500710 [shadow] line 16269 OPEN status= order_id= why=
+    - 1774933500711 [order] line 108 ORDER_INTENT status= order_id= why=
+    - 1774933501357 [shadow] line 16272 UPSERT_OPEN status= order_id= why=
+    - 1774933501358 [shadow] line 16274 MARK_TERMINAL status= order_id= why=
+    - 1774933501359 [shadow] line 16273 ATTACH_EXCHANGE_ID status= order_id=763098610 why=
+    - 1774933501365 [shadow] line 16275 TRADE_EXECUTED status= order_id=763098610 why=
+    - 1774933501371 [shadow] line 16276 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=763098610 why=
+    - 1774933501372 [events] line 8 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-328e8f069cda why=websocket_update
+    - 1774933501373 [order] line 109 ORDER_PLACED status= order_id=763098610 why=
+    - 1774933501447 [shadow] line 16278 TRADE_EXECUTED status= order_id=763098610 why=
+    - 1774933501488 [shadow] line 16279 ORDER_PLACED status= order_id=763098610 why=
+
+RID: rid-e5adcc2a7d67ffcb
+  lifecycle_line: 11
+  symbol: DOGEUSDT strategy_id: mean_reversion side: LONG regime: LOW_VOLATILITY conf: 0.7169125077018723
+  intent_ts_ms: 1774938305354 order_id: 763146229 order_ts_ms: 1774938306004 fill_ts_ms: None close_ts_ms: 1774946703766 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774938305182 [shadow] line 17996 RESERVE_ENTRY status= order_id= why=
+    - 1774938305264 [shadow] line 17997 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774938305346 [shadow] line 17998 OPEN status= order_id= why=
+    - 1774938305350 [shadow] line 17999 OPEN status= order_id= why=
+    - 1774938305354 [order] line 115 ORDER_INTENT status= order_id= why=
+    - 1774938305987 [shadow] line 18002 UPSERT_OPEN status= order_id= why=
+    - 1774938305989 [shadow] line 18003 ATTACH_EXCHANGE_ID status= order_id=763146229 why=
+    - 1774938306003 [order] line 116 ORDER_PLACED status= order_id=763146229 why=
+    - 1774938306073 [shadow] line 18004 ORDER_PLACED status= order_id=763146229 why=
+
+RID: rid-d8cebaa4f1499864
+  lifecycle_line: 12
+  symbol: DOGEUSDT strategy_id: mean_reversion side: SHORT regime: LOW_VOLATILITY conf: 0.44872844108907073
+  intent_ts_ms: 1774940102012 order_id: 763184591 order_ts_ms: 1774940103154 fill_ts_ms: None close_ts_ms: 1774946703766 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774940101885 [shadow] line 18639 RESERVE_ENTRY status= order_id= why=
+    - 1774940101943 [shadow] line 18640 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774940102007 [shadow] line 18641 OPEN status= order_id= why=
+    - 1774940102012 [shadow] line 18642 OPEN status= order_id= why=
+    - 1774940102013 [order] line 121 ORDER_INTENT status= order_id= why=
+    - 1774940103135 [shadow] line 18645 UPSERT_OPEN status= order_id= why=
+    - 1774940103137 [shadow] line 18646 ATTACH_EXCHANGE_ID status= order_id=763184591 why=
+    - 1774940103152 [order] line 122 ORDER_PLACED status= order_id=763184591 why=
+    - 1774940103202 [shadow] line 18647 ORDER_PLACED status= order_id=763184591 why=
+
+RID: rid-cc0c2230ed591c29
+  lifecycle_line: 13
+  symbol: DOGEUSDT strategy_id: mean_reversion side: LONG regime: LOW_VOLATILITY conf: 0.38875820439564973
+  intent_ts_ms: 1774946703769 order_id: 763343279 order_ts_ms: 1774946704455 fill_ts_ms: None close_ts_ms: 1774956301464 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774946703595 [shadow] line 21008 RESERVE_ENTRY status= order_id= why=
+    - 1774946703670 [shadow] line 21009 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774946703761 [shadow] line 21010 OPEN status= order_id= why=
+    - 1774946703765 [shadow] line 21011 OPEN status= order_id= why=
+    - 1774946703770 [order] line 150 ORDER_INTENT status= order_id= why=
+    - 1774946704442 [shadow] line 21015 UPSERT_OPEN status= order_id= why=
+    - 1774946704443 [shadow] line 21016 ATTACH_EXCHANGE_ID status= order_id=763343279 why=
+    - 1774946704455 [order] line 151 ORDER_PLACED status= order_id=763343279 why=
+    - 1774946704589 [shadow] line 21018 ORDER_PLACED status= order_id=763343279 why=
+
+RID: aurora_BTCUSDT_1774956301701
+  lifecycle_line: 14
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: TREND_DOWN conf: 0.42295250781307525
+  intent_ts_ms: 1774956301869 order_id: 13017518957 order_ts_ms: 1774956302980 fill_ts_ms: 1774956315667 close_ts_ms: 1774971901131 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774956301709 [shadow] line 24459 RESERVE_ENTRY status= order_id= why=
+    - 1774956301795 [shadow] line 24460 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774956301863 [shadow] line 24461 OPEN status= order_id= why=
+    - 1774956301868 [shadow] line 24462 OPEN status= order_id= why=
+    - 1774956301870 [order] line 160 ORDER_INTENT status= order_id= why=
+    - 1774956302615 [order] line 163 ORDER_INTENT status= order_id= why=
+    - 1774956302617 [order] line 164 LIMIT_PRICE_ADJUSTED status= order_id= why=GTX_SPREAD_GUARD
+    - 1774956302966 [shadow] line 24468 UPSERT_OPEN status= order_id= why=
+    - 1774956302967 [shadow] line 24469 ATTACH_EXCHANGE_ID status= order_id=13017518957 why=
+    - 1774956302979 [order] line 165 ORDER_PLACED status= order_id=13017518957 why=
+    - 1774956303074 [shadow] line 24471 ORDER_PLACED status= order_id=13017518957 why=
+    - 1774956315528 [events] line 9 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-8cc801da9c19 why=websocket_update
+    - 1774956315538 [shadow] line 24477 MARK_TERMINAL status= order_id=13017518957 why=
+    - 1774956315542 [shadow] line 24478 TRADE_EXECUTED status= order_id=13017518957 why=
+    - 1774956315545 [shadow] line 24479 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017518957 why=
+    - 1774956315665 [shadow] line 24482 TRADE_EXECUTED status= order_id=13017518957 why=
+
+RID: aurora_SOLUSDT_1774956301297
+  lifecycle_line: 15
+  symbol: SOLUSDT strategy_id: aurora side: SHORT regime: TREND_DOWN conf: 0.85
+  intent_ts_ms: 1774956301474 order_id: 1833777569 order_ts_ms: 1774956302358 fill_ts_ms: 1774956384550 close_ts_ms: 1774971901131 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774956301303 [shadow] line 24455 RESERVE_ENTRY status= order_id= why=
+    - 1774956301378 [shadow] line 24456 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774956301458 [shadow] line 24457 OPEN status= order_id= why=
+    - 1774956301462 [shadow] line 24458 OPEN status= order_id= why=
+    - 1774956301477 [order] line 158 ORDER_INTENT status= order_id= why=
+    - 1774956302012 [order] line 161 ORDER_INTENT status= order_id= why=
+    - 1774956302345 [shadow] line 24464 UPSERT_OPEN status= order_id= why=
+    - 1774956302346 [shadow] line 24465 ATTACH_EXCHANGE_ID status= order_id=1833777569 why=
+    - 1774956302357 [order] line 162 ORDER_PLACED status= order_id=1833777569 why=
+    - 1774956302473 [shadow] line 24467 ORDER_PLACED status= order_id=1833777569 why=
+    - 1774956384446 [shadow] line 24507 MARK_TERMINAL status= order_id=1833777569 why=
+    - 1774956384449 [shadow] line 24508 TRADE_EXECUTED status= order_id=1833777569 why=
+    - 1774956384451 [events] line 10 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-33e08d1426ac why=websocket_update
+    - 1774956384452 [shadow] line 24509 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=1833777569 why=
+    - 1774956384547 [shadow] line 24512 TRADE_EXECUTED status= order_id=1833777569 why=
+
+RID: aurora_SOLUSDT_1774971900901
+  lifecycle_line: 16
+  symbol: SOLUSDT strategy_id: aurora side: SHORT regime: TREND_DOWN conf: 0.85
+  intent_ts_ms: 1774971901132 order_id: 1833855044 order_ts_ms: 1774971902107 fill_ts_ms: 1774972314853 close_ts_ms: 1774978203161 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774971900916 [shadow] line 30073 RESERVE_ENTRY status= order_id= why=
+    - 1774971901013 [shadow] line 30074 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774971901127 [shadow] line 30075 OPEN status= order_id= why=
+    - 1774971901130 [shadow] line 30076 OPEN status= order_id= why=
+    - 1774971901132 [order] line 170 ORDER_INTENT status= order_id= why=
+    - 1774971901754 [order] line 171 ORDER_INTENT status= order_id= why=
+    - 1774971902093 [shadow] line 30077 UPSERT_OPEN status= order_id= why=
+    - 1774971902094 [shadow] line 30078 ATTACH_EXCHANGE_ID status= order_id=1833855044 why=
+    - 1774971902105 [order] line 172 ORDER_PLACED status= order_id=1833855044 why=
+    - 1774971902239 [shadow] line 30079 ORDER_PLACED status= order_id=1833855044 why=
+    - 1774972314751 [shadow] line 30226 MARK_TERMINAL status= order_id=1833855044 why=
+    - 1774972314753 [shadow] line 30227 TRADE_EXECUTED status= order_id=1833855044 why=
+    - 1774972314757 [shadow] line 30228 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=1833855044 why=
+    - 1774972314795 [events] line 11 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-29733005b90c why=websocket_update
+    - 1774972314852 [shadow] line 30231 TRADE_EXECUTED status= order_id=1833855044 why=
+
+RID: aurora_ETHUSDT_1774978202964
+  lifecycle_line: 17
+  symbol: ETHUSDT strategy_id: aurora side: SHORT regime: HIGH_VOLATILITY conf: 0.4944737658477949
+  intent_ts_ms: 1774978203163 order_id: 8629488816 order_ts_ms: 1774978204263 fill_ts_ms: 1774978356692 close_ts_ms: 1774982101326 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774978202968 [shadow] line 32315 RESERVE_ENTRY status= order_id= why=
+    - 1774978203055 [shadow] line 32316 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774978203157 [shadow] line 32317 OPEN status= order_id= why=
+    - 1774978203161 [shadow] line 32318 OPEN status= order_id= why=
+    - 1774978203163 [order] line 186 ORDER_INTENT status= order_id= why=
+    - 1774978203904 [order] line 187 ORDER_INTENT status= order_id= why=
+    - 1774978204247 [shadow] line 32319 UPSERT_OPEN status= order_id= why=
+    - 1774978204249 [shadow] line 32320 ATTACH_EXCHANGE_ID status= order_id=8629488816 why=
+    - 1774978204261 [order] line 188 ORDER_PLACED status= order_id=8629488816 why=
+    - 1774978204397 [shadow] line 32322 ORDER_PLACED status= order_id=8629488816 why=
+    - 1774978356554 [shadow] line 32376 MARK_TERMINAL status= order_id=8629488816 why=
+    - 1774978356558 [shadow] line 32377 TRADE_EXECUTED status= order_id=8629488816 why=
+    - 1774978356565 [shadow] line 32378 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=8629488816 why=
+    - 1774978356603 [events] line 12 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-d0df03891352 why=websocket_update
+    - 1774978356691 [shadow] line 32381 TRADE_EXECUTED status= order_id=8629488816 why=
+
+RID: aurora_ETHUSDT_1774982101125
+  lifecycle_line: 18
+  symbol: ETHUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.824102531120249
+  intent_ts_ms: 1774982101327 order_id: 8629520730 order_ts_ms: 1774982102295 fill_ts_ms: 1774982240521 close_ts_ms: 1774986901086 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774982101132 [shadow] line 33709 RESERVE_ENTRY status= order_id= why=
+    - 1774982101221 [shadow] line 33710 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774982101320 [shadow] line 33711 OPEN status= order_id= why=
+    - 1774982101325 [shadow] line 33712 OPEN status= order_id= why=
+    - 1774982101328 [order] line 193 ORDER_INTENT status= order_id= why=
+    - 1774982101954 [order] line 194 ORDER_INTENT status= order_id= why=
+    - 1774982102281 [shadow] line 33718 UPSERT_OPEN status= order_id= why=
+    - 1774982102283 [shadow] line 33719 ATTACH_EXCHANGE_ID status= order_id=8629520730 why=
+    - 1774982102294 [order] line 195 ORDER_PLACED status= order_id=8629520730 why=
+    - 1774982102409 [shadow] line 33720 ORDER_PLACED status= order_id=8629520730 why=
+    - 1774982240415 [shadow] line 33767 MARK_TERMINAL status= order_id=8629520730 why=
+    - 1774982240418 [shadow] line 33768 TRADE_EXECUTED status= order_id=8629520730 why=
+    - 1774982240423 [shadow] line 33769 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=8629520730 why=
+    - 1774982240443 [events] line 13 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-664860e49a4c why=websocket_update
+    - 1774982240518 [shadow] line 33772 TRADE_EXECUTED status= order_id=8629520730 why=
+
+RID: aurora_BTCUSDT_1774986900860
+  lifecycle_line: 19
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.535576592494976
+  intent_ts_ms: 1774986901087 order_id: 13017828118 order_ts_ms: 1774986902093 fill_ts_ms: 1774987320732 close_ts_ms: 1774991109749 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774986900867 [shadow] line 35412 RESERVE_ENTRY status= order_id= why=
+    - 1774986900957 [shadow] line 35413 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774986901082 [shadow] line 35414 OPEN status= order_id= why=
+    - 1774986901085 [shadow] line 35415 OPEN status= order_id= why=
+    - 1774986901088 [order] line 201 ORDER_INTENT status= order_id= why=
+    - 1774986901750 [order] line 202 ORDER_INTENT status= order_id= why=
+    - 1774986902078 [shadow] line 35420 UPSERT_OPEN status= order_id= why=
+    - 1774986902080 [shadow] line 35421 ATTACH_EXCHANGE_ID status= order_id=13017828118 why=
+    - 1774986902092 [order] line 203 ORDER_PLACED status= order_id=13017828118 why=
+    - 1774986902291 [shadow] line 35422 ORDER_PLACED status= order_id=13017828118 why=
+    - 1774987320585 [shadow] line 35567 MARK_TERMINAL status= order_id=13017828118 why=
+    - 1774987320589 [shadow] line 35568 TRADE_EXECUTED status= order_id=13017828118 why=
+    - 1774987320595 [shadow] line 35569 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017828118 why=
+    - 1774987320639 [events] line 14 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-ca3bf3c4f4e1 why=websocket_update
+    - 1774987320731 [shadow] line 35572 TRADE_EXECUTED status= order_id=13017828118 why=
+
+RID: aurora_SOLUSDT_1774991109696
+  lifecycle_line: 20
+  symbol: SOLUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.706606373449315
+  intent_ts_ms: 1774991109749 order_id: 1833946641 order_ts_ms: 1774991110725 fill_ts_ms: 1774991168597 close_ts_ms: 1775013603459 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774991109699 [shadow] line 36895 RESERVE_ENTRY status= order_id= why=
+    - 1774991109718 [shadow] line 36896 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774991109745 [shadow] line 36897 OPEN status= order_id= why=
+    - 1774991109748 [shadow] line 36898 OPEN status= order_id= why=
+    - 1774991109749 [order] line 229 ORDER_INTENT status= order_id= why=
+    - 1774991110379 [order] line 230 ORDER_INTENT status= order_id= why=
+    - 1774991110712 [shadow] line 36902 UPSERT_OPEN status= order_id= why=
+    - 1774991110713 [shadow] line 36903 ATTACH_EXCHANGE_ID status= order_id=1833946641 why=
+    - 1774991110724 [order] line 231 ORDER_PLACED status= order_id=1833946641 why=
+    - 1774991110746 [shadow] line 36904 ORDER_PLACED status= order_id=1833946641 why=
+    - 1774991168560 [shadow] line 36925 MARK_TERMINAL status= order_id=1833946641 why=
+    - 1774991168563 [shadow] line 36926 TRADE_EXECUTED status= order_id=1833946641 why=
+    - 1774991168566 [shadow] line 36927 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=1833946641 why=
+    - 1774991168596 [shadow] line 36930 TRADE_EXECUTED status= order_id=1833946641 why=
+    - 1774991168611 [events] line 15 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-d0d11a3def73 why=websocket_update
+
+RID: aurora_BTCUSDT_1774992000648
+  lifecycle_line: 21
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.7833148900691568
+  intent_ts_ms: 1774992000695 order_id: 13017864483 order_ts_ms: 1774992001663 fill_ts_ms: 1774992034304 close_ts_ms: 1775013603459 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774992000651 [shadow] line 37233 RESERVE_ENTRY status= order_id= why=
+    - 1774992000671 [shadow] line 37234 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774992000691 [shadow] line 37235 OPEN status= order_id= why=
+    - 1774992000695 [shadow] line 37236 OPEN status= order_id= why=
+    - 1774992000696 [order] line 239 ORDER_INTENT status= order_id= why=
+    - 1774992001304 [order] line 240 ORDER_INTENT status= order_id= why=
+    - 1774992001306 [order] line 241 LIMIT_PRICE_ADJUSTED status= order_id= why=GTX_SPREAD_GUARD
+    - 1774992001651 [shadow] line 37239 UPSERT_OPEN status= order_id= why=
+    - 1774992001652 [shadow] line 37240 ATTACH_EXCHANGE_ID status= order_id=13017864483 why=
+    - 1774992001662 [order] line 242 ORDER_PLACED status= order_id=13017864483 why=
+    - 1774992001681 [shadow] line 37241 ORDER_PLACED status= order_id=13017864483 why=
+    - 1774992034271 [shadow] line 37254 MARK_TERMINAL status= order_id=13017864483 why=
+    - 1774992034273 [shadow] line 37255 TRADE_EXECUTED status= order_id=13017864483 why=
+    - 1774992034276 [shadow] line 37256 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017864483 why=
+    - 1774992034303 [events] line 16 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-c575f562e780 why=websocket_update
+    - 1774992034303 [shadow] line 37259 TRADE_EXECUTED status= order_id=13017864483 why=
+
+RID: aurora_BTCUSDT_1774994703487
+  lifecycle_line: 22
+  symbol: BTCUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.8141249074544116
+  intent_ts_ms: 1774994703568 order_id: 13017893905 order_ts_ms: 1774994704547 fill_ts_ms: 1774994716731 close_ts_ms: 1775013603459 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1774994703494 [shadow] line 38223 RESERVE_ENTRY status= order_id= why=
+    - 1774994703527 [shadow] line 38224 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1774994703563 [shadow] line 38225 OPEN status= order_id= why=
+    - 1774994703566 [shadow] line 38226 OPEN status= order_id= why=
+    - 1774994703568 [order] line 249 ORDER_INTENT status= order_id= why=
+    - 1774994704190 [order] line 250 ORDER_INTENT status= order_id= why=
+    - 1774994704530 [shadow] line 38229 UPSERT_OPEN status= order_id= why=
+    - 1774994704532 [shadow] line 38230 ATTACH_EXCHANGE_ID status= order_id=13017893905 why=
+    - 1774994704546 [order] line 251 ORDER_PLACED status= order_id=13017893905 why=
+    - 1774994704576 [shadow] line 38231 ORDER_PLACED status= order_id=13017893905 why=
+    - 1774994705528 [shadow] line 38232 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994705533 [shadow] line 38233 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994705558 [shadow] line 38236 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994705575 [shadow] line 38237 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994705577 [shadow] line 38238 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994705599 [events] line 17 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994705606 [shadow] line 38241 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994705641 [events] line 18 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706001 [shadow] line 38244 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706005 [shadow] line 38245 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994706028 [shadow] line 38248 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706057 [events] line 19 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706142 [shadow] line 38249 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706145 [shadow] line 38250 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994706167 [shadow] line 38253 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706210 [events] line 20 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706308 [events] line 21 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706387 [events] line 22 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706387 [events] line 23 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706485 [events] line 24 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994706490 [shadow] line 38254 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706493 [shadow] line 38255 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994706866 [shadow] line 38258 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706874 [shadow] line 38259 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706877 [shadow] line 38260 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994706901 [shadow] line 38263 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706910 [shadow] line 38264 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706914 [shadow] line 38265 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994706981 [shadow] line 38268 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706990 [shadow] line 38269 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994706993 [shadow] line 38270 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994707014 [shadow] line 38273 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707175 [shadow] line 38274 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707180 [shadow] line 38275 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994707215 [events] line 25 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994707233 [shadow] line 38278 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707396 [shadow] line 38279 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707402 [shadow] line 38280 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994707443 [shadow] line 38283 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707459 [events] line 26 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994707502 [shadow] line 38284 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994707507 [shadow] line 38285 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994707539 [events] line 27 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994707547 [shadow] line 38288 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994708009 [shadow] line 38289 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994708014 [shadow] line 38290 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994708055 [shadow] line 38293 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994708071 [events] line 28 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994708839 [shadow] line 38294 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994708841 [shadow] line 38295 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994708879 [shadow] line 38298 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994708891 [events] line 29 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994709607 [shadow] line 38299 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994709612 [shadow] line 38300 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994709638 [shadow] line 38303 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994709651 [events] line 30 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994710005 [shadow] line 38304 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994710011 [shadow] line 38305 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994710044 [shadow] line 38308 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994710051 [events] line 31 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994710737 [shadow] line 38309 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994710741 [shadow] line 38310 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994710779 [shadow] line 38313 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994710791 [events] line 32 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994711588 [shadow] line 38316 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994711592 [shadow] line 38317 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994711626 [shadow] line 38320 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994711651 [events] line 33 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994711733 [shadow] line 38321 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994711738 [shadow] line 38322 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994711777 [shadow] line 38325 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994711799 [events] line 34 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994711950 [shadow] line 38326 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994711957 [shadow] line 38327 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994711993 [shadow] line 38330 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994712011 [events] line 35 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994712690 [shadow] line 38331 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994712696 [shadow] line 38332 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994712736 [shadow] line 38335 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994712757 [events] line 36 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994712836 [shadow] line 38336 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994712840 [shadow] line 38337 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994712881 [shadow] line 38340 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994712891 [events] line 37 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994713542 [shadow] line 38341 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994713548 [shadow] line 38342 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994713583 [shadow] line 38345 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994713587 [events] line 38 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994714050 [shadow] line 38346 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714056 [shadow] line 38347 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994714075 [events] line 39 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994714093 [shadow] line 38350 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714262 [shadow] line 38351 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714268 [shadow] line 38352 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994714308 [shadow] line 38355 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714311 [events] line 40 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994714580 [shadow] line 38356 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714585 [shadow] line 38357 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994714621 [shadow] line 38360 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994714635 [events] line 41 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994715520 [shadow] line 38361 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994715525 [shadow] line 38362 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994715569 [shadow] line 38365 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994715571 [events] line 42 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994715953 [shadow] line 38366 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994715957 [shadow] line 38367 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994715996 [shadow] line 38370 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716003 [events] line 43 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994716048 [shadow] line 38371 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716054 [shadow] line 38372 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994716087 [events] line 44 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994716096 [shadow] line 38375 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716608 [shadow] line 38376 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716614 [shadow] line 38377 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994716643 [events] line 45 ORDER_STATE_CHANGED status=PARTIALLY_FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994716643 [events] line 46 ORDER_STATE_CHANGED status=FILLED order_id=ENTRY-b48ac968e4eb why=websocket_update
+    - 1774994716670 [shadow] line 38380 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716682 [shadow] line 38381 MARK_TERMINAL status= order_id=13017893905 why=
+    - 1774994716684 [shadow] line 38382 TRADE_EXECUTED status= order_id=13017893905 why=
+    - 1774994716689 [shadow] line 38383 TRADE_EXECUTED_WARM_STATE_MISS status= order_id=13017893905 why=
+    - 1774994716729 [shadow] line 38386 TRADE_EXECUTED status= order_id=13017893905 why=
+
+RID: aurora_ETHUSDT_1775013603304
+  lifecycle_line: 23
+  symbol: ETHUSDT strategy_id: aurora side: SHORT regime: TREND_UP conf: 0.49950148543962675
+  intent_ts_ms: 1775013603460 order_id: 8629777020 order_ts_ms: 1775013605466 fill_ts_ms: None close_ts_ms: 1775023503441 status: ORPHANED_TTL close_reason: TTL_EXPIRED_3600s
+  timeline:
+    - 1775013603312 [shadow] line 45173 RESERVE_ENTRY status= order_id= why=
+    - 1775013603377 [shadow] line 45174 TRADE_INTENT_PROPOSED status= order_id= why=
+    - 1775013603453 [shadow] line 45175 OPEN status= order_id= why=
+    - 1775013603457 [shadow] line 45176 OPEN status= order_id= why=
+    - 1775013603461 [order] line 253 ORDER_INTENT status= order_id= why=
+    - 1775013604640 [order] line 254 ORDER_INTENT status= order_id= why=
+    - 1775013605451 [shadow] line 45182 UPSERT_OPEN status= order_id= why=
+    - 1775013605453 [shadow] line 45183 ATTACH_EXCHANGE_ID status= order_id=8629777020 why=
+    - 1775013605465 [order] line 255 ORDER_PLACED status= order_id=8629777020 why=
+    - 1775013605536 [shadow] line 45184 ORDER_PLACED status= order_id=8629777020 why=
+    - 1775014805603 [order] line 257 ORDER_TIMEOUT status=NRR-019 order_id=8629777020 why=Order timeout: fill_timeout
+    - 1775014806282 [shadow] line 45611 MARK_TERMINAL status= order_id=8629777020 why=
+    - 1775014806288 [shadow] line 45612 ORDER_STATE_CHANGED status= order_id=8629777020 why=
+    - 1775014806312 [order] line 258 ORDER_CANCELLED status= order_id=8629777020 why=timeout_cancellation
+    - 1775014806343 [events] line 47 ORDER_STATE_CHANGED status=CANCELED order_id=ENTRY-6f353f137a09 why=websocket_update

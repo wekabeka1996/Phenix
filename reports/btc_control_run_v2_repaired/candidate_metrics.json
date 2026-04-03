@@ -1,0 +1,25 @@
+{
+  "input_source": "recorder-features-v2",
+  "evidence_tier": "production-aligned",
+  "symbols": {
+    "BTCUSDT": {
+      "candidate_present": false,
+      "quantile": null,
+      "surface": null,
+      "train": null,
+      "validation": null,
+      "train_guardrails_ok": false,
+      "validation_guardrails_ok": false,
+      "guardrail_failures": [
+        "Current live signal threshold resolves via decision.signal_threshold; candidate emission remains limited to assets.<SYMBOL>.signal_threshold.value and is therefore disabled in this mode."
+      ],
+      "candidate_blockers": [
+        "Current live signal threshold resolves via decision.signal_threshold; candidate emission remains limited to assets.<SYMBOL>.signal_threshold.value and is therefore disabled in this mode."
+      ],
+      "warnings": [
+        "Sampled feature-log keys for BTCUSDT expose no explicit timestamp field; recorder remains the only auditable time axis.",
+        "Current live signal threshold resolves via decision.signal_threshold; candidate emission remains limited to assets.<SYMBOL>.signal_threshold.value and is therefore disabled in this mode."
+      ]
+    }
+  }
+}

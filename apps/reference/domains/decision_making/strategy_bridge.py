@@ -1,26 +1,10 @@
-"""
-Strategy Bridge — Decision Making re-export facade.
+"""Sanctioned DecisionMaking-facing facade for FE-hosted strategy artifacts.
 
-FE-DM-BOUNDARY-STABILIZATION (2026-03-15):
-
-These strategy modules live in feature_engineering for historical reasons
-but are semantically owned by decision_making. This facade provides
-the sanctioned DM-facing import path.
-
-DM production code MUST import strategy artifacts through this bridge,
-NOT directly from apps.reference.domains.feature_engineering submodules.
-
-Test code may still import directly from FE during the transition period.
-A future migration package will physically move the files to DM and
-convert this bridge into a backward-compatibility shim.
-
-Canonical imports:
-    from apps.reference.domains.decision_making.strategy_bridge import (
-        MeanReversion1mStrategy, MRSignal, MRSignalType, MRStrategyConfig,
-        MDAMRStrategyV11, MDAMRSignal,
-        FlatRegime, FlatRegimeThresholds, map_to_flat_regime,
-        is_flat_regime, get_mr_parameters, MRParameters,
-    )
+The strategy cores below still live under feature_engineering for historical
+reasons, but current DecisionMaking contracts treat this module as the only
+approved production import surface. Keeping the boundary explicit here lets
+guardrail tests detect accidental direct FE imports from the rest of the DM
+package while the physical file move is still pending.
 """
 
 # ── Mean Reversion Strategy ────────────────────────────────────────────
@@ -50,6 +34,7 @@ from apps.reference.domains.feature_engineering.regime_mapping import (
     MRParameters,
 )
 
+# Keep the public bridge surface explicit so boundary tests can detect drift.
 __all__ = [
     # MR Strategy
     "MeanReversion1mStrategy",

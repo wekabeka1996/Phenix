@@ -1,8 +1,11 @@
-"""
-EntryPlan DTO - Calculates entry, stop-loss, and take-profit prices based on ATR and OBI.
+"""Entry-plan calculation helpers for decision-making.
 
-EP-01.2-INT: Pure computation logic, no I/O.
-All parameters come from config (no magic constants).
+This module owns two related contracts:
+1. Pure ATR/OBI-based computation of entry, stop-loss, and take-profit prices.
+2. Strategy-gateway fallback logic that fills missing SL/TP from the validated
+    decision-making domain config.
+
+The module performs no I/O and accepts all runtime policy inputs explicitly.
 """
 
 from __future__ import annotations
@@ -22,8 +25,9 @@ class ObiMissingPolicy(str, Enum):
 class EntryPlanParams:
     """
     Configuration parameters for EntryPlan computation.
-    
-    All loaded from Pydantic config at runtime (no hardcoded defaults in logic).
+
+    Runtime callers are expected to hydrate these values from the validated
+    decision-making domain config before invoking EntryPlan.
     """
     atr_period: int  # For documentation/tracing (e.g., 14)
     entry_k_atr: float  # Entry offset multiplier
@@ -46,7 +50,7 @@ class EntryPlanParams:
 class EntryPlanResult:
     """
     Result of EntryPlan computation.
-    
+
     All prices are Decimal strings for schema compliance.
     """
     entry_price: str
@@ -87,7 +91,7 @@ def _to_decimal(value: Union[str, float, int, Decimal, None]) -> Optional[Decima
 class EntryPlan:
     """
     Computes entry, stop-loss, and take-profit prices based on ATR and OBI.
-    
+
     Formulas (deterministic):
     - Stop Loss (LONG): ref_price - sl_k_atr * atr
     - Stop Loss (SHORT): ref_price + sl_k_atr * atr
@@ -96,23 +100,23 @@ class EntryPlan:
     - Entry Offset: entry_k_atr * atr * obi_multiplier
     - Entry (LONG): ref_price - entry_offset (buy lower)
     - Entry (SHORT): ref_price + entry_offset (sell higher)
-    
+
     OBI Modulation:
     - raw_mult = 1 + obi_weight * obi_factor
     - obi_factor for LONG: -obi (bullish OBI → smaller offset → closer to market)
     - obi_factor for SHORT: +obi (bullish OBI → larger offset → more cautious)
     - Final mult = clamp(raw_mult, obi_mod_clamp_min, obi_mod_clamp_max)
     """
-    
+
     def __init__(self, params: EntryPlanParams):
         """
         Initialize EntryPlan with config parameters.
-        
+
         Args:
             params: EntryPlanParams from config (strict, no fallbacks)
         """
         self.params = params
-    
+
     @staticmethod
     def validate_inputs(
         side: str,
@@ -122,22 +126,22 @@ class EntryPlan:
         params: EntryPlanParams,
     ) -> tuple[bool, Optional[str]]:
         """
-        Validate inputs for EntryPlan computation (fail-closed).
-        
+        Validate inputs for EntryPlan computation.
+
+        When ATR is optional, ``None`` and ``0`` are allowed soft-start inputs,
+        but malformed or negative ATR values are still rejected explicitly.
+
         Returns:
             Tuple of (is_valid, error_reason)
         """
-        # Validate side
         side_upper = str(side).upper() if side else ""
         if side_upper not in ("BUY", "SELL", "LONG", "SHORT"):
             return False, f"ENTRY_PLAN_INVALID_SIDE:{side}"
-        
-        # Validate ref_price
+
         ref_dec = _to_decimal(ref_price)
         if ref_dec is None or ref_dec <= 0:
             return False, f"ENTRY_PLAN_INVALID_REF_PRICE:{ref_price}"
-        
-        # Validate ATR (fail-closed if require_atr=True)
+
         if params.require_atr:
             if not atr_ready:
                 return False, "ENTRY_PLAN_ATR_NOT_READY"
@@ -145,14 +149,15 @@ class EntryPlan:
             if atr_dec is None or atr_dec <= 0:
                 return False, f"ENTRY_PLAN_INVALID_ATR:{atr}"
         else:
-            # Even if not required, if provided it must be valid
+            # Soft-start mode accepts a missing ATR, but an explicitly provided
+            # ATR must still parse cleanly and may not be negative.
             if atr is not None:
                 atr_dec = _to_decimal(atr)
-                if atr_dec is not None and atr_dec <= 0:
+                if atr_dec is None or atr_dec < 0:
                     return False, f"ENTRY_PLAN_INVALID_ATR:{atr}"
-        
+
         return True, None
-    
+
     def compute(
         self,
         side: str,
@@ -165,138 +170,121 @@ class EntryPlan:
     ) -> EntryPlanResult:
         """
         Compute entry, stop-loss, and take-profit prices.
-        
-        DM-CRITICAL-PATCHES-02: Fail-closed for ATR, safety guard for zero offsets.
-        
+
         Args:
             side: Trade direction ("BUY"/"LONG" or "SELL"/"SHORT")
             ref_price: Reference price (typically bar close)
-            atr: Average True Range value (can be None if require_atr=False)
+            atr: Average True Range value. ``None`` is allowed only when
+                require_atr is False.
             obi: Order Book Imbalance [-1, 1] or None
             pillar_confidence: Confidence from pillars [0, 1] (optional)
             tick_size: Minimum price increment for safety floor (optional)
-            
+
         Returns:
             EntryPlanResult with all computed prices
-            
+
         Raises:
             ValueError: If inputs are invalid (should pre-validate)
         """
-        # Normalize side
         side_upper = str(side).upper()
         is_long = side_upper in ("BUY", "LONG")
-        
-        # Convert to Decimal
+
         ref_dec = _to_decimal(ref_price)
         if ref_dec is None:
             raise ValueError(f"Invalid ref_price: {ref_price}")
-        
-        # DM-CRITICAL-PATCHES-02: Fail-closed ATR handling
+
         atr_dec = _to_decimal(atr)
         if atr_dec is None:
             if self.params.require_atr:
-                # Fail-closed: ATR required but missing
-                raise ValueError("ENTRYPLAN_ATR_MISSING: ATR is None but require_atr=True")
+                raise ValueError(
+                    "ENTRYPLAN_ATR_MISSING: ATR is None but require_atr=True")
             else:
-                # Soft-start: use ATR=0 (will apply safety floor below)
+                # Soft-start keeps the contract explicit: missing ATR becomes a
+                # zero-distance input and the price safety floors still apply.
                 atr_dec = Decimal("0")
         elif atr_dec < 0:
             raise ValueError(f"Invalid ATR (negative): {atr}")
-        
-        # ATR=0 is now allowed when require_atr=False (soft-start)
-        
+
         obi_dec = _to_decimal(obi)
-        
-        # === OBI Modulation ===
+
         obi_multiplier = 1.0
         obi_policy_applied = False
-        
+
         if obi_dec is None:
-            # Apply neutral policy (EXPLICIT, not silent!)
             if self.params.obi_missing_policy == ObiMissingPolicy.NEUTRAL:
                 obi_multiplier = 1.0
                 obi_policy_applied = True
         else:
-            # Compute OBI factor based on side
-            # LONG: bullish OBI (positive) → want closer to market → smaller offset
-            # SHORT: bullish OBI (positive) → want more cautious → larger offset
             obi_float = float(obi_dec)
-            
+
             if is_long:
-                obi_factor = -obi_float  # Bullish OBI → negative factor → smaller mult
+                obi_factor = -obi_float
             else:
-                obi_factor = obi_float  # Bullish OBI → positive factor → larger mult
-            
+                obi_factor = obi_float
+
             raw_mult = 1.0 + self.params.obi_weight * obi_factor
-            
-            # SAFETY: Clamp to prevent taker drift
+
             obi_multiplier = _clamp(
                 raw_mult,
                 self.params.obi_mod_clamp_min,
                 self.params.obi_mod_clamp_max,
             )
-        
-        # === Compute Prices ===
+
         atr_float = float(atr_dec)
         ref_float = float(ref_dec)
-        
-        # DM-CRITICAL-PATCHES-02: Safety floor for tick_size
-        # If tick_size provided, use as minimum offset floor
-        # Otherwise use ref_price * 0.0001 (1 bp) as emergency floor
+
+        # The minimum offset floor prevents degenerate zero-distance SL/TP when
+        # ATR is unavailable or extremely small.
         if tick_size is not None:
             tick_dec = _to_decimal(tick_size)
-            min_offset = tick_dec if tick_dec and tick_dec > 0 else Decimal("0")
+            min_offset = tick_dec if tick_dec and tick_dec > 0 else Decimal(
+                "0")
         else:
-            min_offset = ref_dec * Decimal("0.0001")  # 1 basis point fallback
-        
-        # Entry offset with OBI modulation
-        entry_offset_raw = Decimal(str(self.params.entry_k_atr * atr_float * obi_multiplier))
-        entry_offset = max(entry_offset_raw, Decimal("0"))  # Entry can be zero (market order)
-        
-        # Stop-loss offset
-        # Phase 9: Structural Stop vs Legacy Fixed ATR
-        atr_mult_used = self.params.sl_k_atr  # Default legacy
-        
+            min_offset = ref_dec * Decimal("0.0001")
+
+        entry_offset_raw = Decimal(
+            str(self.params.entry_k_atr * atr_float * obi_multiplier))
+        entry_offset = max(entry_offset_raw, Decimal("0"))
+
+        # Structural-stop mode changes only the stop-loss distance. Entry and TP
+        # stay tied to the configured ATR multipliers.
+        atr_mult_used = self.params.sl_k_atr
+
         if self.params.structural_stop_enabled and pillar_confidence is not None:
-            # Dynamic structural stop: mult = base - scale * confidence
             conf = min(1.0, max(0.0, float(pillar_confidence)))
-            dynamic_mult = self.params.base_atr_mult - (self.params.confidence_scale * conf)
-            atr_mult_used = max(dynamic_mult, 0.5)  # Safety floor: never below 0.5 ATR
-            
+            dynamic_mult = self.params.base_atr_mult - \
+                (self.params.confidence_scale * conf)
+            atr_mult_used = max(dynamic_mult, 0.5)
+
             sl_offset_raw = Decimal(str(atr_mult_used * atr_float))
-            
-            # Enforce min stop distance (bps)
-            min_dist_bps = ref_dec * Decimal(str(self.params.min_stop_bps)) / Decimal("10000")
+
+            min_dist_bps = ref_dec * \
+                Decimal(str(self.params.min_stop_bps)) / Decimal("10000")
             sl_offset_raw = max(sl_offset_raw, min_dist_bps)
         else:
-            # Legacy fixed multiplier
             sl_offset_raw = Decimal(str(self.params.sl_k_atr * atr_float))
 
         sl_offset = max(sl_offset_raw, min_offset)
-        
-        # Take-profit offset (fixed ATR multiple)
+
         tp_offset_raw = Decimal(str(self.params.tp_k_atr * atr_float))
         tp_offset = max(tp_offset_raw, min_offset)
-        
+
         if is_long:
-            # LONG: entry below ref, SL below entry, TP above entry
             entry_price = ref_dec - entry_offset
             stop_loss_price = ref_dec - sl_offset
             take_profit_price = ref_dec + tp_offset
         else:
-            # SHORT: entry above ref, SL above entry, TP below entry
             entry_price = ref_dec + entry_offset
             stop_loss_price = ref_dec + sl_offset
             take_profit_price = ref_dec - tp_offset
-        
-        # Ensure prices are positive (sanity)
+
         if entry_price <= 0:
-            entry_price = ref_dec  # Fallback to ref
+            entry_price = ref_dec
         if stop_loss_price <= 0:
             stop_loss_price = Decimal("0.00000001")
         if take_profit_price <= 0:
-            take_profit_price = ref_dec  # Fallback to ref
-        
+            take_profit_price = ref_dec
+
         return EntryPlanResult(
             entry_price=str(entry_price),
             stop_loss_price=str(stop_loss_price),
@@ -328,10 +316,11 @@ def resolve_strategy_entry_prices(
     strategy_stop: Optional[str] = price_ctx.get("stop_price")
     strategy_target: Optional[str] = price_ctx.get("target_price")
     if strategy_stop is not None:
-        strategy_stop = str(strategy_stop) if strategy_stop not in ("", "None") else None
+        strategy_stop = str(strategy_stop) if strategy_stop not in (
+            "", "None") else None
     if strategy_target is not None:
-        strategy_target = str(strategy_target) if strategy_target not in ("", "None") else None
-    # Validate
+        strategy_target = str(strategy_target) if strategy_target not in (
+            "", "None") else None
     invalid: list[str] = []
     for label, val in [("stop_price", strategy_stop), ("target_price", strategy_target)]:
         if val is None:
@@ -346,7 +335,8 @@ def resolve_strategy_entry_prices(
         reject_fn(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                   reason_code="STRATEGY_INVALID_PRICES", reason="STRATEGY_SIGNAL",
                   context="strategy_signal_gateway:invalid_prices",
-                  why_chain=(why_chain if isinstance(why_chain, list) else []) + ["invalid_prices"],
+                  why_chain=(why_chain if isinstance(why_chain, list)
+                             else []) + ["invalid_prices"],
                   details={"invalid_fields": invalid,
                            "stop_price": strategy_stop, "target_price": strategy_target})
         return "REJECT", None, None
@@ -354,17 +344,21 @@ def resolve_strategy_entry_prices(
         logger.info(
             f"[{symbol}] STRATEGY_PRIMACY: SL={strategy_stop}, TP={strategy_target}")
         if isinstance(why_chain, list):
-            why_chain.append(f"strategy_prices:sl={strategy_stop},tp={strategy_target}")
+            why_chain.append(
+                f"strategy_prices:sl={strategy_stop},tp={strategy_target}")
     stop_price = strategy_stop
     target_price = strategy_target
     entry_plan_trace = None
-    # EntryPlan fallback
+    # EntryPlan fallback fills only missing values. The trace object must stay
+    # schema-compatible because IntentBuilder embeds it directly into the trade
+    # intent payload.
     ep_cfg = getattr(config.domains.decision_making, "entry_plan", None)
     if ep_cfg and ep_cfg.enabled and (stop_price is None or target_price is None):
         vol = pld.get("volatility") or {}
         liq = pld.get("liquidity") or {}
         atr_value = vol.get("atr_14") if isinstance(vol, dict) else None
-        atr_ready = vol.get("atr_ready", False) if isinstance(vol, dict) else False
+        atr_ready = vol.get("atr_ready", False) if isinstance(
+            vol, dict) else False
         obi_close = liq.get("obi_close") if isinstance(liq, dict) else None
         ep_params = EntryPlanParams(
             atr_period=ep_cfg.atr_period, entry_k_atr=ep_cfg.entry_k_atr,
@@ -381,7 +375,8 @@ def resolve_strategy_entry_prices(
             reject_fn(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                       reason_code=str(error), reason="ENTRY_PLAN_VALIDATION_FAILED",
                       context="strategy_signal_gateway:entry_plan",
-                      why_chain=(why_chain if isinstance(why_chain, list) else []) + [str(error)],
+                      why_chain=(why_chain if isinstance(
+                          why_chain, list) else []) + [str(error)],
                       details={"atr_ready": atr_ready, "atr_value": atr_value})
             return "REJECT", None, None
         try:
@@ -394,16 +389,16 @@ def resolve_strategy_entry_prices(
             entry_plan_trace = {
                 "ref_price": ep_result.ref_price, "atr": ep_result.atr,
                 "obi": ep_result.obi, "obi_multiplier": ep_result.obi_multiplier,
-                "obi_policy_applied": ep_result.obi_policy_applied,
-                "strategy_sl_used": strategy_stop is not None,
-                "strategy_tp_used": strategy_target is not None}
+                "obi_policy_applied": ep_result.obi_policy_applied}
             logger.info(
                 f"[{symbol}] EntryPlan: SL={stop_price}, TP={target_price}, "
                 f"OBI_mult={ep_result.obi_multiplier:.3f}")
             if isinstance(why_chain, list):
-                why_chain.append(f"entry_plan:sl={stop_price},tp={target_price}")
+                why_chain.append(
+                    f"entry_plan:sl={stop_price},tp={target_price}")
         except Exception as ep_err:
-            logger.warning(f"[{symbol}] EntryPlan computation failed: {ep_err}")
+            logger.warning(
+                f"[{symbol}] EntryPlan computation failed: {ep_err}")
             if strategy_stop is None:
                 stop_price = None
             if strategy_target is None:

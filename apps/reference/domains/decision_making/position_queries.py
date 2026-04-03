@@ -1,10 +1,12 @@
-"""
-PositionQueries — Position state, sizing, and portfolio queries.
+"""Read portfolio state and compute margin-first sizing for decision paths.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Pure queries against portfolio cache and config. No FSM side effects.
+This module centralizes two related contracts for decision-making code:
+- interpret the latest portfolio snapshot into LONG/SHORT/FLAT/UNKNOWN state;
+- compute quantity candidates from per-instrument sizing and exchange filters.
 
-LOC budget: ≤500 (Constitution §3).
+The class is read-only with respect to the rest of the domain. It consumes an
+injected portfolio getter and typed config, emits diagnostics, and returns
+query results or reject metadata, but it does not emit FSM events.
 """
 
 import decimal
@@ -24,17 +26,17 @@ if TYPE_CHECKING:
 
 
 class PositionQueries:
-    """
-    Position state, sizing computation, and portfolio queries.
+    """Expose read-only portfolio queries and margin-first sizing helpers.
 
-    Dependencies are injected to keep the module decoupled from facade state.
-    `get_portfolio` is a callable that returns the latest portfolio dict (mutable).
+    The instance does not own portfolio truth itself. Callers inject a getter
+    for the latest portfolio snapshot, so freshness and SSOT ownership stay in
+    the surrounding facade or handler.
     """
 
     def __init__(
         self,
         config: "AuroraConfig",
-        get_portfolio: Callable[[], Optional[Dict]],
+        get_portfolio: Callable[[], Optional[Dict[str, Any]]],
         min_pos_size_usd: Decimal,
         liq_cap_usd: Decimal,
         logger: logging.Logger,
@@ -52,7 +54,11 @@ class PositionQueries:
         value: Any,
         default: Optional[Decimal] = None,
     ) -> Optional[Decimal]:
-        """Best-effort Decimal parser for untrusted inputs. Never raises."""
+        """Parse a finite Decimal from untrusted input or return ``default``.
+
+        The helper is intentionally non-throwing so callers can collapse
+        malformed numeric fields into explicit fail-closed branches.
+        """
         if value is None:
             return default
         if isinstance(value, Decimal):
@@ -63,17 +69,45 @@ class PositionQueries:
             return default
         return d if d.is_finite() else default
 
+    @staticmethod
+    def _extract_signed_position_qty(position: Dict[str, Any]) -> Optional[Decimal]:
+        """Parse signed position quantity from one position snapshot.
+
+        ``net_position`` is the SSOT field emitted by portfolio_state_v1. Older
+        aliases remain accepted for compatibility with legacy or external
+        position payloads.
+        """
+        for key in (
+            "net_position",
+            "positionAmt",
+            "position_amount",
+            "position_amt",
+            "qty",
+            "quantity",
+        ):
+            if key not in position:
+                continue
+            raw_value = position.get(key)
+            if raw_value in (None, ""):
+                continue
+            return PositionQueries.safe_decimal(raw_value)
+        return None
+
     # ── Position State ───────────────────────────────────────────────
 
     def get_position_state(self, symbol: str) -> str:
         """
-        Get current position state from SSOT (latest_portfolio).
-        Returns: FLAT, LONG, SHORT, UNKNOWN
+        Derive LONG/SHORT/FLAT/UNKNOWN from the latest portfolio snapshot.
+
+        ``UNKNOWN`` means the portfolio snapshot itself is unavailable or the
+        matching position record exists but its signed quantity is unreadable.
         """
         qty_signed, _ = self.get_portfolio_position_qty_signed(symbol)
         if qty_signed is None:
             return "UNKNOWN"
 
+        # Treat exchange dust as flat so position-state queries and open/close
+        # guards do not disagree on near-zero residual quantities.
         try:
             tol = decimal.Decimal("1e-9")
         except Exception:
@@ -86,8 +120,14 @@ class PositionQueries:
 
     def get_portfolio_position_qty_signed(
         self, symbol: str
-    ) -> tuple:
-        """Return signed position qty for a symbol from latest_portfolio (SSOT), or None if unknown."""
+    ) -> tuple[Optional[Decimal], Optional[Dict[str, Any]]]:
+        """Return signed quantity and raw position snapshot for ``symbol``.
+
+        Return semantics are intentionally strict:
+        - ``(None, None)``: portfolio snapshot missing or malformed;
+        - ``(Decimal("0"), None)``: valid snapshot but symbol absent;
+        - ``(None, curr_pos)``: symbol found but quantity missing or invalid.
+        """
         portfolio = self._get_portfolio()
         if not isinstance(portfolio, dict):
             return None, None
@@ -97,71 +137,66 @@ class PositionQueries:
             return None, None
 
         curr_pos = next(
-            (p for p in positions if isinstance(p, dict) and p.get("symbol") == symbol), None
+            (p for p in positions if isinstance(p, dict)
+             and p.get("symbol") == symbol), None
         )
         if not curr_pos:
             return decimal.Decimal("0"), None
 
-        qty_val: Any = None
-        for key in (
-            "net_position",
-            "positionAmt",
-            "position_amount",
-            "position_amt",
-            "qty",
-            "quantity",
-        ):
-            if key in curr_pos and curr_pos.get(key) not in (None, ""):
-                qty_val = curr_pos.get(key)
-                break
-
-        if qty_val in (None, ""):
+        qty_dec = self._extract_signed_position_qty(curr_pos)
+        if qty_dec is None:
             return None, curr_pos
-
-        try:
-            return decimal.Decimal(str(qty_val)), curr_pos
-        except Exception:
-            return None, curr_pos
+        return qty_dec, curr_pos
 
     def check_symbol_is_flat(self, symbol: str) -> bool:
         """
-        Check if portfolio position for symbol is FLAT (no position).
+        Return ``True`` only when the latest snapshot proves zero position.
 
-        STRICT SEQUENTIAL TRADING CONTRACT:
-        Per-symbol check - ETH position doesn't block DOGE OPEN.
-
-        FAIL-CLOSED (Commit 4.1):
-        - Unknown portfolio -> NOT FLAT -> DEFER
-        - Exception -> NOT FLAT -> DEFER
+        The method is intentionally conservative for sequential-open guards:
+        - missing or malformed portfolio snapshot -> ``False``;
+        - symbol absent from a valid snapshot -> ``True``;
+        - matching symbol with unreadable quantity -> ``False``.
         """
         try:
             portfolio = self._get_portfolio()
-            if not portfolio:
+            if not isinstance(portfolio, dict):
                 self.logger.warning(
                     f"[{symbol}] _check_symbol_is_flat: No portfolio data, "
                     f"FAIL-CLOSED (NRR-PORTFOLIO-UNKNOWN)"
                 )
                 return False
 
-            positions = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
-            if not positions:
+            positions = portfolio.get("positions")
+            if not isinstance(positions, list):
+                self.logger.warning(
+                    f"[{symbol}] _check_symbol_is_flat: Malformed positions snapshot, "
+                    f"FAIL-CLOSED (NRR-PORTFOLIO-UNKNOWN)"
+                )
+                return False
+
+            curr_pos = next(
+                (p for p in positions if isinstance(p, dict)
+                 and p.get("symbol") == symbol), None
+            )
+            if curr_pos is None:
                 return True
 
-            for pos in positions:
-                pos_symbol = pos["symbol"] if "symbol" in pos else ""
-                if pos_symbol != symbol:
-                    continue
+            # Reuse the same signed-qty contract as get_position_state() so a
+            # valid ``net_position`` snapshot cannot be treated as both LONG and FLAT.
+            qty_signed = self._extract_signed_position_qty(curr_pos)
+            if qty_signed is None:
+                self.logger.warning(
+                    f"[{symbol}] _check_symbol_is_flat: Position qty unreadable, "
+                    f"FAIL-CLOSED (NRR-PORTFOLIO-UNKNOWN)"
+                )
+                return False
 
-                qty_str = pos["positionAmt"] if "positionAmt" in pos else "0"
-                try:
-                    qty = abs(float(qty_str))
-                except (ValueError, TypeError):
-                    qty = 0.0
-
-                flat_threshold = 1e-9
-                if qty > flat_threshold:
-                    self.logger.debug(f"[{symbol}] _check_symbol_is_flat: Position exists, qty={qty}")
-                    return False
+            flat_threshold = decimal.Decimal("1e-9")
+            if abs(qty_signed) > flat_threshold:
+                self.logger.debug(
+                    f"[{symbol}] _check_symbol_is_flat: Position exists, qty={qty_signed}"
+                )
+                return False
 
             return True
 
@@ -179,10 +214,10 @@ class PositionQueries:
         symbol: str,
         price: decimal.Decimal,
         side: str,
-        context: dict,
+        context: Dict[str, Any],
         *,
         margin_pct_mult: decimal.Decimal | None = None,
-    ) -> tuple:
+    ) -> tuple[Optional[Decimal], str, Optional[str], Dict[str, Any]]:
         """Compute order quantity using margin-first SSOT.
 
         SSOT inputs:
@@ -190,18 +225,26 @@ class PositionQueries:
         - instruments.<SYM>.execution.target_leverage
         - instruments.<SYM>.{step_size,min_qty,min_notional}
 
+        ``side`` is accepted for caller API parity, but the current sizing path
+        is magnitude-based and does not branch on direction.
+
         Margin-first:
         - margin_usdt = equity * margin_pct
         - notional_target = margin_usdt * leverage
         - qty = floor_to_step(notional_target / price, step_size)
         """
-        portfolio = context.get("portfolio") if isinstance(context, dict) else None
+        # Sizing reads the portfolio snapshot supplied by the caller so upstream
+        # orchestration can evaluate a specific snapshot without touching the
+        # shared latest_portfolio getter.
+        portfolio = context.get("portfolio") if isinstance(
+            context, dict) else None
         if not isinstance(portfolio, dict):
             return None, "portfolio_missing", "PORTFOLIO_MISSING", {}
 
-        equity = self.safe_decimal(portfolio.get("equity", "0"), default=decimal.Decimal("0"))
-        if equity is None:
-            return None, "equity_invalid:None", "ZERO_EQUITY", {"equity": str(portfolio.get("equity"))}
+        # Missing or malformed equity collapses to ZERO_EQUITY so the sizing
+        # gate fails closed instead of inventing buying power.
+        equity = self.safe_decimal(portfolio.get(
+            "equity", "0"), default=decimal.Decimal("0"))
         if equity <= 0:
             return None, f"equity_invalid:{equity}", "ZERO_EQUITY", {"equity": str(equity)}
 
@@ -293,6 +336,9 @@ class PositionQueries:
             f"min_qty={min_qty}, min_notional={min_notional}"
         )
 
+        # Exchange constraints and the local min-position-usd floor are kept as
+        # separate reject surfaces because callers distinguish venue-level
+        # impossibility from local portfolio policy.
         reject_code, constraint_why = validate_exchange_constraints(
             qty=rounded_qty,
             price=price,
@@ -301,12 +347,14 @@ class PositionQueries:
         )
         if reject_code is not None:
             reject_reason = f"exchange_constraints:{reject_code}:{constraint_why}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})", reject_code, sizing_dbg
 
         if order_notional < self.min_pos_size_usd:
             reject_reason = f"position notional {order_notional} is below minimum {self.min_pos_size_usd}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})", "MIN_POSITION_USD", sizing_dbg
 
         return rounded_qty, "margin_first_ok", None, sizing_dbg

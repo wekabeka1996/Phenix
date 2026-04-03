@@ -1,3 +1,15 @@
+"""Pure margin-first sizing helpers used by decision-making paths.
+
+The active production sizing flow goes through PositionQueries, which calls the
+functions in this module in sequence:
+- compute_notional_target() derives the margin-funded notional budget;
+- compute_qty() translates that budget into raw and step-floored quantity;
+- validate_exchange_constraints() reports venue-level sizing failures.
+
+The helpers stay intentionally small and synchronous. They do not read config,
+inspect portfolio state, or emit events.
+"""
+
 from __future__ import annotations
 
 import decimal
@@ -6,6 +18,7 @@ from typing import Any, Optional
 
 
 def _d(v: Any) -> Decimal:
+    """Convert a numeric-like input into a finite Decimal."""
     if v is None:
         raise ValueError("cannot convert None to Decimal")
     try:
@@ -17,7 +30,21 @@ def _d(v: Any) -> Decimal:
     return d
 
 
+def _validated_fee_buffer(fee_buffer: Any) -> Decimal:
+    """Return a finite fee buffer fraction inside the supported range.
+
+    The sizing helpers subtract the fee buffer from available equity before
+    sizing. Values outside [0, 1) would either increase buying power or drive
+    a positive equity snapshot below zero, so the contract rejects them.
+    """
+    fee_buffer_dec = _d(fee_buffer)
+    if fee_buffer_dec < 0 or fee_buffer_dec >= Decimal("1"):
+        raise ValueError("fee_buffer must be in [0, 1)")
+    return fee_buffer_dec
+
+
 def floor_to_step(qty: Decimal, step_size: Decimal) -> Decimal:
+    """Floor quantity to the exchange step size without rounding up."""
     if step_size <= 0:
         raise ValueError("step_size must be > 0")
     if qty <= 0:
@@ -31,8 +58,18 @@ def compute_notional_target(
     margin_pct: Decimal,
     leverage: int,
     notional_cap: Optional[Decimal] = None,
-    fee_buffer: Decimal = Decimal("0.001"),  # NEW: Default 0.1% buffer
+    fee_buffer: Decimal = Decimal("0.001"),
 ) -> tuple[Decimal, Decimal]:
+    """Return margin budget and resulting notional target.
+
+    Formula:
+        safe_equity = equity * (1 - fee_buffer)
+        margin_usdt = safe_equity * margin_pct
+        notional_target = margin_usdt * leverage
+
+    notional_cap, when provided, truncates the final notional target but does
+    not change the pre-cap margin budget.
+    """
     if equity <= 0:
         raise ValueError("equity must be > 0")
     if margin_pct <= 0 or margin_pct > 1:
@@ -40,9 +77,8 @@ def compute_notional_target(
     if leverage < 1:
         raise ValueError("leverage must be >= 1")
 
-    # FIX: Deduct fee buffer from equity BEFORE calculating margin
-    # This prevents "insufficient balance" when margin_pct=1.0
-    safe_equity = equity * (Decimal("1") - fee_buffer)
+    fee_buffer_dec = _validated_fee_buffer(fee_buffer)
+    safe_equity = equity * (Decimal("1") - fee_buffer_dec)
 
     margin_usdt = safe_equity * margin_pct
     notional_target = margin_usdt * Decimal(leverage)
@@ -59,6 +95,7 @@ def compute_qty(
     price: Decimal,
     step_size: Decimal,
 ) -> tuple[Decimal, Decimal]:
+    """Return raw quantity and step-floored quantity for a notional target."""
     if price <= 0:
         raise ValueError("price must be > 0")
     if notional_target <= 0:
@@ -76,6 +113,11 @@ def validate_exchange_constraints(
     min_qty: Decimal,
     min_notional: Decimal,
 ) -> tuple[Optional[str], str]:
+    """Validate quantity against exchange minimums.
+
+    Returns a short machine code plus human-readable explanation instead of
+    raising so callers can surface blocked-order diagnostics directly.
+    """
     if qty <= 0:
         return "ZERO_QUANTITY", "qty <= 0"
     if min_qty > 0 and qty < min_qty:
@@ -96,24 +138,24 @@ def compute_exposure_based_qty(
     step_size: Decimal,
     fee_buffer: Decimal = Decimal("0.001"),
 ) -> tuple[Decimal, Decimal]:
-    """
-    Phase 9: Compute quantity based on exposure conviction.
+    """Scale quantity directly from exposure conviction.
 
-    qty = (|exposure| * max_notional_cap / price) floored to step_size.
-    If max_notional_cap is None, defaults to full equity * leverage.
+    The helper is independent from the margin_pct path above:
+    - full-conviction max_notional defaults to fee-buffered equity * leverage;
+    - metrics_max_notional_cap, when present, tightens that ceiling;
+    - exposure magnitude selects a fraction of the resulting ceiling.
     """
     exposure_abs = abs(exposure)
-    
-    # Default max notional to full leverage if not capped
-    # (Safety: apply fee buffer to equity)
-    safe_equity = equity * (Decimal("1") - fee_buffer)
+
+    fee_buffer_dec = _validated_fee_buffer(fee_buffer)
+    safe_equity = equity * (Decimal("1") - fee_buffer_dec)
     max_notional = safe_equity * Decimal(leverage)
-    
+
     if metrics_max_notional_cap is not None:
         max_notional = min(max_notional, metrics_max_notional_cap)
-    
+
     target_notional = max_notional * _d(exposure_abs)
-    
+
     return compute_qty(
         notional_target=target_notional,
         price=price,

@@ -1,0 +1,153 @@
+{
+  "mode": "diagnostic_noncanonical_manual_surface",
+  "surface": {
+    "signal_threshold_value": 0.162,
+    "regime_thresholds": {
+      "HIGH_VOLATILITY": 0.18,
+      "LOW_VOLATILITY": 0.12,
+      "TREND_UP": 0.1,
+      "TREND_DOWN": 0.1,
+      "MEAN_REVERSION": 0.07,
+      "UNCERTAIN": 99.0,
+      "DEFAULT": 99.0
+    }
+  },
+  "bar_count": 8199,
+  "split_date": "2026-03-28",
+  "feature_log_audit": {
+    "exists": true,
+    "file_size_mb": 431.1489191055298,
+    "sampled_lines": 20,
+    "sampled_keys": [
+      "absorption",
+      "delta_price",
+      "depth_imbalance",
+      "ema_bias",
+      "large_trade_imbalance",
+      "liquidity_kappa",
+      "macro_resid",
+      "macro_sync",
+      "obi",
+      "price",
+      "spread_bps",
+      "tfi",
+      "volatility_state",
+      "volume_spike",
+      "volume_zscore"
+    ],
+    "has_timestamp_fields": false,
+    "warnings": [
+      "Sampled feature-log keys for BTCUSDT expose no explicit timestamp field; recorder remains the only auditable time axis."
+    ]
+  },
+  "train_metrics": {
+    "eligible_bars": 2972,
+    "active_bars": 518,
+    "buy_count": 0,
+    "sell_count": 518,
+    "activation_rate": 0.17429340511440108,
+    "max_daily_activation_rate": 0.26515151515151514,
+    "mean_forward_bps_1": -0.3724475979444252,
+    "mean_forward_bps_3": 1.5376635272071784,
+    "hit_rate_1": 0.4942084942084942,
+    "hit_rate_3": 0.5231660231660231,
+    "p50_abs_score": 0.0,
+    "p75_abs_score": 0.0180525975,
+    "p80_abs_score": 0.020564698000000017,
+    "p90_abs_score": 0.026825946000000007,
+    "regime_counts": {
+      "HIGH_VOLATILITY": 53,
+      "LOW_VOLATILITY": 467,
+      "MEAN_REVERSION": 438,
+      "TREND_DOWN": 748,
+      "TREND_UP": 422,
+      "UNCERTAIN": 844
+    }
+  },
+  "validation_metrics": {
+    "eligible_bars": 993,
+    "active_bars": 148,
+    "buy_count": 0,
+    "sell_count": 148,
+    "activation_rate": 0.14904330312185296,
+    "max_daily_activation_rate": 0.34285714285714286,
+    "mean_forward_bps_1": 0.2325014893038283,
+    "mean_forward_bps_3": -1.9264990413382086,
+    "hit_rate_1": 0.5202702702702703,
+    "hit_rate_3": 0.4421768707482993,
+    "p50_abs_score": 0.0,
+    "p75_abs_score": 0.02265226,
+    "p80_abs_score": 0.025663390000000005,
+    "p90_abs_score": 0.030925198000000004,
+    "regime_counts": {
+      "HIGH_VOLATILITY": 21,
+      "LOW_VOLATILITY": 187,
+      "MEAN_REVERSION": 107,
+      "TREND_DOWN": 62,
+      "TREND_UP": 195,
+      "UNCERTAIN": 421
+    }
+  },
+  "slices": [
+    {
+      "target_minute": "2026-03-31 07:29",
+      "timestamp": "2026-03-31 07:29:59.999000",
+      "eligible": true,
+      "regime": "TREND_UP",
+      "score": -0.0259507,
+      "side": "sell",
+      "deferred": false,
+      "shield_multiplier": 0.8,
+      "threshold_factor": 0.1,
+      "thr_buy": 0.0162,
+      "thr_sell": 0.0162,
+      "forward_bps_1": 1.8649357300211389,
+      "forward_bps_3": -0.3552258533388983
+    },
+    {
+      "target_minute": "2026-03-31 07:34",
+      "timestamp": "2026-03-31 07:34:59.999000",
+      "eligible": true,
+      "regime": "TREND_UP",
+      "score": -0.03472356,
+      "side": "",
+      "deferred": false,
+      "shield_multiplier": 1.0,
+      "threshold_factor": 0.1,
+      "thr_buy": 0.0162,
+      "thr_sell": 0.0162,
+      "forward_bps_1": null,
+      "forward_bps_3": null
+    },
+    {
+      "target_minute": "2026-03-31 19:04",
+      "timestamp": "2026-03-31 19:04:59.999000",
+      "eligible": true,
+      "regime": "MEAN_REVERSION",
+      "score": -0.02899209,
+      "side": "sell",
+      "deferred": false,
+      "shield_multiplier": 0.75,
+      "threshold_factor": 0.07,
+      "thr_buy": 0.01134,
+      "thr_sell": 0.01134,
+      "forward_bps_1": -19.518868863588516,
+      "forward_bps_3": -26.209769463299338
+    },
+    {
+      "target_minute": "2026-03-31 19:14",
+      "timestamp": "2026-03-31 19:14:59.999000",
+      "eligible": true,
+      "regime": "MEAN_REVERSION",
+      "score": -0.02899209,
+      "side": "sell",
+      "deferred": false,
+      "shield_multiplier": 0.75,
+      "threshold_factor": 0.07,
+      "thr_buy": 0.01134,
+      "thr_sell": 0.01134,
+      "forward_bps_1": -12.870695847220778,
+      "forward_bps_3": -24.979015982236024
+    }
+  ]
+}

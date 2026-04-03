@@ -62,46 +62,53 @@ class TestRegimeMultipliers:
     def test_trend_up_full_pass(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000  # some timestamp in ms
-        r = shield.evaluate("BTCUSDT", _features("TREND_UP", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 1.0
         assert "TREND_UP" in r.reasons[0]
 
     def test_trend_down_full_pass(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("TREND_DOWN", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_DOWN", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 1.0
 
     def test_high_volatility_attenuated(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("HIGH_VOLATILITY", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "HIGH_VOLATILITY", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 0.3
         assert "HIGH_VOLATILITY" in r.reasons[0]
 
     def test_low_volatility(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("LOW_VOLATILITY", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "LOW_VOLATILITY", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 0.7
 
     def test_mean_reversion(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("MEAN_REVERSION", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "MEAN_REVERSION", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 0.7
 
     def test_uncertain_regime(self):
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("UNCERTAIN", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "UNCERTAIN", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 0.5
 
     def test_unknown_regime_uses_default(self):
         """A regime not in the multipliers dict falls back to default_multiplier."""
         shield = _make_shield()
         now_ms = 1_700_000_000_000
-        r = shield.evaluate("BTCUSDT", _features("SOME_NEW_REGIME", now_ms, now_ms - 1000), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "SOME_NEW_REGIME", now_ms, now_ms - 1000), 0.5, 1.0)
         assert r.multiplier == 1.0
         assert "default_mult" in r.reasons[0]
 
@@ -132,7 +139,8 @@ class TestTTLStalePolicy:
         shield = _make_shield()
         now_ms = 1_700_000_000_000
         fresh_ts = now_ms - (_4H_MS - 1000)  # 1 second before TTL
-        r = shield.evaluate("BTCUSDT", _features("TREND_UP", now_ms, fresh_ts), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, fresh_ts), 0.5, 1.0)
         assert r.multiplier == 1.0  # normal TREND_UP multiplier
         assert "STALE" not in r.reasons[0]
 
@@ -141,7 +149,8 @@ class TestTTLStalePolicy:
         shield = _make_shield()
         now_ms = 1_700_000_000_000
         stale_ts = now_ms - (_4H_MS + 1000)  # 1 second past TTL
-        r = shield.evaluate("BTCUSDT", _features("TREND_UP", now_ms, stale_ts), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, stale_ts), 0.5, 1.0)
         assert r.multiplier == 0.7
         assert "STALE" in r.reasons[0]
         assert "danger=False" in r.reasons[0]
@@ -151,7 +160,8 @@ class TestTTLStalePolicy:
         shield = _make_shield()
         now_ms = 1_700_000_000_000
         stale_ts = now_ms - (_4H_MS + 1000)
-        r = shield.evaluate("BTCUSDT", _features("HIGH_VOLATILITY", now_ms, stale_ts), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "HIGH_VOLATILITY", now_ms, stale_ts), 0.5, 1.0)
         assert r.multiplier == 0.35
         assert "STALE" in r.reasons[0]
         assert "danger=True" in r.reasons[0]
@@ -161,7 +171,8 @@ class TestTTLStalePolicy:
         shield = _make_shield()
         now_ms = 1_700_000_000_000
         boundary_ts = now_ms - _4H_MS  # exactly at TTL
-        r = shield.evaluate("BTCUSDT", _features("TREND_UP", now_ms, boundary_ts), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, boundary_ts), 0.5, 1.0)
         assert r.multiplier == 1.0  # NOT stale (> not >=)
 
     def test_very_stale_regime_24h(self):
@@ -169,7 +180,8 @@ class TestTTLStalePolicy:
         shield = _make_shield()
         now_ms = 1_700_000_000_000
         very_stale_ts = now_ms - (24 * 3_600_000)  # 24 hours old
-        r = shield.evaluate("BTCUSDT", _features("MEAN_REVERSION", now_ms, very_stale_ts), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "MEAN_REVERSION", now_ms, very_stale_ts), 0.5, 1.0)
         assert r.multiplier == 0.7
         assert "STALE" in r.reasons[0]
         assert "24.0h" in r.reasons[0]
@@ -179,9 +191,20 @@ class TestTTLStalePolicy:
         shield = _make_shield(ttl_ms=3_600_000)  # 1 hour
         now_ms = 1_700_000_000_000
         ts_2h_old = now_ms - (2 * 3_600_000)
-        r = shield.evaluate("BTCUSDT", _features("TREND_UP", now_ms, ts_2h_old), 0.5, 1.0)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, ts_2h_old), 0.5, 1.0)
         assert r.multiplier == 0.7
         assert "STALE" in r.reasons[0]
+
+    def test_zero_ttl_disables_stale_penalty(self):
+        """ttl_ms=0 disables the stale branch and falls back to regime lookup."""
+        shield = _make_shield(ttl_ms=0)
+        now_ms = 1_700_000_000_000
+        ts_24h_old = now_ms - (24 * 3_600_000)
+        r = shield.evaluate("BTCUSDT", _features(
+            "TREND_UP", now_ms, ts_24h_old), 0.5, 1.0)
+        assert r.multiplier == 1.0
+        assert "STALE" not in r.reasons[0]
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +231,8 @@ class TestMissingTimestamps:
     def test_zero_regime_ts_ms_skips_ttl(self):
         """regime_ts_ms=0 (warmup) → skip TTL."""
         shield = _make_shield()
-        f = {"regime": "TREND_UP", "bar_close_ts": 1_700_000_000_000, "regime_ts_ms": 0}
+        f = {"regime": "TREND_UP",
+             "bar_close_ts": 1_700_000_000_000, "regime_ts_ms": 0}
         r = shield.evaluate("BTCUSDT", f, 0.5, 1.0)
         assert r.multiplier == 1.0
 

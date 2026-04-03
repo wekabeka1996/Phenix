@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""
-Aurora Log Adapter
+"""Lightweight trade-event logger for execution_position flows.
 
-Structured logging adapter for Aurora trading system.
-Provides enhanced trade logging with all necessary fields for debugging and analysis.
+The adapter writes human-readable trade lifecycle lines to a dedicated file
+logger and attaches event metadata via ``extra`` for handlers that consume it.
+It is not a generic logging framework and intentionally keeps formatting local.
 """
 
 import logging
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
@@ -16,33 +16,32 @@ from apps.reference.utils.accessors import aget
 
 
 class AuroraLogAdapter:
-    """
-    Aurora Log Adapter for structured trade logging.
-
-    Provides enhanced logging for trade intents, decisions, and executions
-    with all necessary fields for debugging and analysis.
-    """
+    """Trade-log adapter backed by the shared ``aurora.trades`` logger."""
 
     def __init__(self, log_file: str = "logs/aurora_trades.log", level: str = "INFO"):
-        """
-        Initialize Aurora Log Adapter.
+        """Initialize the trade logger and ensure its file handler exists.
 
         Args:
             log_file: Path to trade log file
             level: Logging level (DEBUG, INFO, WARNING, ERROR)
         """
-        self.log_file = Path(log_file)
+        self.log_file = Path(log_file).resolve()
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create dedicated logger for trades
+        # ExecPosFSM instances share one named logger, so handler deduplication
+        # must be path-aware to avoid duplicate writes on repeated init.
         self.logger = logging.getLogger("aurora.trades")
         self.logger.setLevel(getattr(logging, level.upper()))
 
-        # Avoid duplicate handlers
-        already = any(isinstance(h, logging.FileHandler) and aget(h, "baseFilename", "") == str(self.log_file)
-                      for h in self.logger.handlers)
+        already = any(
+            isinstance(h, logging.FileHandler)
+            and aget(h, "baseFilename", "")
+            and Path(str(aget(h, "baseFilename", ""))).resolve() == self.log_file
+            for h in self.logger.handlers
+        )
         if not already:
-            # File handler with trade-specific format
+            # The line format stays intentionally compact because most tests and
+            # operator forensics read the file as plain text, not structured JSON.
             file_handler = logging.FileHandler(self.log_file, encoding="utf-8")
             formatter = logging.Formatter(
                 "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
@@ -50,7 +49,8 @@ class AuroraLogAdapter:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
-        # Prevent propagation to root logger
+        # Keep trade logs out of the root logger to avoid duplicate console/file
+        # emission when the application config wires parent handlers.
         self.logger.propagate = False
 
     def log_trade_intent(
@@ -66,8 +66,7 @@ class AuroraLogAdapter:
         features: Optional[Dict[str, Any]] = None,
         **extra_fields,
     ) -> None:
-        """
-        Log trade intent with full context.
+        """Log a proposed trade intent with optional sizing/risk context.
 
         Args:
             rid: Request ID
@@ -89,7 +88,8 @@ class AuroraLogAdapter:
             "timestamp": get_clock().now_sec(),
         }
 
-        # Add optional fields if provided
+        # Keep ``extra`` sparse so unrelated handlers do not receive a large
+        # payload when optional trading context is absent.
         if probability is not None:
             log_data["probability"] = probability
         if size is not None:
@@ -106,7 +106,7 @@ class AuroraLogAdapter:
         # Add any extra fields
         log_data.update(extra_fields)
 
-        # Format as readable string
+        # The message is optimized for grep-friendly plain-text incident review.
         message = f"EVENT_TRADE_INTENT_PROPOSED - {symbol} {side}"
         if probability is not None:
             message += f" (prob={float(probability):.3f})"
@@ -130,8 +130,7 @@ class AuroraLogAdapter:
         reason: Optional[str] = None,
         **extra_fields,
     ) -> None:
-        """
-        Log trade decision (accept/reject).
+        """Log an accept/reject decision for a proposed trade.
 
         Args:
             rid: Request ID
@@ -173,8 +172,7 @@ class AuroraLogAdapter:
         executed_price: Optional[float] = None,
         **extra_fields,
     ) -> None:
-        """
-        Log trade execution status.
+        """Log an execution-state update for an order/trade.
 
         Args:
             rid: Request ID
@@ -223,8 +221,7 @@ class AuroraLogAdapter:
         reason: str,
         **extra_fields,
     ) -> None:
-        """
-        Log guard rejection with details.
+        """Log a guard-layer rejection with its guard type and reason.
 
         Args:
             rid: Request ID

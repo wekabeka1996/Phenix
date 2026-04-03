@@ -59,7 +59,7 @@ models:
 # NOT a replacement for TREND/MR regimes  a separate guard layer.
 # When enabled + state=STRESS/EXTREME, DM can gate/attenuate entries.
 system_stress:
-  enabled: false                 # OFF by default (additive, opt-in)
+  enabled: true                  # ON: DM can gate/attenuate entries on STRESS/EXTREME
   sources_enabled: ["price"]     # ["price"] | ["price","orderbook"]
   require_l2_if_enabled: true    # fail-fast if orderbook in sources but L2 fields missing
 

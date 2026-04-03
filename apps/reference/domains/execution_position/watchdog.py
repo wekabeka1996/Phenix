@@ -13,6 +13,9 @@ from enum import Enum
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.trade_executed_contracts import (
+    normalize_trade_executed_payload,
+)
 from apps.reference.domains.execution_position.terminal_order_contracts import (
     normalize_order_state_changed_payload,
 )
@@ -91,7 +94,8 @@ class OrderTimeoutWatchdog:
         self._rest_detected_cancels_total = 0
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
-        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10  # Max 10 requests per second globally
+        # Max 10 requests per second globally
+        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
@@ -105,6 +109,83 @@ class OrderTimeoutWatchdog:
         self.get_order_fn = get_order_fn
         self.emit_fn = emit_fn
         LOG.info("✅ OrderTimeoutWatchdog REST polling hooks connected")
+
+    def _build_trade_executed_payload(
+        self,
+        *,
+        order_id: str,
+        symbol: str,
+        order_status: Dict[str, Any],
+        deadline: Optional[OrderDeadline],
+        current_time_ms: int,
+    ) -> Dict[str, Any]:
+        client_order_id = (
+            dget(order_status, "clientOrderId", None)
+            or getattr(deadline, "client_order_id", None)
+        )
+        side = (
+            dget(order_status, "side", None)
+            or dget(order_status, "origSide", None)
+            or getattr(deadline, "side", None)
+        )
+        raw_payload = {
+            "orderId": str(order_id),
+            "exchangeOrderId": str(order_id),
+            "symbol": symbol,
+            "quantity": dget(order_status, "executedQty", 0),
+            "qty": dget(order_status, "executedQty", 0),
+            "price": dget(order_status, "avgPrice", 0),
+            "status": dget(order_status, "status", None),
+            "clientOrderId": client_order_id,
+            "client_order_id": client_order_id,
+            "rid": getattr(deadline, "rid", None),
+            "side": side,
+            "ts": current_time_ms,
+            "ts_ms": current_time_ms,
+            "venue": "binance",
+        }
+        return normalize_trade_executed_payload(
+            raw_payload,
+            fallback_rid=getattr(deadline, "rid", None),
+            fallback_ts_ms=current_time_ms,
+        )
+
+    async def _emit_recovered_trade_executed(
+        self,
+        *,
+        order_id: str,
+        symbol: str,
+        status: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        rid = payload.get("rid")
+        client_order_id = payload.get(
+            "client_order_id") or payload.get("clientOrderId")
+        qty = payload.get("quantity") or payload.get("qty")
+        if self.emit_fn is None:
+            raise RuntimeError(
+                f"WATCHDOG-EMIT-01 missing emit_fn for recovered fill order_id={order_id} symbol={symbol}"
+            )
+
+        LOG.info(
+            "WATCHDOG_RECOVERED_FILL_CANONICAL_EMIT_ATTEMPT: order_id=%s symbol=%s rid=%s client_order_id=%s status=%s qty=%s",
+            order_id,
+            symbol,
+            rid,
+            client_order_id,
+            status,
+            qty,
+        )
+        await self.emit_fn("EVT:TRADE_EXECUTED", payload)
+        LOG.info(
+            "WATCHDOG_RECOVERED_FILL_CANONICAL_EMIT_OK: order_id=%s symbol=%s rid=%s client_order_id=%s status=%s qty=%s",
+            order_id,
+            symbol,
+            rid,
+            client_order_id,
+            status,
+            qty,
+        )
 
     def _check_rps_limit(self) -> bool:
         """
@@ -250,7 +331,8 @@ class OrderTimeoutWatchdog:
 
         if order_id not in self.pending_orders:
             # WD-001: Demote to DEBUG - SL/TP orders are not tracked, this is expected
-            LOG.debug(f"ACK received for untracked order {order_id} (SL/TP or external)")
+            LOG.debug(
+                f"ACK received for untracked order {order_id} (SL/TP or external)")
             return
 
         deadline = self.pending_orders.pop(order_id)
@@ -402,30 +484,31 @@ class OrderTimeoutWatchdog:
                                 deadline = self.pending_orders.get(order_id)
                             elif order_id in self.acked_orders:
                                 deadline = self.acked_orders.get(order_id)
-                            fill_payload = {
-                                "orderId": order_id,
-                                "symbol": symbol,
-                                "quantity": executed_qty,
-                                "qty": executed_qty,
-                                "price": float(dget(order_status, "avgPrice", 0)),
-                                "status": status,
-                                "clientOrderId": (
-                                    dget(order_status, "clientOrderId", "")
-                                    or getattr(deadline, "client_order_id", "")
-                                ),
-                                "client_order_id": (
-                                    dget(order_status, "clientOrderId", "")
-                                    or getattr(deadline, "client_order_id", "")
-                                ),
-                                "rid": getattr(deadline, "rid", None),
-                                "side": getattr(deadline, "side", None),
-                                "ts": current_time_ms,
-                                "ts_ms": current_time_ms,
-                                "venue": "binance",
-                            }
-
-                            if self.emit_fn:
-                                await self.emit_fn("EVT:TRADE_EXECUTED", fill_payload)
+                            try:
+                                fill_payload = self._build_trade_executed_payload(
+                                    order_id=order_id,
+                                    symbol=symbol,
+                                    order_status=order_status,
+                                    deadline=deadline,
+                                    current_time_ms=current_time_ms,
+                                )
+                                await self._emit_recovered_trade_executed(
+                                    order_id=order_id,
+                                    symbol=symbol,
+                                    status=status,
+                                    payload=fill_payload,
+                                )
+                            except Exception as emit_error:
+                                LOG.error(
+                                    "WATCHDOG_RECOVERED_FILL_CANONICAL_EMIT_FAILED: order_id=%s symbol=%s rid=%s client_order_id=%s status=%s error=%s",
+                                    order_id,
+                                    symbol,
+                                    getattr(deadline, "rid", None),
+                                    getattr(deadline, "client_order_id", None),
+                                    status,
+                                    emit_error,
+                                )
+                                raise
 
                             # FILL-PIPELINE-FIX-AUDIT: Only remove from tracking on final FILLED.
                             # PARTIALLY_FILLED means more fills expected — keep tracking.
@@ -435,7 +518,8 @@ class OrderTimeoutWatchdog:
                             else:
                                 # Extend deadline so watchdog doesn't timeout mid-fill-sequence
                                 if order_id in self.acked_orders:
-                                    self.acked_orders[order_id].deadline_ms = current_time_ms + self.fill_ttl_ms
+                                    self.acked_orders[order_id].deadline_ms = current_time_ms + \
+                                        self.fill_ttl_ms
                                 LOG.info(
                                     "PARTIAL_FILL_TRACKING_RETAINED: %s still tracked (qty=%s)",
                                     order_id, executed_qty)

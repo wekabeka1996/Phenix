@@ -1,12 +1,8 @@
-"""
-DangerZoneShield — Volatility Circuit Breaker.
+"""Hard-veto shield for explicitly dangerous market conditions.
 
-Blocks or heavily attenuates signals during extreme market conditions:
-- Extreme volatility spikes (vol > threshold)
-- Spread blowouts (spread_bps > threshold)
-- Price motion anomalies (|price_motion| > threshold)
-
-This is a hard safety shield — returns 0.0 (full veto) for danger zone.
+This implementation is binary: it returns 0.0 on the first proven trigger and
+1.0 otherwise. Invalid, non-numeric, NaN, or infinite feature values are
+ignored rather than treated as positive evidence of danger.
 """
 from __future__ import annotations
 
@@ -20,20 +16,10 @@ from apps.reference.domains.decision_making.shields.base import (
 
 
 class DangerZoneShield(BaseShield):
-    """
-    Volatility circuit breaker — vetoes signals in extreme conditions.
+    """Veto signals when a danger metric crosses its configured threshold.
 
-    Checks (in order, first trigger wins):
-    1. volatility_state > vol_threshold → VETO
-    2. spread_bps > spread_threshold → VETO
-    3. |price_motion_norm| > motion_threshold → VETO
-
-    If none triggered → full pass-through (1.0).
-
-    Config:
-        vol_threshold: 0.95     (volatility_state feature, 0-1 normalized)
-        spread_threshold: 50.0  (spread in basis points)
-        motion_threshold: 3.0   (|pm_norm| sigma-normalized)
+    The checks run in a fixed order: volatility_state, then spread_bps, then
+    price_motion_norm. Only the first matching trigger contributes a reason.
     """
 
     def __init__(
@@ -60,7 +46,8 @@ class DangerZoneShield(BaseShield):
     ) -> ShieldResult:
         reasons: List[str] = []
 
-        # Check 1: Volatility
+        # This shield only vetoes on finite numeric evidence; parse failures are
+        # treated like missing data and allow later checks to run.
         vol = features.get("volatility_state")
         if vol is not None:
             try:
@@ -77,7 +64,6 @@ class DangerZoneShield(BaseShield):
             except (TypeError, ValueError):
                 pass
 
-        # Check 2: Spread
         spread = features.get("spread_bps")
         if spread is not None:
             try:
@@ -94,7 +80,6 @@ class DangerZoneShield(BaseShield):
             except (TypeError, ValueError):
                 pass
 
-        # Check 3: Price motion
         motion = features.get("price_motion_norm")
         if motion is not None:
             try:
@@ -111,7 +96,6 @@ class DangerZoneShield(BaseShield):
             except (TypeError, ValueError):
                 pass
 
-        # All clear
         return ShieldResult(
             multiplier=1.0,
             reasons=[],

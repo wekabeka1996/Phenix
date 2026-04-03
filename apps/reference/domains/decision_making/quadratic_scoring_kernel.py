@@ -1,31 +1,18 @@
-"""
-QuadraticScoringKernel — Phase 9: The Quadratic Brain.
+"""Quadratic Aurora scoring kernel and its result DTOs.
 
-Converts directional conviction (Σ = pillar aggregate) into
-non-linear exposure via:
+The kernel converts an upstream linear conviction input into decision and sizing
+scores, then applies regime-threshold scaling, side-bias penalties, and
+hysteresis-based side selection. The default Aurora geometry remains signed
+quadratic on both admission and sizing paths, but compute() also supports
+decoupled admission/sizing transforms used by the newer decision-geometry
+contract.
 
-    Exposure = sign(Σ) × Σ²
-
-Properties:
-- Weak conviction → near-zero exposure (hesitation penalty)
-- Strong conviction → near-max exposure (conviction reward)
-- Sign preserved (long vs short)
-- Continuous, differentiable, no jumps
-
-Integration:
-- Sole active scoring kernel (Phase 9). v1/v2 kernels deleted.
-- Same ScoringResult output contract
-- Pillar sum injected via features["pillar_sum"]
-
-Shield:
-- Accepts optional shield_fn that can veto/attenuate signal
-- NullShield (default) passes everything through but is forbidden in production (fail-closed)
-
-Deferred-output note:
-- For Aurora, `deferred=True` is reserved for anomaly/fail-closed input or config
-  conditions inside the kernel.
-- Ordinary live "cannot trade now" outcomes are expected to surface as
-  `STRATEGY_DECISION_BLOCKED` via explicit strategy policy gates outside the kernel.
+Boundary notes proven in current runtime wiring:
+- the kernel owns math transformation plus side selection inside the scoring
+    boundary;
+- it does not emit policy-blocked semantics for ordinary live denials;
+- several kwargs are accepted only for shared call-site compatibility and are
+    intentionally ignored here.
 """
 from __future__ import annotations
 
@@ -37,11 +24,17 @@ from typing import Any, Dict, List, Optional, Callable
 
 @dataclass
 class ScoringResult:
-    """Result of scoring kernel computation."""
+    """Structured output returned by QuadraticScoringKernel.compute().
+
+    ``score`` mirrors ``decision_score`` because downstream Aurora call sites
+    still read a single primary score field. ``sizing_score`` may diverge from
+    ``decision_score`` when admission and sizing transforms or shield floors are
+    decoupled.
+    """
 
     # Core outputs
     score: decimal.Decimal
-    side: str  # "buy", "sell", or ""
+    side: str  # Lower-case "buy", "sell", or neutral ""
     thr_buy: decimal.Decimal
     thr_sell: decimal.Decimal
     decision_score: decimal.Decimal = decimal.Decimal("0")
@@ -49,7 +42,7 @@ class ScoringResult:
     raw_score: decimal.Decimal = decimal.Decimal("0")
     admission_shield_multiplier: decimal.Decimal = decimal.Decimal("1.0")
 
-    # Explainability
+    # Explainability payload returned to callers and logs.
     why_chain: List[str] = field(default_factory=list)
     psi_vector: Dict[str, Any] = field(default_factory=dict)
 
@@ -61,18 +54,23 @@ class ScoringResult:
     buy_bias_mult: decimal.Decimal = decimal.Decimal("1.0")
     sell_bias_mult: decimal.Decimal = decimal.Decimal("1.0")
 
-    # Deferred state
+    # Deferred state is reserved for kernel-local fail-closed/anomaly outcomes.
     deferred: bool = False
     defer_reason: Optional[str] = None
 
-    # Phase 9: Shield context
+    # Shield telemetry mirrors the active attenuation branch taken by compute().
     shield_multiplier: decimal.Decimal = decimal.Decimal("1.0")
     shield_breakdown: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class SideBiasState:
-    """Side bias window state for penalty calculation."""
+    """Windowed side-intent counts used to widen one side's entry threshold.
+
+    The kernel does not build this structure itself. AuroraScoringHelpersMixin
+    supplies a pre-pruned snapshot, and the kernel only converts it into buy/sell
+    threshold multipliers.
+    """
 
     buy_count: int = 0
     sell_count: int = 0
@@ -84,7 +82,11 @@ class SideBiasState:
 
 @dataclass
 class QuadraticContext:
-    """Explainability context for quadratic scoring."""
+    """Local explainability snapshot shape for quadratic scoring internals.
+
+    The live ScoringResult contract currently exposes the same information via
+    ``psi_vector`` and ``shield_breakdown`` rather than returning this DTO.
+    """
     pillar_sum: float = 0.0
     raw_exposure: float = 0.0           # sign(Σ)×Σ²
     shield_multiplier: float = 1.0      # from shield cascade
@@ -106,26 +108,28 @@ def _null_shield(
     pillar_sum: float,
     raw_exposure: float,
 ) -> tuple[float, List[str]]:
-    """NullShield: passes everything through unchanged."""
+    """Compatibility pass-through used when the caller omitted shield_fn.
+
+    Production fail-closed enforcement against an effectively disabled shield
+    stack happens outside this module during config validation and wiring.
+    """
     return 1.0, []
 
 
 class QuadraticScoringKernel:
     """
-    Phase 9 Quadratic Scoring Kernel.
+    Non-linear scoring kernel for Aurora's active math path.
 
-    Formula: Exposure = sign(Σ) × Σ² × shield_multiplier
+    Default geometry:
+        sign(S) * |S|^2
 
-    Where:
-    - Σ = weighted pillar sum ∈ [-1, +1]
-    - shield_multiplier ∈ [0, 1] (attenuated by shields)
-
-    The quadratic transform creates:
-    - Near-zero exposure for weak signals (|Σ| < 0.3)
-    - Aggressive scaling for strong signals (|Σ| > 0.7)
-    - Natural hesitation/conviction zones
-
-    Output contract: ScoringResult dataclass.
+    Actual compute() flow:
+    1. resolve a linear input from ``linear_score`` or ``features['pillar_sum']``;
+    2. scale and clamp it to [-1, 1];
+    3. transform admission and sizing scores, optionally with different modes;
+    4. apply shield attenuation and the optional admission shield floor;
+    5. widen thresholds via regime factors and side-bias penalties;
+    6. choose a side with 3-zone hysteresis.
     """
 
     @staticmethod
@@ -165,11 +169,26 @@ class QuadraticScoringKernel:
         admission_shield_floor: float = 0.0,
     ) -> ScoringResult:
         """
-        Compute quadratic signal score.
+        Compute decision and sizing scores for one symbol snapshot.
 
-        Args:
-            linear_score: Explicit linear score input (e.g. from handler computation).
-                          If provided, takes precedence over features["pillar_sum"].
+        Live inputs read by this implementation:
+        - ``linear_score`` or ``features['pillar_sum']``
+        - ``base_threshold`` plus ``regime_name`` / ``regime_thresholds``
+        - ``side_bias_state``
+        - ``shield_fn``
+        - ``current_side`` and ``neutral_threshold``
+        - transform controls such as ``admission_mode`` and ``sizing_mode``
+
+        Compatibility-only kwargs accepted but not read here include:
+        ``warmup_readiness``, ``price``, ``signal_weights``,
+        ``feature_neutrals``, ``essential_features``,
+        ``direction_strength_cfg``, ``delta_price_cap_pct``,
+        ``scoring_version``, ``normalize_mode``, and ``regime_smoother``.
+
+        Raises:
+            ValueError: if a transform mode is unsupported or soft_power is
+                requested without an explicit exponent. Live Aurora callers
+                handle that fail-closed outside the kernel.
         """
         _shield = shield_fn or _null_shield
 
@@ -182,12 +201,14 @@ class QuadraticScoringKernel:
             regime=regime_name,
         )
 
-        # ─── Step 1: Resolve Linear Input (S_linear) ────────────────
+        # ``linear_score`` bypasses the feature contract and is mainly used by
+        # callers that have already computed the aggregate conviction upstream.
         if linear_score is not None:
             s_linear = linear_score
             source = "arg"
         else:
-            # Fallback to feature contract
+            # The canonical Aurora feature contract exposes the aggregate as
+            # ``pillar_sum``. Missing/invalid values defer rather than raise.
             pillar_sum_raw = features.get("pillar_sum")
             if pillar_sum_raw is None:
                 result.deferred = True
@@ -208,14 +229,14 @@ class QuadraticScoringKernel:
             return result
         result.raw_score = decimal.Decimal(str(round(s_linear, 8)))
 
-        # ─── Step 2: Scale & Clamp (Sensitivity) ──────────────────
-        # Formula: S_scaled = clamp(S_linear * M, -1, 1)
+        # score_multiplier adjusts sensitivity before the transform, but the
+        # kernel still enforces the invariant that transformed input stays in [-1, 1].
         s_scaled_raw = s_linear * score_multiplier
 
-        # SAFETY CAP: Enforce [-1, 1] invariant before squaring
         s_clamped = max(-1.0, min(1.0, s_scaled_raw))
 
-        # ─── Step 3: Admission / Sizing transforms ───────────────
+        # Admission and sizing may intentionally diverge. Decision-score logic
+        # can stay more permissive or more conservative than sizing-score logic.
         admission_pre_shield = _transform_signed_score(
             s_clamped, mode=admission_mode, power=admission_power
         )
@@ -223,7 +244,8 @@ class QuadraticScoringKernel:
             s_clamped, mode=sizing_mode, power=sizing_power
         )
 
-        # ─── Step 4: Shield Cascade ──────────────────────────────
+        # The shield sees the raw linear conviction together with the sizing
+        # transform. Hard vetoes force both branches to zero.
         shield_mult, shield_reasons = _shield(
             symbol, features, s_linear, sizing_pre_shield)
         shield_mult = max(0.0, min(1.0, shield_mult))
@@ -231,6 +253,8 @@ class QuadraticScoringKernel:
         if shield_mult == 0.0:
             admission_shield_mult = 0.0
         else:
+            # admission_shield_floor can only lift a non-zero attenuation;
+            # it never overrides a proven hard veto.
             admission_shield_mult = max(
                 shield_mult,
                 max(0.0, min(1.0, admission_shield_floor)),
@@ -239,7 +263,8 @@ class QuadraticScoringKernel:
         decision_score_val = admission_pre_shield * admission_shield_mult
         sizing_score_val = sizing_pre_shield * shield_mult
 
-        # ─── Step 5: Output & Explainability ─────────────────────
+        # ``score`` remains aliased to decision_score for compatibility with
+        # older consumers that still read a single primary score field.
         result.decision_score = decimal.Decimal(
             str(round(decision_score_val, 8)))
         result.sizing_score = decimal.Decimal(str(round(sizing_score_val, 8)))
@@ -291,8 +316,8 @@ class QuadraticScoringKernel:
             "admission_shield_multiplier": admission_shield_mult,
         }
 
-        # ─── Step 6: Threshold calculation ───────────────────────
-        # Reuse regime × side-bias threshold logic from legacy kernel
+        # Threshold widening is still part of the active kernel contract even
+        # though the upstream v2 linear kernel has been removed.
         factor = _resolve_regime_factor(regime_name, regime_thresholds)
         if factor is None:
             result.deferred = True
@@ -302,7 +327,7 @@ class QuadraticScoringKernel:
         result.threshold_factor = factor
         signal_threshold = base_threshold * factor
 
-        # Side bias penalties
+        # Side-bias widens only the overloaded side once enough history exists.
         buy_bias_mult, sell_bias_mult = _compute_side_bias_mult(
             side_bias_state)
         result.buy_bias_mult = buy_bias_mult
@@ -313,7 +338,7 @@ class QuadraticScoringKernel:
         result.thr_buy = thr_buy
         result.thr_sell = thr_sell
 
-        # ─── Step 7: Side determination with hysteresis ──────────
+        # Hysteresis is evaluated on the decision score, not on sizing score.
         thr_neutral = neutral_threshold if neutral_threshold is not None else thr_buy
         result.side, side_why = _determine_side(
             result.decision_score, thr_buy, thr_sell, thr_neutral, current_side,
@@ -343,7 +368,11 @@ def _resolve_regime_factor(
     regime_name: Optional[str],
     regime_thresholds: Dict[str, float],
 ) -> Optional[decimal.Decimal]:
-    """Resolve regime threshold factor (same logic as legacy kernel)."""
+    """Resolve the positive finite regime multiplier used to widen thresholds.
+
+    Returns None when neither the named regime nor DEFAULT yields a valid
+    positive Decimal. The caller converts that into a kernel defer path.
+    """
     if regime_name and regime_name in regime_thresholds:
         raw = regime_thresholds[regime_name]
     elif "DEFAULT" in regime_thresholds:
@@ -363,7 +392,12 @@ def _resolve_regime_factor(
 def _compute_side_bias_mult(
     side_bias_state: Optional[SideBiasState],
 ) -> tuple[decimal.Decimal, decimal.Decimal]:
-    """Compute buy/sell bias multipliers from side bias state."""
+    """Compute threshold multipliers from the windowed side-bias snapshot.
+
+    No penalty is applied until ``min_intents`` has been reached. After that,
+    only the overloaded side is widened, scaled by how far the observed share is
+    past the configured target_ratio.
+    """
     buy_mult = decimal.Decimal("1.0")
     sell_mult = decimal.Decimal("1.0")
 
@@ -404,9 +438,12 @@ def _determine_side(
     current_side: str,
 ) -> tuple[str, str]:
     """
-    3-zone hysteresis side determination.
+    Apply 3-zone hysteresis and return a lower-case side plus explanation.
 
-    Returns (side, why_string).
+    The zones are:
+    - flip into the opposite side when the opposite threshold is crossed;
+    - hold the current side while the score remains inside the neutral band;
+    - otherwise collapse to neutral.
     """
     if current_side == "buy":
         if score <= -thr_sell:
@@ -437,6 +474,16 @@ def _transform_signed_score(
     mode: str,
     power: Optional[float],
 ) -> float:
+    """Transform a signed score magnitude under the configured geometry mode.
+
+    Supported modes:
+    - ``quadratic``: sign(x) * |x|^2
+    - ``linear``: x unchanged
+    - ``soft_power``: sign(x) * |x|^power
+
+    Invalid mode/exponent combinations raise ValueError intentionally so the
+    caller can fail closed instead of inventing fallback math.
+    """
     sign = 1.0 if value >= 0 else -1.0
     magnitude = abs(value)
 

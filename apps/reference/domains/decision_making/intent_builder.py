@@ -1,18 +1,21 @@
-"""
-IntentBuilder — Order policy resolution, payload assembly, WAL write, FSM emit.
+"""IntentBuilder for the execution-critical trade-intent boundary.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Handles the "green-light" path after safety gates pass: pre-flight checks,
-order policy validation, trade intent construction, and emission.
+This helper owns the post-gate path after safety checks returned ALLOW:
+- warmup and one-open-order re-checks
+- order-policy and TTL resolution
+- trade_intent payload assembly
+- WAL persistence and FSM emission
+- side-channel observability (trace, lifecycle, order logger)
 
-LOC budget: <=500 (Constitution S3).
+It deliberately consumes upstream sizing/price decisions instead of
+recomputing them here.
 """
 
 import decimal
 import json
 import logging
 import uuid
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from vfoundation.core.protocol import truncate_why
@@ -80,6 +83,7 @@ class IntentBuilder:
     # -- helpers ---------------------------------------------------------------
 
     def _get_strict(self, obj: Any, key: str, err_msg: str) -> Any:
+        """Read a required field from a dict or object and fail on None."""
         if isinstance(obj, dict):
             val = obj[key] if key in obj else None
         else:
@@ -90,6 +94,7 @@ class IntentBuilder:
 
     def _reject(self, *, symbol: str, strategy_id: str, side: str, rid: str,
                 reason_code: str, context: str, why_chain: list) -> None:
+        """Emit the canonical reject event for builder-local contract failures."""
         self._emit_rejected(
             symbol=symbol, strategy_id=str(strategy_id), side=str(side),
             rid=str(rid), reason_code=reason_code, reason="DECISION",
@@ -125,7 +130,9 @@ class IntentBuilder:
     ) -> None:
         """Build and emit a TRADE_INTENT_PROPOSED event.
 
-        Called only when safety gates returned ALLOW.
+        Execution order matters here: the builder performs the last contract
+        checks, persists the proposal to WAL, emits it through the FSM, and
+        only then commits arbitration/post-emit bookkeeping.
         """
         intent_side = sg.intent_side
         trace_ts_ms = sg.trace_ts_ms
@@ -241,6 +248,10 @@ class IntentBuilder:
             td = self._safe_decimal(target_price, default=None)
             target_price_payload = str(td) if td is not None else None
 
+        # These schema-required fields are still produced in their current
+        # compatibility form here. The builder does not have a proven local
+        # Kelly calculator, so this path only preserves the existing runtime
+        # values instead of introducing new sizing math.
         try:
             strat_cfg = getattr(self.config.strategies, str(
                 strategy_id), getattr(self.config.strategies, "aurora", None))
@@ -279,6 +290,8 @@ class IntentBuilder:
             "regime": sg.regime,
             "regime_confidence": sg.regime_confidence,
         }
+        # Optional top-level trace is part of the active execution-boundary
+        # schema and is only attached when an upstream strategy supplied one.
         if isinstance(strategy_trace, dict) and strategy_trace:
             trade_intent["trace"] = strategy_trace
 
@@ -318,6 +331,9 @@ class IntentBuilder:
                 f"Failed to record accepted intent metrics: {e}")
 
         # ── WAL + FSM emit ─────────────────────────────────────
+        # Arbitration is committed only after both durability and boundary emit
+        # succeeded, so a failed append/emit must leave the arbitration window
+        # unpoisoned for the competing strategy.
         try:
             intent_evt = Message(
                 op="EVT", verb="TRADE_INTENT_PROPOSED", src="decision_making",
@@ -397,6 +413,9 @@ class IntentBuilder:
             pass
 
         # ── OrderLogger ────────────────────────────────────────
+        # lifecycle_id mirrors idempotent_key at the top level so downstream
+        # execution/order forensics can correlate the proposal without digging
+        # through metadata.
         order_logger.write({
             "rid": rid, "event_type": "ORDER_INTENT",
             # PHASE 1: top-level lifecycle identity
@@ -482,7 +501,6 @@ class IntentBuilder:
                 return None, None, None
             tif = None
 
-
         # ── valid_for_ms (LIMIT only) ─────────────────────────
         # Close-path exemption: reduce_only intents (position closes) must NOT
         # be subject to pending-entry TTL semantics. Applying valid_for_ms to
@@ -523,4 +541,3 @@ class IntentBuilder:
                 return None, None, None
 
         return order_type_u, tif, valid_for_ms
-

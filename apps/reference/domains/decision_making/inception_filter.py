@@ -1,6 +1,13 @@
-from decimal import Decimal
-from typing import List, Optional, TYPE_CHECKING
+"""Pure regime-shift inception gating for the current decision tick.
+
+This module is intentionally narrow: it evaluates the current raw/stable regime
+split and returns a small result object for the caller. It does not emit
+telemetry, mutate strategy state, or schedule follow-up confirmation work.
+"""
+
 from dataclasses import dataclass
+from decimal import Decimal
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from apps.reference.config_models import RegimeShiftInceptionConfig
@@ -8,9 +15,17 @@ if TYPE_CHECKING:
 
 @dataclass
 class InceptionResult:
+    """Outcome of the inception gate for the current evaluation only.
+
+    ``eligible`` tells the caller whether it may attempt an immediate inception
+    action now. ``micro_fraction`` is the sizing multiplier returned by the
+    selected action contract; non-entry outcomes use ``1.0``. ``why`` is a
+    short reason token that callers can surface into telemetry or reason chains.
+    """
+
     eligible: bool
-    micro_fraction: float  # 1.0 if not inception, < 1.0 if micro
-    why: str  # <= 80 chars
+    micro_fraction: float
+    why: str
 
 
 def check_inception_eligibility(
@@ -22,14 +37,28 @@ def check_inception_eligibility(
     stress_state: str,
     config: Optional["RegimeShiftInceptionConfig"],
 ) -> InceptionResult:
-    """
-    Zero-delay eligibility filter. ALL must be true:
-    1. raw_regime != stable_regime
-    2. raw_regime ∈ allowed_regimes
-    3. stable_regime ∉ allowed_regimes (RESCUE-ONLY guard)
-    4. signal_score >= threshold for raw_regime
-    5. stress_state != "EXTREME"
-    If config is None or config.enabled is False → InceptionResult(eligible=False, micro_fraction=1.0)
+    """Return whether the current regime shift qualifies for inception handling.
+
+    This helper is stateless and evaluates only the inputs for the current
+    decision pass. It does not confirm later bars or persist pending work.
+
+    Eligibility requires all of the following:
+    1. the feature is enabled;
+    2. ``raw_regime`` differs from ``stable_regime``;
+    3. ``raw_regime`` is in ``allowed_regimes``;
+    4. ``stable_regime`` is not in ``allowed_regimes``;
+    5. ``stress_state`` is not ``EXTREME``;
+    6. ``abs(signal_score)`` meets the raw-regime threshold.
+
+    Action semantics:
+    - ``none`` returns a non-eligible telemetry-only result;
+    - ``confirm_next_bar`` returns a non-eligible reason token only; this
+      helper does not schedule or persist any follow-up confirmation;
+    - ``micro_size`` returns an eligible result with the configured size
+      fraction.
+
+    Raises:
+        ValueError: if ``config.action`` is outside the validated contract.
     """
     if config is None or not config.enabled:
         return InceptionResult(eligible=False, micro_fraction=1.0, why="inception_disabled")
@@ -46,12 +75,15 @@ def check_inception_eligibility(
     if stress_state == "EXTREME":
         return InceptionResult(eligible=False, micro_fraction=1.0, why="extreme_stress")
 
+    # The gate uses score magnitude only; a sufficiently negative score still
+    # passes this threshold check and direction is handled by the caller.
     if abs(signal_score) < signal_threshold_for_raw:
         return InceptionResult(eligible=False, micro_fraction=1.0, why="score_below_raw_threshold")
 
     action = config.action
+    # Only ``micro_size`` makes the result eligible here. Other modes preserve a
+    # machine-readable reason for the caller without authorizing an immediate entry.
     if action == "none":
-        # telemetry only, not eligible for trading
         return InceptionResult(eligible=False, micro_fraction=1.0, why="action_none")
     elif action == "confirm_next_bar":
         return InceptionResult(eligible=False, micro_fraction=1.0, why="action_confirm_next_bar")
@@ -59,4 +91,6 @@ def check_inception_eligibility(
         fraction = float(config.micro_size_fraction)
         return InceptionResult(eligible=True, micro_fraction=fraction, why=f"inception:micro_{fraction}")
 
+    # Unknown actions are treated as a contract/config error instead of silently
+    # degrading into a trading decision.
     raise ValueError(f"Unknown inception action: {action!r}")

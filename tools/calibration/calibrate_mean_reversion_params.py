@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
+"""Production-aligned candidate calibrator for active mean_reversion parameters.
+
+This script searches mean_reversion strategy and per-asset parameter overlays from recorder bars,
+emits overlay artifacts, and never mutates canonical YAML automatically.
+"""
 from __future__ import annotations
+from tools.objective_calibration.extract_recorder import load_recorder_rows
+from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
+    MRStrategyConfig,
+    MeanReversion1mStrategy,
+)
+from apps.reference.domains.feature_engineering.bar_resampler import Bar
 
 import argparse
 import json
@@ -18,13 +29,6 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
-from apps.reference.domains.feature_engineering.bar_resampler import Bar
-from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
-    MRStrategyConfig,
-    MeanReversion1mStrategy,
-)
-from tools.objective_calibration.extract_recorder import load_recorder_rows
 
 
 @dataclass(frozen=True)
@@ -62,7 +66,8 @@ def _extract_symbol_cfg(root: dict[str, Any], symbol: str) -> dict[str, Any]:
 
 def _allowed_regimes(root: dict[str, Any], symbol: str) -> list[str]:
     asset_cfg = ((root.get("assets") or {}).get(symbol) or {})
-    regimes = asset_cfg.get("allowed_regimes") or root.get("allowed_regimes") or []
+    regimes = asset_cfg.get("allowed_regimes") or root.get(
+        "allowed_regimes") or []
     return [str(regime) for regime in regimes]
 
 
@@ -83,8 +88,10 @@ def _build_strategy_cfg(*, params: dict[str, Any], allowed_regimes: list[str]) -
         cooldown_sec=int(params["cooldown_sec"]),
         allowed_regimes=list(allowed_regimes),
         confidence_base=Decimal(str(params.get("confidence_base", 0.5))),
-        confidence_bb_slope=Decimal(str(params.get("confidence_bb_slope", 2.0))),
-        confidence_rsi_bonus=Decimal(str(params.get("confidence_rsi_bonus", 0.2))),
+        confidence_bb_slope=Decimal(
+            str(params.get("confidence_bb_slope", 2.0))),
+        confidence_rsi_bonus=Decimal(
+            str(params.get("confidence_rsi_bonus", 0.2))),
     )
 
 
@@ -113,7 +120,8 @@ def _signal_return_bps(
     future_bars: pd.DataFrame,
     cfg: SearchCfg,
 ) -> float:
-    exit_price = Decimal(str(future_bars.iloc[min(len(future_bars) - 1, max(0, cfg.horizon_bars - 1))]["close"]))
+    exit_price = Decimal(str(future_bars.iloc[min(
+        len(future_bars) - 1, max(0, cfg.horizon_bars - 1))]["close"]))
     for _, row in future_bars.head(max(1, int(cfg.horizon_bars))).iterrows():
         high = Decimal(str(row["high"]))
         low = Decimal(str(row["low"]))
@@ -134,9 +142,11 @@ def _signal_return_bps(
     if entry_price <= 0:
         return 0.0
     if signal_side == "BUY":
-        gross = float(((exit_price - entry_price) / entry_price) * Decimal("10000"))
+        gross = float(((exit_price - entry_price) /
+                      entry_price) * Decimal("10000"))
     else:
-        gross = float(((entry_price - exit_price) / entry_price) * Decimal("10000"))
+        gross = float(((entry_price - exit_price) /
+                      entry_price) * Decimal("10000"))
     return gross - float(cfg.cost_bps_roundtrip)
 
 
@@ -155,28 +165,33 @@ def _max_drawdown(values: list[float]) -> float:
 
 def _evaluate_symbol(*, df_symbol: pd.DataFrame, params: dict[str, Any], cfg: SearchCfg) -> dict[str, Any]:
     strategy = MeanReversion1mStrategy(
-        config=_build_strategy_cfg(params=params, allowed_regimes=params["allowed_regimes"]),
+        config=_build_strategy_cfg(
+            params=params, allowed_regimes=params["allowed_regimes"]),
         timeframe_sec=int(params["timeframe_sec"]),
     )
     trades: list[float] = []
     signals = 0
-    ordered = df_symbol.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
+    ordered = df_symbol.sort_values(
+        "timestamp", kind="mergesort").reset_index(drop=True)
     for idx, row in ordered.iterrows():
-        strategy.set_regime(str(row["symbol"]).upper(), str(row.get("regime") or ""))
+        strategy.set_regime(str(row["symbol"]).upper(),
+                            str(row.get("regime") or ""))
         bar = _build_bar(row, int(params["timeframe_sec"]))
         signal = strategy.on_bar(str(bar.symbol), bar, int(bar.end_ts_ms))
         if signal is None or not signal.is_signal:
             continue
         signals += 1
-        future = ordered.iloc[idx + 1 :]
+        future = ordered.iloc[idx + 1:]
         if future.empty:
             continue
         trades.append(
             _signal_return_bps(
                 signal_side=str(signal.side),
                 entry_price=Decimal(str(signal.entry_price or signal.price)),
-                stop_price=Decimal(str(signal.stop_price)) if signal.stop_price is not None else None,
-                target_price=Decimal(str(signal.target_price)) if signal.target_price is not None else None,
+                stop_price=Decimal(str(signal.stop_price)
+                                   ) if signal.stop_price is not None else None,
+                target_price=Decimal(
+                    str(signal.target_price)) if signal.target_price is not None else None,
                 future_bars=future,
                 cfg=cfg,
             )
@@ -187,7 +202,8 @@ def _evaluate_symbol(*, df_symbol: pd.DataFrame, params: dict[str, Any], cfg: Se
     wins = sum(1 for trade in trades if trade > 0.0)
     win_rate = float(wins / trade_count) if trade_count else 0.0
     max_dd = _max_drawdown(trades)
-    score = total - max_dd + (win_rate * 100.0) if trade_count >= int(cfg.min_trades) else 0.0
+    score = total - max_dd + \
+        (win_rate * 100.0) if trade_count >= int(cfg.min_trades) else 0.0
     return {
         "score": score,
         "signal_count": signals,
@@ -225,8 +241,10 @@ def _evaluate_dataset(*, df: pd.DataFrame, root_cfg: dict[str, Any], candidate: 
         aggregate["max_drawdown_bps"] += float(metrics["max_drawdown_bps"])
         if int(metrics["trade_count"]) > 0:
             per_symbol_win_rates.append(float(metrics["win_rate"]))
-    aggregate["avg_pnl_bps"] = aggregate["net_pnl_bps"] / aggregate["trade_count"] if aggregate["trade_count"] > 0 else 0.0
-    aggregate["win_rate"] = float(sum(per_symbol_win_rates) / len(per_symbol_win_rates)) if per_symbol_win_rates else 0.0
+    aggregate["avg_pnl_bps"] = aggregate["net_pnl_bps"] / \
+        aggregate["trade_count"] if aggregate["trade_count"] > 0 else 0.0
+    aggregate["win_rate"] = float(sum(
+        per_symbol_win_rates) / len(per_symbol_win_rates)) if per_symbol_win_rates else 0.0
     aggregate["per_symbol"] = symbol_metrics
     return aggregate
 
@@ -244,7 +262,8 @@ def _mutate_candidate(base: dict[str, Any], rng: random.Random) -> dict[str, Any
 
 
 def _split_train_test(df: pd.DataFrame, frac: float) -> tuple[pd.DataFrame, pd.DataFrame]:
-    ordered = df.sort_values(["timestamp", "symbol"], kind="mergesort").reset_index(drop=True)
+    ordered = df.sort_values(["timestamp", "symbol"],
+                             kind="mergesort").reset_index(drop=True)
     split_idx = max(1, int(len(ordered) * frac))
     split_idx = min(split_idx, len(ordered))
     return ordered.iloc[:split_idx].copy(), ordered.iloc[split_idx:].copy()
@@ -323,8 +342,10 @@ def _write_outputs(
 - Max drawdown bps: {best_test['max_drawdown_bps']}
 
 ## Rollout Reminder
+- Calibration class: production-aligned candidate for active mean_reversion parameters.
 - This report writes overlays only.
 - It does not mutate canonical YAML automatically.
+- Scope caveat: recorder-bar proxy metrics do not prove execution-routing or fill-quality behavior.
 """
     (out_dir / "report.md").write_text(report, encoding="utf-8")
     (out_dir / "candidate_mean_reversion_overlay.yaml").write_text(
@@ -348,7 +369,8 @@ def _write_outputs(
         json.dumps(
             {
                 "candidates": [
-                    {"score": point.score, "metrics": point.metrics, "overlay": point.overlay}
+                    {"score": point.score, "metrics": point.metrics,
+                        "overlay": point.overlay}
                     for point in candidates
                 ]
             },
@@ -360,8 +382,14 @@ def _write_outputs(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Calibrate mean_reversion strategy parameters from recorder bars")
-    parser.add_argument("--mr-yaml", default="config/aurora/strategies/mean_reversion.yaml")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Production-aligned candidate calibrator for active mean_reversion strategy parameters. "
+            "Emits overlay artifacts only and never mutates canonical YAML automatically."
+        )
+    )
+    parser.add_argument(
+        "--mr-yaml", default="config/aurora/strategies/mean_reversion.yaml")
     parser.add_argument("--recorder-dir", default="data/recorder")
     parser.add_argument("--symbols", nargs="+", required=True)
     parser.add_argument("--start", type=_parse_date, required=True)
@@ -386,13 +414,17 @@ def main(argv: list[str] | None = None) -> int:
         tf_sec=int(args.tf_sec),
     )
     if df.empty:
-        raise SystemExit("No recorder rows found for requested symbols/date range")
-    required_cols = {"symbol", "timestamp", "open", "high", "low", "close", "regime"}
+        raise SystemExit(
+            "No recorder rows found for requested symbols/date range")
+    required_cols = {"symbol", "timestamp",
+                     "open", "high", "low", "close", "regime"}
     missing = sorted(required_cols.difference(df.columns))
     if missing:
-        raise SystemExit(f"Recorder dataset missing required columns: {missing}")
+        raise SystemExit(
+            f"Recorder dataset missing required columns: {missing}")
 
-    df = df.sort_values(["timestamp", "symbol"], kind="mergesort").reset_index(drop=True)
+    df = df.sort_values(["timestamp", "symbol"],
+                        kind="mergesort").reset_index(drop=True)
     train_df, test_df = _split_train_test(df, float(args.train_frac))
     search_cfg = SearchCfg(
         horizon_bars=int(args.horizon_bars),
@@ -411,25 +443,33 @@ def main(argv: list[str] | None = None) -> int:
         "max_bb_width": float(base_strategy["max_bb_width"]),
     }
 
-    baseline_train = _evaluate_dataset(df=train_df, root_cfg=root_cfg, candidate=baseline_candidate, cfg=search_cfg)
-    best = EvalPoint(score=float(baseline_train["score"]), metrics=baseline_train, overlay=_overlay_from_candidate(baseline_candidate))
+    baseline_train = _evaluate_dataset(
+        df=train_df, root_cfg=root_cfg, candidate=baseline_candidate, cfg=search_cfg)
+    best = EvalPoint(score=float(
+        baseline_train["score"]), metrics=baseline_train, overlay=_overlay_from_candidate(baseline_candidate))
     candidates = [best]
     rng = random.Random(int(args.seed))
     for _ in range(max(1, int(args.trials))):
         candidate = _mutate_candidate(baseline_candidate, rng)
-        metrics = _evaluate_dataset(df=train_df, root_cfg=root_cfg, candidate=candidate, cfg=search_cfg)
-        point = EvalPoint(score=float(metrics["score"]), metrics=metrics, overlay=_overlay_from_candidate(candidate))
+        metrics = _evaluate_dataset(
+            df=train_df, root_cfg=root_cfg, candidate=candidate, cfg=search_cfg)
+        point = EvalPoint(score=float(
+            metrics["score"]), metrics=metrics, overlay=_overlay_from_candidate(candidate))
         candidates.append(point)
         if point.score > best.score:
             best = point
 
-    baseline_test = _evaluate_dataset(df=test_df, root_cfg=root_cfg, candidate=baseline_candidate, cfg=search_cfg) if not test_df.empty else baseline_train
+    baseline_test = _evaluate_dataset(df=test_df, root_cfg=root_cfg, candidate=baseline_candidate,
+                                      cfg=search_cfg) if not test_df.empty else baseline_train
     best_candidate_payload = next(iter(best.overlay.values()))
     best_params = dict(best_candidate_payload.get("strategy") or {})
-    best_test = _evaluate_dataset(df=test_df, root_cfg=root_cfg, candidate=best_params, cfg=search_cfg) if not test_df.empty else best.metrics
+    best_test = _evaluate_dataset(df=test_df, root_cfg=root_cfg, candidate=best_params,
+                                  cfg=search_cfg) if not test_df.empty else best.metrics
 
-    candidates = sorted(candidates, key=lambda item: item.score, reverse=True)[: max(1, int(args.top_k))]
-    out_dir = Path(args.out_dir) if args.out_dir else Path(f"reports/strategy_calibration/{datetime.now().strftime('%Y%m%d_%H%M%S')}_mean_reversion_{'_'.join(str(symbol).upper() for symbol in args.symbols)}")
+    candidates = sorted(candidates, key=lambda item: item.score, reverse=True)[
+        : max(1, int(args.top_k))]
+    out_dir = Path(args.out_dir) if args.out_dir else Path(
+        f"reports/strategy_calibration/{datetime.now().strftime('%Y%m%d_%H%M%S')}_mean_reversion_{'_'.join(str(symbol).upper() for symbol in args.symbols)}")
     _write_outputs(
         out_dir=out_dir,
         args=args,

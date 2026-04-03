@@ -28,10 +28,15 @@ Backtest post-processing and diagnostics.
 - `backtest_summarize.py`
 
 ## calibration
-Parameter calibration for Aurora and MD/AMR flows.
+Parameter calibration and selection tooling.
+See `config/docs/CALIBRATION_STANDARD_V1.md` and `tools/calibration/README.md` for class definitions and current registry status.
+- `calibrate_aurora_thresholds.py`
 - `calibrate_aurora_regime_params.py`
 - `calibrate_aurora_signal_weights.py`
 - `calibrate_md_amr_weights.py`
+- `calibrate_mean_reversion_params.py`
+- `calibrate_objective_stack.py`
+- `calibrate_system_stress_weights.py`
 
 ## ci_cd
 Config validation and CI gate scripts.
@@ -118,6 +123,9 @@ Offline parquet dataset build, audit, stress, and preset tooling.
 
 ## regime_calibration
 Low-level regime calibration support modules.
+
+## system_stress_calibration
+Offline helpers for system stress oracle construction, offline overlay replay, and weight grid search.
 
 ## simulation
 Offline simulation, replay, and config tuning utilities.

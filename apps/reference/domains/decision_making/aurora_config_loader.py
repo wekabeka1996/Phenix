@@ -1,10 +1,13 @@
-"""
-Aurora Config Loader Mixin.
+"""Load Aurora strategy and domain config into handler runtime state.
 
-Extracted from aurora_handler.py (Phase 14A Decomposition).
+The mixin translates the Aurora config tree into concrete handler attributes and
+helper objects used later by AuroraHandler. It does not emit signals or resolve
+per-symbol state on its own; its job is to materialize configuration contracts
+into deterministic runtime fields.
 
-Provides:
-  - _load_config: Parse and validate Aurora strategy configuration
+Two config surfaces are supported:
+- strict Pydantic AuroraConfig objects, which fail closed on missing fields;
+- legacy/mock objects, which retain local defaults for older tests.
 """
 from __future__ import annotations
 
@@ -37,28 +40,31 @@ logger = logging.getLogger("aurora_handler")
 
 
 class AuroraConfigLoaderMixin:
-    """
-    Mixin: configuration loading for AuroraHandler.
+    """Populate AuroraHandler state from strategy and domain configuration.
 
-    Self-attributes set (consumed by AuroraHandler and other mixins):
-      - self.timeframe_sec, self.signal_threshold, self.neutral_threshold
-      - self.side_bias_*, self.regime_thresholds, self.direction_strength_cfg
-      - self.delta_price_cap_pct, self.scoring_kernel_cls, self._scoring_engine_cfg
-      - self.score_multiplier, self.blocked_regimes
-      - self.vol_gates_enabled, self.anti_flat_sigma, self.anti_fomo_sigma, self.motion_window_sec
-      - self.holding_period_enabled, self.default_min_duration_sec, etc.
-      - self.anti_churn_enabled, self.time_multipliers, regime inertia params
-      - self.execution_gate, self.exit_manager, self.entry_plan_calculator
-      - self.mode_manager, self.dashboard
+    Host contract:
+    - ``self.config`` contains either a typed AuroraConfig or a test double.
+    - ``self.logger`` is available for diagnostics.
+    - ``self._build_shield_cascade()`` is supplied by AuroraScoringHelpersMixin.
+
+    Side effects:
+    - mutates handler attributes consumed by decision/execution paths;
+    - constructs helper collaborators such as ExecutionGate, ExitManager,
+      EntryPlan, ModeManager, and DashboardMetrics.
     """
 
     def _load_config(self) -> None:
-        """Extract configuration parameters."""
+        """Load Aurora config into handler attributes and helper objects.
+
+        Strict Pydantic configs reject missing runtime-required fields. Legacy
+        mocks keep compatibility defaults so isolated unit tests can still
+        instantiate AuroraHandler without a full config tree.
+        """
         aurora_cfg = getattr(self.config, "strategies", None)
         aurora = getattr(aurora_cfg, "aurora", None) if aurora_cfg else None
 
-        # FeatureEngineering warmup enforcement mode (used for readiness fail-closed behavior).
-        # Default is fail_fast to preserve live safety if config can't be resolved.
+        # Warmup enforcement defaults to fail_fast unless the typed FE subtree is
+        # present and explicitly overrides it.
         self._fe_warmup_enforcement_mode: str = "fail_fast"
         self._strict_pydantic_config: bool = False
         try:
@@ -76,10 +82,10 @@ class AuroraConfigLoaderMixin:
         except Exception:
             self._fe_warmup_enforcement_mode = "fail_fast"
 
-        # TF-SSOT-PACK-003: Get timeframe_sec from config (MANDATORY)
-        # CLOSEOUT-BASELINE-001: Strict contract - no fallbacks
+        # timeframe_sec is a strict Aurora strategy contract. If the whole
+        # strategy block is absent, keep a deterministic sentinel; the missing
+        # decision block still fails closed below.
         if aurora is None:
-            # Aurora strategy not enabled - use sentinel that will be rejected by guards
             self.timeframe_sec = 0
             self.logger.debug(
                 "AuroraHandler: aurora strategy not configured, timeframe_sec=0 (sentinel)")
@@ -101,6 +107,8 @@ class AuroraConfigLoaderMixin:
             self.mode_manager = ModeManager(op_mode)
 
             if self._strict_pydantic_config:
+                # Typed config path: reject missing scoring inputs rather than
+                # synthesizing runtime defaults.
                 from apps.reference.config_contract import ConfigContractError
 
                 thr_raw = getattr(decision, "signal_threshold", None)
@@ -153,7 +161,8 @@ class AuroraConfigLoaderMixin:
                     )
                 self.regime_thresholds = dict(regime_thr)
             else:
-                # Legacy/non-typed config path (tests/mocks): keep backward-compatible defaults.
+                # Legacy/mock config path: preserve historical defaults so older
+                # tests can build a handler without a full AuroraConfig tree.
                 self.signal_threshold = decimal.Decimal(
                     str(getattr(decision, "signal_threshold", "0.1")))
                 self.side_bias_window_sec = float(
@@ -176,9 +185,8 @@ class AuroraConfigLoaderMixin:
                 "strength_cap": float(getattr(ds_cfg, "strength_cap", 1.5)) if ds_cfg else 1.5,
             }
 
-            # Signals config — production MUST have signals (enforced by Pydantic SignalsConfig).
-            # Strict pydantic path: signals=None is a contract violation → fail-closed.
-            # Non-strict path (tests with partial mocks): fallback to "signed_v2".
+            # SignalsConfig makes this mandatory in strict configs. Partial test
+            # doubles still fall back to signed_v2 to avoid forcing full fixtures.
             signals = getattr(decision, "signals", None)
             self.delta_price_cap_pct = decimal.Decimal(str(getattr(
                 signals, "delta_price_cap_pct", "0.005"))) if signals else decimal.Decimal("0.005")
@@ -283,6 +291,8 @@ class AuroraConfigLoaderMixin:
             # REGIME-KILL-SWITCH-01: Optional config-driven regime blocklist.
             blocked = getattr(decision, "blocked_regimes", None)
             try:
+                # Legacy mocks may expose arbitrary iterables here; normalize to
+                # a stable string set or collapse to empty if the value is unusable.
                 self.blocked_regimes = {str(x)
                                         for x in (blocked or []) if str(x)}
             except Exception:
@@ -387,7 +397,9 @@ class AuroraConfigLoaderMixin:
                     signal_exit_enabled=False,
                 )
 
-            # S2-TRAILING: Extract trailing stop config from instrument config
+            # Compatibility probe: older config objects may expose trailing_stop
+            # under config.instruments. AuroraConfig.instruments is the precision
+            # SSOT, so strict configs typically leave this unset here.
             _trailing_cfg = None
             try:
                 instruments = getattr(self.config, "instruments", None)
@@ -413,7 +425,8 @@ class AuroraConfigLoaderMixin:
                     getattr(_trailing_cfg, "trail_pct", 0)) or None if _trailing_cfg else None,
             )
 
-            # Phase 4: Entry Plan (SSOT: domains.decision_making.entry_plan)
+            # EntryPlan lives under the decision_making domain contract rather
+            # than under strategies.aurora.decision.
             domains_cfg = getattr(self.config, "domains", None)
             dm_domain_cfg = getattr(
                 domains_cfg, "decision_making", None) if domains_cfg else None

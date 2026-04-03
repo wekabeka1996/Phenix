@@ -40,6 +40,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 class BinanceWebSocketClient:
     """
     Standalone WebSocket client for Binance Futures User Data Stream.
@@ -76,8 +77,10 @@ class BinanceWebSocketClient:
             try:
                 self._loop = asyncio.get_running_loop()
             except RuntimeError:
-                logger.warning("[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
+                logger.warning(
+                    "[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
                 self._loop = None
+        self._account_update_contract_warning_logged = False
 
     def _safe_emit(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
         """
@@ -89,10 +92,11 @@ class BinanceWebSocketClient:
                 self.fsm_core.emit, event_name, payload, why
             )
         else:
-             # Fallback (dangerous, but better than silent drop if loop missing)
-             logger.warning(f"[BinanceWS] _safe_emit called without loop layer! Thread safety compromised for {event_name}")
-             if self.fsm_core:
-                 self.fsm_core.emit(event_name, payload, why)
+            # Fallback (dangerous, but better than silent drop if loop missing)
+            logger.warning(
+                f"[BinanceWS] _safe_emit called without loop layer! Thread safety compromised for {event_name}")
+            if self.fsm_core:
+                self.fsm_core.emit(event_name, payload, why)
 
     def start(self) -> None:
         """
@@ -102,9 +106,11 @@ class BinanceWebSocketClient:
             logger.warning("[BinanceWS] WebSocket already running")
             return
 
-        logger.info("[BinanceWS] Starting WebSocket connection to USER_DATA_STREAM")
+        logger.info(
+            "[BinanceWS] Starting WebSocket connection to USER_DATA_STREAM")
         self.ws_running = True
-        self.ws_thread = threading.Thread(target=self._websocket_loop, daemon=True)
+        self.ws_thread = threading.Thread(
+            target=self._websocket_loop, daemon=True)
         self.ws_thread.start()
         logger.info("[BinanceWS] WebSocket thread started")
 
@@ -118,7 +124,8 @@ class BinanceWebSocketClient:
         if self.ws_thread and self.ws_thread.is_alive():
             self.ws_thread.join(timeout=5.0)
             if self.ws_thread.is_alive():
-                logger.warning("[BinanceWS] WebSocket thread did not stop gracefully")
+                logger.warning(
+                    "[BinanceWS] WebSocket thread did not stop gracefully")
 
         logger.info("[BinanceWS] WebSocket stopped")
 
@@ -134,7 +141,8 @@ class BinanceWebSocketClient:
             except Exception as e:
                 logger.error(f"[BinanceWS] WebSocket connection failed: {e}")
                 if self.ws_running:
-                    logger.info(f"[BinanceWS] Retrying WebSocket connection in {self.ws_reconnect_delay}s")
+                    logger.info(
+                        f"[BinanceWS] Retrying WebSocket connection in {self.ws_reconnect_delay}s")
                     time.sleep(self.ws_reconnect_delay)
                     # Exponential backoff
                     self.ws_reconnect_delay = min(
@@ -167,7 +175,8 @@ class BinanceWebSocketClient:
             async def ws_handler():
                 try:
                     async with websockets.connect(ws_url) as websocket:
-                        logger.info("[BinanceWS] WebSocket connected successfully")
+                        logger.info(
+                            "[BinanceWS] WebSocket connected successfully")
 
                         while self.ws_running:
                             try:
@@ -184,7 +193,8 @@ class BinanceWebSocketClient:
                                     self._refresh_listen_key()
 
                             except websockets.exceptions.ConnectionClosed:
-                                logger.warning("[BinanceWS] WebSocket connection closed")
+                                logger.warning(
+                                    "[BinanceWS] WebSocket connection closed")
                                 break
 
                 except Exception as e:
@@ -199,7 +209,8 @@ class BinanceWebSocketClient:
                 ws_loop.close()
 
         except Exception as e:
-            logger.error(f"[BinanceWS] Failed to establish WebSocket connection: {e}")
+            logger.error(
+                f"[BinanceWS] Failed to establish WebSocket connection: {e}")
             raise
 
     def _get_listen_key(self) -> None:
@@ -215,9 +226,11 @@ class BinanceWebSocketClient:
             data = resp.json()
             self.ws_listen_key = data.get("listenKey")
             self.listen_key_last_refresh = time.time()
-            logger.info(f"[BinanceWS] Obtained listen key: {self.ws_listen_key[:10]}...")
+            logger.info(
+                f"[BinanceWS] Obtained listen key: {self.ws_listen_key[:10]}...")
         else:
-            raise RuntimeError(f"Failed to get listen key: HTTP {resp.status_code} {resp.text}")
+            raise RuntimeError(
+                f"Failed to get listen key: HTTP {resp.status_code} {resp.text}")
 
     def _refresh_listen_key(self) -> None:
         """
@@ -232,14 +245,16 @@ class BinanceWebSocketClient:
 
         import requests
         try:
-            resp = requests.put(url, headers=headers, params=params, timeout=10)
+            resp = requests.put(url, headers=headers,
+                                params=params, timeout=10)
             if resp.ok:
                 self.listen_key_last_refresh = time.time()
                 logger.debug("[BinanceWS] Listen key refreshed")
             else:
-                logger.warning(f"[BinanceWS] Failed to refresh listen key: HTTP {resp.status_code}")
+                logger.warning(
+                    f"[BinanceWS] Failed to refresh listen key: HTTP {resp.status_code}")
         except Exception as e:
-             logger.warning(f"[BinanceWS] Failed to refresh listen key: {e}")
+            logger.warning(f"[BinanceWS] Failed to refresh listen key: {e}")
 
     def _handle_ws_message(self, msg: Dict[str, Any]) -> None:
         """
@@ -254,10 +269,12 @@ class BinanceWebSocketClient:
             elif event_type == "ACCOUNT_UPDATE":
                 self._handle_account_update(msg)
             else:
-                logger.debug(f"[BinanceWS] Ignoring unknown event type: {event_type}")
+                logger.debug(
+                    f"[BinanceWS] Ignoring unknown event type: {event_type}")
 
         except Exception as e:
-            logger.error(f"[BinanceWS] Error handling WS message: {e}", exc_info=True)
+            logger.error(
+                f"[BinanceWS] Error handling WS message: {e}", exc_info=True)
 
     def _handle_order_trade_update(self, msg: Dict[str, Any]) -> None:
         """
@@ -282,9 +299,11 @@ class BinanceWebSocketClient:
             # Correlate order using OrderIndex
             order_ref = None
             if hasattr(self.fsm_core, "order_index") and self.fsm_core.order_index:
-                order_ref = self.fsm_core.order_index.get(clientOrderId=client_order_id)
+                order_ref = self.fsm_core.order_index.get(
+                    clientOrderId=client_order_id)
                 if not order_ref and exchange_order_id:
-                    order_ref = self.fsm_core.order_index.get(exchangeOrderId=exchange_order_id)
+                    order_ref = self.fsm_core.order_index.get(
+                        exchangeOrderId=exchange_order_id)
 
             if not order_ref:
                 logger.warning(
@@ -301,7 +320,8 @@ class BinanceWebSocketClient:
                 "REJECTED": "REJECTED",
                 "EXPIRED": "EXPIRED",
             }
-            standardized_status = status_mapping.get(order_status, order_status)
+            standardized_status = status_mapping.get(
+                order_status, order_status)
 
             # EP-01.5 + EP-01.6: Detect MAKER_ONLY_REJECT (GTX order EXPIRED with 0 fill)
             # EP-01.6: Use OrderIndex._is_entry_ref() instead of string-hack
@@ -320,19 +340,21 @@ class BinanceWebSocketClient:
                 from decimal import Decimal, InvalidOperation
                 if filled_qty is None or filled_qty == "":
                     # Fail-closed: if we can't determine filled_qty, don't classify as maker-only reject
-                    logger.debug(f"[BinanceWS] filled_qty is empty/None, skipping maker-only check")
+                    logger.debug(
+                        f"[BinanceWS] filled_qty is empty/None, skipping maker-only check")
                     filled_qty_is_zero = False
                 else:
                     qty_dec = Decimal(str(filled_qty))
                     filled_qty_is_zero = qty_dec == 0
             except (InvalidOperation, ValueError) as e:
-                logger.warning(f"[BinanceWS] Failed to parse filled_qty={filled_qty!r}: {e}, fail-closed")
+                logger.warning(
+                    f"[BinanceWS] Failed to parse filled_qty={filled_qty!r}: {e}, fail-closed")
                 filled_qty_is_zero = False
 
             if (standardized_status == "EXPIRED"
                 and time_in_force == "GTX"
                 and is_entry_order
-                and filled_qty_is_zero):
+                    and filled_qty_is_zero):
                 # This is a post-only GTX order that couldn't become maker
                 is_maker_only_reject = True
                 logger.warning(
@@ -408,7 +430,8 @@ class BinanceWebSocketClient:
                 # final chunk is FILLED.  Both must route to EVT:TRADE_EXECUTED.
                 if standardized_status in ("FILLED", "PARTIALLY_FILLED"):
                     # Use last filled qty ("l") for incremental amount, "z" is cumulative
-                    last_fill_qty = str(order_data.get("l", order_data.get("z", "0")))
+                    last_fill_qty = str(order_data.get(
+                        "l", order_data.get("z", "0")))
                     payload["qty"] = last_fill_qty
                     payload["quantity"] = last_fill_qty
                     payload["last_fill_qty"] = last_fill_qty
@@ -420,10 +443,12 @@ class BinanceWebSocketClient:
                 elif is_maker_only_reject:
                     # EP-01.5: Emit special rejection event for MAKER_ONLY_REJECT
                     event_name = "EVT:ORDER_REJECTED"
-                    logger.info(f"[BinanceWS] 🚫 MAKER_ONLY_REJECT - Emitting EVT:ORDER_REJECTED for {symbol}")
+                    logger.info(
+                        f"[BinanceWS] 🚫 MAKER_ONLY_REJECT - Emitting EVT:ORDER_REJECTED for {symbol}")
                 else:
                     event_name = "EVT:ORDER_STATE_CHANGED"
-                    logger.info(f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
+                    logger.info(
+                        f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
 
                 if event_name == "EVT:ORDER_REJECTED":
                     payload = normalize_order_rejected_payload(
@@ -438,10 +463,12 @@ class BinanceWebSocketClient:
                         fallback_ts_ms=payload.get("ts_ms"),
                     )
 
-                self._safe_emit(event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}")
+                self._safe_emit(event_name, payload,
+                                f"WS_ORDER_UPDATE_{standardized_status}")
 
         except Exception as e:
-            logger.error(f"[BinanceWS] Error processing ORDER_TRADE_UPDATE: {e}", exc_info=True)
+            logger.error(
+                f"[BinanceWS] Error processing ORDER_TRADE_UPDATE: {e}", exc_info=True)
 
     def _handle_account_update(self, msg: Dict[str, Any]) -> None:
         """
@@ -451,21 +478,25 @@ class BinanceWebSocketClient:
             account_data = msg.get("a", {})
             balances = account_data.get("B", [])
             positions = account_data.get("P", [])
+            update_reason = account_data.get("m", "")
 
-            logger.info(f"[BinanceWS] ACCOUNT_UPDATE: {len(balances)} balances, {len(positions)} positions")
+            logger.info(
+                "[BinanceWS] ACCOUNT_UPDATE delta: %d balances, %d positions, reason=%s",
+                len(balances),
+                len(positions),
+                update_reason or "unknown",
+            )
 
-            # Create payload
-            payload = {
-                "balances": balances,
-                "positions": positions,
-                "event_time": msg.get("E", int(time.time() * 1000)),
-                "raw_ws_data": account_data,
-            }
-
-            # Emit FSM event
-            if self.fsm_core:
-                self._safe_emit("EVT:ACCOUNT_UPDATE_RECEIVED", payload, "WS_ACCOUNT_UPDATE")
-                logger.info("[BinanceWS] Emitted EVT:ACCOUNT_UPDATE_RECEIVED")
+            # Binance ACCOUNT_UPDATE is a partial delta and does not satisfy the
+            # canonical EVT:ACCOUNT_UPDATE_RECEIVED schema owned by account_balance.
+            # Fail closed instead of emitting a contract-breaking payload.
+            if self.fsm_core and not self._account_update_contract_warning_logged:
+                logger.warning(
+                    "[BinanceWS] Skipping raw ACCOUNT_UPDATE delta: "
+                    "EVT:ACCOUNT_UPDATE_RECEIVED is reserved for canonical account_balance snapshots"
+                )
+                self._account_update_contract_warning_logged = True
 
         except Exception as e:
-            logger.error(f"[BinanceWS] Error processing ACCOUNT_UPDATE: {e}", exc_info=True)
+            logger.error(
+                f"[BinanceWS] Error processing ACCOUNT_UPDATE: {e}", exc_info=True)

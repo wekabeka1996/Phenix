@@ -1,7 +1,9 @@
-"""
-MD-AMR decision handler.
+"""Stateful runtime handler for the md_amr strategy.
 
-Strict-isolated strategy handler (does not modify legacy handlers).
+The scoring math lives in MDAMRStrategyV11. This module owns the event-driven
+runtime surface around that core: startup hydration, cold-start and warmup
+gates, regime and portfolio caches, deferred/reject side channels, runtime
+readiness snapshots, and signal emission.
 """
 
 from __future__ import annotations
@@ -98,11 +100,23 @@ def _maybe_build_position_queries(
 
 
 class MDAMRHandler:
-    """Event-driven handler for strategy_id=md_amr."""
+    """Coordinate md_amr strategy instances with runtime contracts and state.
+
+    Proven responsibilities in this file:
+    - hydrate a bounded local bar history for enabled symbols;
+    - cache regime, position, portfolio, exposure, and restore state;
+    - enforce cold-start, warmup, allowlist, and objective-engine gates;
+    - emit strategy signals, rejects, defers, and runtime-readiness payloads.
+
+    The class does not implement the MD-AMR scoring math itself; that remains
+    in MDAMRStrategyV11.
+    """
 
     _REST_HYDRATION_LIMIT = 100
     _MANDATORY_LIVE_WARMUP_SEC = 7200
     _DIR_COMPONENTS_REQUIRED_BARS = 96
+    # Historical aliases keep operator/test inputs stable before allowlist
+    # checks compare them against normalized structural regime labels.
     _REGIME_ALIAS_MAP: Dict[str, str] = {
         "LOW_FLAT": "FLAT_LOW",
         "HIGH_FLAT": "FLAT_HIGH",
@@ -112,6 +126,8 @@ class MDAMRHandler:
         "LOW_VOLATILYTY": "LOW_VOLATILITY",
         "HIGHT_VOLATILITY": "HIGH_VOLATILITY",
     }
+    # A single allowlist may mix flat-regime and volatility-oriented labels;
+    # expand them to the compatible set before enforcing the gate.
     _REGIME_COMPATIBILITY_MAP: Dict[str, tuple[str, ...]] = {
         "FLAT_LOW": ("FLAT_LOW", "LOW_VOLATILITY"),
         "LOW_VOLATILITY": ("LOW_VOLATILITY", "FLAT_LOW"),
@@ -127,6 +143,7 @@ class MDAMRHandler:
         self.logger = LOG.getChild("MDAMRHandler")
         self.mlog = logging.getLogger("domain_md_amr")
 
+        # Strategy-local runtime caches are keyed by symbol unless noted otherwise.
         self._cfg: Optional[MDAMRStrategyConfig] = None
         self._enabled = False
         self._enabled_symbols: set[str] = set()
@@ -141,7 +158,8 @@ class MDAMRHandler:
         self._regime_confidence: Dict[str, float] = {}
         self._rest_hydrated = False
         self._rest_last_bar_ts_ms: Dict[str, int] = {}
-        # FIX:N-2 — Track bars seen per symbol since restart for cold-start gate
+        # Cold-start gating is based on bars observed since this process started.
+        # Startup seeding may raise this counter before live bars arrive.
         self._bars_seen_since_restart: Dict[str, int] = {}
         self._last_ingested_bar_ts_ms: Dict[str, int] = {}
         self._pending_close: dict[str, bool] = {}
@@ -156,7 +174,7 @@ class MDAMRHandler:
         self._objective_reentry_ts_ms: Dict[str, deque[int]] = {}
         self._analytics_restore_snapshots: Dict[str,
                                                 StrategyAnalyticsRestoreSnapshot] = {}
-        # TICK-BAR-SPLIT-FIX-3: cooldown for tf_sec reject logging (300s per key)
+        # Throttle repeated tf_sec contract warnings per (symbol, stage, reason).
         self._tf_sec_reject_cooldown: Dict[str, float] = {}
         self._TF_SEC_REJECT_COOLDOWN_SEC = 300
         self._signal_ready_logged: set[str] = set()
@@ -172,6 +190,12 @@ class MDAMRHandler:
             self._init_strategies()
 
     def _core_signal_history_required_bars(self) -> int:
+        """Return the internal history horizon needed before the core can signal.
+
+        The compatibility matrix provides the external basis-bar readiness
+        contract. The strategy math can still require a longer local history to
+        compute its channel, ATR statistics, and directional components.
+        """
         if self._cfg is None:
             return self._DIR_COMPONENTS_REQUIRED_BARS
         atr_window = int(getattr(self._cfg, "atr_window", 14) or 14)
@@ -186,6 +210,7 @@ class MDAMRHandler:
         )
 
     def _log_runtime_marker(self, marker: str, **payload: Any) -> None:
+        """Emit a structured md_amr runtime marker to the dedicated log sink."""
         base_payload: Dict[str, Any] = {
             "strategy_id": "md_amr",
             "tf_sec": int(self.timeframe_sec),
@@ -328,6 +353,11 @@ class MDAMRHandler:
         return results
 
     def register(self) -> None:
+        """Register the md_amr event listeners and prime startup state.
+
+        CMD:PROCESS_STRATEGY is the only path that can emit strategy signals.
+        The other listeners only maintain local state or observability inputs.
+        """
         if not self._enabled:
             self._log_runtime_marker(
                 "MD_AMR_REGISTERED",
@@ -364,8 +394,7 @@ class MDAMRHandler:
                         self._on_trade_intent_rejected)
         self.logger.info(
             "MD_AMR registered events=%s symbols=%s tf=%s",
-            ["CMD:PROCESS_STRATEGY", "EVT:FEATURES_CALCULATED",
-                "EVT:REGIME_DETECTED", "EVT:TRADE_EXECUTED"],
+            events,
             sorted(self._enabled_symbols),
             self.timeframe_sec,
         )
@@ -378,6 +407,7 @@ class MDAMRHandler:
 
     @staticmethod
     def _run_coro_blocking(coro: Any) -> Any:
+        """Run a coroutine from sync code regardless of loop ownership."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -473,6 +503,12 @@ class MDAMRHandler:
         }
 
     def _resolve_rest_adapter(self) -> tuple[Any, bool]:
+        """Resolve the adapter used for startup REST hydration.
+
+        Prefer the already-wired market_data adapter when it exposes get_klines.
+        Otherwise build a temporary BinanceAdapter from config and mark it for
+        later cleanup.
+        """
         md_domain = self.fsm.get_domain("market_data") if hasattr(
             self.fsm, "get_domain") else None
         adapter = getattr(md_domain, "adapter",
@@ -568,6 +604,7 @@ class MDAMRHandler:
         return hydrated_symbols
 
     def _hydrate_state_from_rest(self) -> None:
+        """Prime local strategy state from recent REST bars and arm live warmup."""
         interval = self._interval_for_tf(self.timeframe_sec)
         now_ms = get_clock().now_ms()
         if interval is None:
@@ -613,6 +650,7 @@ class MDAMRHandler:
         return symbols
 
     def _parse_config(self) -> None:
+        """Validate md_amr config for assigned symbols and derive enablement."""
         assigned = self._get_assigned_symbols()
         cfg = getattr(self.config.strategies, "md_amr", None)
         if cfg is None:
@@ -682,6 +720,7 @@ class MDAMRHandler:
         )
 
     def _init_strategies(self) -> None:
+        """Instantiate one MDAMRStrategyV11 core per enabled symbol."""
         assert self._cfg is not None
         for symbol in self._enabled_symbols:
             self._objective_blocked_ts_ms[symbol] = deque()
@@ -779,6 +818,7 @@ class MDAMRHandler:
         symbol: str,
         asset_cfg: Any,
     ) -> tuple[bool, Dict[str, Any]]:
+        """Check whether an entry is allowed under the asset regime allowlist."""
         allowed_regimes = list(
             getattr(asset_cfg, "allowed_regimes", None) or [])
         effective_allowed_regimes = self._expand_allowed_regimes(
@@ -818,6 +858,12 @@ class MDAMRHandler:
         }
 
     def _on_features_calculated(self, event: Message) -> None:
+        """Cache feature payloads and optionally advance warmup-only bar state.
+
+        During the mandatory live warmup window this path is allowed to feed the
+        strategy core the latest bar so the first post-warmup CMD bar does not
+        start from an empty local history.
+        """
         if not self._enabled:
             return
         pld = event.pld or {}
@@ -828,7 +874,8 @@ class MDAMRHandler:
         if symbol not in self._enabled_symbols:
             return
 
-        # TICK-BAR-SPLIT-FIX-3: explicit tf_sec guard with cooldown logging
+        # Features are data-only for this handler, but their timeframe still
+        # must match the strategy contract so bar ingestion stays deterministic.
         if tf_sec is None:
             self._log_tf_sec_reject(symbol, "features", "tf_sec_is_None")
             return
@@ -1029,6 +1076,7 @@ class MDAMRHandler:
         )
 
     def reconcile_position(self, symbol: str, exchange_qty: Decimal) -> None:
+        """Best-effort local position reconciliation against exchange truth."""
         cfg = self._cfg
         if cfg and not cfg.reconciliation.enabled:
             return
@@ -1114,14 +1162,15 @@ class MDAMRHandler:
                     "MD_AMR_GTX_REJECT_RETRY symbol=%s reason=%s retry=%s max=%s",
                     symbol, reason, retries + 1, max_retries
                 )
-                # In a real system, we'd emit EVT:PROCESS_STRATEGY or signal re-eval here
-                # For this step, we just track the metric/state as requested in Fix 7.
+                # This handler only records retry state and observability here.
+                # Order resubmission is owned by upstream intent/execution flows.
             elif self._cfg and hasattr(self._cfg, 'execution') and self._cfg.execution.gtx_fallback_to_market:
                 self.mlog.warning(
                     "MD_AMR_GTX_FALLBACK symbol=%s max_retries=%s -> MARKET",
                     symbol, max_retries
                 )
-                # Fallback to market would be handled upstream by the signal intent
+                # Exhausting the GTX budget is observable here, but this handler
+                # does not place the market fallback order itself.
                 self._gtx_retries[symbol] = 0
             else:
                 self._gtx_retries[symbol] = 0
@@ -1174,6 +1223,13 @@ class MDAMRHandler:
             self._deferred.pop(symbol, None)
 
     def _on_process_strategy(self, event: Message) -> None:
+        """Process one CMD:PROCESS_STRATEGY payload for md_amr.
+
+        This is the only path that can emit md_amr strategy signals. The method
+        may still feed the strategy core a bar and then stop later due to
+        mandatory warmup, readiness, allowlist, concentration, or objective
+        gates.
+        """
         if not self._enabled:
             return
         pld = event.pld if hasattr(event, "pld") else event
@@ -1185,7 +1241,8 @@ class MDAMRHandler:
             return
         tf_sec = pld.get("tf_sec")
 
-        # TICK-BAR-SPLIT-FIX-3: explicit tf_sec guard with cooldown logging
+        # The command path is strict about tf_sec because this is the only
+        # surface that can emit tradeable md_amr signals.
         if tf_sec is None:
             self._log_tf_sec_reject(
                 symbol, "process_strategy", "tf_sec_is_None")
@@ -1240,7 +1297,8 @@ class MDAMRHandler:
         if self._is_duplicate_live_event(symbol, bar_close_ts):
             return
 
-        # FIX:N-2 — Increment bars-seen counter for cold-start gate
+        # Count the bar after the envelope checks pass so diagnostics and cold-
+        # start gating reflect bars the handler actually accepted.
         self._bars_seen_since_restart[symbol] = self._bars_seen_since_restart.get(
             symbol, 0) + 1
 
@@ -1278,6 +1336,9 @@ class MDAMRHandler:
         if strategy is None:
             return
 
+        # FEATURES_CALCULATED may already have primed the strategy with this
+        # bar during mandatory live warmup; dedupe so the core sees each bar at
+        # most once.
         should_ingest_bar = bar_close_ts > int(
             self._last_ingested_bar_ts_ms.get(symbol, 0) or 0)
         if should_ingest_bar:
@@ -1331,8 +1392,9 @@ class MDAMRHandler:
                              reason="md_amr_warmup_not_ready")
             return
 
-        # FIX:N-2 — Cold-start bars_required gate: block signal emission until
-        # handler has received enough bars to produce meaningful features.
+        # The compatibility profile and the strategy core use different warmup
+        # horizons. basis_required_bars blocks signal emission, while the core
+        # may still return DEFER until its own internal history is long enough.
         _bars_seen = self._bars_seen_since_restart.get(symbol, 0)
         _basis_required = 0
         _readiness_contract_error: str | None = None
@@ -1505,7 +1567,8 @@ class MDAMRHandler:
         rid = self._rid(symbol=symbol, side=signal.side,
                         ts_ms=bar_close_ts, intent_kind=signal.intent_kind)
 
-        # MD-AMR-TPSL-01: Compute regime-based TP/SL for ENTRY signals only
+        # TP/SL is attached only for entry signals; close signals carry the raw
+        # strategy intent without bracket synthesis.
         tpsl_result = None
         if str(signal.intent_kind) == "ENTRY":
             try:
@@ -1520,7 +1583,8 @@ class MDAMRHandler:
                 self.logger.debug(
                     f"[{symbol}] MD-AMR-TPSL: computation error: {_tpsl_err}")
 
-        # Objective Engine Integration
+        # Objective gating is entry-only and runs after the base strategy output
+        # plus TP/SL context are available.
         if str(signal.intent_kind) == "ENTRY":
             domain_cfg = getattr(getattr(self.config, "domains", None),
                                  "objective_engine", None)
@@ -1748,6 +1812,8 @@ class MDAMRHandler:
         if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
             blocking_reason_chain.append("protect_only")
             blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
+        # Build live runtime-readiness evidence first, then merge restore state
+        # per scope without letting restored status overwrite current live gaps.
         runtime_scopes = {
             RuntimeReadinessScope.BASIS_BAR_READY.value: build_basis_bar_status_from_gap(
                 gap_status,
@@ -1900,7 +1966,7 @@ class MDAMRHandler:
         if restore_snapshot is not None:
             payload["analytics_restore"] = restore_snapshot.to_payload()
 
-        # MD-AMR-TPSL-01: Inject TP/SL into price_ctx (same contract as aurora handler)
+        # Mirror the Aurora-style bracket contract when MD-AMR entry TP/SL is available.
         if tpsl_result is not None:
             payload["price_ctx"]["stop_price"] = str(tpsl_result["stop_price"])
             payload["price_ctx"]["target_price"] = str(
@@ -1948,6 +2014,7 @@ class MDAMRHandler:
 
     @staticmethod
     def _extract_liquidity(features: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the nested liquidity payload or a tiny compatibility subset."""
         liq = features.get("liquidity")
         if isinstance(liq, dict):
             return liq
@@ -1969,7 +2036,7 @@ class MDAMRHandler:
         asset_cfg: Any,
     ) -> Optional[Dict[str, Any]]:
         """
-        MD-AMR-TPSL-01: Compute regime-based TP/SL for ENTRY signals (pct_mult mode).
+        Compute regime-based TP/SL for ENTRY signals in pct_mult mode.
 
         Formula:
           sl_pct_eff   = exit.sl_pct  × sl_mult[regime]
@@ -1977,8 +2044,9 @@ class MDAMRHandler:
           BUY:  stop = entry × (1 − sl_pct_eff),  target = entry × (1 + tp_dist_pct)
           SELL: stop = entry × (1 + sl_pct_eff),  target = entry × (1 − tp_dist_pct)
 
-        Returns dict with stop_price, target_price, tpsl_ctx — or None if config absent/disabled.
-        fail-open: exceptions are caught by caller.
+        Returns stop/target plus telemetry, or None when TP/SL config is absent
+        or unusable. Caller code treats exceptions around this helper as a local
+        TP/SL failure, not as permission to emit invented bracket prices.
         """
         import decimal as _dec
         if asset_cfg is None:
@@ -2051,9 +2119,11 @@ class MDAMRHandler:
         tpsl_cfg: Any,
     ) -> Optional[Dict[str, Any]]:
         """
-        MD-AMR-TPSL-01: Apply guardrails to computed TP/SL.
-        Clamps SL% and TP RR to configured min/max.
-        Fail-closed on wrong-side or min_dist_bps violations.
+        Apply final TP/SL guardrails to an already computed candidate pair.
+
+        Order matters here: wrong-side geometry fails closed immediately, SL is
+        clamped first, TP RR is clamped against that post-SL geometry, and only
+        the final emitted prices are checked against min_dist_bps.
         """
         import decimal as _dec
         stop_price = result["stop_price"]
@@ -2101,7 +2171,8 @@ class MDAMRHandler:
                 else entry_price * (1 + sl_dist_pct)
             tpsl_ctx["guardrail_sl_clamp"] = "max"
 
-        # Clamp TP RR
+        # Clamp TP RR against the post-SL geometry and keep telemetry aligned
+        # with the final emitted target distance.
         actual_rr = tp_dist_pct / \
             sl_dist_pct if sl_dist_pct > 0 else _dec.Decimal("0")
         if actual_rr < min_tp_rr:
@@ -2111,6 +2182,7 @@ class MDAMRHandler:
             target_price = entry_price * (1 + tp_dist_pct) if side.upper() == "BUY" \
                 else entry_price * (1 - tp_dist_pct)
             tpsl_ctx["guardrail_tp_clamp"] = "min"
+            actual_rr = min_tp_rr
         elif actual_rr > max_tp_rr:
             self.logger.warning(
                 f"[{symbol}] MD-AMR-TPSL: TP RR clamped down to max_tp_rr")
@@ -2118,6 +2190,7 @@ class MDAMRHandler:
             target_price = entry_price * (1 + tp_dist_pct) if side.upper() == "BUY" \
                 else entry_price * (1 - tp_dist_pct)
             tpsl_ctx["guardrail_tp_clamp"] = "max"
+            actual_rr = max_tp_rr
 
         # Fail-closed: min distance in bps
         min_dist = entry_price * \

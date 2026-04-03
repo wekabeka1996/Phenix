@@ -1,9 +1,9 @@
-"""
-SafetyGates — Directional sanity, regime confidence, and price motion gates.
+"""Safety-gate evaluation for decision intent proposals.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Pure computation: no FSM side effects.  Returns SafetyGateResult for the
-facade to act on (emit traces, log, block).
+This module is intentionally side-effect free: it reads cached market/context
+state, applies the configured gate sequence, and returns a ``SafetyGateResult``
+for the facade to consume. Rejection emission, decision tracing, and any
+downstream size attenuation are handled outside this module.
 
 LOC budget: <=500 (Constitution S3).
 """
@@ -25,9 +25,9 @@ class SafetyGateResult:
     """Result of safety gate evaluation.
 
     outcome:
-        "ALLOW"        — all gates passed, proceed to intent builder.
-        "DENY"         — gate blocked, facade handles trace/reject emission.
-        "CONFIG_ERROR" — safety_gates config missing, facade emits rejection.
+        "ALLOW"        — all gates passed, proceed to the builder/facade flow.
+        "DENY"         — a runtime gate blocked the proposal.
+        "CONFIG_ERROR" — required safety-gates config could not be resolved.
     """
 
     outcome: str = "ALLOW"
@@ -38,7 +38,7 @@ class SafetyGateResult:
     # Flags
     apply_safety_gates: bool = False
 
-    # Computed context carried downstream for intent_builder / forensic trace
+    # Computed context carried downstream for builder payloads and forensic trace.
     intent_side: str = "LONG"
     trace_ts_ms: int = 0
     signal_score: Optional[float] = None
@@ -54,7 +54,8 @@ class SafetyGateResult:
     vol_pct_10s: Optional[float] = None
     vol_pct_60s: Optional[float] = None
     vol_pct_300s: Optional[float] = None
-    # Phase 0.5: system stress overlay ("NORMAL"|"STRESS"|"EXTREME"); passed downstream for attenuation
+    # Phase 0.5 overlay state. StrategyGateway is responsible for any STRESS
+    # attenuation side effect; this module only surfaces the state.
     system_stress_state: str = "NORMAL"
 
 
@@ -66,11 +67,15 @@ def _resolve_safety_gates_flag(
     config: "AuroraConfig",
     strategy_id: str,
 ) -> tuple[bool, Optional[str]]:
-    """Resolve apply_safety_gates from per-strategy config.
+    """Resolve the per-strategy enabled flag for safety gates.
 
     Returns:
-        (apply_safety_gates, error_context)  — error_context is non-None
-        when config is missing (FAIL-CLOSED).
+        ``(apply_safety_gates, error_context)``.
+
+        ``error_context`` is non-``None`` when the strategy block or the
+        ``safety_gates`` block is missing. ``apply_safety_gates`` itself is not
+        a fallback default here; missing config is reported to the caller so the
+        facade can fail closed.
     """
     try:
         strat_cfg = getattr(config.strategies, str(strategy_id), None)
@@ -78,14 +83,19 @@ def _resolve_safety_gates_flag(
             return False, f"safety_gates config missing for strategy"
         safety_gates_cfg = getattr(strat_cfg, "safety_gates", None)
         if safety_gates_cfg is None:
-            return False, f"safety_gates.enabled missing in strategy config"
+            return False, f"safety_gates block missing in strategy config"
         return bool(getattr(safety_gates_cfg, "enabled", False)), None
     except Exception as e:
         return False, f"safety_gates config error: {str(e)[:40]}"
 
 
 def _extract_price_motion(symbol_states: dict, symbol: str) -> dict:
-    """Extract price_motion block from symbol_states cache (best-effort)."""
+    """Extract cached ``price_motion`` metrics for one symbol.
+
+    The expected source is ``symbol_states[symbol]["features"]["price_motion"]``
+    as populated by the features event handler. Missing or malformed payloads
+    are treated as absent metrics and returned as ``None`` fields.
+    """
     result: Dict[str, Optional[float]] = {
         "pm_norm_10s": None, "pm_norm_60s": None, "pm_norm_300s": None,
         "vol_pct_10s": None, "vol_pct_60s": None, "vol_pct_300s": None,
@@ -93,7 +103,8 @@ def _extract_price_motion(symbol_states: dict, symbol: str) -> dict:
     try:
         st = symbol_states.get(symbol)
         feats_evt = st.get("features") if isinstance(st, dict) else None
-        pm = feats_evt.get("price_motion") if isinstance(feats_evt, dict) else None
+        pm = feats_evt.get("price_motion") if isinstance(
+            feats_evt, dict) else None
         if isinstance(pm, dict):
             for key in result:
                 val = pm.get(key)
@@ -104,7 +115,7 @@ def _extract_price_motion(symbol_states: dict, symbol: str) -> dict:
 
 
 def _extract_signal_score(why_chain: list) -> Optional[float]:
-    """Best-effort extraction of signal_score from why_chain strings."""
+    """Best-effort extraction of ``signal_score`` tokens from why_chain strings."""
     try:
         for item in (why_chain or []):
             if not isinstance(item, str):
@@ -119,7 +130,7 @@ def _extract_signal_score(why_chain: list) -> Optional[float]:
 
 
 def _extract_regime(per_symbol_regimes: dict, symbol: str) -> tuple[Optional[str], Optional[float]]:
-    """Extract regime name and confidence from per-symbol cache."""
+    """Extract regime name and confidence from the per-symbol regime cache."""
     try:
         r = per_symbol_regimes.get(symbol)
         if isinstance(r, dict):
@@ -138,7 +149,10 @@ def _compute_trend(
     consecutive: int,
     min_abs_delta: float,
 ) -> tuple[str, float, Optional[float], int]:
-    """Compute trend direction from delta_price history.
+    """Compute directional trend from cached ``_delta_price_hist``.
+
+    This helper is intentionally best-effort: malformed history yields the
+    neutral/unknown contract rather than raising inside gate evaluation.
 
     Returns:
         (trend_dir, trend_confidence, delta_price, trend_run_length)
@@ -149,7 +163,8 @@ def _compute_trend(
     trend_run_length = 0
     try:
         state = symbol_states.get(symbol)
-        hist = state.get("_delta_price_hist") if isinstance(state, dict) else None
+        hist = state.get("_delta_price_hist") if isinstance(
+            state, dict) else None
         if isinstance(hist, deque) and len(hist) > 0:
             delta_price = float(hist[-1])
             filtered: list[float] = []
@@ -202,7 +217,11 @@ def _check_directional_gate(
     min_conf: float,
     hard_veto_consecutive_bars: int,
 ) -> tuple[str, Optional[str], str]:
-    """Evaluate directional sanity gate.
+    """Evaluate the directional sanity gate.
+
+    ``min_conf`` is checked against the stronger of regime confidence and local
+    trend confidence. Counter-trend proposals can still pass as "soft" allows
+    until ``hard_veto_consecutive_bars`` is reached.
 
     Returns:
         (gate_outcome, deny_reason, why_short)
@@ -214,7 +233,8 @@ def _check_directional_gate(
     if not ds_enabled:
         return "ALLOW", None, "directional_sanity_disabled"
 
-    effective_conf = max(float(regime_confidence or 0.0), float(trend_confidence or 0.0))
+    effective_conf = max(float(regime_confidence or 0.0),
+                         float(trend_confidence or 0.0))
     if trend_dir not in ("UP", "DOWN"):
         return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient trend confirmation"
     if effective_conf < float(min_conf):
@@ -245,7 +265,11 @@ def _check_price_motion_gate(
     pm_norm_60s: Optional[float],
     pm_norm_300s: Optional[float],
 ) -> tuple[str, Optional[str], str]:
-    """Evaluate price motion multi-window sanity gate.
+    """Evaluate the multi-window price-motion sanity gate.
+
+    The gate is bypassed for ``reduce_only`` flows, for strategies with
+    ``safety_gates.enabled=false``, when the price-motion gate itself is
+    disabled, and in backtest mode.
 
     Returns:
         (gate_outcome, deny_reason, why_short)
@@ -254,7 +278,8 @@ def _check_price_motion_gate(
     pm_enabled = bool(pm_cfg.enabled)
 
     try:
-        is_backtest = str(getattr(config, "trading_mode", "")).strip().lower() == "backtest"
+        is_backtest = str(getattr(config, "trading_mode", "")
+                          ).strip().lower() == "backtest"
     except Exception:
         is_backtest = False
 
@@ -315,12 +340,18 @@ def _resolve_stress_policy(
     """Resolve per-strategy system stress policy and attenuation factor.
 
     Returns:
-        (stress_policy, stress_attenuation_factor)
-        Returns ("CONFIG_ERROR", 0.0) on any missing/bad config resolution — fail-closed.
+        ``(stress_policy, stress_attenuation_factor)``.
+
+        This helper is intentionally lenient for absent strategy/safety-gates
+        blocks and falls back to ``("off", 1.0)`` so direct helper callers can
+        treat "no policy configured" as a bypass. Only unexpected resolution
+        errors return ``("CONFIG_ERROR", 0.0)`` for fail-closed handling by the
+        Gate 0.5 caller.
     """
     try:
         strat_cfg = getattr(config.strategies, str(strategy_id), None)
-        sg_cfg = getattr(strat_cfg, "safety_gates", None) if strat_cfg else None
+        sg_cfg = getattr(strat_cfg, "safety_gates",
+                         None) if strat_cfg else None
         if sg_cfg is None:
             return "off", 1.0
         policy = str(getattr(sg_cfg, "system_stress_policy", "off"))
@@ -340,14 +371,15 @@ def _check_system_stress_gate(
     system_stress_states: Optional[dict],
     stress_policy: str = "off",
 ) -> tuple:
-    """Gate 0.5 — System Stress Overlay (Phase 0.5 / 0.6).
+    """Evaluate Gate 0.5: the system-stress overlay.
 
     Policy semantics (per-strategy, Phase 0.6):
         off       → Gate fully bypassed; even EXTREME is ignored.
-        attenuate → EXTREME=DENY; STRESS=ALLOW+surface for size attenuation.
+        attenuate → EXTREME=DENY; STRESS=ALLOW+surface for later size attenuation.
         block     → EXTREME and STRESS both DENY.
         CONFIG_ERROR → DENY (Fail-closed).
-    reduce_only orders always bypass (closing is risk-reducing).
+
+    ``reduce_only`` orders always bypass because closing flow is risk-reducing.
 
     Returns:
         (gate_outcome, deny_reason, why_short, stress_state_str)
@@ -408,19 +440,20 @@ def apply_safety_gates(
 ) -> SafetyGateResult:
     """Evaluate all safety gates for a trade intent proposal.
 
-    Pure computation — no FSM side effects.  The caller (facade) handles
-    trace emission, rejection events, and blocked-intent recording based
-    on the returned ``SafetyGateResult``.
+    This function only evaluates the gate contract and returns structured
+    context. The caller handles rejection events, decision tracing, blocked
+    intent accounting, and any post-gate sizing side effects.
 
     Gate sequence:
         0.  Config resolution (FAIL-CLOSED if missing)
-        0.5 System stress overlay gate (Phase 0.5 / 0.6): policy-driven DENY or surface
+        0.5 System stress overlay gate (Phase 0.5 / 0.6): policy-driven DENY or surface state
         1.  FIX-CONF-GATE-01: Regime confidence gate
         2.  Directional sanity gate (trend vs intent)
         3.  Price motion multi-window gate (flash / bleed)
     """
     result = SafetyGateResult()
-    result.trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else clock.now_ms()
+    result.trace_ts_ms = int(
+        decision_ts_ms) if decision_ts_ms is not None else clock.now_ms()
     result.intent_side = "LONG" if str(side).upper() == "BUY" else "SHORT"
 
     # ── Gate 0: Config resolution ──────────────────────────────
@@ -433,6 +466,8 @@ def apply_safety_gates(
     result.apply_safety_gates = apply_flag
 
     # ── Gate 0.5: System Stress Overlay (Phase 0.5 / 0.6) ──────
+    # Gate 0.5 only decides allow/deny and surfaces stress state. The returned
+    # attenuation factor is intentionally consumed later in StrategyGateway.
     stress_policy, _stress_factor = _resolve_stress_policy(config, strategy_id)
     ss_outcome, ss_deny, ss_why, ss_state = _check_system_stress_gate(
         symbol=symbol,
@@ -448,7 +483,7 @@ def apply_safety_gates(
         result.why_short = ss_why
         return result
 
-    # ── Extract context (best-effort) ──────────────────────────
+    # ── Extract context (best-effort, non-authoritative caches) ─────────────
     pm = _extract_price_motion(symbol_states, symbol)
     result.pm_norm_10s = pm["pm_norm_10s"]
     result.pm_norm_60s = pm["pm_norm_60s"]
@@ -458,7 +493,8 @@ def apply_safety_gates(
     result.vol_pct_300s = pm["vol_pct_300s"]
 
     result.signal_score = _extract_signal_score(why_chain)
-    result.regime, result.regime_confidence = _extract_regime(per_symbol_regimes, symbol)
+    result.regime, result.regime_confidence = _extract_regime(
+        per_symbol_regimes, symbol)
 
     # ── Read directional sanity config ─────────────────────────
     ds_cfg = config.domains.decision_making.directional_sanity
@@ -472,6 +508,8 @@ def apply_safety_gates(
     consecutive = int(ds_cfg.consecutive_bars)
     raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)
     try:
+        # Some direct unit tests use MagicMock-backed configs; treat those as
+        # "field absent" and preserve the production fallback to consecutive_bars.
         if raw_hard_veto is None or type(raw_hard_veto).__name__ == "MagicMock":
             raise TypeError
         hard_veto_consecutive = int(raw_hard_veto)

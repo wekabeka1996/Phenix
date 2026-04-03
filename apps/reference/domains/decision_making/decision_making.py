@@ -1,7 +1,8 @@
-"""
-DecisionMaking domain component — thin facade (Phase 14A decomposition).
-All logic delegated to sub-modules (Strangler Fig). External imports unchanged.
-CFG-DOMAINS-STEP-02: Enforces AuroraConfig. T2B-08: Clock injection.
+"""DecisionMaking domain facade and compatibility surface.
+
+Phase 14A moved most decision logic into focused helpers, but this module still
+owns delegate construction, shared mutable state, event subscriptions, and a
+small set of glue paths that preserve legacy imports and method names.
 """
 
 import decimal
@@ -52,17 +53,34 @@ if TYPE_CHECKING:
 
 
 class DecisionMaking:
-    """Thin facade — all logic delegated to sub-modules (Phase 14A)."""
+    """Compose DecisionMaking delegates and expose the legacy facade API.
+
+    The class is intentionally thin in the scoring/business-logic sense, but it
+    still owns orchestration boundaries: shared state, helper wiring, bus
+    listeners, safety-gate glue, and compatibility shims used by tests and
+    callers during the strangler migration.
+    """
 
     def __init__(self, fsm: "FSMCore", config: AuroraConfig, *, clock: Optional[Clock] = None) -> None:
+        """Initialize shared state, helpers, and event listeners.
+
+        Contract:
+        - ``config`` must already be a typed AuroraConfig.
+        - delegates receive shared state by reference, so this facade remains
+          the canonical owner of those mutable containers.
+        """
         if isinstance(config, dict):
             raise TypeError("DecisionMaking requires AuroraConfig, got dict")
         self.fsm = fsm
         self.config = config
         self._clock: Clock = clock or LiveClock()
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
 
-        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"features": None, "risk": None})
+        # These containers remain owned by the facade because multiple
+        # delegates and tests still share them by reference.
+        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"features": None, "risk": None})
         self._shared: Dict[str, Any] = {
             "latest_portfolio": None, "latest_regime": None, "latest_warmup": None,
             "latest_structural_regime_by_symbol": {}, "latest_structural_warmup_by_symbol": {},
@@ -88,7 +106,8 @@ class DecisionMaking:
         self.alert_manager: Optional["AlertManager"] = None
         if ALERT_MANAGER_AVAILABLE and _AlertManager is not None:
             try:
-                self.alert_manager = _AlertManager(config=config, logger=self.logger.getChild("alerts"))
+                self.alert_manager = _AlertManager(
+                    config=config, logger=self.logger.getChild("alerts"))
             except Exception:
                 self.logger.warning("AlertManager init failed", exc_info=True)
 
@@ -110,14 +129,18 @@ class DecisionMaking:
         dm_cfg = _res.get_decision_making()
         qos_cfg = dm_cfg.qos
 
-        self._fail_closed_on_degraded_context = bool(getattr(dm_cfg, "fail_closed_on_degraded_context", False))
+        self._fail_closed_on_degraded_context = bool(
+            getattr(dm_cfg, "fail_closed_on_degraded_context", False))
         try:
-            _raw = list(getattr(dm_cfg, "degraded_context_critical_keys", []) or [])
+            _raw = list(
+                getattr(dm_cfg, "degraded_context_critical_keys", []) or [])
         except Exception:
             _raw = []
-        self._degraded_context_critical_keys: set = set(str(k) for k in _raw if str(k))
+        self._degraded_context_critical_keys: set = set(
+            str(k) for k in _raw if str(k))
         try:
-            _by_s = getattr(dm_cfg, "degraded_context_critical_keys_by_strategy", {}) or {}
+            _by_s = getattr(
+                dm_cfg, "degraded_context_critical_keys_by_strategy", {}) or {}
         except Exception:
             _by_s = {}
         self._degraded_context_critical_keys_by_strategy: dict = {
@@ -126,10 +149,14 @@ class DecisionMaking:
         }
 
         sizing_cfg = dm_cfg.position_sizing
-        self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
-        self.liq_cap_usd = decimal.Decimal(str(sizing_cfg.liquidity_based_cap_usd))
-        self.qos_exposure_block_cooldown_sec = int(qos_cfg.exposure_block_cooldown_sec)
-        self.qos_max_intents_per_minute_per_symbol = int(qos_cfg.max_intents_per_minute_per_symbol)
+        self.min_pos_size_usd = decimal.Decimal(
+            str(sizing_cfg.min_position_size_usd))
+        self.liq_cap_usd = decimal.Decimal(
+            str(sizing_cfg.liquidity_based_cap_usd))
+        self.qos_exposure_block_cooldown_sec = int(
+            qos_cfg.exposure_block_cooldown_sec)
+        self.qos_max_intents_per_minute_per_symbol = int(
+            qos_cfg.max_intents_per_minute_per_symbol)
         self.qos_mode = str(qos_cfg.mode)
         self._default_symbol_cooldown_sec = int(qos_cfg.symbol_cooldown_sec)
         self.qos_enforce = bool(qos_cfg.enforce)
@@ -137,7 +164,8 @@ class DecisionMaking:
             _apply_to = list(getattr(qos_cfg, "apply_to_strategies", []) or [])
         except Exception:
             _apply_to = []
-        self._qos_apply_to_strategies: set = set(str(s) for s in _apply_to if str(s))
+        self._qos_apply_to_strategies: set = set(
+            str(s) for s in _apply_to if str(s))
 
         self.arming_require_regime_warmup = dm_cfg.arming.require_regime_warmup
         self.arming_retry_backoff_ms = dm_cfg.arming.retry_backoff_ms
@@ -151,15 +179,22 @@ class DecisionMaking:
         self._behavior_enabled = dm_cfg.behavior_fsm.enable
         self._behavior_state: Dict[str, str] = {}
 
-        # Derive normalize_signals_mode for WAL observability (mirrors AuroraConfigLoaderMixin pattern)
+        # normalize_signals_mode is mirrored here for intent/WAL observability.
+        # The signed_v2 fallback only protects partial mocks and degraded test
+        # fixtures; it is not meant to broaden the production config contract.
         try:
-            _aurora = getattr(getattr(self.config, "strategies", None), "aurora", None)
+            _aurora = getattr(
+                getattr(self.config, "strategies", None), "aurora", None)
             _decision = getattr(_aurora, "decision", None) if _aurora else None
-            _signals = getattr(_decision, "signals", None) if _decision else None
-            self.normalize_signals_mode = str(_signals.normalize_signals_mode) if _signals is not None else "signed_v2"
+            _signals = getattr(_decision, "signals",
+                               None) if _decision else None
+            self.normalize_signals_mode = str(
+                _signals.normalize_signals_mode) if _signals is not None else "signed_v2"
         except Exception:
             self.normalize_signals_mode = "signed_v2"
 
+        # Delegate composition happens once here; the wrapper methods below keep
+        # the historical DecisionMaking method surface stable.
         self._cfg = DMConfigResolver(
             self.config, self.strategies_registry, self._arb_signal_buffer,
             self._arb_window_winner, self.flip_global_enabled, self.logger)
@@ -184,13 +219,15 @@ class DecisionMaking:
             lambda: self.latest_portfolio,
             lambda **kw: self._propose_trade_intent(**kw),
             self.logger,
-            emit_reduce_only_close_fn=lambda **kw: self._emit_reduce_only_close(**kw),
+            emit_reduce_only_close_fn=lambda **kw: self._emit_reduce_only_close(
+                **kw),
             registry_lookup_fn=self._get_registry_owners_for_symbol,
         )
         self._flip = FlipOrchestrator(
             self._clock, self.config, self.fsm,
             self._get_position_state, self._get_portfolio_position_qty_signed,
-            lambda sym: self._get_flip_config(sym), lambda **kw: self._propose_trade_intent(**kw),
+            lambda sym: self._get_flip_config(
+                sym), lambda **kw: self._propose_trade_intent(**kw),
             self._emit_intent_deferred_v1, self.logger)
         self._builder = IntentBuilder(
             fsm=self.fsm, clock=self._clock, config=self.config,
@@ -215,18 +252,22 @@ class DecisionMaking:
             logger=self.logger)
         self._gateway = StrategyGateway(self)
 
+        # Listener registration stays in the facade so bootstrap does not need
+        # to know which delegate currently owns a specific event path.
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features)
         self.fsm.listen("EVT:RISK_ASSESSMENT_COMPLETED", self.on_risk)
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio)
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
-        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED", self.update_exposure_cache)
-        self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED", self._on_strategy_signal_gateway)
+        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
+                        self.update_exposure_cache)
+        self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED",
+                        self._on_strategy_signal_gateway)
         # Phase 0.5: system stress overlay state updates
-        self.fsm.listen("EVT:SYSTEM_STRESS_STATE_UPDATED", self._on_system_stress)
+        self.fsm.listen("EVT:SYSTEM_STRESS_STATE_UPDATED",
+                        self._on_system_stress)
         self._domain_bridge = DomainBridge("decision_making", bus=self.fsm)
         self._domain_bridge.register_health_fn(self.is_healthy)
         self._last_status_ts = 0.0
-
 
     def _safe_decimal(self, value: Any, default: Optional[Decimal] = None) -> Optional[Decimal]:
         if value is None:
@@ -296,7 +337,8 @@ class DecisionMaking:
     def _exposure_cache_timestamp(self, value: Any) -> None:
         if not isinstance(getattr(self, "_shared", None), dict):
             self._shared = {}
-        self._shared["exposure_cache_timestamp"] = float(value if value is not None else 0.0)
+        self._shared["exposure_cache_timestamp"] = float(
+            value if value is not None else 0.0)
 
     def _on_strategy_signal_gateway(self, event: Message) -> None:
         self._gateway.process_signal(event)
@@ -308,7 +350,16 @@ class DecisionMaking:
         tf_sec=None, max_slippage_bps=None, max_latency_ms=None, risk_score=None,
         strategy_trace=None,
     ):
-        system_stress_states = self._system_stress_states if hasattr(self, "_system_stress_states") else {}
+        """Run safety-gate glue and forward allowed intents to IntentBuilder.
+
+        This is one of the few non-trivial facade methods left in this module:
+        it normalizes the safety-gate contract, emits rejection side effects for
+        deny/config-error outcomes, and only then hands control to the builder.
+        """
+        system_stress_states = self._system_stress_states if hasattr(
+            self, "_system_stress_states") else {}
+        # Safety gates run before the builder so denied or misconfigured intents
+        # never reach the downstream emission/arbitration pipeline.
         sg = apply_safety_gates(
             symbol=symbol, side=side, reduce_only=reduce_only, strategy_id=strategy_id,
             decision_ts_ms=decision_ts_ms, why_chain=why_chain, config=self.config,
@@ -326,6 +377,8 @@ class DecisionMaking:
         if sg.outcome == "DENY":
             self._handle_safety_deny(symbol, side, rid, why_chain, sg)
             return
+        # After this point the builder owns payload assembly, arbitration, QoS,
+        # and intent emission side effects.
         self._builder.build_and_emit(
             symbol=symbol, side=side, qty=qty,
             price=price, why_chain=why_chain, rid=rid,
@@ -337,7 +390,8 @@ class DecisionMaking:
             normalize_mode=self.normalize_signals_mode, sg=sg)
 
     def _handle_safety_deny(self, symbol, side, rid, why_chain, sg) -> None:
-        _g = lambda a, d=None: getattr(sg, a, d)  # noqa: E731
+        """Emit best-effort observability for a safety-gate denial."""
+        def _g(a, d=None): return getattr(sg, a, d)  # noqa: E731
         trace = {
             "symbol": symbol, "ts": _g("trace_ts_ms"), "intent_side": _g("intent_side"),
             "signal_score": _g("signal_score"), "regime": _g("regime"),
@@ -349,11 +403,18 @@ class DecisionMaking:
             "gate_outcome": "DENY", "deny_reason": sg.deny_reason,
             "why": (str(_g("why_short", ""))[:80]),
         }
+        # Observability is best-effort here: a failed trace emit must not turn a
+        # denied decision into a runtime exception.
         try:
-            self.fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace, why="decision_trace", data_ref=why_chain)
+            self.fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace,
+                          why="decision_trace", data_ref=why_chain)
         except Exception:
-            self.logger.debug("EVT:DECISION_TRACE_EMITTED emit failed", exc_info=True)
-        side_u = str(side).upper() if str(side).upper() in ("BUY", "SELL") else "NONE"
+            self.logger.debug(
+                "EVT:DECISION_TRACE_EMITTED emit failed", exc_info=True)
+        side_u = str(side).upper() if str(
+            side).upper() in ("BUY", "SELL") else "NONE"
+        # Mirror the denial into ORDER_REJECTED telemetry for downstream audits
+        # that inspect the order journal rather than the decision event stream.
         try:
             order_logger.write({
                 "rid": rid, "event_type": "ORDER_REJECTED", "symbol": symbol, "side": side_u,
@@ -362,7 +423,8 @@ class DecisionMaking:
                 "metadata": {"reject_reason": "SAFETY_GATES_DENY", "deny_reason": sg.deny_reason},
             })
         except Exception:
-            self.logger.debug("order_logger.write failed in _handle_safety_deny", exc_info=True)
+            self.logger.debug(
+                "order_logger.write failed in _handle_safety_deny", exc_info=True)
         self._record_blocked_intent(symbol)
 
     def _get_risk_skew_config(self, key: str) -> Any:
@@ -372,44 +434,91 @@ class DecisionMaking:
         except AttributeError:
             value = None
         if value is None:
-            raise ValueError(f"risk_skew.{key} is required but not set in config (fail-closed)")
+            raise ValueError(
+                f"risk_skew.{key} is required but not set in config (fail-closed)")
         return value
 
     # -- Config stubs ----------------------------------------------------------
-    def _get_position_sizing_config(self): return self._cfg.get_position_sizing_config()
-    def _is_strategy_assigned(self, symbol, strategy_id): return self._cfg.is_strategy_assigned(symbol, strategy_id)
-    def _get_aurora_instrument_cfg(self, symbol): return self._cfg.get_aurora_instrument_cfg(symbol)
-    def _get_symbol_cooldown(self, symbol, strategy_id="aurora"): return self._cfg.get_symbol_cooldown(symbol, strategy_id)
-    def _get_param(self, symbol, param, default): return self._cfg.get_param(symbol, param, default)
-    def _get_side_bias_params(self, symbol): return self._cfg.get_side_bias_params(symbol)
-    def _get_regime_thresholds(self, symbol): return self._cfg.get_regime_thresholds(symbol)
-    def _get_signal_threshold(self, symbol): return self._cfg.get_signal_threshold(symbol)
+    # These proxies intentionally preserve the legacy DecisionMaking surface
+    # while the concrete logic lives in the composed helpers above.
+    def _get_position_sizing_config(
+        self): return self._cfg.get_position_sizing_config()
+
+    def _is_strategy_assigned(
+        self, symbol, strategy_id): return self._cfg.is_strategy_assigned(symbol, strategy_id)
+
+    def _get_aurora_instrument_cfg(
+        self, symbol): return self._cfg.get_aurora_instrument_cfg(symbol)
+
+    def _get_symbol_cooldown(
+        self, symbol, strategy_id="aurora"): return self._cfg.get_symbol_cooldown(symbol, strategy_id)
+
+    def _get_param(self, symbol, param, default): return self._cfg.get_param(
+        symbol, param, default)
+
+    def _get_side_bias_params(
+        self, symbol): return self._cfg.get_side_bias_params(symbol)
+
+    def _get_regime_thresholds(
+        self, symbol): return self._cfg.get_regime_thresholds(symbol)
+
+    def _get_signal_threshold(
+        self, symbol): return self._cfg.get_signal_threshold(symbol)
+
     def _get_flip_config(self, symbol):
+        """Resolve effective flip config from global gate plus per-symbol SSOT.
+
+        Global disabled -> return a deterministic disabled tuple.
+        Global enabled -> per-symbol instruments.<SYM>.flip is mandatory.
+        """
         if not self.flip_global_enabled:
             return (False, 1.0)
         instr = self.config.instruments.get(symbol)
         if not instr:
-            raise ConfigContractError(path=f"instruments.{symbol}", why=f"Missing instruments config for active symbol {symbol}")
+            raise ConfigContractError(
+                path=f"instruments.{symbol}", why=f"Missing instruments config for active symbol {symbol}")
         if not instr.flip:
-            raise ConfigContractError(path=f"instruments.{symbol}.flip", why=f"Missing REQUIRED flip config for symbol {symbol}. Add flip.enabled + flip.hysteresis_mult.")
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.flip", why=f"Missing REQUIRED flip config for symbol {symbol}. Add flip.enabled + flip.hysteresis_mult.")
         return (bool(instr.flip.enabled), max(1.0, float(instr.flip.hysteresis_mult)))
+
     def _get_precision(self, symbol): return self._cfg.get_precision(symbol)
+
     def _check_strategy_arbitration(self, symbol, strategy_id, *, ts_ms=None, commit=False):
         return self._cfg.check_strategy_arbitration(symbol, strategy_id, ts_ms=ts_ms, commit=commit)
 
     # -- QoS stubs -------------------------------------------------------------
-    def _qos_enabled_for_strategy(self, strategy_id): return self._qos.qos_enabled_for_strategy(strategy_id)
-    def _qos_allow(self, symbol, strategy_id="aurora", is_exposure_block=False): return self._qos.qos_allow(symbol, strategy_id, is_exposure_block)
-    def _update_symbol_cooldown(self, symbol, strategy_id="aurora"): self._qos.update_symbol_cooldown(symbol, strategy_id)
-    def _update_intent_count(self, symbol, strategy_id="aurora"): self._qos.update_intent_count(symbol, strategy_id)
-    def _calculate_next_allowed_time(self, symbol, strategy_id="aurora"): return self._qos.calculate_next_allowed_time(symbol, strategy_id)
-    def _update_qos_state(self, symbol, strategy_id="aurora"): self._qos.update_qos_state(symbol, strategy_id)
-    def _handle_exposure_block(self, symbol): self._qos.handle_exposure_block(symbol)
+    def _qos_enabled_for_strategy(
+        self, strategy_id): return self._qos.qos_enabled_for_strategy(strategy_id)
+
+    def _qos_allow(self, symbol, strategy_id="aurora", is_exposure_block=False): return self._qos.qos_allow(
+        symbol, strategy_id, is_exposure_block)
+
+    def _update_symbol_cooldown(
+        self, symbol, strategy_id="aurora"): self._qos.update_symbol_cooldown(symbol, strategy_id)
+
+    def _update_intent_count(
+        self, symbol, strategy_id="aurora"): self._qos.update_intent_count(symbol, strategy_id)
+
+    def _calculate_next_allowed_time(
+        self, symbol, strategy_id="aurora"): return self._qos.calculate_next_allowed_time(symbol, strategy_id)
+
+    def _update_qos_state(
+        self, symbol, strategy_id="aurora"): self._qos.update_qos_state(symbol, strategy_id)
+
+    def _handle_exposure_block(
+        self, symbol): self._qos.handle_exposure_block(symbol)
 
     # -- Position stubs --------------------------------------------------------
-    def _get_position_state(self, symbol): return self._pos.get_position_state(symbol)
-    def _get_portfolio_position_qty_signed(self, symbol): return self._pos.get_portfolio_position_qty_signed(symbol)
-    def _check_symbol_is_flat(self, symbol): return self._pos.check_symbol_is_flat(symbol)
+    def _get_position_state(
+        self, symbol): return self._pos.get_position_state(symbol)
+
+    def _get_portfolio_position_qty_signed(
+        self, symbol): return self._pos.get_portfolio_position_qty_signed(symbol)
+
+    def _check_symbol_is_flat(
+        self, symbol): return self._pos.check_symbol_is_flat(symbol)
+
     def _calculate_position_size(self, symbol, price, side, context, *, margin_pct_mult=None):
         return self._pos.calculate_position_size(symbol, price, side, context, margin_pct_mult=margin_pct_mult)
 
@@ -418,7 +527,9 @@ class DecisionMaking:
     def on_risk(self, event): self._evt.on_risk(event)
     def on_portfolio(self, event): self._evt.on_portfolio(event)
     def on_regime(self, event): self._evt.on_regime(event)
-    def update_exposure_cache(self, event): self._evt.update_exposure_cache(event)
+
+    def update_exposure_cache(
+        self, event): self._evt.update_exposure_cache(event)
 
     def _on_system_stress(self, event: "Message") -> None:
         """Phase 0.5: cache latest system stress state per symbol."""
@@ -428,34 +539,63 @@ class DecisionMaking:
             state = pld.get("state")
             if symbol and state in ("NORMAL", "STRESS", "EXTREME"):
                 self._system_stress_states[symbol] = state
-                self.logger.debug(f"[{symbol}] SystemStress state cached: {state}")
+                self.logger.debug(
+                    f"[{symbol}] SystemStress state cached: {state}")
         except Exception:
-            self.logger.warning("_on_system_stress: unexpected error", exc_info=True)
+            self.logger.warning(
+                "_on_system_stress: unexpected error", exc_info=True)
 
     # -- Readiness stubs -------------------------------------------------------
-    def _features_ready(self, symbol, features_data): return self._readiness.features_ready(symbol, features_data)
-    def _warmup_not_ready(self, symbol, reason, *, details=None): self._readiness.warmup_not_ready(symbol, reason, details=details)
-    def _precheck_exposure_cache(self, symbol, side, notional_usd): return self._readiness.precheck_exposure_cache(symbol, side, notional_usd)
+    def _features_ready(self, symbol, features_data): return self._readiness.features_ready(
+        symbol, features_data)
+
+    def _warmup_not_ready(self, symbol, reason, *,
+                          details=None): self._readiness.warmup_not_ready(symbol, reason, details=details)
+
+    def _precheck_exposure_cache(
+        self, symbol, side, notional_usd): return self._readiness.precheck_exposure_cache(symbol, side, notional_usd)
+
     def _warmup_gate_before_trade_intent(self, *, symbol, rid, reduce_only, context):
         return self._readiness.warmup_gate_before_trade_intent(symbol=symbol, rid=rid, reduce_only=reduce_only, context=context)
+
     def _degraded_context_gate_should_defer(self, *, symbol, rid, ctx, features_evt, strategy_id=None):
         return self._readiness.degraded_context_gate_should_defer(symbol=symbol, rid=rid, ctx=ctx, features_evt=features_evt, strategy_id=strategy_id)
 
     # -- Emitter stubs ---------------------------------------------------------
-    def _emit_trade_intent_rejected(self, **kw): self._emitter.emit_trade_intent_rejected(**kw)
-    def _emit_intent_deferred_v1(self, **kw): self._emitter.emit_intent_deferred_v1(**kw)
-    def _schedule_open_retry(self, symbol, original_context, cooldown_ms, reason): self._emitter.schedule_open_retry(symbol, original_context, cooldown_ms, reason)
-    def _record_blocked_intent(self, symbol): self._emitter.record_blocked_intent(symbol)
-    def _record_accepted_intent(self, symbol): self._emitter.record_accepted_intent(symbol)
-    def _check_and_emit_risk_gate_alert(self): self._emitter.check_and_emit_risk_gate_alert()
-    def _handle_regime_flip(self, symbol, regime_data): self._emitter.handle_regime_flip(symbol, regime_data)
+    def _emit_trade_intent_rejected(
+        self, **kw): self._emitter.emit_trade_intent_rejected(**kw)
+
+    def _emit_intent_deferred_v1(
+        self, **kw): self._emitter.emit_intent_deferred_v1(**kw)
+
+    def _schedule_open_retry(self, symbol, original_context, cooldown_ms, reason): self._emitter.schedule_open_retry(
+        symbol, original_context, cooldown_ms, reason)
+
+    def _record_blocked_intent(
+        self, symbol): self._emitter.record_blocked_intent(symbol)
+
+    def _record_accepted_intent(
+        self, symbol): self._emitter.record_accepted_intent(symbol)
+
+    def _check_and_emit_risk_gate_alert(
+        self): self._emitter.check_and_emit_risk_gate_alert()
+
+    def _handle_regime_flip(
+        self, symbol, regime_data): self._emitter.handle_regime_flip(symbol, regime_data)
 
     # -- Flip stubs ------------------------------------------------------------
-    def _is_flip(self, symbol, intent_side, position_state=None): return self._flip.is_flip(symbol, intent_side, position_state)
-    def _is_same_side_position(self, position_side, intent_side): return self._flip.is_same_side_position(position_side, intent_side)
-    def _generate_flip_retry_key(self, symbol, side, seed=None): return self._flip.generate_flip_retry_key(symbol, side, seed)
+    def _is_flip(self, symbol, intent_side, position_state=None): return self._flip.is_flip(
+        symbol, intent_side, position_state)
+
+    def _is_same_side_position(self, position_side, intent_side): return self._flip.is_same_side_position(
+        position_side, intent_side)
+
+    def _generate_flip_retry_key(
+        self, symbol, side, seed=None): return self._flip.generate_flip_retry_key(symbol, side, seed)
+
     def _handle_flip_orchestration(self, symbol, intent_side, original_pld, source="aurora"):
         return self._flip.handle_flip_orchestration(symbol, intent_side, original_pld, source)
+
     def _emit_reduce_only_close(self, symbol, reason, rid, *, strategy_id, strategy_trace=None):
         return self._flip.emit_reduce_only_close(
             symbol,
@@ -464,7 +604,10 @@ class DecisionMaking:
             strategy_id=strategy_id,
             strategy_trace=strategy_trace,
         )
-    def _resolve_position_mode(self, *, symbol, source): return self._flip.resolve_position_mode(symbol=symbol, source=source)
+
+    def _resolve_position_mode(
+        self, *, symbol, source): return self._flip.resolve_position_mode(symbol=symbol, source=source)
+
     def _initiate_flip_close(self, symbol, intent_side, original_pld, source):
         return self._flip.initiate_flip_close(symbol, intent_side, original_pld, source)
 
@@ -482,6 +625,7 @@ class DecisionMaking:
 
     # -- Lifecycle -------------------------------------------------------------
     def clear_internal_state_for_symbol(self, symbol: str) -> None:
+        """Compatibility no-op; current per-symbol caches are delegate-managed."""
         pass  # Per-symbol caches are TTL-managed
 
     def start(self) -> None:
@@ -497,11 +641,12 @@ class DecisionMaking:
         return True
 
     def handle_tick(self) -> None:
+        """Emit periodic domain status without owning market-tick processing."""
         now = self._clock.now_sec()
         if now - self._last_status_ts >= 60:
             self._domain_bridge.emit_status()
             self._last_status_ts = now
 
 
-# Backward-compat alias
+# Backward-compat alias kept for legacy imports/tests.
 DecisionMakingLogic = DecisionMaking

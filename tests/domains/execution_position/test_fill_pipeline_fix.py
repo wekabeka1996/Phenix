@@ -27,7 +27,8 @@ class TestTTLConfigContract:
         """default_ttl_seconds must NOT reduce fill_ttl_ms below watchdog value."""
         import os
         config_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config", "aurora", "trading.yaml"
+            os.path.dirname(
+                __file__), "..", "..", "..", "config", "aurora", "trading.yaml"
         )
         with open(config_path) as f:
             trading = yaml.safe_load(f)
@@ -37,7 +38,8 @@ class TestTTLConfigContract:
         orders = execution.get("orders") or {}
 
         fill_ttl_ms = watchdog.get("fill_ttl_ms", 0)
-        default_ttl_seconds = orders.get("default_ttl_seconds") if orders else None
+        default_ttl_seconds = orders.get(
+            "default_ttl_seconds") if orders else None
 
         # If default_ttl_seconds is still present, it must not reduce fill_ttl_ms
         if default_ttl_seconds is not None:
@@ -52,10 +54,12 @@ class TestTTLConfigContract:
         """Watchdog fill_ttl_ms must be >= max pending_entry_ttl to avoid racing."""
         import os
         trading_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config", "aurora", "trading.yaml"
+            os.path.dirname(
+                __file__), "..", "..", "..", "config", "aurora", "trading.yaml"
         )
         domains_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config", "aurora", "domains.yaml"
+            os.path.dirname(
+                __file__), "..", "..", "..", "config", "aurora", "domains.yaml"
         )
         with open(trading_path) as f:
             trading = yaml.safe_load(f)
@@ -64,7 +68,8 @@ class TestTTLConfigContract:
 
         fill_ttl_ms = trading["trading"]["execution"]["watchdog"]["fill_ttl_ms"]
 
-        pe_ttl = domains.get("execution_position", {}).get("pending_entry_ttl", {})
+        pe_ttl = domains.get("execution_position", {}).get(
+            "pending_entry_ttl", {})
         ttl_by_tf = pe_ttl.get("ttl_by_tf_sec", {})
         if ttl_by_tf:
             max_pe_ttl_ms = max(int(v) * 1000 for v in ttl_by_tf.values())
@@ -77,12 +82,14 @@ class TestTTLConfigContract:
         """After fix, default_ttl_seconds should NOT be present in trading.yaml."""
         import os
         config_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config", "aurora", "trading.yaml"
+            os.path.dirname(
+                __file__), "..", "..", "..", "config", "aurora", "trading.yaml"
         )
         with open(config_path) as f:
             trading = yaml.safe_load(f)
 
-        orders = trading.get("trading", {}).get("execution", {}).get("orders") or {}
+        orders = trading.get("trading", {}).get(
+            "execution", {}).get("orders") or {}
         assert orders.get("default_ttl_seconds") is None, (
             "default_ttl_seconds should be removed from trading.yaml "
             "(RC1: it silently overrides fill_ttl_ms)"
@@ -245,7 +252,74 @@ class TestWSClientIntegration:
             main_loop=None,
         )
         # In non-async context, _loop will be None (fallback warning)
-        assert client._loop is None or isinstance(client._loop, asyncio.AbstractEventLoop)
+        assert client._loop is None or isinstance(
+            client._loop, asyncio.AbstractEventLoop)
+
+    def test_ws_account_update_does_not_emit_canonical_account_event(self):
+        """Raw WS ACCOUNT_UPDATE deltas must not violate the canonical schema contract."""
+        from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
+
+        fsm_core = MagicMock()
+        client = BinanceWebSocketClient(
+            api_key="test",
+            base_url="https://test",
+            use_testnet=True,
+            fsm_core=fsm_core,
+            main_loop=None,
+        )
+
+        client._handle_ws_message(
+            {
+                "e": "ACCOUNT_UPDATE",
+                "E": 1775105850079,
+                "a": {
+                    "B": [{"a": "USDT", "wb": "4052.20449344", "cw": "3144.90650844", "bc": "0"}],
+                    "P": [{"s": "ETHUSDT", "pa": "-1.116", "ep": "2042.91", "up": "-0.76456814", "mt": "isolated"}],
+                    "m": "ORDER",
+                },
+            }
+        )
+
+        fsm_core.emit.assert_not_called()
+
+    def test_adapter_init_uses_registered_async_loop_for_ws_client(self):
+        """Adapter bootstrap should reuse the execution async loop outside async context."""
+        from apps.reference.domains.execution_position.adapter_init import AdapterInitMixin
+
+        mixin = AdapterInitMixin()
+        mixin.shadow_mode = False
+        mixin._orphan_metrics = {}
+        mixin.fsm = MagicMock()
+        mixin._get_async_loop = MagicMock()
+
+        mock_loop = MagicMock(spec=asyncio.AbstractEventLoop)
+        mixin._get_async_loop.return_value = mock_loop
+
+        env_config = MagicMock()
+        env_config.api_key = "key"
+        env_config.api_secret = "secret"
+        env_config.rest_url = "https://test"
+
+        api_config = MagicMock()
+        api_config.testnet = env_config
+        api_config.live = env_config
+
+        config = MagicMock()
+        config.get_domain_mode.return_value = "testnet"
+        config.binance_api = api_config
+        mixin.config = config
+
+        mock_adapter = MagicMock()
+        mock_ws_client = MagicMock()
+
+        with patch("apps.reference.adapters.binance_adapter.BinanceAdapter", return_value=mock_adapter):
+            with patch("apps.reference.adapters.binance_ws_client.BinanceWebSocketClient", return_value=mock_ws_client) as ws_ctor:
+                with patch("asyncio.get_running_loop", side_effect=RuntimeError):
+                    mixin._initialize_adapter()
+
+        ws_ctor.assert_called_once()
+        assert ws_ctor.call_args.kwargs["main_loop"] is mock_loop
+        mock_ws_client.start.assert_called_once_with()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -312,7 +386,8 @@ class TestPartialFillDedupFix:
         symbol = "ETHUSDT"
 
         def build_key(payload):
-            _trade_id = str(payload.get("tradeId") or payload.get("trade_id") or "")
+            _trade_id = str(payload.get("tradeId")
+                            or payload.get("trade_id") or "")
             return f"fill_{order_id}_{_trade_id}_{symbol}" if _trade_id else f"fill_{order_id}_{symbol}"
 
         key1 = build_key(payload_1)

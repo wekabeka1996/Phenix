@@ -1,26 +1,21 @@
-"""
-Async scheduling helpers — Phase 14.2 extraction from fsm.py.
+"""Async scheduling helpers for execution-position background work.
 
-Encapsulates asyncio loop management and background task scheduling
-used by ExecPosFSM.
+The mixin owns loop discovery and one-way scheduling for guardian and cleanup
+tasks. It does not manage task shutdown or result propagation.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Coroutine, Optional, TYPE_CHECKING
+from typing import Any, Coroutine, Optional
 
 from apps.reference.utils.accessors import aget
-
-if TYPE_CHECKING:
-    pass
 
 LOG = logging.getLogger(__name__)
 
 
 class AsyncSchedulingMixin:
-    """
-    Mixin providing async loop and background scheduling for ExecPosFSM.
+    """Mixin providing async loop discovery and fire-and-forget scheduling.
 
     Expects:
         self._async_loop: Optional[asyncio.AbstractEventLoop]
@@ -36,11 +31,15 @@ class AsyncSchedulingMixin:
     _async_loop: Optional[asyncio.AbstractEventLoop]
 
     def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Register the shared asyncio loop for guardian/adapter tasks."""
+        """Register the shared asyncio loop for guardian and cleanup tasks."""
         self._async_loop = loop
 
     def _get_async_loop(self) -> Optional[asyncio.AbstractEventLoop]:
-        """Resolve the active asyncio loop for scheduling background work."""
+        """Resolve the loop to use for background scheduling.
+
+        Preference order is: explicitly injected shared loop, otherwise the
+        currently running loop in the calling thread.
+        """
         loop = self._async_loop
         if loop and not loop.is_closed():
             return loop
@@ -54,10 +53,16 @@ class AsyncSchedulingMixin:
         coro: Coroutine[Any, Any, Any],
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> None:
-        """Schedule coroutine on a target loop, thread-safe."""
+        """Schedule ``coro`` on the target loop.
+
+        The coroutine object is owned by this helper: if no usable loop is
+        available it is closed immediately to avoid ``RuntimeWarning: coroutine
+        was never awaited`` leaks in deferred or shutdown paths.
+        """
         target_loop = loop or self._get_async_loop()
         if not target_loop:
             LOG.debug("No asyncio loop available to schedule %r", coro)
+            coro.close()
             return
 
         try:
@@ -65,13 +70,15 @@ class AsyncSchedulingMixin:
         except RuntimeError:
             running_loop = None
 
+        # Use create_task only when already on the target loop; cross-thread
+        # scheduling must go through run_coroutine_threadsafe.
         if running_loop is target_loop:
             target_loop.create_task(coro)
         else:
             asyncio.run_coroutine_threadsafe(coro, target_loop)
 
     def _schedule_guardian_start(self) -> None:
-        """Ensure guardian poller and startup reconcile are scheduled once."""
+        """Schedule guardian start/reconcile once the async runtime is ready."""
         if self._guardian_start_scheduled:
             return
         guardian = aget(self, "order_guardian", None)
@@ -89,7 +96,7 @@ class AsyncSchedulingMixin:
         self._guardian_start_scheduled = True
 
     def _schedule_fsm_cleanup_loop(self) -> None:
-        """Start FSM-side cleanup loop respecting unified guardian config."""
+        """Start the FSM-side cleanup loop if this FSM still owns that duty."""
         if self._bg_started:
             return
         if not self._orphan_cfg.get("enabled"):
@@ -97,6 +104,8 @@ class AsyncSchedulingMixin:
         if not aget(self, "order_guardian", None):
             return
         if self._guardian_unified and not self._fsm_cleanup_enabled:
+            # Unified guardian mode centralizes cleanup ownership outside this
+            # FSM; the one-shot log avoids repeating the same startup reason.
             if not self._fsm_cleanup_logged:
                 LOG.info("[FSM-CLEANUP] disabled_by_config (unified=true)")
                 self._fsm_cleanup_logged = True

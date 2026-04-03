@@ -1,16 +1,15 @@
-"""
-Bracket order management for execution_position domain.
+"""Bracket placement helper for execution_position.
 
-Extracted from ExecPosFSM (Phase 14A decomposition).
-Handles TP/SL bracket placement (parallel and deferred),
-pre-flight position checks, and bracket registration.
+This module owns TP/SL submission after an entry is accepted. It covers the
+immediate market-entry path, the deferred limit-entry path, bounded preflight
+position checks, and registration with correlation/order-guardian state.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict
 
 from apps.reference.core.time import get_clock
 from apps.reference.domains.execution_position.utils import (
@@ -26,7 +25,7 @@ LOG = logging.getLogger(__name__)
 
 
 class BracketManager:
-    """Manages TP/SL bracket placement and pre-flight checks."""
+    """Place and register TP/SL brackets around filled entries."""
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
@@ -46,7 +45,12 @@ class BracketManager:
         entry_resp: Dict[str, Any],
         decision: "Message",
     ) -> None:
-        """Place SL and TP brackets in parallel with -2021 retry logic."""
+        """Place SL/TP together for market entries.
+
+        The TP side owns the Binance -2021 widen/retry fallback. If the
+        parallel branch fails as a whole, the manager retries sequentially so a
+        transient failure in one coroutine does not drop both protective orders.
+        """
         from apps.reference.adapters.binance_adapter import BinanceAPIError
 
         sl_side = opposite_side(side)
@@ -58,14 +62,18 @@ class BracketManager:
 
         # Read bracket placement config from SSOT
         bracket_cfg = self._fsm.config.domains.execution_position.bracket_placement
-        tp_widen_first = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
-        tp_widen_second = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_second_bps)) / Decimal("10000")
+        tp_widen_first = Decimal(
+            "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+        tp_widen_second = Decimal(
+            "1") + Decimal(str(bracket_cfg.tp_widen_second_bps)) / Decimal("10000")
         retry_backoff_ms = bracket_cfg.retry_backoff_ms
 
         sl_resp = None
         tp_resp = None
 
         try:
+            # Run both protective orders concurrently, but keep the TP-specific
+            # widen/fallback policy local to the TP coroutine.
             async def place_sl_async():
                 return await self._fsm.adapter.place_stop_market_close_position(
                     symbol, sl_side, str(sl), new_client_order_id=sl_id)
@@ -76,14 +84,16 @@ class BracketManager:
                         symbol, tp_side, str(tp), new_client_order_id=tp_id)
                 except BinanceAPIError as e:
                     if e.code == -2021:
-                        LOG.warning(f"⚠️ [PHASE A3] TP -2021 error, attempting backoff for {symbol}")
+                        LOG.warning(
+                            f"⚠️ [PHASE A3] TP -2021 error, attempting backoff for {symbol}")
                         self._fsm._orphan_metrics["tp_sl_retry_backoff"] += 1
 
                         tp_adj = tp * tp_widen_first
                         tp_adj = quantize_stop_price(
                             tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL")
                         if self._fsm.metrics_collector:
-                            self._fsm.metrics_collector.record_retry("tp_adjust")
+                            self._fsm.metrics_collector.record_retry(
+                                "tp_adjust")
 
                         await get_clock().sleep_ms(retry_backoff_ms[0])
 
@@ -100,15 +110,18 @@ class BracketManager:
                                     return await self._fsm.adapter.place_take_profit_market_close_position(
                                         symbol, tp_side, str(tp_adj2), new_client_order_id=tp_id)
                                 except BinanceAPIError:
-                                    LOG.warning(f"⚠️ [PHASE A3] TP -2021 fallback to LIMIT for {symbol}")
+                                    LOG.warning(
+                                        f"⚠️ [PHASE A3] TP -2021 fallback to LIMIT for {symbol}")
                                     if self._fsm.metrics_collector:
-                                        self._fsm.metrics_collector.record_retry("tp_fallback")
+                                        self._fsm.metrics_collector.record_retry(
+                                            "tp_fallback")
                                     return await self._fsm.adapter.place_limit_reduce_only(
                                         symbol, tp_side, str(tp_adj2), qty, new_client_order_id=tp_id)
                             else:
                                 raise
                         if self._fsm.metrics_collector:
-                            self._fsm.metrics_collector.record_retry("tp_fallback")
+                            self._fsm.metrics_collector.record_retry(
+                                "tp_fallback")
                         return await self._fsm.adapter.place_limit_reduce_only(
                             symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
                     else:
@@ -118,6 +131,8 @@ class BracketManager:
                 place_sl_async(), place_tp_async(), return_exceptions=False)
         except Exception as e:
             LOG.error(f"Error placing brackets in parallel: {e}")
+            # Fall back to the older sequential behavior to salvage bracket
+            # placement when one side of the parallel path fails unexpectedly.
             sl_resp = await self._fsm.adapter.place_stop_market_close_position(
                 symbol, sl_side, str(sl), new_client_order_id=sl_id)
             try:
@@ -148,7 +163,9 @@ class BracketManager:
         self, *, symbol, sl_resp, tp_resp, sl_id, tp_id,
         entry_resp, decision, corr_id, oco_group_id
     ):
-        """Register bracket results with correlation store and order guardian."""
+        """Mirror accepted bracket IDs into FSM, correlation, and guardian state."""
+        corr_value = corr_id or decision.corr_id or ""
+        oco_group_value = oco_group_id or decision.oco_group_id or ""
         sl_order_id = None
         tp_order_id = None
 
@@ -158,8 +175,9 @@ class BracketManager:
             sl_order_id = str(sl_resp["orderId"])
             self._fsm.correlation_store.put_sl_tp_ack(
                 sl_order_id, entry_resp["clientOrderId"],
-                decision.corr_id or "", decision.oco_group_id or "", decision.rid or "")
-            self._fsm._symbol_brackets.setdefault(symbol, {})["sl_order_id"] = sl_order_id
+                corr_value, oco_group_value, decision.rid or "")
+            self._fsm._symbol_brackets.setdefault(
+                symbol, {})["sl_order_id"] = sl_order_id
 
         if tp_resp:
             LOG.info(f"✅ TP placed: {tp_resp}")
@@ -167,8 +185,9 @@ class BracketManager:
             tp_order_id = str(tp_resp["orderId"])
             self._fsm.correlation_store.put_sl_tp_ack(
                 tp_order_id, entry_resp["clientOrderId"],
-                decision.corr_id or "", decision.oco_group_id or "", decision.rid or "")
-            self._fsm._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+                corr_value, oco_group_value, decision.rid or "")
+            self._fsm._symbol_brackets.setdefault(
+                symbol, {})["tp_order_id"] = tp_order_id
 
         if sl_order_id or tp_order_id:
             self._fsm.order_guardian.register_brackets(
@@ -176,18 +195,22 @@ class BracketManager:
                 sl_order_id=sl_order_id, tp_order_id=tp_order_id,
                 sl_client_id=sl_id if sl_resp else None,
                 tp_client_id=tp_id if tp_resp else None,
-                corr_id=decision.corr_id, rid=decision.rid)
+                corr_id=corr_value, rid=decision.rid)
 
             try:
+                # Best-effort cleanup avoids leaving older bracket sets alive
+                # after a newer entry has already been acknowledged.
                 import asyncio
                 asyncio.ensure_future(self._fsm.order_guardian.cleanup_other_brackets_for_symbol(
                     symbol, keep_parent_order_id=str(entry_resp["orderId"])))
             except Exception as _e:
-                LOG.debug(f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
+                LOG.debug(
+                    f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
 
         manage_flow = self._fsm.manage_flows.get(symbol)
         if manage_flow:
-            brackets = self._fsm._symbol_brackets[symbol] if symbol in self._fsm._symbol_brackets else {}
+            brackets = self._fsm._symbol_brackets[symbol] if symbol in self._fsm._symbol_brackets else {
+            }
             manage_flow.set_bracket_ids(
                 sl_order_id=brackets.get("sl_order_id"),
                 tp_order_id=brackets.get("tp_order_id"))
@@ -195,7 +218,7 @@ class BracketManager:
     async def place_deferred_brackets(
         self, entry_order_id: str, bracket_data: Dict[str, Any]
     ) -> None:
-        """LIMIT-ENTRY-DEFERRED-BRACKETS: Place TP/SL brackets after LIMIT entry fill."""
+        """Place TP/SL after a deferred LIMIT entry fill is confirmed."""
         from apps.reference.adapters.binance_adapter import BinanceAPIError
 
         symbol = bracket_data["symbol"]
@@ -209,23 +232,32 @@ class BracketManager:
         oco_group_id = bracket_data.get("oco_group_id")
         entry_client_order_id = bracket_data.get("entry_client_order_id")
 
-        LOG.info(f"📌 [LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}")
+        LOG.info(
+            f"📌 [LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}")
 
+        # The deferred path reuses the same two guards as the immediate path:
+        # position must be visible first, and OrderGuardian must accept the
+        # entry->brackets transition for this parent order.
         if not await self.preflight_position_check(symbol):
-            LOG.warning(f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets")
+            LOG.warning(
+                f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets")
             return
 
         if not await self._fsm.order_guardian.should_place_brackets(symbol, entry_order_id):
-            LOG.warning(f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}")
+            LOG.warning(
+                f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}")
             return
 
         sl_side = opposite_side(side)
-        sl_id = generate_client_order_id("SL", symbol, idempotent_key=str(idem_key) if idem_key else None)
+        sl_id = generate_client_order_id(
+            "SL", symbol, idempotent_key=str(idem_key) if idem_key else None)
         tp_side = opposite_side(side)
-        tp_id = generate_client_order_id("TP", symbol, idempotent_key=str(idem_key) if idem_key else None)
+        tp_id = generate_client_order_id(
+            "TP", symbol, idempotent_key=str(idem_key) if idem_key else None)
 
         bracket_cfg = self._fsm.config.domains.execution_position.bracket_placement
-        tp_widen_first = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+        tp_widen_first = Decimal(
+            "1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
 
         sl_resp = None
         tp_resp = None
@@ -238,9 +270,11 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 sl_order_id, entry_client_order_id or "", corr_id or "",
                 oco_group_id or "", rid or "")
-            self._fsm._symbol_brackets.setdefault(symbol, {})["sl_order_id"] = sl_order_id
+            self._fsm._symbol_brackets.setdefault(
+                symbol, {})["sl_order_id"] = sl_order_id
         except Exception as e:
-            LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+            LOG.error(
+                f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
 
         try:
             tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
@@ -251,27 +285,35 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 tp_order_id, entry_client_order_id or "", corr_id or "",
                 oco_group_id or "", rid or "")
-            self._fsm._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+            self._fsm._symbol_brackets.setdefault(
+                symbol, {})["tp_order_id"] = tp_order_id
         except BinanceAPIError as e:
             if e.code == -2021:
-                LOG.warning(f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+                LOG.warning(
+                    f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
                 tp_adj = tp * tp_widen_first
-                tp_adj = quantize_stop_price(tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL")
+                tp_adj = quantize_stop_price(
+                    tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL")
                 try:
                     tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
                         symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
-                    LOG.info(f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+                    LOG.info(
+                        f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
                     tp_order_id = str(tp_resp["orderId"])
                     self._fsm.correlation_store.put_sl_tp_ack(
                         tp_order_id, entry_client_order_id or "", corr_id or "",
                         oco_group_id or "", rid or "")
-                    self._fsm._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+                    self._fsm._symbol_brackets.setdefault(
+                        symbol, {})["tp_order_id"] = tp_order_id
                 except Exception as e2:
-                    LOG.error(f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+                    LOG.error(
+                        f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
             else:
-                LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+                LOG.error(
+                    f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
         except Exception as e:
-            LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+            LOG.error(
+                f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
 
         # Register with OrderGuardian
         if sl_resp:
@@ -290,16 +332,24 @@ class BracketManager:
             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}")
 
     async def preflight_position_check(self, symbol: str) -> bool:
-        """PHASE A3: Pre-flight check before placing TP/SL orders."""
+        """Confirm that the exchange exposes a non-zero position before TP/SL placement.
+
+        The retry cadence comes from trading.execution.preflight_backoff_ms and
+        is intentionally strict: missing or invalid config raises immediately,
+        while exchange/read-path instability degrades to a bounded False result.
+        """
         exec_cfg = getattr(self._fsm.config, "trading", None)
-        exec_cfg = getattr(exec_cfg, "execution", None) if exec_cfg is not None else None
-        backoff_ms = getattr(exec_cfg, "preflight_backoff_ms", None) if exec_cfg is not None else None
+        exec_cfg = getattr(exec_cfg, "execution",
+                           None) if exec_cfg is not None else None
+        backoff_ms = getattr(exec_cfg, "preflight_backoff_ms",
+                             None) if exec_cfg is not None else None
         if not backoff_ms:
             raise ValueError(
                 "trading.execution.preflight_backoff_ms is required for TP/SL preflight; no fallback/default is allowed.")
         backoff_ms = [int(x) for x in backoff_ms]
         if any(x <= 0 for x in backoff_ms):
-            raise ValueError(f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms}")
+            raise ValueError(
+                f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms}")
         tries = 0
         start = get_clock().now_sec()
 
@@ -312,23 +362,28 @@ class BracketManager:
                         p.__dict__ if not isinstance(p, dict) else p)
                     for p in positions
                 ]
-                pos = next((p for p in positions_list if p.get("symbol") == symbol), None)
+                pos = next(
+                    (p for p in positions_list if p.get("symbol") == symbol), None)
                 if pos is None:
                     position_amt = 0.0
                 else:
-                    position_amt = float(pos.get("position_amount") or pos.get("positionAmt") or 0)
+                    position_amt = float(
+                        pos.get("position_amount") or pos.get("positionAmt") or 0)
                 elapsed_ms = int((get_clock().now_sec() - start) * 1000)
-                LOG.info(f"[BRK] preflight positionRisk posAmt={position_amt} try={tries} elapsed={elapsed_ms}ms")
+                LOG.info(
+                    f"[BRK] preflight positionRisk posAmt={position_amt} try={tries} elapsed={elapsed_ms}ms")
                 if abs(position_amt) >= 1e-10:
                     LOG.info("[BRK] preflight DECISION=allow (pos!=0)")
                     return True
                 if tries > len(backoff_ms):
-                    LOG.warning(f"🚫 [PHASE A3] PRE-FLIGHT SKIPPED: Position is 0 for {symbol} after {tries} tries")
+                    LOG.warning(
+                        f"🚫 [PHASE A3] PRE-FLIGHT SKIPPED: Position is 0 for {symbol} after {tries} tries")
                     self._fsm._orphan_metrics["tp_sl_skipped_no_position"] += 1
                     return False
                 await get_clock().sleep_ms(backoff_ms[tries - 1])
             except Exception as e:
-                LOG.warning(f"⚠️ [PHASE A3] PRE-FLIGHT ERROR for {symbol} (try {tries}): {e}")
+                LOG.warning(
+                    f"⚠️ [PHASE A3] PRE-FLIGHT ERROR for {symbol} (try {tries}): {e}")
                 if tries > len(backoff_ms):
                     return False
                 await get_clock().sleep_ms(backoff_ms[tries - 1])

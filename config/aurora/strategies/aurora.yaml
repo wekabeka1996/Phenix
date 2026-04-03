@@ -471,7 +471,7 @@ aurora:
         MEAN_REVERSION: 0.8
 
       exit:
-        sl_pct: 0.019
+        sl_pct: 0.0095
         max_hold_sec: null
         regime_tpsl:
           enabled: true
@@ -589,7 +589,7 @@ aurora:
         MEAN_REVERSION: 1.0
 
       exit:
-        sl_pct: 0.0135
+        sl_pct: 0.00675
         max_hold_sec: null
         regime_tpsl:
           enabled: true
@@ -1056,7 +1056,7 @@ aurora:
         MEAN_REVERSION: 0.75
 
       exit:
-        sl_pct: 0.01512
+        sl_pct: 0.00756
         max_hold_sec: 3000
         regime_tpsl:
           enabled: true

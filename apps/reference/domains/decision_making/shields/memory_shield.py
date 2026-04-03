@@ -1,32 +1,31 @@
 """
 MemoryShield — State-Familiarity Attenuation (Doctrine v2.6, P0-3.1).
 
-Tracks coarse-grained market-state visits via exponentially-decayed
-counters.  Unknown/rare states get lower multipliers; well-known
+Tracks coarse-grained market-state visits via exponentially decayed
+counters. Unknown or rare states get lower multipliers; well-known
 states pass through at 1.0.
 
-State hash: "{REGIME}|{VOL}|{STR}|{QUAL}" (~54 buckets).
-Storage: O(1) per state — exponential decay counter, no unbounded lists.
+State hash: "{REGIME}|{VOL}|{STR}|{QUAL}" (~54 coarse buckets).
+Storage remains bounded: an LRU state map plus a bounded per-bar dedup set.
 
-Idempotency:
-  A visit is recorded **at most once per (state_hash, bar_ts)**.
-  Repeated evaluate() calls on the same bar do NOT inflate counters.
+Read/write contract:
+    evaluate() is pure-read and never records a visit.
+    record_visit() is the only public write path.
+    A visit is recorded at most once per (state_hash, bar_ts).
 
 Persistence modes:
-  storage_path=None  → RAM-only (safe for backtest & default).
-  storage_path=<path> → atomic JSON persistence, throttled by
-                        *flush_interval_sec* (default 60 s).
+    storage_path=None   -> RAM-only (safe for backtest and default).
+    storage_path=<path> -> atomic JSON persistence, throttled by
+                                                 flush_interval_sec (default 60 s).
 """
 from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import tempfile
-import time
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from apps.reference.domains.decision_making.shields.base import (
     BaseShield,
@@ -35,7 +34,8 @@ from apps.reference.domains.decision_making.shields.base import (
 
 logger = logging.getLogger(__name__)
 
-# Maximum size of the idempotency dedup set (most recent bar keys kept).
+# Bounded history for (state_hash, bar_ts) keys used to keep writes idempotent
+# without letting the dedup structure grow forever.
 _DEDUP_CAP = 512
 
 
@@ -124,10 +124,12 @@ class _StateEntry:
         self.last_ts = now_ts
 
     def to_dict(self) -> dict:
+        """Serialize the counter for JSON persistence."""
         return {"visits": self.visits, "last_ts": self.last_ts}
 
     @classmethod
     def from_dict(cls, d: dict) -> "_StateEntry":
+        """Restore persisted counter state."""
         return cls(visits=float(d.get("visits", 0.0)),
                    last_ts=int(d.get("last_ts", 0)))
 
@@ -143,7 +145,8 @@ class MemoryShield(BaseShield):
     decay_rate : float
         Per-day exponential decay for visit counts (default 0.95).
     max_states : int
-        LRU cap on tracked states (default 200).
+        Target LRU cap on tracked states (default 200).
+        Eviction happens on the write path when new visits are recorded.
     unknown_threshold, exploring_threshold : float
         Effective-visit boundaries for familiarity tiers.
     unknown_multiplier, exploring_multiplier, known_multiplier : float
@@ -154,6 +157,12 @@ class MemoryShield(BaseShield):
         guarantee no cross-run leakage and no filesystem I/O.
     flush_interval_sec : float
         Minimum seconds between disk flushes (default 60).
+
+    Notes
+    -----
+    evaluate() is intentionally side-effect free so callers can score the same
+    bar multiple times without inflating familiarity. record_visit() is the
+    explicit mutation hook for downstream intent-confirmed writes.
     """
 
     def __init__(
@@ -211,14 +220,16 @@ class MemoryShield(BaseShield):
         pillar_sum: float,
         raw_exposure: float,
     ) -> ShieldResult:
-        """Compute familiarity multiplier and record visit (idempotent)."""
+        """Compute the familiarity multiplier without mutating visit state."""
         now_ts = self._extract_ts(features)
         state_hash, missing = self._get_state_hash(features)
 
-        # --- missing features → deterministic UNKNOWN (pure-read) ----
+        # Missing features fail closed into the UNKNOWN tier and avoid exposing
+        # a state hash that a normal caller might later persist as if complete.
         if missing:
             reason = f"MEMORY:MISSING_FEATURES({missing})"
-            logger.debug("[%s] %s → mult=%.2f", symbol, reason, self._unknown_mult)
+            logger.debug("[%s] %s → mult=%.2f", symbol,
+                         reason, self._unknown_mult)
             return ShieldResult(
                 multiplier=self._unknown_mult,
                 reasons=[reason],
@@ -247,11 +258,13 @@ class MemoryShield(BaseShield):
         # Defensive clamp
         clamped = max(0.0, min(1.0, mult))
         if clamped != mult:
-            logger.warning("MEMORY: clamped mult %.4f→%.4f for %s", mult, clamped, state_hash)
+            logger.warning("MEMORY: clamped mult %.4f→%.4f for %s",
+                           mult, clamped, state_hash)
             mult = clamped
 
         reason = f"MEMORY:{tag}(ev={ev:.1f})"
-        logger.debug("[%s] %s hash=%s → mult=%.2f", symbol, reason, state_hash, mult)
+        logger.debug("[%s] %s hash=%s → mult=%.2f",
+                     symbol, reason, state_hash, mult)
 
         return ShieldResult(
             multiplier=mult,
@@ -261,7 +274,7 @@ class MemoryShield(BaseShield):
         )
 
     # ------------------------------------------------------------------
-    # Public write-path (Fix BUG-2)
+    # Public write path — intentionally separate from evaluate()
     # ------------------------------------------------------------------
     def record_visit(
         self,
@@ -270,14 +283,20 @@ class MemoryShield(BaseShield):
         bar_close_ts: Optional[int] = None,
         state_hash: Optional[str] = None,
     ) -> None:
-        """Record a visit for the current state (idempotent per bar).
+        """Record one visit for the current state (idempotent per bar).
 
-        MUST be called only when a valid trading intent is formed
-        (or at end of bar processing if tracking all observed states).
+        Runtime callers usually pass the hash returned by evaluate() so the
+        scoring and persistence paths use the exact same bucket. Standalone
+        callers may omit state_hash and let this method recompute it.
+
+        This method should be called only when a valid trading intent is
+        formed, or when the caller explicitly wants to track observed states.
         """
         if state_hash is None:
+            # Preserve the same hashing contract for callers that did not run a
+            # prior evaluate() pass.
             state_hash, _ = self._get_state_hash(features)
-        
+
         now_ts = bar_close_ts or self._extract_ts(features)
         self._maybe_record_visit(state_hash, now_ts)
 
@@ -294,6 +313,10 @@ class MemoryShield(BaseShield):
                         ``features["volatility_state"]``
           strength    → ``features["pillar_operator"]``
           quality     → ``features["pillar_strategist"]``
+
+        The returned missing list is consumed by evaluate() to short-circuit
+        into a deterministic UNKNOWN tier. record_visit() may still persist a
+        recomputed hash when called directly.
         """
         missing: list[str] = []
 
@@ -315,7 +338,8 @@ class MemoryShield(BaseShield):
             except (TypeError, ValueError):
                 atr_pct = None
         if atr_pct is None:
-            # Fallback: normalised volatility_state (0-1)
+            # Fallback: normalised volatility_state (0-1). Only the absence of
+            # both volatility sources is treated as a missing-field condition.
             vs = features.get("volatility_state")
             if vs is not None:
                 try:
@@ -342,7 +366,8 @@ class MemoryShield(BaseShield):
         # -- Quality (long-horizon regime quality) ---------------------
         ps_raw = features.get("pillar_strategist")
         if ps_raw is None:
-            # Graceful degradation: quality unknown but still usable
+            # Preserve a stable hash string for direct callers, but flag the
+            # feature set as incomplete for the normal evaluate() path.
             missing.append("pillar_strategist")
             qual = "UNKNOWN"
         else:
@@ -359,18 +384,19 @@ class MemoryShield(BaseShield):
     # Idempotent visit recording (max 1 per bar per state)
     # ------------------------------------------------------------------
     def _maybe_record_visit(self, state_hash: str, bar_ts: int) -> None:
-        """Record visit only if (state_hash, bar_ts) not yet seen."""
+        """Record a state only once for a given bar timestamp."""
         key = (state_hash, bar_ts)
         if key in self._seen_keys:
             return  # idempotent: already counted for this bar
-        # Mark as seen (bounded dedup set)
+        # Keep only the most recent dedup keys; older bars no longer need
+        # protection once they have fallen out of the active processing window.
         self._seen_keys[key] = None
         while len(self._seen_keys) > _DEDUP_CAP:
             self._seen_keys.popitem(last=False)
-        # Actual recording
         self._record_visit(state_hash, bar_ts)
 
     def _record_visit(self, state_hash: str, now_ts: int) -> None:
+        """Update the decayed counter, refresh LRU order, and schedule a flush."""
         entry = self._states.get(state_hash)
         if entry is None:
             entry = _StateEntry()
@@ -398,7 +424,8 @@ class MemoryShield(BaseShield):
             if val is not None:
                 try:
                     v = int(val)
-                    # Convert ms → s if value looks like milliseconds
+                    # Current-era epoch milliseconds are downcast to seconds so
+                    # the rest of the module can stay on a single time unit.
                     return v // 1000 if v > 1_700_000_000_000 else v
                 except (TypeError, ValueError):
                     continue
@@ -422,11 +449,14 @@ class MemoryShield(BaseShield):
             self._save()
 
     def _save(self) -> None:
+        """Persist the current state snapshot atomically on a best-effort basis."""
         if not self._storage_path:
             return
         try:
             data = {k: v.to_dict() for k, v in self._states.items()}
             dir_name = os.path.dirname(self._storage_path) or "."
+            # Write to a sibling temp file first so readers never observe a
+            # partially written JSON payload.
             fd, tmp = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
             try:
                 with os.fdopen(fd, "w") as f:
@@ -444,6 +474,7 @@ class MemoryShield(BaseShield):
             logger.error("MEMORY: save failed: %s", exc)
 
     def _load(self) -> None:
+        """Load persisted state if available; on failure, start with empty RAM."""
         if not self._storage_path or not os.path.isfile(self._storage_path):
             return
         try:
@@ -451,7 +482,8 @@ class MemoryShield(BaseShield):
                 raw = json.load(f)
             for k, v in raw.items():
                 self._states[k] = _StateEntry.from_dict(v)
-            logger.info("MEMORY: loaded %d states from %s", len(self._states), self._storage_path)
+            logger.info("MEMORY: loaded %d states from %s",
+                        len(self._states), self._storage_path)
         except Exception as exc:
             logger.error("MEMORY: load failed (starting fresh): %s", exc)
             self._states.clear()

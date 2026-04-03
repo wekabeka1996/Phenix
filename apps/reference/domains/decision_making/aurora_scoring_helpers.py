@@ -1,22 +1,15 @@
-"""
-Aurora Scoring Helpers Mixin.
+"""Scoring-support helpers mixed into AuroraHandler.
 
-Extracted from aurora_handler.py (Phase 14A Decomposition).
-
-Provides:
-  - Vol-adj gates (anti-flat, anti-FOMO)
-  - Signal weight resolution
-  - Shield cascade builder
-  - Regime threshold lookups
-  - Liquidity gate checking
-  - Feature neutrals & essential features
-  - Side bias state management
+This mixin normalizes symbol-level config overrides, builds the shield
+cascade, and applies helper gates/state transforms around the Aurora decision
+path. It does not own event registration or the main decision orchestration;
+those responsibilities stay in AuroraHandler and AuroraDecisionMixin.
 """
 from __future__ import annotations
 
 import decimal
 import logging
-from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import SideBiasState
 from apps.reference.domains.decision_making.shields.null_shield import NullShield
@@ -25,43 +18,27 @@ from apps.reference.domains.decision_making.shields.context_shield import Contex
 from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
 from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
 
-if TYPE_CHECKING:
-    from apps.reference.domains.decision_making.aurora_handler import SymbolState
-
 logger = logging.getLogger("aurora_handler")
 
 
 class AuroraScoringHelpersMixin:
-    """
-    Mixin: scoring support methods for AuroraHandler.
-
-    Self-attributes used (provided by AuroraHandler):
-      - self.logger, self.config
-      - self._symbol_states
-      - self._scoring_engine_cfg, self.mode_manager
-      - self.vol_gates_enabled, self.anti_flat_sigma, self.anti_fomo_sigma, self.motion_window_sec
-      - self.side_bias_window_sec, self.side_bias_target_ratio, self.side_bias_penalty_factor
-      - self.side_bias_min_intents
-      - self.wall_time_fn, self.regime_thresholds
-      - self._get_instrument_config(), self._emit_strategy_blocked()
-    """
+    """Scoring helper methods shared by AuroraHandler and AuroraDecisionMixin."""
 
     # ------------------------------------------------------------------
     # Vol-Adj Gates (Anti-Flat / Anti-FOMO)
     # ------------------------------------------------------------------
 
     def _get_motion_norm_sigma(self, symbol: str, features: Dict[str, Any]) -> Optional[float]:
-        """
-        Extract absolute motion norm sigma from features.
+        """Return absolute motion sigma for the configured price-motion window.
 
-        Uses pm_norm_{window}s from price_motion block.
-        Returns absolute value (sigma magnitude) or None if unavailable.
-
-        P0-3: Falls back to cached price_motion if not in CMD features.
+        The primary source is features["price_motion"]. If CMD input omitted that
+        block, the helper falls back to the cached EVT:FEATURES_CALCULATED copy
+        stored on symbol state.
         """
         pm = features.get("price_motion")
 
-        # P0-3: Fallback to cached price_motion from EVT:FEATURES_CALCULATED
+        # CMD:PROCESS_STRATEGY may omit price_motion; the cached event copy keeps
+        # vol-adj gates on the same FE contract instead of silently disabling them.
         if not isinstance(pm, dict):
             state = self._symbol_states.get(symbol)
             if state and state.cached_price_motion:
@@ -70,6 +47,7 @@ class AuroraScoringHelpersMixin:
         if not isinstance(pm, dict):
             return None
 
+        # The exact pm_norm_<window>s bucket is part of the FE payload contract.
         window_key = f"pm_norm_{self.motion_window_sec}s"
         val = pm.get(window_key)
 
@@ -90,16 +68,16 @@ class AuroraScoringHelpersMixin:
         *,
         effective_side: str | None = None,
     ) -> bool:
-        """
-        Apply volatility-adjusted entry gates.
+        """Apply anti-flat and anti-FOMO gates to actionable entry proposals.
 
-        Returns True if entry should be BLOCKED, False if passed.
-        Only applies to ENTRY proposals (flat → position).
+        Returns True when this helper already emitted a blocked event. Missing
+        motion data is treated as unavailable evidence and left to readiness or
+        cached-price-motion handling rather than causing a local block.
         """
         if not self.vol_gates_enabled:
             return False
 
-        # Only apply to entries (flat → position)
+        # Gate the post-policy actionable side, not just the raw kernel side.
         side = effective_side if effective_side is not None else result.side
         if not side or state.position_side != "":
             return False  # Not an entry, skip gates
@@ -165,19 +143,27 @@ class AuroraScoringHelpersMixin:
     # ------------------------------------------------------------------
 
     def _get_signal_weights(self, symbol: str, instr_cfg: Any) -> Dict[str, float]:
-        """Get signal weights for symbol."""
+        """Return per-symbol signal weights or the global decision fallback.
+
+        ``None`` means "no symbol override". An explicit empty mapping remains
+        a valid override and must not fall back to the global weights.
+        """
         weights = getattr(instr_cfg, "weights", None)
-        if weights:
+        if weights is not None:
             return dict(weights)
-        # Fallback to global
+
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return dict(getattr(decision, "signal_weights", {})) if decision else {}
 
     def _build_shield_cascade(self, *, cfg: Any | None = None, record_memory_shield: bool = True):
-        """Build shield function from ScoringEngineConfig.
+        """Build the runtime shield object from a scoring-engine config surface.
 
-        If shield_enabled=True, returns ShieldCascade with enabled shields.
-        Otherwise returns NullShield (transparent pass-through).
+        ``cfg`` may be a strict ScoringEngineConfig or a legacy/mock object.
+        A real cascade is built only when shield_enabled is literally ``True``;
+        this prevents truthy mocks from silently enabling live protection paths.
+
+        When record_memory_shield=True and MemoryShield is active, the created
+        instance is also stored on self._memory_shield for later visit recording.
         """
         cfg = self._scoring_engine_cfg if cfg is None else cfg
         if not cfg:
@@ -189,6 +175,10 @@ class AuroraScoringHelpersMixin:
             return NullShield()
 
         shields = []
+
+    # These getattr defaults intentionally mirror the typed config defaults
+    # so partial mocks behave like the strict config path instead of drifting
+    # to arbitrary MagicMock truthiness.
 
         # DangerZone first — hard safety gate should veto earliest
         dz_cfg = getattr(cfg, "danger_zone_shield", None)
@@ -246,7 +236,7 @@ class AuroraScoringHelpersMixin:
         return ShieldCascade(shields)
 
     def _get_regime_thresholds(self, *, symbol: str, instr_cfg: Any) -> Dict[str, float]:
-        """Get regime threshold multipliers for symbol (per-symbol override → global fallback)."""
+        """Return symbol-specific regime thresholds with global fallback."""
         thr = getattr(instr_cfg, "regime_thresholds", None)
         if isinstance(thr, dict) and thr:
             return dict(thr)
@@ -263,12 +253,11 @@ class AuroraScoringHelpersMixin:
         features: Dict[str, Any],
         warmup_readiness: Any,
     ) -> tuple[bool, Dict[str, Any]]:
-        """Liquidity gate for Aurora strategy (Score V2).
+        """Evaluate the resolved Aurora liquidity gate and return ``(allowed, ctx)``.
 
-        Fallback chain:
-        1) strategies.aurora.assets.<SYMBOL>.liquidity_gate
-        2) strategies.aurora.decision.liquidity_gate
-        3) Gate disabled (pass)
+        The per-symbol gate comes from instr_cfg. The global fallback is the
+        already-resolved host attribute ``self._global_liquidity_gate_cfg``;
+        this helper does not traverse the config tree itself.
 
         Fail-closed behavior (when enabled):
         - warmup_readiness['liquidity_kappa'] must be True
@@ -287,6 +276,8 @@ class AuroraScoringHelpersMixin:
 
         kappa_min_raw = getattr(gate_cfg, "kappa_min", None)
         kappa_max_raw = getattr(gate_cfg, "kappa_max", None)
+        # LiquidityGateConfig marks this field as parsed-but-not-implemented;
+        # keep surfacing it in diagnostics so callers can see the resolved value.
         failsafe_qty_check = bool(
             getattr(gate_cfg, "failsafe_qty_check", True))
 
@@ -342,6 +333,8 @@ class AuroraScoringHelpersMixin:
             kappa_min = decimal.Decimal(
                 str(kappa_min_raw)) if kappa_min_raw is not None else decimal.Decimal("0")
         except Exception:
+            # Strict typed configs should make this parseable. Legacy mocks fall
+            # back to zero here so the handler stays observable instead of crashing.
             kappa_min = decimal.Decimal("0")
 
         if kappa < kappa_min:
@@ -357,31 +350,45 @@ class AuroraScoringHelpersMixin:
         return True, {}
 
     def _get_feature_neutrals(self, symbol: str, instr_cfg: Any) -> Dict[str, float]:
-        """Get feature neutrals for symbol."""
+        """Return per-symbol neutral offsets or the global decision fallback.
+
+        ``None`` means "no symbol override". An explicit empty mapping remains
+        a valid override and must not fall back to the global neutrals.
+        """
         neutrals = getattr(instr_cfg, "feature_neutrals", None)
-        if neutrals:
+        if neutrals is not None:
             return dict(neutrals)
-        # Fallback to global
+
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return dict(getattr(decision, "feature_neutrals", {})) if decision else {}
 
     def _get_essential_features(self, symbol: str, instr_cfg: Any) -> List[str]:
-        """Get essential features for symbol."""
+        """Return per-symbol essential features or the global decision fallback.
+
+        ``None`` means "no symbol override". An explicit empty list remains a
+        valid override and must not fall back to the global requirement set.
+        """
         essential = getattr(instr_cfg, "essential_features", None)
-        if essential:
+        if essential is not None:
             return list(essential)
-        # Fallback to global
+
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return list(getattr(decision, "essential_features", [])) if decision else []
 
     def _get_side_bias_state(self, symbol: str) -> SideBiasState:
-        """Build SideBiasState for kernel from cached history (per-symbol overrides supported)."""
+        """Build SideBiasState and prune expired side-bias history in place.
+
+        This is not a pure getter: old timestamps are removed from the cached
+        buy/sell history so repeated decisions share the same windowed state.
+        """
         instr_cfg = self._get_instrument_config(symbol)
         penalty_factor = self.side_bias_penalty_factor
         window_sec = self.side_bias_window_sec
         target_ratio = self.side_bias_target_ratio
         min_intents = self.side_bias_min_intents
 
+        # Per-symbol side_bias config currently overrides only the bias-shape
+        # parameters; min_intents remains a global DecisionConfig contract.
         sb_cfg = getattr(instr_cfg, "side_bias",
                          None) if instr_cfg is not None else None
         if sb_cfg is not None:
@@ -402,7 +409,8 @@ class AuroraScoringHelpersMixin:
         state = self._symbol_states[symbol]
         now = float(self.wall_time_fn())
 
-        # Clean old entries outside window
+        # Prune in place so cached history stays bounded and all later calls see
+        # the same rolling window rather than re-counting stale timestamps.
         state.buy_timestamps = [
             ts for ts in state.buy_timestamps if now - ts < window_sec]
         state.sell_timestamps = [
@@ -418,7 +426,7 @@ class AuroraScoringHelpersMixin:
         )
 
     def _update_side_bias(self, symbol: str, side: str) -> None:
-        """Update side bias history after emitting signal."""
+        """Append the current wall-clock timestamp for BUY or SELL emissions."""
         state = self._symbol_states[symbol]
         now = float(self.wall_time_fn())
 

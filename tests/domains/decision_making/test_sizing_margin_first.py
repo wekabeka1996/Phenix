@@ -83,10 +83,40 @@ def test_compute_notional_target_rejects_invalid_inputs():
     from apps.reference.domains.decision_making.sizing_margin_first import compute_notional_target
 
     with pytest.raises(ValueError):
-        compute_notional_target(equity=Decimal("0"), margin_pct=Decimal("0.1"), leverage=10)
+        compute_notional_target(equity=Decimal(
+            "0"), margin_pct=Decimal("0.1"), leverage=10)
     with pytest.raises(ValueError):
-        compute_notional_target(equity=Decimal("10"), margin_pct=Decimal("0"), leverage=10)
+        compute_notional_target(equity=Decimal(
+            "10"), margin_pct=Decimal("0"), leverage=10)
     with pytest.raises(ValueError):
-        compute_notional_target(equity=Decimal("10"), margin_pct=Decimal("1.1"), leverage=10)
+        compute_notional_target(equity=Decimal(
+            "10"), margin_pct=Decimal("1.1"), leverage=10)
     with pytest.raises(ValueError):
-        compute_notional_target(equity=Decimal("10"), margin_pct=Decimal("0.1"), leverage=0)
+        compute_notional_target(equity=Decimal(
+            "10"), margin_pct=Decimal("0.1"), leverage=0)
+
+
+@pytest.mark.parametrize("bad_fee_buffer", [Decimal("-0.01"), Decimal("1")])
+def test_margin_first_helpers_reject_invalid_fee_buffer(bad_fee_buffer):
+    from apps.reference.domains.decision_making.sizing_margin_first import (
+        compute_exposure_based_qty,
+        compute_notional_target,
+    )
+
+    with pytest.raises(ValueError, match="fee_buffer"):
+        compute_notional_target(
+            equity=Decimal("10"),
+            margin_pct=Decimal("0.1"),
+            leverage=10,
+            fee_buffer=bad_fee_buffer,
+        )
+
+    with pytest.raises(ValueError, match="fee_buffer"):
+        compute_exposure_based_qty(
+            equity=Decimal("10"),
+            exposure=0.5,
+            leverage=10,
+            price=Decimal("100"),
+            step_size=Decimal("0.01"),
+            fee_buffer=bad_fee_buffer,
+        )

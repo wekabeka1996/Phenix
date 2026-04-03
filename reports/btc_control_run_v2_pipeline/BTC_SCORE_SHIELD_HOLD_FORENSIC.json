@@ -1,0 +1,135 @@
+{
+  "package": "AURORA_BTC_SCORE_SHIELD_HOLD_FIDELITY_FORENSIC",
+  "evaluation_date": "2026-04-01",
+  "verdict": "GO_ROOT_CAUSES_ISOLATED_WITH_REPAIR_PLAN",
+  "surfaces": [
+    {
+      "surface": "score_scale",
+      "status": "isolated",
+      "repairability": "local_repair",
+      "root_cause": "replay_omits_live_decision_geometry_kwargs",
+      "evidence": {
+        "live_compute_anchor": "apps/reference/domains/decision_making/aurora_decision.py:499-506",
+        "replay_compute_anchor": "tools/calibration/calibrate_aurora_thresholds.py:1820-1839",
+        "config_anchor": "config/aurora/strategies/aurora.yaml:202-205",
+        "proof_points": [
+          {
+            "slice": "2026-03-31 07:30",
+            "live_s_linear": -0.1801065775423327,
+            "live_formula": "linear * 0.75",
+            "live_expected": -0.13507993315674952,
+            "live_observed": -0.13508,
+            "replay_formula": "-abs(s_linear)^2 * 0.8",
+            "replay_expected": -0.025950703419209842,
+            "replay_observed": -0.0259507
+          },
+          {
+            "slice": "2026-03-31 07:35",
+            "live_s_linear": -0.1863425974418626,
+            "live_formula": "linear * 0.75",
+            "live_expected": -0.13975694808139694,
+            "live_observed": -0.139757,
+            "replay_formula": "-abs(s_linear)^2 * 1.0",
+            "replay_expected": -0.034723563621380057,
+            "replay_observed": -0.03472356
+          },
+          {
+            "slice": "2026-03-31 19:05",
+            "live_s_linear": -0.19661158041823273,
+            "live_formula": "linear * 0.75",
+            "live_expected": -0.14745868531367456,
+            "live_observed": -0.147459,
+            "replay_formula": "-abs(s_linear)^2 * 0.75",
+            "replay_expected": -0.028992085165916399,
+            "replay_observed": -0.02899209
+          },
+          {
+            "slice": "2026-03-31 19:15",
+            "live_s_linear": -0.19661158041823273,
+            "live_formula": "linear * 0.75",
+            "live_expected": -0.14745868531367456,
+            "live_observed": -0.147459,
+            "replay_formula": "-abs(s_linear)^2 * 0.75",
+            "replay_expected": -0.028992085165916399,
+            "replay_observed": -0.02899209
+          }
+        ]
+      }
+    },
+    {
+      "surface": "shield_attenuation",
+      "status": "isolated_to_family",
+      "repairability": "partial",
+      "root_cause": "memoryshield_familiarity_tier_divergence",
+      "evidence": {
+        "config_anchor": "config/aurora/strategies/aurora.yaml:291-316",
+        "memory_evaluate_anchor": "apps/reference/domains/decision_making/shields/memory_shield.py:216-273",
+        "memory_hash_anchor": "apps/reference/domains/decision_making/shields/memory_shield.py:307-376",
+        "live_record_visit_anchor": "apps/reference/domains/decision_making/aurora_decision.py:1688-1693",
+        "replay_record_visit_anchor": "tools/calibration/calibrate_aurora_thresholds.py:1845-1852",
+        "decomposition": {
+          "live_trend_up": "1.0 * 0.60 = 0.60",
+          "live_mean_reversion": "0.75 * 0.60 = 0.45",
+          "replay_trend_up_exploring": "1.0 * 0.80 = 0.80",
+          "replay_trend_up_known": "1.0 * 1.00 = 1.00",
+          "replay_mean_reversion_known": "0.75 * 1.00 = 0.75"
+        },
+        "not_explained_by": [
+          "missing_pillar_keys_on_target_anchors",
+          "context_regime_multiplier_mismatch",
+          "threshold_surface_extraction"
+        ],
+        "remaining_unknown": "exact_split_between_write_path_and_history_horizon"
+      }
+    },
+    {
+      "surface": "hold_state_continuity",
+      "status": "isolated_as_secondary_effect",
+      "repairability": "verify_after_score_fix",
+      "root_cause": "score_compression_above_neutral_hold_boundary",
+      "evidence": {
+        "live_hold_anchor": "logs/shadow_critical_event_journal_v1.jsonl:15609",
+        "live_score": -0.139757,
+        "replay_score": -0.03472356,
+        "neutral_threshold": 0.05,
+        "live_condition": true,
+        "replay_condition": false
+      }
+    },
+    {
+      "surface": "replay_to_gateway_semantics",
+      "status": "isolated_architectural_boundary",
+      "repairability": "scope_extension_or_explicit_bound",
+      "root_cause": "replay_stops_below_EVT_STRATEGY_SIGNAL_PRODUCED",
+      "evidence": {
+        "live_emit_anchor": "apps/reference/domains/decision_making/aurora_decision.py:1725",
+        "live_gateway_anchor": "apps/reference/domains/decision_making/strategy_gateway.py:804-809",
+        "replay_boundary_anchor": "tools/calibration/calibrate_aurora_thresholds.py:1820-1858",
+        "live_log_examples": [
+          "logs/aurora_core.log.28:7027-7029",
+          "logs/aurora_core.log.28:10456-10460",
+          "logs/aurora_core.log.16:272-276",
+          "logs/aurora_core.log.16:7062-7067"
+        ]
+      }
+    },
+    {
+      "surface": "feature_provenance_time_axis",
+      "status": "contributing_blocker",
+      "repairability": "instrumentation_repair",
+      "root_cause": "feature_logs_lack_explicit_timestamp_fields",
+      "evidence": {
+        "artifact": "reports/btc_control_run_v2_repaired/diagnostic_replay_slice.json",
+        "sampled_has_timestamp_fields": false,
+        "impact": "blocks_audit_grade_alignment_but_not_needed_for_anchored_score_formula_proof"
+      }
+    }
+  ],
+  "recommended_order": [
+    "fix_replay_geometry_kwargs",
+    "align_memoryshield_record_visit_semantics",
+    "rerun_four_btc_anchors",
+    "decide_signal_only_vs_gateway_scope",
+    "add_feature_timestamps_and_memory_state_provenance"
+  ]
+}

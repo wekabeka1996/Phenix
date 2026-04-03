@@ -1,21 +1,14 @@
-"""
-Shield Base — ABC and ShieldResult for Phase 9 Shield Cascade.
+"""Core contracts for the decision-making shield pipeline.
 
-Architecture:
-- Each shield is a callable implementing the ShieldFn protocol
-- ShieldResult captures multiplier + reasons for explainability
-- ShieldCascade chains multiple shields: final_mult = Π(shield_i.mult)
-
-Shield types (Phase 3):
-1. ContextShield  — regime-aware attenuation (risk-off regimes → lower mult)
-2. MemoryShield   — drawdown memory (consecutive losses → lower mult)
-3. DangerZoneShield — volatility circuit breaker (extreme vol → block)
+This module defines the common result container, the abstract shield interface,
+and the cascade that combines multiple shields multiplicatively. It does not
+choose which shields are active; callers supply concrete shield instances.
 """
 from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -27,6 +20,7 @@ class ShieldResult:
                     1.0 = full pass, 0.0 = full veto.
         reasons: Human-readable explanation strings for XAI.
         shield_name: Name of the shield that produced this result.
+        details: Optional structured metadata for downstream diagnostics.
     """
     multiplier: float = 1.0
     reasons: List[str] = field(default_factory=list)
@@ -37,13 +31,13 @@ class ShieldResult:
 class BaseShield(abc.ABC):
     """Abstract base class for all shields.
 
-    Each shield is a callable that takes:
-        (symbol, features, pillar_sum, raw_exposure)
-    and returns:
-        (multiplier: float, reasons: List[str])
+    The primary contract is evaluate(), which returns ShieldResult. __call__ is
+    a compatibility adapter for call sites that only consume
+    (multiplier, reasons).
 
-    Shields MUST be stateless or manage their own state.
-    They MUST NOT raise exceptions — degrade to pass-through on error.
+    Concrete shields may keep internal state, but failures at this boundary are
+    treated as pass-through so the caller receives an explicit error reason
+    instead of an exception.
     """
 
     @property
@@ -70,13 +64,13 @@ class BaseShield(abc.ABC):
         pillar_sum: float,
         raw_exposure: float,
     ) -> tuple[float, List[str]]:
-        """ShieldFn protocol adapter: returns (multiplier, reasons)."""
+        """Adapt ShieldResult to the tuple form consumed by legacy callers."""
         try:
             result = self.evaluate(symbol, features, pillar_sum, raw_exposure)
             mult = max(0.0, min(1.0, result.multiplier))
             return mult, result.reasons
         except Exception as e:
-            # Fail-open: shield error → pass through (don't block trading)
+            # Keep the call surface exception-free and make the failure visible.
             return 1.0, [f"SHIELD_ERROR:{self.name}:{e}"]
 
     def __repr__(self) -> str:
@@ -84,15 +78,11 @@ class BaseShield(abc.ABC):
 
 
 class ShieldCascade(BaseShield):
-    """
-    Chains multiple shields. Final multiplier = product of all shields.
+    """Combine shields in order and multiply their resulting multipliers.
 
-    If any shield returns 0.0, the entire cascade vetoes.
-    Reasons from all shields are aggregated.
-
-    Usage:
-        cascade = ShieldCascade([ContextShield(cfg), MemoryShield(cfg)])
-        mult, reasons = cascade(symbol, features, pillar_sum, raw_exposure)
+    Evaluation order matters: the first shield that drives the aggregate to 0.0
+    stops the cascade. Reasons are concatenated, and detail keys from later
+    shields overwrite earlier keys with the same name.
     """
 
     def __init__(self, shields: List[BaseShield]):
@@ -115,7 +105,11 @@ class ShieldCascade(BaseShield):
 
         for shield in self._shields:
             try:
-                result = shield.evaluate(symbol, features, pillar_sum, raw_exposure)
+                # The cascade needs the full ShieldResult, so it handles
+                # clamping and exception isolation locally instead of routing
+                # through BaseShield.__call__.
+                result = shield.evaluate(
+                    symbol, features, pillar_sum, raw_exposure)
                 mult = max(0.0, min(1.0, result.multiplier))
                 final_mult *= mult
                 if result.reasons:

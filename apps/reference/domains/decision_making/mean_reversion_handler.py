@@ -1,26 +1,25 @@
-"""
-Mean Reversion Decision Handler.
-
-Track B: Integrates Mean Reversion 3m Strategy into DecisionMaking workflow.
-
-T2B-03 Architecture (Orchestrated Cycle):
-1. FeatureEngineering emits CMD:PROCESS_STRATEGY after bar closes + features ready
-2. This handler receives bar data via CMD:PROCESS_STRATEGY (includes full OHLCV bar)
-3. Computes MR signals via MeanReversion3mStrategy
-4. Emits EVT:STRATEGY_SIGNAL_PRODUCED when signal is actionable
-
-Activation SSOT: strategies_registry.assignments (per symbol).
-The config flag mean_reversion.enabled is a global kill-switch (can disable, does not activate without assignment).
-"""
-
-import logging
-# DET-BT-09: Removed 'import time' - use get_clock() for deterministic backtest
-from apps.reference.core.time import get_clock
-import uuid
 import json
+import logging
+import time
 from collections import deque
 from decimal import Decimal
 from typing import Any, Dict, Optional, TYPE_CHECKING
+
+"""Orchestrate Mean Reversion decisions from CMD:PROCESS_STRATEGY payloads.
+
+This handler wires MeanReversion1mStrategy instances into the DecisionMaking
+domain, maintains the per-symbol runtime caches they depend on, and emits the
+decision artifacts that downstream execution consumes. Upstream components are
+responsible for producing bars, features, warmup status, and regime payloads.
+
+Activation SSOT is strategies_registry.assignments on a per-symbol basis.
+mean_reversion.enabled acts only as a global kill-switch and does not activate
+the handler by itself.
+"""
+
+# DET-BT-09: runtime timestamps come from the shared clock abstraction.
+# Stdlib time remains only for human-readable formatting in get_stats().
+from apps.reference.core.time import get_clock
 
 from apps.reference.contracts.runtime_analytics_restore import (
     RuntimeAnalyticsRestoreScope,
@@ -84,9 +83,7 @@ from apps.reference.domains.decision_making.strategy_bridge import (
 from apps.reference.config_models import (
     AuroraConfig,
     MeanReversion1mStrategyConfig,
-    MRStrategyParamsConfig,
     MRAssetConfig,
-    LiquidityGateConfig,
 )
 from apps.reference.domains.decision_making.mean_reversion_logger import MeanReversionBarLogger
 from apps.reference.domains.decision_making.position_queries import PositionQueries
@@ -186,15 +183,12 @@ def _maybe_build_position_queries(
 
 
 class MeanReversionHandler:
-    """Handler for Mean Reversion 3m strategy integration with DecisionMaking.
+    """Coordinate Mean Reversion decision flow for assigned symbols.
 
-    T2B-03 Workflow (Orchestrated Cycle):
-        1. _on_process_strategy() — receives CMD:PROCESS_STRATEGY from FE
-        2. Strategy processes bar (OHLCV from CMD payload), MR signal
-        3. If signal is actionable, emit EVT:STRATEGY_SIGNAL_PRODUCED
-
-    Activation SSOT: strategies_registry.assignments.
-    The config flag mean_reversion.enabled is a global kill-switch.
+    The handler owns config hydration, per-symbol strategy instances, local
+    execution/readiness caches, and the emission of blocked/signal artifacts.
+    The primary decision trigger is CMD:PROCESS_STRATEGY; other listeners only
+    maintain local state used by later signal evaluation.
     """
 
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
@@ -351,10 +345,11 @@ class MeanReversionHandler:
         return self._analytics_restore_snapshots.get(str(symbol))
 
     def register(self) -> None:
-        """Attach FSM listeners.
+        """Attach the listeners required by the current MR orchestration path.
 
-        T2B-03: Primary trigger is CMD:PROCESS_STRATEGY (Orchestrated Cycle).
-        EVT:BAR_CLOSED and EVT:FEATURES_CALCULATED are kept for data caching only.
+        CMD:PROCESS_STRATEGY is the only decision trigger. The remaining wired
+        listeners update local state used by later signal evaluation or runtime
+        restore handling; they do not independently emit MR signals.
         """
         if not self._enabled:
             return
@@ -654,7 +649,7 @@ class MeanReversionHandler:
         Logic (bivariate):
             1. If veto not configured/enabled for this symbol → ALLOW
             2. Extract TFI from cached features → missing → fail-closed (block)
-            3. Update TFI EMA → not enough bars → ALLOW (warmup)
+            3. Update TFI EMA → not enough bars → BLOCK with NOT_READY
             4. If smoothed TFI is NOT adverse → ALLOW (no flow problem)
             5. If OBI confirm enabled, check OBI → missing → fail-closed
             6. Measure price reaction (continuation vs absorption):
@@ -847,15 +842,20 @@ class MeanReversionHandler:
         # positive funding → longs pay → fade the crowd →
         #   LONG harder (lower threshold = needs more extreme pct_b < threshold),
         #   SHORT easier (higher threshold = trigger boundary 1-threshold drops)
-        eff_long = bias_cfg.base_long_threshold - norm_funding * bias_cfg.funding_shift_magnitude
-        eff_short = bias_cfg.base_short_threshold + norm_funding * bias_cfg.funding_shift_magnitude
+        eff_long = bias_cfg.base_long_threshold - \
+            norm_funding * bias_cfg.funding_shift_magnitude
+        eff_short = bias_cfg.base_short_threshold + \
+            norm_funding * bias_cfg.funding_shift_magnitude
 
         # Clamp to legal range
-        eff_long = max(bias_cfg.threshold_clamp_min, min(bias_cfg.threshold_clamp_max, eff_long))
-        eff_short = max(bias_cfg.threshold_clamp_min, min(bias_cfg.threshold_clamp_max, eff_short))
+        eff_long = max(bias_cfg.threshold_clamp_min, min(
+            bias_cfg.threshold_clamp_max, eff_long))
+        eff_short = max(bias_cfg.threshold_clamp_min, min(
+            bias_cfg.threshold_clamp_max, eff_short))
 
         strategy.config.entry_threshold_long = Decimal(str(round(eff_long, 6)))
-        strategy.config.entry_threshold_short = Decimal(str(round(eff_short, 6)))
+        strategy.config.entry_threshold_short = Decimal(
+            str(round(eff_short, 6)))
 
     def _emit_strategy_blocked(
         self,
@@ -868,6 +868,11 @@ class MeanReversionHandler:
         why_chain: list[str] | None = None,
         throttle_ms: int = 10_000,
     ) -> None:
+        """Emit a throttled EVT:STRATEGY_DECISION_BLOCKED artifact for ``symbol``.
+
+        Throttling is keyed by ``symbol`` and ``reason_code`` so noisy repeated
+        guards do not spam identical blocked events on every decision pass.
+        """
         # DET-BT-09: Use get_clock() for deterministic backtest
         now_ms = get_clock().now_ms()
         last_reason = self._last_block_reason.get(symbol)
@@ -956,6 +961,13 @@ class MeanReversionHandler:
         gap_status: RuntimeGapStatus | None = None,
         warmup_readiness: Dict[str, Any] | None = None,
     ) -> None:
+        """Emit EVT:STRATEGY_SIGNAL_PRODUCED after runtime overlays are applied.
+
+        This method enriches the raw strategy signal with runtime readiness,
+        restore state, gap status, and optional objective-engine scoring. When
+        objective evaluation blocks or fails closed, it emits a blocked artifact
+        and returns without emitting a strategy signal.
+        """
         symbol = signal.symbol
 
         # Track signal
@@ -1454,6 +1466,12 @@ class MeanReversionHandler:
             )
 
     def _on_trade_executed(self, event: Message) -> None:
+        """Update local signed position state from execution fills.
+
+        The handler uses this lightweight position view only for objective and
+        re-entry bookkeeping; canonical portfolio truth still comes from the
+        portfolio/exposure events handled elsewhere.
+        """
         pld = event.pld or {}
         if not isinstance(pld, dict):
             return
@@ -1604,7 +1622,13 @@ class MeanReversionHandler:
                 )
 
     def _on_features_calculated(self, event: Message) -> None:
-        """Cache liquidity kappa from FE."""
+        """Legacy direct-call feature cache hook.
+
+        Current register() wiring does not subscribe EVT:FEATURES_CALCULATED for
+        MR decisions; live processing caches features from CMD:PROCESS_STRATEGY.
+        If this compatibility hook is called directly, it only updates the local
+        feature and liquidity caches after timeframe validation.
+        """
         if not self._enabled:
             return
         try:
@@ -1652,8 +1676,8 @@ class MeanReversionHandler:
                 print(json.dumps(log_entry), flush=True)
                 return
 
-            # Update features cache
-            self.features[symbol] = features
+            # Keep the compatibility hook aligned with the CMD-path cache shape.
+            self._last_cmd_features[symbol] = features
 
             # TAP LOG: MR accepted features
             log_entry = {
@@ -1677,7 +1701,11 @@ class MeanReversionHandler:
             self.logger.debug(f"MRHandler: failed to process features: {e}")
 
     def _check_liquidity_gate(self, symbol: str) -> bool:
-        """Check if symbol passes liquidity gate."""
+        """Return whether ``symbol`` passes the configured liquidity gate.
+
+        Configuration resolves from per-asset override to global MR default.
+        Missing kappa blocks fail-closed instead of raising.
+        """
         # CONFIG HIERARCHY (most specific wins):
         # 1. Per-asset override: mean_reversion.assets.<symbol>.liquidity_gate
         # 2. Global fallback: mean_reversion.liquidity_gate
@@ -2030,10 +2058,11 @@ class MeanReversionHandler:
 
     def _on_bar_closed_data_only(self, event: Message) -> None:
         """
-        T2B-03: Data-only handler for EVT:BAR_CLOSED.
+        Compatibility hook for EVT:BAR_CLOSED.
 
-        Caches bar data but does NOT trigger decision.
-        Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
+        Decision execution is triggered exclusively by CMD:PROCESS_STRATEGY.
+        The BAR_CLOSED listener remains registered only to preserve event wiring
+        compatibility while this hook stays intentionally inert.
         """
         # No-op for now. Bar data caching can be added if needed.
         # The primary purpose is to maintain backwards compatibility
@@ -2044,7 +2073,7 @@ class MeanReversionHandler:
     # Mean Reversion sizing moved to per-symbol instruments SSOT.
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get handler statistics."""
+        """Return lightweight handler diagnostics for observability/debugging."""
         return {
             "enabled": self._enabled,
             "enabled_symbols": list(self._enabled_symbols),

@@ -1,10 +1,9 @@
-"""
-DMConfigResolver — Configuration resolution and strategy arbitration.
+"""Configuration resolution and strategy arbitration for DecisionMaking.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Pure config lookups + strategy arbitration logic. No FSM side effects.
-
-LOC budget: ≤500 (Constitution §3).
+This module centralizes typed config reads, per-symbol override lookup, and the
+registry-based arbitration rules used before an intent is committed. It does
+not emit FSM events, but it does mutate the shared arbitration buffers when the
+caller requests a commit.
 """
 
 import decimal
@@ -38,6 +37,12 @@ class DMConfigResolver:
         flip_global_enabled: bool,
         logger: logging.Logger,
     ) -> None:
+        """Store typed config handles and shared arbitration state.
+
+        ``arb_signal_buffer`` and ``arb_window_winner`` are owned by the
+        surrounding facade. This resolver only updates them during successful
+        arbitration commits.
+        """
         self.config = config
         self.strategies_registry = strategies_registry
         self._arb_signal_buffer = arb_signal_buffer
@@ -51,7 +56,8 @@ class DMConfigResolver:
         """
         Check if a specific strategy is assigned to a symbol in strategies_registry.
 
-        STRATEGY-AWARE-GATES-FIX: This is the SSOT for strategy activation.
+        When no registry is wired, the helper preserves the legacy single-
+        strategy assumption that Aurora remains enabled by default.
         """
         if not self.strategies_registry:
             return strategy_id == "aurora"
@@ -72,8 +78,10 @@ class DMConfigResolver:
         """
         Check if strategy is allowed to generate intent for symbol based on arbitration rules.
 
-        CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Implements deterministic arbitration.
-        DM-CRITICAL-PATCHES-02: Uses dedicated signal buffer with priority ranks.
+        The method supports a two-phase contract:
+        - ``commit=False`` performs a pure eligibility check;
+        - ``commit=True`` records the winning strategy into the shared window
+          buffers once the caller has finished downstream validation.
 
         Returns:
             Dict with keys: allowed (bool), reason (str)
@@ -135,6 +143,8 @@ class DMConfigResolver:
                     "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80],
                 }
 
+        # Without a timestamp there is no arbitration window to compare against,
+        # so the caller only gets assignment/priority validation.
         if ts_ms is None:
             return {"allowed": True, "reason": ""}
 
@@ -152,6 +162,7 @@ class DMConfigResolver:
             last_ts, last_sid, last_rank = existing
             delta_ms = now_ms - last_ts
 
+            # Only intents that collide inside the configured window compete.
             if delta_ms <= window_ms:
                 if rank < last_rank:
                     self.logger.info(
@@ -159,8 +170,10 @@ class DMConfigResolver:
                         f"{last_sid}(rank={last_rank}) delta={delta_ms}ms window={window_ms}ms"
                     )
                     if commit:
-                        self._arb_signal_buffer[symbol] = (now_ms, strategy_id, rank)
-                        self._arb_window_winner[symbol] = (now_ms // window_ms, strategy_id)
+                        self._arb_signal_buffer[symbol] = (
+                            now_ms, strategy_id, rank)
+                        self._arb_window_winner[symbol] = (
+                            now_ms // window_ms, strategy_id)
                     return {"allowed": True, "reason": ""}
                 elif rank >= last_rank:
                     self.logger.info(
@@ -174,7 +187,8 @@ class DMConfigResolver:
 
         if commit:
             self._arb_signal_buffer[symbol] = (now_ms, strategy_id, rank)
-            self._arb_window_winner[symbol] = (now_ms // window_ms, strategy_id)
+            self._arb_window_winner[symbol] = (
+                now_ms // window_ms, strategy_id)
         return {"allowed": True, "reason": ""}
 
     # ── Per-Instrument Config Lookups ───────────────────────────────
@@ -197,7 +211,7 @@ class DMConfigResolver:
         return aurora.assets.get(symbol)
 
     def get_position_sizing_config(self):
-        """Get position sizing configuration from domains.yaml. SSOT."""
+        """Return the typed position sizing config from decision_making domains."""
         if hasattr(self.config, "domains") and hasattr(self.config.domains, "decision_making"):
             dm_cfg = self.config.domains.decision_making
             if hasattr(dm_cfg, "position_sizing") and dm_cfg.position_sizing is not None:
@@ -209,7 +223,10 @@ class DMConfigResolver:
         """
         Get per-symbol cooldown in seconds (partitioned by strategy_id).
 
-        Fallback: strategies.<strategy_id>.assets.<SYMBOL>.cooldown_sec → default 3s.
+        Fallback chain:
+        1. strategies.aurora.assets.<SYMBOL>.cooldown_sec
+        2. domains.decision_making.qos.symbol_cooldown_sec
+        3. compatibility fallback from ``_default_symbol_cooldown_sec``
         """
         if strategy_id == "aurora":
             instr_cfg = self.get_aurora_instrument_cfg(symbol)
@@ -222,7 +239,12 @@ class DMConfigResolver:
 
     @property
     def _default_symbol_cooldown_sec(self) -> int:
-        """Resolve default cooldown from config."""
+        """Resolve the default cooldown from typed config.
+
+        The hardcoded ``3`` is a backward-compatibility guard for malformed or
+        partially mocked configs; normal typed runtime should supply the value
+        via domains.decision_making.qos.symbol_cooldown_sec.
+        """
         try:
             dm_cfg = self.config.domains.decision_making
             qos = getattr(dm_cfg, "qos", None)
@@ -241,7 +263,7 @@ class DMConfigResolver:
         Fallback chain:
         1. strategies.aurora.assets.<SYMBOL>.<param>
         2. strategies.aurora.decision.<param>
-        3. default value
+        3. explicit runtime default provided by the caller
         """
         instr_cfg = self.get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
@@ -249,7 +271,8 @@ class DMConfigResolver:
             if value is not None:
                 return value
 
-        global_value = aget(self.config.strategies.aurora.decision, param, default)
+        global_value = aget(
+            self.config.strategies.aurora.decision, param, default)
         return global_value if global_value is not None else default
 
     def get_side_bias_params(self, symbol: str) -> tuple:
@@ -260,7 +283,9 @@ class DMConfigResolver:
             (penalty_factor, window_sec, target_ratio, min_intents)
 
         Raises:
-            ValueError: If required params missing (fail-closed).
+            ValueError: If any required parameter is missing after applying the
+                override chain. This helper intentionally fails closed instead
+                of inventing defaults in runtime logic.
         """
         dm = self.config.strategies.aurora.decision
         instr_cfg = self.get_aurora_instrument_cfg(symbol)
@@ -279,11 +304,13 @@ class DMConfigResolver:
         min_intents = get_val("min_intents", "side_bias_min_intents")
 
         if penalty is None:
-            raise ValueError(f"side_bias_penalty_factor is required for {symbol}")
+            raise ValueError(
+                f"side_bias_penalty_factor is required for {symbol}")
         if window is None:
             raise ValueError(f"side_bias_window_sec is required for {symbol}")
         if target is None:
-            raise ValueError(f"side_bias_target_ratio is required for {symbol}")
+            raise ValueError(
+                f"side_bias_target_ratio is required for {symbol}")
         if min_intents is None:
             raise ValueError(f"side_bias_min_intents is required for {symbol}")
 
@@ -311,7 +338,10 @@ class DMConfigResolver:
 
     def get_signal_threshold(self, symbol: str) -> decimal.Decimal:
         """
-        Get signal threshold with per-instrument override (Phase 3+).
+        Get signal threshold with the typed per-instrument override contract.
+
+        A per-asset override only applies when the override object exists,
+        ``enabled`` is true, and ``value`` is not null.
 
         Raises:
             AttributeError: If global config missing (fail-closed).
@@ -335,6 +365,7 @@ class DMConfigResolver:
         Raises:
             ConfigContractError: if per-symbol flip config is missing.
         """
+        # Global disable is authoritative and short-circuits symbol lookup.
         if not self.flip_global_enabled:
             return (False, 1.0)
 

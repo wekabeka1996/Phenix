@@ -182,7 +182,7 @@ mean_reversion:
         min_bb_width: 0.005  # (min_vol_atr from report)
         entry_threshold: 0.05
         # Exit parameters
-        sl_atr_mult: 1.5     # Base, overridden below
+        sl_atr_mult: 0.75    # Base, overridden below
         tp_to_mid: false     # False for outer band target
         cooldown_sec: 210
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for ""
@@ -253,7 +253,7 @@ mean_reversion:
         min_bb_width: 0.025
         entry_threshold: 0.12
         tp_to_mid: true
-        sl_atr_mult: 2.0
+        sl_atr_mult: 1.0
         cooldown_sec: 210
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 

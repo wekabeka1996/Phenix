@@ -117,6 +117,33 @@ if TYPE_CHECKING:
     from apps.reference.config_models import LeverageConfig
 
 
+def _build_watchdog_trade_executed_message(
+    event_name: str,
+    payload: Dict[str, Any],
+    why: str,
+) -> Message:
+    """Build the canonical watchdog TRADE_EXECUTED envelope.
+
+    The top-level RID must mirror the normalized business RID in payload["rid"]
+    so WAL, shadow, and lifecycle records can be queried with one key.
+    """
+    verb = event_name.split(":")[1] if ":" in event_name else event_name
+    msg_kwargs = {
+        "op": "EVT",
+        "verb": verb,
+        "src": "execution_position",
+        "dst": "execution_position",
+        "pld": payload,
+        "why": why,
+    }
+
+    business_rid = payload.get("rid")
+    if business_rid not in (None, ""):
+        msg_kwargs["rid"] = str(business_rid)
+
+    return Message(**msg_kwargs)
+
+
 def _utc_hm() -> Tuple[int, int]:
     """Get current hour and minute in UTC."""
     now = datetime.now(timezone.utc)
@@ -608,24 +635,11 @@ class ExecPosFSM(
                 async def emit_trade_executed(event_name, payload, why="polling_fill"):
                     """Emit TRADE_EXECUTED event via FSM event system."""
                     try:
-                        verb = event_name.split(
-                            ":")[1] if ":" in event_name else event_name
-
-                        # Build kwargs for Message, only include rid if present
-                        msg_kwargs = {
-                            "op": "EVT",
-                            "verb": verb,
-                            "src": "execution_position",
-                            "dst": "execution_position",
-                            "pld": payload,
-                            "why": why
-                        }
-
-                        # Only add rid if it's present and not None
-                        if payload.get("rid") is not None:
-                            msg_kwargs["rid"] = payload["rid"]
-
-                        msg = Message(**msg_kwargs)
+                        msg = _build_watchdog_trade_executed_message(
+                            event_name,
+                            payload,
+                            why,
+                        )
                         await emit_compat(self.fsm, msg, logger=LOG)
                     except Exception as e:
                         LOG.error(f"Failed to emit {event_name}: {e}")

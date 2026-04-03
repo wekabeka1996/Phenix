@@ -1,15 +1,15 @@
-"""
-Phase 5: Exit Manager (Position Management).
+"""Evaluate local exit conditions for an already open position.
 
-Manages active positions by evaluating exit criteria:
-- DangerZone (Priority 1): Force close or tighten stops
-- Trailing Stop (Priority 1.5): Synthetic ATR-based trailing exit
-- Time-based Exits (Priority 2): Stagnation / max hold
-- Signal Reversal (Priority 3): Alpha flip
+ExitManager is a pure decision helper in the Aurora path: it does not mutate
+position state, emit events, or place orders. The caller supplies the current
+position snapshot and receives either an immediate exit instruction or a
+best-effort stop-loss override to apply upstream.
 
-S2-TRAILING: Trailing stop logic uses MFE (max favorable excursion)
-and ATR-based trail distance. It is a "synthetic exit" (not SL modify),
-meaning if price drops below trail level → EXIT immediately.
+Priority order in this module:
+1. DangerZone close or tighten action
+2. Synthetic trailing-stop exit
+3. Time-based stop
+4. Signal-reversal exit
 """
 from typing import Optional, Tuple
 from decimal import Decimal
@@ -19,17 +19,13 @@ from apps.reference.config_models import ExitManagerConfig, DangerZoneExitType
 
 
 class ExitManager:
+    """Resolve whether an open position should exit or tighten risk now.
+
+    The class normalizes the config once at construction time into private
+    primitive fields. Runtime checks then consume those normalized values rather
+    than reading from ``config`` repeatedly.
     """
-    Orchestrates exit logic for open positions.
-    Decides when to close a position or adjust its risk parameters.
-    
-    Priority chain:
-        1. DangerZone CLOSE_POSITION  (highest)
-        2. DangerZone TIGHTEN_STOPS
-        3. Trailing Stop              (S2-TRAILING)
-        4. Time-based Exit
-        5. Signal Reversal            (lowest)
-    """
+
     def __init__(
         self,
         config: ExitManagerConfig,
@@ -39,10 +35,19 @@ class ExitManager:
         trailing_atr_mult: Optional[float] = None,
         trailing_pct: Optional[float] = None,
     ):
+        """Store normalized exit policy and injected trailing parameters.
+
+        ``config`` owns the base exit policy. Trailing-stop settings are injected
+        separately by AuroraConfigLoaderMixin because they currently come from a
+        different compatibility surface than ExitManagerConfig.
+        """
         self.config = config
         self.logger = logging.getLogger(__name__)
+        # Normalize once so later checks stay deterministic even when tests pass
+        # partial mocks instead of a fully typed config tree.
         self._danger_zone_action = self._safe_danger_zone_action(
-            getattr(config, "danger_zone_action", DangerZoneExitType.TIGHTEN_STOPS)
+            getattr(config, "danger_zone_action",
+                    DangerZoneExitType.TIGHTEN_STOPS)
         )
         self._danger_zone_tighten_factor = self._safe_float(
             getattr(config, "danger_zone_tighten_factor", 0.5),
@@ -72,6 +77,11 @@ class ExitManager:
 
     @staticmethod
     def _safe_bool(value, *, default: bool) -> bool:
+        """Best-effort bool coercion for legacy or partially mocked config.
+
+        Truthy stand-ins such as MagicMock still coerce to True here; callers
+        that mean "unset" must pass None rather than an arbitrary object.
+        """
         if isinstance(value, bool):
             return value
         if value is None:
@@ -83,6 +93,7 @@ class ExitManager:
 
     @staticmethod
     def _safe_float(value, *, default: float) -> float:
+        """Best-effort float coercion for legacy or partially mocked config."""
         try:
             return float(value)
         except Exception:
@@ -90,6 +101,7 @@ class ExitManager:
 
     @staticmethod
     def _safe_danger_zone_action(value) -> DangerZoneExitType:
+        """Normalize danger-zone action into the typed enum with safe fallback."""
         if isinstance(value, DangerZoneExitType):
             return value
         try:
@@ -112,7 +124,7 @@ class ExitManager:
         atr: Optional[Decimal] = None,
     ) -> Tuple[bool, Optional[str], Optional[Decimal]]:
         """
-        Evaluate exit criteria for a single position.
+        Evaluate exit criteria for a single position snapshot.
 
         Args:
             symbol: Trading pair symbol
@@ -130,18 +142,20 @@ class ExitManager:
             (should_exit, reason, new_stop_loss)
             - should_exit (bool): True if position should be closed immediately.
             - reason (str): Human-readable reason for exit/adjustment.
-            - new_stop_loss (Decimal): New SL price if adjustment needed, else None.
+            - new_stop_loss (Decimal): New SL price to apply upstream, else None.
         """
+        # Any side that is not explicitly long/buy is treated as short. The
+        # caller is expected to enforce the position-side contract before entry.
         side_norm = str(current_position_side).upper()
         is_long = side_norm in ("LONG", "BUY")
-        
+
         # 1. Danger Zone Logic (Priority 1 - highest)
         if danger_zone_active:
             action = self._danger_zone_action
-            
+
             if action == DangerZoneExitType.CLOSE_POSITION:
                 return True, "EXIT_DANGER_ZONE:ForceClose", None
-                
+
             elif action == DangerZoneExitType.TIGHTEN_STOPS:
                 # S2-R2: Profit guard — only tighten when position is profitable.
                 if is_long:
@@ -154,8 +168,11 @@ class ExitManager:
                 # Tighten logic: Reduce distance from current price to SL by factor
                 if current_stop_loss:
                     dist = abs(current_price - current_stop_loss)
-                    new_dist = dist * Decimal(str(self._danger_zone_tighten_factor))
-                    
+                    new_dist = dist * \
+                        Decimal(str(self._danger_zone_tighten_factor))
+
+                    # Returning (False, reason, proposed_sl) tells the caller to
+                    # keep the position open but tighten the emitted stop level.
                     if is_long:
                         proposed_sl = current_price - new_dist
                         if proposed_sl >= current_price:
@@ -190,7 +207,7 @@ class ExitManager:
         # 3. Signal Reversal (Alpha Flip)
         if self._signal_exit_enabled:
             threshold = self._signal_reversal_threshold
-            
+
             if is_long:
                 if final_score < threshold:
                     return True, f"EXIT_SIGNAL_REVERSAL:{final_score:.4f}<{threshold}", None
@@ -211,18 +228,11 @@ class ExitManager:
         atr: Optional[Decimal],
     ) -> Optional[Tuple[bool, str, Optional[Decimal]]]:
         """
-        Check if trailing stop should trigger exit.
-        
-        Returns (should_exit, reason, new_sl) or None if no trailing action.
-        
-        Logic:
-            1. Check if PnL% exceeds activation threshold
-            2. Calculate trail distance (ATR × mult preferred, pct fallback)
-            3. If price has retraced past trail level → EXIT
-        
-        Invariants:
-            - Trail stop never crosses current price
-            - Trail stop is always between entry and MFE
+        Check whether the synthetic trailing stop now forces an exit.
+
+        The helper returns None when trailing is inactive or when the computed
+        trail geometry is unsafe. It never returns a stop override: trailing in
+        this module is exit-only, not a persistent stop-modification engine.
         """
         # Activation check: only trail when position has been profitable enough
         if is_long:
@@ -273,7 +283,7 @@ class ExitManager:
         mfe_price: Decimal,
         atr: Optional[Decimal],
     ) -> Optional[Decimal]:
-        """Calculate trail distance. Prefer ATR × mult, fall back to % of MFE."""
+        """Calculate trail distance from ATR first, then from MFE percentage."""
         # Prefer ATR-based distance
         if self._trailing_atr_mult is not None and atr is not None and atr > 0:
             return atr * Decimal(str(self._trailing_atr_mult))

@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
+"""Meta or stage-2 calibration stack.
+
+This tool bundles stage-1 strategy candidates and objective-search artifacts.
+It is not a stage-1 production calibrator for any single live strategy surface.
+"""
 from __future__ import annotations
+from apps.reference.config_loader import ConfigLoader
+from tools.objective_calibration.dataset import build_objective_dataset, load_objective_dataset
+from tools.objective_calibration.overlay import write_overlay_bundle
+from tools.objective_calibration.report import render_objective_calibration_report
+from tools.objective_calibration.search import search_objective_candidates
 
 import argparse
 import json
@@ -11,13 +21,6 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
-from apps.reference.config_loader import ConfigLoader
-
-from tools.objective_calibration.dataset import build_objective_dataset, load_objective_dataset
-from tools.objective_calibration.overlay import write_overlay_bundle
-from tools.objective_calibration.report import render_objective_calibration_report
-from tools.objective_calibration.search import search_objective_candidates
 
 
 def _parse_date(raw: str) -> date:
@@ -53,7 +56,8 @@ def _strategy_candidates_from_file(path: Path | None) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for item in payload["candidates"]:
             if isinstance(item, dict) and isinstance(item.get("overlay"), dict):
-                out.append({"score": float(item.get("score", 0.0) or 0.0), "overlay": item["overlay"]})
+                out.append({"score": float(item.get("score", 0.0)
+                           or 0.0), "overlay": item["overlay"]})
         return out
     if isinstance(payload.get("overlay"), dict):
         return [{"score": float(payload.get("score", 0.0) or 0.0), "overlay": payload["overlay"]}]
@@ -69,11 +73,15 @@ def _build_strategy_bundle(
     top_k: int,
 ) -> dict[str, Any]:
     baseline = _current_strategy_bundle(config_root)["strategy_overlays"]
-    aurora_candidates = _strategy_candidates_from_file(aurora_candidates_path) or [{"score": 0.0, "overlay": baseline["aurora"]}]
-    md_amr_candidates = _strategy_candidates_from_file(md_amr_candidates_path) or [{"score": 0.0, "overlay": baseline["md_amr"]}]
-    mr_candidates = _strategy_candidates_from_file(mr_candidates_path) or [{"score": 0.0, "overlay": baseline["mean_reversion"]}]
+    aurora_candidates = _strategy_candidates_from_file(aurora_candidates_path) or [
+        {"score": 0.0, "overlay": baseline["aurora"]}]
+    md_amr_candidates = _strategy_candidates_from_file(md_amr_candidates_path) or [
+        {"score": 0.0, "overlay": baseline["md_amr"]}]
+    mr_candidates = _strategy_candidates_from_file(mr_candidates_path) or [
+        {"score": 0.0, "overlay": baseline["mean_reversion"]}]
     merged: list[dict[str, Any]] = []
-    max_candidates = max(len(aurora_candidates), len(md_amr_candidates), len(mr_candidates), 1)
+    max_candidates = max(len(aurora_candidates), len(
+        md_amr_candidates), len(mr_candidates), 1)
     for idx in range(min(max_candidates, max(1, int(top_k)))):
         aur = aurora_candidates[min(idx, len(aurora_candidates) - 1)]
         md = md_amr_candidates[min(idx, len(md_amr_candidates) - 1)]
@@ -95,18 +103,22 @@ def _write_strategy_bundle(out_dir: Path, bundle: dict[str, Any]) -> None:
     import yaml
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "candidate_bundle.json").write_text(json.dumps(bundle, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "candidate_bundle.json").write_text(json.dumps(bundle,
+                                                              indent=2, ensure_ascii=False), encoding="utf-8")
     best = ((bundle.get("candidates") or [{}])[0])
-    strategy_overlays = best.get("strategy_overlays") if isinstance(best, dict) else {}
+    strategy_overlays = best.get(
+        "strategy_overlays") if isinstance(best, dict) else {}
     for strategy_id, file_name in (
         ("aurora", "candidate_aurora_strategy_overlay.yaml"),
         ("md_amr", "candidate_md_amr_strategy_overlay.yaml"),
         ("mean_reversion", "candidate_mean_reversion_strategy_overlay.yaml"),
     ):
-        overlay = strategy_overlays.get(strategy_id, {}) if isinstance(strategy_overlays, dict) else {}
-        (out_dir / file_name).write_text(yaml.safe_dump(overlay, sort_keys=False, allow_unicode=False), encoding="utf-8")
+        overlay = strategy_overlays.get(strategy_id, {}) if isinstance(
+            strategy_overlays, dict) else {}
+        (out_dir / file_name).write_text(yaml.safe_dump(overlay,
+                                                        sort_keys=False, allow_unicode=False), encoding="utf-8")
     (out_dir / "report.md").write_text(
-        "# Strategy Calibration Bundle\n\n- This artifact bundles candidate strategy overlays.\n- It does not mutate canonical YAML automatically.\n",
+        "# Strategy Calibration Bundle\n\n- Calibration class: meta/stage2.\n- This artifact bundles candidate strategy overlays.\n- It is not a stage-1 production calibrator.\n- It does not mutate canonical YAML automatically.\n",
         encoding="utf-8",
     )
 
@@ -135,19 +147,24 @@ def _cmd_build_dataset(args: argparse.Namespace) -> int:
         end=args.end,
         tf_sec=int(args.tf_sec),
     )
-    out_dir = Path(args.out_dir) if args.out_dir else _default_out_dir("dataset")
+    out_dir = Path(
+        args.out_dir) if args.out_dir else _default_out_dir("dataset")
     dataset.write(out_dir)
     print(f"Objective dataset written to {out_dir}")
     return 0
 
 
 def _cmd_strategy(args: argparse.Namespace) -> int:
-    out_dir = Path(args.out_dir) if args.out_dir else _default_out_dir("strategy")
+    out_dir = Path(
+        args.out_dir) if args.out_dir else _default_out_dir("strategy")
     bundle = _build_strategy_bundle(
         config_root=Path(args.config_root),
-        aurora_candidates_path=Path(args.aurora_candidates) if args.aurora_candidates else None,
-        md_amr_candidates_path=Path(args.md_amr_candidates) if args.md_amr_candidates else None,
-        mr_candidates_path=Path(args.mean_reversion_candidates) if args.mean_reversion_candidates else None,
+        aurora_candidates_path=Path(
+            args.aurora_candidates) if args.aurora_candidates else None,
+        md_amr_candidates_path=Path(
+            args.md_amr_candidates) if args.md_amr_candidates else None,
+        mr_candidates_path=Path(
+            args.mean_reversion_candidates) if args.mean_reversion_candidates else None,
         top_k=int(args.top_k),
     )
     _write_strategy_bundle(out_dir, bundle)
@@ -178,7 +195,8 @@ def _objective_stage(
         min_trade_count=int(min_trade_count),
     )
     best = candidates[0]
-    overlay_paths = write_overlay_bundle(out_dir, best_candidate=best, candidates=candidates)
+    overlay_paths = write_overlay_bundle(
+        out_dir, best_candidate=best, candidates=candidates)
     render_objective_calibration_report(
         out_dir,
         scope=scope,
@@ -192,14 +210,16 @@ def _objective_stage(
 
 def _cmd_objective(args: argparse.Namespace) -> int:
     dataset = _resolve_dataset(args)
-    out_dir = Path(args.out_dir) if args.out_dir else _default_out_dir("objective")
+    out_dir = Path(args.out_dir) if args.out_dir else _default_out_dir(
+        "objective")
     out_dir.mkdir(parents=True, exist_ok=True)
     if not args.dataset_dir:
         dataset.write(out_dir / "dataset")
     return _objective_stage(
         dataset=dataset,
         config_root=Path(args.config_root),
-        strategy_bundle_path=Path(args.strategy_bundle) if args.strategy_bundle else None,
+        strategy_bundle_path=Path(
+            args.strategy_bundle) if args.strategy_bundle else None,
         out_dir=out_dir,
         trials=args.trials,
         top_k=args.top_k,
@@ -215,9 +235,12 @@ def _cmd_joint(args: argparse.Namespace) -> int:
     strategy_dir = out_dir / "strategy_stage"
     bundle = _build_strategy_bundle(
         config_root=Path(args.config_root),
-        aurora_candidates_path=Path(args.aurora_candidates) if args.aurora_candidates else None,
-        md_amr_candidates_path=Path(args.md_amr_candidates) if args.md_amr_candidates else None,
-        mr_candidates_path=Path(args.mean_reversion_candidates) if args.mean_reversion_candidates else None,
+        aurora_candidates_path=Path(
+            args.aurora_candidates) if args.aurora_candidates else None,
+        md_amr_candidates_path=Path(
+            args.md_amr_candidates) if args.md_amr_candidates else None,
+        mr_candidates_path=Path(
+            args.mean_reversion_candidates) if args.mean_reversion_candidates else None,
         top_k=int(args.top_k),
     )
     _write_strategy_bundle(strategy_dir, bundle)
@@ -238,7 +261,12 @@ def _cmd_joint(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Unified strategy + objective calibration stack")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Meta or stage-2 strategy plus objective calibration stack. "
+            "Not a stage-1 production surface calibrator."
+        )
+    )
     parser.add_argument("--config-root", default="config/aurora")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -246,7 +274,8 @@ def build_parser() -> argparse.ArgumentParser:
     common_dataset.add_argument("--dataset-dir", default=None)
     common_dataset.add_argument("--recorder-dir", default="data/recorder")
     common_dataset.add_argument("--wal-dir", default="ops/wal")
-    common_dataset.add_argument("--ledger-path", default="data/order_ledger.db")
+    common_dataset.add_argument(
+        "--ledger-path", default="data/order_ledger.db")
     common_dataset.add_argument("--symbols", nargs="+", default=["BTCUSDT"])
     common_dataset.add_argument("--start", type=_parse_date, default=None)
     common_dataset.add_argument("--end", type=_parse_date, default=None)
@@ -271,7 +300,8 @@ def build_parser() -> argparse.ArgumentParser:
     strategy.add_argument("--out-dir", default=None)
     strategy.set_defaults(func=_cmd_strategy)
 
-    objective = sub.add_parser("objective", parents=[common_dataset, common_search])
+    objective = sub.add_parser("objective", parents=[
+                               common_dataset, common_search])
     objective.add_argument("--out-dir", default=None)
     objective.set_defaults(func=_cmd_objective)
 

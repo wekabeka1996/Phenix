@@ -1,8 +1,10 @@
 """
-ReadinessGates — Warmup, features TTL, degraded context, and exposure pre-checks.
+ReadinessGates — readiness checks around trade-intent admission.
 
 Extracted from decision_making.py (Phase 14A decomposition).
-Stateless readiness checks that gate trade intent proposals.
+The module does not mutate the FSM directly, but it is not fully stateless:
+it keeps per-symbol warmup blocker diagnostics and can invoke injected
+callbacks to defer or record blocked intents.
 
 LOC budget: <=500 (Constitution §3).
 """
@@ -26,9 +28,10 @@ class ReadinessGates:
     """
     Readiness gates for DecisionMaking domain.
 
-    Pure checks against caches and config. No FSM side effects.
-    Callbacks (emit_intent_deferred_v1, record_blocked_intent) are injected
-    from the facade to avoid circular dependency with IntentEmitter (STEP 5).
+    The class checks caches and config before a new intent is proposed.
+    It owns lightweight blocker diagnostics for live evidence and routes any
+    side effects through injected callbacks so the DecisionMaking facade keeps
+    its historical method surface without direct FSM coupling here.
     """
 
     def __init__(
@@ -63,6 +66,7 @@ class ReadinessGates:
         self._warmup_diag_by_symbol: Dict[str, Dict[str, Any]] = {}
 
     def _diag_for_symbol(self, symbol: str) -> Dict[str, Any]:
+        """Create or return per-symbol warmup blocker attribution state."""
         sym = str(symbol)
         if sym not in self._warmup_diag_by_symbol:
             self._warmup_diag_by_symbol[sym] = {
@@ -99,7 +103,7 @@ class ReadinessGates:
         )
 
     def get_live_blocker_evidence(self, symbol: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
-        """Return DM warmup blocker attribution: FE vs RD vs dual."""
+        """Return the last observed FE/RD warmup blocker attribution per symbol."""
         out: Dict[str, Dict[str, Any]] = {}
         for sym, diag in self._warmup_diag_by_symbol.items():
             if symbol is not None and str(sym) != str(symbol):
@@ -124,6 +128,7 @@ class ReadinessGates:
         side: str | None = None,
         ts_ms: int | None = None,
     ) -> str:
+        """Build a retry key anchored to symbol/side/time rather than caller-local IDs."""
         if ts_ms is None:
             ts_ms = self._clock.now_ms()
         if side:
@@ -133,6 +138,7 @@ class ReadinessGates:
     # ── Warmup Gates ──────────────────────────────────────────────────
 
     def warmup_not_ready(self, symbol: str, reason: str, *, details: str | None = None) -> None:
+        """Emit the shared warmup-block observability side effects."""
         why = truncate_why(f"WARMUP_NOT_READY:{reason}")
         inc_warmup_block(domain="decision_making", reason=reason)
         if details:
@@ -149,14 +155,19 @@ class ReadinessGates:
         context: str,
     ) -> bool:
         """
-        TASK24.B: Fail-closed readiness gate.
+        Fail-closed pre-emit gate for new trade intents.
 
-        Contract: while NOT_READY -> no new TRADE_INTENT_PROPOSED (reduce_only closes allowed).
+        Proven runtime contract:
+        - reduce_only closes bypass the gate
+        - warn_only enforcement preserves compatibility by not blocking here
+        - portfolio, feature freshness, RD warmup, and FE warmup are checked in order
+        - FE-vs-RD blocker attribution is stored for live diagnostics
         """
         if reduce_only:
             return False
 
-        # BYPASS IF WARN_ONLY (config-driven, not hardcoded)
+        # Config-driven compatibility mode: keep runtime behavior opt-in instead
+        # of silently fail-closing older deployments.
         cfg_dm = self.config.domains.decision_making if hasattr(
             self.config.domains, "decision_making") else None
         if cfg_dm and hasattr(cfg_dm, "warmup") and cfg_dm.warmup.enforcement_mode == "warn_only":
@@ -224,6 +235,9 @@ class ReadinessGates:
         if symbol in self._per_symbol_regimes:
             warmup = self._per_symbol_regimes[symbol].get("warmup")
 
+        # RD warmup lives in per_symbol_regimes, while FE warmup is embedded in
+        # EVT:FEATURES_CALCULATED payloads. Keep both sources separate so live
+        # evidence can show which subsystem is still lagging.
         warmup_dict = warmup if isinstance(warmup, dict) else None
         fe_warmup = features_evt.get("warmup")
         fe_warmup_dict = fe_warmup if isinstance(fe_warmup, dict) else None
@@ -313,7 +327,9 @@ class ReadinessGates:
         is_bar = tf_sec > 0
 
         if is_bar:
-            # BAR-AWARE TTL: Use lenient bar_ttl_ms and age_mode
+            # BAR-AWARE TTL: transport freshness may be measured either from
+            # event receipt time or from the bar close timestamp, but the
+            # ancient-bar guard still uses event-time freshness.
             sys_md = getattr(self.config.system, "market_data",
                              None) if self.config.system else None
             if sys_md:
@@ -374,10 +390,13 @@ class ReadinessGates:
         features_evt: dict,
         strategy_id: str | None = None,
     ) -> bool:
-        """Optionally defer when critical DecisionContext features are missing/invalid.
+        """Optionally fail closed when critical DecisionContext fields are degraded.
 
-        This is intentionally opt-in to avoid changing live behavior unless explicitly enabled.
-        Enable by setting `fail_closed_on_degraded_context = True`.
+        When enabled, the gate forces lazy DecisionContext parsing, inspects
+        only the configured critical keys, and emits INTENT_DEFERRED through
+        the injected callback when those keys are missing or invalid.
+        Strategy-specific critical-key lists override the global list; if both
+        are empty, a conservative built-in default set is used.
         """
 
         if not bool(self._fail_closed_on_degraded_context):
@@ -408,7 +427,8 @@ class ReadinessGates:
 
         critical_keys = selected
 
-        # Force lazy parsing to populate missing_fields.
+        # DecisionContext populates missing_fields lazily through typed accessors.
+        # Touch each slice before inspecting the degraded-field map.
         _ = ctx.price
         _ = ctx.trend
         _ = ctx.flow
@@ -460,12 +480,14 @@ class ReadinessGates:
 
     def precheck_exposure_cache(self, symbol: str, side: str, notional_usd: float) -> bool:
         """
-        Pre-check exposure limits using cached exposure summary.
+        Coarse fail-closed preflight using the latest cached exposure summary.
 
-        DM-SAFETY-BYPASSES-P1: FAIL-CLOSED behavior.
-        Returns True if trade should be allowed, False if blocked.
-        Missing/stale/error cache -> BLOCK (not allow).
+        This does not replace the authoritative exposure guard. It only blocks
+        obvious opens when the summary is missing, stale, unreadable, or would
+        exceed the cached max_exposure_usd budget.
         """
+        # The cache is maintained by DecisionMaking event handlers from the last
+        # exposure summary update. Absence is treated as unknown state.
         exposure_cache, cache_timestamp = self._get_exposure_cache()
 
         if not exposure_cache:

@@ -1,53 +1,36 @@
-"""
-Aurora Holding Period Mixin.
+"""Holding-period and re-entry timing helpers for AuroraHandler.
 
-Extracted from aurora_handler.py (Phase 14A Decomposition).
-
-Provides:
-  - Anti-churn holding period logic
-  - Entry/exit tracking
-  - Re-entry cooldown
-  - Emergency exit override
-  - Trade execution position sync
+This mixin owns the local timer logic that can suppress soft exits or flips,
+tracks position timing state off executed trades, and exposes cooldown helpers
+used by the decision path. It does not decide whether a signal is valid on its
+own; AuroraDecisionMixin calls into these methods after scoring and exit logic.
 """
 from __future__ import annotations
 
 import decimal
-import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 from apps.reference.domains.decision_making.dashboard import TradeOutcome
 
-logger = logging.getLogger("aurora_handler")
-
 
 class AuroraHoldingPeriodMixin:
-    """
-    Mixin: holding period (anti-churn) methods for AuroraHandler.
-
-    Self-attributes used (provided by AuroraHandler):
-      - self.logger, self.monotonic_fn, self.dashboard
-      - self._symbol_states
-      - self.holding_period_enabled, self.holding_apply_to_flips
-      - self.default_min_duration_sec, self.default_emergency_threshold
-      - self.default_reentry_cooldown_sec
-      - self._get_instrument_config(), self._get_time_multiplier()
-      - self._emit_strategy_blocked()
-    """
+    # Host contract:
+    # - self._symbol_states stores the per-symbol timing state owned by AuroraHandler;
+    # - self.monotonic_fn is the only timebase used for hold/cooldown math;
+    # - self.default_* values are already hydrated by AuroraConfigLoaderMixin;
+    # - self._emit_strategy_blocked() is available for blocked-event telemetry.
 
     # =========================================================================
     # HOLDING PERIOD (ANTI-CHURN) METHODS
     # =========================================================================
 
     def _get_min_duration_sec(self, symbol: str) -> float:
-        """
-        Get min_duration_sec with per-symbol override.
+        """Resolve the active minimum hold duration for a symbol.
 
-        Fallback chain:
-        1. strategies.aurora.assets.<SYMBOL>.holding_period.min_duration_sec
-        2. strategies.aurora.decision.holding_period.min_duration_sec
-        3. self.default_min_duration_sec (30s)
+        This method only reads the per-symbol override directly. The global
+        decision-level value has already been folded into self.default_min_duration_sec
+        by the config loader.
         """
         base = self.default_min_duration_sec
         instr_cfg = self._get_instrument_config(symbol)
@@ -59,17 +42,16 @@ class AuroraHoldingPeriodMixin:
                     base = float(val)
 
         state = self._symbol_states[symbol]
+        # Use the inertia-adjusted regime so timer scaling matches the same
+        # effective regime seen by the decision path.
         mult = self._get_time_multiplier(state.regime_effective)
         return base * mult
 
     def _get_emergency_threshold(self, symbol: str) -> float:
-        """
-        Get emergency_exit_threshold with per-symbol override.
+        """Resolve the score magnitude that bypasses the holding-period gate.
 
-        Fallback chain:
-        1. strategies.aurora.assets.<SYMBOL>.holding_period.emergency_exit_threshold
-        2. strategies.aurora.decision.holding_period.emergency_exit_threshold
-        3. self.default_emergency_threshold (0.7)
+        As with the minimum duration, the global decision-level default is
+        already materialized into self.default_emergency_threshold.
         """
         instr_cfg = self._get_instrument_config(symbol)
         if instr_cfg:
@@ -81,13 +63,11 @@ class AuroraHoldingPeriodMixin:
         return self.default_emergency_threshold
 
     def _get_reentry_cooldown_sec(self, symbol: str) -> float:
-        """
-        Get reentry_cooldown_sec with per-symbol override.
+        """Resolve the cooldown applied after a local exit is recorded.
 
-        Fallback chain:
-        1. strategies.aurora.assets.<SYMBOL>.reentry_cooldown_sec
-        2. strategies.aurora.decision.reentry_cooldown_sec
-        3. self.default_reentry_cooldown_sec (60s)
+        The loader precomputes the global fallback into
+        self.default_reentry_cooldown_sec; this method only layers a per-symbol
+        override on top and then applies the effective-regime time multiplier.
         """
         base = self.default_reentry_cooldown_sec
         instr_cfg = self._get_instrument_config(symbol)
@@ -101,12 +81,7 @@ class AuroraHoldingPeriodMixin:
         return base * mult
 
     def _is_emergency_exit(self, score: decimal.Decimal, symbol: str) -> bool:
-        """
-        Check if score indicates emergency conditions.
-
-        Returns True if |score| >= emergency_threshold, allowing exit
-        even within holding period.
-        """
+        """Return True when absolute score reaches the bypass threshold."""
         threshold = self._get_emergency_threshold(symbol)
         return abs(float(score)) >= threshold
 
@@ -116,19 +91,11 @@ class AuroraHoldingPeriodMixin:
         result: ScoringResult,
         is_flip: bool = False,
     ) -> bool:
-        """
-        Check if exit/flip signal should be suppressed due to minimum holding period.
+        """Return True when a soft exit/flip must be held by anti-churn policy.
 
-        Returns True (suppress) if:
-        1. Holding period feature is enabled
-        2. We have an active entry timestamp
-        3. Time in position < min_duration_sec
-        4. This is NOT an emergency exit
-        5. (for flips) holding_apply_to_flips is True
-
-        Returns False (allow) otherwise.
-
-        FAIL-OPEN: If entry_timestamp is None (unknown state), allow exit.
+        Hard exits from the exit manager bypass this method. Unknown entry time
+        fails open so the handler does not deadlock a position after restart or
+        state loss.
         """
         # 0. Feature disabled?
         if not self.holding_period_enabled:
@@ -138,7 +105,7 @@ class AuroraHoldingPeriodMixin:
         if is_flip and not self.holding_apply_to_flips:
             return False
 
-        # 2. Get state
+        # 2. Read the current local position timing state.
         state = self._symbol_states[symbol]
         entry_ts = state.entry_timestamp
 
@@ -146,7 +113,7 @@ class AuroraHoldingPeriodMixin:
             # FAIL-OPEN: No tracked entry → allow exit
             return False
 
-        # 3. Check holding period
+        # 3. Compare elapsed monotonic time against the scaled min duration.
         now = float(self.monotonic_fn())
         min_duration = self._get_min_duration_sec(symbol)
         time_in_position = now - entry_ts
@@ -155,7 +122,8 @@ class AuroraHoldingPeriodMixin:
             # Holding period elapsed → allow exit
             return False
 
-        # 4. Check emergency override
+        # 4. Emergency override is score-driven and intentionally ignores the
+        # remaining hold time.
         if self._is_emergency_exit(result.score, symbol):
             self.logger.warning(
                 f"[{symbol}] EMERGENCY_OVERRIDE: Allowing exit despite holding period "
@@ -171,7 +139,8 @@ class AuroraHoldingPeriodMixin:
             f"score={float(result.score):.4f})"
         )
 
-        # Emit blocked event for observability
+        # Emit a blocked event because the caller will otherwise only observe a
+        # forced HOLD outcome, not the reason the soft exit/flip was denied.
         self._emit_strategy_blocked(
             symbol=symbol,
             reason_code="HOLDING_PERIOD_ACTIVE",
@@ -183,20 +152,30 @@ class AuroraHoldingPeriodMixin:
                 "score": float(result.score),
                 "signal_type": "flip" if is_flip else "exit",
             },
-            why_chain=["HOLDING_PERIOD", f"time:{time_in_position:.1f}s", f"min:{min_duration}s"],
+            why_chain=["HOLDING_PERIOD",
+                       f"time:{time_in_position:.1f}s", f"min:{min_duration}s"],
         )
 
         return True
 
     def _track_entry(self, symbol: str, side: str) -> None:
-        """Track entry timestamp when position opens."""
+        """Stamp a local entry using the handler monotonic clock.
+
+        This helper updates only local timer state. Production position truth is
+        normally established by on_trade_executed(), not by signal emission.
+        """
         state = self._symbol_states[symbol]
         state.entry_timestamp = float(self.monotonic_fn())
         state.position_side = side.lower()
-        self.logger.debug(f"[{symbol}] Entry tracked: side={side}, ts={state.entry_timestamp}")
+        self.logger.debug(
+            f"[{symbol}] Entry tracked: side={side}, ts={state.entry_timestamp}")
 
     def _clear_entry(self, symbol: str) -> None:
-        """Clear entry tracking when position closes."""
+        """Clear local timing markers for a closed position.
+
+        This does not stamp last_exit_timestamp; callers that start a cooldown
+        must record the exit time separately before clearing the entry state.
+        """
         state = self._symbol_states[symbol]
         state.entry_timestamp = None
         state.position_side = ""
@@ -204,10 +183,11 @@ class AuroraHoldingPeriodMixin:
         self.logger.debug(f"[{symbol}] Entry tracking cleared")
 
     def on_trade_executed(self, event: Dict[str, Any]) -> None:
-        """
-        P0-3-FIX: Sync position tracking with EVT:TRADE_EXECUTED.
+        """Sync local position timing state from an executed-trade event.
 
-        Entry tracking is updated ONLY on real trades, not on signal emission.
+        Only quantity-bearing buy/sell executions mutate state here. This mixin
+        uses the handler monotonic clock rather than event wall-clock timestamps
+        so holding-period and cooldown calculations stay on one timebase.
         """
         symbol = event.get("symbol")
         if not symbol:
@@ -228,10 +208,13 @@ class AuroraHoldingPeriodMixin:
             return
 
         if state.position_side == "":
+            # A fresh entry starts the hold timer; if we had a prior local exit,
+            # also feed the objective-engine reentry counter.
             state.entry_timestamp = float(self.monotonic_fn())
             state.position_side = side
             if state.last_exit_timestamp is not None:
-                state.objective_reentry_ts_ms.append(int(self.monotonic_fn() * 1000))
+                state.objective_reentry_ts_ms.append(
+                    int(self.monotonic_fn() * 1000))
             self.logger.info(
                 f"[{symbol}] TRADE_EXECUTED: entry confirmed (side={side}, qty={qty})"
             )
@@ -243,7 +226,9 @@ class AuroraHoldingPeriodMixin:
             )
             return
 
-        # Opposite-side trade: treat as exit/flatten (conservative)
+        # Without execution-side position reconciliation in this mixin, an
+        # opposite fill is treated conservatively as a close/flatten event
+        # rather than assuming an immediate reversal is fully established.
         prev_side = state.position_side
         if self.dashboard:
             entry_ts = state.entry_timestamp or float(self.monotonic_fn())

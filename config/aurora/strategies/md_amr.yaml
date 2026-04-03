@@ -258,7 +258,7 @@ md_amr:
       allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml ETHUSDT (verbatim)
       exit:
-        sl_pct: 0.019       # 1.9% base SL
+        sl_pct: 0.0095      # 0.95% base SL
         tp_rr: 0.4          # base TP RR (tp_low_ratio from aurora)
         regime_tpsl:
           enabled: true
@@ -296,7 +296,7 @@ md_amr:
       allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml SOLUSDT (verbatim)
       exit:
-        sl_pct: 0.0135      # 1.35% base SL
+        sl_pct: 0.00675     # 0.675% base SL
         tp_rr: 0.36         # base TP RR (tp_low_ratio from aurora)
         regime_tpsl:
           enabled: true
@@ -334,7 +334,7 @@ md_amr:
       allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
       # MD-AMR-TPSL-01: TP/SL  averaged values from BTC+ETH+SOL aurora configs
       exit:
-        sl_pct: 0.013       # avg(0.005, 0.019, 0.0135)
+        sl_pct: 0.0065      # 0.65% base SL (halved)
         tp_rr: 0.60         # avg(1.0, 0.4, 0.36)
         regime_tpsl:
           enabled: true

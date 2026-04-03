@@ -1,16 +1,13 @@
-"""
-Aurora Decision Processing Mixin.
+"""Decision-processing mixin for AuroraHandler.
 
-Extracted from aurora_handler.py (Phase 14A Decomposition).
+This module orchestrates the per-symbol decision path around the scoring
+kernel. It applies readiness and policy gates, records diagnostic traces, and
+builds the EVT:STRATEGY_SIGNAL_PRODUCED payload with runtime readiness data.
 
-Provides:
-  - _process_decision: Core scoring kernel invocation + gates
-  - _emit_signal: EVT:STRATEGY_SIGNAL_PRODUCED payload builder
-
-Aurora semantic note:
-  - Normal live no-trade outcomes are expressed as STRATEGY_DECISION_BLOCKED.
-  - EVT:INTENT_DEFERRED on this path is reserved for anomaly/fail-closed kernel
-    defer outcomes after the quadratic path is reached.
+Aurora semantics on this path are intentionally strict:
+- ordinary live denials should surface as STRATEGY_DECISION_BLOCKED;
+- EVT:INTENT_DEFERRED is reserved for kernel-side anomaly or fail-closed
+    outcomes after the quadratic path has already been reached.
 """
 from __future__ import annotations
 
@@ -66,12 +63,14 @@ from apps.reference.domains.decision_making.decision_truth_artifacts import (
     canonicalize_intent_deferred_reason,
     write_intent_deferred,
 )
-from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.domains.decision_making.instrument_quantizer import (
     quantize_exposure,
     InstrumentSpec as QuantizerSpec,
+)
+from apps.reference.domains.decision_making.trade_intent_reject_wal import (
+    write_trade_intent_rejected,
 )
 
 if TYPE_CHECKING:
@@ -107,7 +106,20 @@ class AuroraDecisionMixin:
         result: ScoringResult,
         effective_neutral: decimal.Decimal,
     ) -> Dict[str, Any]:
+        """Build a serializable trace for operator-facing quadratic diagnostics.
+
+        The trace prefers kernel explainability fields from ``psi_vector`` and
+        backfills a small set of values from the handler inputs when the kernel
+        did not populate them explicitly.
+        """
         psi = result.psi_vector or {}
+        shield_multiplier = float(
+            getattr(result, "shield_multiplier", 1.0) or 1.0
+        )
+        admission_shield_multiplier = float(
+            getattr(result, "admission_shield_multiplier", shield_multiplier)
+            or shield_multiplier
+        )
         shield_reasons = []
         if isinstance(psi.get("shield_reasons"), list):
             shield_reasons = list(psi.get("shield_reasons") or [])
@@ -130,8 +142,8 @@ class AuroraDecisionMixin:
             "s_scaled_raw": psi.get("s_scaled_raw"),
             "s_clamped": psi.get("s_clamped"),
             "raw_exposure": psi.get("raw_exposure"),
-            "shield_multiplier": psi.get("shield_multiplier", float(result.shield_multiplier or 1.0)),
-            "admission_shield_multiplier": psi.get("admission_shield_multiplier", float(getattr(result, "admission_shield_multiplier", 1.0))),
+            "shield_multiplier": psi.get("shield_multiplier", shield_multiplier),
+            "admission_shield_multiplier": psi.get("admission_shield_multiplier", admission_shield_multiplier),
             "shield_reasons": shield_reasons,
             "decision_score": psi.get("decision_score", float(getattr(result, "decision_score", getattr(result, "score", 0.0)))),
             "sizing_score": psi.get("sizing_score", float(getattr(result, "sizing_score", getattr(result, "score", 0.0)))),
@@ -155,6 +167,7 @@ class AuroraDecisionMixin:
         self,
         trace: Dict[str, Any] | None,
     ) -> Dict[str, Any]:
+        """Keep only the stable trace fields reused by blocked/deferred payloads."""
         if not isinstance(trace, dict):
             return {}
         keys = (
@@ -186,9 +199,12 @@ class AuroraDecisionMixin:
 
     def _process_decision(self, symbol: str, cmd: Dict[str, Any]) -> None:
         """
-        Internal: Process decision logic after CMD:PROCESS_STRATEGY validation.
+        Process one CMD:PROCESS_STRATEGY payload for a single symbol.
 
-        This contains the core scoring kernel and signal emission logic.
+        The method is intentionally side-effectful: it updates symbol state,
+        may enrich the incoming ``features`` mapping with missing regime/bar
+        identity fields, and emits one of the strategy blocked, deferred, trace,
+        or signal events depending on where the decision path stops.
         """
         # Check if symbol is enabled for Aurora
         if not self._is_symbol_enabled(symbol):
@@ -204,12 +220,13 @@ class AuroraDecisionMixin:
         warmup = cmd.get("warmup", {})
         warmup_readiness = warmup.get("ready", {})
 
-        # System-level warmup state is now exclusively controlled by the StrategyGateway
-        # (see readiness_gates.py). Handlers only track it for diagnostics, not fail-closed gates.
+        # Warmup ownership lives upstream. The handler only mirrors the flag so
+        # emitted diagnostics can explain which readiness evidence was present.
         state = self._symbol_states[symbol]
         state.warmup_full_ready = bool(warmup.get("full_ready", False))
 
-        # DM-CRITICAL-PATCHES-02: Regime liveness guard
+        # Reject stale regime state before touching the kernel; downstream
+        # scoring assumes the cached regime heartbeat is still current.
         liveness_block = self._check_regime_liveness(symbol, state)
         if liveness_block is not None:
             self._emit_strategy_blocked(
@@ -226,9 +243,8 @@ class AuroraDecisionMixin:
             )
             return
 
-        # FIX:N-2 — Cold-start bars_required gate: block signals until handler has
-        # accumulated enough real-time bars to produce meaningful features/regime.
-        # Uses basis_required_bars from StrategyCompatibilityProfile as threshold.
+        # The compatibility profile defines how many live bars are required
+        # before this handler may trust regime/features enough to trade.
         _bars_seen = getattr(
             self, "_bars_seen_since_restart", {}).get(symbol, 0)
         _basis_required = getattr(self, "_basis_required_bars_override", None)
@@ -249,6 +265,23 @@ class AuroraDecisionMixin:
                 _readiness_contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
                 _basis_required = 0
         if _readiness_contract_error:
+            # These gates stop the bar before any actionable signal exists, so
+            # they also write a reject WAL record for forensic continuity.
+            write_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=self.strategy_id,
+                tf_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+                bar_close_ts=cmd.get("bar_close_ts"),
+                reason_code="READINESS_CONTRACT_UNRESOLVED",
+                stage="STRATEGY",
+                why="aurora_handler:readiness_contract_unresolved",
+                src="aurora_handler",
+                ts_ms=cmd.get("bar_close_ts"),
+                rid=cmd.get("rid"),
+                context="aurora_handler:basis_required_resolution",
+                why_chain=["READINESS", "READINESS_CONTRACT_UNRESOLVED"],
+                details={"error": _readiness_contract_error},
+            )
             self.logger.error(
                 "[%s] READINESS_CONTRACT_UNRESOLVED — cannot resolve basis_required_bars: %s — blocking signal",
                 symbol, _readiness_contract_error,
@@ -263,6 +296,32 @@ class AuroraDecisionMixin:
             )
             return
         if _basis_required and _bars_seen < _basis_required:
+            cold_start_why = f"Cold-start: {_bars_seen}/{_basis_required} bars seen"
+            cold_start_details = {
+                "bars_seen": _bars_seen,
+                "basis_required_bars": _basis_required,
+            }
+            cold_start_why_chain = [
+                "READINESS",
+                "BARS_REQUIRED",
+                f"bars_seen:{_bars_seen}",
+                f"basis_required:{_basis_required}",
+            ]
+            write_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=self.strategy_id,
+                tf_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+                bar_close_ts=cmd.get("bar_close_ts"),
+                reason_code="BARS_REQUIRED_COLD_START",
+                stage="STRATEGY",
+                why=cold_start_why,
+                src="aurora_handler",
+                ts_ms=cmd.get("bar_close_ts"),
+                rid=cmd.get("rid"),
+                context="aurora_handler:bars_required_gate",
+                why_chain=cold_start_why_chain,
+                details=cold_start_details,
+            )
             self.logger.info(
                 "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal (quadratic path NOT reached)",
                 symbol, _bars_seen, _basis_required,
@@ -273,35 +332,31 @@ class AuroraDecisionMixin:
                 reason="READINESS",
                 context="aurora_handler:bars_required_gate",
                 rid=cmd.get("rid"),
-                why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
-                details={
-                    "bars_seen": _bars_seen,
-                    "basis_required_bars": _basis_required,
-                },
-                why_chain=[
-                    "READINESS",
-                    "BARS_REQUIRED",
-                    f"bars_seen:{_bars_seen}",
-                    f"basis_required:{_basis_required}",
-                ],
+                why=cold_start_why,
+                details=cold_start_details,
+                why_chain=cold_start_why_chain,
                 tf_sec=int(cmd.get("tf_sec") or 0),
                 bar_close_ts=cmd.get("bar_close_ts"),
             )
             return
 
-        # Get price
+        # Price is a hard precondition for kernel scoring and every downstream
+        # payload branch in this method.
         price = features.get("price")
         if price is None:
             self.logger.warning(f"[{symbol}] Missing price in features")
             return
         price_dec = decimal.Decimal(str(price))
 
-        # Get config for this symbol
+        # These helpers normalize symbol-level overrides so the kernel can work
+        # against a stable input contract.
         signal_weights = self._get_signal_weights(symbol, instr_cfg)
         feature_neutrals = self._get_feature_neutrals(symbol, instr_cfg)
         essential_features = self._get_essential_features(symbol, instr_cfg)
 
-        # === LIQUIDITY GATE (Score V2) ===
+        # Liquidity gating happens before the kernel so a normal live denial is
+        # reported as STRATEGY_DECISION_BLOCKED instead of a deferred kernel
+        # outcome.
         liq_ok, liq_ctx = self._check_liquidity_gate(
             symbol=symbol,
             instr_cfg=instr_cfg,
@@ -327,7 +382,8 @@ class AuroraDecisionMixin:
         # Build side bias state
         side_bias = self._get_side_bias_state(symbol)
 
-        # === [SAFETY PATCH: ANCHOR SHOCK VETO (pre-check)] ===
+        # Resolve macro-veto inputs once up front. Parse failures stay
+        # observable via logging but do not crash the decision path.
         veto_cfg = None
         veto_anchor_symbol = "BTCUSDT"
         veto_threshold: float | None = None
@@ -354,7 +410,8 @@ class AuroraDecisionMixin:
             veto_macro_resid = None
             veto_applicable = False
 
-        # === [PATCH: PER-SYMBOL THRESHOLD SUPPORT] ===
+        # Instrument overrides adjust admission thresholds without mutating the
+        # handler defaults shared by other symbols.
         effective_threshold = self.signal_threshold
         effective_neutral = self.neutral_threshold
 
@@ -406,6 +463,9 @@ class AuroraDecisionMixin:
                 cmd.get("tf_sec") or self.timeframe_sec or 0),
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
+        # Some downstream contracts expect these fields inside ``features`` even
+        # when upstream omitted them. Only fill missing keys so upstream values
+        # remain the source of truth when present.
         if "regime" not in features:
             features["regime"] = state.regime
         if "regime_ts_ms" not in features:
@@ -464,9 +524,9 @@ class AuroraDecisionMixin:
                 **extra_kwargs,
             )
         except Exception as _kernel_exc:
-            # QUADRATIC-FAIL-CLOSED: No silent fallback to v2.
-            # Policy: kernel crash → emit observable event + fail-closed (no signal this bar).
-            # Explicit rollback requires: scoring_version: "v2" in aurora.yaml
+            # Kernel crashes stay fail-closed. The rollout contract no longer
+            # provides a legacy v2 fallback path, so this branch must emit
+            # diagnostics and stop the bar from producing a signal.
             _kernel_name = getattr(self.scoring_kernel_cls, "__name__",
                                    "UnknownKernel") if self.scoring_kernel_cls else "None"
             self.logger.exception(
@@ -506,9 +566,16 @@ class AuroraDecisionMixin:
             effective_neutral=effective_neutral,
         )
 
-        # QUADRATIC-VISIBILITY: Emit structured trace at INFO level and as FSM event
-        # so the operator can see it in logs and downstream sinks.
+        # Emit a compact trace both to logs and as an event so blocked/deferred
+        # investigations can correlate the same scoring snapshot.
         compact_trace = self._compact_quadratic_decision_trace(decision_trace)
+        shield_multiplier = float(
+            getattr(result, "shield_multiplier", 1.0) or 1.0
+        )
+        admission_shield_multiplier = float(
+            getattr(result, "admission_shield_multiplier", shield_multiplier)
+            or shield_multiplier
+        )
         self.logger.info(
             "[%s] QUADRATIC_DECISION_TRACE score=%.6f decision_score=%.6f sizing_score=%.6f side=%s deferred=%s regime=%s",
             symbol,
@@ -533,8 +600,8 @@ class AuroraDecisionMixin:
                 "deferred": bool(result.deferred),
                 "defer_reason": str(result.defer_reason) if result.defer_reason else None,
                 "regime": str(state.regime),
-                "shield_multiplier": float(result.shield_multiplier or 1.0),
-                "admission_shield_multiplier": float(getattr(result, "admission_shield_multiplier", result.shield_multiplier or 1.0)),
+                "shield_multiplier": shield_multiplier,
+                "admission_shield_multiplier": admission_shield_multiplier,
                 "thr_buy": str(result.thr_buy) if result.thr_buy is not None else None,
                 "thr_sell": str(result.thr_sell) if result.thr_sell is not None else None,
                 "admission_mode": str(getattr(self, "decision_admission_mode", "quadratic")),
@@ -558,9 +625,8 @@ class AuroraDecisionMixin:
             float(_psi.get("s_linear", 0.0)),
             float(getattr(result, "decision_score", result.score)),
             float(getattr(result, "sizing_score", result.score)),
-            float(result.shield_multiplier or 1.0),
-            float(getattr(result, "admission_shield_multiplier",
-                  result.shield_multiplier or 1.0)),
+            shield_multiplier,
+            admission_shield_multiplier,
             result.deferred,
             result.defer_reason or "-",
             result.side,
@@ -591,7 +657,8 @@ class AuroraDecisionMixin:
                 "strategy_id": self.strategy_id,
             }
             if isinstance(cmd.get("regime"), dict):
-                original_event_payload["regime"] = dict(cmd.get("regime") or {})
+                original_event_payload["regime"] = dict(
+                    cmd.get("regime") or {})
             elif cmd.get("regime") is not None:
                 original_event_payload["regime"] = cmd.get("regime")
             if raw_reason:
@@ -719,7 +786,8 @@ class AuroraDecisionMixin:
             )
             return
 
-        # === PHASE 5: EXIT MANAGER ===
+        # Exit management can override the actionable side or tighten the stop
+        # loss, but it does not rewrite the raw kernel result.
         shield_breakdown = getattr(result, "shield_breakdown", {}) or {}
         shield_reasons = shield_breakdown.get(
             "reasons", []) if isinstance(shield_breakdown, dict) else []
@@ -780,7 +848,8 @@ class AuroraDecisionMixin:
                 self.logger.info(
                     f"[{symbol}] EXIT MANAGER: Tightening stops ({exit_reason}) to {new_sl}")
 
-        # === HOLDING PERIOD CHECK ===
+        # Holding-period policy may force a hold on soft exits/flips while
+        # leaving the original scoring result intact for diagnostics.
         is_exit_signal = (not effective_side) and (current_position_side != "")
         is_flip_signal = (
             current_position_side != ""
@@ -824,7 +893,7 @@ class AuroraDecisionMixin:
                 f"[{symbol}] Neutral signal (score={float(result.score):.4f})")
             return
 
-        # === RE-ENTRY COOLDOWN ===
+        # Re-entry cooldown applies only after a real exit was recorded in state.
         if state.position_side == "" and effective_side:
             if state.last_exit_timestamp:
                 reentry_cooldown = self._get_reentry_cooldown_sec(symbol)
@@ -846,11 +915,12 @@ class AuroraDecisionMixin:
                     )
                     return
 
-        # === VOL-ADJ GATES ===
+        # Volatility-adjusted gates own their own blocked-event emission.
         if self._apply_vol_adj_gates(symbol, result, state, features, effective_side=effective_side):
             return
 
-        # === ANCHOR SHOCK VETO ===
+        # The anchor veto is intentionally asymmetric: it only blocks long risk
+        # when the configured macro residual breaches the downside threshold.
         if (
             veto_cfg
             and getattr(veto_cfg, "enabled", False)
@@ -879,7 +949,13 @@ class AuroraDecisionMixin:
             )
             return
 
-        # === PHASE 5: EXECUTION GATES & ENTRY PLAN ===
+        # Downstream planners and gates must consume the post-policy side that
+        # will actually be emitted, while result.side remains the raw kernel output.
+        canonical_side = str(effective_side).lower()
+
+        # Entry planning and execution gating only run when the handler was
+        # wired with an execution gate; otherwise the raw strategy signal is
+        # emitted after the decision-phase checks above.
         if self.execution_gate is not None:
             shield_mult = float(
                 getattr(result, "shield_multiplier", 1.0) or 1.0)
@@ -909,7 +985,7 @@ class AuroraDecisionMixin:
                                  factor) if factor > 0 else 0.5
 
                 entry_plan_res = entry_plan_calc.compute(
-                    side=result.side,
+                    side=canonical_side,
                     ref_price=price_dec,
                     atr=features.get("atr"),
                     obi=features.get("obi"),
@@ -931,7 +1007,7 @@ class AuroraDecisionMixin:
                 return
 
             active_threshold = float(
-                result.thr_buy if result.side.lower() == "buy" else result.thr_sell)
+                result.thr_buy if canonical_side == "buy" else result.thr_sell)
 
             # Objective Engine Integration (post-EntryPlan / pre-ExecutionGate seam)
             domain_cfg = getattr(getattr(self.config, "domains", None),
@@ -960,8 +1036,10 @@ class AuroraDecisionMixin:
                     cost_cfg = domain_cfg.components.get("cost")
                     behavior_cfg = domain_cfg.components.get("behavior")
 
-                    # FIX:N-7 — Soft-block on missing preconditions instead of
-                    # raising ValueError. These are normal during startup warmup.
+                    # These prerequisites arrive asynchronously during startup.
+                    # Missing data is treated as a blocked decision rather than
+                    # an exception because the condition is operational, not
+                    # programmer error.
                     _objective_precondition_fail = None
                     if cost_cfg is None or not cost_cfg.enabled:
                         _objective_precondition_fail = "OBJECTIVE_COMPONENT_MISSING:cost"
@@ -1002,7 +1080,7 @@ class AuroraDecisionMixin:
                         strategy_id=self.strategy_id,
                         symbol=symbol,
                         signal_score=float(result.score),
-                        signal_direction=1 if result.side == "buy" else -1,
+                        signal_direction=1 if canonical_side == "buy" else -1,
                         regime=str(state.regime),
                         regime_age_sec=float(
                             (int(self.wall_time_fn() * 1000) - int(state.regime_ts_ms)) / 1000.0),
@@ -1016,7 +1094,7 @@ class AuroraDecisionMixin:
                     )
                     projected_notional_usd = compute_projected_order_notional(
                         symbol=symbol,
-                        side=result.side.upper(),
+                        side=canonical_side.upper(),
                         entry_price=decimal.Decimal(
                             str(entry_plan_res.entry_price)),
                         position_queries=self._position_queries,
@@ -1094,7 +1172,7 @@ class AuroraDecisionMixin:
 
             gate_ok, gate_reason = self.execution_gate.check_entry(
                 symbol=symbol,
-                side=result.side,
+                side=canonical_side,
                 features=features,
                 final_score=float(result.score),
                 shield_multiplier=shield_mult,
@@ -1128,7 +1206,7 @@ class AuroraDecisionMixin:
                 result,
                 features,
                 cmd,
-                effective_side=effective_side,
+                effective_side=canonical_side,
                 entry_plan=entry_plan_res,
                 stop_loss_override=stop_loss_override,
                 micro_fraction=micro_fraction,
@@ -1140,13 +1218,13 @@ class AuroraDecisionMixin:
                 result,
                 features,
                 cmd,
-                effective_side=effective_side,
+                effective_side=canonical_side,
                 micro_fraction=micro_fraction,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
 
         # Update side bias history
-        self._update_side_bias(symbol, effective_side)
+        self._update_side_bias(symbol, canonical_side)
 
     def _emit_signal(
         self,
@@ -1161,7 +1239,13 @@ class AuroraDecisionMixin:
         micro_fraction: float = 1.0,
         quadratic_shadow_evaluation: Any | None = None,
     ) -> None:
-        """Emit EVT:STRATEGY_SIGNAL_PRODUCED with readiness contract."""
+        """Emit EVT:STRATEGY_SIGNAL_PRODUCED with runtime readiness metadata.
+
+        This helper assumes the upstream decision path has already selected an
+        actionable side and validated the basic signal inputs. It may still fail
+        closed locally when payload-specific prerequisites such as ATR-based
+        entry pricing or instrument quantization are unavailable.
+        """
         state = self._symbol_states[symbol]
         side = effective_side if effective_side is not None else result.side
         now_ms = int(self.wall_time_fn() * 1000)
@@ -1185,11 +1269,11 @@ class AuroraDecisionMixin:
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
 
-        # Get anchor price and default entry price
+        # Entry price starts from the bar price and is refined either by the
+        # entry-plan result or by the legacy volatility/regime TPSL helpers.
         anchor_price = decimal.Decimal(str(features.get("price", "0")))
         entry_price = anchor_price
 
-        # === ENTRY PLAN (Phase 4/5) ===
         tpsl_result = None
 
         if entry_plan:
@@ -1207,7 +1291,8 @@ class AuroraDecisionMixin:
                 }
             }
         else:
-            # Fallback to Legacy Regime TPSL
+            # When no explicit entry plan was produced, build the payload prices
+            # from the older regime-aware TPSL path used by existing consumers.
             instr_cfg = self._get_instrument_config(symbol)
             vel_cfg = getattr(instr_cfg, "volatility_entry_logic",
                               None) if instr_cfg else None
@@ -1232,6 +1317,21 @@ class AuroraDecisionMixin:
                 if mult_raw is None:
                     self.logger.error(
                         f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="VOLATILITY_ENTRY_MULTIPLIER_MISSING",
+                        reason="CONFIG",
+                        context="aurora_handler:volatility_entry",
+                        details={
+                            "regime": regime,
+                            "configured_regimes": sorted(str(key) for key in multipliers.keys()),
+                        },
+                        why_chain=[
+                            "VOLATILITY_ENTRY",
+                            "REGIME_MULTIPLIER_MISSING",
+                            "FAIL_CLOSED",
+                        ],
+                    )
                     return
                 mult = decimal.Decimal(str(mult_raw))
 
@@ -1256,12 +1356,14 @@ class AuroraDecisionMixin:
                 features=features,
             )
 
-        # === STOP LOSS OVERRIDE (Exit Manager) ===
+        # Exit manager is allowed to tighten the emitted stop without changing
+        # the rest of the TP/SL payload construction.
         if stop_loss_override is not None and tpsl_result:
             tpsl_result["stop_price"] = stop_loss_override
             tpsl_result["tpsl_ctx"]["mode"] = "EXIT_MANAGER_OVERRIDE"
 
-        # Build payload per v7 contract
+        # Runtime readiness is snapshotted at emit time so downstream consumers
+        # can see the exact permissions and evidence that accompanied the signal.
         restore_snapshot = self.get_runtime_analytics_restore_snapshot(symbol)
         decision_cfg = getattr(
             getattr(getattr(self.config, "strategies", None), "aurora", None),
@@ -1440,6 +1542,14 @@ class AuroraDecisionMixin:
             permissions=runtime_permissions,
             blocking_reason_chain=blocking_reason_chain,
         )
+        shield_multiplier_total = float(
+            getattr(result, "shield_multiplier", 1.0) or 1.0
+        )
+        admission_shield_multiplier = float(
+            getattr(result, "admission_shield_multiplier",
+                    shield_multiplier_total)
+            or shield_multiplier_total
+        )
         payload = {
             "strategy_id": self.strategy_id,
             "symbol": symbol,
@@ -1473,8 +1583,8 @@ class AuroraDecisionMixin:
                 "objective": (result.psi_vector or {}).get("objective"),
                 "admission_mode": str(getattr(self, "decision_admission_mode", "quadratic")),
                 "sizing_mode": str(getattr(self, "decision_sizing_mode", "quadratic")),
-                "shield_multiplier_total": float(result.shield_multiplier or 1.0),
-                "admission_shield_multiplier": float(getattr(result, "admission_shield_multiplier", result.shield_multiplier or 1.0)),
+                "shield_multiplier_total": shield_multiplier_total,
+                "admission_shield_multiplier": admission_shield_multiplier,
                 "admission_result": "side" if side else "neutral",
             },
             "sizing": {
@@ -1509,7 +1619,9 @@ class AuroraDecisionMixin:
         if restore_snapshot is not None:
             payload["analytics_restore"] = restore_snapshot.to_payload()
 
-        # BUG-5: Instrument Quantization (Phase 9)
+        # Quantization is applied only when instrument precision metadata is
+        # available; a reject here blocks emission because the payload would not
+        # correspond to an executable order size.
         instruments_cfg = getattr(self.config, "instruments", None)
         precision = instruments_cfg.get(symbol) if isinstance(
             instruments_cfg, dict) else None
@@ -1571,7 +1683,8 @@ class AuroraDecisionMixin:
                 )
                 return
 
-        # BUG-2: IDEMPOTENT MEMORY RECORDING
+        # Memory-shield recording is best-effort and only runs when the scoring
+        # result exposed a stable state hash to deduplicate visits.
         ms = getattr(self, "_memory_shield", None)
         if ms:
             sh_details = getattr(result, "details", {}) or {}
@@ -1580,7 +1693,8 @@ class AuroraDecisionMixin:
                 ms.record_visit(symbol, features, bar_close_ts=int(
                     now_ms/1000), state_hash=state_hash)
 
-        # === INJECT REGIME-BASED TP/SL INTO PAYLOAD ===
+        # Attach TP/SL context only after all local fail-closed checks passed so
+        # the emitted payload stays internally consistent.
         if tpsl_result is not None:
             payload["price_ctx"]["stop_price"] = str(tpsl_result["stop_price"])
             payload["price_ctx"]["target_price"] = str(

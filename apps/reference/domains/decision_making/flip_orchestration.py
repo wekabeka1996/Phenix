@@ -1,11 +1,17 @@
-"""
-FlipOrchestrator — Flip detection, close/open sequencing, anti-pyramiding.
+"""Flip orchestration for opposite-side opens and same-side pyramiding checks.
 
-Extracted from decision_making.py (Phase 14A decomposition).
-Manages D3 Flip Orchestration: position state checks, hysteresis,
-reduce-only close emission, and deferred open retry scheduling.
+This helper owns the local flip gate used by DecisionMaking/StrategyGateway.
+Its responsibilities are intentionally narrow:
 
-LOC budget: <=500 (Constitution S3).
+- inspect current position state for the symbol;
+- distinguish same-side add vs. true opposite-side flip;
+- enforce per-strategy position_mode on same-side intents;
+- optionally require stronger opposite signals via per-symbol hysteresis;
+- emit the close-and-retry side effects for proven flips.
+
+The actual position queries, trade-intent proposal, deferred-event emission, and
+FSM access remain injected from the DecisionMaking facade so this module does
+not silently invent alternative execution or retry behavior.
 """
 
 import decimal
@@ -19,10 +25,15 @@ if TYPE_CHECKING:
 
 class FlipOrchestrator:
     """
-    Flip orchestration for DecisionMaking domain.
+    Flip gate and close-orchestration helper for DecisionMaking.
 
-    Delegates position queries, config resolution, and intent emission
-    to injected callables from the facade/other sub-modules.
+    Return contract:
+    - ``None`` means the current OPEN may continue downstream.
+    - non-``None`` means the current OPEN must not proceed as-is.
+
+    Some non-``None`` outcomes are pure gate decisions (for example
+    ``ANTI_PYRAMIDING_BLOCK``), while flip-close outcomes also emit
+    ``EVT:INTENT_DEFERRED`` before returning control to the caller.
     """
 
     def __init__(
@@ -50,7 +61,12 @@ class FlipOrchestrator:
     # -- Utility ------------------------------------------------------------
 
     def is_flip(self, symbol: str, intent_side: str, position_state: str = None) -> bool:
-        """Check if intent opposes current position."""
+        """Return ``True`` only for known opposite-side position vs intent pairs.
+
+        ``UNKNOWN`` remains caller-managed fail-closed state; this helper only
+        answers the narrower question of whether a non-flat known position is on
+        the opposite side of the requested OPEN.
+        """
         if not position_state:
             position_state = self._get_position_state(symbol)
 
@@ -72,23 +88,35 @@ class FlipOrchestrator:
         return position_side == intent_side
 
     def generate_flip_retry_key(self, symbol: str, side: str, seed: str | None = None) -> str:
-        """Generate stable retry_key for a flip transaction."""
+        """Generate a correlation key shared by flip close and deferred retry.
+
+        A caller-provided seed keeps the retry key stable across the close and
+        deferred-open parts of the same flip transaction; ad hoc callers fall
+        back to the current clock timestamp.
+        """
         if seed:
             return f"flip:{symbol}:{side}:{seed}"
         ts_ms = self._clock.now_ms()
         return f"flip:{symbol}:{side}:{ts_ms}"
 
     def resolve_position_mode(self, *, symbol: str, source: str) -> str | None:
-        """Resolve per-symbol position_mode for the emitting strategy (STRICT|DYNAMIC).
+        """Resolve per-symbol position_mode for the emitting strategy.
 
         SSOT: strategies.<strategy_id>.assets.<SYMBOL>.position_mode
+
+        Returns ``None`` on missing, invalid, or unreadable config so the caller
+        can fail closed instead of silently defaulting to STRICT or DYNAMIC.
         """
         try:
             strategies = getattr(self.config, "strategies", None)
-            strat_cfg = getattr(strategies, str(source), None) if strategies is not None else None
-            assets = getattr(strat_cfg, "assets", None) if strat_cfg is not None else None
-            asset_cfg = assets.get(symbol) if isinstance(assets, dict) else None
-            mode_raw = getattr(asset_cfg, "position_mode", None) if asset_cfg is not None else None
+            strat_cfg = getattr(strategies, str(source),
+                                None) if strategies is not None else None
+            assets = getattr(strat_cfg, "assets",
+                             None) if strat_cfg is not None else None
+            asset_cfg = assets.get(symbol) if isinstance(
+                assets, dict) else None
+            mode_raw = getattr(asset_cfg, "position_mode",
+                               None) if asset_cfg is not None else None
             if mode_raw is None:
                 return None
             mode = str(mode_raw).upper()
@@ -109,9 +137,16 @@ class FlipOrchestrator:
         strategy_id: str,
         strategy_trace: dict | None = None,
     ) -> bool:
-        """Emit immediate reduce-only close intent for Flip Orchestration.
+        """Emit the canonical reduce-only close intent for a flip.
 
-        IMPORTANT: Use the originating strategy_id for registry arbitration.
+        The close direction and absolute quantity are derived from the current
+        signed portfolio position. Fail-closed behavior is deliberate here:
+        missing, unparsable, or effectively zero quantity means no close intent
+        is emitted and the caller gets ``False``.
+
+        IMPORTANT: the originating ``strategy_id`` must be preserved so the
+        normal trade-intent/arbitration pipeline evaluates the close under the
+        strategy that owns the position.
         """
         qty_signed, curr_pos = self._get_portfolio_position_qty_signed(symbol)
         if qty_signed is None:
@@ -140,6 +175,8 @@ class FlipOrchestrator:
             f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty_abs} (reduce_only)"
         )
 
+        # Canonical flip-close path goes through the regular intent pipeline so
+        # downstream bridge/execution logic sees an ordinary reduce-only intent.
         self._propose_trade_intent(
             symbol=symbol,
             side=close_side,
@@ -163,13 +200,21 @@ class FlipOrchestrator:
         source: str = "aurora",
     ) -> Optional[str]:
         """
-        D3: Handle flip orchestration when OPEN requested.
-        STRICT SEQUENTIAL CONTRACT:
-        1. UNKNOWN -> Fail-closed (Defer)
-        2. FLAT -> Allow
-        3. LONG/SHORT + Same Side -> Block (Anti-Pyramiding)
-        4. LONG/SHORT + Opposite Side -> Flip Orchestration (Close -> Defer Open)
+        Evaluate an OPEN against current position state and flip rules.
+
+        Strict sequential contract:
+        1. ``UNKNOWN`` -> fail closed for the caller.
+        2. ``FLAT`` -> allow current OPEN.
+        3. same-side position -> apply ``position_mode`` anti-pyramiding rules.
+        4. opposite-side position -> optionally require hysteresis, then emit a
+           reduce-only close and defer the new OPEN for retry.
+
+        Return value is a reason string understood by the caller as "current
+        OPEN did not proceed". For flip-close outcomes this method also emits a
+        deferred retry envelope before returning.
         """
+        # Flip config is mandatory SSOT for active instruments even if the final
+        # branch turns out to be FLAT or a same-side block.
         flip_enabled, flip_mult = self._get_flip_config(symbol)
 
         pos_state = self._get_position_state(symbol)
@@ -181,13 +226,15 @@ class FlipOrchestrator:
             return "NRR-PORTFOLIO-UNKNOWN"
 
         if pos_state == "FLAT":
-            self.logger.debug(f"[{symbol}] FLIP_ORCHESTRATION: FLAT, allowing OPEN {intent_side}")
+            self.logger.debug(
+                f"[{symbol}] FLIP_ORCHESTRATION: FLAT, allowing OPEN {intent_side}")
             return None
 
         is_flip_detected = self.is_flip(symbol, intent_side, pos_state)
 
         if not is_flip_detected:
-            position_mode = self.resolve_position_mode(symbol=symbol, source=source)
+            position_mode = self.resolve_position_mode(
+                symbol=symbol, source=source)
             if position_mode is None:
                 self.logger.error(
                     f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - position_mode missing/invalid "
@@ -212,12 +259,16 @@ class FlipOrchestrator:
             )
             return None
 
-        # Hysteresis check
+        # Hysteresis only runs when the signal payload carries concrete score and
+        # threshold evidence. Missing fields do not get synthetic defaults here.
         if flip_enabled and flip_mult > 1.0:
             try:
-                score = float(original_pld.get("signal_score")) if original_pld.get("signal_score") is not None else None
-                thr_buy = float(original_pld.get("thr_buy")) if original_pld.get("thr_buy") is not None else None
-                thr_sell = float(original_pld.get("thr_sell")) if original_pld.get("thr_sell") is not None else None
+                score = float(original_pld.get("signal_score")) if original_pld.get(
+                    "signal_score") is not None else None
+                thr_buy = float(original_pld.get("thr_buy")) if original_pld.get(
+                    "thr_buy") is not None else None
+                thr_sell = float(original_pld.get("thr_sell")) if original_pld.get(
+                    "thr_sell") is not None else None
             except Exception:
                 score, thr_buy, thr_sell = None, None, None
 
@@ -254,14 +305,20 @@ class FlipOrchestrator:
 
         stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec
         if stale_ttl_sec is None:
-            raise ValueError("domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
+            raise ValueError(
+                "domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
 
-        original_payload_min = dict(original_pld) if isinstance(original_pld, dict) else {}
+        original_payload_min = dict(original_pld) if isinstance(
+            original_pld, dict) else {}
         original_payload_min["symbol"] = symbol
         original_payload_min["side"] = intent_side
-        original_payload_min["strategy_id"] = original_payload_min.get("strategy_id") or source
-        original_payload_min["rid"] = original_payload_min.get("rid") or f"flip_{retry_key}"
+        original_payload_min["strategy_id"] = original_payload_min.get(
+            "strategy_id") or source
+        original_payload_min["rid"] = original_payload_min.get(
+            "rid") or f"flip_{retry_key}"
+        # Deferred signals re-enter StrategyGateway, which expects the v7
+        # readiness contract to be present in payload_min.
         original_payload_min["readiness"] = {"warmup_ok": True}
 
         original_event = {
@@ -302,17 +359,24 @@ class FlipOrchestrator:
         source: str,
     ) -> str:
         """
-        D3: Initiate flip by emitting CMD:CLOSE and deferring OPEN intent.
+        Compatibility helper that emits ``CMD:CLOSE`` then defers the OPEN.
+
+        This is the command-oriented alternative to ``emit_reduce_only_close``.
+        It asks the FSM to close immediately, then schedules the original OPEN
+        for retry using the same stale-portfolio TTL contract as the canonical
+        reduce-only path.
 
         Returns:
-            "FLIP_CLOSE_PENDING" reason (always blocks current intent)
+            ``FLIP_CLOSE_PENDING``. The current OPEN never continues inline.
         """
-        retry_key = self.generate_flip_retry_key(symbol, intent_side, seed=original_pld.get("rid"))
+        retry_key = self.generate_flip_retry_key(
+            symbol, intent_side, seed=original_pld.get("rid"))
         now_ms = self._clock.now_ms()
 
         stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec
         if stale_ttl_sec is None:
-            raise ValueError("domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
+            raise ValueError(
+                "domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
 
         self.logger.info(
@@ -329,11 +393,16 @@ class FlipOrchestrator:
 
         self._fsm.emit("CMD:CLOSE", close_pld)
 
-        original_payload_min = dict(original_pld) if isinstance(original_pld, dict) else {}
+        original_payload_min = dict(original_pld) if isinstance(
+            original_pld, dict) else {}
         original_payload_min["symbol"] = symbol
         original_payload_min["side"] = intent_side
-        original_payload_min["strategy_id"] = original_payload_min.get("strategy_id") or source
-        original_payload_min["rid"] = original_payload_min.get("rid") or f"flip_{retry_key}"
+        original_payload_min["strategy_id"] = original_payload_min.get(
+            "strategy_id") or source
+        original_payload_min["rid"] = original_payload_min.get(
+            "rid") or f"flip_{retry_key}"
+        # Deferred signals re-enter StrategyGateway, which expects the v7
+        # readiness contract to be present in payload_min.
         original_payload_min["readiness"] = {"warmup_ok": True}
 
         original_event = {

@@ -799,6 +799,244 @@ Blocks MR fades when price has already drifted significantly in the same directi
 
 ---
 
+---
+
+## 14d. Per-Asset Override Resolution Chain
+
+> **Source:** `MRStrategyOverrideConfig` (`config_models.py:662-716`)
+
+Handler builds final `MRStrategyConfig` per symbol via 3 layers:
+
+1. **Global:** `mean_reversion.strategy.*` (always present, required fields)
+2. **Per-asset `allowed_regimes`:** `mean_reversion.assets.<SYM>.allowed_regimes`
+3. **Per-asset strategy overrides:** `mean_reversion.assets.<SYM>.strategy.*`
+
+All per-asset override fields are `Optional[None]`. **Fallback:** `None` → use global.
+
+### Override Fields Available
+
+| Field | Type | Global Source | Fallback |
+|---|---|---|---|
+| `bb_window` | Optional[int] | `strategy.bb_window` | None → global |
+| `bb_num_std` | Optional[float] | `strategy.bb_num_std` | None → global |
+| `min_bb_width` | Optional[float] | `strategy.min_bb_width` | None → global |
+| `entry_threshold` | Optional[float] | `strategy.entry_threshold` | None → global |
+| `tp_to_mid` | Optional[bool] | `strategy.tp_to_mid` | None → global |
+| `sl_atr_mult` | Optional[float] | `strategy.sl_atr_mult` | None → global |
+| `cooldown_sec` | Optional[int] | `strategy.cooldown_sec` | None → global |
+| `sl_buffer_pct` | Optional[float] | `strategy.sl_buffer_pct` (0) | None → global |
+| `tp_buffer_pct` | Optional[float] | `strategy.tp_buffer_pct` (0) | None → global |
+| `confidence_base` | Optional[float] | `strategy.confidence_base` (0.5) | None → global |
+| `confidence_bb_slope` | Optional[float] | `strategy.confidence_bb_slope` (2.0) | None → global |
+| `confidence_rsi_bonus` | Optional[float] | `strategy.confidence_rsi_bonus` (0.2) | None → global |
+| `allowed_regimes` | Optional[list[str]] | `mean_reversion.allowed_regimes` | None → global |
+| `flat_low_short_min_bb_width` | Optional[float] | — | None → disabled |
+| `squeeze_expansion_veto` | Optional[Config] | — | None → disabled |
+| `momentum_separation_veto` | Optional[Config] | — | None → disabled |
+| `microstructure_veto` | Optional[Config] | `mean_reversion.microstructure_veto` | None → global V1 |
+| `directional_bias` | Optional[Config] | `mean_reversion.directional_bias` | None → global V2 |
+
+**Category:** All per-asset overrides are **runtime fallbacks** (None → global; global → required YAML).
+
+---
+
+## 14e. Per-Asset Fields: `position_mode` and `leverage`
+
+### `position_mode`
+- **Type:** `Literal["STRICT", "DYNAMIC"]`
+- **YAML:** `mean_reversion.assets.<SYM>.position_mode`
+- **Category:** **Required / no default** — must be declared per asset
+- **Logic:**
+    - `STRICT` = No pyramiding; only 1 open position per symbol allowed
+    - `DYNAMIC` = Pyramiding allowed up to an external cap
+
+### `leverage`
+- **Type:** `Optional[LeverageConfig]` with `target: int`, `mode: Literal["ISOLATED", "CROSS"]`
+- **YAML:** `mean_reversion.assets.<SYM>.leverage.target` / `.mode`
+- **Category:** **Runtime fallback** — `None` → no leverage management by handler
+- **Consumer:** `LeverageBootstrapper` at startup — sets Binance leverage and margin mode
+- **Current Live Values:**
+    - DOGEUSDT: `target: 10`, `mode: "ISOLATED"`
+    - BTCUSDT (dormant): `target: 12`, `mode: "ISOLATED"`
+    - XRPUSDT (dormant): `target: 10`, `mode: "ISOLATED"`
+
+---
+
+## 14f. Liquidity Gate Details
+
+> **Section 8 gives the overview. This section adds field-level detail.**
+
+### Config Hierarchy (most specific wins)
+1. `mean_reversion.assets.<SYM>.liquidity_gate` (per-asset override)
+2. `mean_reversion.liquidity_gate` (global fallback)
+3. Not configured → gate disabled, all signals pass
+
+### YAML Config Fields
+
+| Field | Type | Default | Role |
+|---|---|---|---|
+| `enabled` | bool | — | Master switch (required) |
+| `kappa_min` | float | — | Min kappa to pass (0.0–1.0, required) |
+| `kappa_max` | float | 1.0 | Max kappa clamp |
+| `failsafe_qty_check` | bool | true | [NOT IMPLEMENTED] Reserved |
+
+### Runtime Behavior
+- **Kappa source:** `_liquidity_kappa_map[symbol]` — cached from FE features
+- **Missing kappa:** **Fail-closed** — blocks signal, does not crash (`_check_liquidity_gate`, handler.py:1695-1701)
+- **kappa < kappa_min:** Signal blocked (not an error, just below threshold)
+- **Gate disabled or not configured:** All signals pass
+
+### Current Live State
+- **Global `liquidity_gate`:** Not configured in YAML → gate disabled for all MR assets
+
+---
+
+## 14g. Safety Gates Details
+
+### YAML Config Fields
+
+| Field | Type | Default | Role |
+|---|---|---|---|
+| `enabled` | bool | `false` | Master switch. MR is counter-trend → gates OFF |
+| `system_stress_policy` | `"off" / "attenuate" / "block"` | `"off"` | Gate 0.5: system stress level handling |
+| `stress_attenuation_factor` | float | 0.5 | Multiplicative factor on margin_pct_mult when STRESS + policy=attenuate |
+
+### Policies
+- `off` → Gate 0.5 fully bypassed (even EXTREME stress is ignored)
+- `attenuate` → EXTREME = DENY (NRR-059); STRESS = ALLOW + reduce margin_pct_mult by factor
+- `block` → EXTREME and STRESS both DENY (NRR-059)
+
+### Current Live State
+- `enabled: false` → all safety gates skipped for MR
+- `system_stress_policy: "off"` → Gate 0.5 bypassed
+- **Rationale:** MR trades AGAINST trend; directional sanity gates would incorrectly block valid counter-trend entries
+
+### Fallback
+- Missing `safety_gates` config → **fail-closed** (trade blocked). This is enforced at Pydantic level — field is required on `MeanReversion1mStrategyConfig`.
+
+---
+
+## 14h. Objective Engine Configuration
+
+### YAML Location
+`mean_reversion.objective` — per-regime weights, multiplier sigmoid, and gating parameters.
+
+### Structure
+
+| Field | Type | Role |
+|---|---|---|
+| `enabled` | bool | Master switch |
+| `regimes.<REGIME>.weights` | dict | Per-pillar weights (`cost`, `risk`, `edge`, `execution`, `information`, `behavior`) |
+| `regimes.<REGIME>.multiplier.m_min` | float | Sigmoid floor |
+| `regimes.<REGIME>.multiplier.m_max` | float | Sigmoid ceiling |
+| `regimes.<REGIME>.multiplier.lambda_scale` | float | Sigmoid steepness |
+| `regimes.<REGIME>.multiplier.penalty_center` | float | Sigmoid inflection point |
+| `regimes.<REGIME>.multiplier.penalty_scale` | float | Sigmoid spread |
+| `regimes.<REGIME>.gate.min_objective_score` | float | Min composite score to pass gate |
+| `regimes.<REGIME>.gate.enforcement_mode` | str | `"OBSERVE"` / `"ENFORCE"` |
+
+### Current Live State
+```yaml
+objective:
+  enabled: true
+  regimes:
+    FLAT_LOW:     min_objective_score: 0.05, enforcement_mode: "OBSERVE"
+    FLAT_NORMAL:  min_objective_score: 0.06, enforcement_mode: "OBSERVE"
+    FLAT_HIGH:    min_objective_score: 0.08, enforcement_mode: "OBSERVE"
+    MEAN_REVERSION: min_objective_score: 0.06, enforcement_mode: "OBSERVE"
+```
+
+### Operational Implications
+- `enforcement_mode: "OBSERVE"` → objective engine computes score and logs but does NOT block signals
+- When switched to `"ENFORCE"` → signals below `min_objective_score` will be blocked with `OBJECTIVE_GATE_BLOCKED`
+- Engine can also fail-close with `OBJECTIVE_ENGINE_FAIL_CLOSED` if computation errors occur
+
+### Fallback
+- `objective: null` → engine disabled, all signals pass
+- **Category:** Optional config (Pydantic `Optional[None]`)
+
+---
+
+## 14i. Handler FSM Event Wiring
+
+> **Source:** `MeanReversionHandler.register()` (handler.py:353-396)
+
+### Registered Event Listeners
+
+| Event | Handler Method | Purpose |
+|---|---|---|
+| `CMD:PROCESS_STRATEGY` | `_on_process_strategy()` | **Primary decision trigger**. Only path that produces signals. |
+| `EVT:BAR_CLOSED` | `_on_bar_closed_data_only()` | Data-only (no-op currently). Kept for compatibility. |
+| `EVT:REGIME_DETECTED` | `_on_regime_detected()` | Caches per-symbol regime, confidence, timestamp |
+| `EVT:TRADE_EXECUTED` | `_on_trade_executed()` | Tracks position qty, close timestamps, reentry events |
+| `EVT:PORTFOLIO_STATE_UPDATED` | `_on_portfolio_state_updated()` | Caches latest portfolio for objective engine |
+| `EVT:PORTFOLIO_STATE_UPDATED` | `_on_portfolio_clean_start_check()` | Separate listener for clean start validation |
+| `EVT:EXPOSURE_SUMMARY_UPDATED` | `_on_exposure_summary_updated()` | Caches exposure summary for objective engine |
+| `EVT:ORDER_STATE_CHANGED` | `_on_order_state_changed()` | Tracks CANCELED/EXPIRED/REJECTED orders (objective) |
+| `EVT:TRADE_INTENT_REJECTED` | `_on_trade_intent_rejected()` | Tracks downstream rejections (objective) |
+
+### Key Invariant
+- **Only `CMD:PROCESS_STRATEGY` produces signals.** All other listeners are data caching only. No other event triggers decision logic.
+
+---
+
+## 14j. Handler Runtime State Caches
+
+> **Source:** `MeanReversionHandler.__init__()` (handler.py:200-319)
+
+### Per-Symbol Caches
+
+| Cache | Type | Purpose | Populated By |
+|---|---|---|---|
+| `_strategies` | `Dict[str, MeanReversion1mStrategy]` | Per-symbol strategy instance (isolated) | `_init_strategies()` |
+| `_per_symbol_regime` | `Dict[str, str]` | Last detected regime | `_on_regime_detected()` |
+| `_regime_ts_ms` | `Dict[str, int]` | Regime detection timestamp | `_on_regime_detected()` |
+| `_regime_confidence` | `Dict[str, float]` | Regime confidence score | `_on_regime_detected()` |
+| `_last_cmd_features` | `Dict[str, Dict]` | Features from last CMD | `_on_process_strategy()` |
+| `_last_cmd_price_motion` | `Dict[str, Dict]` | Price motion from last CMD (top-level) | `_on_process_strategy()` |
+| `_tfi_ema` | `Dict[str, float]` | Smoothed TFI per symbol | `_check_microstructure_veto()` |
+| `_tfi_bar_count` | `Dict[str, int]` | TFI warmup bar count | `_check_microstructure_veto()` |
+| `_funding_rate` | `Dict[str, float]` | Cached funding rate per symbol | features / market data |
+| `_liquidity_kappa_map` | `Dict[str, Decimal]` | Cached kappa per symbol | FE features |
+| `_position_qty` | `Dict[str, Decimal]` | Current position quantity | `_on_trade_executed()` |
+| `_last_close_ts` | `Dict[str, int]` | Last position close timestamp | `_on_trade_executed()` |
+| `_signal_counts` | `Dict[str, int]` | Signal emission counter | `_emit_signal()` |
+| `_last_signal_time` | `Dict[str, float]` | Last emission time | `_emit_signal()` |
+| `_last_block_reason` | `Dict[str, str]` | Last block reason (throttling) | `_emit_strategy_blocked()` |
+| `_last_block_ts_ms` | `Dict[str, int]` | Last block timestamp | `_emit_strategy_blocked()` |
+| `_analytics_restore_snapshots` | `Dict[str, Snapshot]` | Analytics restore state | `apply_runtime_analytics_restore_snapshot()` |
+
+### Config Resolution Caches (set once at init)
+
+| Cache | Type | Purpose |
+|---|---|---|
+| `_microstructure_veto_configs` | `Dict[str, Config]` | Resolved V1 config per symbol (global → per-asset) |
+| `_directional_bias_configs` | `Dict[str, Config]` | Resolved V2 config per symbol (global → per-asset) |
+
+### Objective Engine Caches
+
+| Cache | Type | Purpose |
+|---|---|---|
+| `_latest_portfolio` | `Dict / None` | Latest portfolio state |
+| `_latest_exposure_summary` | `Dict / None` | Latest exposure summary |
+| `_objective_blocked_ts_ms` | `Dict[str, deque[int]]` | Blocked event timestamps |
+| `_objective_cancel_replace_ts_ms` | `Dict[str, deque[int]]` | Cancel/expire timestamps |
+| `_objective_reentry_ts_ms` | `Dict[str, deque[int]]` | Reentry event timestamps |
+
+### Stats Counters
+
+```python
+_stats = {
+    "ticks_seen", "ticks_dropped_missing_ts", "ticks_dropped_out_of_order",
+    "ticks_dropped_invalid_price", "bars_completed", "signals_emitted",
+    "neutral_bars", "bar_logging_errors", "tick_processing_errors",
+    "regime_processing_errors", "bars_received", "bars_rejected_wrong_tf",
+    "bars_rejected_missing_tf", "bars_rejected_missing_bar"
+}
+```
+
+---
+
 ## 15. Defaults vs Fallbacks vs Hardcoded Policies
 
 > Full matrix: `reports/MR_DEFAULTS_FALLBACKS_MATRIX.md`
@@ -807,13 +1045,13 @@ Blocks MR fades when price has already drifted significantly in the same directi
 
 | Category | Count | Examples |
 |---|---|---|
-| **YAML default** (operator-configurable) | ~30 core params + per-asset | `bb_window`, `entry_threshold`, `timeframe_sec` |
-| **Pydantic default** (configurable, has fallback) | 6 | `confidence_base`, `confidence_bb_slope`, `confidence_rsi_bonus`, `system_stress_policy`, `score_multiplier`, `tfi_ema_span` |
-| **Required / no default** | ~15 | `enabled`, `timeframe_sec`, `bb_window`, `entry_threshold`, `allowed_regimes` |
-| **Runtime fallback** | 5 | Per-asset strategy overrides (`None` → global), per-asset liquidity/veto/bias (`None` → global) |
+| **YAML default** (operator-configurable) | ~35 core params + per-asset + objective + regime_sizing | `bb_window`, `entry_threshold`, `timeframe_sec`, `objective.regimes.*` |
+| **Pydantic default** (configurable, has fallback) | 8 | `confidence_base`, `confidence_bb_slope`, `confidence_rsi_bonus`, `system_stress_policy`, `stress_attenuation_factor`, `score_multiplier`, `tfi_ema_span`, `kappa_max` |
+| **Required / no default** | ~18 | `enabled`, `timeframe_sec`, `bb_window`, `entry_threshold`, `allowed_regimes`, `position_mode`, `kappa_min` |
+| **Runtime fallback** | 10+ | Per-asset strategy overrides (`None` → global), per-asset liquidity/veto/bias (`None` → global), `squeeze_expansion_veto` (None→disabled), `momentum_separation_veto` (None→disabled), `flat_low_short_min_bb_width` (None→disabled), `leverage` (None→no mgmt), `objective` (None→disabled) |
 | **Graceful degradation** | 2 | Missing funding → static split thresholds; invalid funding → same |
-| **Fail-closed** | 6 | Missing TFI, invalid TFI, zero-range bar, ambiguous case, missing OBI (when enabled), missing price_motion + adverse TFI |
-| **Hardcoded policy** | 8 | OBI confirm-only, EMA formula, return key selection, absorption OR logic, clamp formula, per-symbol isolation, transient clearing, price_motion top-level contract |
+| **Fail-closed** | 7 | Missing TFI, invalid TFI, zero-range bar, ambiguous case, missing OBI (when enabled), missing price_motion + adverse TFI, missing liquidity kappa (when gate enabled) |
+| **Hardcoded policy** | 9 | OBI confirm-only, EMA formula, return key selection, absorption OR logic, clamp formula, per-symbol isolation, transient clearing, price_motion top-level contract, CMD:PROCESS_STRATEGY as sole signal trigger |
 | **Dormant default** | 4 | `microstructure_veto.enabled: false`, `directional_bias.enabled: false`, disabled assets (BTC/XRP/ETH/SOL) |
 
 ### Key Distinctions for Operators
@@ -823,6 +1061,10 @@ Blocks MR fades when price has already drifted significantly in the same directi
 3. **OBI confirm-only is a code policy, NOT a config knob.** `obi_confirm_enabled` controls whether OBI is consulted, but OBI can never be the sole veto driver regardless of config.
 4. **Per-asset overrides are runtime fallbacks.** `None` in per-asset means "use global". This is not a default — it's a two-level resolution chain.
 5. **`MRStrategyConfig` dataclass defaults are test-only.** Production never uses them; handler always injects explicit YAML values.
+6. **Squeeze/momentum veto configs are per-asset only.** There is no global squeeze or momentum veto. `None` means disabled, not "use global".
+7. **Missing liquidity kappa is fail-closed** when gate is enabled. Handler blocks signal without crashing.
+8. **Objective engine in OBSERVE mode is a no-op for blocking.** Score is computed and logged but does not gate signals. Only `ENFORCE` mode blocks.
+9. **Safety gates are OFF for MR by design.** Directional sanity gates would contradict the counter-trend nature of mean reversion.
 
 ---
 

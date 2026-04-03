@@ -1,21 +1,31 @@
 
+"""Append-only mean-reversion bar logs for operator inspection and forensics.
+
+This logger is called from MeanReversionHandler after a bar has already been
+evaluated. It must never influence the trading decision path; write failures are
+logged and swallowed so signal generation can continue.
+"""
+
+import json
 import logging
 import os
-import json
 import time
 from decimal import Decimal
-from typing import Any, Dict, Optional
-from logging.handlers import RotatingFileHandler
+from typing import Any, Dict
 
 from apps.reference.shared.types import Bar
 
 
+LOG = logging.getLogger(__name__)
+
+
 class MeanReversionBarLogger:
     """
-    Dedicated logger for Mean Reversion strategy bars.
-    Writes to:
-    - logs/mean_reversion/bars_{timeframe}s.tsv (Human readable)
-    - logs/mean_reversion/bars_{timeframe}s.jsonl (Machine readable)
+    Persist completed mean-reversion bars in TSV and JSONL sidecars.
+
+    The TSV file is a compact operator-facing summary with a fixed set of
+    columns. The JSONL file keeps the richer per-bar payload needed for later
+    forensic inspection.
     """
 
     def __init__(self, timeframe_sec: int):
@@ -31,19 +41,8 @@ class MeanReversionBarLogger:
         # Initialize TSV header if file is empty/new
         self._init_tsv_header()
 
-        # We handle file IO directly or via logging?
-        # User requested logging.FileHandler. Let's use a standard implementation
-        # but wrapper for easy "log_bar" interface.
-        # Actually, for dual format, simple file appending might be cleaner than
-        # wrestling with Python logging formatters for two different files
-        # unless we setup two loggers. Let's use direct appending for simplicity
-        # and control, or two specific loggers.
-        # Plan said specific logger. Let's try to be consistent with system patterns.
-
-        # However, for CSV/TSV, simple append is very robust.
-        pass
-
     def _init_tsv_header(self):
+        """Create the TSV header once per file, preserving append-only writes."""
         if not os.path.exists(self.tsv_path) or os.path.getsize(self.tsv_path) == 0:
             with open(self.tsv_path, "a", encoding="utf-8") as f:
                 # Time | Symbol | O | H | L | C | V | BB_U | BB_L | RSI | Signal | Reason | Regime
@@ -60,20 +59,15 @@ class MeanReversionBarLogger:
         context: Dict[str, Any]
     ) -> None:
         """
-        Log a completed bar with context.
+        Log one completed bar plus the already-computed strategy context.
 
-        context should contain:
-        - generated_ts_ms (int)
-        - signal_type (str: LONG/SHORT/NEUTRAL)
-        - reason (str)
-        - bb (dict: upper, mid, lower, width, pct_b)
-        - rsi (float/decimal)
-        - atr (float/decimal)
-        - regime (str)
-        - mr_params (dict)
+        Expected context keys come from MeanReversionHandler._log_bar(). Only a
+        compact subset is written to TSV: ``bb.upper``, ``bb.lower``, ``rsi``,
+        signal type, reason, and regime. The JSONL record keeps the broader
+        indicator payload and optional mean-reversion parameters.
         """
         try:
-            ts_str = time.strftime('%Y-%m-%d %H:%M:%S',
+            ts_str = time.strftime("%Y-%m-%d %H:%M:%S",
                                    time.gmtime(bar.end_ts_ms / 1000.0))
 
             # Extract basic data
@@ -85,9 +79,9 @@ class MeanReversionBarLogger:
 
             # Extract context
             bb = context.get("bb") or {}
-            bb_u_val = bb.get('upper')
+            bb_u_val = bb.get("upper")
             bb_u = f"{Decimal(str(bb_u_val)):.4f}" if bb_u_val is not None else ""
-            bb_l_val = bb.get('lower')
+            bb_l_val = bb.get("lower")
             bb_l = f"{Decimal(str(bb_l_val)):.4f}" if bb_l_val is not None else ""
 
             rsi_val = context.get("rsi")
@@ -132,8 +126,7 @@ class MeanReversionBarLogger:
             with open(self.jsonl_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(json_record) + "\n")
 
-        except Exception as e:
+        except Exception as exc:
             # Fallback to standard logging if something explodes
             # (Don't want logging to crash the strategy)
-            logging.getLogger(__name__).error(
-                f"Failed to log bar for {symbol}: {e}")
+            LOG.error("Failed to log bar for %s: %s", symbol, exc)

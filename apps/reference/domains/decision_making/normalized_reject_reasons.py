@@ -1,8 +1,16 @@
-"""
-Normalized Reject Reasons (NRR) module.
+"""Canonical normalized reject-reason surface for decision-making paths.
 
-Provides standardized error codes and normalization logic for consistent
-error handling across the trading system.
+This module is the SSOT for class-level NRR codes used directly by
+decision_making and adjacent domains. It also provides two helper surfaces:
+
+- ``normalize()`` collapses raw reject strings, short helper codes, and
+    already-normalized NRR strings onto a canonical NRR code;
+- ``get_description()`` returns optional operator-facing text for codes that
+    currently have a local description entry.
+
+The module does not emit events or persist diagnostics on its own. Its job is
+to keep the reject taxonomy stable and deterministic for callers that already
+chose to reject, defer, or classify an outcome.
 """
 
 import re
@@ -10,11 +18,15 @@ from typing import Optional
 
 
 class NormalizedRejectReasons:
-    """
-    Maps raw error messages to standardized NRR codes for analytics and debugging.
+    """Canonical NRR codes plus normalization helpers.
+
+    Most consumers use the class attributes directly as stable reason codes.
+    ``normalize()`` exists for compatibility paths where callers still provide
+    free-text messages or local helper codes instead of the final NRR value.
     """
 
-    # NRR Code definitions
+    # Canonical class-level codes. Tests guard both identity and format because
+    # this class is treated as the single source of truth across domains.
     INSUFFICIENT_BALANCE = "NRR-001"
     INVALID_ORDER_PARAMS = "NRR-002"
     MARKET_CLOSED = "NRR-003"
@@ -85,7 +97,6 @@ class NormalizedRejectReasons:
     # DM-SAFETY-BYPASSES-P1: Fail-closed exposure cache and safety gates config
     EXPOSURE_CACHE_UNAVAILABLE = "NRR-053"
     CONFIG_SAFETY_GATES_MISSING = "NRR-054"
-    CONFIG_SAFETY_GATES_MISSING = "NRR-054"
     # Phase 5: Execution Gates
     HARD_VETO_BLOCKED = "NRR-055"
     SHIELD_INVARIANT_VIOLATED = "NRR-056"
@@ -97,7 +108,8 @@ class NormalizedRejectReasons:
     MICROSTRUCTURE_VETO = "NRR-060"
     UNKNOWN_ERROR = "NRR-999"
 
-    # Regex patterns for normalization
+    # Regex normalization is intentionally partial: not every NRR constant is
+    # expected to be discovered from arbitrary free-text messages.
     PATTERNS = {
         INSUFFICIENT_BALANCE: [
             r"insufficient.*balance",
@@ -238,23 +250,30 @@ class NormalizedRejectReasons:
     }
 
     @classmethod
-    def normalize(cls, raw_reason: str) -> str:
+    def normalize(cls, raw_reason: Optional[str]) -> str:
         """
-        Normalize a raw reject reason to a standardized NRR code.
+        Normalize a caller-supplied reject reason to a canonical NRR code.
+
+        Supported input shapes:
+        - already-normalized NRR codes, optionally followed by details;
+        - internal short helper codes used by sizing/validation paths;
+        - free-text messages matched against the regex map below.
+
+        Inputs that are empty or cannot be mapped fall back to UNKNOWN_ERROR.
 
         Args:
-            raw_reason: The raw error message from API or system
+            raw_reason: Raw reason string, helper code, or canonical NRR code.
 
         Returns:
-            Standardized NRR code
+            Canonical NRR code
         """
         if not raw_reason:
             return cls.UNKNOWN_ERROR
 
         raw_clean = raw_reason.strip()
 
-        # Idempotency: if the input is already a known NRR code (optionally with extra details),
-        # preserve the canonical numeric code.
+        # Preserve canonical codes first so callers can safely normalize an NRR
+        # value multiple times without drifting into regex-based remaps.
         try:
             all_codes = {
                 v
@@ -272,8 +291,9 @@ class NormalizedRejectReasons:
             if raw_upper_direct == code or raw_upper_direct.startswith(code + ":") or raw_upper_direct.startswith(code + " "):
                 return code
 
-        # Explicit short-code mapping (used by internal sizing/validation helpers).
-        # Keep this before regex so that stable internal codes map deterministically.
+        # Internal helper codes are matched before regex so local validation
+        # reasons map deterministically even when their text also matches a more
+        # generic pattern.
         raw_upper = raw_upper_direct
         short_code_map = {
             "ZERO_QUANTITY": cls.INVALID_ORDER_PARAMS,
@@ -311,7 +331,8 @@ class NormalizedRejectReasons:
             if raw_upper == short_code or raw_upper.startswith(short_code + ":") or raw_upper.startswith(short_code + " "):
                 return nrr_code
 
-        # Prefix-based mapping for DM reasons we want to group under DATA_NOT_READY.
+        # Prefix grouping keeps families of degraded-context reasons stable even
+        # when callers add detail after the shared prefix.
         if raw_upper.startswith("NRR-ARMING-"):
             return cls.DATA_NOT_READY
 
@@ -330,7 +351,10 @@ class NormalizedRejectReasons:
     @classmethod
     def get_description(cls, nrr_code: str) -> Optional[str]:
         """
-        Get human-readable description for an NRR code.
+        Return the local human-readable description for an NRR code.
+
+        Not every canonical code currently has a description entry in this
+        method; callers must handle ``None`` as "no local copy defined".
 
         Args:
             nrr_code: The NRR code

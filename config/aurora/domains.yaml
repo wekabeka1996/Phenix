@@ -357,9 +357,9 @@ feature_engineering:
       min_bars: 200             # Min D1 bars before ready
 
     weights:
-      tactician: 0.45           # M15 weight in pillar sum
+      tactician: 0.60           # M15 weight in pillar sum
       operator: 0.25            # H4 weight (balanced signal)
-      strategist: 0.30          # D1 weight in pillar sum
+      strategist: 0.15          # D1 weight in pillar sum
 
     backfill:
       enabled: true             # Enable backfill at live startup

@@ -1,38 +1,32 @@
-"""
-Deferred Intent Scheduler for QoS
+"""Schedule one-shot deferred intent retries on the active asyncio loop.
 
-Provides one-time scheduling of deferred intent retries after cooldown periods.
-Prevents infinite defer loops by ensuring maximum one retry per symbol.
+The scheduler is intentionally narrow: it stores at most one pending retry per
+symbol, fires the callback once, and then drops its own handle. It does not own
+its own event loop, persist retries, or reschedule repeated defers.
 """
 
 import asyncio
 import logging
-import time
-from typing import Dict, Callable
+from typing import Callable, Dict
 
 log = logging.getLogger(__name__)
 
 
 class DeferredIntentScheduler:
-    """
-    Schedules one-time deferred retries for QoS cooldown scenarios.
-
-    Prevents infinite defer loops by deduplicating retries per symbol.
-    """
+    """Keep one pending deferred retry per symbol on the current event loop."""
 
     def __init__(self) -> None:
         self._tasks: Dict[str, asyncio.TimerHandle] = {}
 
     def schedule_once(self, symbol: str, when_ts_ms: int, cb: Callable[[str], None]) -> None:
-        """
-        Schedule one deferred retry for a symbol.
+        """Schedule a one-shot retry for ``symbol`` at an absolute epoch-ms time.
 
-        Deduplication: maximum one active retry per symbol. If one exists - skip.
-
-        Args:
-            symbol: Trading symbol (e.g., 'BTCUSDT')
-            when_ts_ms: Unix timestamp in milliseconds when to fire
-            cb: Callback function that takes symbol as argument
+        Contract notes:
+        - ``when_ts_ms`` is an absolute Unix timestamp in milliseconds, not a
+          relative cooldown duration.
+        - if a non-cancelled retry is already pending for the same symbol, the
+          new request is ignored.
+        - if no asyncio loop is running in this thread, the retry is skipped.
         """
         try:
             loop = asyncio.get_running_loop()
@@ -41,7 +35,8 @@ class DeferredIntentScheduler:
                 "DeferredIntentScheduler: no running event loop, skip scheduling")
             return
 
-            # DET-BT-09: Use get_clock() for deterministic backtest
+        # Use the shared clock abstraction so replay/backtest paths and live
+        # paths derive delay from the same timebase contract.
         from apps.reference.core.time import get_clock
         now_ms = get_clock().now_ms()
 
@@ -51,6 +46,7 @@ class DeferredIntentScheduler:
                 "DeferredIntentScheduler: when_ts_ms=%s looks non-epoch-ms; delay may be wrong",
                 when_ts_ms,
             )
+        # Past timestamps degrade to immediate execution instead of negative delay.
         delay = max(0.0, (when_ts_ms - now_ms) / 1000.0)
 
         # Deduplication: if already scheduled and not cancelled - skip
@@ -61,6 +57,8 @@ class DeferredIntentScheduler:
             try:
                 cb(symbol)
             finally:
+                # Cleanup must happen even if the callback raises so later defers
+                # for the same symbol are not blocked forever.
                 self._tasks.pop(symbol, None)
 
         handle = loop.call_later(delay, _fire)
@@ -68,12 +66,12 @@ class DeferredIntentScheduler:
         log.info("Deferred retry scheduled for %s in %.3fs", symbol, delay)
 
     def cancel(self, symbol: str) -> None:
-        """Cancel any pending retry for the symbol."""
+        """Cancel and forget any pending retry handle for ``symbol``."""
         h = self._tasks.pop(symbol, None)
         if h and not h.cancelled():
             h.cancel()
             log.debug("Cancelled deferred retry for %s", symbol)
 
     def get_pending_count(self) -> int:
-        """Get count of currently pending retries."""
+        """Return the number of non-cancelled retry handles still tracked."""
         return len([h for h in self._tasks.values() if not h.cancelled()])

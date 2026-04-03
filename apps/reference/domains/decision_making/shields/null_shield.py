@@ -1,17 +1,8 @@
-"""
-NullShield — Phase 9 Shield Stub.
+"""Transparent shield implementation for no-op or fallback paths.
 
-A transparent shield that passes all signals through
-without attenuation. Used as the default shield when
-no shield cascade is configured (Phase 2).
-
-Phase 3 replaces this with ContextShield, MemoryShield,
-and DangerZoneShield in a cascade.
-
-Contract:
-- Input:  (symbol, features, pillar_sum, raw_exposure)
-- Output: (multiplier: float ∈ [0,1], reasons: List[str])
-- NullShield always returns (1.0, [])
+NullShield preserves the shield interface when the real cascade is disabled,
+empty, or intentionally replaced in tests. It has no side effects and does not
+inspect the incoming features.
 """
 from __future__ import annotations
 
@@ -24,12 +15,7 @@ from apps.reference.domains.decision_making.shields.base import (
 
 
 class NullShield(BaseShield):
-    """
-    Transparent shield — passes everything through.
-
-    Extends BaseShield for cascade compatibility.
-    Always returns multiplier=1.0, no reasons.
-    """
+    """Explicit no-op shield used where a shield object is still required."""
 
     @property
     def name(self) -> str:
@@ -42,7 +28,7 @@ class NullShield(BaseShield):
         pillar_sum: float,
         raw_exposure: float,
     ) -> ShieldResult:
-        """Always returns full pass-through."""
+        """Return a pass-through result with no diagnostic reasons."""
         return ShieldResult(
             multiplier=1.0,
             reasons=[],

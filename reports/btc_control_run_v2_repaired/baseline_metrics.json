@@ -1,0 +1,107 @@
+{
+  "input_source": "recorder-features-v2",
+  "evidence_tier": "production-aligned",
+  "symbols": {
+    "BTCUSDT": {
+      "surface": {
+        "symbol": "BTCUSDT",
+        "signal_threshold": {
+          "value": 0.162
+        },
+        "regime_thresholds": {
+          "DEFAULT": 99.0,
+          "HIGH_VOLATILITY": 0.18,
+          "LOW_VOLATILITY": 0.12,
+          "MEAN_REVERSION": 0.07,
+          "TREND_DOWN": 0.1,
+          "TREND_UP": 0.1,
+          "UNCERTAIN": 99.0
+        },
+        "signal_threshold_source": "global_decision",
+        "signal_threshold_path": "decision.signal_threshold",
+        "regime_threshold_source": "asset_override",
+        "regime_threshold_path": "assets.BTCUSDT.regime_thresholds"
+      },
+      "calibration_target_supported": false,
+      "calibration_target_blockers": [
+        "Current live signal threshold resolves via decision.signal_threshold; candidate emission remains limited to assets.<SYMBOL>.signal_threshold.value and is therefore disabled in this mode."
+      ],
+      "split_date": "2026-03-28",
+      "recorder_bar_count": 8199,
+      "feature_log_audit": {
+        "exists": true,
+        "file_size_mb": 431.148919,
+        "sampled_lines": 20,
+        "sampled_keys": [
+          "absorption",
+          "delta_price",
+          "depth_imbalance",
+          "ema_bias",
+          "large_trade_imbalance",
+          "liquidity_kappa",
+          "macro_resid",
+          "macro_sync",
+          "obi",
+          "price",
+          "spread_bps",
+          "tfi",
+          "volatility_state",
+          "volume_spike",
+          "volume_zscore"
+        ],
+        "has_timestamp_fields": false,
+        "warnings": [
+          "Sampled feature-log keys for BTCUSDT expose no explicit timestamp field; recorder remains the only auditable time axis."
+        ]
+      },
+      "train": {
+        "eligible_bars": 2972,
+        "active_bars": 518,
+        "buy_count": 0,
+        "sell_count": 518,
+        "activation_rate": 0.174293,
+        "max_daily_activation_rate": 0.265152,
+        "mean_forward_bps_1": -0.372448,
+        "mean_forward_bps_3": 1.537664,
+        "hit_rate_1": 0.494208,
+        "hit_rate_3": 0.523166,
+        "p50_abs_score": 0.0,
+        "p75_abs_score": 0.018053,
+        "p80_abs_score": 0.020565,
+        "p90_abs_score": 0.026826,
+        "regime_counts": {
+          "HIGH_VOLATILITY": 53,
+          "LOW_VOLATILITY": 467,
+          "MEAN_REVERSION": 438,
+          "TREND_DOWN": 748,
+          "TREND_UP": 422,
+          "UNCERTAIN": 844
+        }
+      },
+      "validation": {
+        "eligible_bars": 993,
+        "active_bars": 148,
+        "buy_count": 0,
+        "sell_count": 148,
+        "activation_rate": 0.149043,
+        "max_daily_activation_rate": 0.342857,
+        "mean_forward_bps_1": 0.232501,
+        "mean_forward_bps_3": -1.926499,
+        "hit_rate_1": 0.52027,
+        "hit_rate_3": 0.442177,
+        "p50_abs_score": 0.0,
+        "p75_abs_score": 0.022652,
+        "p80_abs_score": 0.025663,
+        "p90_abs_score": 0.030925,
+        "regime_counts": {
+          "HIGH_VOLATILITY": 21,
+          "LOW_VOLATILITY": 187,
+          "MEAN_REVERSION": 107,
+          "TREND_DOWN": 62,
+          "TREND_UP": 195,
+          "UNCERTAIN": 421
+        }
+      }
+    }
+  }
+}
