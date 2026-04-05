@@ -16,6 +16,9 @@ from vfoundation.core.protocol import Message
 from apps.reference.config_models import AuroraConfig
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.telemetry.regime_confidence_audit import (
+    emit_regime_decision_audit,
+)
 from vfoundation.obs.domain_bridge import DomainBridge
 
 from apps.reference.config_contract import ConfigContractError
@@ -147,6 +150,20 @@ class DecisionMaking:
             str(sid): set(str(k) for k in (keys or []) if str(k))
             for sid, keys in (_by_s.items() if isinstance(_by_s, dict) else [])
         }
+        try:
+            _contracts = getattr(
+                dm_cfg, "degraded_context_contracts_by_strategy", {}) or {}
+        except Exception:
+            _contracts = {}
+        self._degraded_context_contracts_by_strategy: dict = {}
+        if isinstance(_contracts, dict):
+            for sid, contract in _contracts.items():
+                enabled = bool(getattr(contract, "enabled", False))
+                keys_raw = list(getattr(contract, "critical_keys", []) or [])
+                self._degraded_context_contracts_by_strategy[str(sid)] = {
+                    "enabled": enabled,
+                    "critical_keys": set(str(k) for k in keys_raw if str(k)),
+                }
 
         sizing_cfg = dm_cfg.position_sizing
         self.min_pos_size_usd = decimal.Decimal(
@@ -213,7 +230,8 @@ class DecisionMaking:
             lambda: (self._exposure_cache, self._exposure_cache_timestamp),
             self._emit_intent_deferred_v1, self._record_blocked_intent,
             self._fail_closed_on_degraded_context, self._degraded_context_critical_keys,
-            self._degraded_context_critical_keys_by_strategy, self.logger)
+            self._degraded_context_critical_keys_by_strategy, self.logger,
+            degraded_context_contracts_by_strategy=self._degraded_context_contracts_by_strategy)
         self._emitter = IntentEmitter(
             self.fsm, self._clock, self.config, self.alert_manager,
             lambda: self.latest_portfolio,
@@ -348,6 +366,7 @@ class DecisionMaking:
         reduce_only=False, strategy_id="aurora", decision_ts_ms=None,
         stop_price=None, target_price=None, entry_plan_trace=None,
         tf_sec=None, max_slippage_bps=None, max_latency_ms=None, risk_score=None,
+        tpsl_owner_ctx=None,
         strategy_trace=None,
     ):
         """Run safety-gate glue and forward allowed intents to IntentBuilder.
@@ -375,7 +394,14 @@ class DecisionMaking:
             self._record_blocked_intent(symbol)
             return
         if sg.outcome == "DENY":
-            self._handle_safety_deny(symbol, side, rid, why_chain, sg)
+            self._handle_safety_deny(
+                symbol,
+                side,
+                rid,
+                why_chain,
+                sg,
+                strategy_id=strategy_id,
+            )
             return
         # After this point the builder owns payload assembly, arbitration, QoS,
         # and intent emission side effects.
@@ -386,10 +412,11 @@ class DecisionMaking:
             stop_price=stop_price, target_price=target_price, entry_plan_trace=entry_plan_trace,
             tf_sec=tf_sec, max_slippage_bps=max_slippage_bps,
             max_latency_ms=max_latency_ms, risk_score=risk_score,
+            tpsl_owner_ctx=tpsl_owner_ctx,
             strategy_trace=strategy_trace,
             normalize_mode=self.normalize_signals_mode, sg=sg)
 
-    def _handle_safety_deny(self, symbol, side, rid, why_chain, sg) -> None:
+    def _handle_safety_deny(self, symbol, side, rid, why_chain, sg, *, strategy_id: str) -> None:
         """Emit best-effort observability for a safety-gate denial."""
         def _g(a, d=None): return getattr(sg, a, d)  # noqa: E731
         trace = {
@@ -403,6 +430,8 @@ class DecisionMaking:
             "gate_outcome": "DENY", "deny_reason": sg.deny_reason,
             "why": (str(_g("why_short", ""))[:80]),
         }
+        if isinstance(_g("regime_provenance"), dict):
+            trace["regime_provenance"] = _g("regime_provenance")
         # Observability is best-effort here: a failed trace emit must not turn a
         # denied decision into a runtime exception.
         try:
@@ -413,18 +442,46 @@ class DecisionMaking:
                 "EVT:DECISION_TRACE_EMITTED emit failed", exc_info=True)
         side_u = str(side).upper() if str(
             side).upper() in ("BUY", "SELL") else "NONE"
-        # Mirror the denial into ORDER_REJECTED telemetry for downstream audits
-        # that inspect the order journal rather than the decision event stream.
+        # Mirror the denial into an explicitly decision-local journal row so it
+        # does not masquerade as canonical execution/runtime ORDER_REJECTED.
         try:
             order_logger.write({
-                "rid": rid, "event_type": "ORDER_REJECTED", "symbol": symbol, "side": side_u,
+                "rid": rid, "event_type": "DECISION_INTENT_REJECTED", "symbol": symbol, "side": side_u,
+                "origin_class": "decision_alias",
                 "nrr_code": str(sg.deny_reason) if sg.deny_reason else None,
+                "regime": _g("regime"),
+                "regime_confidence": _g("regime_confidence"),
+                "regime_provenance": _g("regime_provenance") if isinstance(_g("regime_provenance"), dict) else None,
                 "why": f"SAFETY_GATES:{_g('why_short', '')}", "source_fsm": "DecisionMaking",
-                "metadata": {"reject_reason": "SAFETY_GATES_DENY", "deny_reason": sg.deny_reason},
+                "metadata": {
+                    "reject_reason": "SAFETY_GATES_DENY",
+                    "deny_reason": sg.deny_reason,
+                    "canonical_event_family": "TRADE_INTENT_REJECTED",
+                    "alias_of": "TRADE_INTENT_REJECTED",
+                    "min_regime_confidence": _g("min_regime_confidence"),
+                    "threshold_applied": _g("threshold_applied"),
+                    "threshold_verdict": _g("threshold_verdict"),
+                    "threshold_reason": _g("threshold_reason"),
+                },
             })
         except Exception:
             self.logger.debug(
                 "order_logger.write failed in _handle_safety_deny", exc_info=True)
+        try:
+            emit_regime_decision_audit(
+                logger=self.logger,
+                symbol=str(symbol),
+                rid=str(rid),
+                lifecycle_id=None,
+                strategy_id=str(strategy_id),
+                sg=sg,
+                outcome="DENY",
+            )
+        except Exception:
+            self.logger.debug(
+                "REGIME_AUDIT decision emit failed in _handle_safety_deny",
+                exc_info=True,
+            )
         self._record_blocked_intent(symbol)
 
     def _get_risk_skew_config(self, key: str) -> Any:

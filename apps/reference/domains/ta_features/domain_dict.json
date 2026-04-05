@@ -1,0 +1,69 @@
+{
+  "domain_name": "ta_features",
+  "version": "1.1.0",
+  "description": "Isolated bar-based TA core. Subscribes to EVT:BAR_CLOSED, computes 8 technical indicators on every configured bar, and emits EVT:TA_FEATURES_CALCULATED with explicit readiness semantics instead of dropping pre-warmup state.",
+  "owner": "aurora",
+  "status": "active",
+  "imports": [
+    {
+      "event_name": "EVT:BAR_CLOSED",
+      "source_domain": "market_data",
+      "description": "Canonical OHLCV bar close events from BarAggregator."
+    }
+  ],
+  "exports": [
+    {
+      "event_name": "EVT:TA_FEATURES_CALCULATED",
+      "target_domains": [
+        "alpha_search"
+      ],
+      "schema": "schemas/ta_features_calculated_v1.json",
+      "description": "Flat TA payload with explicit warmup state for consumers that want separate TA provenance."
+    }
+  ],
+  "components": [
+    {
+      "name": "ta_features.py",
+      "role": "Runtime FSM handler that buffers bars, computes TA features, emits EVT:TA_FEATURES_CALCULATED, and writes JSONL diagnostics."
+    },
+    {
+      "name": "calculators.py",
+      "role": "Pure TA math helpers and neutral fallbacks for insufficient history."
+    },
+    {
+      "name": "bar_buffer.py",
+      "role": "Per-(symbol, tf_sec) rolling OHLCV buffer."
+    },
+    {
+      "name": "contracts.py",
+      "role": "Shared TA event constants and feature-vector extraction helpers for downstream consumers."
+    }
+  ],
+  "feature_families": {
+    "ta_core": [
+      "bb_position",
+      "bb_width",
+      "rsi_14",
+      "price_sma_20_deviation",
+      "volume_sma_ratio",
+      "stoch_k",
+      "stoch_d",
+      "price_momentum_5m"
+    ]
+  },
+  "side_effects": [
+    {
+      "type": "file_write",
+      "path": "logs/ta_features/{SYMBOL}.jsonl",
+      "description": "Per-symbol JSONL log of each TA calculation (rotating according to config.domains.ta_features log settings)."
+    }
+  ],
+  "ssot_notes": {
+    "config": "config/aurora/domains.yaml -> config.domains.ta_features",
+    "event_contract": "apps/reference/dictionaries/verb_registry_v1.yaml",
+    "schema": "apps/reference/domains/ta_features/schemas/ta_features_calculated_v1.json",
+    "warmup_semantics": "EVT:TA_FEATURES_CALCULATED is emitted for every configured bar. Consumers must read is_warm together with warm_up_bars and required_warm_up_bars instead of inferring readiness from missing events.",
+    "coexistence": "ta_features is a separate TA event plane. feature_engineering remains its own contract and ta_features does not co-emit into EVT:FEATURES_CALCULATED.",
+    "hidden_config_policy": "config/ta_features.yaml is retired. No side-loaded ta_features config is allowed."
+  }
+}

@@ -184,8 +184,13 @@ async def test_handle_order_timeout_success(mock_emit, entry_manager, fsm):
     deadline = MockDeadline("BTCUSDT", "o1")
     fsm.adapter.cancel_order.return_value = {"status": "CANCELED"}
     fsm._is_cancel_success_response.return_value = True
-    
-    await entry_manager.handle_order_timeout(deadline)
+
+    lifecycle = MagicMock()
+    with patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
+    ):
+        await entry_manager.handle_order_timeout(deadline)
     
     assert fsm.watchdog.cancel_attempt_count == 1
     assert fsm.watchdog.cancel_success_count == 1
@@ -193,6 +198,10 @@ async def test_handle_order_timeout_success(mock_emit, entry_manager, fsm):
     mock_emit.assert_called_once()
     emitted = mock_emit.call_args[0][1]
     assert emitted.verb == "ORDER_TIMEOUT"
+    lifecycle.on_cancel.assert_called_once_with(
+        rid="test_rid",
+        cancel_reason="timeout_cancellation",
+    )
 
 @pytest.mark.asyncio
 @patch("vfoundation.core.fsm_emit_compat.emit_compat", new_callable=AsyncMock)
@@ -221,10 +230,19 @@ async def test_handle_order_timeout_unknown_order(mock_emit, entry_manager, fsm)
     deadline = MockDeadline("BTCUSDT", "o1")
     fsm.adapter.cancel_order.side_effect = Exception("-2011 Unknown Order")
     fsm._is_unknown_order_error.return_value = True
-    
-    await entry_manager.handle_order_timeout(deadline)
+
+    lifecycle = MagicMock()
+    with patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
+    ):
+        await entry_manager.handle_order_timeout(deadline)
     # Counts as success
     assert fsm.watchdog.cancel_success_count == 1
+    lifecycle.on_cancel.assert_called_once_with(
+        rid="test_rid",
+        cancel_reason="timeout_cancel_idempotent",
+    )
 
 @pytest.mark.asyncio
 @patch("vfoundation.core.fsm_emit_compat.emit_compat", new_callable=AsyncMock)

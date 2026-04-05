@@ -10,6 +10,18 @@ import decimal
 import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from .tpsl_owner import (
+    TPSL_OWNER_LOSS_ATR_UNAVAILABLE,
+    TPSL_OWNER_LOSS_CONFIG_ERROR,
+    TPSL_OWNER_LOSS_DISABLED_OR_MISSING,
+    TPSL_OWNER_LOSS_INVALID_INPUT,
+    TPSL_OWNER_LOSS_SL_MIN_DIST_BPS,
+    TPSL_OWNER_LOSS_SL_WRONG_SIDE,
+    TPSL_OWNER_LOSS_TP_MIN_DIST_BPS,
+    TPSL_OWNER_LOSS_TP_WRONG_SIDE,
+    TPSL_OWNER_LOSS_UNSUPPORTED_MODE,
+)
+
 if TYPE_CHECKING:
     from apps.reference.domains.decision_making.aurora_handler import SymbolState
 
@@ -28,6 +40,12 @@ class AuroraTpslMixin:
     Side effects are limited to logging; successful methods return computed
     prices and telemetry dictionaries.
     """
+
+    def _set_tpsl_owner_loss_reason(self, reason: Optional[str]) -> None:
+        self._tpsl_owner_loss_reason = reason
+
+    def _get_tpsl_owner_loss_reason(self) -> Optional[str]:
+        return getattr(self, "_tpsl_owner_loss_reason", None)
 
     # ------------------------------------------------------------------
     # ATR Volatility accessor (co-located because _compute_tpsl_atr needs it)
@@ -105,15 +123,23 @@ class AuroraTpslMixin:
         This method only computes candidate prices. Downstream code decides
         whether a None result means "emit without TP/SL" or "block signal".
         """
+        self._set_tpsl_owner_loss_reason(None)
+
         if instr_cfg is None:
+            self._set_tpsl_owner_loss_reason(
+                TPSL_OWNER_LOSS_DISABLED_OR_MISSING)
             return None
 
         exit_cfg = getattr(instr_cfg, "exit", None)
         if exit_cfg is None:
+            self._set_tpsl_owner_loss_reason(
+                TPSL_OWNER_LOSS_DISABLED_OR_MISSING)
             return None
 
         regime_tpsl_cfg = getattr(exit_cfg, "regime_tpsl", None)
         if regime_tpsl_cfg is None or not getattr(regime_tpsl_cfg, "enabled", False):
+            self._set_tpsl_owner_loss_reason(
+                TPSL_OWNER_LOSS_DISABLED_OR_MISSING)
             return None
 
         tp_cfg = getattr(instr_cfg, "take_profit", None)
@@ -122,9 +148,11 @@ class AuroraTpslMixin:
         # entry/exit decisions, not just the raw detector regime.
         state = self._symbol_states.get(symbol)
         if state is None:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             self.logger.warning("[%s] Unknown symbol for regime TP/SL", symbol)
             return None
         if entry_price <= 0:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             self.logger.error(
                 "[%s] Invalid entry_price for TP/SL: %s", symbol, entry_price
             )
@@ -155,6 +183,7 @@ class AuroraTpslMixin:
                 features=features,
             )
         else:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_UNSUPPORTED_MODE)
             self.logger.warning(
                 f"[{symbol}] Unknown regime_tpsl mode: {mode}, skipping")
             return None
@@ -172,6 +201,8 @@ class AuroraTpslMixin:
             result=result,
             regime_tpsl_cfg=regime_tpsl_cfg,
         )
+        if result is not None:
+            self._set_tpsl_owner_loss_reason(None)
 
         return result
 
@@ -192,9 +223,12 @@ class AuroraTpslMixin:
 
         FAIL-CLOSED: Requires explicit sl_pct and tp_low_ratio in config.
         """
+        self._set_tpsl_owner_loss_reason(None)
+
         # Get base values (FAIL-CLOSED: no silent defaults)
         sl_pct_raw = getattr(exit_cfg, "sl_pct", None)
         if sl_pct_raw is None:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_CONFIG_ERROR)
             self.logger.error(
                 "TPSL_CONFIG_ERROR: exit.sl_pct is required for regime_tpsl pct_mult mode. "
                 "Add explicit sl_pct to instrument config."
@@ -205,6 +239,7 @@ class AuroraTpslMixin:
         tp_low_ratio_raw = getattr(
             tp_cfg, "tp_low_ratio", None) if tp_cfg else None
         if tp_low_ratio_raw is None:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_CONFIG_ERROR)
             self.logger.error(
                 "TPSL_CONFIG_ERROR: take_profit.tp_low_ratio is required for regime_tpsl pct_mult mode. "
                 "Add explicit tp_low_ratio to instrument config."
@@ -217,6 +252,7 @@ class AuroraTpslMixin:
         tp_mult_map = dict(getattr(regime_tpsl_cfg, "tp_mult", None) or {})
 
         if "DEFAULT" not in sl_mult_map or "DEFAULT" not in tp_mult_map:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_CONFIG_ERROR)
             self.logger.error(
                 f"TPSL_CONFIG_ERROR: sl_mult and tp_mult must have 'DEFAULT' key. "
                 f"Got sl_mult keys: {list(sl_mult_map.keys())}, tp_mult keys: {list(tp_mult_map.keys())}"
@@ -241,8 +277,10 @@ class AuroraTpslMixin:
             stop_price = entry_price * (1 + sl_pct_dec)
             target_price = entry_price * (1 - tp_dist_pct)
         else:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             return None
 
+        self._set_tpsl_owner_loss_reason(None)
         return {
             "stop_price": stop_price,
             "target_price": target_price,
@@ -276,9 +314,12 @@ class AuroraTpslMixin:
         FAIL-CLOSED at the TP/SL layer: requires ATR input and explicit config
         maps. Missing ATR disables TP/SL injection for this path.
         """
+        self._set_tpsl_owner_loss_reason(None)
+
         # Get ATR (strict, no fallbacks)
         atr = self._get_volatility_strict(symbol, features)
         if atr is None or atr == 0:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_ATR_UNAVAILABLE)
             self.logger.warning(
                 f"[{symbol}] ATR missing for regime_tpsl atr mode, skipping TP/SL injection")
             return None
@@ -292,12 +333,14 @@ class AuroraTpslMixin:
         rr_map = dict(getattr(regime_tpsl_cfg, "rr_by_regime", None) or {})
 
         if "DEFAULT" not in sl_k_map:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_CONFIG_ERROR)
             self.logger.error(
                 f"[{symbol}] TPSL_CONFIG_ERROR: sl_k_atr must have 'DEFAULT' key for atr mode. "
                 f"Got keys: {list(sl_k_map.keys())}"
             )
             return None
         if "DEFAULT" not in rr_map:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_CONFIG_ERROR)
             self.logger.error(
                 f"[{symbol}] TPSL_CONFIG_ERROR: rr_by_regime must have 'DEFAULT' key for atr mode. "
                 f"Got keys: {list(rr_map.keys())}"
@@ -319,8 +362,10 @@ class AuroraTpslMixin:
             stop_price = entry_price * (1 + sl_pct_eff)
             target_price = entry_price * (1 - sl_pct_eff * rr)
         else:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             return None
 
+        self._set_tpsl_owner_loss_reason(None)
         return {
             "stop_price": stop_price,
             "target_price": target_price,
@@ -370,6 +415,7 @@ class AuroraTpslMixin:
 
         # Calculate actual SL distance
         if entry_price <= 0:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             self.logger.error(
                 "[%s] Invalid entry_price for TP/SL guardrails: %s", symbol, entry_price
             )
@@ -382,6 +428,7 @@ class AuroraTpslMixin:
             sl_dist_pct = (stop_price - entry_price) / entry_price
             tp_dist_pct = (entry_price - target_price) / entry_price
         else:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_INVALID_INPUT)
             self.logger.error(
                 "[%s] Invalid side for TP/SL guardrails: %r", symbol, side
             )
@@ -389,6 +436,7 @@ class AuroraTpslMixin:
 
         # Validate SL on correct side
         if sl_dist_pct <= 0:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_SL_WRONG_SIDE)
             self.logger.error(
                 f"[{symbol}] TPSL_GUARDRAIL_FAIL: SL on wrong side of entry "
                 f"(side={side}, entry={entry_price}, sl={stop_price})"
@@ -397,6 +445,7 @@ class AuroraTpslMixin:
 
         # Validate TP on correct side
         if tp_dist_pct <= 0:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_TP_WRONG_SIDE)
             self.logger.error(
                 f"[{symbol}] TPSL_GUARDRAIL_FAIL: TP on wrong side of entry "
                 f"(side={side}, entry={entry_price}, tp={target_price})"
@@ -469,12 +518,14 @@ class AuroraTpslMixin:
         min_dist_dec = decimal.Decimal(
             str(min_dist_bps)) / decimal.Decimal("10000")
         if sl_dist_pct < min_dist_dec:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_SL_MIN_DIST_BPS)
             self.logger.error(
                 f"[{symbol}] TPSL_GUARDRAIL_FAIL: SL distance {float(sl_dist_pct)*10000:.1f} bps "
                 f"< min_dist_bps {min_dist_bps}"
             )
             return None
         if tp_dist_pct < min_dist_dec:
+            self._set_tpsl_owner_loss_reason(TPSL_OWNER_LOSS_TP_MIN_DIST_BPS)
             self.logger.error(
                 f"[{symbol}] TPSL_GUARDRAIL_FAIL: TP distance {float(tp_dist_pct)*10000:.1f} bps "
                 f"< min_dist_bps {min_dist_bps}"
@@ -490,6 +541,7 @@ class AuroraTpslMixin:
         tpsl_ctx["sl_pct_post"] = float(sl_dist_pct)
         tpsl_ctx["rr_post"] = float(current_rr)
 
+        self._set_tpsl_owner_loss_reason(None)
         return {
             "stop_price": stop_price,
             "target_price": target_price,

@@ -34,6 +34,65 @@ from typing import Literal
 from pydantic import model_validator
 
 
+class DetectorEventProvenancePayload(BaseModel):
+    """Detector-side regime provenance carried additively into execution."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    event_name: str = Field(..., min_length=1)
+    rid: Optional[str] = Field(default=None)
+    ts_ms: Optional[int] = Field(default=None, ge=0)
+    last_update_ts_ms: Optional[int] = Field(default=None, ge=0)
+    structural_regime_ref: Optional[str] = Field(default=None)
+    basis_tf_sec: Optional[int] = Field(default=None, ge=1)
+    bar_close_ts_ms: Optional[int] = Field(default=None, ge=0)
+    changed: Optional[bool] = Field(default=None)
+    regime: Optional[str] = Field(default=None)
+    confidence: Optional[str] = Field(default=None)
+    stable_confidence: Optional[float | str] = Field(default=None)
+    source_model: Optional[str] = Field(default=None)
+    pre_cutoff_source_model: Optional[str] = Field(default=None)
+    confidence_min: Optional[float | str] = Field(default=None)
+    confidence_max: Optional[float | str] = Field(default=None)
+    pre_cutoff_regime: Optional[str] = Field(default=None)
+    pre_cutoff_confidence: Optional[float | str] = Field(default=None)
+    pre_cutoff_clamped_to_min: Optional[bool] = Field(default=None)
+    pre_cutoff_clamped_to_max: Optional[bool] = Field(default=None)
+    pre_cutoff_boundary_reason: Optional[str] = Field(default=None)
+    uncertain_cutoff: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    demoted_to_uncertain: Optional[bool] = Field(default=None)
+    raw_regime: Optional[str] = Field(default=None)
+    raw_confidence: Optional[float | str] = Field(default=None)
+    raw_boundary_reason: Optional[str] = Field(default=None)
+    hysteresis_bars: Optional[int] = Field(default=None, ge=1)
+    hysteresis_confirm_count: Optional[int] = Field(default=None, ge=0)
+    carried_previous_stable: Optional[bool] = Field(default=None)
+    emitted_confidence_kind: Optional[str] = Field(default=None)
+    reason_summary: Optional[str] = Field(default=None)
+
+
+class CacheSnapshotProvenancePayload(BaseModel):
+    """Cache snapshot truth used by decision_making at intent time."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    cache_write_ts_ms: Optional[int] = Field(default=None, ge=0)
+    regime: Optional[str] = Field(default=None)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class RegimeProvenancePayload(BaseModel):
+    """Strict additive regime provenance block for execution-boundary handoff."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    source_kind: Literal["detector_event", "detector_cache", "unknown"]
+    detector_event: Optional[DetectorEventProvenancePayload] = Field(
+        default=None)
+    cache_snapshot: Optional[CacheSnapshotProvenancePayload] = Field(
+        default=None)
+
+
 class CmdOpenPayload(BaseModel):
     """
     EP-01.4-INT-A: Strict Pydantic model for CMD:OPEN payload validation.
@@ -44,26 +103,52 @@ class CmdOpenPayload(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     # Required fields
-    symbol: str = Field(..., min_length=1, description="Trading symbol (e.g., BTCUSDT)")
+    symbol: str = Field(..., min_length=1,
+                        description="Trading symbol (e.g., BTCUSDT)")
     side: Literal["BUY", "SELL"] = Field(..., description="Order side")
-    qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$", description="Order quantity (string-encoded)")
+    qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$",
+                     description="Order quantity (string-encoded)")
     # ORDER-POLICY-01: REQUIRED. No silent defaults.
-    order_type: Literal["MARKET", "LIMIT"] = Field(..., description="Order type. REQUIRED.")
+    order_type: Literal["MARKET",
+                        "LIMIT"] = Field(..., description="Order type. REQUIRED.")
 
     # Optional fields
-    price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
-    price_ref: Optional[str] = Field(default=None, description="Reference price for checks")
+    price: Optional[str] = Field(
+        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
+    price_ref: Optional[str] = Field(
+        default=None, description="Reference price for checks")
     tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
         default=None,
         description="Time in force. REQUIRED for LIMIT. Must be null for MARKET."
     )
-    valid_for_ms: Optional[int] = Field(default=None, ge=1000, description="Pending entry TTL in ms (LIMIT-only)")
-    stop_price: Optional[str] = Field(default=None, description="Stop-loss price")
-    target_price: Optional[str] = Field(default=None, description="Take-profit price")
-    sl_pct: Optional[str] = Field(default=None, description="Stop-loss percentage")
-    idempotent_key: Optional[str] = Field(default=None, description="Idempotency key")
-    rid: Optional[str] = Field(default=None, description="Request ID for correlation")
-    strategy: Optional[str] = Field(default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
+    valid_for_ms: Optional[int] = Field(
+        default=None, ge=1000, description="Pending entry TTL in ms (LIMIT-only)")
+    stop_price: Optional[str] = Field(
+        default=None, description="Stop-loss price")
+    target_price: Optional[str] = Field(
+        default=None, description="Take-profit price")
+    sl_pct: Optional[str] = Field(
+        default=None, description="Stop-loss percentage")
+    idempotent_key: Optional[str] = Field(
+        default=None, description="Idempotency key")
+    rid: Optional[str] = Field(
+        default=None, description="Request ID for correlation")
+    strategy: Optional[str] = Field(
+        default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
+    regime: Optional[str] = Field(
+        default=None,
+        description="Decision-time structural regime propagated additively to execution.",
+    )
+    regime_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Decision-time regime confidence propagated additively to execution.",
+    )
+    regime_provenance: Optional[RegimeProvenancePayload] = Field(
+        default=None,
+        description="Structured detector/cache provenance for the propagated regime truth.",
+    )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional structured metadata (e.g., strategy/tca/risk context).",
@@ -128,7 +213,8 @@ class OpenFlowFSM:
         self.guard_enabled = guard_enabled
 
         if isinstance(config, dict):
-            raise TypeError("OpenFlowFSM requires typed AuroraConfig, got dict")
+            raise TypeError(
+                "OpenFlowFSM requires typed AuroraConfig, got dict")
         if config is None:
             raise ValueError(
                 f"CRITICAL: {self.__class__.__name__} requires valid AuroraConfig. "
@@ -166,7 +252,8 @@ class OpenFlowFSM:
         # Idempotency window from config - SSOT: domains.execution_position.fsm_open (FAIL-CLOSED)
         try:
             if not hasattr(self.config, 'domains') or not hasattr(self.config.domains, 'execution_position'):
-                raise ValueError("domains.execution_position config is required")
+                raise ValueError(
+                    "domains.execution_position config is required")
             fsm_open_cfg = self.config.domains.execution_position.fsm_open
             if fsm_open_cfg is None or fsm_open_cfg.idempotency_window_sec is None:
                 raise ValueError("fsm_open.idempotency_window_sec is required")
@@ -206,6 +293,7 @@ class OpenFlowFSM:
             }
         )
         return f"{cls._LIMIT_ROUNDING_TRACE_REF_PREFIX}{query}"
+
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config.
 
@@ -227,23 +315,28 @@ class OpenFlowFSM:
                 try:
                     value = Decimal(str(raw))
                 except (InvalidOperation, TypeError, ValueError) as e:
-                    raise ValueError(f"Invalid {field} for {symbol}: {raw!r}") from e
+                    raise ValueError(
+                        f"Invalid {field} for {symbol}: {raw!r}") from e
                 if value <= 0:
-                    raise ValueError(f"Invalid {field} for {symbol}: {raw!r} (must be > 0)")
+                    raise ValueError(
+                        f"Invalid {field} for {symbol}: {raw!r} (must be > 0)")
                 return value
 
             # Pydantic model InstrumentPrecisionSpec fields, convert to Decimal
             # Primary fields (tick_size/step_size are float in canonical model)
             if hasattr(specs, 'tick_size') and specs.tick_size is not None:
-                tick_size = _parse_positive_decimal(specs.tick_size, "tick_size")
+                tick_size = _parse_positive_decimal(
+                    specs.tick_size, "tick_size")
             if hasattr(specs, 'step_size') and specs.step_size is not None:
-                step_size = _parse_positive_decimal(specs.step_size, "step_size")
+                step_size = _parse_positive_decimal(
+                    specs.step_size, "step_size")
 
             # Optional legacy fields (may not be in InstrumentPrecisionSpec)
             if hasattr(specs, 'min_qty') and specs.min_qty is not None:
                 min_qty = _parse_positive_decimal(specs.min_qty, "min_qty")
             if hasattr(specs, 'min_notional') and specs.min_notional is not None:
-                min_notional = _parse_positive_decimal(specs.min_notional, "min_notional")
+                min_notional = _parse_positive_decimal(
+                    specs.min_notional, "min_notional")
 
         return {
             "min_qty": min_qty,
@@ -299,8 +392,10 @@ class OpenFlowFSM:
             # Block ALL new CMD:OPEN when panic_killswitch is explicitly True.
             try:
                 trading = getattr(self.config, "trading", None)
-                ops = getattr(trading, "ops", None) if trading is not None else None
-                panic = getattr(ops, "panic_killswitch", False) if ops is not None else False
+                ops = getattr(trading, "ops",
+                              None) if trading is not None else None
+                panic = getattr(ops, "panic_killswitch",
+                                False) if ops is not None else False
                 if panic is True:
                     self.logger.error(
                         f"PANIC_REJECT: CMD:OPEN blocked - panic_killswitch=true, rid={msg.rid}"
@@ -449,6 +544,9 @@ class OpenFlowFSM:
                     "side": side,
                     "qty": str(qty_dec),
                     "order_type": order_type,
+                    "regime": validated_pld.regime,
+                    "regime_confidence": float(validated_pld.regime_confidence) if validated_pld.regime_confidence is not None else None,
+                    "regime_provenance": validated_pld.regime_provenance.model_dump() if validated_pld.regime_provenance is not None else None,
                 }
                 if tif is not None:
                     dec_pld["tif"] = tif
@@ -591,7 +689,8 @@ class OpenFlowFSM:
             # Get per-instrument execution config
             instruments = self.config.instruments or {}
             specs = instruments.get(symbol)
-            execution_config = getattr(specs, "execution", None) if specs else None
+            execution_config = getattr(
+                specs, "execution", None) if specs else None
 
             if execution_config is not None:
                 leverage_policy = execution_config.leverage_policy
@@ -626,7 +725,8 @@ class OpenFlowFSM:
                 )
             else:
                 # No execution config for this symbol - log but proceed (for non-trading symbols)
-                self.logger.debug(f"No execution config for {symbol}, skipping leverage check")
+                self.logger.debug(
+                    f"No execution config for {symbol}, skipping leverage check")
 
         # All leverage checks passed (or skipped), proceed with sync handler
         return self.handle(msg)

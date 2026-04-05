@@ -4,7 +4,7 @@
 > - **Document path:** `config/docs/AURORA_STRATEGY_CONFIG_PASSPORT.md`
 > - **Audit date:** 2026-03-18
 > - **Audit mode:** Code-driven deep sync
-> - **Major drifts found:** 
+> - **Major drifts found:**
 >   1. `signal_threshold` default shifted from `0.12` to `0.162`.
 >   2. `reentry_cooldown_sec` global default shifted from `60` to `900`.
 >   3. `anti_flat_sigma` shifted from `0.5` to `0.48` and `anti_fomo_sigma` from `4.0` to `10.0`.
@@ -18,6 +18,13 @@
 **CFG-STRATEGY-SSOT-FREEZE-02:** Цей файл — єдине джерело істини для Aurora. Політика не мусить міститися в `trading.yaml` або `domains.yaml`.
 
 **Registry:** Який інструмент призначена Aurora визначає `strategies_registry.assignments` в `strategies.yaml`.
+
+### TP/SL owner truth addendum
+
+- `regime_tpsl` є intended Aurora-local TP/SL owner, але не guaranteed live owner.
+- Якщо Aurora handler не заповнює `price_ctx.stop_price` або `price_ctx.target_price`, фінальний owner переходить на sanctioned fallback `StrategyGateway -> resolve_strategy_entry_prices -> EntryPlan.compute`.
+- TP/SL ownership для Aurora треба читати як conditional runtime truth, а не як singular handler-owned truth.
+- Operator-facing runtime payloads and traces carry additive `tpsl_owner_ctx`, щоб явно показувати intended owner, final owner і owner-loss reason без retune stop math.
 
 ---
 
@@ -194,9 +201,9 @@
       anti_fomo_sigma: 10.0  # Блокує ENTRY if |pm_norm| > 10.0 (extreme impulse)
       motion_window_sec: 300  # 5-хв вікно для обчислення нормалізованого руху
     ```
-    
+
     **Формула:** `pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)`
-    
+
     - `ret_window`: return за цей період
     - `vol_window`: volatility за цей період
     - `k_vol`: volatility scale
@@ -235,7 +242,7 @@
 * **Code Trace:**
     * `apps/reference/domains/decision_making/aurora_scoring_kernel.py`: ~350 — обчислює directional vs strength score
     * `apps/reference/domains/decision_making/aurora_handler.py`: ~300 — валідує наявність усіх features
-* **Математичний вплив:** 
+* **Математичний вплив:**
     ```
     final_score = directional_score * (1 + strength_score * strength_alpha)
     ```
@@ -326,8 +333,8 @@
 
 ---
 
-**Дата аналізу:** 2026-01-27  
-**Версія конфігу:** 1.0.0 (CFG-STRATEGY-SSOT-FREEZE-02)  
+**Дата аналізу:** 2026-01-27
+**Версія конфігу:** 1.0.0 (CFG-STRATEGY-SSOT-FREEZE-02)
 **Статус:** ✅ Актуальний, готовий до production (з OVERRIDE сигналу)
 
 ---

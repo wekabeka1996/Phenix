@@ -868,30 +868,81 @@ class ExposureGuard:
             raise ValueError(f"Invalid order side: '{side}'. Expected one of {allowed_sides}")
 
         if key in self.state.reservations:
-            # Calculate filled margin
-            symbol_leverage = self.resolve_symbol_leverage(
-                symbol) if symbol else Decimal("1")
-            filled_margin = notional_usd / symbol_leverage
-
-            # Move to post-fill hold instead of releasing
-            expiration_ts = get_clock().now_sec() + self.post_fill_hold_ttl_sec
-            self.state.postfill_reservations[key] = {
-                "notional": notional_usd,
-                "margin": filled_margin,
-                "leverage": symbol_leverage,
-                "exp_ts": expiration_ts,
-                "symbol": symbol,
-                "side": side,
-            }
             self.state.reservations.pop(key, None)
             self.state.reservations_ts.pop(key, None)
             self.state.pending_exposure.pop(key, None)
-
-            self.metrics["postfill_hold_active"] = len(
-                self.state.postfill_reservations)
-            self.logger.debug(
-                f"POSTFILL_HOLD: key={key}, notional={notional_usd}, margin={filled_margin}, lev={symbol_leverage}, side={side}, expires={expiration_ts}"
+            self.record_postfill_hold(
+                key=key,
+                notional_usd=notional_usd,
+                symbol=symbol,
+                side=side,
+                notional_source="pending_reservation_fill",
             )
+
+    def record_postfill_hold(
+        self,
+        *,
+        key: str,
+        notional_usd: Decimal,
+        symbol: str,
+        side: str,
+        rid: Optional[str] = None,
+        qty: Optional[Any] = None,
+        ts_ms: Optional[int] = None,
+        notional_source: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Store a canonical post-fill hold shape compatible with expire_stale().
+
+        This is the SSOT writer for postfill_reservations. It keeps the
+        execution-facing metadata (`rid`, `qty`, `ts_ms`) additive, while
+        always writing the exposure fields required by expire_stale() and
+        exposure accounting (`notional`, `margin`, `leverage`, `exp_ts`,
+        `symbol`, `side`).
+        """
+        symbol_key = str(symbol or "").strip()
+        if not symbol_key:
+            raise ValueError("record_postfill_hold requires non-empty symbol")
+
+        side_key = str(side or "").upper()
+        allowed_sides = {"BUY", "SELL", "LONG", "SHORT"}
+        if side_key not in allowed_sides:
+            raise ValueError(f"Invalid order side: '{side}'. Expected one of {allowed_sides}")
+
+        normalized_notional = abs(Decimal(str(notional_usd)))
+        symbol_leverage = self.resolve_symbol_leverage(symbol_key)
+        filled_margin = normalized_notional / symbol_leverage if symbol_leverage else Decimal("0")
+        expiration_ts = get_clock().now_sec() + self.post_fill_hold_ttl_sec
+
+        record: Dict[str, Any] = {
+            "notional": normalized_notional,
+            "margin": filled_margin,
+            "leverage": symbol_leverage,
+            "exp_ts": expiration_ts,
+            "symbol": symbol_key,
+            "side": side_key,
+            "ts_ms": int(get_clock().now_ms() if ts_ms is None else ts_ms),
+        }
+        if rid not in (None, ""):
+            record["rid"] = str(rid)
+        if qty not in (None, ""):
+            record["qty"] = str(qty)
+        if notional_source:
+            record["notional_source"] = str(notional_source)
+
+        self.state.postfill_reservations[key] = record
+        self.metrics["postfill_hold_active"] = len(self.state.postfill_reservations)
+        self.logger.debug(
+            "POSTFILL_HOLD: key=%s, notional=%s, margin=%s, lev=%s, side=%s, expires=%s, source=%s",
+            key,
+            normalized_notional,
+            filled_margin,
+            symbol_leverage,
+            side_key,
+            expiration_ts,
+            notional_source or "direct",
+        )
+        return dict(record)
 
     def expire_stale(self) -> List[str]:
         """

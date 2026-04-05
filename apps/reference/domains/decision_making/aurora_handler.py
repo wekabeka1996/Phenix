@@ -109,6 +109,11 @@ class SymbolState:
         self.regime_raw_event = None
         self.regime_confidence = 0.0
         self.regime_ts_ms = 0
+        self.regime_structural_regime_ref = None
+        self.regime_changed = None
+        self.regime_raw_confidence = None
+        self.regime_last_update_ts_ms = 0
+        self.regime_cache_write_ts_ms = 0
 
         self.system_stress_state = "NORMAL"
 
@@ -545,6 +550,12 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state.regime_confidence = float(event.get("confidence", 0.0))
         state.regime_ts_ms = int(event.get("ts_ms") or event.get(
             "ts") or int(self.wall_time_fn() * 1000))
+        state.regime_structural_regime_ref = event.get("structural_regime_ref")
+        state.regime_changed = event.get("changed")
+        state.regime_raw_confidence = event.get("raw_confidence")
+        state.regime_last_update_ts_ms = int(
+            event.get("last_update_ts_ms") or 0)
+        state.regime_cache_write_ts_ms = int(self.wall_time_fn() * 1000)
 
         # Prefer detector-provided timestamp evidence; otherwise stamp arrival on
         # the same monotonic clock used by the liveness guard.

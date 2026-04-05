@@ -129,7 +129,8 @@ class OrderIndex:
                 "size_by_client": len(self._by_client),
                 "size_by_exchange": len(self._by_exchange),
             }
-            ref = self._by_rid.get(rid) or OrderRef(rid=rid, idempotent_key=idempotent_key)
+            ref = self._by_rid.get(rid) or OrderRef(
+                rid=rid, idempotent_key=idempotent_key)
             ref.clientOrderId = clientOrderId or ref.clientOrderId
             ref.symbol, ref.side, ref.order_type = symbol, side, order_type
             self._by_rid[rid] = ref
@@ -149,6 +150,94 @@ class OrderIndex:
                 "side": side,
                 "order_type": order_type,
                 "clientOrderId": clientOrderId,
+                "idempotent_key": idempotent_key,
+            },
+            before=before,
+            after=after,
+        )
+        return ref
+
+    def register_bracket_child(
+        self,
+        *,
+        rid: str,
+        idempotent_key: str,
+        clientOrderId: str,
+        exchangeOrderId: str,
+        symbol: str,
+        side: str,
+        order_type: str,
+        order_kind: str,
+    ) -> OrderRef:
+        """
+        Canonical registration for bracket child orders (SL/TP).
+
+        Unlike upsert_from_open, this requires BOTH clientOrderId AND
+        exchangeOrderId up-front (both are known at bracket placement time)
+        and sets order_kind explicitly.
+
+        Args:
+            rid: Parent request ID (from the entry decision)
+            idempotent_key: Idempotency key for the bracket child
+            clientOrderId: Client-assigned order ID (SL-xxx / TP-xxx)
+            exchangeOrderId: Exchange-assigned order ID from placement response
+            symbol: Trading symbol
+            side: Order side (the bracket side, opposite of entry)
+            order_type: Order type (STOP_MARKET / TAKE_PROFIT_MARKET / LIMIT)
+            order_kind: Bracket role — "SL" or "TP"
+
+        Returns:
+            OrderRef instance
+        """
+        if not clientOrderId or not exchangeOrderId:
+            raise ValueError(
+                "register_bracket_child requires both clientOrderId and exchangeOrderId"
+            )
+        if order_kind not in ("SL", "TP"):
+            raise ValueError(
+                f"register_bracket_child order_kind must be 'SL' or 'TP', got {order_kind!r}"
+            )
+
+        with self._lock:
+            before = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+            }
+            # Bracket children use clientOrderId as the primary key (not rid),
+            # because multiple bracket children share the same parent rid.
+            # We use a synthetic rid to avoid collisions in _by_rid.
+            bracket_rid = f"{rid}:{order_kind}"
+            ref = OrderRef(
+                rid=bracket_rid,
+                idempotent_key=idempotent_key,
+                clientOrderId=clientOrderId,
+                exchangeOrderId=exchangeOrderId,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                order_kind=order_kind,
+            )
+            self._by_rid[bracket_rid] = ref
+            self._by_client[clientOrderId] = ref
+            self._by_exchange[exchangeOrderId] = ref
+            after = {
+                "size_by_rid": len(self._by_rid),
+                "size_by_client": len(self._by_client),
+                "size_by_exchange": len(self._by_exchange),
+                "rid_ref": ref,
+            }
+        self._record_shadow_transition(
+            event_name="ORDER_INDEX:REGISTER_BRACKET_CHILD",
+            rid=bracket_rid,
+            payload={
+                "symbol": symbol,
+                "side": side,
+                "order_type": order_type,
+                "order_kind": order_kind,
+                "clientOrderId": clientOrderId,
+                "exchangeOrderId": exchangeOrderId,
+                "parent_rid": rid,
                 "idempotent_key": idempotent_key,
             },
             before=before,
@@ -324,7 +413,8 @@ class OrderIndex:
                 self._record_shadow_transition(
                     event_name="ORDER_INDEX:RESERVE_ENTRY",
                     rid=rid,
-                    payload={"symbol": symbol, "reason": "reservation_denied_existing_entry"},
+                    payload={"symbol": symbol,
+                             "reason": "reservation_denied_existing_entry"},
                     before=before,
                     after={
                         "size_by_rid": len(self._by_rid),
@@ -400,7 +490,8 @@ class OrderIndex:
             payload={"rid": rid},
             before=before,
             after=after,
-            notes=["reservation_cancelled"] if cancelled else ["reservation_cancel_noop"],
+            notes=["reservation_cancelled"] if cancelled else [
+                "reservation_cancel_noop"],
         )
         return cancelled
 

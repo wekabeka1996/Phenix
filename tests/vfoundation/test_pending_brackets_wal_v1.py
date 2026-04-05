@@ -32,15 +32,15 @@ def mock_wal_dir(tmp_path, monkeypatch):
     """Redirect WAL writes to temp directory."""
     wal_dir = tmp_path / "wal"
     wal_dir.mkdir()
-    
+
     # Patch the WAL directory in vfoundation config
     from vfoundation import config as vf_config
     vf_config.config.wal_dir = wal_dir
-    
+
     # Also update the module-level WAL_DIR in wal.py
     from vfoundation.dr import wal
     wal.set_wal_dir(wal_dir)
-    
+
     yield wal_dir
 
 
@@ -78,7 +78,7 @@ class TestWALBasicOperations:
             oco_group_id="oco-001",
             entry_client_order_id="client-001",
         )
-        
+
         # WAL file should exist with record
         wal_files = list(mock_wal_dir.glob("**/*.jsonl"))
         # Either direct file or via vfoundation WAL
@@ -100,13 +100,13 @@ class TestWALBasicOperations:
             oco_group_id="oco-002",
             entry_client_order_id="client-002",
         )
-        
+
         wal_module["cleared"](
             entry_order_id="ORD-002",
             reason="filled",
             symbol="ETHUSDT",
         )
-        
+
         # Should not raise
         assert True
 
@@ -129,17 +129,28 @@ class TestWALRehydration:
             corr_id="corr-rehy-001",
             oco_group_id="oco-rehy-001",
             entry_client_order_id="client-rehy-001",
+            strategy_id="md_amr",
+            strategy_source="registry_assignment",
+            owner_status="resolved",
+            owner_detail="",
+            assigned_strategies=["md_amr"],
+            placement_path="deferred_pending",
         )
-        
+
         # Simulate restart by reading
         restored = wal_module["read"]()
-        
+
         # Should contain our entry
         assert "ORD-REHYDRATE-001" in restored
         assert restored["ORD-REHYDRATE-001"]["symbol"] == "BTCUSDT"
         assert restored["ORD-REHYDRATE-001"]["side"] == "BUY"
         assert restored["ORD-REHYDRATE-001"]["sl"] == 48000.0
         assert restored["ORD-REHYDRATE-001"]["tp"] == 52000.0
+        assert restored["ORD-REHYDRATE-001"]["strategy_id"] == "md_amr"
+        assert restored["ORD-REHYDRATE-001"]["strategy_source"] == "registry_assignment"
+        assert restored["ORD-REHYDRATE-001"]["owner_status"] == "resolved"
+        assert restored["ORD-REHYDRATE-001"]["assigned_strategies"] == ["md_amr"]
+        assert restored["ORD-REHYDRATE-001"]["placement_path"] == "deferred_pending"
 
     def test_stored_then_cleared_not_rehydrated(self, wal_module, mock_wal_dir):
         """Entry stored then cleared should NOT be restored."""
@@ -157,16 +168,16 @@ class TestWALRehydration:
             oco_group_id="oco-clr-001",
             entry_client_order_id="client-clr-001",
         )
-        
+
         wal_module["cleared"](
             entry_order_id="ORD-CLEARED-001",
             reason="filled",
             symbol="ETHUSDT",
         )
-        
+
         # Simulate restart by reading
         restored = wal_module["read"]()
-        
+
         # Should NOT contain cleared entry
         assert "ORD-CLEARED-001" not in restored
 
@@ -188,24 +199,24 @@ class TestWALRehydration:
                 oco_group_id=f"oco-multi-{i:03d}",
                 entry_client_order_id=f"client-multi-{i:03d}",
             )
-        
+
         # Clear entry 2 (filled)
         wal_module["cleared"](
             entry_order_id="ORD-MULTI-002",
             reason="filled",
             symbol="BTCUSDT",
         )
-        
+
         # Clear entry 3 (cancelled)
         wal_module["cleared"](
             entry_order_id="ORD-MULTI-003",
             reason="cancelled",
             symbol="BTCUSDT",
         )
-        
+
         # Read back
         restored = wal_module["read"]()
-        
+
         # Only entry 1 should remain
         assert "ORD-MULTI-001" in restored
         assert "ORD-MULTI-002" not in restored
@@ -246,7 +257,7 @@ class TestWALEdgeCases:
             oco_group_id="oco-dup-001",
             entry_client_order_id="client-dup-001",
         )
-        
+
         # Store again with different SL
         wal_module["stored"](
             entry_order_id="ORD-DUP-001",
@@ -262,9 +273,9 @@ class TestWALEdgeCases:
             oco_group_id="oco-dup-002",
             entry_client_order_id="client-dup-002",
         )
-        
+
         restored = wal_module["read"]()
-        
+
         # Should use latest values
         assert restored["ORD-DUP-001"]["sl"] == 47000.0
         assert restored["ORD-DUP-001"]["tp"] == 53000.0

@@ -104,6 +104,8 @@ def load_cases():
             if not line.strip():
                 continue
             r = json.loads(line)
+            if r.get("record_kind") == "position_policy_sidecar":
+                continue
             status = r.get("status", "")
             close_reason = r.get("close_reason", "")
 

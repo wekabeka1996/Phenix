@@ -34,6 +34,12 @@ TRADE_EXECUTED_OPTIONAL_KEYS = frozenset(
         "commission",
         "commissionAsset",
         "realizedPnl",
+        "close_reason",
+        "bracket_role",
+        "tracked_bracket_order_id",
+        "parent_entry_order_id",
+        "terminal_correlation_source",
+        "correlation_recovered",
     }
 )
 
@@ -162,6 +168,9 @@ def normalize_trade_executed_payload(
                 "realizedPnl",
             }:
                 normalized[key] = _stringify_decimal(value)
+                continue
+            if key in {"correlation_recovered"}:
+                normalized[key] = bool(value)
                 continue
             normalized[key] = value
 

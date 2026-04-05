@@ -125,6 +125,22 @@ decision_making:
   # Optional per-strategy overrides (strategy_id -> list of critical keys).
   degraded_context_critical_keys_by_strategy: {}
 
+  # Canonical per-strategy degraded-context contracts.
+  # absent = strategy does not participate
+  # enabled=false = explicit opt-out
+  # enabled=true + [] = explicit no-op
+  # enabled=true + [keys] = exact strategy-owned contract
+  degraded_context_contracts_by_strategy:
+    aurora:
+      enabled: false
+      critical_keys: ["price", "pillar_sum"]
+    mean_reversion:
+      enabled: false
+      critical_keys: ["tfi", "obi", "price_motion", "liquidity_kappa"]
+    md_amr:
+      enabled: false
+      critical_keys: ["price_ref", "sentiment_state", "atr", "liquidity", "obi_close"]
+
 feature_engineering:
   enable_new_metrics: true
   volume_input_mode: integrate
@@ -367,6 +383,17 @@ feature_engineering:
       h4_candles: 100           # H4 candles to fetch
       m15_candles: 50           # M15 candles to fetch
 
+ta_features:
+  enabled: true
+  # Keep TA core on the same canonical BAR_CLOSED surface as feature_engineering.
+  # Consumers subscribe explicitly to EVT:TA_FEATURES_CALCULATED.
+  timeframes_sec: [180, 300, 900]
+  warm_up_bars: 20
+  buffer_max_bars: 50
+  log_calculations: true
+  log_max_bytes: 10485760
+  log_backup_count: 5
+
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
   use_absorption_penalty: true
@@ -473,6 +500,11 @@ execution_position:
       storage_path: logs/execution_truth_warm_state_v1.json
       max_entries: 2000
 
+  restore_artifact:
+    mode: writer_only
+    storage_path: ops/restore/execution_position_restore_envelope_v1.json
+    flush_interval_ms: 30000
+
   # EP-01.3-INT: Per-timeframe pending entry TTL
   # When LIMIT entry order is placed, valid_for_ms = ttl_by_tf_sec[tf_sec] * 1000
   # Cancel triggers: TTL expired, regime change, supersede, panic
@@ -544,6 +576,54 @@ execution_position:
     interval_sec: 45
     grace_period_ms: 15000
     max_placements_per_cycle: 2
+
+  position_policy_sidecar:
+    mode: shadow
+    freshness:
+      portfolio_max_age_ms: 15000
+      features_max_age_ms: 15000
+      regime_max_age_ms: 30000
+      order_state_max_age_ms: 15000
+    startup_grace:
+      startup_grace_ms: 30000
+      post_fill_grace_ms: 15000
+      min_portfolio_updates: 1
+      min_feature_updates: 1
+      min_regime_updates: 1
+    profitability_guard:
+      enabled: true
+      min_unrealized_pnl_pct: 0.25
+      min_unrealized_pnl_usdt: 0.0
+    scoring:
+      weights:
+        microstructure_adverse_pressure: 0.30
+        regime_exhaustion_hint: 0.30
+        conviction_decay: 0.15
+        unrealized_loss_pressure: 0.25
+      caps:
+        microstructure_adverse_pressure: 1.0
+        regime_exhaustion_hint: 1.0
+        conviction_decay: 1.0
+        unrealized_loss_pressure: 1.0
+    thresholds:
+      recommend_soft_close_at: 0.70
+      loss_bps_full_pressure: 50.0
+      adverse_price_distance_bps_full_pressure: 25.0
+      book_imbalance_full_pressure: 0.35
+      regime_confidence_floor: 0.55
+      signal_score_floor: 0.0
+      adverse_regimes_long: ["TREND_DOWN"]
+      adverse_regimes_short: ["TREND_UP"]
+    logging:
+      emit_internal_bus_events: true
+      write_trade_lifecycle_jsonl: true
+      trade_lifecycle_log_path: logs/trade_lifecycle.jsonl
+      include_score_payloads: true
+    allowed_actions:
+      soft_close_symbol_current_net_only: true
+      partial_reduce: false
+      bracket_mutation: false
+      exact_targeting: false
 
   #
   # MAGIC-NUM-EXTRACTION: Order Lifecycle Timing Configuration

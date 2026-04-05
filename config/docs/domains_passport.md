@@ -2950,6 +2950,487 @@
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
+### `domains.execution_position.position_policy_sidecar.mode`
+- **Type:** `str` *(`disable | shadow | enable`)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3959 (PositionPolicySidecarMode) ; apps/reference/domains/execution_position/fsm.py:1096 (sidecar bootstrap)
+- **Mathematical/Architectural Role:**
+    > Selects the Phase-1 sidecar posture: no instance, shadow evaluation+trace, or enable-mode evaluation with action still skipped.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Moving toward `enable` increases operational readiness pressure and observability volume.
+    - 🔽 **Too Low:** Moving toward `disable` removes sidecar evaluation and forensic coverage.
+- **Invariant/Constraints:** Enum-only; unknown values rejected fail-closed by Pydantic.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.freshness.portfolio_max_age_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3967 (PositionPolicySidecarFreshnessConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:684 (freshness snapshot)
+- **Mathematical/Architectural Role:**
+    > Maximum age for portfolio truth before sidecar evaluation collapses to suppression.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Looser freshness gate; more evaluations with older portfolio truth.
+    - 🔽 **Too Low:** Stricter freshness gate; more fail-closed suppressions.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `100 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.freshness.features_max_age_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3967 (PositionPolicySidecarFreshnessConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:684 (freshness snapshot)
+- **Mathematical/Architectural Role:**
+    > Freshness ceiling for symbol feature context used in pressure-score calculation.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** More stale features admitted into scoring.
+    - 🔽 **Too Low:** More feature-missing suppressions and quieter sidecar output.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `100 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.freshness.regime_max_age_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3967 (PositionPolicySidecarFreshnessConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:684 (freshness snapshot)
+- **Mathematical/Architectural Role:**
+    > Maximum age for regime context before regime-driven adverse interpretation is suppressed.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Sidecar trusts older regime state for longer.
+    - 🔽 **Too Low:** More regime-stale suppressions and less coverage.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `100 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.freshness.order_state_max_age_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3967 (PositionPolicySidecarFreshnessConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:684 (freshness snapshot)
+- **Mathematical/Architectural Role:**
+    > Defines how long recent terminal order-state evidence can suppress sidecar evaluation.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Terminal non-fill suppression persists longer after cancel/expire paths.
+    - 🔽 **Too Low:** Sidecar becomes willing to re-evaluate sooner after terminal order-state events.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `100 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.startup_grace.startup_grace_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3978 (PositionPolicySidecarStartupGraceConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:359 (startup suppression)
+- **Mathematical/Architectural Role:**
+    > Global grace window after sidecar startup before any position evaluation is allowed.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Longer warmup silence after startup/restart.
+    - 🔽 **Too Low:** Sidecar evaluates sooner with higher cold-start ambiguity risk.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `0 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.startup_grace.post_fill_grace_ms`
+- **Type:** `int` *(milliseconds)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3978 (PositionPolicySidecarStartupGraceConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:383 (post-fill suppression)
+- **Mathematical/Architectural Role:**
+    > Cooldown after a fill during which sidecar remains silent to avoid transitional-state noise.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Longer silence around fresh fills and bracket placement aftermath.
+    - 🔽 **Too Low:** More early evaluations during unstable post-fill transitions.
+- **Invariant/Constraints:** Integer milliseconds; Pydantic enforces `0 <= value <= 600000`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.startup_grace.min_portfolio_updates`
+- **Type:** `int`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3978 (PositionPolicySidecarStartupGraceConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:388 (warmup suppression)
+- **Mathematical/Architectural Role:**
+    > Minimum portfolio snapshots required before sidecar treats local context as warmed up.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** More conservative startup; more warmup suppressions.
+    - 🔽 **Too Low:** Less startup evidence required before evaluation begins.
+- **Invariant/Constraints:** Pydantic enforces `1 <= value <= 10`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.startup_grace.min_feature_updates`
+- **Type:** `int`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3978 (PositionPolicySidecarStartupGraceConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:388 (warmup suppression)
+- **Mathematical/Architectural Role:**
+    > Minimum feature snapshots required before score inputs are considered warm.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Longer wait for feature readiness.
+    - 🔽 **Too Low:** Less evidence required before feature-driven scoring begins.
+- **Invariant/Constraints:** Pydantic enforces `1 <= value <= 10`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.startup_grace.min_regime_updates`
+- **Type:** `int`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3978 (PositionPolicySidecarStartupGraceConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:388 (warmup suppression)
+- **Mathematical/Architectural Role:**
+    > Minimum regime updates required before regime-based adverse interpretation becomes eligible.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** More conservative regime warmup.
+    - 🔽 **Too Low:** Sidecar trusts regime context earlier after startup.
+- **Invariant/Constraints:** Pydantic enforces `1 <= value <= 10`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.profitability_guard.enabled`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3990 (PositionPolicySidecarProfitabilityGuardConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:715 (_is_profitable)
+- **Mathematical/Architectural Role:**
+    > Master switch for suppressing action-bearing recommendations on clearly profitable positions.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` keeps Phase-1 focused on soft early-loss governance only.
+    - 🔽 **Too Low:** `false` allows recommendations on profitable runners, expanding scope.
+- **Invariant/Constraints:** Boolean gate only; Phase-1 roadmap expects this protection to remain explicit.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.profitability_guard.min_unrealized_pnl_pct`
+- **Type:** `float` *(percent)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3990 (PositionPolicySidecarProfitabilityGuardConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:715 (_is_profitable)
+- **Mathematical/Architectural Role:**
+    > Percent PnL threshold above which the sidecar suppresses soft-close recommendations.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Fewer profitable positions qualify for suppression.
+    - 🔽 **Too Low:** More positions are treated as protected profitable states.
+- **Invariant/Constraints:** Pydantic enforces `value >= 0.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.profitability_guard.min_unrealized_pnl_usdt`
+- **Type:** `float` *(USD/USDT)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:3990 (PositionPolicySidecarProfitabilityGuardConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:715 (_is_profitable)
+- **Mathematical/Architectural Role:**
+    > Absolute PnL threshold used alongside percent PnL for profitability suppression.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Requires larger absolute profit before suppression kicks in.
+    - 🔽 **Too Low:** Smaller profits already qualify as protected profitable states.
+- **Invariant/Constraints:** Pydantic enforces `value >= 0.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.weights.microstructure_adverse_pressure`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4000 (PositionPolicySidecarScoringWeightsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:463 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Weight assigned to adverse microstructure contribution in composite soft-close pressure.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Score reacts more strongly to imbalance / adverse price-distance evidence.
+    - 🔽 **Too Low:** Microstructure contributes less to recommendation pressure.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`; total weight sum must remain `> 0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.weights.regime_exhaustion_hint`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4000 (PositionPolicySidecarScoringWeightsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:492 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Weight assigned to adverse regime / low-confidence contribution in the composite score.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Regime interpretation dominates more of the recommendation pressure.
+    - 🔽 **Too Low:** Sidecar depends less on regime exhaustion evidence.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`; total weight sum must remain `> 0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.weights.conviction_decay`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4000 (PositionPolicySidecarScoringWeightsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:521 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Weight assigned to decaying signal/conviction evidence.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Weakening signal score more quickly turns into exit pressure.
+    - 🔽 **Too Low:** Conviction decay has less influence on recommendation output.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`; total weight sum must remain `> 0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.weights.unrealized_loss_pressure`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4000 (PositionPolicySidecarScoringWeightsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:538 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Weight assigned to unrealized-loss contribution in composite soft-close pressure.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Unrealized drawdown dominates recommendations faster.
+    - 🔽 **Too Low:** Sidecar tolerates more unrealized loss before pressure rises.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`; total weight sum must remain `> 0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.caps.microstructure_adverse_pressure`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4022 (PositionPolicySidecarScoringCapsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:549 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Upper cap on normalized microstructure contribution before weighting.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Extreme microstructure evidence can contribute more to total pressure.
+    - 🔽 **Too Low:** Microstructure contribution saturates earlier.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.caps.regime_exhaustion_hint`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4022 (PositionPolicySidecarScoringCapsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:550 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Upper cap on regime-exhaustion contribution before weighting.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Adverse regime evidence can dominate more of the score.
+    - 🔽 **Too Low:** Regime contribution saturates sooner.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.caps.conviction_decay`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4022 (PositionPolicySidecarScoringCapsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:551 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Upper cap on conviction-decay contribution before weighting.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Weakening signal score can contribute more to exit pressure.
+    - 🔽 **Too Low:** Conviction decay saturates quickly and has less total effect.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.scoring.caps.unrealized_loss_pressure`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4022 (PositionPolicySidecarScoringCapsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:552 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Upper cap on unrealized-loss contribution before weighting.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Drawdown evidence can drive more of total pressure.
+    - 🔽 **Too Low:** Loss contribution saturates earlier.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.recommend_soft_close_at`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:327 (recommendation gate)
+- **Mathematical/Architectural Role:**
+    > Main threshold above which computed soft-close pressure becomes a recommendation.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Fewer recommendations; stricter sidecar.
+    - 🔽 **Too Low:** More recommendations; noisier sidecar.
+- **Invariant/Constraints:** Pydantic enforces `0.0 <= value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.loss_bps_full_pressure`
+- **Type:** `float` *(basis points)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:541 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Normalization constant mapping unrealized loss into full-pressure contribution.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Loss-driven pressure rises more slowly.
+    - 🔽 **Too Low:** Loss-driven pressure saturates faster.
+- **Invariant/Constraints:** Pydantic enforces `value > 0.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.adverse_price_distance_bps_full_pressure`
+- **Type:** `float` *(basis points)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:474 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Normalization scale for adverse price-vs-reference distance inside microstructure pressure.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Adverse distance contributes less aggressively.
+    - 🔽 **Too Low:** Smaller adverse moves already count as full pressure.
+- **Invariant/Constraints:** Pydantic enforces `value > 0.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.book_imbalance_full_pressure`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:481 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Normalization constant for adverse order-book imbalance pressure.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Imbalance must be more extreme to produce high pressure.
+    - 🔽 **Too Low:** Smaller imbalance already counts as strong adverse pressure.
+- **Invariant/Constraints:** Pydantic enforces `0.0 < value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.regime_confidence_floor`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:506 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Confidence floor below which regime certainty becomes an adverse contribution.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** More regimes are treated as insufficiently confident.
+    - 🔽 **Too Low:** Sidecar tolerates lower regime confidence before adding pressure.
+- **Invariant/Constraints:** Pydantic enforces `0.0 < value <= 1.0`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.signal_score_floor`
+- **Type:** `float`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:533 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Floor below which signal/conviction score is treated as decaying.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** More setups are treated as low-conviction.
+    - 🔽 **Too Low:** Fewer setups trigger conviction-decay pressure.
+- **Invariant/Constraints:** Generic float threshold; semantics owned entirely by sidecar scoring logic.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.adverse_regimes_long`
+- **Type:** `list[str]`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:512 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Explicit regime labels considered adverse when the held position side is long.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Larger/more inclusive list produces more adverse-regime pressure for longs.
+    - 🔽 **Too Low:** Narrower list reduces regime-driven long-side suppress/recommend signals.
+- **Invariant/Constraints:** Non-empty uppercase-normalized labels; empty labels rejected.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.thresholds.adverse_regimes_short`
+- **Type:** `list[str]`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4042 (PositionPolicySidecarThresholdsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:512 (_compute_scores)
+- **Mathematical/Architectural Role:**
+    > Explicit regime labels considered adverse when the held position side is short.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Larger/more inclusive list produces more adverse-regime pressure for shorts.
+    - 🔽 **Too Low:** Narrower list reduces regime-driven short-side suppress/recommend signals.
+- **Invariant/Constraints:** Non-empty uppercase-normalized labels; empty labels rejected.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.logging.emit_internal_bus_events`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4068 (PositionPolicySidecarLoggingConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:730 (_publish)
+- **Mathematical/Architectural Role:**
+    > Controls whether sidecar forensic events are emitted onto the internal EP event bus.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` increases runtime observability and downstream consumer visibility.
+    - 🔽 **Too Low:** `false` keeps sidecar traces out of the bus and limits forensic surfaces.
+- **Invariant/Constraints:** Boolean-only; disabling bus events does not remove config validation or sidecar logic itself.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.logging.write_trade_lifecycle_jsonl`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4068 (PositionPolicySidecarLoggingConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:733 (_publish)
+- **Mathematical/Architectural Role:**
+    > Controls whether mixed-shape sidecar records are appended into `trade_lifecycle.jsonl`.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` increases forensic persistence and replay/audit visibility.
+    - 🔽 **Too Low:** `false` removes the primary JSONL forensic sink for the sidecar.
+- **Invariant/Constraints:** Boolean-only; when enabled, rows are tagged with `record_kind="position_policy_sidecar"`.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.logging.trade_lifecycle_log_path`
+- **Type:** `str` *(filesystem path)*
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4068 (PositionPolicySidecarLoggingConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:745 (_publish) ; apps/reference/telemetry/trade_lifecycle_logger.py:54 (append helper)
+- **Mathematical/Architectural Role:**
+    > Target JSONL forensic sink for sidecar rows.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** Redirecting to a broader/shared sink increases discoverability but may increase mixed-stream complexity.
+    - 🔽 **Too Low:** Overly narrow or disabled pathing reduces forensic survivability.
+- **Invariant/Constraints:** Non-empty string path; helper creates parent directories as needed.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.logging.include_score_payloads`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4068 (PositionPolicySidecarLoggingConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:307 (_compute_scores emission)
+- **Mathematical/Architectural Role:**
+    > Declares whether score snapshots are expected in forensic payloads for explainability.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` preserves more explainability detail in logs/events.
+    - 🔽 **Too Low:** `false` would reduce trace richness and forensic completeness.
+- **Invariant/Constraints:** Boolean-only; current implementation emits score snapshots on score/evaluated/recommended records.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.allowed_actions.soft_close_symbol_current_net_only`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:342 (ACTION_SKIPPED payload)
+- **Mathematical/Architectural Role:**
+    > Declarative statement of the only future Phase-2 action scope admitted by this config surface.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` keeps future action scope aligned to current symbol-net close semantics.
+    - 🔽 **Too Low:** `false` would remove the declared soft-close scope from the config contract.
+- **Invariant/Constraints:** Declarative only in Phase 1; does not grant action execution by itself.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.allowed_actions.partial_reduce`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Mathematical/Architectural Role:**
+    > Declares whether partial-reduce action semantics are admitted by the contract surface.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` would broaden action semantics beyond Phase-1 scope.
+    - 🔽 **Too Low:** `false` keeps action scope narrow and contract-honest.
+- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.allowed_actions.bracket_mutation`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Mathematical/Architectural Role:**
+    > Declares whether bracket mutation ownership is admitted by the sidecar contract.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` would encroach on incumbent bracket owners.
+    - 🔽 **Too Low:** `false` preserves incumbent ownership boundaries.
+- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
+### `domains.execution_position.position_policy_sidecar.allowed_actions.exact_targeting`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Mathematical/Architectural Role:**
+    > Declares whether exact lifecycle / close-by-id targeting is admitted by the contract.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` would imply unsupported identity semantics.
+    - 🔽 **Too Low:** `false` keeps action posture aligned with current symbol-scoped close truth.
+- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
+
+---
 ### `domains.execution_position.shadow_check.absolute_threshold_usd`
 - **Type:** `float` *(USD/USDT)*
 - **Logic Owner:** `execution_position`

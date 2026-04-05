@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ta_features_calculated_v1",
+  "description": "Payload for EVT:TA_FEATURES_CALCULATED — bar-based TA features computed by ta_features domain.",
+  "type": "object",
+  "required": [
+    "ts",
+    "symbol",
+    "tf_sec",
+    "bar_close_ts",
+    "close",
+    "bb_position",
+    "bb_width",
+    "rsi_14",
+    "price_sma_20_deviation",
+    "volume_sma_ratio",
+    "stoch_k",
+    "stoch_d",
+    "price_momentum_5m",
+    "warm_up_bars",
+    "required_warm_up_bars",
+    "is_warm",
+    "source"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Event timestamp in milliseconds (bar-close aligned)."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol (e.g. BTCUSDT)"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bar timeframe in seconds (e.g. 60 = 1m, 300 = 5m)"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "description": "Bar close timestamp in milliseconds (Unix epoch)"
+    },
+    "close": {
+      "type": "number",
+      "description": "Last close price used for the TA calculation."
+    },
+    "bb_position": {
+      "type": "number",
+      "description": "Bollinger Band %B — (close - lower) / (upper - lower), typically [0, 1]"
+    },
+    "bb_width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Bollinger Band width — (upper - lower) / mid"
+    },
+    "rsi_14": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "RSI(14) — Relative Strength Index, range [0, 100]"
+    },
+    "price_sma_20_deviation": {
+      "type": "number",
+      "description": "Normalised deviation from SMA(20) — (close - SMA20) / SMA20"
+    },
+    "volume_sma_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Volume / SMA(volume, 20) — ratio of current volume to its 20-bar average"
+    },
+    "stoch_k": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Stochastic %K — fast oscillator value"
+    },
+    "stoch_d": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Stochastic %D — 3-period SMA of %K"
+    },
+    "price_momentum_5m": {
+      "type": "number",
+      "description": "Price momentum over a 5-minute window (adaptive lookback by tf_sec)"
+    },
+    "warm_up_bars": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of bars in the buffer at time of calculation"
+    },
+    "required_warm_up_bars": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Configured warmup threshold that flips is_warm=true."
+    },
+    "is_warm": {
+      "type": "boolean",
+      "description": "True when the buffer has at least required_warm_up_bars bars; false means payload is explicit warmup state, not a dropped event."
+    },
+    "source": {
+      "type": "string",
+      "description": "Originating domain identifier — always 'ta_features'"
+    }
+  }
+}

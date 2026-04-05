@@ -10,7 +10,9 @@ All models are designed to fail fast (startup validation) rather than silently a
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal, Tuple
-from pydantic import BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
+
+from apps.reference.contracts.runtime_regime_layers import normalize_structural_regime_label
 
 
 def _coerce_positive_decimal(value: Any) -> Decimal:
@@ -2371,6 +2373,20 @@ class EntryPlanConfig(BaseModel):
         return self
 
 
+class DegradedContextStrategyContractConfig(BaseModel):
+    """Explicit per-strategy degraded-context contract."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=False,
+        description="When true, degraded-context checks apply to this strategy only.",
+    )
+    critical_keys: List[str] = Field(
+        default_factory=list,
+        description="Exact DecisionContext keys owned by this strategy contract. Empty means explicit no-op.",
+    )
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -2414,8 +2430,15 @@ class DecisionMakingDomainConfig(BaseModel):
     degraded_context_critical_keys_by_strategy: Dict[str, List[str]] = Field(
         default_factory=dict,
         description=(
-            "Optional per-strategy overrides for degraded_context_critical_keys. "
-            "If a strategy_id is present here, its list is used instead of the global list."
+            "Deprecated legacy per-strategy override map. Runtime strategy-scoped degraded-context "
+            "resolution now uses degraded_context_contracts_by_strategy."
+        ),
+    )
+    degraded_context_contracts_by_strategy: Dict[str, DegradedContextStrategyContractConfig] = Field(
+        default_factory=dict,
+        description=(
+            "Canonical strategy-scoped degraded-context contracts. Runtime no longer falls back "
+            "to a hidden global default bundle when this redesign surface is in use."
         ),
     )
     portfolio_warmup_timeout_sec: int = Field(
@@ -3388,6 +3411,57 @@ class FeatureEngineeringDomainConfig(BaseModel):
         return 2.0 / (n + 1)
 
 
+class TAFeaturesDomainConfig(BaseModel):
+    """Canonical ta_features domain configuration."""
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        description="Master switch for ta_features runtime wiring."
+    )
+    timeframes_sec: List[int] = Field(
+        min_length=1,
+        description="Configured BAR_CLOSED timeframes that ta_features consumes.",
+    )
+    warm_up_bars: int = Field(
+        ge=20,
+        description="Bars required before ta_features marks payloads is_warm=true.",
+    )
+    buffer_max_bars: int = Field(
+        ge=20,
+        description="Rolling OHLCV buffer length per (symbol, tf_sec). Must be >= warm_up_bars.",
+    )
+    log_calculations: bool = Field(
+        description="Write per-symbol JSONL calculation logs under logs/ta_features/.",
+    )
+    log_max_bytes: int = Field(
+        ge=1,
+        description="Rotating JSONL maxBytes per symbol log file.",
+    )
+    log_backup_count: int = Field(
+        ge=0,
+        description="Rotating JSONL backupCount per symbol log file.",
+    )
+
+    @field_validator("timeframes_sec")
+    @classmethod
+    def validate_timeframes(cls, value: List[int]) -> List[int]:
+        if not all(60 <= tf_sec <= 3600 for tf_sec in value):
+            raise ValueError(
+                "All ta_features timeframes must be between 60 and 3600 seconds"
+            )
+        if len(value) != len(set(value)):
+            raise ValueError("ta_features.timeframes_sec must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def validate_buffer_length(self) -> "TAFeaturesDomainConfig":
+        if self.buffer_max_bars < self.warm_up_bars:
+            raise ValueError(
+                "ta_features.buffer_max_bars must be >= ta_features.warm_up_bars"
+            )
+        return self
+
+
 # ============================================================================
 # Risk Management Domain
 # ============================================================================
@@ -3956,6 +4030,217 @@ class IntentBoundaryAuditConfig(BaseModel):
     )
 
 
+class PositionPolicySidecarMode(str, Enum):
+    """Phase-1 operating mode for the position policy sidecar."""
+
+    DISABLE = "disable"
+    SHADOW = "shadow"
+    ENABLE = "enable"
+
+
+_POSITION_POLICY_SIDECAR_CANONICAL_STRUCTURAL_REGIME_LABELS = frozenset(
+    {
+        "TREND_UP",
+        "TREND_DOWN",
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "MEAN_REVERSION",
+        "UNCERTAIN",
+    }
+)
+
+
+class PositionPolicySidecarFreshnessConfig(BaseModel):
+    """Freshness requirements for sidecar evaluation inputs."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    portfolio_max_age_ms: int = Field(..., ge=100, le=600000)
+    features_max_age_ms: int = Field(..., ge=100, le=600000)
+    regime_max_age_ms: int = Field(..., ge=100, le=600000)
+    order_state_max_age_ms: int = Field(..., ge=100, le=600000)
+
+
+class PositionPolicySidecarStartupGraceConfig(BaseModel):
+    """Startup and post-fill grace windows for fail-closed evaluation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    startup_grace_ms: int = Field(..., ge=0, le=600000)
+    post_fill_grace_ms: int = Field(..., ge=0, le=600000)
+    min_portfolio_updates: int = Field(..., ge=1, le=10)
+    min_feature_updates: int = Field(..., ge=1, le=10)
+    min_regime_updates: int = Field(..., ge=1, le=10)
+
+
+class PositionPolicySidecarProfitabilityGuardConfig(BaseModel):
+    """Profitability guard for suppressing soft-loss recommendations."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    min_unrealized_pnl_pct: float = Field(..., ge=0.0)
+    min_unrealized_pnl_usdt: float = Field(..., ge=0.0)
+
+
+class PositionPolicySidecarScoringWeightsConfig(BaseModel):
+    """Composite score weights."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    microstructure_adverse_pressure: float = Field(..., ge=0.0, le=1.0)
+    regime_exhaustion_hint: float = Field(..., ge=0.0, le=1.0)
+    conviction_decay: float = Field(..., ge=0.0, le=1.0)
+    unrealized_loss_pressure: float = Field(..., ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_non_zero_weight_sum(self) -> "PositionPolicySidecarScoringWeightsConfig":
+        if (
+            self.microstructure_adverse_pressure
+            + self.regime_exhaustion_hint
+            + self.conviction_decay
+            + self.unrealized_loss_pressure
+        ) <= 0.0:
+            raise ValueError(
+                "position_policy_sidecar.scoring.weights must sum to > 0")
+        return self
+
+
+class PositionPolicySidecarScoringCapsConfig(BaseModel):
+    """Per-component contribution caps."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    microstructure_adverse_pressure: float = Field(..., ge=0.0, le=1.0)
+    regime_exhaustion_hint: float = Field(..., ge=0.0, le=1.0)
+    conviction_decay: float = Field(..., ge=0.0, le=1.0)
+    unrealized_loss_pressure: float = Field(..., ge=0.0, le=1.0)
+
+
+class PositionPolicySidecarScoringConfig(BaseModel):
+    """Score composition configuration."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    weights: PositionPolicySidecarScoringWeightsConfig = Field(...)
+    caps: PositionPolicySidecarScoringCapsConfig = Field(...)
+
+
+class PositionPolicySidecarThresholdsConfig(BaseModel):
+    """Thresholds and label mappings used by the sidecar."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    recommend_soft_close_at: float = Field(..., ge=0.0, le=1.0)
+    loss_bps_full_pressure: float = Field(..., gt=0.0)
+    adverse_price_distance_bps_full_pressure: float = Field(..., gt=0.0)
+    book_imbalance_full_pressure: float = Field(..., gt=0.0, le=1.0)
+    regime_confidence_floor: float = Field(..., gt=0.0, le=1.0)
+    signal_score_floor: float = Field(...)
+    adverse_regimes_long: List[str] = Field(..., min_length=1)
+    adverse_regimes_short: List[str] = Field(..., min_length=1)
+
+    @field_validator("adverse_regimes_long", "adverse_regimes_short")
+    @classmethod
+    def _normalize_regime_labels(cls, value: List[str]) -> List[str]:
+        normalized: List[str] = []
+        for item in value:
+            label = str(item).strip()
+            if not label:
+                raise ValueError("regime labels must be non-empty")
+            normalized_label = normalize_structural_regime_label(label)
+            if normalized_label.startswith("FLAT_"):
+                raise ValueError(
+                    f"unsupported sidecar regime label {label!r}: strategy-local flat buckets are not allowed"
+                )
+            if normalized_label not in _POSITION_POLICY_SIDECAR_CANONICAL_STRUCTURAL_REGIME_LABELS:
+                supported = ", ".join(
+                    sorted(_POSITION_POLICY_SIDECAR_CANONICAL_STRUCTURAL_REGIME_LABELS))
+                raise ValueError(
+                    f"unsupported sidecar regime label {label!r}: use canonical structural labels only ({supported})"
+                )
+            normalized.append(normalized_label)
+        return normalized
+
+
+class PositionPolicySidecarLoggingConfig(BaseModel):
+    """Logging and forensic output switches."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    emit_internal_bus_events: bool = Field(...)
+    write_trade_lifecycle_jsonl: bool = Field(...)
+    trade_lifecycle_log_path: str = Field(..., min_length=1)
+    include_score_payloads: bool = Field(...)
+
+
+class PositionPolicySidecarAllowedActionsConfig(BaseModel):
+    """Declared action scope for future guarded enablement."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    soft_close_symbol_current_net_only: bool = Field(...)
+    partial_reduce: bool = Field(...)
+    bracket_mutation: bool = Field(...)
+    exact_targeting: bool = Field(...)
+
+
+class PositionPolicySidecarConfig(BaseModel):
+    """Strict configuration contract for the position policy sidecar."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    mode: PositionPolicySidecarMode = Field(...)
+    freshness: PositionPolicySidecarFreshnessConfig = Field(...)
+    startup_grace: PositionPolicySidecarStartupGraceConfig = Field(...)
+    profitability_guard: PositionPolicySidecarProfitabilityGuardConfig = Field(
+        ...)
+    scoring: PositionPolicySidecarScoringConfig = Field(...)
+    thresholds: PositionPolicySidecarThresholdsConfig = Field(...)
+    logging: PositionPolicySidecarLoggingConfig = Field(...)
+    allowed_actions: PositionPolicySidecarAllowedActionsConfig = Field(...)
+
+    @model_validator(mode="after")
+    def _validate_phase1_scope(self) -> "PositionPolicySidecarConfig":
+        if self.allowed_actions.partial_reduce:
+            raise ValueError(
+                "Phase-1 position_policy_sidecar forbids partial_reduce")
+        if self.allowed_actions.bracket_mutation:
+            raise ValueError(
+                "Phase-1 position_policy_sidecar forbids bracket_mutation")
+        if self.allowed_actions.exact_targeting:
+            raise ValueError(
+                "Phase-1 position_policy_sidecar forbids exact_targeting")
+        return self
+
+
+class ExecutionPositionRestoreArtifactMode(str, Enum):
+    """Writer/read rollout mode for the execution restore artifact."""
+
+    OFF = "off"
+    WRITER_ONLY = "writer_only"
+    DARK_READ = "dark_read"
+    AUTHORITATIVE = "authoritative"
+
+
+class ExecutionPositionRestoreArtifactConfig(BaseModel):
+    """Strict SSOT for the execution restore artifact rollout surface."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    mode: ExecutionPositionRestoreArtifactMode = Field(
+        description="Restore artifact rollout mode."
+    )
+    storage_path: str = Field(
+        min_length=1,
+        description="Canonical whole-envelope JSON path for execution restore persistence.",
+    )
+    flush_interval_ms: int = Field(
+        gt=0,
+        description="Bounded periodic flush interval while active restore state exists.",
+    )
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -4014,6 +4299,12 @@ class ExecutionPositionDomainConfig(BaseModel):
     bracket_health_check: Optional[BracketHealthCheckConfig] = Field(
         default=None,
         description="Current-native adapter config for bracket health reconciliation.",
+    )
+    restore_artifact: ExecutionPositionRestoreArtifactConfig = Field(
+        description="Writer/read rollout config for the canonical execution restore artifact.",
+    )
+    position_policy_sidecar: PositionPolicySidecarConfig = Field(
+        description="Position Policy Sidecar typed config for open-position recommendation logic.",
     )
 
 
@@ -4230,6 +4521,10 @@ class DomainsConfig(BaseModel):
     debug: DomainsDebugConfig = Field()
     decision_making: DecisionMakingDomainConfig = Field()
     feature_engineering: FeatureEngineeringDomainConfig = Field()
+    ta_features: Optional[TAFeaturesDomainConfig] = Field(
+        default=None,
+        description="Separate TA feature core. Absent or enabled=false means no runtime wiring.",
+    )
     risk_management: RiskManagementDomainConfig = Field()
     position_tracking: PositionTrackingDomainConfig = Field()
     # NOTE: account_observer removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
@@ -4631,7 +4926,18 @@ class StrategyExecutionConfig(BaseModel):
     exit_limit_ttl_ms: Optional[int] = Field(default=None, ge=1)
     gtx_retry_max: int = Field(default=0, ge=0, le=10)
     gtx_retry_offset_bps: float = Field(default=2.0, ge=0.0)
-    gtx_fallback_to_market: bool = Field(default=False)
+    emit_market_fallback_marker_on_retry_exhaustion: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "emit_market_fallback_marker_on_retry_exhaustion",
+            "gtx_fallback_to_market",
+        ),
+    )
+
+    @property
+    def gtx_fallback_to_market(self) -> bool:
+        """Backward-compatible read alias for legacy code and reports."""
+        return bool(self.emit_market_fallback_marker_on_retry_exhaustion)
 
 
 class MDAMRWeightsConfig(BaseModel):
@@ -5313,6 +5619,7 @@ class ShadowCriticalEventJournalConfig(BaseModel):
             "EVT:TRADE_INTENT_REJECTED",
             "EVT:INTENT_DEFERRED",
             "EVT:DECISION_BLOCKED",
+            "EVT:REGIME_DETECTED",
             "EVT:STRATEGY_DECISION_BLOCKED",
             "CMD:OPEN",
             "DEC:OPEN",

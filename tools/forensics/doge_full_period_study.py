@@ -133,6 +133,8 @@ def load_mr_bars():
         for line in f:
             try:
                 obj = json.loads(line.strip())
+                if obj.get("record_kind") == "position_policy_sidecar":
+                    continue
                 if obj.get("symbol") != "DOGEUSDT":
                     continue
                 bars.append(obj)
@@ -154,6 +156,8 @@ def load_trade_lifecycle():
         for line in f:
             try:
                 obj = json.loads(line.strip())
+                if obj.get("record_kind") == "position_policy_sidecar":
+                    continue
                 if obj.get("symbol") != "DOGEUSDT":
                     continue
                 trades.append(obj)

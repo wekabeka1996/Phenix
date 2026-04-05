@@ -35,7 +35,8 @@ def _runtime_config(tmp_path: Path):
     config.observability.shadow_journal.path = str(shadow_path)
     config.observability.shadow_journal.schema_version = "1.0.0"
     config.observability.shadow_journal.instrumentation_version = "1.0.0"
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     return config, shadow_path
 
 
@@ -163,8 +164,22 @@ def test_trade_executed_canonical_rid_queries_wal_shadow_and_lifecycle(tmp_path)
         assert shadow_row["payload_fragment"]["orderId"] == "order-123"
 
         lifecycle_rows = _read_jsonl(lifecycle_path)
-        assert len(lifecycle_rows) == 1
-        lifecycle_row = lifecycle_rows[0]
+        assert len(lifecycle_rows) == 3
+
+        ordered_row = lifecycle_rows[0]
+        assert ordered_row["record_kind"] == "trade_lifecycle_snapshot"
+        assert ordered_row["event_type"] == "TRADE_LIFECYCLE_ORDERED"
+        assert ordered_row["status"] == "ORDERED"
+        assert ordered_row["order_id"] == "order-123"
+
+        filled_row = lifecycle_rows[1]
+        assert filled_row["record_kind"] == "trade_lifecycle_snapshot"
+        assert filled_row["event_type"] == "TRADE_LIFECYCLE_FILLED"
+        assert filled_row["status"] == "FILLED"
+        assert filled_row["order_id"] == "order-123"
+        assert float(filled_row["fill_price"]) == 100.0
+
+        lifecycle_row = lifecycle_rows[2]
         assert lifecycle_row["rid"] == "RID-123"
         assert lifecycle_row["status"] == "CLOSED"
         assert lifecycle_row["order_id"] == "order-123"

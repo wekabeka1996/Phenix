@@ -1164,7 +1164,13 @@ class MDAMRHandler:
                 )
                 # This handler only records retry state and observability here.
                 # Order resubmission is owned by upstream intent/execution flows.
-            elif self._cfg and hasattr(self._cfg, 'execution') and self._cfg.execution.gtx_fallback_to_market:
+            elif self._cfg and hasattr(self._cfg, 'execution') and bool(
+                getattr(
+                    self._cfg.execution,
+                    "emit_market_fallback_marker_on_retry_exhaustion",
+                    getattr(self._cfg.execution, "gtx_fallback_to_market", False),
+                )
+            ):
                 self.mlog.warning(
                     "MD_AMR_GTX_FALLBACK symbol=%s max_retries=%s -> MARKET",
                     symbol, max_retries

@@ -106,6 +106,27 @@ class TestRegimeCaching:
         event = {"regime": "TREND_UP"}
         handler.on_regime_detected(event)  # Should not raise
 
+    def test_regime_detected_caches_provenance_markers(self, handler):
+        event = {
+            "symbol": "BTCUSDT",
+            "regime": "TREND_UP",
+            "confidence": 0.85,
+            "raw_confidence": "0.91",
+            "changed": False,
+            "ts_ms": 1700000000000,
+            "last_update_ts_ms": 1700000000123,
+            "structural_regime_ref": "structural:BTCUSDT:1700000000000",
+        }
+
+        handler.on_regime_detected(event)
+
+        state = handler._symbol_states["BTCUSDT"]
+        assert state.regime_structural_regime_ref == "structural:BTCUSDT:1700000000000"
+        assert state.regime_changed is False
+        assert state.regime_raw_confidence == "0.91"
+        assert state.regime_last_update_ts_ms == 1700000000123
+        assert state.regime_cache_write_ts_ms > 0
+
 
 class TestSideBiasHistory:
     """Tests for side bias history tracking."""

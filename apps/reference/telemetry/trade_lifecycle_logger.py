@@ -48,6 +48,57 @@ except Exception:
     append_why = None
 
 LOG = logging.getLogger(__name__)
+POSITION_POLICY_SIDECAR_RECORD_KIND = "position_policy_sidecar"
+EXECUTION_FILL_INGRESS_RECORD_KIND = "execution_fill_ingress"
+EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND = "execution_bracket_ownership"
+EXECUTION_WS_TERMINAL_RECORD_KIND = "execution_ws_terminal"
+POSITION_DISAPPEARANCE_RECORD_KIND = "position_disappearance"
+TRADE_LIFECYCLE_SNAPSHOT_RECORD_KIND = "trade_lifecycle_snapshot"
+
+
+def append_trade_lifecycle_record(
+    record: Dict[str, Any],
+    *,
+    log_file: str = "logs/trade_lifecycle.jsonl",
+) -> None:
+    """Append an additive record to trade_lifecycle.jsonl without lifecycle aggregation."""
+    target = Path(log_file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(
+            record, ensure_ascii=False, default=str) + "\n")
+
+
+def iter_trade_lifecycle_records(
+    *,
+    log_file: str = "logs/trade_lifecycle.jsonl",
+    include_policy_records: bool = False,
+):
+    """Iterate JSONL rows while allowing callers to skip mixed-shape policy records."""
+    target = Path(log_file)
+    if not target.exists():
+        return
+    with open(target, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                not include_policy_records
+                and record.get("record_kind") in {
+                    POSITION_POLICY_SIDECAR_RECORD_KIND,
+                    EXECUTION_FILL_INGRESS_RECORD_KIND,
+                    EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND,
+                    EXECUTION_WS_TERMINAL_RECORD_KIND,
+                    POSITION_DISAPPEARANCE_RECORD_KIND,
+                }
+            ):
+                continue
+            yield record
 
 
 @dataclass
@@ -63,6 +114,7 @@ class TradeRecord:
     side: str = ""               # LONG / SHORT
     regime: str = ""
     regime_confidence: Optional[float] = None
+    regime_provenance: Optional[Dict[str, Any]] = None
     signal_score: Optional[float] = None
     entry_type: str = ""         # LIMIT / MARKET
     intent_ts_ms: int = 0
@@ -71,6 +123,9 @@ class TradeRecord:
     order_id: str = ""
     order_price: Optional[float] = None
     order_ts_ms: int = 0
+    execution_regime: str = ""
+    execution_regime_confidence: Optional[float] = None
+    execution_regime_provenance: Optional[Dict[str, Any]] = None
 
     # Fill
     fill_price: Optional[float] = None
@@ -104,8 +159,22 @@ class TradeRecord:
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
-        # Drop None values for compact JSONL
-        return {k: v for k, v in d.items() if v is not None and v != "" and v != 0}
+        explicit_null_fields = {
+            "regime",
+            "regime_confidence",
+            "regime_provenance",
+            "execution_regime",
+            "execution_regime_confidence",
+            "execution_regime_provenance",
+        }
+        out: Dict[str, Any] = {}
+        for k, v in d.items():
+            if k in explicit_null_fields:
+                out[k] = None if v == "" else v
+                continue
+            if v is not None and v != "" and v != 0:
+                out[k] = v
+        return out
 
 
 class TradeLifecycleLogger:
@@ -131,6 +200,7 @@ class TradeLifecycleLogger:
         self._next_sweep_at = time.time() + self._auto_sweep_interval_sec
         self._trades: "OrderedDict[str, TradeRecord]" = OrderedDict()
         self._recent_terminal: "OrderedDict[str, TradeRecord]" = OrderedDict()
+        self._snapshot_fingerprints: Dict[str, Dict[str, tuple[Any, ...]]] = {}
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
@@ -186,6 +256,36 @@ class TradeLifecycleLogger:
         while len(self._recent_terminal) > self._max_open_trades:
             self._recent_terminal.popitem(last=False)
 
+    def _snapshot_row(self, rec: TradeRecord, *, snapshot_kind: str) -> Dict[str, Any]:
+        row = rec.to_dict()
+        row["record_kind"] = TRADE_LIFECYCLE_SNAPSHOT_RECORD_KIND
+        row["event_type"] = f"TRADE_LIFECYCLE_{snapshot_kind}"
+        row["snapshot_kind"] = snapshot_kind
+        row["snapshot_ts_ms"] = self._now_ms()
+        return row
+
+    def _write_snapshot(
+        self,
+        rec: TradeRecord,
+        *,
+        snapshot_kind: str,
+        fingerprint: tuple[Any, ...],
+    ) -> None:
+        per_rid = self._snapshot_fingerprints.setdefault(rec.rid, {})
+        if per_rid.get(snapshot_kind) == fingerprint:
+            return
+        append_trade_lifecycle_record(
+            self._snapshot_row(rec, snapshot_kind=snapshot_kind),
+            log_file=str(self._log_file),
+        )
+        per_rid[snapshot_kind] = fingerprint
+
+    def _is_duplicate_terminal(self, rid: str, *, status: str) -> bool:
+        if rid in self._trades:
+            return False
+        prior = self._recent_terminal.get(rid)
+        return prior is not None and prior.status == status
+
     def _maybe_sweep(self) -> None:
         now = time.time()
         if now >= self._next_sweep_at:
@@ -227,6 +327,7 @@ class TradeLifecycleLogger:
         rec = self._trades.pop(rid, None)
         if rec is None:
             return
+        self._snapshot_fingerprints.pop(rid, None)
         self._remember_terminal(rec)
         try:
             line = json.dumps(rec.to_dict(), ensure_ascii=False, default=str)
@@ -246,7 +347,8 @@ class TradeLifecycleLogger:
                     },
                 )
         except Exception as e:
-            LOG.warning(f"TradeLifecycleLogger: failed to flush rid={rid}: {e}")
+            LOG.warning(
+                f"TradeLifecycleLogger: failed to flush rid={rid}: {e}")
 
     # ─── Lifecycle events ──────────────────────────────────────
 
@@ -257,6 +359,7 @@ class TradeLifecycleLogger:
         side: str = "",
         regime: str = "",
         confidence: Optional[float] = None,
+        regime_provenance: Optional[Dict[str, Any]] = None,
         signal_score: Optional[float] = None,
         strategy_id: str = "",
         entry_type: str = "",
@@ -265,8 +368,10 @@ class TradeLifecycleLogger:
         rec = self._get_or_create(rid, source="intent")
         rec.symbol = symbol
         rec.side = side
-        rec.regime = regime
+        rec.regime = regime or None
         rec.regime_confidence = confidence
+        rec.regime_provenance = dict(regime_provenance) if isinstance(
+            regime_provenance, dict) else None
         rec.signal_score = signal_score
         rec.strategy_id = strategy_id
         rec.entry_type = entry_type
@@ -279,14 +384,32 @@ class TradeLifecycleLogger:
         rid: str,
         order_id: str = "",
         price: Optional[float] = None,
+        regime: str = "",
+        confidence: Optional[float] = None,
+        regime_provenance: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Record order placement."""
         rec = self._get_or_create(rid, source="order_placed")
         rec.order_id = order_id
         rec.order_price = price
+        rec.execution_regime = regime or None
+        rec.execution_regime_confidence = confidence
+        rec.execution_regime_provenance = dict(regime_provenance) if isinstance(
+            regime_provenance, dict) else None
         rec.order_ts_ms = self._now_ms()
         rec.updated_ts_ms = rec.order_ts_ms
         rec.status = "ORDERED"
+        self._write_snapshot(
+            rec,
+            snapshot_kind="ORDERED",
+            fingerprint=(
+                rec.status,
+                rec.order_id,
+                rec.order_price,
+                rec.execution_regime,
+                rec.execution_regime_confidence,
+            ),
+        )
 
     def on_fill(
         self,
@@ -303,6 +426,16 @@ class TradeLifecycleLogger:
         rec.fill_ts_ms = self._now_ms()
         rec.updated_ts_ms = rec.fill_ts_ms
         rec.status = "FILLED"
+        self._write_snapshot(
+            rec,
+            snapshot_kind="FILLED",
+            fingerprint=(
+                rec.status,
+                rec.fill_price,
+                rec.fill_qty,
+                rec.fill_fees,
+            ),
+        )
 
     def on_brackets_set(
         self,
@@ -349,6 +482,8 @@ class TradeLifecycleLogger:
         cancel_reason: str = "",
     ) -> None:
         """Record order cancellation and flush to JSONL."""
+        if self._is_duplicate_terminal(rid, status="CANCELLED"):
+            return
         rec = self._get_or_create(rid, source="cancel")
         rec.close_reason = cancel_reason
         rec.close_ts_ms = self._now_ms()
@@ -364,6 +499,8 @@ class TradeLifecycleLogger:
         reject_stage: str = "",
     ) -> None:
         """Record trade intent rejection and flush to JSONL."""
+        if self._is_duplicate_terminal(rid, status="REJECTED"):
+            return
         rec = self._get_or_create(rid, source="reject")
         rec.close_reason = reject_reason
         rec.reject_reason_code = reject_reason_code

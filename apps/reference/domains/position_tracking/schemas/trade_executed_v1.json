@@ -93,6 +93,24 @@
       "type": "string",
       "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
     },
+    "close_reason": {
+      "type": "string"
+    },
+    "bracket_role": {
+      "type": "string"
+    },
+    "tracked_bracket_order_id": {
+      "type": "string"
+    },
+    "parent_entry_order_id": {
+      "type": "string"
+    },
+    "terminal_correlation_source": {
+      "type": "string"
+    },
+    "correlation_recovered": {
+      "type": "boolean"
+    },
     "venue": {
       "type": "string",
       "description": "Trading venue/exchange where the trade was executed"

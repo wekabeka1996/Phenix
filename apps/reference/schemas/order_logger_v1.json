@@ -25,6 +25,7 @@
         "ORDER_CANCELLATION_FAILED",
         "ORDER_TIMEOUT",
         "ORDER_REJECTED",
+        "DECISION_INTENT_REJECTED",
         "ORDER_STATE_CHANGED",
         "POSITION_CLOSED",
         "QTY_NORMALIZE_REJECTED"
@@ -62,6 +63,17 @@
       "type": "string",
       "pattern": "^NRR-[0-9]{3}$",
       "description": "NRR error code"
+    },
+    "origin_class": {
+      "type": "string",
+      "enum": [
+        "execution_adapter",
+        "execution_internal",
+        "exchange_websocket",
+        "decision_alias",
+        "unknown"
+      ],
+      "description": "Canonical provenance for reject-like rows"
     },
     "why": {
       "type": "string",
@@ -107,6 +119,18 @@
     "context": {
       "type": "string",
       "description": "Additional context for cancellations"
+    },
+    "regime": {
+      "type": ["string", "null"],
+      "description": "Decision-time or execution-time structural regime carried additively to the order log."
+    },
+    "regime_confidence": {
+      "type": ["number", "null"],
+      "description": "Decision-time or execution-time regime confidence carried additively to the order log."
+    },
+    "regime_provenance": {
+      "type": ["object", "null"],
+      "description": "Structured detector/cache provenance block carried additively to the order log."
     }
   },
   "required": ["rid", "event_type", "symbol", "source_fsm"]

@@ -238,6 +238,66 @@
       "type": "object",
       "additionalProperties": true
     },
+    "tpsl_owner_ctx": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intended_owner": {
+              "type": "string",
+              "enum": [
+                "regime_tpsl",
+                "entry_plan"
+              ]
+            },
+            "final_owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "regime_tpsl",
+                    "entry_plan"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner_loss_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "REGIME_TPSL_DISABLED_OR_MISSING",
+                    "REGIME_TPSL_CONFIG_ERROR",
+                    "REGIME_TPSL_ATR_UNAVAILABLE",
+                    "REGIME_TPSL_INVALID_INPUT",
+                    "REGIME_TPSL_UNSUPPORTED_MODE",
+                    "TPSL_GUARDRAIL_SL_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_TP_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_SL_MIN_DIST_BPS",
+                    "TPSL_GUARDRAIL_TP_MIN_DIST_BPS"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "intended_owner",
+            "final_owner",
+            "owner_loss_reason"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "mr_params": {
       "type": "object",
       "additionalProperties": true

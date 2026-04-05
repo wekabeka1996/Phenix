@@ -86,6 +86,10 @@ class CloseExecutor:
             if abs(amt) < 1e-10:
                 LOG.info(f"No open position to close for {symbol}")
                 self._fsm._symbol_brackets.pop(symbol, None)
+                self._fsm._persist_restore_artifact_snapshot(
+                    trigger="close_executor:no_position_partial",
+                    allow_empty=True,
+                )
                 return
 
             position_qty = abs(Decimal(str(amt)))
@@ -209,6 +213,10 @@ class CloseExecutor:
         if abs(amt) < 1e-10:
             LOG.info(f"No open position to close for {symbol}")
             self._fsm._symbol_brackets.pop(symbol, None)
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger="close_executor:no_position_full",
+                allow_empty=True,
+            )
             return
         close_side = "SELL" if amt > 0 else "BUY"
         close_qty = str(abs(Decimal(str(amt))))
@@ -221,6 +229,10 @@ class CloseExecutor:
         LOG.info(
             f"Close executed for {symbol}: side={close_side} qty={close_qty}")
         self._fsm._symbol_brackets.pop(symbol, None)
+        self._fsm._persist_restore_artifact_snapshot(
+            trigger="close_executor:close_executed",
+            allow_empty=True,
+        )
 
         # Allow exchange-side settlement to catch up before orphan cleanup.
         lifecycle_cfg = self._fsm.config.domains.execution_position.order_lifecycle
@@ -377,6 +389,10 @@ class CloseExecutor:
                     current_sl = brackets.get("sl_order_id")
                     current_tp = brackets.get("tp_order_id")
                     manage_flow.set_bracket_ids(current_sl, current_tp)
+                self._fsm._persist_restore_artifact_snapshot(
+                    trigger="close_executor:aux_bracket_registered",
+                    allow_empty=True,
+                )
 
         except Exception as e:
             LOG.error(f"❌ PLACE_ORDER failed: {e}")

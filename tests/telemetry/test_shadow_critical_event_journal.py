@@ -6,6 +6,7 @@ from unittest.mock import patch
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from apps.reference.config_models import ShadowCriticalEventJournalConfig
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
@@ -128,7 +129,8 @@ def _make_execpos_config(path: Path):
     fb.risk_reduction_pct = "0.5"
     fb.backoff_ms = [200, 500, 1000]
 
-    cfg.trading.execution.exposure.leverage_defaults = {"__default__": 20, "BTCUSDT": 20}
+    cfg.trading.execution.exposure.leverage_defaults = {
+        "__default__": 20, "BTCUSDT": 20}
     cfg.trading.execution.exposure.count_pending_orders = True
     cfg.trading.execution.exposure.exclude_reduce_only = True
     cfg.trading.risk = {
@@ -186,22 +188,229 @@ def test_shadow_journal_fail_open_and_duplicate_fill_marker(tmp_path):
 
     payload = {
         "symbol": "BTCUSDT",
+        "side": "buy",
         "orderId": "12345",
         "client_order_id": "ENTRY-BTCUSDT-1",
         "quantity": "0.01",
         "price": "50000",
+        "ts": 1775261792250,
+        "venue": "binance",
     }
 
     with patch.object(journal.sink, "write", side_effect=flaky_write):
-        fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
-        fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="polling_fill", rid="rid-1")
+        fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+                 why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
+        fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+                 why="polling_fill", rid="rid-1")
 
     records = _read_jsonl(path)
     assert len(records) == 1
     assert records[0]["suspected_duplicate"] is True
     assert records[0]["duplicate_heuristic"] is True
     assert records[0]["duplicate_kind"] == "cross_origin_duplicate_exposure"
-    assert "shadow_journal_write_failed" in (records[0]["instrumentation_failure"] or "")
+    assert "shadow_journal_write_failed" in (
+        records[0]["instrumentation_failure"] or "")
+
+
+def test_shadow_journal_captures_regime_detected_heartbeat_truth(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, _shadow_cfg(path))
+
+    payload = {
+        "symbol": "ETHUSDT",
+        "ts": 1775105700000,
+        "ts_ms": 1775105700000,
+        "regime": "TREND_DOWN",
+        "confidence": "0.85",
+        "source_model": "sma_trend_v1",
+        "changed": False,
+        "raw_regime": "TREND_DOWN",
+        "raw_confidence": "0.85",
+        "stable_confidence": "0.85",
+        "structural_regime_ref": "structural:ETHUSDT:1775105700000",
+        "last_update_ts_ms": 1775105700256,
+        "hysteresis_confirm_count": 3,
+        "regime_layer": "structural",
+        "regime_scope": "per_symbol",
+        "regime_clock": "bar",
+    }
+
+    fsm.emit(
+        "EVT:REGIME_DETECTED",
+        payload=payload,
+        why="regime=TREND_DOWN model=sma_trend_v1 symbol=ETHUSDT same",
+        rid="rid-regime-heartbeat",
+    )
+
+    records = _read_jsonl(path)
+    assert len(records) == 1
+    assert records[0]["event_name"] == "EVT:REGIME_DETECTED"
+    fragment = records[0]["payload_fragment"]
+    assert fragment["regime"] == "TREND_DOWN"
+    assert fragment["confidence"] == "0.85"
+    assert fragment["changed"] is False
+    assert fragment["raw_confidence"] == "0.85"
+    assert fragment["structural_regime_ref"] == "structural:ETHUSDT:1775105700000"
+
+
+def test_shadow_journal_captures_regime_detected_transition_truth(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, _shadow_cfg(path))
+
+    payload = {
+        "symbol": "ETHUSDT",
+        "ts": 1775106000000,
+        "ts_ms": 1775106000000,
+        "regime": "LOW_VOLATILITY",
+        "confidence": "0.28",
+        "source_model": "volatility_v2",
+        "changed": True,
+        "raw_regime": "LOW_VOLATILITY",
+        "raw_confidence": "0.2869",
+        "stable_confidence": "0.28",
+        "structural_regime_ref": "structural:ETHUSDT:1775106000000",
+        "last_update_ts_ms": 1775106000123,
+        "hysteresis_confirm_count": 3,
+        "regime_layer": "structural",
+        "regime_scope": "per_symbol",
+        "regime_clock": "bar",
+    }
+
+    fsm.emit(
+        "EVT:REGIME_DETECTED",
+        payload=payload,
+        why="regime=LOW_VOLATILITY model=volatility_v2 symbol=ETHUSDT",
+        rid="rid-regime-transition",
+    )
+
+    records = _read_jsonl(path)
+    assert len(records) == 1
+    fragment = records[0]["payload_fragment"]
+    assert fragment["changed"] is True
+    assert fragment["regime"] == "LOW_VOLATILITY"
+    assert fragment["raw_regime"] == "LOW_VOLATILITY"
+    assert fragment["last_update_ts_ms"] == 1775106000123
+
+
+def test_shadow_journal_typed_default_matches_runtime_default_allowlist():
+    assert list(ShadowCriticalEventJournalConfig().critical_events) == list(
+        DEFAULT_CRITICAL_EVENTS
+    )
+
+
+def test_loaded_runtime_config_retains_regime_detected_in_shadow_journal():
+    config = ConfigLoader().load_config()
+
+    assert "EVT:REGIME_DETECTED" in config.observability.shadow_journal.critical_events
+
+
+def test_loaded_runtime_shadow_journal_links_business_rid_to_retained_detector_artifact(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    config = ConfigLoader().load_config()
+    config.observability.shadow_journal.enabled = True
+    config.observability.shadow_journal.path = str(path)
+
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, config)
+
+    detector_ts_ms = 1775400000000
+    detector_ref = f"structural:ETHUSDT:{detector_ts_ms}"
+    detector_payload = {
+        "symbol": "ETHUSDT",
+        "ts": detector_ts_ms,
+        "ts_ms": detector_ts_ms,
+        "regime": "LOW_VOLATILITY",
+        "confidence": "0.57",
+        "source_model": "volatility_v2",
+        "changed": False,
+        "raw_regime": "LOW_VOLATILITY",
+        "raw_confidence": "0.57",
+        "stable_confidence": "0.57",
+        "structural_regime_ref": detector_ref,
+        "last_update_ts_ms": detector_ts_ms + 123,
+        "hysteresis_confirm_count": 3,
+        "regime_layer": "structural",
+        "regime_scope": "per_symbol",
+        "regime_clock": "bar",
+        "regime_owner": "regime_detector",
+    }
+    business_rid = "rid-runtime-business-link-1"
+
+    fsm.emit(
+        "EVT:REGIME_DETECTED",
+        payload=detector_payload,
+        why="regime=LOW_VOLATILITY model=volatility_v2 symbol=ETHUSDT same",
+        rid="rid-detector-heartbeat-1",
+    )
+    fsm.emit(
+        "EVT:TRADE_INTENT_PROPOSED",
+        payload={
+            "rid": business_rid,
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "qty": "0.01",
+            "price": "2400.0",
+            "strategy_id": "aurora",
+            "regime": "LOW_VOLATILITY",
+            "regime_confidence": 0.57,
+            "regime_provenance": {
+                "source_kind": "detector_cache",
+                "detector_event": {
+                    "event_name": "EVT:REGIME_DETECTED",
+                    "rid": "rid-detector-heartbeat-1",
+                    "ts_ms": detector_ts_ms,
+                    "last_update_ts_ms": detector_ts_ms + 123,
+                    "structural_regime_ref": detector_ref,
+                    "changed": False,
+                    "regime": "LOW_VOLATILITY",
+                    "confidence": "0.57",
+                    "raw_regime": "LOW_VOLATILITY",
+                    "raw_confidence": "0.57",
+                },
+                "cache_snapshot": {
+                    "cache_write_ts_ms": detector_ts_ms + 200,
+                    "regime": "LOW_VOLATILITY",
+                    "confidence": 0.57,
+                },
+            },
+        },
+        why="controlled_runtime_like_business_case",
+        rid=business_rid,
+    )
+
+    records = _read_jsonl(path)
+    detector_records = [
+        record
+        for record in records
+        if record["event_name"] == "EVT:REGIME_DETECTED"
+        and record["symbol"] == "ETHUSDT"
+    ]
+    intent_records = [
+        record
+        for record in records
+        if record["event_name"] == "EVT:TRADE_INTENT_PROPOSED"
+        and record["rid"] == business_rid
+    ]
+
+    assert len(detector_records) == 1
+    assert len(intent_records) == 1
+
+    detector_fragment = detector_records[0]["payload_fragment"]
+    intent_fragment = intent_records[0]["payload_fragment"]
+    detector_ref_from_intent = intent_fragment["regime_provenance"]["detector_event"]
+
+    assert detector_fragment["ts_ms"] == detector_ts_ms
+    assert detector_fragment["regime"] == "LOW_VOLATILITY"
+    assert detector_fragment["confidence"] == "0.57"
+    assert detector_fragment["structural_regime_ref"] == detector_ref
+    assert detector_ref_from_intent["event_name"] == "EVT:REGIME_DETECTED"
+    assert detector_ref_from_intent["rid"] == "rid-detector-heartbeat-1"
+    assert detector_ref_from_intent["ts_ms"] == detector_fragment["ts_ms"]
+    assert detector_ref_from_intent["regime"] == detector_fragment["regime"]
+    assert detector_ref_from_intent["confidence"] == detector_fragment["confidence"]
+    assert detector_ref_from_intent["structural_regime_ref"] == detector_fragment["structural_regime_ref"]
 
 
 def test_close_flow_transition_captures_before_after_state(tmp_path):
@@ -237,10 +446,12 @@ def test_execpos_hydrate_writes_restore_record(tmp_path):
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"):
         bus = _Bus()
         fsm = ExecPosFSM(config=fsm_config, fsm=bus)
-        fsm.hydrate({"symbol": "BTCUSDT", "qty": "0.01", "entry_price": "50000", "side": "BUY"})
+        fsm.hydrate({"symbol": "BTCUSDT", "qty": "0.01",
+                    "entry_price": "50000", "side": "BUY"})
 
     records = _read_jsonl(path)
-    restore_records = [r for r in records if r["event_name"] == "RESTORE:EXECUTION_POSITION_HYDRATE"]
+    restore_records = [r for r in records if r["event_name"]
+                       == "RESTORE:EXECUTION_POSITION_HYDRATE"]
     assert len(restore_records) == 1
     assert restore_records[0]["restore_marker"] is True
     assert restore_records[0]["truth_owner"] == "ExecPosFSM"
@@ -253,7 +464,8 @@ def test_position_tracking_load_snapshot_writes_restore_record(tmp_path):
     config = ConfigLoader().load_config()
     config.observability.shadow_journal.enabled = True
     config.observability.shadow_journal.path = str(path)
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     config.domains.execution_position.event_dedup.warm_state.storage_path = str(
         tmp_path / "warm_state.json"
     )
@@ -274,7 +486,8 @@ def test_position_tracking_load_snapshot_writes_restore_record(tmp_path):
             "balance": "995",
         },
     }
-    state_hash = hashlib.sha256(json.dumps(state, sort_keys=True).encode("utf-8")).hexdigest()
+    state_hash = hashlib.sha256(json.dumps(
+        state, sort_keys=True).encode("utf-8")).hexdigest()
     snapshot = {
         "timestamp_utc": "2026-03-20T10:00:00Z",
         "state_hash": f"sha256:{state_hash}",
@@ -284,7 +497,8 @@ def test_position_tracking_load_snapshot_writes_restore_record(tmp_path):
     assert tracker.load_snapshot(snapshot) is True
 
     records = _read_jsonl(path)
-    restore_records = [r for r in records if r["event_name"] == "RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD"]
+    restore_records = [r for r in records if r["event_name"]
+                       == "RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD"]
     assert len(restore_records) == 1
     assert restore_records[0]["restore_marker"] is True
     assert restore_records[0]["truth_owner"] == "PositionTracking"

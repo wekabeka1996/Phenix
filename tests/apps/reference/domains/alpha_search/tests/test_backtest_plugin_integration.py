@@ -7,10 +7,20 @@ Tests for apps/reference/domains/alpha_search/backtest_plugin.py
 """
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
-from apps.reference.domains.alpha_search.config_models import get_default_config, get_default_system_config
+from apps.reference.domains.alpha_search.config_models import (
+    get_default_config,
+    get_default_system_config,
+    load_alpha_search_config,
+)
+
+
+def _load_repo_alpha_search_config():
+    repo_root = Path(__file__).resolve().parents[6]
+    return load_alpha_search_config(str(repo_root / "config" / "alpha_search.yaml"))
 
 
 @pytest.mark.unit
@@ -79,6 +89,42 @@ class TestFeatureCacheViaLocalBus:
         )
 
         assert len(plugin._feature_cache) > 0
+
+    def test_ta_feature_event_flat_payload_populates_cache(self):
+        """Emitting EVT:TA_FEATURES_CALCULATED via LocalBus populates TA cache metadata."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+        bus = LocalBus()
+        cfg = _load_repo_alpha_search_config()
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+
+        bus.emit(
+            event_name=cfg.triggers.ta_feature_event,
+            payload={
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1740000000000,
+                "ts": 1740000000000,
+                "close": 96000.0,
+                "bb_position": 0.3,
+                "bb_width": 0.02,
+                "rsi_14": 45.0,
+                "price_sma_20_deviation": -0.005,
+                "volume_sma_ratio": 1.1,
+                "stoch_k": 35.0,
+                "stoch_d": 38.0,
+                "price_momentum_5m": 0.002,
+                "warm_up_bars": 20,
+                "required_warm_up_bars": 20,
+                "is_warm": True,
+                "source": "ta_features",
+            },
+            why="test",
+        )
+
+        key = ("BTCUSDT", 300, 1740000000000)
+        assert key in plugin._feature_cache
+        assert plugin._feature_cache[key].ta_features_ready is True
+        assert cfg.triggers.ta_feature_event in plugin._feature_cache[key].source_events
 
     def test_scoring_produces_event(self):
         """CMD:PROCESS_STRATEGY with cached features triggers score event."""
@@ -156,6 +202,61 @@ class TestFeatureCacheViaLocalBus:
             pld = r.get("pld", r) if isinstance(r, dict) else r
             if isinstance(pld, dict):
                 assert pld.get("score", 1.0) == 0.0
+
+    def test_ta_ensemble_fails_closed_when_ta_not_warm(self):
+        """ta_ensemble must fail closed when the explicit TA event is present but not warm."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+        bus = LocalBus()
+        cfg = _load_repo_alpha_search_config()
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+
+        results = []
+        bus.listen("EVT:ALPHA_SCORE_CALCULATED",
+                   lambda e, **kw: results.append(e))
+
+        bus.emit(
+            event_name=cfg.triggers.ta_feature_event,
+            payload={
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1740000000000,
+                "ts": 1740000000000,
+                "close": 96000.0,
+                "bb_position": 0.3,
+                "bb_width": 0.02,
+                "rsi_14": 45.0,
+                "price_sma_20_deviation": -0.005,
+                "volume_sma_ratio": 1.1,
+                "stoch_k": 35.0,
+                "stoch_d": 38.0,
+                "price_momentum_5m": 0.002,
+                "warm_up_bars": 5,
+                "required_warm_up_bars": 20,
+                "is_warm": False,
+                "source": "ta_features",
+            },
+            why="test",
+        )
+        bus.emit(
+            event_name="CMD:PROCESS_STRATEGY",
+            payload={
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1740000000000,
+            },
+            why="test",
+        )
+
+        ta_results = []
+        for result in results:
+            payload = result.get("pld", result) if isinstance(
+                result, dict) else result
+            if isinstance(payload, dict) and payload.get("provider_id") == "ta_ensemble":
+                ta_results.append(payload)
+
+        assert ta_results
+        assert ta_results[-1]["score"] == 0.0
+        assert "fail_closed:ta_features_not_warm" in ta_results[-1]["why"]
 
 
 @pytest.mark.unit

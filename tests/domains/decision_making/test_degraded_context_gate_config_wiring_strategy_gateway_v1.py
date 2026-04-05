@@ -4,6 +4,7 @@ import time
 
 from vfoundation.core.fsm_core import FSMCore
 
+from apps.reference.config_models import DegradedContextStrategyContractConfig
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
@@ -15,10 +16,11 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     # Enable gate via canonical domains.decision_making config.
     cfg.domains.decision_making.fail_closed_on_degraded_context = True
 
-    # Global critical keys would not trigger (price provided), per-strategy override should.
-    cfg.domains.decision_making.degraded_context_critical_keys = ["price"]
-    cfg.domains.decision_making.degraded_context_critical_keys_by_strategy = {
-        "stratX": ["ema_bias"],
+    # Strategy-scoped contract is the canonical SSOT; no hidden global fallback applies.
+    cfg.domains.decision_making.degraded_context_critical_keys = []
+    cfg.domains.decision_making.degraded_context_critical_keys_by_strategy = {}
+    cfg.domains.decision_making.degraded_context_contracts_by_strategy = {
+        "stratX": DegradedContextStrategyContractConfig(enabled=True, critical_keys=["ema_bias"]),
     }
 
     fsm = FSMCore()
@@ -30,6 +32,7 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     # Avoid test coupling to optional strategies registry arbitration.
     dm.strategies_registry = None
     dm._cfg.strategies_registry = None
+    dm._flip.handle_flip_orchestration = lambda *args, **kwargs: None
 
     symbol = "ETHUSDT"
 
@@ -65,3 +68,42 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     payload_min = original_event.get("payload_min") or {}
     missing_critical = payload_min.get("missing_critical") or {}
     assert "ema_bias" in missing_critical
+
+
+def test_degraded_context_gate_ignores_global_lists_when_strategy_contract_absent() -> None:
+    cfg = ConfigLoader().load_config()
+    cfg.domains.decision_making.fail_closed_on_degraded_context = True
+    cfg.domains.decision_making.degraded_context_critical_keys = ["ema_bias"]
+    cfg.domains.decision_making.degraded_context_critical_keys_by_strategy = {
+        "stratY": ["price"],
+    }
+    cfg.domains.decision_making.degraded_context_contracts_by_strategy = {}
+
+    fsm = FSMCore()
+    deferred: list[dict] = []
+    fsm.listen("EVT:INTENT_DEFERRED", lambda msg: deferred.append(msg.pld))
+
+    dm = DecisionMaking(fsm=fsm, config=cfg)
+    dm.strategies_registry = None
+    dm._cfg.strategies_registry = None
+    dm._flip.handle_flip_orchestration = lambda *args, **kwargs: None
+
+    symbol = "ETHUSDT"
+    now_ms = int(time.time() * 1000)
+    fsm.emit(
+        "EVT:RISK_ASSESSMENT_COMPLETED",
+        {"symbol": symbol, "ts": now_ms, "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}},
+        why="test",
+    )
+    fsm.emit(
+        "EVT:FEATURES_CALCULATED",
+        {"ts": now_ms, "symbol": symbol, "features": {}},
+        why="test",
+    )
+    fsm.emit(
+        "EVT:STRATEGY_SIGNAL_PRODUCED",
+        {"strategy_id": "stratZ", "symbol": symbol, "side": "BUY", "rid": "rid-absent", "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
+        why="test",
+    )
+
+    assert deferred == []

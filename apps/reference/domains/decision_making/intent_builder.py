@@ -23,7 +23,11 @@ from vfoundation.dr import wal
 from apps.reference.utils.accessors import aget
 from apps.reference.telemetry.metrics import inc_decision_deferred
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.telemetry.regime_confidence_audit import (
+    emit_regime_decision_audit,
+)
 from .normalized_reject_reasons import NormalizedRejectReasons
+from .tpsl_owner import clone_tpsl_owner_ctx
 
 try:
     from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
@@ -124,6 +128,7 @@ class IntentBuilder:
         max_slippage_bps: Optional[int],
         max_latency_ms: Optional[int],
         risk_score: Optional[float],
+        tpsl_owner_ctx: Optional[dict] = None,
         strategy_trace: Optional[dict] = None,
         normalize_mode: str = "signed_v2",
         sg: "SafetyGateResult",
@@ -247,6 +252,7 @@ class IntentBuilder:
         if target_price not in (None, "", "None"):
             td = self._safe_decimal(target_price, default=None)
             target_price_payload = str(td) if td is not None else None
+        tpsl_owner_payload = clone_tpsl_owner_ctx(tpsl_owner_ctx)
 
         # These schema-required fields are still produced in their current
         # compatibility form here. The builder does not have a proven local
@@ -289,7 +295,13 @@ class IntentBuilder:
             "entry_plan": entry_plan_trace,
             "regime": sg.regime,
             "regime_confidence": sg.regime_confidence,
+            "regime_provenance": None,
         }
+        regime_provenance = getattr(sg, "regime_provenance", None)
+        if isinstance(regime_provenance, dict) and regime_provenance:
+            trade_intent["regime_provenance"] = regime_provenance
+        if tpsl_owner_payload is not None:
+            trade_intent["tpsl_owner_ctx"] = tpsl_owner_payload
         # Optional top-level trace is part of the active execution-boundary
         # schema and is only attached when an upstream strategy supplied one.
         if isinstance(strategy_trace, dict) and strategy_trace:
@@ -303,6 +315,21 @@ class IntentBuilder:
                 f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {commit['reason']}")
             self._record_blocked(symbol)
             return
+        try:
+            emit_regime_decision_audit(
+                logger=self.logger,
+                symbol=str(symbol),
+                rid=str(rid),
+                lifecycle_id=str(trade_intent["idempotent_key"]),
+                strategy_id=str(strategy_id),
+                sg=sg,
+                outcome="ALLOW",
+            )
+        except Exception:
+            self.logger.debug(
+                "REGIME_AUDIT decision emit failed in IntentBuilder",
+                exc_info=True,
+            )
 
         # ── Forensic trace ─────────────────────────────────────
         trace_payload = {
@@ -317,6 +344,17 @@ class IntentBuilder:
             "gate_outcome": "ALLOW", "deny_reason": None,
             "why": (str(sg.why_short)[:80] if sg.why_short else ""),
         }
+        if isinstance(regime_provenance, dict) and regime_provenance:
+            trace_payload["regime_provenance"] = regime_provenance
+        if tpsl_owner_payload is not None:
+            trace_payload["tpsl_owner_ctx"] = tpsl_owner_payload
+            self.logger.info(
+                "[%s] TPSL_OWNER_INTENT intended=%s final=%s reason=%s",
+                symbol,
+                tpsl_owner_payload.get("intended_owner"),
+                tpsl_owner_payload.get("final_owner"),
+                tpsl_owner_payload.get("owner_loss_reason"),
+            )
         try:
             self._fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace_payload,
                            why="decision_trace", data_ref=why_chain)
@@ -374,6 +412,8 @@ class IntentBuilder:
                     regime=str(sg.regime) if sg.regime else "",
                     confidence=float(
                         sg.regime_confidence) if sg.regime_confidence is not None else None,
+                    regime_provenance=regime_provenance if isinstance(
+                        regime_provenance, dict) else None,
                     signal_score=float(
                         sg.signal_score) if sg.signal_score is not None else None,
                     strategy_id=str(strategy_id), entry_type=order_type,
@@ -424,7 +464,16 @@ class IntentBuilder:
             "quantity": float(qty), "price": float(price),
             "source_fsm": "DecisionMaking",
             "regime": sg.regime, "regime_confidence": sg.regime_confidence,
-            "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"], "normalize_mode_effective": normalize_mode},
+            "regime_provenance": regime_provenance if isinstance(regime_provenance, dict) else None,
+            "metadata": {
+                "intent_proposed": True,
+                "idempotent_key": trade_intent["idempotent_key"],
+                "normalize_mode_effective": normalize_mode,
+                "min_regime_confidence": getattr(sg, "min_regime_confidence", None),
+                "threshold_applied": getattr(sg, "threshold_applied", None),
+                "threshold_verdict": getattr(sg, "threshold_verdict", None),
+                "threshold_reason": getattr(sg, "threshold_reason", None),
+            },
         })
 
     # -- Order policy resolution -----------------------------------------------

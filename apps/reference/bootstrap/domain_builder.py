@@ -19,6 +19,7 @@ from apps.reference.domains.position_tracking.position_tracking import PositionT
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.system_stress.system_stress_overlay import SystemStressOverlay
+from apps.reference.domains.ta_features import TAFeaturesEngine
 from vfoundation.core import FSMCore
 
 
@@ -36,6 +37,7 @@ class LiveDomainBundle:
     bar_aggregator: Optional[BarAggregator]
     system_stress_overlay: Optional[SystemStressOverlay] = None
     objective_engine_runtime: Optional[ObjectiveEngineRuntime] = None
+    ta_features_engine: Optional[TAFeaturesEngine] = None
 
 
 _DEBUG_EVENTS = [
@@ -59,7 +61,8 @@ def build_live_domains(
         if debug_event_listener is not None:
             for event_name in _DEBUG_EVENTS:
                 fsm.listen(event_name, debug_event_listener)
-            logger.info("Debug event listener ENABLED via config.system.debug_event_listener_enabled")
+            logger.info(
+                "Debug event listener ENABLED via config.system.debug_event_listener_enabled")
     else:
         logger.debug("Debug event listener DISABLED in config")
 
@@ -79,6 +82,29 @@ def build_live_domains(
         logger.info("Using MarketDataConnector (legacy single-process mode)")
         market_data = MarketDataConnector(fsm=fsm, config=config)
 
+    ta_features_engine: Optional[TAFeaturesEngine] = None
+    ta_features_cfg = getattr(config.domains, "ta_features", None)
+    if ta_features_cfg is None:
+        logger.info(
+            "TAFeaturesEngine disabled",
+            extra={
+                "why": "ta_features_absent",
+                "reason": "config.domains.ta_features not defined",
+            },
+        )
+    elif not ta_features_cfg.enabled:
+        logger.info(
+            "TAFeaturesEngine disabled",
+            extra={
+                "why": "ta_features_disabled",
+                "reason": "config.domains.ta_features.enabled=false",
+            },
+        )
+    else:
+        # Register TA first so same-bar TA cache exists before FE can trigger
+        # downstream decision scoring on CMD:PROCESS_STRATEGY.
+        ta_features_engine = TAFeaturesEngine(fsm=fsm, config=ta_features_cfg)
+
     feature_engineering = FeatureEngineering(fsm=fsm, config=config)
 
     bar_aggregator: Optional[BarAggregator] = None
@@ -86,12 +112,14 @@ def build_live_domains(
     if bar_config is None:
         logger.info(
             "BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_missing_config", "reason": "config.trading.market_data.bar_aggregator not defined"},
+            extra={"why": "bar_agg_disabled_missing_config",
+                   "reason": "config.trading.market_data.bar_aggregator not defined"},
         )
     elif not bar_config.enabled:
         logger.info(
             "BarAggregator disabled",
-            extra={"why": "bar_agg_disabled_config", "reason": "bar_aggregator.enabled=false"},
+            extra={"why": "bar_agg_disabled_config",
+                   "reason": "bar_aggregator.enabled=false"},
         )
     else:
         timeframes = bar_config.timeframes_sec
@@ -101,7 +129,8 @@ def build_live_domains(
                 extra={"why": "bar_agg_timeframes_default"},
             )
             timeframes = [60, 300]
-        bar_aggregator = BarAggregator(timeframes_sec=timeframes, emit_fn=fsm.emit)
+        bar_aggregator = BarAggregator(
+            timeframes_sec=timeframes, emit_fn=fsm.emit)
         fsm.listen("EVT:MARKET_TICK_RECEIVED", bar_aggregator.on_market_tick)
         logger.info(
             "BarAggregator enabled",
@@ -109,8 +138,8 @@ def build_live_domains(
         )
 
     risk_management = RiskManagement(fsm=fsm, config=config)
-    position_tracking = PositionTracking(fsm=fsm, config=config)
     execution_position = ExecPosFSM(config=config, fsm=fsm)
+    position_tracking = PositionTracking(fsm=fsm, config=config)
     decision_making = DecisionMaking(fsm=fsm, config=config)
     regime_detector = RegimeDetector(config=config, fsm=fsm)
     csv_recorder = CsvRecorder(fsm=fsm, config=config)
@@ -132,4 +161,5 @@ def build_live_domains(
         bar_aggregator=bar_aggregator,
         system_stress_overlay=system_stress_overlay,
         objective_engine_runtime=objective_engine_runtime,
+        ta_features_engine=ta_features_engine,
     )

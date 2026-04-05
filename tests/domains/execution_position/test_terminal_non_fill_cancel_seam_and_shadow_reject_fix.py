@@ -5,13 +5,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
+from apps.reference.main import build_emit_with_monitoring
+from apps.reference.domains.execution_position.terminal_order_contracts import (
+    emit_canonical_terminal_order_event,
+)
 from apps.reference.domains.execution_position.entry_manager import EntryManager
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     attach_shadow_journal,
 )
+from apps.reference.telemetry.trade_lifecycle_logger import TradeLifecycleLogger
 from vfoundation.core.fsm_core import FSMCore
+from vfoundation.core.protocol import Message
 
 
 def _shadow_cfg(path: Path):
@@ -51,9 +58,31 @@ class _MakerOnlyReject(Exception):
         self.code = code
 
 
+class _OrderRef:
+    def __init__(self, *, rid: str, idempotent_key: str, client_order_id: str) -> None:
+        self.rid = rid
+        self.idempotent_key = idempotent_key
+        self.clientOrderId = client_order_id
+        self.order_kind = "ENTRY"
+        self.created_ts = 0.0
+
+
+class _OrderIndex:
+    def __init__(self, ref: _OrderRef) -> None:
+        self._ref = ref
+        self.marked_terminal = []
+
+    def get(self, clientOrderId=None, exchangeOrderId=None):
+        return self._ref
+
+    def mark_terminal(self, ref):
+        self.marked_terminal.append(ref)
+
+
 @pytest.mark.asyncio
 async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shadow(tmp_path):
     journal_path = tmp_path / "shadow_timeout_cancel.jsonl"
+    lifecycle_path = tmp_path / "trade_lifecycle_timeout_cancel.jsonl"
     bus = FSMCore()
     attach_shadow_journal(bus, _shadow_cfg(journal_path))
 
@@ -81,9 +110,25 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
         client_order_id="ENTRY-4dc9a0dc9de7",
     )
 
+    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
         "apps.reference.domains.execution_position.entry_manager.order_logger.write"
+    ), patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
     ):
+        lifecycle.on_intent(
+            rid=deadline.rid,
+            symbol="SOLUSDT",
+            side="BUY",
+            strategy_id="aurora",
+            entry_type="LIMIT",
+        )
+        lifecycle.on_order_placed(
+            rid=deadline.rid,
+            order_id=deadline.order_id,
+            price=120.5,
+        )
         await EntryManager(fsm).handle_order_timeout(deadline)
 
     fsm.watchdog.on_order_cancel.assert_called_once_with("1811569723")
@@ -108,10 +153,15 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
     assert fragment["terminal_state_kind"] == "CANCELED"
     assert fragment["canonical_identity_key"] == payload["canonical_identity_key"]
 
+    lifecycle_rows = _read_jsonl(lifecycle_path)
+    assert lifecycle_rows[-1]["status"] == "CANCELLED"
+    assert lifecycle_rows[-1]["close_reason"] == "timeout_cancellation"
+
 
 @pytest.mark.asyncio
 async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat_fallback(tmp_path):
     journal_path = tmp_path / "shadow_reject.jsonl"
+    lifecycle_path = tmp_path / "trade_lifecycle_reject.jsonl"
     bus = FSMCore()
     attach_shadow_journal(bus, _shadow_cfg(journal_path))
 
@@ -123,22 +173,34 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     executor = OpenExecutor(fsm)
     decision = SimpleNamespace(rid="mdamr-shadow-gap-fix")
 
+    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
         "apps.reference.domains.execution_position.open_executor.order_logger.write"
     ), patch(
         "apps.reference.domains.execution_position.terminal_order_contracts.emit_compat",
         new_callable=AsyncMock,
     ) as mock_emit_compat:
-        result = await executor._place_limit_entry(
-            decision=decision,
+        lifecycle.on_intent(
+            rid=decision.rid,
             symbol="XRPUSDT",
             side="BUY",
-            price="1.4004",
-            qty="6246.7",
-            tif="GTX",
-            entry_id="ENTRY-XRP-1",
-            wal=MagicMock(),
+            strategy_id="aurora",
+            entry_type="LIMIT",
         )
+        with patch(
+            "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+            lifecycle,
+        ):
+            result = await executor._place_limit_entry(
+                decision=decision,
+                symbol="XRPUSDT",
+                side="BUY",
+                price="1.4004",
+                qty="6246.7",
+                tif="GTX",
+                entry_id="ENTRY-XRP-1",
+                wal=MagicMock(),
+            )
 
     assert result is None
     mock_emit_compat.assert_not_awaited()
@@ -162,3 +224,154 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     assert fragment["terminal_state_kind"] == "REJECTED"
     assert fragment["reject_reason_normalized"] == "MAKER_ONLY_REJECT"
     assert fragment["canonical_identity_key"] == payload["canonical_identity_key"]
+
+    lifecycle_rows = _read_jsonl(lifecycle_path)
+    assert lifecycle_rows[-1]["status"] == "REJECTED"
+    assert lifecycle_rows[-1]["reject_stage"] == "EXECUTION"
+    assert lifecycle_rows[-1]["close_reason"] == "MAKER_ONLY_REJECT"
+
+
+@pytest.mark.asyncio
+async def test_monitored_emit_wrapper_preserves_message_path_for_canonical_reject_shadow(tmp_path):
+    journal_path = tmp_path / "shadow_wrapper_reject.jsonl"
+    lifecycle_path = tmp_path / "trade_lifecycle_wrapper_reject.jsonl"
+    bus = FSMCore()
+    attach_shadow_journal(bus, _shadow_cfg(journal_path))
+
+    entropy_monitor = MagicMock()
+    shadow_publisher = MagicMock()
+    wrapped_emit = build_emit_with_monitoring(
+        original_emit=bus.emit,
+        entropy_monitor=entropy_monitor,
+        shadow_event_tap_getter=lambda: shadow_publisher,
+        logger=MagicMock(),
+    )
+
+    wal_records: list[dict] = []
+    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle.on_intent(
+        rid="rid-wrapper-shadow-fix",
+        symbol="DOGEUSDT",
+        side="BUY",
+        strategy_id="aurora",
+        entry_type="LIMIT",
+    )
+    with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
+    ):
+        await emit_canonical_terminal_order_event(
+            fsm=SimpleNamespace(emit=wrapped_emit),
+            event_name="EVT:ORDER_REJECTED",
+            payload={
+                "symbol": "DOGEUSDT",
+                "side": "BUY",
+                "reason_code": "ADAPTER_ERROR",
+                "reason_text": "Order would immediately trigger.",
+                "origin_class": "execution_adapter",
+            },
+            rid="rid-wrapper-shadow-fix",
+            src="execution_position",
+            dst="decision_making",
+            why="adapter_execution_failed",
+            write_wal=True,
+            fallback_ts_ms=1775300000000,
+        )
+
+    entropy_monitor.track_event.assert_called_once()
+    tracked_msg = entropy_monitor.track_event.call_args.args[0]
+    assert isinstance(tracked_msg, Message)
+    assert tracked_msg.verb == "ORDER_REJECTED"
+
+    shadow_publisher.publish.assert_called_once_with(
+        event_name="EVT:ORDER_REJECTED",
+        payload=wal_records[0]["pld"],
+        why="adapter_execution_failed",
+    )
+
+    records = _read_jsonl(journal_path)
+    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_REJECTED"]
+    assert len(shadow_events) == 1
+    assert shadow_events[0]["payload_fragment"]["origin_class"] == "execution_adapter"
+
+    lifecycle_rows = _read_jsonl(lifecycle_path)
+    assert lifecycle_rows[-1]["status"] == "REJECTED"
+    assert lifecycle_rows[-1]["close_reason"] == "ADAPTER_ERROR: ORDER WOULD IMMEDIATELY TRIGGER."
+
+
+def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
+    journal_path = tmp_path / "shadow_ws_cancel.jsonl"
+    lifecycle_path = tmp_path / "trade_lifecycle_ws_cancel.jsonl"
+    bus = FSMCore()
+    attach_shadow_journal(bus, _shadow_cfg(journal_path))
+
+    order_ref = _OrderRef(
+        rid="aurora_SOLUSDT_phase4_cancel_fix",
+        idempotent_key="idem-phase4-cancel-fix",
+        client_order_id="ENTRY-SOL-PHASE4-1",
+    )
+    bus.order_index = _OrderIndex(order_ref)
+    ws_client = BinanceWebSocketClient(
+        api_key="test",
+        base_url="https://test",
+        use_testnet=True,
+        fsm_core=bus,
+        main_loop=None,
+    )
+
+    wal_records: list[dict] = []
+    ws_msg = {
+        "e": "ORDER_TRADE_UPDATE",
+        "T": 1775300100000,
+        "o": {
+            "s": "SOLUSDT",
+            "c": "ENTRY-SOL-PHASE4-1",
+            "i": "1836000001",
+            "X": "CANCELED",
+            "S": "BUY",
+            "o": "LIMIT",
+            "z": "0",
+            "q": "4",
+            "p": "120.50",
+            "f": "GTC",
+        },
+    }
+
+    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle.on_intent(
+        rid="aurora_SOLUSDT_phase4_cancel_fix",
+        symbol="SOLUSDT",
+        side="BUY",
+        strategy_id="aurora",
+        entry_type="LIMIT",
+    )
+    lifecycle.on_order_placed(
+        rid="aurora_SOLUSDT_phase4_cancel_fix",
+        order_id="1836000001",
+        price=120.5,
+    )
+    with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
+    ):
+        ws_client._handle_order_trade_update(ws_msg)
+
+    state_changed = [r for r in wal_records if r.get("verb") == "ORDER_STATE_CHANGED"]
+    assert len(state_changed) == 1
+    payload = state_changed[0]["pld"]
+    assert payload["rid"] == "aurora_SOLUSDT_phase4_cancel_fix"
+    assert payload["orderId"] == "1836000001"
+    assert payload["clientOrderId"] == "ENTRY-SOL-PHASE4-1"
+    assert payload["terminal_non_fill"] is True
+    assert payload["terminal_state_kind"] == "CANCELED"
+
+    records = _read_jsonl(journal_path)
+    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_STATE_CHANGED"]
+    assert len(shadow_events) == 1
+    fragment = shadow_events[0]["payload_fragment"]
+    assert fragment["canonical_identity_key"] == payload["canonical_identity_key"]
+    assert fragment["terminal_state_kind"] == "CANCELED"
+
+    lifecycle_rows = _read_jsonl(lifecycle_path)
+    assert lifecycle_rows[-1]["status"] == "CANCELLED"
+    assert lifecycle_rows[-1]["close_reason"] == "CANCELED"

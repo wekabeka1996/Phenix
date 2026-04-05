@@ -29,7 +29,7 @@ from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
 
 class DummyExecution:
     gtx_retry_max = 2
-    gtx_fallback_to_market = True
+    emit_market_fallback_marker_on_retry_exhaustion = True
 
 
 class DummyMDAMRConfig:
@@ -219,7 +219,7 @@ class TestOnOrderRejectedIntegration:
 
     # --- no_fallback path ---
     def test_no_fallback_config_resets_retries(self, handler):
-        handler._cfg.execution.gtx_fallback_to_market = False
+        handler._cfg.execution.emit_market_fallback_marker_on_retry_exhaustion = False
         evt = _evt({"symbol": "BTCUSDT", "reason": "POST_ONLY_REJECT"})
         handler._gtx_retries["BTCUSDT"] = 2
         handler._on_order_rejected(evt)  # exceeds max, no fallback

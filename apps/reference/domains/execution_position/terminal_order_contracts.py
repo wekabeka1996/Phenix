@@ -15,6 +15,11 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
+try:
+    from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
+except ImportError:
+    _trade_lifecycle = None
+
 IDENTITY_EXACT = "order_identity_exact"
 IDENTITY_DEGRADED = "order_identity_degraded"
 IDENTITY_WEAK = "order_identity_weak"
@@ -24,6 +29,26 @@ TERMINAL_NON_FILL_STATUS_MAP = {
     "CANCELLED": "CANCELED",
     "EXPIRED": "EXPIRED",
     "REJECTED": "REJECTED",
+}
+
+REJECT_ORIGIN_CLASS_UNKNOWN = "unknown"
+REJECT_ORIGIN_CLASS_EXECUTION_ADAPTER = "execution_adapter"
+REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL = "execution_internal"
+REJECT_ORIGIN_CLASS_EXCHANGE_WEBSOCKET = "exchange_websocket"
+REJECT_ORIGIN_CLASS_DECISION_ALIAS = "decision_alias"
+
+REJECT_ORIGIN_CLASS_ALIASES = {
+    "adapter": REJECT_ORIGIN_CLASS_EXECUTION_ADAPTER,
+    "execution_adapter": REJECT_ORIGIN_CLASS_EXECUTION_ADAPTER,
+    "ep_adapter": REJECT_ORIGIN_CLASS_EXECUTION_ADAPTER,
+    "internal": REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL,
+    "execution_internal": REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL,
+    "ep_internal": REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL,
+    "websocket": REJECT_ORIGIN_CLASS_EXCHANGE_WEBSOCKET,
+    "exchange_websocket": REJECT_ORIGIN_CLASS_EXCHANGE_WEBSOCKET,
+    "ws": REJECT_ORIGIN_CLASS_EXCHANGE_WEBSOCKET,
+    "decision": REJECT_ORIGIN_CLASS_DECISION_ALIAS,
+    "decision_alias": REJECT_ORIGIN_CLASS_DECISION_ALIAS,
 }
 
 
@@ -70,6 +95,29 @@ def normalize_order_reject_reason(payload: Mapping[str, Any]) -> Tuple[Optional[
         return code.upper(), "reason_code"
 
     return None, None
+
+
+def normalize_reject_origin_class(payload: Mapping[str, Any]) -> str:
+    for key in ("origin_class", "reject_origin_class", "origin", "origin_type"):
+        value = _stringify(payload.get(key))
+        if value is None:
+            continue
+        return REJECT_ORIGIN_CLASS_ALIASES.get(value.lower(), REJECT_ORIGIN_CLASS_UNKNOWN)
+
+    reason_code = _stringify(payload.get("reason_code"))
+    if reason_code is not None and reason_code.upper() == "ADAPTER_ERROR":
+        return REJECT_ORIGIN_CLASS_EXECUTION_ADAPTER
+
+    nrr_code = _stringify(payload.get("nrr_code"))
+    if nrr_code is not None:
+        return REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL
+
+    details = _stringify(payload.get("details"))
+    norm_result = payload.get("norm_result")
+    if details is not None or norm_result is not None:
+        return REJECT_ORIGIN_CLASS_EXECUTION_INTERNAL
+
+    return REJECT_ORIGIN_CLASS_UNKNOWN
 
 
 def _identity_quality(
@@ -151,6 +199,8 @@ def normalize_order_rejected_payload(
         normalized["reject_reason_source"] = reject_reason_source
         normalized.setdefault("reject_reason", reject_reason_normalized)
         normalized.setdefault("reason", reject_reason_normalized)
+
+    normalized["origin_class"] = normalize_reject_origin_class(normalized)
 
     normalized["identity_quality"] = _identity_quality(
         order_id=order_id,
@@ -257,6 +307,60 @@ def normalize_terminal_order_event_payload(
     return dict(payload)
 
 
+def sync_trade_lifecycle_terminal_order_event(
+    event_name: str,
+    payload: Mapping[str, Any],
+    *,
+    logger: Optional[logging.Logger] = None,
+) -> None:
+    lifecycle = _trade_lifecycle
+    if lifecycle is None:
+        return
+
+    rid = _first_text(payload, "rid")
+    if not rid:
+        return
+
+    try:
+        if event_name == "EVT:ORDER_REJECTED":
+            lifecycle.on_reject(
+                rid=rid,
+                reject_reason=(
+                    _stringify(payload.get("reject_reason_normalized"))
+                    or _stringify(payload.get("reason"))
+                    or _stringify(payload.get("reason_code"))
+                    or "ORDER_REJECTED"
+                ),
+                reject_reason_code=_stringify(payload.get("reason_code")) or "",
+                reject_stage="EXECUTION",
+            )
+            return
+
+        if event_name != "EVT:ORDER_STATE_CHANGED" or payload.get("terminal_non_fill") is not True:
+            return
+
+        terminal_state_kind = (_stringify(payload.get("terminal_state_kind")) or "").upper()
+        reason = (
+            _stringify(payload.get("reason"))
+            or _stringify(payload.get("reject_reason_normalized"))
+            or terminal_state_kind
+            or "ORDER_STATE_CHANGED"
+        )
+        if terminal_state_kind == "REJECTED":
+            lifecycle.on_reject(
+                rid=rid,
+                reject_reason=reason,
+                reject_reason_code=_stringify(payload.get("reason_code")) or "",
+                reject_stage="EXECUTION",
+            )
+            return
+
+        lifecycle.on_cancel(rid=rid, cancel_reason=reason)
+    except Exception as exc:
+        if logger is not None:
+            logger.warning("trade_lifecycle terminal sync failed for %s: %s", event_name, exc)
+
+
 async def emit_canonical_terminal_order_event(
     *,
     fsm: Any,
@@ -311,6 +415,11 @@ async def emit_canonical_terminal_order_event(
             result = emit(msg)
             if inspect.isawaitable(result):
                 await result
+            sync_trade_lifecycle_terminal_order_event(
+                event_name,
+                normalized,
+                logger=logger,
+            )
             return normalized
         except TypeError:
             pass
@@ -323,4 +432,9 @@ async def emit_canonical_terminal_order_event(
                 )
 
     await emit_compat(fsm, msg, logger=logger)
+    sync_trade_lifecycle_terminal_order_event(
+        event_name,
+        normalized,
+        logger=logger,
+    )
     return normalized

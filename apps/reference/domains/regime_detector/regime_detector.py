@@ -31,6 +31,9 @@ from apps.reference.contracts.runtime_regime_layers import (
     RuntimeRegimeScope,
     structural_regime_ref,
 )
+from apps.reference.telemetry.regime_confidence_audit import (
+    emit_regime_bar_close_audit,
+)
 from apps.reference.telemetry.metrics import inc_data_quality_drop
 
 
@@ -282,6 +285,31 @@ class RegimeDetector:
         bounded_confidence = min(
             max(abs(confidence), conf_min), conf_max)
         return bounded_confidence
+
+    def _calculate_confidence_meta(
+        self,
+        sma_short: Decimal,
+        sma_long: Decimal,
+    ) -> tuple[Decimal, bool, bool, Optional[str]]:
+        """Return bounded trend confidence plus explicit boundary semantics."""
+        conf_min = Decimal(str(self.model_config.confidence_min))
+        conf_max = Decimal(str(self.model_config.confidence_max))
+        if sma_long == 0:
+            return conf_min, False, False, "trend_floor_invalid_base"
+
+        confidence_multiplier = Decimal(
+            str(self.model_config.confidence_multiplier))
+        spread_ratio = (sma_short - sma_long) / sma_long
+        unbounded = abs(spread_ratio * confidence_multiplier)
+        clamped_to_min = unbounded < conf_min
+        clamped_to_max = unbounded > conf_max
+        bounded_confidence = min(max(unbounded, conf_min), conf_max)
+        boundary_reason: Optional[str] = None
+        if clamped_to_min:
+            boundary_reason = "trend_floor_clamp"
+        elif clamped_to_max:
+            boundary_reason = "trend_ceiling_clamp"
+        return bounded_confidence, clamped_to_min, clamped_to_max, boundary_reason
 
     @staticmethod
     def _ema(values: list, span: int) -> float:
@@ -557,6 +585,10 @@ class RegimeDetector:
         regime = "UNCERTAIN"
         confidence = conf_min
         source_model = self.model_name
+        pre_cutoff_source_model = source_model
+        pre_cutoff_clamped_to_min = False
+        pre_cutoff_clamped_to_max = False
+        pre_cutoff_boundary_reason: Optional[str] = "default_uncertain_floor"
 
         # Priority 1: Volatility regimes (if enabled and baseline ready)
         if (
@@ -578,13 +610,27 @@ class RegimeDetector:
                 excess = vol_ratio - threshold_multiplier
                 conf_mult = Decimal(
                     str(vol_cfg.high_vol_confidence_multiplier))
-                confidence = min(conf_max, conf_min + excess * conf_mult)
+                candidate_confidence = conf_min + excess * conf_mult
+                pre_cutoff_clamped_to_max = candidate_confidence >= conf_max
+                confidence = min(conf_max, candidate_confidence)
+                pre_cutoff_boundary_reason = (
+                    "volatility_high_ceiling"
+                    if pre_cutoff_clamped_to_max
+                    else None
+                )
             elif vol_ratio < low_vol_multiplier:
                 regime = "LOW_VOLATILITY"
                 source_model = "volatility_v2"
                 calm = low_vol_multiplier - vol_ratio
                 conf_mult = Decimal(str(vol_cfg.low_vol_confidence_multiplier))
-                confidence = min(conf_max, conf_min + calm * conf_mult)
+                candidate_confidence = conf_min + calm * conf_mult
+                pre_cutoff_clamped_to_max = candidate_confidence >= conf_max
+                confidence = min(conf_max, candidate_confidence)
+                pre_cutoff_boundary_reason = (
+                    "volatility_low_ceiling"
+                    if pre_cutoff_clamped_to_max
+                    else None
+                )
 
         # HYSTERESIS-SLOPE-GATE-01: Volatility Slope Gate
         storm_rejected = False
@@ -615,6 +661,9 @@ class RegimeDetector:
                             regime = "UNCERTAIN"
                             confidence = conf_min
                             source_model = "slope_gate"
+                            pre_cutoff_clamped_to_min = False
+                            pre_cutoff_clamped_to_max = False
+                            pre_cutoff_boundary_reason = "slope_gate_floor"
                             storm_rejected = True
                     else:
                         self._slope_reject_count[symbol] = 0
@@ -635,15 +684,32 @@ class RegimeDetector:
                 source_model = "mean_reversion_v2"
                 tightness = threshold - max(sma_spread, dev_short, dev_long)
                 conf_mult = Decimal(str(mr_cfg.confidence_multiplier))
-                confidence = min(conf_max, conf_min + tightness * conf_mult)
+                candidate_confidence = conf_min + tightness * conf_mult
+                pre_cutoff_clamped_to_max = candidate_confidence >= conf_max
+                confidence = min(conf_max, candidate_confidence)
+                pre_cutoff_boundary_reason = (
+                    "mean_reversion_ceiling"
+                    if pre_cutoff_clamped_to_max
+                    else None
+                )
 
         # Priority 3: SMA trend
         if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short > sma_long and price > sma_short:
             regime = "TREND_UP"
-            confidence = self._calculate_confidence(sma_short, sma_long)
+            (
+                confidence,
+                pre_cutoff_clamped_to_min,
+                pre_cutoff_clamped_to_max,
+                pre_cutoff_boundary_reason,
+            ) = self._calculate_confidence_meta(sma_short, sma_long)
         if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short < sma_long and price < sma_short:
             regime = "TREND_DOWN"
-            confidence = self._calculate_confidence(sma_short, sma_long)
+            (
+                confidence,
+                pre_cutoff_clamped_to_min,
+                pre_cutoff_clamped_to_max,
+                pre_cutoff_boundary_reason,
+            ) = self._calculate_confidence_meta(sma_short, sma_long)
 
         # HYSTERESIS-SLOPE-GATE-01: Explicit lock - if storm_rejected, block MR/TREND
         if storm_rejected and regime in ("TREND_UP", "TREND_DOWN", "MEAN_REVERSION"):
@@ -654,12 +720,24 @@ class RegimeDetector:
             regime = "UNCERTAIN"
             confidence = conf_min
             source_model = "slope_gate_lock"
+            pre_cutoff_clamped_to_min = False
+            pre_cutoff_clamped_to_max = False
+            pre_cutoff_boundary_reason = "slope_gate_lock_floor"
 
         # TASK24.D5: Data-quality gates are fail-closed (no regime claims on stale/invalid data).
         if data_drops:
             regime = "UNCERTAIN"
             confidence = conf_min
             source_model = "data_quality_gate"
+            pre_cutoff_clamped_to_min = False
+            pre_cutoff_clamped_to_max = False
+            pre_cutoff_boundary_reason = "data_quality_floor"
+
+        pre_cutoff_regime = regime
+        pre_cutoff_confidence = confidence
+        pre_cutoff_source_model = source_model
+        demoted_to_uncertain = False
+        raw_boundary_reason = pre_cutoff_boundary_reason
 
         # REG-FIX-01: uncertain_cutoff - demote low-confidence regimes to UNCERTAIN
         # This prevents weak regime claims from triggering strategy decisions
@@ -673,6 +751,8 @@ class RegimeDetector:
             regime = "UNCERTAIN"
             confidence = conf_min
             source_model = "uncertain_cutoff_gate"
+            demoted_to_uncertain = True
+            raw_boundary_reason = "uncertain_cutoff_floor"
 
         warmup_ready_map = {
             "sma_short": bool(sma_short_ready),
@@ -735,10 +815,49 @@ class RegimeDetector:
 
         stable_regime = self._hysteresis_stable[symbol]
         stable_confidence = self._stable_confidence[symbol]
+        carried_previous_stable = bool(
+            self._hysteresis_count[symbol] < hysteresis_bars
+            and (
+                stable_regime != raw_regime
+                or stable_confidence != raw_confidence
+            )
+        )
 
         last_regime = self._last_emitted_regime.get(symbol)
         changed = (last_regime is None) or (
             last_regime != stable_regime)  # Use stable_regime
+        emitted_confidence_kind = (
+            "hysteresis_carried"
+            if carried_previous_stable
+            else "stable_from_uncertain_cutoff"
+            if demoted_to_uncertain
+            else "stable_transition_confirmed"
+            if changed
+            else "stable_heartbeat"
+        )
+        reason_parts = [
+            f"pre_cutoff_source={pre_cutoff_source_model}",
+            f"pre_cutoff={pre_cutoff_regime}:{float(pre_cutoff_confidence):.6f}",
+        ]
+        if pre_cutoff_boundary_reason:
+            reason_parts.append(pre_cutoff_boundary_reason)
+        if demoted_to_uncertain:
+            reason_parts.append(
+                f"uncertain_cutoff:{float(pre_cutoff_confidence):.6f}<{self._uncertain_cutoff:.6f}"
+            )
+        if carried_previous_stable:
+            reason_parts.append(
+                f"hysteresis_carry={stable_regime}:{float(stable_confidence):.6f}"
+            )
+        else:
+            reason_parts.append(
+                f"hysteresis_confirm={self._hysteresis_count[symbol]}/{hysteresis_bars}"
+            )
+        if data_drops:
+            reason_parts.append("drops=" + ",".join(data_drops))
+        if data_notes:
+            reason_parts.append("notes=" + ",".join(data_notes))
+        reason_summary = "; ".join(reason_parts)
 
         payload: Dict[str, Any] = {
             "ts": ts_ms,
@@ -747,11 +866,14 @@ class RegimeDetector:
             "regime": stable_regime,  # HYSTERESIS: emit stable_regime
             "confidence": str(stable_confidence),
             "source_model": source_model,
+            "pre_cutoff_source_model": pre_cutoff_source_model,
             "regime_layer": RuntimeRegimeLayer.STRUCTURAL.value,
             "regime_scope": RuntimeRegimeScope.PER_SYMBOL.value,
             "regime_clock": RuntimeRegimeClock.BAR.value,
             "regime_owner": "regime_detector",
             "structural_regime_ref": structural_regime_ref(symbol, ts_ms),
+            "basis_tf_sec": int(self._basis_tf_sec),
+            "bar_close_ts_ms": int(close_boundary_ts_ms),
             "warmup": warmup,
             "data_quality": {"drops": data_drops, "notes": data_notes},
             # DM-CRITICAL-PATCHES-02: Heartbeat fields
@@ -760,13 +882,27 @@ class RegimeDetector:
             "last_update_ts_ms": now_monotonic_ms,
             "calc_lag_ms": now_wall_ms - ts_ms,  # Latency for audit
             # HYSTERESIS-SLOPE-GATE-01: Telemetry metrics
+            "confidence_min": str(conf_min),
+            "confidence_max": str(conf_max),
+            "pre_cutoff_regime": pre_cutoff_regime,
+            "pre_cutoff_confidence": str(pre_cutoff_confidence),
+            "pre_cutoff_clamped_to_min": pre_cutoff_clamped_to_min,
+            "pre_cutoff_clamped_to_max": pre_cutoff_clamped_to_max,
+            "pre_cutoff_boundary_reason": pre_cutoff_boundary_reason,
+            "uncertain_cutoff": float(self._uncertain_cutoff),
+            "demoted_to_uncertain": demoted_to_uncertain,
             "raw_regime": raw_regime,
             "raw_confidence": str(raw_confidence),
+            "raw_boundary_reason": raw_boundary_reason,
             "stable_confidence": str(stable_confidence),
             "vol_ratio": str(vol_ratio_val) if vol_ratio_val is not None else None,
             "vol_ratio_slope": vol_ratio_slope if vol_ratio_val is not None else None,
             "storm_rejected": storm_rejected,
+            "hysteresis_bars": hysteresis_bars,
             "hysteresis_confirm_count": self._hysteresis_count[symbol],
+            "carried_previous_stable": carried_previous_stable,
+            "emitted_confidence_kind": emitted_confidence_kind,
+            "reason_summary": reason_summary,
         }
         rd_diag = self._update_basis_diag(
             symbol=str(symbol),
@@ -785,6 +921,47 @@ class RegimeDetector:
                 "rd_lag_events": int(rd_diag["rd_lag_events"]),
             }
         }
+        try:
+            emit_regime_bar_close_audit(
+                logger=self.logger,
+                symbol=str(symbol),
+                ts_ms=int(ts_ms),
+                basis_tf_sec=int(self._basis_tf_sec),
+                bar_close_ts_ms=int(close_boundary_ts_ms),
+                structural_regime_ref=payload["structural_regime_ref"],
+                changed=changed,
+                regime=stable_regime,
+                raw_regime=raw_regime,
+                source_model=source_model,
+                pre_cutoff_source_model=pre_cutoff_source_model,
+                confidence_min=float(conf_min),
+                confidence_max=float(conf_max),
+                pre_cutoff_regime=pre_cutoff_regime,
+                pre_cutoff_confidence=float(pre_cutoff_confidence),
+                raw_confidence=float(raw_confidence),
+                stable_confidence=float(stable_confidence),
+                emitted_confidence=float(stable_confidence),
+                pre_cutoff_clamped_to_min=pre_cutoff_clamped_to_min,
+                pre_cutoff_clamped_to_max=pre_cutoff_clamped_to_max,
+                pre_cutoff_boundary_reason=pre_cutoff_boundary_reason,
+                raw_boundary_reason=raw_boundary_reason,
+                uncertain_cutoff=float(self._uncertain_cutoff),
+                demoted_to_uncertain=demoted_to_uncertain,
+                hysteresis_bars=hysteresis_bars,
+                hysteresis_confirm_count=int(self._hysteresis_count[symbol]),
+                carried_previous_stable=carried_previous_stable,
+                emitted_confidence_kind=emitted_confidence_kind,
+                reason_summary=reason_summary,
+                warmup_full_ready=bool(warmup.get("full_ready")),
+                data_quality_drops=list(data_drops),
+                data_quality_notes=list(data_notes),
+            )
+        except Exception:
+            self.logger.warning(
+                "[%s] REGIME_AUDIT bar_close emit failed",
+                symbol,
+                exc_info=True,
+            )
 
         why = f"regime={stable_regime} model={source_model} symbol={symbol}"
         if not changed:

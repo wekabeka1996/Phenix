@@ -11,7 +11,7 @@ llm_microstructure:
     exit_tif: null
     gtx_retry_max: 0
     gtx_retry_offset_bps: 2.0
-    gtx_fallback_to_market: false
+    emit_market_fallback_marker_on_retry_exhaustion: false
   safety_gates:
     # AUDIT-FIX-2026-03-19: Disabled for llm_microstructure.
     # Root cause: regime_confidence gate (FIX-CONF-GATE-01) fires with regime_confidence=None

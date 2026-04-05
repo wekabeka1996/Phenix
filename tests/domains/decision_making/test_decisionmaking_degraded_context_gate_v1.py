@@ -12,8 +12,13 @@ class _DummyDM:
         self._clock = LiveClock()
 
         self._fail_closed_on_degraded_context = True
-        self._degraded_context_critical_keys = {"ema_bias", "price"}
+        self._degraded_context_critical_keys = set()
         self._degraded_context_critical_keys_by_strategy = {}
+        self._degraded_context_contracts_by_strategy = {
+            "aurora": {"enabled": True, "critical_keys": {"ema_bias", "price"}},
+            "mean_reversion": {"enabled": False, "critical_keys": {"tfi"}},
+            "md_amr": {"enabled": True, "critical_keys": set()},
+        }
 
         from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
 
@@ -37,6 +42,7 @@ class _DummyDM:
             degraded_context_critical_keys=self._degraded_context_critical_keys,
             degraded_context_critical_keys_by_strategy=self._degraded_context_critical_keys_by_strategy,
             logger=self.logger,
+            degraded_context_contracts_by_strategy=self._degraded_context_contracts_by_strategy,
         )
 
     def _emit_intent_deferred_v1(self, **payload):
@@ -60,7 +66,7 @@ def test_degraded_context_gate_defers_on_missing_critical_features():
     features_evt = {"ts": 123, "features": {}}
     ctx = create_decision_context("BTCUSDT", 123, features_evt["features"])
 
-    should_defer = gate(symbol="BTCUSDT", rid="rid-1", ctx=ctx, features_evt=features_evt)
+    should_defer = gate(symbol="BTCUSDT", rid="rid-1", ctx=ctx, features_evt=features_evt, strategy_id="aurora")
 
     assert should_defer is True
     assert dm.blocked == ["BTCUSDT"]
@@ -72,3 +78,17 @@ def test_degraded_context_gate_defers_on_missing_critical_features():
     assert emitted["original_event_name"] == "EVT:FEATURES_CALCULATED"
     assert "missing_critical" in emitted["original_payload_min"]
     assert emitted["original_payload_min"]["missing_critical"]
+
+
+def test_degraded_context_gate_absent_or_opt_out_contracts_do_not_defer():
+    from apps.reference.domains.decision_making.decision_context import create_decision_context
+    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+    dm = _DummyDM()
+    gate = DecisionMaking._degraded_context_gate_should_defer.__get__(dm, _DummyDM)
+    features_evt = {"ts": 123, "features": {}}
+    ctx = create_decision_context("BTCUSDT", 123, features_evt["features"])
+
+    assert gate(symbol="BTCUSDT", rid="rid-opt-out", ctx=ctx, features_evt=features_evt, strategy_id="mean_reversion") is False
+    assert gate(symbol="BTCUSDT", rid="rid-empty", ctx=ctx, features_evt=features_evt, strategy_id="md_amr") is False
+    assert gate(symbol="BTCUSDT", rid="rid-absent", ctx=ctx, features_evt=features_evt, strategy_id="llm_microstructure") is False

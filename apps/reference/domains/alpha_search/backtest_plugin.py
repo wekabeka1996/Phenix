@@ -16,6 +16,12 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from apps.reference.domains.ta_features.contracts import (
+    TA_WARMUP_KEY,
+    extract_ta_feature_vector,
+    has_ta_feature_vector,
+)
+
 from .alpha_model import AlphaModel, AlphaScore
 from .config_models import (
     AlphaSearchConfig,
@@ -35,6 +41,10 @@ class FeatureCacheEntry:
     bar_close_ts: int
     features: Dict[str, Any]
     ts: int
+    price: float = 0.0
+    warmup_status: Dict[str, bool] = field(default_factory=dict)
+    ta_features_ready: Optional[bool] = None
+    source_events: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -67,8 +77,9 @@ class AlphaSearchBacktestPlugin:
     """
     Multi-provider backtest plugin for alpha search.
 
-    Architecture (A3):
-    - Listens to EVT:FEATURES_CALCULATED → caches features by (symbol, tf_sec, bar_close_ts)
+        Architecture (A3):
+        - Listens to EVT:FEATURES_CALCULATED and optional EVT:TA_FEATURES_CALCULATED supplements
+            → caches/merges features by (symbol, tf_sec, bar_close_ts)
     - Listens to CMD:PROCESS_STRATEGY → reads cache, runs all enabled providers
     - Emits EVT:ALPHA_SCORE_CALCULATED with provider_id
     - Per-provider virtual trader for clean PnL feedback
@@ -226,7 +237,8 @@ class AlphaSearchBacktestPlugin:
                 ),
                 performance_window_days=cfg.ensemble.performance_window_days,
                 risk_adjustment=cfg.ensemble.risk_adjustment,
-                objective_feedback_enabled=bool(self.config.objective_feedback.enabled),
+                objective_feedback_enabled=bool(
+                    self.config.objective_feedback.enabled),
                 objective_feedback_window_trades=(
                     int(self.config.objective_feedback.window_trades)
                     if self.config.objective_feedback.enabled and self.config.objective_feedback.window_trades is not None
@@ -246,11 +258,21 @@ class AlphaSearchBacktestPlugin:
     def _register_listeners(self) -> None:
         """Register event listeners for two-phase bridge."""
         if hasattr(self.event_bus, "listen"):
-            # Phase 1: Cache features
-            self.event_bus.listen(
-                self.config.triggers.feature_event,
-                self._on_features_cache
-            )
+            feature_events = [self.config.triggers.feature_event]
+            if self._should_cache_ta_features():
+                ta_feature_event = self.config.triggers.ta_feature_event
+                if ta_feature_event and ta_feature_event not in feature_events:
+                    feature_events.append(ta_feature_event)
+
+            for feature_event in feature_events:
+                self.event_bus.listen(
+                    feature_event,
+                    lambda event, _event_name=feature_event, **kwargs: self._on_features_cache(
+                        event,
+                        source_event=_event_name,
+                        **kwargs,
+                    ),
+                )
             # Phase 2: Score on decision event
             self.event_bus.listen(
                 self.config.triggers.decision_event,
@@ -259,20 +281,32 @@ class AlphaSearchBacktestPlugin:
             # Trade tracking for virtual PnL
             self.event_bus.listen("EVT:TRADE_EXECUTED", self._on_trade)
             if self.config.objective_feedback.enabled:
-                self.event_bus.listen("EVT:OBJECTIVE_REALIZED_V1", self._on_objective_realized)
+                self.event_bus.listen(
+                    "EVT:OBJECTIVE_REALIZED_V1", self._on_objective_realized)
 
             LOG.debug(
-                f"AlphaSearch listeners: {self.config.triggers.feature_event} → cache, "
+                f"AlphaSearch listeners: {','.join(feature_events)} → cache, "
                 f"{self.config.triggers.decision_event} → score"
             )
 
+    def _should_cache_ta_features(self) -> bool:
+        """Return True when ta_ensemble provider needs the separate TA event plane."""
+        cfg = self.config.providers.get("ta_ensemble")
+        return bool(cfg and cfg.enabled)
+
     # =========================================================================
-    # Phase 1: Cache features on EVT:FEATURES_CALCULATED
+    # Phase 1: Cache features on feature events
     # =========================================================================
 
-    def _on_features_cache(self, event: Any, **kwargs) -> None:
+    def _on_features_cache(
+        self,
+        event: Any,
+        *,
+        source_event: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         """
-        Cache features from EVT:FEATURES_CALCULATED.
+        Cache features from the configured feature events.
 
         Key = (symbol, tf_sec, bar_close_ts)
         """
@@ -283,36 +317,190 @@ class AlphaSearchBacktestPlugin:
         if not payload:
             return
 
-        symbol = payload.get("symbol", "")
-        features = payload.get("features", {})
-        tf_sec = payload.get("tf_sec", 300)
-        ts = payload.get("ts", 0)
-
-        # Get bar_close_ts from bar or payload
-        bar_raw = payload.get("bar")
-        bar = bar_raw if isinstance(bar_raw, dict) else {}
-        bar_close_ts = bar.get("close_ts") or bar.get(
-            "ts") or payload.get("bar_close_ts") or ts
-
-        if not symbol or not features:
+        snapshot = self._normalize_feature_snapshot(
+            payload,
+            source_event=source_event,
+        )
+        if snapshot is None:
             return
 
         # Cache entry — normalize bar_close_ts to milliseconds
-        bar_close_ts = self._normalize_timestamp(bar_close_ts)
-        key = (symbol, tf_sec, bar_close_ts)
-        self._feature_cache[key] = FeatureCacheEntry(
-            symbol=symbol,
-            tf_sec=tf_sec,
-            bar_close_ts=bar_close_ts,
-            features=features,
-            ts=ts,
+        key = (
+            snapshot["symbol"],
+            snapshot["tf_sec"],
+            snapshot["bar_close_ts"],
         )
+        existing = self._feature_cache.get(key)
+        if existing is None:
+            self._feature_cache[key] = FeatureCacheEntry(
+                symbol=snapshot["symbol"],
+                tf_sec=snapshot["tf_sec"],
+                bar_close_ts=snapshot["bar_close_ts"],
+                features=dict(snapshot["features"]),
+                ts=snapshot["ts"],
+                price=snapshot["price"],
+                warmup_status=dict(snapshot["warmup_status"]),
+                ta_features_ready=snapshot["ta_features_ready"],
+                source_events=[snapshot["source_event"]],
+            )
+        else:
+            merged_features = dict(existing.features)
+            merged_features.update(snapshot["features"])
+            merged_warmup = dict(existing.warmup_status)
+            merged_warmup.update(snapshot["warmup_status"])
+            merged_sources = list(existing.source_events)
+            if snapshot["source_event"] not in merged_sources:
+                merged_sources.append(snapshot["source_event"])
+            ta_features_ready = existing.ta_features_ready
+            if snapshot["ta_features_ready"] is not None:
+                ta_features_ready = snapshot["ta_features_ready"]
+
+            self._feature_cache[key] = FeatureCacheEntry(
+                symbol=existing.symbol,
+                tf_sec=existing.tf_sec,
+                bar_close_ts=existing.bar_close_ts,
+                features=merged_features,
+                ts=max(existing.ts, snapshot["ts"]),
+                price=snapshot["price"] or existing.price,
+                warmup_status=merged_warmup,
+                ta_features_ready=ta_features_ready,
+                source_events=merged_sources,
+            )
 
         # Prune old entries for this symbol
-        self._prune_cache(symbol)
+        self._prune_cache(snapshot["symbol"])
 
         LOG.debug(
-            f"[{symbol}] Cached features for bar_close_ts={bar_close_ts}")
+            "[%s] Cached %s for bar_close_ts=%s",
+            snapshot["symbol"],
+            snapshot["source_event"],
+            snapshot["bar_close_ts"],
+        )
+
+    def _normalize_feature_snapshot(
+        self,
+        payload: Dict[str, Any],
+        *,
+        source_event: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Normalize FE and TA payloads into a single cacheable shape."""
+        source_name = source_event or self.config.triggers.feature_event
+        symbol = payload.get("symbol", "")
+        tf_sec = int(payload.get("tf_sec", 300))
+
+        if not symbol:
+            return None
+
+        if self._is_ta_feature_payload(payload, source_event=source_event):
+            features = extract_ta_feature_vector(payload)
+            if not features:
+                return None
+            ts = int(payload.get("ts") or payload.get("bar_close_ts") or 0)
+            bar_close_ts = self._normalize_timestamp(
+                int(payload.get("bar_close_ts") or ts)
+            )
+            return {
+                "symbol": symbol,
+                "tf_sec": tf_sec,
+                "bar_close_ts": bar_close_ts,
+                "features": features,
+                "ts": ts,
+                "price": self._extract_price_from_payload(payload, features),
+                "warmup_status": {
+                    TA_WARMUP_KEY: bool(payload.get("is_warm", False))
+                },
+                "ta_features_ready": bool(payload.get("is_warm", False)),
+                "source_event": source_name,
+            }
+
+        features = payload.get("features", {})
+        if not features:
+            return None
+
+        ts = int(payload.get("ts", 0) or 0)
+        bar_raw = payload.get("bar")
+        bar = bar_raw if isinstance(bar_raw, dict) else {}
+        bar_close_ts = self._normalize_timestamp(
+            int(bar.get("close_ts") or bar.get("ts")
+                or payload.get("bar_close_ts") or ts)
+        )
+        return {
+            "symbol": symbol,
+            "tf_sec": tf_sec,
+            "bar_close_ts": bar_close_ts,
+            "features": dict(features),
+            "ts": ts,
+            "price": self._extract_price_from_payload(payload, features),
+            "warmup_status": self._extract_warmup_status(payload),
+            "ta_features_ready": None,
+            "source_event": source_name,
+        }
+
+    def _is_ta_feature_payload(
+        self,
+        payload: Dict[str, Any],
+        *,
+        source_event: Optional[str],
+    ) -> bool:
+        """Detect whether a payload belongs to the separate TA event plane."""
+        return (
+            source_event == self.config.triggers.ta_feature_event
+            or payload.get("source") == "ta_features"
+            or (
+                not isinstance(payload.get("features"), dict)
+                and has_ta_feature_vector(payload)
+            )
+        )
+
+    def _extract_warmup_status(self, payload: Dict[str, Any]) -> Dict[str, bool]:
+        """Normalize warmup readiness payload variants into a bool dict."""
+        if isinstance(payload.get("warmup_status"), dict):
+            return {
+                str(key): bool(value)
+                for key, value in payload["warmup_status"].items()
+            }
+        if isinstance(payload.get("warmup_readiness"), dict):
+            return {
+                str(key): bool(value)
+                for key, value in payload["warmup_readiness"].items()
+            }
+
+        warmup = payload.get("warmup")
+        ready = warmup.get("ready") if isinstance(warmup, dict) else None
+        if isinstance(ready, dict):
+            return {str(key): bool(value) for key, value in ready.items()}
+        return {}
+
+    def _extract_price_from_payload(
+        self,
+        payload: Dict[str, Any],
+        features: Dict[str, Any],
+    ) -> float:
+        """Best-effort price extraction across FE and TA payload shapes."""
+        price = self._get_price_from_features(features)
+        if price > 0:
+            return price
+
+        for key in ("close", "price", "last_price"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+
+        bar_raw = payload.get("bar")
+        bar = bar_raw if isinstance(bar_raw, dict) else {}
+        for key in ("close", "close_price"):
+            value = bar.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return 0.0
 
     def _prune_cache(self, symbol: str) -> None:
         """Remove old cache entries for symbol, keep max_per_symbol."""
@@ -379,6 +567,40 @@ class AlphaSearchBacktestPlugin:
                 continue
             if cfg.min_tf_sec is not None and tf_sec < cfg.min_tf_sec:
                 continue
+            if self._provider_requires_ta_source(provider_id=provider_id, model=model):
+                if self.config.triggers.ta_feature_event not in cache_entry.source_events:
+                    LOG.warning(
+                        "[%s] Provider %s skipped: missing %s for bar_close_ts=%s",
+                        symbol,
+                        provider_id,
+                        self.config.triggers.ta_feature_event,
+                        bar_close_ts,
+                    )
+                    if cfg.fail_closed:
+                        self._emit_fail_closed_score(
+                            provider_id,
+                            symbol,
+                            tf_sec,
+                            bar_close_ts,
+                            reason="ta_features_missing_for_bar",
+                        )
+                    continue
+                if cache_entry.ta_features_ready is False:
+                    LOG.warning(
+                        "[%s] Provider %s skipped: ta_features not warm for bar_close_ts=%s",
+                        symbol,
+                        provider_id,
+                        bar_close_ts,
+                    )
+                    if cfg.fail_closed:
+                        self._emit_fail_closed_score(
+                            provider_id,
+                            symbol,
+                            tf_sec,
+                            bar_close_ts,
+                            reason="ta_features_not_warm",
+                        )
+                    continue
 
             normalized_features = self._normalize_features_for_provider(
                 provider_id=provider_id,
@@ -403,7 +625,9 @@ class AlphaSearchBacktestPlugin:
                 continue
 
             # Get current price for virtual trader
-            current_price = self._get_price_from_features(normalized_features)
+            current_price = cache_entry.price or self._get_price_from_features(
+                normalized_features
+            )
 
             # Calculate score
             try:
@@ -534,6 +758,20 @@ class AlphaSearchBacktestPlugin:
             return []
 
         return [name for name in required if name not in features]
+
+    def _provider_requires_ta_source(
+        self,
+        *,
+        provider_id: str,
+        model: AlphaModel,
+    ) -> bool:
+        """Return True when the provider must consume the explicit TA event plane."""
+        model_name = ""
+        try:
+            model_name = str(model.get_model_name())
+        except Exception:
+            model_name = ""
+        return provider_id == "ta_ensemble" or "ensemble" in model_name
 
     def _find_best_cache_match(
         self,
@@ -673,7 +911,8 @@ class AlphaSearchBacktestPlugin:
         provider_id: str,
         symbol: str,
         tf_sec: int,
-        bar_close_ts: int
+        bar_close_ts: int,
+        reason: str = "missing_features_for_bar",
     ) -> None:
         """Emit fail-closed score (score=0) when features unavailable."""
         payload = {
@@ -687,7 +926,7 @@ class AlphaSearchBacktestPlugin:
             "threshold": self.provider_configs[provider_id].threshold,
             "shadow": True,
             "signal_id": "",
-            "why": ["fail_closed:missing_features_for_bar"],
+            "why": [f"fail_closed:{reason}"],
             "features_used": [],
         }
 
@@ -876,7 +1115,8 @@ class AlphaSearchBacktestPlugin:
         pnl_scale = float(self.config.virtual_trader.notional_size)
         pnl_efficiency = self._clip_unit(realized_pnl / pnl_scale)
         max_hold_sec = float(self.config.virtual_trader.exit.max_hold_sec)
-        duration_efficiency = self._clip_unit(1.0 - (duration_sec / max_hold_sec))
+        duration_efficiency = self._clip_unit(
+            1.0 - (duration_sec / max_hold_sec))
         realized_quality_score = (pnl_efficiency + duration_efficiency) / 2.0
         return {
             "strategy_id": "alpha_search_virtual",
@@ -906,25 +1146,32 @@ class AlphaSearchBacktestPlugin:
             raise ValueError("objective_feedback disabled")
         components = payload.get("realized_components")
         if not isinstance(components, dict):
-            raise ValueError("objective feedback payload requires realized_components")
+            raise ValueError(
+                "objective feedback payload requires realized_components")
 
         metrics: Dict[str, float] = {}
-        metrics["realized_quality_score"] = float(payload["realized_quality_score"])
+        metrics["realized_quality_score"] = float(
+            payload["realized_quality_score"])
         metrics["realized_pnl"] = self._clip_unit(
-            float(payload["realized_pnl"]) / float(self.config.virtual_trader.notional_size)
+            float(payload["realized_pnl"]) /
+            float(self.config.virtual_trader.notional_size)
         )
         for key, value in components.items():
             metrics[str(key)] = float(value)
 
         assert cfg.quality_metric_weights is not None
-        missing = [name for name in cfg.quality_metric_weights.keys() if name not in metrics]
+        missing = [name for name in cfg.quality_metric_weights.keys()
+                   if name not in metrics]
         if missing:
             raise ValueError(
-                "objective feedback payload missing metrics: " + ",".join(sorted(missing))
+                "objective feedback payload missing metrics: " +
+                ",".join(sorted(missing))
             )
-        denom = sum(abs(float(weight)) for weight in cfg.quality_metric_weights.values())
+        denom = sum(abs(float(weight))
+                    for weight in cfg.quality_metric_weights.values())
         if denom <= 0.0:
-            raise ValueError("objective feedback weights must have non-zero mass")
+            raise ValueError(
+                "objective feedback weights must have non-zero mass")
         weighted_sum = sum(
             float(cfg.quality_metric_weights[name]) * metrics[name]
             for name in cfg.quality_metric_weights.keys()
@@ -938,7 +1185,8 @@ class AlphaSearchBacktestPlugin:
         signal_id: str,
         payload: Dict[str, Any],
     ) -> None:
-        closed_record = self._find_closed_record(provider_id=provider_id, signal_id=signal_id)
+        closed_record = self._find_closed_record(
+            provider_id=provider_id, signal_id=signal_id)
         if closed_record is None:
             self._pending_objective_events[signal_id] = payload
             return
@@ -967,7 +1215,8 @@ class AlphaSearchBacktestPlugin:
         payload = self._extract_payload(event)
         if not payload or not self.config.objective_feedback.enabled:
             return
-        signal_id = str(payload.get("signal_id") or payload.get("entry_rid") or "").strip()
+        signal_id = str(payload.get("signal_id")
+                        or payload.get("entry_rid") or "").strip()
         if not signal_id:
             return
         provider_id = self._signal_provider.get(signal_id)
@@ -983,7 +1232,8 @@ class AlphaSearchBacktestPlugin:
                 payload=payload,
             )
         except Exception as exc:
-            LOG.warning("Failed to attach objective feedback for %s: %s", signal_id, exc)
+            LOG.warning(
+                "Failed to attach objective feedback for %s: %s", signal_id, exc)
 
     # =========================================================================
     # Trade Tracking (for correlation with real trades)

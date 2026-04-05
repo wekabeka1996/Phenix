@@ -199,7 +199,7 @@ md_amr:
     exit_limit_ttl_ms: null
     gtx_retry_max: 2
     gtx_retry_offset_bps: 2.0
-    gtx_fallback_to_market: true
+    emit_market_fallback_marker_on_retry_exhaustion: true
 
   safety_gates:
     enabled: true

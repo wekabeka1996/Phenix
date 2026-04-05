@@ -6,9 +6,10 @@ Core execution unit: wraps AlphaSearchBacktestPlugin via composition.
 Each worker owns an isolated LocalBus, plugin instance, and state.
 
 Self-triggering pattern: on each feature snapshot the worker:
-1. Emits synthetic EVT:FEATURES_CALCULATED to its local bus -> caches features
-2. Immediately emits synthetic CMD:PROCESS_STRATEGY -> triggers scoring
-3. Collects EVT:ALPHA_SCORE_CALCULATED events from local bus
+1. Emits synthetic EVT:FEATURES_CALCULATED to its local bus -> caches FE features
+2. Emits synthetic EVT:TA_FEATURES_CALCULATED when TA features are present
+3. Immediately emits synthetic CMD:PROCESS_STRATEGY -> triggers scoring
+4. Collects EVT:ALPHA_SCORE_CALCULATED events from local bus
 """
 
 import decimal
@@ -17,6 +18,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from apps.reference.domains.ta_features.contracts import (
+    TA_WARMUP_KEY,
+    extract_ta_feature_vector,
+)
 from apps.reference.orchestrator.utils_event_bus import LocalBus
 
 from ..backtest_plugin import AlphaSearchBacktestPlugin
@@ -102,7 +107,7 @@ class ScenarioWorker:
         Process a single feature snapshot through the self-triggering pipeline.
 
         SELF-TRIGGERING PATTERN:
-        Phase 1: emit EVT:FEATURES_CALCULATED -> plugin caches features
+        Phase 1: emit synthetic feature events -> plugin caches features
         Phase 2: emit CMD:PROCESS_STRATEGY -> plugin reads cache, runs scoring
         Collect: read results from local bus
 
@@ -116,6 +121,7 @@ class ScenarioWorker:
 
         try:
             # --- Phase 1: cache features ---
+            feature_event_name = self._plugin.config.triggers.feature_event
             feature_payload = {
                 "symbol": snapshot.symbol,
                 "features": snapshot.features,
@@ -129,10 +135,34 @@ class ScenarioWorker:
             }
 
             self._bus.emit(
-                event_name="EVT:FEATURES_CALCULATED",
+                event_name=feature_event_name,
                 payload=feature_payload,
                 why=f"alpha_search_standalone:{self._scenario_id}",
             )
+
+            ta_features = extract_ta_feature_vector(snapshot.features)
+            ta_feature_event_name = self._plugin.config.triggers.ta_feature_event
+            if ta_features and ta_feature_event_name != feature_event_name:
+                # alpha_input_v1 currently preserves TA readiness as a bool flag only.
+                # Replay-local synthetic TA events therefore carry explicit readiness
+                # but not the original warmup bar counters.
+                ta_feature_payload = {
+                    "ts": snapshot.ts_ms,
+                    "symbol": snapshot.symbol,
+                    "tf_sec": snapshot.tf_sec,
+                    "bar_close_ts": snapshot.bar_close_ts,
+                    "close": snapshot.price,
+                    **ta_features,
+                    "is_warm": bool(
+                        snapshot.warmup_status.get(TA_WARMUP_KEY, True)
+                    ),
+                    "source": "ta_features",
+                }
+                self._bus.emit(
+                    event_name=ta_feature_event_name,
+                    payload=ta_feature_payload,
+                    why=f"alpha_search_standalone_ta:{self._scenario_id}",
+                )
 
             if self._strategy_type == "aurora":
                 self._apply_regime_adaptive_threshold(snapshot.regime)
@@ -279,7 +309,8 @@ class ScenarioWorker:
         if provider_cfg is None or aurora_provider is None:
             return
 
-        regime_thresholds = getattr(aurora_provider, "_regime_thresholds", {}) or {}
+        regime_thresholds = getattr(
+            aurora_provider, "_regime_thresholds", {}) or {}
         raw_factor = regime_thresholds.get(
             regime, regime_thresholds.get("DEFAULT", 1.0)
         )

@@ -22,11 +22,15 @@ from typing import Dict, Any, Optional, Tuple, Set, Coroutine, List, TYPE_CHECKI
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
 from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
-from apps.reference.config_models import AuroraConfig
+from apps.reference.config_models import (
+    AuroraConfig,
+    ExecutionPositionRestoreArtifactConfig,
+    PositionPolicySidecarConfig,
+)
 from apps.reference.utils.accessors import aget, dget
 
 from .fsm_open import OpenFlowFSM
-from .fsm_manage import ManageFlowFSM
+from .fsm_manage import ManageFlowFSM, ManageState
 from .fsm_close import CloseFlowFSM
 from .exposure_guard import ExposureGuard
 from .watchdog import OrderTimeoutWatchdog, OrderDeadline
@@ -41,9 +45,15 @@ from .aurora_log_adapter import AuroraLogAdapter
 from .terminal_order_contracts import (
     emit_canonical_terminal_order_event,
 )
+from .trade_executed_contracts import normalize_trade_executed_payload
 from .metrics_collector import MetricsCollector
 from .intent_boundary_audit import IntentBoundaryAudit
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.telemetry.trade_lifecycle_logger import (
+    EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND,
+    EXECUTION_FILL_INGRESS_RECORD_KIND,
+    append_trade_lifecycle_record,
+)
 
 # FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
 try:
@@ -83,6 +93,10 @@ from apps.reference.domains.execution_position.event_handlers import EPEventHand
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
+from apps.reference.domains.execution_position.position_policy_sidecar import (
+    PositionPolicyCloseRequest,
+    PositionPolicySidecar,
+)
 from apps.reference.telemetry.shadow_journal import (
     attach_shadow_journal,
     get_shadow_journal,
@@ -93,6 +107,16 @@ from apps.reference.domains.execution_position.truth_hardening import (
     build_position_signature,
     get_execution_truth_hardening,
     normalize_close_qty,
+)
+from apps.reference.domains.execution_position.restore_artifact import (
+    BRACKET_STATE_DEFERRED_PENDING_WAL,
+    BRACKET_STATE_LINKED_ACTIVE,
+    BRACKET_STATE_PARTIAL_LINKAGE,
+    BRACKET_STATE_UNKNOWN,
+    RESTORE_PHASE_UNKNOWN,
+    DeferredBracketRef,
+    ExecutionPositionRestoreArtifactWriter,
+    ExecutionPositionRestoreLifecycleRecord,
 )
 
 # Phase 14.2: Additional Strangler Fig micro-extractions
@@ -234,6 +258,12 @@ class ExecPosFSM(
         self.config = config
 
         self.fsm = fsm
+        try:
+            domains = getattr(self.fsm, "domains", None)
+            if isinstance(domains, dict):
+                domains["execution_position"] = self
+        except Exception:
+            pass
         self.shadow_mode = shadow_mode
         # BinanceExecutionAdapter or similar
         self.adapter: Optional[Any] = None
@@ -287,6 +317,9 @@ class ExecPosFSM(
         self.exposure_guard = ExposureGuard(self.fsm, self.config)
         # EXP-FIX: Store latest portfolio state
         self._latest_portfolio_state: Dict[str, Any] = {}
+        self._portfolio_event_stage_traces: Dict[str, Dict[str, Any]] = {}
+        self._portfolio_event_stage_trace_order: List[str] = []
+        self._portfolio_event_stage_trace_limit: int = 256
         # Post-close cooldown support (global + per-symbol)
         self._prev_position_amts: Dict[str, float] = {}
         self._last_position_closed_ts: Dict[str, float] = {}
@@ -335,6 +368,9 @@ class ExecPosFSM(
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Pending TP/SL for LIMIT entries (placed on fill)
         # Key = entry_order_id, Value = {"symbol", "side", "sl", "tp", "qty", "rid", "idem_key", "tick_size"}
         self._pending_brackets: Dict[str, Dict[str, Any]] = {}
+        # Canonical per-symbol bracket ownership snapshot shared by primary,
+        # deferred, and recovery placement paths.
+        self._bracket_owner_by_symbol: Dict[str, Dict[str, Any]] = {}
 
         # REGIME-LOG: Track open-time regime per symbol for close-time forensics
         self._open_regime_by_symbol: Dict[str, Dict[str, Any]] = {}
@@ -347,6 +383,7 @@ class ExecPosFSM(
         # PnL + close_reason cache: populated on ORDER_FILLED, consumed on POSITION_CLOSED.
         self._last_realized_pnl_by_symbol: Dict[str, float] = {}
         self._last_close_reason_by_symbol: Dict[str, str] = {}
+        self._proven_terminal_close_by_symbol: Dict[str, Dict[str, Any]] = {}
 
         # PHASE 1: Stable lifecycle identity per symbol for downstream neocortex correlation.
         # Populated from OrderIndex.ref.idempotent_key at fill time (TASK40 block).
@@ -472,7 +509,11 @@ class ExecPosFSM(
             self.config,
         )
         self._trade_lifecycle = _trade_lifecycle
+        self._restore_artifact_writer = self._create_restore_artifact_writer()
+        self._restore_artifact_loop_started: bool = False
         self._emit_trade_intent_reject_wal = True
+        self.position_policy_close_request_type = PositionPolicyCloseRequest
+        self._position_policy_sidecar: Optional[PositionPolicySidecar] = None
 
         audit_cfg = None
         try:
@@ -494,10 +535,14 @@ class ExecPosFSM(
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
         self.bus.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+        self.bus.listen("EVT:ORDER_STATE_CHANGED",
+                        self._on_order_state_changed)
         self.bus.listen("EVT:FEATURES_CALCULATED",
                         self._on_features_calculated)
         # EP-01: Subscribe to regime changes for dynamic risk adaptation
         self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
+        self.bus.listen("EVT:EXECUTION_CLOSE_RECONCILED",
+                        self._on_execution_close_reconciled)
         # BUGFIX: Connect DecisionMaking intent to ExecutionPosition logic
         self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
                         self._on_trade_intent_proposed)
@@ -543,56 +588,30 @@ class ExecPosFSM(
         # Direct access - if missing, raises ValueError (fail-closed)
         ack_ttl_ms: int = int(get_watchdog_setting("ack_ttl_ms", None))
         fill_ttl_ms: int = int(get_watchdog_setting("fill_ttl_ms", None))
+        # P1_EXECUTION_TIMEOUT_TRUTH_RESTORATION: wire canonical cadence/throttle fields
+        check_interval_ms: int = int(
+            get_watchdog_setting("check_interval_ms", None))
+        rps_limit: int = int(get_watchdog_setting("rps_limit", None))
 
         # Log TTL configuration source and values
         ttl_source = "execution.watchdog"
         if watchdog_config is None or not watchdog_config:
             ttl_source = "trading.watchdog"
-        elif hasattr(self.config, 'trading') and self.config.trading and hasattr(self.config.trading, 'orders') and self.config.trading.orders:
-            # Check if override was applied
-            try:
-                orders_cfg = self.config.trading.orders if self.config.trading else None
-                default_ttl_seconds = aget(
-                    orders_cfg, "default_ttl_seconds", None) if orders_cfg else None
-                if default_ttl_seconds is not None:
-                    ttl_source = "trading.orders.default_ttl_seconds"
-            except Exception:
-                pass
+        # NOTE: shadow alias probe for trading.orders.default_ttl_seconds removed (P1 slice)
 
         LOG.info(
-            f"ExecPosFSM TTL config: ack_ttl_ms={ack_ttl_ms}, fill_ttl_ms={fill_ttl_ms}, source={ttl_source}")
+            f"ExecPosFSM TTL config: ack_ttl_ms={ack_ttl_ms}, fill_ttl_ms={fill_ttl_ms}, "
+            f"check_interval_ms={check_interval_ms}, rps_limit={rps_limit}, source={ttl_source}")
 
-        # Optional override from trading.orders.default_ttl_seconds (Balanced profile)
-        # FILL-PIPELINE-FIX: guard against silent downward override that kills LIMIT orders
-        try:
-            orders_cfg = self._get_config_value(["trading", "orders"])
-            if not orders_cfg:
-                orders_cfg = self._get_config_value(["orders"])
-
-            if orders_cfg:
-                default_ttl_seconds = None
-                if isinstance(orders_cfg, dict):
-                    default_ttl_seconds = orders_cfg.get("default_ttl_seconds")
-                else:
-                    default_ttl_seconds = aget(
-                        orders_cfg, "default_ttl_seconds", None)
-
-                if default_ttl_seconds is not None:
-                    candidate_ms = int(default_ttl_seconds) * 1000
-                    if candidate_ms < fill_ttl_ms:
-                        LOG.warning(
-                            f"ExecPosFSM: IGNORING default_ttl_seconds={default_ttl_seconds} "
-                            f"(would reduce fill_ttl_ms from {fill_ttl_ms} to {candidate_ms}). "
-                            f"fill_ttl_ms from watchdog config is SSOT.")
-                    else:
-                        fill_ttl_ms = candidate_ms
-                        LOG.info(
-                            f"ExecPosFSM: applying default_ttl_seconds override -> fill_ttl_ms={fill_ttl_ms}")
-        except Exception as e:
-            LOG.warning(f"ExecPosFSM: failed to read default_ttl_seconds: {e}")
+        # P1_EXECUTION_TIMEOUT_TRUTH_RESTORATION: Shadow alias reads for
+        # trading.orders.default_ttl_seconds and root orders.default_ttl_seconds
+        # have been removed. fill_ttl_ms from watchdog config is the sole SSOT.
+        # Per-order LIMIT lifetime is owned by valid_for_ms -> fill_ttl_override_ms chain.
         self.watchdog: OrderTimeoutWatchdog = OrderTimeoutWatchdog(
             ack_ttl_ms=ack_ttl_ms,
             fill_ttl_ms=fill_ttl_ms,
+            check_interval_ms=check_interval_ms,
+            rps_limit=rps_limit,
             on_timeout_callback=self._handle_order_timeout
         )
 
@@ -723,6 +742,10 @@ class ExecPosFSM(
         self._close_exec = CloseExecutor(self)
         self._open_exec = OpenExecutor(self)
         self._bracket_mgr = BracketManager(self)
+        self.position_policy_close_request_type = PositionPolicyCloseRequest
+        self._position_policy_sidecar = self._create_position_policy_sidecar()
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.announce_mode_active()
 
     async def run_leverage_bootstrap(self) -> Set[str]:
         """Phase 14A: Delegated to LeverageConfigManager."""
@@ -1046,6 +1069,8 @@ class ExecPosFSM(
     def _on_regime_detected(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_regime_detected(event)
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.on_regime_detected(event)
 
     def _on_trade_intent_proposed(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter."""
@@ -1062,25 +1087,1032 @@ class ExecPosFSM(
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_portfolio_state_updated(event)
+        if self._position_policy_sidecar is not None:
+            self._record_portfolio_event_trace_stage(
+                event,
+                "sidecar_portfolio_refresh_reached",
+            )
+            self._position_policy_sidecar.on_portfolio_state_updated(event)
+            self._record_portfolio_event_trace_stage(
+                event,
+                "sidecar_portfolio_refresh_completed",
+            )
 
     def _on_order_ack(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_order_ack(event)
 
+    @staticmethod
+    def _manage_state_value(manage_flow: Optional[ManageFlowFSM]) -> str:
+        if manage_flow is None:
+            return ""
+        state = getattr(manage_flow, "state", None)
+        if state is None:
+            return ""
+        return str(getattr(state, "value", state) or "")
+
+    @staticmethod
+    def _close_state_value(close_flow: Optional[CloseFlowFSM]) -> str:
+        if close_flow is None:
+            return ""
+        state = getattr(close_flow, "state", None)
+        if state is None:
+            return ""
+        return str(getattr(state, "value", state) or "")
+
+    def _create_restore_artifact_writer(
+        self,
+    ) -> Optional[ExecutionPositionRestoreArtifactWriter]:
+        try:
+            candidate = self.config.domains.execution_position.restore_artifact
+        except Exception:
+            return None
+
+        if not isinstance(candidate, ExecutionPositionRestoreArtifactConfig):
+            return None
+
+        return ExecutionPositionRestoreArtifactWriter(
+            candidate,
+            observability_hook=self._emit_observability_event,
+            logger=LOG,
+        )
+
+    def _restore_artifact_symbol_candidates(self) -> List[str]:
+        symbols: Set[str] = set()
+        symbols.update(str(sym).upper() for sym in self.manage_flows.keys())
+        symbols.update(str(sym).upper() for sym in self.close_flows.keys())
+        symbols.update(str(sym).upper() for sym in self._symbol_brackets.keys())
+        for pending in dict(self._pending_brackets).values():
+            if not isinstance(pending, dict):
+                continue
+            symbol = str(pending.get("symbol") or "").strip().upper()
+            if symbol:
+                symbols.add(symbol)
+        return sorted(symbols)
+
+    def _resolve_restore_artifact_bracket_snapshot(
+        self,
+        symbol: str,
+    ) -> Dict[str, Any]:
+        symbol_key = str(symbol or "").strip().upper()
+        pending_order_ids: List[str] = []
+        for entry_order_id, pending in dict(self._pending_brackets).items():
+            if not isinstance(pending, dict):
+                continue
+            pending_symbol = str(pending.get("symbol") or "").strip().upper()
+            if pending_symbol == symbol_key:
+                pending_order_ids.append(str(entry_order_id))
+
+        if len(pending_order_ids) == 1:
+            return {
+                "bracket_state": BRACKET_STATE_DEFERRED_PENDING_WAL,
+                "deferred_entry_order_id": pending_order_ids[0],
+                "restore_relevant": True,
+            }
+        if len(pending_order_ids) > 1:
+            return {
+                "bracket_state": BRACKET_STATE_UNKNOWN,
+                "deferred_entry_order_id": None,
+                "restore_relevant": True,
+            }
+
+        bracket_links = dict(self._symbol_brackets.get(symbol_key) or {})
+        has_sl = bool(str(bracket_links.get("sl_order_id") or "").strip())
+        has_tp = bool(str(bracket_links.get("tp_order_id") or "").strip())
+        if has_sl and has_tp:
+            return {
+                "bracket_state": BRACKET_STATE_LINKED_ACTIVE,
+                "deferred_entry_order_id": None,
+                "restore_relevant": True,
+            }
+        if has_sl or has_tp:
+            return {
+                "bracket_state": BRACKET_STATE_PARTIAL_LINKAGE,
+                "deferred_entry_order_id": None,
+                "restore_relevant": True,
+            }
+        return {
+            "bracket_state": BRACKET_STATE_UNKNOWN,
+            "deferred_entry_order_id": None,
+            "restore_relevant": False,
+        }
+
+    def _build_execution_restore_artifact_records(
+        self,
+    ) -> List[ExecutionPositionRestoreLifecycleRecord]:
+        records: List[ExecutionPositionRestoreLifecycleRecord] = []
+        for symbol in self._restore_artifact_symbol_candidates():
+            record = self._build_execution_restore_artifact_record(symbol)
+            if record is not None:
+                records.append(record)
+        return records
+
+    def _build_execution_restore_artifact_record(
+        self,
+        symbol: str,
+    ) -> Optional[ExecutionPositionRestoreLifecycleRecord]:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return None
+
+        manage_flow = self.manage_flows.get(symbol_key)
+        close_flow = self.close_flows.get(symbol_key)
+        manage_phase = self._manage_state_value(manage_flow) or RESTORE_PHASE_UNKNOWN
+        close_phase = self._close_state_value(close_flow) or RESTORE_PHASE_UNKNOWN
+        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(symbol_key)
+
+        has_active_manage = self._has_active_lifecycle_for_symbol(symbol_key)
+        has_active_close = close_phase not in ("", "FLAT")
+        if not (has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]):
+            return None
+
+        record_kwargs: Dict[str, Any] = {
+            "symbol": symbol_key,
+            "manage_phase": manage_phase,
+            "close_phase": close_phase,
+            "bracket_state": bracket_snapshot["bracket_state"],
+            "live_reconcile_required": True,
+        }
+        if (
+            bracket_snapshot["bracket_state"] == BRACKET_STATE_DEFERRED_PENDING_WAL
+            and bracket_snapshot["deferred_entry_order_id"]
+        ):
+            record_kwargs["deferred_bracket_ref"] = DeferredBracketRef(
+                entry_order_id=str(bracket_snapshot["deferred_entry_order_id"]),
+            )
+        return ExecutionPositionRestoreLifecycleRecord(**record_kwargs)
+
+    def _restore_semantics_signature(
+        self,
+        symbol: str,
+    ) -> Tuple[str, str, str, Optional[str], bool]:
+        symbol_key = str(symbol or "").strip().upper()
+        manage_phase = self._manage_state_value(self.manage_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
+        close_phase = self._close_state_value(self.close_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
+        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(symbol_key)
+        has_active_manage = self._has_active_lifecycle_for_symbol(symbol_key)
+        has_active_close = close_phase not in ("", "FLAT")
+        return (
+            manage_phase,
+            close_phase,
+            str(bracket_snapshot["bracket_state"]),
+            (
+                str(bracket_snapshot["deferred_entry_order_id"])
+                if bracket_snapshot["deferred_entry_order_id"]
+                else None
+            ),
+            bool(has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]),
+        )
+
+    def _restore_artifact_has_state(self) -> bool:
+        return any(self._build_execution_restore_artifact_records())
+
+    def _persist_restore_artifact_snapshot(
+        self,
+        *,
+        trigger: str,
+        allow_empty: bool,
+    ) -> bool:
+        writer = self._restore_artifact_writer
+        if writer is None:
+            return False
+        return writer.persist(self, trigger=trigger, allow_empty=allow_empty)
+
+    def _trade_lifecycle_log_path(self) -> str:
+        try:
+            candidate = self.config.domains.execution_position.position_policy_sidecar
+        except Exception:
+            candidate = None
+
+        if isinstance(candidate, PositionPolicySidecarConfig):
+            try:
+                if candidate.logging.write_trade_lifecycle_jsonl:
+                    return str(candidate.logging.trade_lifecycle_log_path)
+            except Exception:
+                pass
+        return "logs/trade_lifecycle.jsonl"
+
+    def _portfolio_event_trace_id(self, event: Message) -> str:
+        payload = getattr(event, "pld", None) or {}
+        rid = getattr(event, "rid", None) or payload.get("rid") or "-"
+        positions_last_ts_ms = payload.get("positions_last_ts_ms")
+        event_ts_ms = None
+        for key in ("event_ts_ms", "ts_ms", "timestamp_ms", "timestamp", "ts"):
+            value = payload.get(key)
+            if value not in (None, "", "None"):
+                event_ts_ms = value
+                break
+        return (
+            f"{rid}|"
+            f"{positions_last_ts_ms if positions_last_ts_ms not in (None, '', 'None') else '-'}|"
+            f"{event_ts_ms if event_ts_ms not in (None, '', 'None') else '-'}"
+        )
+
+    def _record_portfolio_event_trace_stage(
+        self,
+        event: Message,
+        stage: str,
+        *,
+        error: Optional[BaseException] = None,
+    ) -> str:
+        payload = getattr(event, "pld", None) or {}
+        trace_id = self._portfolio_event_trace_id(event)
+
+        symbols: List[str] = []
+        positions = payload.get("positions")
+        if isinstance(positions, list):
+            for position in positions:
+                if not isinstance(position, dict):
+                    continue
+                symbol = str(position.get("symbol") or "").strip().upper()
+                if symbol:
+                    symbols.append(symbol)
+        symbol_summary = ",".join(sorted(set(symbols)))
+
+        if trace_id not in self._portfolio_event_stage_traces:
+            self._portfolio_event_stage_traces[trace_id] = {
+                "trace_id": trace_id,
+                "rid": getattr(event, "rid", None) or payload.get("rid"),
+                "positions_last_ts_ms": payload.get("positions_last_ts_ms"),
+                "event_ts_ms": payload.get("event_ts_ms")
+                or payload.get("ts_ms")
+                or payload.get("timestamp_ms")
+                or payload.get("timestamp")
+                or payload.get("ts"),
+                "symbol_summary": symbol_summary,
+                "latest_portfolio_state_set": False,
+                "expire_stale_entered": False,
+                "expire_stale_failed": False,
+                "sidecar_portfolio_refresh_reached": False,
+                "sidecar_portfolio_refresh_completed": False,
+            }
+            self._portfolio_event_stage_trace_order.append(trace_id)
+            if len(self._portfolio_event_stage_trace_order) > self._portfolio_event_stage_trace_limit:
+                evicted_trace_id = self._portfolio_event_stage_trace_order.pop(
+                    0)
+                self._portfolio_event_stage_traces.pop(evicted_trace_id, None)
+
+        entry = self._portfolio_event_stage_traces[trace_id]
+        entry[stage] = True
+        entry["last_stage"] = stage
+        if error is not None:
+            entry["error_type"] = type(error).__name__
+            entry["error_message"] = str(error)
+        return trace_id
+
+    def _portfolio_event_trace_snapshot(self) -> List[Dict[str, Any]]:
+        return [
+            dict(self._portfolio_event_stage_traces[trace_id])
+            for trace_id in self._portfolio_event_stage_trace_order
+            if trace_id in self._portfolio_event_stage_traces
+        ]
+
+    def _has_active_lifecycle_for_symbol(self, symbol: str) -> bool:
+        manage_flow = self.manage_flows.get(str(symbol or "").upper())
+        if manage_flow is None:
+            return False
+        try:
+            return bool(manage_flow.has_active_lifecycle())
+        except Exception:
+            return False
+
+    def _strategy_assignments_for_symbol(self, symbol: str) -> List[str]:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return []
+        try:
+            registry = getattr(self.config, "strategies_registry", None)
+            assignments = getattr(registry, "assignments", None)
+        except Exception:
+            return []
+        if not isinstance(assignments, dict):
+            return []
+        raw_assignments = assignments.get(symbol_key) or []
+        if not isinstance(raw_assignments, list):
+            return []
+        result: List[str] = []
+        for strategy_id in raw_assignments:
+            normalized = str(strategy_id or "").strip()
+            if normalized:
+                result.append(normalized)
+        return result
+
+    def _strategy_profile_has_symbol(self, strategy_id: str, symbol: str) -> bool:
+        strategy_key = str(strategy_id or "").strip()
+        symbol_key = str(symbol or "").strip().upper()
+        if not strategy_key or not symbol_key:
+            return False
+        try:
+            strategies = getattr(self.config, "strategies", None)
+            strategy_cfg = getattr(
+                strategies, strategy_key, None) if strategies is not None else None
+            assets = getattr(strategy_cfg, "assets",
+                             None) if strategy_cfg is not None else None
+        except Exception:
+            return False
+        return isinstance(assets, dict) and symbol_key in assets
+
+    def _resolve_bracket_strategy_owner(
+        self,
+        *,
+        symbol: str,
+        explicit_strategy_id: Optional[str] = None,
+        explicit_source: str = "",
+        allow_registry_fallback: bool = True,
+    ) -> Dict[str, Any]:
+        symbol_key = str(symbol or "").strip().upper()
+        assignments = self._strategy_assignments_for_symbol(symbol_key)
+        explicit = str(explicit_strategy_id or "").strip()
+        if explicit.lower() == "none":
+            explicit = ""
+
+        explicit_invalid_detail = ""
+        if explicit:
+            assigned_ok = (not assignments) or (explicit in assignments)
+            profile_ok = self._strategy_profile_has_symbol(
+                explicit, symbol_key)
+            if assigned_ok and profile_ok:
+                return {
+                    "strategy_id": explicit,
+                    "strategy_source": explicit_source or "explicit",
+                    "owner_status": "resolved",
+                    "detail": "",
+                    "assigned_strategies": assignments,
+                }
+            if not assigned_ok:
+                explicit_invalid_detail = f"explicit_strategy_not_assigned:{explicit}"
+            elif not profile_ok:
+                explicit_invalid_detail = f"explicit_strategy_profile_missing:{explicit}"
+            if not allow_registry_fallback:
+                return {
+                    "strategy_id": None,
+                    "strategy_source": explicit_source or "explicit",
+                    "owner_status": "unresolved",
+                    "detail": explicit_invalid_detail,
+                    "assigned_strategies": assignments,
+                }
+
+        if allow_registry_fallback:
+            if len(assignments) == 1:
+                candidate = assignments[0]
+                if self._strategy_profile_has_symbol(candidate, symbol_key):
+                    detail = explicit_invalid_detail
+                    if detail:
+                        detail = f"{detail};fallback_to_registry_assignment:{candidate}"
+                    return {
+                        "strategy_id": candidate,
+                        "strategy_source": "registry_assignment",
+                        "owner_status": "resolved",
+                        "detail": detail,
+                        "assigned_strategies": assignments,
+                    }
+                detail = f"assigned_strategy_profile_missing:{candidate}"
+                if explicit_invalid_detail:
+                    detail = f"{explicit_invalid_detail};{detail}"
+                return {
+                    "strategy_id": None,
+                    "strategy_source": "registry_assignment",
+                    "owner_status": "profile_missing",
+                    "detail": detail,
+                    "assigned_strategies": assignments,
+                }
+            if len(assignments) > 1:
+                detail = "multiple_strategy_assignments"
+                if explicit_invalid_detail:
+                    detail = f"{explicit_invalid_detail};{detail}"
+                return {
+                    "strategy_id": None,
+                    "strategy_source": explicit_source or "registry_assignment",
+                    "owner_status": "ambiguous",
+                    "detail": detail,
+                    "assigned_strategies": assignments,
+                }
+
+        detail = explicit_invalid_detail or "strategy_owner_unresolved"
+        return {
+            "strategy_id": None,
+            "strategy_source": explicit_source or "unresolved",
+            "owner_status": "missing",
+            "detail": detail,
+            "assigned_strategies": assignments,
+        }
+
+    def _resolve_strategy_owner_from_decision(
+        self,
+        *,
+        symbol: str,
+        decision: Message,
+    ) -> Dict[str, Any]:
+        payload = dict(getattr(decision, "pld", None) or {})
+        metadata = payload.get("metadata") if isinstance(
+            payload.get("metadata"), dict) else {}
+        candidates = (
+            (metadata.get("strategy_id"), "decision_metadata"),
+            (payload.get("strategy_id"), "decision_strategy_id"),
+            (payload.get("strategy"), "decision_strategy"),
+        )
+        for strategy_id, source in candidates:
+            normalized = str(strategy_id or "").strip()
+            if normalized and normalized.lower() != "none":
+                return self._resolve_bracket_strategy_owner(
+                    symbol=symbol,
+                    explicit_strategy_id=normalized,
+                    explicit_source=source,
+                    allow_registry_fallback=True,
+                )
+        return self._resolve_bracket_strategy_owner(
+            symbol=symbol,
+            explicit_strategy_id=None,
+            explicit_source="",
+            allow_registry_fallback=True,
+        )
+
+    def _resolve_strategy_owner_for_recovery(self, *, symbol: str) -> Dict[str, Any]:
+        symbol_key = str(symbol or "").strip().upper()
+        cached_owner = self._resolve_bracket_strategy_owner(
+            symbol=symbol_key,
+            explicit_strategy_id=self._open_strategy_by_symbol.get(symbol_key),
+            explicit_source="runtime_cache",
+            allow_registry_fallback=True,
+        )
+        if cached_owner.get("owner_status") == "resolved":
+            return cached_owner
+
+        remembered = dict(self._bracket_owner_by_symbol.get(symbol_key) or {})
+        remembered_strategy_id = str(
+            remembered.get("strategy_id") or "").strip()
+        if remembered_strategy_id:
+            remembered_owner = self._resolve_bracket_strategy_owner(
+                symbol=symbol_key,
+                explicit_strategy_id=remembered_strategy_id,
+                explicit_source="bracket_owner_cache",
+                allow_registry_fallback=True,
+            )
+            if remembered_owner.get("owner_status") == "resolved":
+                return remembered_owner
+            remembered_detail = str(
+                remembered_owner.get("detail") or "").strip()
+            cached_detail = str(cached_owner.get("detail") or "").strip()
+            if cached_detail and remembered_detail:
+                cached_owner["detail"] = f"{cached_detail};{remembered_detail}"
+            elif remembered_detail:
+                cached_owner["detail"] = remembered_detail
+        return cached_owner
+
+    def _remember_bracket_owner(
+        self,
+        *,
+        symbol: str,
+        strategy_id: Optional[str],
+        strategy_source: Optional[str],
+        owner_status: str,
+        placement_path: str,
+        detail: Optional[str] = None,
+        assigned_strategies: Optional[List[str]] = None,
+        rid: Optional[str] = None,
+        corr_id: Optional[str] = None,
+        entry_order_id: Optional[str] = None,
+        entry_client_order_id: Optional[str] = None,
+        lifecycle_active: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return {}
+        current = dict(self._bracket_owner_by_symbol.get(symbol_key) or {})
+        current["symbol"] = symbol_key
+        current["updated_ts_ms"] = get_clock().now_ms()
+        strategy_value = str(strategy_id or "").strip()
+        if strategy_value and strategy_value.lower() != "none":
+            current["strategy_id"] = strategy_value
+        if strategy_source:
+            current["strategy_source"] = str(strategy_source)
+        if owner_status:
+            current["owner_status"] = str(owner_status)
+        if detail:
+            current["detail"] = str(detail)
+        if assigned_strategies is not None:
+            current["assigned_strategies"] = [
+                str(item) for item in assigned_strategies if str(item or "").strip()
+            ]
+        current["placement_path"] = str(placement_path)
+        if rid:
+            current["rid"] = str(rid)
+        if corr_id:
+            current["corr_id"] = str(corr_id)
+        if entry_order_id:
+            current["entry_order_id"] = str(entry_order_id)
+        if entry_client_order_id:
+            current["entry_client_order_id"] = str(entry_client_order_id)
+        if lifecycle_active is not None:
+            current["lifecycle_active"] = bool(lifecycle_active)
+        self._bracket_owner_by_symbol[symbol_key] = current
+        return current
+
+    def _append_bracket_ownership_record(
+        self,
+        *,
+        event_type: str,
+        symbol: str,
+        placement_path: str,
+        strategy_id: Optional[str],
+        strategy_source: Optional[str],
+        owner_status: str,
+        detail: Optional[str] = None,
+        assigned_strategies: Optional[List[str]] = None,
+        rid: Optional[str] = None,
+        corr_id: Optional[str] = None,
+        entry_order_id: Optional[str] = None,
+        entry_client_order_id: Optional[str] = None,
+        sl_order_id: Optional[str] = None,
+        tp_order_id: Optional[str] = None,
+        lifecycle_active: Optional[bool] = None,
+    ) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+
+        fingerprint = (
+            str(event_type),
+            str(placement_path),
+            str(strategy_id or ""),
+            str(strategy_source or ""),
+            str(owner_status or ""),
+            str(detail or ""),
+            str(entry_order_id or ""),
+            str(entry_client_order_id or ""),
+            str(sl_order_id or ""),
+            str(tp_order_id or ""),
+            lifecycle_active,
+        )
+        current = dict(self._bracket_owner_by_symbol.get(symbol_key) or {})
+        if current.get("last_record_fingerprint") == fingerprint:
+            return
+        current["last_record_fingerprint"] = fingerprint
+        self._bracket_owner_by_symbol[symbol_key] = current
+
+        record = {
+            "record_kind": EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND,
+            "event_type": event_type,
+            "ts_ms": get_clock().now_ms(),
+            "symbol": symbol_key,
+            "placement_path": placement_path,
+            "recovery_only": placement_path == "recovery",
+            "strategy_id": strategy_id,
+            "strategy_source": strategy_source,
+            "owner_status": owner_status,
+            "owner_detail": detail,
+            "assigned_strategies": assigned_strategies,
+            "rid": rid,
+            "corr_id": corr_id,
+            "entry_order_id": entry_order_id,
+            "entry_client_order_id": entry_client_order_id,
+            "sl_order_id": sl_order_id,
+            "tp_order_id": tp_order_id,
+            "lifecycle_active": lifecycle_active,
+        }
+        filtered = {key: value for key,
+                    value in record.items() if value is not None}
+        append_trade_lifecycle_record(
+            filtered,
+            log_file=self._trade_lifecycle_log_path(),
+        )
+        self._emit_observability_event(event_type, filtered)
+        self._persist_restore_artifact_snapshot(
+            trigger=f"bracket_record:{event_type.lower()}",
+            allow_empty=True,
+        )
+
+    def _remember_proven_terminal_close(
+        self,
+        payload: Dict[str, Any],
+        *,
+        trigger_event: str,
+    ) -> None:
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        close_reason = str(
+            payload.get("close_reason") or payload.get("bracket_role") or ""
+        ).strip().upper()
+        tracked_bracket_order_id = str(
+            payload.get("tracked_bracket_order_id") or ""
+        ).strip()
+        correlation_source = str(
+            payload.get("terminal_correlation_source") or ""
+        ).strip()
+
+        if (
+            not symbol
+            or close_reason not in {"SL", "TP", "TP1", "TP2"}
+            or not tracked_bracket_order_id
+        ):
+            return
+
+        ts_ms_raw = payload.get("ts_ms") or payload.get(
+            "event_ts_ms") or get_clock().now_ms()
+        try:
+            ts_ms = int(ts_ms_raw)
+        except (TypeError, ValueError):
+            ts_ms = get_clock().now_ms()
+
+        self._proven_terminal_close_by_symbol[symbol] = {
+            "symbol": symbol,
+            "rid": str(payload.get("rid") or "").strip() or None,
+            "close_reason": close_reason,
+            "tracked_bracket_order_id": tracked_bracket_order_id,
+            "parent_entry_order_id": str(
+                payload.get("parent_entry_order_id") or ""
+            ).strip() or None,
+            "terminal_correlation_source": correlation_source or None,
+            "source": "exchange_bracket_websocket",
+            "trigger_event": trigger_event,
+            "event_order_id": str(payload.get("orderId") or "").strip() or None,
+            "client_order_id": str(
+                payload.get("clientOrderId") or payload.get(
+                    "client_order_id") or ""
+            ).strip() or None,
+            "ts_ms": ts_ms,
+        }
+
+    def get_recent_terminal_close_proof(
+        self,
+        symbol: str,
+        *,
+        max_age_ms: int = 300000,
+    ) -> Optional[Dict[str, Any]]:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return None
+
+        proof = self._proven_terminal_close_by_symbol.get(symbol_key)
+        if not proof:
+            return None
+
+        try:
+            age_ms = get_clock().now_ms() - int(proof.get("ts_ms") or 0)
+        except (TypeError, ValueError):
+            age_ms = max_age_ms + 1
+        if age_ms > int(max_age_ms):
+            self._proven_terminal_close_by_symbol.pop(symbol_key, None)
+            return None
+        return dict(proof)
+
+    def _latest_portfolio_position_amt(self, symbol: str) -> Optional[str]:
+        if not symbol:
+            return None
+        positions = (self._latest_portfolio_state or {}).get("positions") or []
+        for position in positions:
+            if str(position.get("symbol") or "").upper() != symbol.upper():
+                continue
+            value = position.get("positionAmt")
+            return None if value is None else str(value)
+        return None
+
+    def _build_canonical_fill_message(
+        self,
+        event: Message,
+        *,
+        fill_source: str,
+    ) -> Optional[Message]:
+        raw_payload = dict(event.pld or {})
+        normalized = normalize_trade_executed_payload(
+            raw_payload,
+            fallback_rid=getattr(event, "rid", None),
+            order_index=getattr(self.fsm, "order_index", None),
+        )
+        symbol = str(
+            normalized.get("symbol") or raw_payload.get("symbol") or ""
+        ).strip().upper()
+        if not symbol:
+            LOG.warning(
+                "CANONICAL_FILL_INGRESS_SKIPPED: missing symbol for %s payload_keys=%s",
+                fill_source,
+                sorted(raw_payload.keys()),
+            )
+            return None
+
+        payload = dict(raw_payload)
+        payload.update(normalized)
+        payload["symbol"] = symbol
+
+        quantity = payload.get("qty") or payload.get(
+            "quantity") or payload.get("last_fill_qty")
+        if quantity is not None:
+            quantity = str(quantity)
+            payload["qty"] = quantity
+            payload["quantity"] = quantity
+
+        price = payload.get("price")
+        if price is not None:
+            payload["price"] = str(price)
+
+        side = payload.get("side")
+        if side is not None:
+            payload["side"] = str(side).upper()
+
+        order_id = payload.get("orderId") or payload.get("exchangeOrderId")
+        if order_id is not None:
+            payload["orderId"] = str(order_id)
+            payload.setdefault("exchangeOrderId", str(order_id))
+
+        client_order_id = payload.get(
+            "clientOrderId") or payload.get("client_order_id")
+        if client_order_id is not None:
+            payload["clientOrderId"] = str(client_order_id)
+            payload["client_order_id"] = str(client_order_id)
+
+        rid = payload.get("rid") or getattr(event, "rid", None) or order_id
+        if rid is not None:
+            payload["rid"] = str(rid)
+
+        now_ms = get_clock().now_ms()
+        payload["fill_source"] = fill_source
+        payload["canonical_fill_trace_id"] = (
+            f"exec-fill:{symbol}:{fill_source}:{payload.get('rid') or order_id or now_ms}:{now_ms}"
+        )
+        payload.setdefault("event_ts_ms", payload.get(
+            "ts_ms") or payload.get("ts") or now_ms)
+
+        event_data = event.model_dump()
+        event_data["op"] = "EVT"
+        event_data["verb"] = "TRADE_EXECUTED"
+        event_data["pld"] = payload
+        if rid is not None:
+            event_data["rid"] = str(rid)
+        return Message(**event_data)
+
+    @staticmethod
+    def _missing_fill_activation_fields(payload: Dict[str, Any]) -> List[str]:
+        missing: List[str] = []
+        for field in ("symbol", "qty", "price", "side"):
+            value = payload.get(field)
+            if value in (None, "", "None"):
+                missing.append(field)
+        return missing
+
+    def _append_execution_fill_ingress_record(
+        self,
+        *,
+        canonical_msg: Message,
+        trigger_event: str,
+        fill_source: str,
+        manage_flow_created: bool,
+        manage_state_before: str,
+        manage_state_after: str,
+        result: Optional[Message],
+        activation_skipped_reason: Optional[str] = None,
+    ) -> None:
+        payload = canonical_msg.pld or {}
+        symbol = str(payload.get("symbol") or "")
+        record = {
+            "record_kind": EXECUTION_FILL_INGRESS_RECORD_KIND,
+            "event_type": "EXECUTION_FILL_INGRESS",
+            "ts_ms": get_clock().now_ms(),
+            "trigger_event": trigger_event,
+            "fill_source": fill_source,
+            "canonical_fill_trace_id": payload.get("canonical_fill_trace_id"),
+            "rid": payload.get("rid") or canonical_msg.rid,
+            "symbol": symbol,
+            "order_id": payload.get("orderId"),
+            "client_order_id": payload.get("clientOrderId") or payload.get("client_order_id"),
+            "manage_flow_created": manage_flow_created,
+            "manage_state_before": manage_state_before or None,
+            "manage_state_after": manage_state_after or None,
+            "activation_skipped_reason": activation_skipped_reason,
+            "result_op": getattr(result, "op", None),
+            "result_verb": getattr(result, "verb", None),
+            "portfolio_position_signature": (
+                self._get_portfolio_position_signature(
+                    symbol) if symbol else None
+            ),
+            "portfolio_positions_last_ts_ms": (
+                (self._latest_portfolio_state or {}).get("positions_last_ts_ms")
+            ),
+            "portfolio_position_amt": self._latest_portfolio_position_amt(symbol),
+        }
+        append_trade_lifecycle_record(
+            {key: value for key, value in record.items() if value is not None},
+            log_file=self._trade_lifecycle_log_path(),
+        )
+
+    def _process_flow_result(self, result: Optional[Message]) -> None:
+        if not result or result.op != "DEC":
+            return
+
+        if result.verb == "BATCH":
+            batch_pld = result.pld or {}
+            messages = batch_pld["messages"] if "messages" in batch_pld else []
+            for msg_data in messages:
+                if isinstance(msg_data, dict):
+                    try:
+                        sub_msg = Message(**msg_data)
+                    except Exception as exc:
+                        LOG.error(
+                            "Failed to reconstruct BATCH message: %s",
+                            exc,
+                        )
+                        continue
+                else:
+                    sub_msg = msg_data
+
+                wal.append(sub_msg.model_dump())
+                if (not self.shadow_mode and self.adapter) or (
+                    sub_msg.verb in (
+                        "CLOSE", "CLOSE_POSITION") and self.adapter
+                ):
+                    loop = self._get_async_loop()
+                    if loop:
+                        self._submit_async(
+                            self._execute_decision(sub_msg), loop)
+            return
+
+        wal.append(result.model_dump())
+        if (not self.shadow_mode and self.adapter) or (
+            result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter
+        ):
+            loop = self._get_async_loop()
+            LOG.info(
+                " ExecPosFSM: DEC:%s ready to execute, loop=%s, shadow_mode=%s, adapter=%s",
+                result.verb,
+                loop is not None,
+                self.shadow_mode,
+                self.adapter is not None,
+            )
+            if loop:
+                self._submit_async(self._execute_decision(result), loop)
+            else:
+                LOG.error(
+                    " ExecPosFSM: No async loop available for DEC:%s! Order will NOT be executed!",
+                    result.verb,
+                )
+        else:
+            LOG.info(
+                " ExecPosFSM: Skipping execution for DEC:%s (shadow_mode=%s, adapter=%s)",
+                result.verb,
+                self.shadow_mode,
+                self.adapter is not None,
+            )
+
+    def _handle_canonical_fill_ingress(
+        self,
+        event: Message,
+        *,
+        fill_source: str,
+        process_result: bool,
+    ) -> Optional[Message]:
+        canonical_msg = self._build_canonical_fill_message(
+            event,
+            fill_source=fill_source,
+        )
+        if canonical_msg is None:
+            return None
+
+        payload = canonical_msg.pld or {}
+        symbol = str(payload.get("symbol") or "")
+        missing_fields = self._missing_fill_activation_fields(payload)
+        manage_flow: Optional[ManageFlowFSM] = None
+        manage_flow_created = False
+        manage_state_before = ""
+
+        self._remember_proven_terminal_close(
+            payload,
+            trigger_event=event.verb,
+        )
+
+        if not missing_fields and symbol:
+            manage_flow_created = symbol not in self.manage_flows
+            _, manage_flow, _ = self._get_or_create_flows(symbol)
+            manage_state_before = self._manage_state_value(manage_flow)
+
+        if fill_source == "trade_executed":
+            self._evt_handlers.on_trade_executed(canonical_msg)
+
+        bookkeeping_msg = canonical_msg
+        if fill_source == "trade_executed":
+            bookkeeping_data = canonical_msg.model_dump()
+            bookkeeping_payload = dict(payload)
+            bookkeeping_payload["_skip_trade_lifecycle_on_fill"] = True
+            bookkeeping_data["pld"] = bookkeeping_payload
+            bookkeeping_msg = Message(**bookkeeping_data)
+        self._evt_handlers.on_order_fill(bookkeeping_msg)
+
+        if missing_fields:
+            self._append_execution_fill_ingress_record(
+                canonical_msg=canonical_msg,
+                trigger_event=event.verb,
+                fill_source=fill_source,
+                manage_flow_created=False,
+                manage_state_before="",
+                manage_state_after="",
+                result=None,
+                activation_skipped_reason="missing_fields:" +
+                ",".join(missing_fields),
+            )
+            return None
+
+        result = manage_flow.handle(
+            canonical_msg) if manage_flow is not None else None
+        manage_state_after = self._manage_state_value(manage_flow)
+
+        payload["manage_flow_created"] = manage_flow_created
+        payload["manage_state_before"] = manage_state_before
+        payload["manage_state_after"] = manage_state_after
+        payload["portfolio_position_signature"] = self._get_portfolio_position_signature(
+            symbol)
+        payload["portfolio_positions_last_ts_ms"] = (
+            (self._latest_portfolio_state or {}).get("positions_last_ts_ms")
+        )
+        portfolio_position_amt = self._latest_portfolio_position_amt(symbol)
+        if portfolio_position_amt is not None:
+            payload["portfolio_position_amt"] = portfolio_position_amt
+
+        self._append_execution_fill_ingress_record(
+            canonical_msg=canonical_msg,
+            trigger_event=event.verb,
+            fill_source=fill_source,
+            manage_flow_created=manage_flow_created,
+            manage_state_before=manage_state_before,
+            manage_state_after=manage_state_after,
+            result=result,
+        )
+
+        if self._position_policy_sidecar is not None and (
+            result is None or getattr(result, "op", None) != "ERR"
+        ):
+            if fill_source == "trade_executed":
+                self._position_policy_sidecar.on_trade_executed(canonical_msg)
+            else:
+                self._position_policy_sidecar.on_order_fill(canonical_msg)
+
+        if process_result:
+            self._process_flow_result(result)
+        return result
+
     def _on_trade_executed(self, event: Message) -> None:
-        """Phase 14A: Delegated to EPEventHandlers."""
-        self._evt_handlers.on_trade_executed(event)
+        """Canonical fill ingress for authoritative runtime TRADE_EXECUTED events."""
+        self._handle_canonical_fill_ingress(
+            event,
+            fill_source="trade_executed",
+            process_result=True,
+        )
 
     def _on_order_fill(self, event: Message) -> None:
-        """Phase 14A: Delegated to EPEventHandlers."""
-        self._evt_handlers.on_order_fill(event)
+        """Compatibility fill ingress routed into the same canonical local lifecycle path."""
+        self._handle_canonical_fill_ingress(
+            event,
+            fill_source="order_fill",
+            process_result=True,
+        )
 
     def _on_features_calculated(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
         self._evt_handlers.on_features_calculated(event)
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.on_features_calculated(event)
+
+    def _on_order_state_changed(self, event: Message) -> None:
+        """Preserve incumbent cancel-state handling, then forward to the sidecar."""
+        self._handle_cancel_event(event)
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.on_order_state_changed(event)
+
+    def _on_execution_close_reconciled(self, event: Message) -> None:
+        """Forward authoritative close reconciliation after incumbent ownership resolves."""
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.on_execution_close_reconciled(event)
+
+    def _position_policy_known_symbols(self) -> Set[str]:
+        symbols: Set[str] = set(self.manage_flows.keys())
+        symbols.update(str(sym).upper()
+                       for sym in self._last_features_cache.keys())
+        symbols.update(str(sym).upper()
+                       for sym in self._last_regime_by_symbol.keys())
+        return symbols
+
+    def _create_position_policy_sidecar(self) -> Optional[PositionPolicySidecar]:
+        try:
+            candidate = self.config.domains.execution_position.position_policy_sidecar
+        except Exception:
+            return None
+
+        if not isinstance(candidate, PositionPolicySidecarConfig):
+            return None
+        if candidate.mode.value == "disable":
+            return None
+
+        return PositionPolicySidecar(
+            config=candidate,
+            bus=self.bus,
+            manage_flow_getter=lambda symbol: self.manage_flows.get(
+                str(symbol).upper()),
+            known_symbols_getter=self._position_policy_known_symbols,
+        )
 
     def shutdown(self):
         """Shutdown the FSM and cleanup resources."""
+        if self._restore_artifact_has_state():
+            self._persist_restore_artifact_snapshot(
+                trigger="shutdown",
+                allow_empty=False,
+            )
         if hasattr(self, '_intent_boundary_audit') and self._intent_boundary_audit:
             self._intent_boundary_audit.stop()
         if hasattr(self, 'watchdog') and self.watchdog:
@@ -1099,6 +2131,10 @@ class ExecPosFSM(
 
     async def start_order_guardian(self):
         """Start OrderGuardian polling and reconciliation after FSM initialization."""
+        try:
+            self._schedule_restore_artifact_loop()
+        except Exception as e:
+            LOG.error(f"Failed to start restore artifact loop: {e}")
         if not self.order_guardian:
             return
 
@@ -1108,6 +2144,37 @@ class ExecPosFSM(
             self._schedule_bracket_health_check()
         except Exception as e:
             LOG.error(f"Failed to start OrderGuardian: {e}")
+
+    def _schedule_restore_artifact_loop(self) -> None:
+        if self._restore_artifact_loop_started:
+            return
+        if self._restore_artifact_writer is None:
+            return
+        if not self._restore_artifact_writer.writes_enabled():
+            return
+        loop = self._get_async_loop()
+        if not loop:
+            LOG.debug("Restore artifact loop deferred: no event loop active")
+            return
+        self._submit_async(self._restore_artifact_loop(), loop)
+        self._restore_artifact_loop_started = True
+
+    async def _restore_artifact_loop(self) -> None:
+        writer = self._restore_artifact_writer
+        if writer is None or not writer.writes_enabled():
+            return
+
+        while True:
+            try:
+                await get_clock().sleep_ms(writer.flush_interval_ms)
+                self._persist_restore_artifact_snapshot(
+                    trigger="periodic",
+                    allow_empty=False,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                LOG.warning("restore artifact loop error: %s", e)
 
     def _schedule_bracket_health_check(self) -> None:
         """Schedule the bracket health loop once the shared async runtime is ready."""
@@ -1228,12 +2295,28 @@ class ExecPosFSM(
                 continue
 
             side = "BUY" if position_amt > 0 else "SELL"
-            sl_price, tp_price = self._compute_health_check_brackets(
+            owner_context = self._resolve_health_check_bracket_context(
                 symbol=symbol,
                 entry_price=entry_price,
                 side=side,
             )
+            sl_price = owner_context.get("sl_price")
+            tp_price = owner_context.get("tp_price")
             if sl_price is None or tp_price is None:
+                self._append_bracket_ownership_record(
+                    event_type="EXECUTION_BRACKET_RECOVERY_SKIPPED",
+                    symbol=symbol,
+                    placement_path="recovery",
+                    strategy_id=owner_context.get("strategy_id"),
+                    strategy_source=owner_context.get("strategy_source"),
+                    owner_status=str(owner_context.get(
+                        "owner_status") or "missing"),
+                    detail=owner_context.get("detail"),
+                    assigned_strategies=owner_context.get(
+                        "assigned_strategies"),
+                    lifecycle_active=self._has_active_lifecycle_for_symbol(
+                        symbol),
+                )
                 continue
 
             placed = await self._place_health_check_brackets(
@@ -1243,6 +2326,7 @@ class ExecPosFSM(
                 tp_price=tp_price,
                 need_sl=not has_sl,
                 need_tp=not has_tp,
+                owner_context=owner_context,
             )
             if placed:
                 placements_this_cycle += 1
@@ -1293,19 +2377,52 @@ class ExecPosFSM(
 
         return has_sl, has_tp
 
-    def _compute_health_check_brackets(
+    def _resolve_health_check_bracket_context(
         self,
         *,
         symbol: str,
         entry_price: float,
         side: str,
-    ) -> Tuple[Optional[float], Optional[float]]:
-        """Compute recovery brackets from the active strategy SSOT for the symbol."""
-        try:
-            strategy_id = str(
-                self._open_strategy_by_symbol.get(symbol) or "aurora")
-            regime = str(self._last_regime_by_symbol.get(symbol) or "DEFAULT")
+    ) -> Dict[str, Any]:
+        context = dict(
+            self._resolve_strategy_owner_for_recovery(symbol=symbol))
+        context.setdefault("assigned_strategies",
+                           self._strategy_assignments_for_symbol(symbol))
+        context["sl_price"] = None
+        context["tp_price"] = None
+        strategy_id = str(context.get("strategy_id") or "").strip()
+        if context.get("owner_status") != "resolved" or not strategy_id:
+            return context
 
+        regime = str(self._last_regime_by_symbol.get(symbol) or "DEFAULT")
+        sl_price, tp_price, detail = self._compute_strategy_health_check_brackets(
+            symbol=symbol,
+            entry_price=entry_price,
+            side=side,
+            strategy_id=strategy_id,
+            regime=regime,
+        )
+        if sl_price is None or tp_price is None:
+            current_detail = str(context.get("detail") or "").strip()
+            if detail:
+                context["detail"] = f"{current_detail};{detail}" if current_detail else detail
+            return context
+
+        context["sl_price"] = sl_price
+        context["tp_price"] = tp_price
+        return context
+
+    def _compute_strategy_health_check_brackets(
+        self,
+        *,
+        symbol: str,
+        entry_price: float,
+        side: str,
+        strategy_id: str,
+        regime: str,
+    ) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+        """Compute recovery brackets from the explicit strategy owner for the symbol."""
+        try:
             sl_pct_eff: Optional[float] = None
             tp_rr_eff: Optional[float] = None
 
@@ -1343,7 +2460,7 @@ class ExecPosFSM(
                         if getattr(regime_tpsl, "max_tp_rr", None) is not None:
                             tp_rr_eff = min(
                                 float(regime_tpsl.max_tp_rr), tp_rr_eff)
-            else:
+            elif strategy_id == "aurora" and getattr(self.config.strategies, "aurora", None) is not None:
                 strategy_cfg = getattr(self.config.strategies, "aurora", None)
                 asset_cfg = strategy_cfg.assets.get(
                     symbol) if strategy_cfg is not None else None
@@ -1381,9 +2498,13 @@ class ExecPosFSM(
                         if getattr(regime_tpsl, "max_tp_rr", None) is not None:
                             tp_rr_eff = min(
                                 float(regime_tpsl.max_tp_rr), tp_rr_eff)
+            elif strategy_id == "mean_reversion":
+                return None, None, "unsupported_recovery_strategy:mean_reversion"
+            else:
+                return None, None, f"unsupported_recovery_strategy:{strategy_id}"
 
             if sl_pct_eff is None or tp_rr_eff is None:
-                return None, None
+                return None, None, f"recovery_exit_profile_missing:{strategy_id}"
 
             tp_pct_eff = sl_pct_eff * tp_rr_eff
             instrument_spec = self.config.instruments.get(symbol)
@@ -1402,11 +2523,26 @@ class ExecPosFSM(
                       side="SELL" if side == "BUY" else "BUY")),
                 float(quantize_stop_price(tp_price, float(tick_size),
                       side="BUY" if side == "BUY" else "SELL")),
+                None,
             )
         except Exception as e:
             LOG.warning(
                 f"[BRACKET-HEALTH] failed to compute recovery brackets for {symbol}: {e}")
-            return None, None
+            return None, None, f"recovery_compute_error:{strategy_id}"
+
+    def _compute_health_check_brackets(
+        self,
+        *,
+        symbol: str,
+        entry_price: float,
+        side: str,
+    ) -> Tuple[Optional[float], Optional[float]]:
+        context = self._resolve_health_check_bracket_context(
+            symbol=symbol,
+            entry_price=entry_price,
+            side=side,
+        )
+        return context.get("sl_price"), context.get("tp_price")
 
     async def _place_health_check_brackets(
         self,
@@ -1417,6 +2553,7 @@ class ExecPosFSM(
         tp_price: float,
         need_sl: bool,
         need_tp: bool,
+        owner_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Place only the missing recovery brackets and register them with current owners."""
         if not self.adapter or not self.order_guardian:
@@ -1428,6 +2565,7 @@ class ExecPosFSM(
         bracket_side = opposite_side(side)
         parent_order_id = f"health_check:{symbol}"
         placed = False
+        owner_context = dict(owner_context or {})
 
         if need_sl:
             try:
@@ -1492,6 +2630,18 @@ class ExecPosFSM(
                     f"[BRACKET-HEALTH] TP recovery failed for {symbol}: {e}")
 
         if placed:
+            lifecycle_active = self._has_active_lifecycle_for_symbol(symbol)
+            owner_snapshot = self._remember_bracket_owner(
+                symbol=symbol,
+                strategy_id=owner_context.get("strategy_id"),
+                strategy_source=owner_context.get("strategy_source"),
+                owner_status=str(owner_context.get(
+                    "owner_status") or "resolved"),
+                detail=owner_context.get("detail"),
+                assigned_strategies=owner_context.get("assigned_strategies"),
+                placement_path="recovery",
+                lifecycle_active=lifecycle_active,
+            )
             manage_flow = self.manage_flows.get(symbol)
             # GUARD: Only sync bracket IDs into ManageFlowFSM when a real lifecycle
             # is active (state != FLAT). Injecting bracket IDs into a FLAT FSM corrupts
@@ -1512,6 +2662,22 @@ class ExecPosFSM(
                     "sl_price": sl_price,
                     "tp_price": tp_price,
                 },
+            )
+            self._append_bracket_ownership_record(
+                event_type="EXECUTION_BRACKET_RECOVERY_PLACED",
+                symbol=symbol,
+                placement_path="recovery",
+                strategy_id=owner_snapshot.get("strategy_id"),
+                strategy_source=owner_snapshot.get("strategy_source"),
+                owner_status=str(owner_snapshot.get(
+                    "owner_status") or "resolved"),
+                detail=owner_snapshot.get("detail"),
+                assigned_strategies=owner_snapshot.get("assigned_strategies"),
+                lifecycle_active=lifecycle_active,
+                sl_order_id=(self._symbol_brackets.get(
+                    symbol, {}) or {}).get("sl_order_id"),
+                tp_order_id=(self._symbol_brackets.get(
+                    symbol, {}) or {}).get("tp_order_id"),
             )
 
         return placed
@@ -1550,18 +2716,22 @@ class ExecPosFSM(
                         self._emit_execution_bus_event,
                     )
                 if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                    self.manage_flows[symbol].set_shadow_journal(self._shadow_journal)
+                    self.manage_flows[symbol].set_shadow_journal(
+                        self._shadow_journal)
                 self.close_flows[symbol] = CloseFlowFSM()
                 if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                    self.close_flows[symbol].set_shadow_journal(self._shadow_journal)
+                    self.close_flows[symbol].set_shadow_journal(
+                        self._shadow_journal)
             elif hasattr(self.manage_flows[symbol], "set_observability_hook"):
                 self.manage_flows[symbol].set_observability_hook(
                     self._emit_execution_bus_event,
                 )
             if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                self.manage_flows[symbol].set_shadow_journal(self._shadow_journal)
+                self.manage_flows[symbol].set_shadow_journal(
+                    self._shadow_journal)
             if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                self.close_flows[symbol].set_shadow_journal(self._shadow_journal)
+                self.close_flows[symbol].set_shadow_journal(
+                    self._shadow_journal)
 
             return (
                 self.open_flows[symbol],
@@ -1577,7 +2747,8 @@ class ExecPosFSM(
             return
 
         journal = get_shadow_journal(self)
-        before = snapshot_execpos_state(self, symbol) if journal is not None else None
+        before = snapshot_execpos_state(
+            self, symbol) if journal is not None else None
         _, manage_flow, close_flow = self._get_or_create_flows(symbol)
 
         LOG.info(f"Hydrating FSMs for symbol {symbol} from snapshot.")
@@ -1591,7 +2762,8 @@ class ExecPosFSM(
                 event_origin_type="restore",
                 truth_owner="ExecPosFSM",
                 payload=position_data,
-                rid=str(position_data.get("rid")) if position_data.get("rid") is not None else None,
+                rid=str(position_data.get("rid")) if position_data.get(
+                    "rid") is not None else None,
                 before=before,
                 after=snapshot_execpos_state(self, symbol),
                 restore_marker=True,
@@ -1602,7 +2774,8 @@ class ExecPosFSM(
         journal = get_shadow_journal(self)
         pld = msg.pld or {}
         symbol_hint = pld.get("symbol")
-        before = snapshot_execpos_state(self, symbol_hint) if journal is not None else None
+        before = snapshot_execpos_state(
+            self, symbol_hint) if journal is not None else None
         result = None
         try:
             if msg.verb == "PORTFOLIO_STATE_UPDATED":
@@ -1615,7 +2788,9 @@ class ExecPosFSM(
                     f"ExecPosFSM received message without symbol: {msg.verb}, pld_keys={list(pld.keys()) if pld else 'EMPTY'}, msg_type={type(msg)}, pld_type={type(pld)}")
                 return None
 
-            open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
+            open_flow, manage_flow, close_flow = self._get_or_create_flows(
+                symbol)
+            restore_signature_before = self._restore_semantics_signature(symbol)
 
             if msg.verb == "OPEN":
                 now = get_clock().now_sec()
@@ -1680,10 +2855,23 @@ class ExecPosFSM(
                     except Exception as e:
                         LOG.error(f"Failed to capture intent data: {e}")
             elif msg.verb == "TRADE_EXECUTED":
-                self._on_order_fill(msg)
-                result = manage_flow.handle(msg)
+                result = self._handle_canonical_fill_ingress(
+                    msg,
+                    fill_source=str((msg.pld or {}).get(
+                        "fill_source") or "trade_executed"),
+                    process_result=False,
+                )
+            elif msg.verb == "ORDER_FILL":
+                result = self._handle_canonical_fill_ingress(
+                    msg,
+                    fill_source=str((msg.pld or {}).get(
+                        "fill_source") or "order_fill"),
+                    process_result=False,
+                )
             elif msg.verb == "ORDER_STATE_CHANGED":
-                self._handle_cancel_event(msg)
+                self._on_order_state_changed(msg)
+            elif msg.verb == "EXECUTION_CLOSE_RECONCILED":
+                self._on_execution_close_reconciled(msg)
             elif msg.verb == "ORDER_CANCELLED":
                 self._handle_cancel_event(msg)
             elif msg.verb == "CLOSE":
@@ -1693,7 +2881,8 @@ class ExecPosFSM(
                     close_decision = hardening.evaluate_close_command(
                         symbol=symbol,
                         requested_qty=(msg.pld or {}).get("qty"),
-                        position_signature=self._get_portfolio_position_signature(symbol),
+                        position_signature=self._get_portfolio_position_signature(
+                            symbol),
                         rid=getattr(msg, "rid", None),
                     )
                     if close_decision.suppress:
@@ -1732,42 +2921,13 @@ class ExecPosFSM(
             else:
                 result = manage_flow.handle(msg)
 
-            if result and result.op == "DEC":
-                if result.verb == "BATCH":
-                    batch_pld = result.pld or {}
-                    messages = batch_pld["messages"] if "messages" in batch_pld else []
-                    for msg_data in messages:
-                        if isinstance(msg_data, dict):
-                            try:
-                                sub_msg = Message(**msg_data)
-                            except Exception as e:
-                                LOG.error(
-                                    f"Failed to reconstruct BATCH message: {e}")
-                                continue
-                        else:
-                            sub_msg = msg_data
-
-                        wal.append(sub_msg.model_dump())
-                        if (not self.shadow_mode and self.adapter) or (sub_msg.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
-                            loop = self._get_async_loop()
-                            if loop:
-                                self._submit_async(
-                                    self._execute_decision(sub_msg), loop)
-                else:
-                    wal.append(result.model_dump())
-                    if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
-                        loop = self._get_async_loop()
-                        LOG.info(
-                            f" ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
-                        if loop:
-                            self._submit_async(
-                                self._execute_decision(result), loop)
-                        else:
-                            LOG.error(
-                                f" ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
-                    else:
-                        LOG.info(
-                            f" ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
+            self._process_flow_result(result)
+            restore_signature_after = self._restore_semantics_signature(symbol)
+            if restore_signature_after != restore_signature_before:
+                self._persist_restore_artifact_snapshot(
+                    trigger=f"transition:{str(msg.verb).lower()}",
+                    allow_empty=True,
+                )
 
             return result
         finally:
@@ -1784,7 +2944,8 @@ class ExecPosFSM(
                     payload=msg.pld or {},
                     rid=getattr(msg, "rid", None),
                     before=before,
-                    after=snapshot_execpos_state(self, (msg.pld or {}).get("symbol")),
+                    after=snapshot_execpos_state(
+                        self, (msg.pld or {}).get("symbol")),
                     notes=notes,
                 )
 
@@ -1840,7 +3001,8 @@ class ExecPosFSM(
                     close_decision = hardening.evaluate_non_cmd_close_decision(
                         symbol=symbol,
                         requested_qty=decision_pld.get("qty"),
-                        position_signature=self._get_portfolio_position_signature(symbol),
+                        position_signature=self._get_portfolio_position_signature(
+                            symbol),
                         rid=getattr(decision, "rid", None),
                     )
                     if close_decision.suppress:
@@ -1910,6 +3072,7 @@ class ExecPosFSM(
                 "nrr_code": "NRR-015",
                 "why": f"Adapter execution failed: {str(e)}",
                 "source_fsm": "ExecPosFSM",
+                "origin_class": "execution_adapter",
                 "metadata": {"error": str(e), "decision_verb": decision.verb}
             })
 
@@ -1923,6 +3086,7 @@ class ExecPosFSM(
                         "reason_code": "ADAPTER_ERROR",
                         "reason_text": str(e)[:200],
                         "exception_class": type(e).__name__,
+                        "origin_class": "execution_adapter",
                         "ts_ms": get_clock().now_ms(),
                     },
                     rid=decision.rid,
@@ -1934,7 +3098,8 @@ class ExecPosFSM(
                     fallback_ts_ms=get_clock().now_ms(),
                 )
             except Exception as emit_e:
-                LOG.warning("Failed to emit EVT:ORDER_REJECTED canonical seam: %s", emit_e)
+                LOG.warning(
+                    "Failed to emit EVT:ORDER_REJECTED canonical seam: %s", emit_e)
 
             exec_failed_msg = Message(
                 op="ERR", verb="EXECUTION_FAILED", src="execution_position",
@@ -2013,7 +3178,8 @@ class ExecPosFSM(
 
     def _get_portfolio_position_signature(self, symbol: str) -> str:
         """Close-guard state basis derived from current portfolio truth."""
-        signature = build_position_signature(self._latest_portfolio_state or {}, symbol)
+        signature = build_position_signature(
+            self._latest_portfolio_state or {}, symbol)
         return str(signature or "UNKNOWN")
 
     def _emit_execution_bus_event(self, topic: str, payload: Dict[str, Any]) -> None:

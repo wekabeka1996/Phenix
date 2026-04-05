@@ -4,7 +4,7 @@ from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
 
 class DummyExecution:
     gtx_retry_max = 2
-    gtx_fallback_to_market = True
+    emit_market_fallback_marker_on_retry_exhaustion = True
 
 class DummyMDAMRConfig:
     enabled = False

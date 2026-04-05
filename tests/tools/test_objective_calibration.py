@@ -187,7 +187,8 @@ def test_search_candidates_is_deterministic_and_writes_overlays(tmp_path: Path) 
         end=None,
         tf_sec=300,
     )
-    config_snapshot = Path("config/aurora/domains.yaml").read_text(encoding="utf-8")
+    config_snapshot = Path(
+        "config/aurora/domains.yaml").read_text(encoding="utf-8")
     candidates_a = search_objective_candidates(
         realized_df=dataset.realized_trades,
         attempted_df=dataset.attempted_entries,
@@ -208,10 +209,12 @@ def test_search_candidates_is_deterministic_and_writes_overlays(tmp_path: Path) 
         seed=42,
         min_trade_count=1,
     )
-    assert [candidate.score for candidate in candidates_a] == [candidate.score for candidate in candidates_b]
+    assert [candidate.score for candidate in candidates_a] == [
+        candidate.score for candidate in candidates_b]
 
     out_dir = tmp_path / "objective_report"
-    overlay_paths = write_overlay_bundle(out_dir, best_candidate=candidates_a[0], candidates=candidates_a)
+    overlay_paths = write_overlay_bundle(
+        out_dir, best_candidate=candidates_a[0], candidates=candidates_a)
     report_path = render_objective_calibration_report(
         out_dir,
         scope="unit-test",
@@ -223,12 +226,14 @@ def test_search_candidates_is_deterministic_and_writes_overlays(tmp_path: Path) 
     assert report_path.exists()
     assert (out_dir / "best_trial.json").exists()
     assert (out_dir / "candidate_bundle.json").exists()
-    assert Path("config/aurora/domains.yaml").read_text(encoding="utf-8") == config_snapshot
+    assert Path(
+        "config/aurora/domains.yaml").read_text(encoding="utf-8") == config_snapshot
 
 
 def test_objective_stack_cli_builds_dataset_and_joint_artifacts(tmp_path: Path) -> None:
     recorder_dir, wal_dir, ledger_path = _dataset_fixture(tmp_path)
-    module = runpy.run_path(str(Path("tools/calibration/calibrate_objective_stack.py")))
+    module = runpy.run_path(
+        str(Path("tools/calibration/calibrate_objective_stack.py")))
     main = module["main"]
 
     dataset_dir = tmp_path / "dataset_cli"
@@ -280,35 +285,38 @@ def test_objective_stack_cli_builds_dataset_and_joint_artifacts(tmp_path: Path) 
 
 def test_mean_reversion_calibrator_emits_overlay_and_report(tmp_path: Path) -> None:
     recorder_dir = tmp_path / "mr_recorder"
-    day_dir = recorder_dir / "2026-03-10"
-    day_dir.mkdir(parents=True, exist_ok=True)
-    rows = []
-    base_ts = 1_700_000_000_000
-    for idx in range(80):
-        price = 100.0 + (4.0 * sin(idx / 6.0))
-        rows.append(
-            {
-                "timestamp": base_ts + idx * 300_000,
-                "symbol": "DOGEUSDT",
-                "tf_sec": 300,
-                "open": price - 0.3,
-                "high": price + 0.6,
-                "low": price - 0.6,
-                "close": price,
-                "volume": 10.0,
-                "trade_count": 100,
-                "regime": "MEAN_REVERSION",
-                "regime_conf": 0.8,
-                "feat_price": price,
-                "feat_spread_bps": 1.5,
-                "feat_liquidity_kappa": 2.0,
-                "feat_volatility_state": "NORMAL",
-                "ready": True,
-            }
-        )
-    pd.DataFrame(rows).to_csv(day_dir / "DOGEUSDT_300.csv", index=False)
+    for offset in range(8):
+        day = f"2026-03-{10 + offset:02d}"
+        day_dir = recorder_dir / day
+        day_dir.mkdir(parents=True, exist_ok=True)
+        rows = []
+        base_ts = int(pd.Timestamp(f"{day}T00:00:00Z").value // 1_000_000)
+        for idx in range(96):
+            price = 100.0 + (4.0 * sin((idx + (offset * 3)) / 6.0))
+            rows.append(
+                {
+                    "timestamp": base_ts + idx * 300_000,
+                    "symbol": "DOGEUSDT",
+                    "tf_sec": 300,
+                    "open": price - 0.3,
+                    "high": price + 0.6,
+                    "low": price - 0.6,
+                    "close": price,
+                    "volume": 10.0,
+                    "trade_count": 100,
+                    "regime": "MEAN_REVERSION",
+                    "regime_conf": 0.8,
+                    "feat_price": price,
+                    "feat_spread_bps": 1.5,
+                    "feat_liquidity_kappa": 2.0,
+                    "feat_volatility_state": "NORMAL",
+                    "ready": True,
+                }
+            )
+        pd.DataFrame(rows).to_csv(day_dir / "DOGEUSDT_300.csv", index=False)
 
-    module = runpy.run_path(str(Path("tools/calibration/calibrate_mean_reversion_params.py")))
+    module = runpy.run_path(
+        str(Path("tools/calibration/calibrate_mean_reversion_params.py")))
     main = module["main"]
     out_dir = tmp_path / "mr_calibration"
     rc = main(
@@ -322,9 +330,15 @@ def test_mean_reversion_calibrator_emits_overlay_and_report(tmp_path: Path) -> N
             "--start",
             "2026-03-10",
             "--end",
-            "2026-03-11",
+            "2026-03-18",
             "--tf-sec",
             "300",
+            "--validation-days",
+            "2",
+            "--forward-days",
+            "2",
+            "--min-train-days",
+            "2",
             "--trials",
             "5",
             "--top-k",
@@ -337,6 +351,12 @@ def test_mean_reversion_calibrator_emits_overlay_and_report(tmp_path: Path) -> N
     )
     assert rc == 0
     assert (out_dir / "report.md").exists()
+    assert (out_dir / "run_manifest.json").exists()
+    assert (out_dir / "baseline_metrics.json").exists()
+    assert (out_dir / "candidate_metrics.json").exists()
+    assert (out_dir / "validation_metrics.json").exists()
+    assert (out_dir / "forward_metrics.json").exists()
     assert (out_dir / "best_trial.json").exists()
     assert (out_dir / "candidate_bundle.json").exists()
     assert (out_dir / "candidate_mean_reversion_overlay.yaml").exists()
+    assert (out_dir / "candidate_mean_reversion_strategy_overlay.yaml").exists()

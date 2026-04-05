@@ -44,6 +44,11 @@ class SafetyGateResult:
     signal_score: Optional[float] = None
     regime: Optional[str] = None
     regime_confidence: Optional[float] = None
+    regime_provenance: Optional[Dict[str, Any]] = None
+    min_regime_confidence: Optional[float] = None
+    threshold_applied: bool = False
+    threshold_verdict: str = "BYPASS"
+    threshold_reason: str = "threshold_not_evaluated"
     trend_dir: str = "UNKNOWN"
     trend_run_length: int = 0
     delta_price: Optional[float] = None
@@ -129,7 +134,7 @@ def _extract_signal_score(why_chain: list) -> Optional[float]:
     return None
 
 
-def _extract_regime(per_symbol_regimes: dict, symbol: str) -> tuple[Optional[str], Optional[float]]:
+def _extract_regime(per_symbol_regimes: dict, symbol: str) -> tuple[Optional[str], Optional[float], Dict[str, Any]]:
     """Extract regime name and confidence from the per-symbol regime cache."""
     try:
         r = per_symbol_regimes.get(symbol)
@@ -137,10 +142,61 @@ def _extract_regime(per_symbol_regimes: dict, symbol: str) -> tuple[Optional[str
             regime = r.get("regime")
             rc = r.get("confidence")
             confidence = float(rc) if rc not in (None, "") else None
-            return regime, confidence
+            cached_provenance = r.get("regime_provenance")
+            cache_snapshot = {
+                "cache_write_ts_ms": r.get("cache_write_ts_ms"),
+                "regime": regime,
+                "confidence": confidence,
+            }
+            if isinstance(cached_provenance, dict):
+                cache_snapshot = dict(cached_provenance.get(
+                    "cache_snapshot") or cache_snapshot)
+                detector_event = cached_provenance.get("detector_event")
+            else:
+                detector_event = {
+                    "event_name": "EVT:REGIME_DETECTED",
+                    "rid": r.get("rid"),
+                    "ts_ms": r.get("ts_ms"),
+                    "last_update_ts_ms": r.get("last_update_ts_ms"),
+                    "structural_regime_ref": r.get("structural_regime_ref"),
+                    "basis_tf_sec": r.get("basis_tf_sec"),
+                    "bar_close_ts_ms": r.get("bar_close_ts_ms"),
+                    "changed": r.get("changed"),
+                    "regime": regime,
+                    "confidence": rc,
+                    "stable_confidence": r.get("stable_confidence"),
+                    "source_model": r.get("source_model"),
+                    "pre_cutoff_source_model": r.get("pre_cutoff_source_model"),
+                    "confidence_min": r.get("confidence_min"),
+                    "confidence_max": r.get("confidence_max"),
+                    "pre_cutoff_regime": r.get("pre_cutoff_regime"),
+                    "pre_cutoff_confidence": r.get("pre_cutoff_confidence"),
+                    "pre_cutoff_clamped_to_min": r.get("pre_cutoff_clamped_to_min"),
+                    "pre_cutoff_clamped_to_max": r.get("pre_cutoff_clamped_to_max"),
+                    "pre_cutoff_boundary_reason": r.get("pre_cutoff_boundary_reason"),
+                    "uncertain_cutoff": r.get("uncertain_cutoff"),
+                    "demoted_to_uncertain": r.get("demoted_to_uncertain"),
+                    "raw_regime": r.get("raw_regime"),
+                    "raw_confidence": r.get("raw_confidence"),
+                    "raw_boundary_reason": r.get("raw_boundary_reason"),
+                    "hysteresis_bars": r.get("hysteresis_bars"),
+                    "hysteresis_confirm_count": r.get("hysteresis_confirm_count"),
+                    "carried_previous_stable": r.get("carried_previous_stable"),
+                    "emitted_confidence_kind": r.get("emitted_confidence_kind"),
+                    "reason_summary": r.get("reason_summary"),
+                }
+            return regime, confidence, {
+                "source_kind": "detector_cache",
+                "detector_event": detector_event,
+                "cache_snapshot": cache_snapshot,
+            }
     except Exception:
         pass
-    return None, None
+    return None, None, {
+        "source_kind": "unknown",
+        "detector_event": None,
+        "cache_snapshot": None,
+    }
 
 
 def _compute_trend(
@@ -493,7 +549,7 @@ def apply_safety_gates(
     result.vol_pct_300s = pm["vol_pct_300s"]
 
     result.signal_score = _extract_signal_score(why_chain)
-    result.regime, result.regime_confidence = _extract_regime(
+    result.regime, result.regime_confidence, result.regime_provenance = _extract_regime(
         per_symbol_regimes, symbol)
 
     # ── Read directional sanity config ─────────────────────────
@@ -505,6 +561,7 @@ def apply_safety_gates(
         min_regime_conf = float(getattr(ds_cfg, 'min_regime_confidence', 0.0))
     except (TypeError, ValueError):
         min_regime_conf = 0.0
+    result.min_regime_confidence = min_regime_conf
     consecutive = int(ds_cfg.consecutive_bars)
     raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)
     try:
@@ -517,19 +574,48 @@ def apply_safety_gates(
         hard_veto_consecutive = consecutive
 
     # ── Gate 1: Regime confidence gate (FIX-CONF-GATE-01) ──────
-    if (
-        ds_enabled
-        and not reduce_only
-        and apply_flag
-        and min_regime_conf > 0.0
-        and (result.regime_confidence is None or result.regime_confidence < min_regime_conf)
-    ):
+    if reduce_only:
+        result.threshold_applied = False
+        result.threshold_verdict = "BYPASS"
+        result.threshold_reason = "reduce_only"
+    elif not apply_flag:
+        result.threshold_applied = False
+        result.threshold_verdict = "BYPASS"
+        result.threshold_reason = "safety_gates_disabled"
+    elif not ds_enabled:
+        result.threshold_applied = False
+        result.threshold_verdict = "BYPASS"
+        result.threshold_reason = "directional_sanity_disabled"
+    elif min_regime_conf <= 0.0:
+        result.threshold_applied = False
+        result.threshold_verdict = "BYPASS"
+        result.threshold_reason = "min_regime_confidence_disabled"
+    elif result.regime_confidence is None:
+        result.threshold_applied = True
+        result.threshold_verdict = "BLOCK"
+        result.threshold_reason = (
+            f"regime_confidence missing < min={min_regime_conf}"
+        )
         result.outcome = "DENY"
         result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
-        result.why_short = (
-            f"FIX-CONF-GATE-01: regime_confidence={result.regime_confidence} < min={min_regime_conf}"
-        )
+        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
         return result
+    elif result.regime_confidence < min_regime_conf:
+        result.threshold_applied = True
+        result.threshold_verdict = "BLOCK"
+        result.threshold_reason = (
+            f"regime_confidence={result.regime_confidence} < min={min_regime_conf}"
+        )
+        result.outcome = "DENY"
+        result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+        return result
+    else:
+        result.threshold_applied = True
+        result.threshold_verdict = "PASS"
+        result.threshold_reason = (
+            f"regime_confidence={result.regime_confidence} >= min={min_regime_conf}"
+        )
 
     # ── Compute trend ──────────────────────────────────────────
     result.trend_dir, result.trend_confidence, result.delta_price, result.trend_run_length = _compute_trend(

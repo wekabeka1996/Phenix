@@ -50,7 +50,8 @@ def test_absorption_legacy_alias_migrates_to_proxy_dp_cap_pct() -> None:
 def test_md_amr_profile_loads_when_assigned_in_registry(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     strategies_path = cfg_dir / "strategies.yaml"
-    strategies_data = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BTCUSDT"] = ["aurora", "md_amr"]
     _write_yaml(strategies_path, strategies_data)
 
@@ -58,14 +59,16 @@ def test_md_amr_profile_loads_when_assigned_in_registry(tmp_path: Path) -> None:
 
     assert config.strategies.md_amr is not None
     assert config.strategies_registry is not None
-    assert config.strategies_registry.assignments["BTCUSDT"] == ["aurora", "md_amr"]
+    assert config.strategies_registry.assignments["BTCUSDT"] == [
+        "aurora", "md_amr"]
     assert config.strategies_registry.arbitration.priority["md_amr"] == 3
 
 
 def test_bracket_health_uses_md_amr_exit_profile(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     strategies_path = cfg_dir / "strategies.yaml"
-    strategies_data = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BTCUSDT"] = ["aurora", "md_amr"]
     _write_yaml(strategies_path, strategies_data)
     config = ConfigLoader(config_dir=cfg_dir).load_config()
@@ -82,6 +85,111 @@ def test_bracket_health_uses_md_amr_exit_profile(tmp_path: Path) -> None:
 
     assert sl_price == pytest.approx(99.6, abs=0.11)
     assert tp_price == pytest.approx(100.6, abs=0.11)
+
+
+def test_bracket_health_uses_aurora_registry_assignment_for_eth_recovery(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    strategies_path = cfg_dir / "strategies.yaml"
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
+    strategies_data["assignments"]["ETHUSDT"] = ["aurora"]
+    _write_yaml(strategies_path, strategies_data)
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+
+    ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
+    ep._last_regime_by_symbol["ETHUSDT"] = "DEFAULT"
+
+    owner_context = ep._resolve_health_check_bracket_context(
+        symbol="ETHUSDT",
+        entry_price=100.0,
+        side="BUY",
+    )
+
+    assert owner_context["strategy_id"] == "aurora"
+    assert owner_context["strategy_source"] == "registry_assignment"
+    assert owner_context["owner_status"] == "resolved"
+    assert owner_context["sl_price"] is not None
+    assert owner_context["tp_price"] is not None
+    assert owner_context["sl_price"] < 100.0 < owner_context["tp_price"]
+
+
+def test_bracket_health_uses_registry_assignment_when_runtime_owner_missing(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    strategies_path = cfg_dir / "strategies.yaml"
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
+    strategies_data["assignments"]["BTCUSDT"] = ["md_amr"]
+    _write_yaml(strategies_path, strategies_data)
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+
+    ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
+    ep._last_regime_by_symbol["BTCUSDT"] = "LOW_VOLATILITY"
+
+    owner_context = ep._resolve_health_check_bracket_context(
+        symbol="BTCUSDT",
+        entry_price=100.0,
+        side="BUY",
+    )
+
+    assert owner_context["strategy_id"] == "md_amr"
+    assert owner_context["strategy_source"] == "registry_assignment"
+    assert owner_context["owner_status"] == "resolved"
+    assert owner_context["sl_price"] == pytest.approx(99.6, abs=0.11)
+    assert owner_context["tp_price"] == pytest.approx(100.6, abs=0.11)
+
+
+def test_bracket_health_uses_md_amr_registry_assignment_for_xrp_recovery(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    strategies_path = cfg_dir / "strategies.yaml"
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
+    strategies_data["assignments"]["XRPUSDT"] = ["md_amr"]
+    _write_yaml(strategies_path, strategies_data)
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+
+    ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
+    ep._last_regime_by_symbol["XRPUSDT"] = "DEFAULT"
+
+    owner_context = ep._resolve_health_check_bracket_context(
+        symbol="XRPUSDT",
+        entry_price=1.0,
+        side="BUY",
+    )
+
+    assert owner_context["strategy_id"] == "md_amr"
+    assert owner_context["strategy_source"] == "registry_assignment"
+    assert owner_context["owner_status"] == "resolved"
+    assert owner_context["sl_price"] is not None
+    assert owner_context["tp_price"] is not None
+    assert owner_context["sl_price"] < 1.0 < owner_context["tp_price"]
+
+
+def test_bracket_health_mean_reversion_recovery_fails_closed_without_aurora_fallback(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    strategies_path = cfg_dir / "strategies.yaml"
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
+    strategies_data["assignments"]["DOGEUSDT"] = ["mean_reversion"]
+    _write_yaml(strategies_path, strategies_data)
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+
+    ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
+    ep._open_strategy_by_symbol["DOGEUSDT"] = "aurora"
+    ep._last_regime_by_symbol["DOGEUSDT"] = "DEFAULT"
+
+    owner_context = ep._resolve_health_check_bracket_context(
+        symbol="DOGEUSDT",
+        entry_price=0.1,
+        side="BUY",
+    )
+
+    assert owner_context["strategy_id"] == "mean_reversion"
+    assert owner_context["strategy_source"] == "registry_assignment"
+    assert owner_context["owner_status"] == "resolved"
+    assert owner_context["sl_price"] is None
+    assert owner_context["tp_price"] is None
+    assert "unsupported_recovery_strategy:mean_reversion" in str(
+        owner_context.get("detail") or "")
 
 
 def test_feature_engineering_legacy_log_sampling_is_runtime_controlled(tmp_path: Path) -> None:

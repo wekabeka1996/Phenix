@@ -39,6 +39,7 @@ class AlertType(str, Enum):
     SYSTEM_HEALTH = "system_health"
     TRADE_EXECUTION = "trade_execution"
     MANUAL_INTERVENTION = "manual_intervention"
+    POSITION_DISAPPEARANCE = "position_disappearance"
 
 
 @dataclass
@@ -349,6 +350,39 @@ class AlertManager:
                 "timestamp": time.time(),
                 "recommendation": "Review account activity and consider symbol cooldown"
             }
+        )
+
+    def check_position_disappearance(
+        self,
+        symbol: str,
+        position_details: Dict[str, Any],
+        *,
+        mechanism: str = "unknown_disappearance",
+        proof: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit a non-overclaiming alert for snapshot disappearance without manual attribution."""
+        proven_bracket_close = mechanism == "proven_exchange_bracket_close"
+        self.raise_alert(
+            level=AlertLevel.INFO if proven_bracket_close else AlertLevel.WARNING,
+            alert_type=AlertType.POSITION_DISAPPEARANCE,
+            title=f"Position Disappearance Detected: {symbol}",
+            message=(
+                f"Position {symbol} disappeared after a proven exchange-side bracket close"
+                if proven_bracket_close
+                else f"Position {symbol} disappeared from exchange snapshots without internal close proof"
+            ),
+            details={
+                "symbol": symbol,
+                "position_details": position_details,
+                "mechanism": mechanism,
+                "proof": proof or {},
+                "timestamp": time.time(),
+                "recommendation": (
+                    "Review lifecycle correlation for this symbol"
+                    if proven_bracket_close
+                    else "Review exchange activity and close correlation for this symbol"
+                ),
+            },
         )
 
     def get_active_alerts(self) -> Dict[str, Alert]:

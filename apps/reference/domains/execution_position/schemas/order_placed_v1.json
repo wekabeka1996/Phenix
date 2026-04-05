@@ -1,0 +1,359 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/order_placed_v1.json",
+  "title": "EVT:ORDER_PLACED payload schema",
+  "description": "Strict execution truth contract for ORDER_PLACED emitted by execution_position.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbol",
+    "side",
+    "qty",
+    "order_type",
+    "client_order_id",
+    "exchange_order_id",
+    "order_id",
+    "rid",
+    "ts_ms",
+    "corr_id"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ]
+    },
+    "qty": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "order_type": {
+      "type": "string",
+      "enum": [
+        "MARKET",
+        "LIMIT"
+      ]
+    },
+    "client_order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exchange_order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "corr_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "regime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Decision-time structural regime propagated additively to execution truth."
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Decision-time regime confidence propagated additively to execution truth."
+    },
+    "regime_provenance": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source_kind": {
+              "type": "string",
+              "enum": [
+                "detector_event",
+                "detector_cache",
+                "unknown"
+              ]
+            },
+            "detector_event": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "event_name": {
+                      "type": "string"
+                    },
+                    "rid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "last_update_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "structural_regime_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "basis_tf_sec": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "bar_close_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "changed": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stable_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source_model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_source_model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence_min": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence_max": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_clamped_to_min": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_clamped_to_max": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_boundary_reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "uncertain_cutoff": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "demoted_to_uncertain": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "raw_regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "raw_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "raw_boundary_reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "hysteresis_bars": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "hysteresis_confirm_count": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "carried_previous_stable": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "emitted_confidence_kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason_summary": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "event_name",
+                    "rid",
+                    "ts_ms",
+                    "last_update_ts_ms",
+                    "structural_regime_ref",
+                    "changed",
+                    "regime",
+                    "confidence",
+                    "raw_regime",
+                    "raw_confidence"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cache_snapshot": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "cache_write_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "cache_write_ts_ms",
+                    "regime",
+                    "confidence"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "source_kind",
+            "detector_event",
+            "cache_snapshot"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

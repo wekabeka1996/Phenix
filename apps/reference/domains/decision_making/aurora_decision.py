@@ -64,6 +64,11 @@ from apps.reference.domains.decision_making.decision_truth_artifacts import (
     write_intent_deferred,
 )
 from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
+from apps.reference.domains.decision_making.tpsl_owner import (
+    TPSL_OWNER_ENTRY_PLAN,
+    TPSL_OWNER_REGIME_TPSL,
+    build_tpsl_owner_ctx,
+)
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.domains.decision_making.instrument_quantizer import (
     quantize_exposure,
@@ -1275,6 +1280,7 @@ class AuroraDecisionMixin:
         entry_price = anchor_price
 
         tpsl_result = None
+        tpsl_owner_ctx = None
 
         if entry_plan:
             entry_price = decimal.Decimal(entry_plan.entry_price)
@@ -1290,6 +1296,11 @@ class AuroraDecisionMixin:
                     "reward_bps": 0,
                 }
             }
+            tpsl_owner_ctx = build_tpsl_owner_ctx(
+                intended_owner=TPSL_OWNER_ENTRY_PLAN,
+                final_owner=TPSL_OWNER_ENTRY_PLAN,
+                owner_loss_reason=None,
+            )
         else:
             # When no explicit entry plan was produced, build the payload prices
             # from the older regime-aware TPSL path used by existing consumers.
@@ -1354,6 +1365,13 @@ class AuroraDecisionMixin:
                 regime=state.regime,
                 instr_cfg=instr_cfg,
                 features=features,
+            )
+            tpsl_owner_ctx = build_tpsl_owner_ctx(
+                intended_owner=TPSL_OWNER_REGIME_TPSL,
+                final_owner=(
+                    TPSL_OWNER_REGIME_TPSL if tpsl_result is not None else None
+                ),
+                owner_loss_reason=self._get_tpsl_owner_loss_reason(),
             )
 
         # Exit manager is allowed to tighten the emitted stop without changing
@@ -1618,6 +1636,8 @@ class AuroraDecisionMixin:
                 payload, gap=gap_status, attach_nested_bar=False)
         if restore_snapshot is not None:
             payload["analytics_restore"] = restore_snapshot.to_payload()
+        if tpsl_owner_ctx is not None:
+            payload["tpsl_owner_ctx"] = tpsl_owner_ctx
 
         # Quantization is applied only when instrument precision metadata is
         # available; a reject here blocks emission because the payload would not
@@ -1715,6 +1735,15 @@ class AuroraDecisionMixin:
             self.logger.info(
                 f"[{symbol}] REGIME_TPSL: regime={tpsl_ctx.get('regime_used')} "
                 f"stop={tpsl_result['stop_price']:.6f} target={tpsl_result['target_price']:.6f}"
+            )
+
+        if tpsl_owner_ctx is not None:
+            self.logger.info(
+                "[%s] TPSL_OWNER_SIGNAL intended=%s final=%s reason=%s",
+                symbol,
+                tpsl_owner_ctx.get("intended_owner"),
+                tpsl_owner_ctx.get("final_owner"),
+                tpsl_owner_ctx.get("owner_loss_reason"),
             )
 
         self.logger.info(

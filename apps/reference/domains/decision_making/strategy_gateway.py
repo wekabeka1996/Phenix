@@ -14,6 +14,7 @@ from vfoundation.core.protocol import Message
 from .normalized_reject_reasons import NormalizedRejectReasons
 from .decision_context import create_decision_context
 from .entry_plan import resolve_strategy_entry_prices
+from .tpsl_owner import resolve_gateway_tpsl_owner_ctx
 
 if TYPE_CHECKING:
     from .decision_making import DecisionMaking
@@ -224,6 +225,7 @@ class StrategyGateway:
             side = pld.get("side")
             rid = pld.get("rid") or f"sig-{uuid.uuid4()}"
             why_chain = pld.get("why_chain") or []
+            signal_tpsl_owner_ctx = pld.get("tpsl_owner_ctx")
             tf_sec = pld.get("tf_sec")
             if tf_sec is not None:
                 try:
@@ -819,6 +821,18 @@ class StrategyGateway:
                 config=self.config, logger=self.logger, reject_fn=self._reject)
             if stop_price == "REJECT":
                 return
+            resolved_tpsl_owner_ctx = resolve_gateway_tpsl_owner_ctx(
+                signal_tpsl_owner_ctx,
+                ep_trace,
+            )
+            if resolved_tpsl_owner_ctx is not None:
+                self.logger.info(
+                    "[%s] TPSL_OWNER_RESOLVED intended=%s final=%s reason=%s",
+                    symbol,
+                    resolved_tpsl_owner_ctx.get("intended_owner"),
+                    resolved_tpsl_owner_ctx.get("final_owner"),
+                    resolved_tpsl_owner_ctx.get("owner_loss_reason"),
+                )
 
             # TCA/Risk from latest_risk
             tca = latest_risk.get("tca_budget") or {}
@@ -839,6 +853,7 @@ class StrategyGateway:
                 entry_plan_trace=ep_trace, tf_sec=tf_sec,
                 max_slippage_bps=max_slip, max_latency_ms=max_lat,
                 risk_score=risk_val,
+                tpsl_owner_ctx=resolved_tpsl_owner_ctx,
                 strategy_trace=(
                     {
                         **({"md_amr": md_amr_trace_norm} if md_amr_trace_norm else {}),

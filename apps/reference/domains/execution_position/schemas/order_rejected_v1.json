@@ -7,6 +7,7 @@
   "required": [
     "symbol",
     "event_ts_ms",
+    "origin_class",
     "identity_quality",
     "canonical_identity_key",
     "terminal_non_fill",
@@ -28,6 +29,16 @@
     "client_order_id": { "type": "string", "minLength": 1 },
     "event_ts_ms": { "type": "integer", "minimum": 0 },
     "ts_ms": { "type": "integer", "minimum": 0 },
+    "origin_class": {
+      "type": "string",
+      "enum": [
+        "execution_adapter",
+        "execution_internal",
+        "exchange_websocket",
+        "decision_alias",
+        "unknown"
+      ]
+    },
     "identity_quality": {
       "type": "string",
       "enum": [

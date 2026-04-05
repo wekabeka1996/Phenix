@@ -15,6 +15,11 @@ from typing import Dict, Optional, Any
 from apps.reference.domains.execution_position.terminal_order_contracts import (
     normalize_order_rejected_payload,
     normalize_order_state_changed_payload,
+    sync_trade_lifecycle_terminal_order_event,
+)
+from apps.reference.telemetry.trade_lifecycle_logger import (
+    EXECUTION_WS_TERMINAL_RECORD_KIND,
+    append_trade_lifecycle_record,
 )
 
 # Try to import metrics and audit logger, provide mocks if missing
@@ -82,21 +87,118 @@ class BinanceWebSocketClient:
                 self._loop = None
         self._account_update_contract_warning_logged = False
 
-    def _safe_emit(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
+    def _safe_emit(
+        self,
+        event_name: str,
+        payload: Dict[str, Any],
+        why: str,
+        *,
+        write_wal: bool = False,
+        src: str = "binance_ws_client",
+        dst: str = "execution_position",
+    ) -> None:
         """
         Thread-safe wrapper for fsm_core.emit.
         Marshals the call to the main event loop.
         """
-        if self._loop and self.fsm_core:
-            self._loop.call_soon_threadsafe(
-                self.fsm_core.emit, event_name, payload, why
+        def _emit_on_main_loop() -> None:
+            if write_wal:
+                try:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.dr import wal
+
+                    op, verb = event_name.split(":", 1)
+                    wal.append(
+                        Message(
+                            op=op,
+                            verb=verb,
+                            src=src,
+                            dst=dst,
+                            rid=payload.get("rid"),
+                            pld=payload,
+                            why=why,
+                        ).model_dump()
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[BinanceWS] Failed to write %s to WAL before emit: %s",
+                        event_name,
+                        exc,
+                    )
+            self.fsm_core.emit(event_name, payload, why)
+            sync_trade_lifecycle_terminal_order_event(
+                event_name,
+                payload,
+                logger=logger,
             )
+
+        if self._loop and self.fsm_core:
+            self._loop.call_soon_threadsafe(_emit_on_main_loop)
         else:
             # Fallback (dangerous, but better than silent drop if loop missing)
             logger.warning(
                 f"[BinanceWS] _safe_emit called without loop layer! Thread safety compromised for {event_name}")
             if self.fsm_core:
-                self.fsm_core.emit(event_name, payload, why)
+                _emit_on_main_loop()
+
+    def _append_terminal_ws_record(
+        self,
+        *,
+        event_type: str,
+        symbol: str,
+        client_order_id: str,
+        exchange_order_id: str,
+        order_status: str,
+        order_type: str,
+        event_ts_ms: int,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = {
+            "record_kind": EXECUTION_WS_TERMINAL_RECORD_KIND,
+            "event_type": event_type,
+            "ts_ms": int(time.time() * 1000),
+            "event_ts_ms": event_ts_ms,
+            "symbol": symbol,
+            "client_order_id": client_order_id or None,
+            "exchange_order_id": exchange_order_id or None,
+            "status": order_status,
+            "order_type": order_type,
+        }
+        if context:
+            record.update(
+                {
+                    "rid": context.get("rid"),
+                    "corr_id": context.get("corr_id"),
+                    "bracket_role": context.get("bracket_role"),
+                    "tracked_bracket_order_id": context.get("tracked_bracket_order_id"),
+                    "parent_entry_order_id": context.get("parent_entry_order_id"),
+                    "terminal_correlation_source": context.get("correlation_source"),
+                }
+            )
+        append_trade_lifecycle_record(
+            {key: value for key, value in record.items() if value is not None}
+        )
+
+    @staticmethod
+    def _is_close_bearing_terminal_update(
+        *,
+        order_status: str,
+        order_type: str,
+        order_data: Dict[str, Any],
+    ) -> bool:
+        status_upper = str(order_status or "").upper()
+        order_type_upper = str(order_type or "").upper()
+        reduce_only = str(order_data.get("R", "")).lower() == "true"
+        close_position = str(order_data.get("cp", "")).lower() == "true"
+        return (
+            status_upper in {"FILLED", "PARTIALLY_FILLED",
+                             "CANCELED", "EXPIRED", "REJECTED"}
+            and (
+                order_type_upper in {"STOP_MARKET", "TAKE_PROFIT_MARKET"}
+                or reduce_only
+                or close_position
+            )
+        )
 
     def start(self) -> None:
         """
@@ -305,11 +407,40 @@ class BinanceWebSocketClient:
                     order_ref = self.fsm_core.order_index.get(
                         exchangeOrderId=exchange_order_id)
 
+            recovered_context = None
             if not order_ref:
-                logger.warning(
-                    f"[BinanceWS] No correlation found for order {client_order_id}/{exchange_order_id}, skipping"
-                )
-                return
+                # CANONICAL: OrderIndex is the sole truth for bracket child
+                # correlation. Guardian fallback is NOT used.
+                # If the order is close-bearing (SL/TP/reduceOnly/closePosition)
+                # and not in OrderIndex, this is a contract breach — fail closed.
+                if self._is_close_bearing_terminal_update(
+                    order_status=order_status,
+                    order_type=order_type,
+                    order_data=order_data,
+                ):
+                    self._append_terminal_ws_record(
+                        event_type="EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS",
+                        symbol=symbol,
+                        client_order_id=client_order_id,
+                        exchange_order_id=exchange_order_id,
+                        order_status=order_status,
+                        order_type=order_type,
+                        event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                    )
+                    logger.error(
+                        "[BinanceWS] CONTRACT BREACH: close-bearing terminal update %s/%s for %s "
+                        "has no canonical OrderIndex record; fail-closed drop. "
+                        "Bracket child orders MUST be registered in OrderIndex at placement time.",
+                        client_order_id,
+                        exchange_order_id,
+                        symbol,
+                    )
+                    return
+                else:
+                    logger.warning(
+                        f"[BinanceWS] No correlation found for order {client_order_id}/{exchange_order_id}, skipping"
+                    )
+                    return
 
             # Map Binance status to standardized status
             status_mapping = {
@@ -329,7 +460,8 @@ class BinanceWebSocketClient:
             is_entry_order = False
             try:
                 from apps.reference.domains.execution_position.order_index import OrderIndex
-                is_entry_order = OrderIndex._is_entry_ref(order_ref)
+                is_entry_order = bool(
+                    order_ref) and OrderIndex._is_entry_ref(order_ref)
             except Exception:
                 # Fallback: check clientOrderId for "ENTRY" (legacy, EP-01.5)
                 is_entry_order = "ENTRY" in client_order_id.upper() if client_order_id else False
@@ -362,20 +494,27 @@ class BinanceWebSocketClient:
                     f"symbol={symbol}, order_id={exchange_order_id}, NO FALLBACK"
                 )
 
+            resolved_rid = getattr(order_ref, "rid", None)
+            resolved_idempotent_key = getattr(
+                order_ref, "idempotent_key", None)
+            resolved_side = getattr(order_ref, "side", None) or side
+            resolved_order_type = getattr(
+                order_ref, "order_type", None) or order_type
+
             # Create payload
             payload = {
                 "symbol": symbol,
                 "status": standardized_status,
-                "rid": order_ref.rid,
-                "idempotent_key": order_ref.idempotent_key,
+                "rid": resolved_rid,
+                "idempotent_key": resolved_idempotent_key,
                 "clientOrderId": client_order_id,
                 "client_order_id": client_order_id,
                 "exchangeOrderId": exchange_order_id,
                 "orderId": exchange_order_id,
                 "tradeId": str(order_data.get("t", "")),
                 "trade_id": str(order_data.get("t", "")),
-                "side": side,
-                "order_type": order_type,
+                "side": str(resolved_side or side).lower(),
+                "order_type": str(resolved_order_type or order_type).lower(),
                 "qty": filled_qty,
                 "quantity": filled_qty,
                 "price": str(order_data.get("ap", order_data.get("p", "0"))),
@@ -387,6 +526,13 @@ class BinanceWebSocketClient:
                 "commissionAsset": order_data.get("N", ""),
                 "realizedPnl": str(order_data.get("rp", "0")),
             }
+
+            # Enrich bracket child metadata from OrderIndex order_kind
+            order_kind = getattr(order_ref, "order_kind", None)
+            if order_kind in ("SL", "TP"):
+                payload["close_reason"] = order_kind
+                payload["bracket_role"] = order_kind
+                payload["terminal_correlation_source"] = "order_index_canonical"
 
             # EP-01.5: Add MAKER_ONLY_REJECT reason if detected
             if is_maker_only_reject:
@@ -400,8 +546,8 @@ class BinanceWebSocketClient:
 
             # Log to audit
             audit_logger.log_order_state_changed(
-                rid=order_ref.rid,
-                idempotent_key=order_ref.idempotent_key,
+                rid=resolved_rid,
+                idempotent_key=resolved_idempotent_key,
                 clientOrderId=client_order_id,
                 exchangeOrderId=exchange_order_id,
                 symbol=symbol,
@@ -418,7 +564,7 @@ class BinanceWebSocketClient:
 
             # For terminal states, mark as terminal and observe lifecycle
             # FILL-PIPELINE-FIX: PARTIALLY_FILLED is NOT terminal (more fills expected)
-            if standardized_status in ["FILLED", "CANCELED", "REJECTED", "EXPIRED"]:
+            if standardized_status in ["FILLED", "CANCELED", "REJECTED", "EXPIRED"] and order_ref is not None:
                 self.fsm_core.order_index.mark_terminal(order_ref)
                 duration_sec = time.time() - order_ref.created_ts
                 observe_order_lifecycle(duration_sec)
@@ -451,6 +597,7 @@ class BinanceWebSocketClient:
                         f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
 
                 if event_name == "EVT:ORDER_REJECTED":
+                    payload["origin_class"] = "exchange_websocket"
                     payload = normalize_order_rejected_payload(
                         payload,
                         fallback_rid=order_ref.rid,
@@ -463,8 +610,16 @@ class BinanceWebSocketClient:
                         fallback_ts_ms=payload.get("ts_ms"),
                     )
 
-                self._safe_emit(event_name, payload,
-                                f"WS_ORDER_UPDATE_{standardized_status}")
+                write_wal = event_name == "EVT:ORDER_REJECTED" or (
+                    event_name == "EVT:ORDER_STATE_CHANGED"
+                    and payload.get("terminal_non_fill") is True
+                )
+                self._safe_emit(
+                    event_name,
+                    payload,
+                    f"WS_ORDER_UPDATE_{standardized_status}",
+                    write_wal=write_wal,
+                )
 
         except Exception as e:
             logger.error(

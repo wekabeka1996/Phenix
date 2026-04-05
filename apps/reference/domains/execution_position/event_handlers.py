@@ -8,6 +8,7 @@ and tidy gate logic.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Dict
 
 from apps.reference.core.time import get_clock
@@ -44,6 +45,33 @@ class EPEventHandlers:
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    def _resolve_position_close_reason(self, symbol: str) -> str:
+        close_reason = "POSITION_CLOSED_DETECTED"
+        try:
+            cached_reason = self._fsm._last_close_reason_by_symbol.pop(
+                symbol, None)
+        except Exception:
+            cached_reason = None
+
+        normalized_cached_reason = str(cached_reason or "").strip().upper()
+        if normalized_cached_reason:
+            return normalized_cached_reason
+
+        proof_getter = getattr(
+            self._fsm, "get_recent_terminal_close_proof", None)
+        if not callable(proof_getter):
+            return close_reason
+
+        try:
+            proof = proof_getter(symbol)
+        except Exception:
+            proof = None
+
+        normalized_proof_reason = str(
+            (proof or {}).get("close_reason") or ""
+        ).strip().upper()
+        return normalized_proof_reason or close_reason
 
     def on_features_calculated(self, event: "Message") -> None:
         """Cache latest features snapshot for runtime adapters."""
@@ -117,7 +145,12 @@ class EPEventHandlers:
         """
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
+        trace_stage = getattr(
+            self._fsm, "_record_portfolio_event_trace_stage", None)
+
         self._fsm._latest_portfolio_state = event.pld or {}
+        if callable(trace_stage):
+            trace_stage(event, "latest_portfolio_state_set")
 
         # EXP-LEVERAGE-001: Update exposure guard with latest portfolio state
         self._fsm.exposure_guard.on_portfolio(
@@ -221,14 +254,13 @@ class EPEventHandlers:
                                 self._fsm._last_realized_pnl_by_symbol.get(sym, 0.0))
                         except Exception:
                             pass
-                    close_reason = "POSITION_CLOSED_DETECTED"
+                    close_reason = self._resolve_position_close_reason(sym)
                     try:
-                        close_reason = self._fsm._last_close_reason_by_symbol.pop(
-                            sym, "POSITION_CLOSED_DETECTED")
+                        self._fsm._open_strategy_by_symbol.pop(sym, None)
                     except Exception:
                         pass
                     try:
-                        self._fsm._open_strategy_by_symbol.pop(sym, None)
+                        self._fsm._bracket_owner_by_symbol.pop(sym, None)
                     except Exception:
                         pass
 
@@ -258,7 +290,7 @@ class EPEventHandlers:
                                 rid=rid_for_sym,
                                 close_price=float(
                                     close_price) if close_price is not None else None,
-                                close_reason="POSITION_CLOSED_DETECTED",
+                                close_reason=close_reason,
                             )
                         except Exception:
                             pass
@@ -274,7 +306,8 @@ class EPEventHandlers:
                     if _get_order_logger is not None:
                         try:
                             # PHASE 3: Get accumulated fees before write (used in two keys)
-                            _pos_fees = self._fsm._accumulated_fees_by_symbol.get(sym, 0.0)
+                            _pos_fees = self._fsm._accumulated_fees_by_symbol.get(
+                                sym, 0.0)
                             _get_order_logger().write({
                                 "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
                                 "event_type": "POSITION_CLOSED",
@@ -306,10 +339,12 @@ class EPEventHandlers:
                         # PHASE 2: Also clean up trade_id and entry side caches.
                         # PHASE 3: Also clean up accumulated fees cache.
                         try:
-                            self._fsm._last_lifecycle_ikey_by_symbol.pop(sym, None)
+                            self._fsm._last_lifecycle_ikey_by_symbol.pop(
+                                sym, None)
                             self._fsm._last_trade_id_by_symbol.pop(sym, None)
                             self._fsm._last_entry_side_by_symbol.pop(sym, None)
-                            self._fsm._accumulated_fees_by_symbol.pop(sym, None)
+                            self._fsm._accumulated_fees_by_symbol.pop(
+                                sym, None)
                         except Exception:
                             pass
 
@@ -328,7 +363,14 @@ class EPEventHandlers:
             LOG.debug(f"Error checking position closures: {e}")
 
         # Clean up stale reservations
-        expired = self._fsm.exposure_guard.expire_stale()
+        if callable(trace_stage):
+            trace_stage(event, "expire_stale_entered")
+        try:
+            expired = self._fsm.exposure_guard.expire_stale()
+        except Exception as exc:
+            if callable(trace_stage):
+                trace_stage(event, "expire_stale_failed", error=exc)
+            raise
 
         # Release post-fill holds
         released_postfill = list(
@@ -409,7 +451,8 @@ class EPEventHandlers:
             if symbol:
                 self._fsm._last_lifecycle_rid_by_symbol[symbol] = str(rid)
                 if payload.get("price") is not None:
-                    self._fsm._last_lifecycle_fill_price_by_symbol[symbol] = float(payload.get("price"))
+                    self._fsm._last_lifecycle_fill_price_by_symbol[symbol] = float(
+                        payload.get("price"))
         except Exception:
             pass
 
@@ -417,8 +460,10 @@ class EPEventHandlers:
             try:
                 _trade_lifecycle.on_fill(
                     rid=str(rid),
-                    fill_price=float(payload.get("price", 0)) if payload.get("price") else None,
-                    fill_qty=float(payload.get("quantity", 0)) if payload.get("quantity") else None,
+                    fill_price=float(payload.get("price", 0)
+                                     ) if payload.get("price") else None,
+                    fill_qty=float(payload.get("quantity", 0)) if payload.get(
+                        "quantity") else None,
                     fees=float(payload.get("fees", payload.get("commission", 0))) if (
                         payload.get("fees") or payload.get("commission")
                     ) else None,
@@ -427,11 +472,13 @@ class EPEventHandlers:
                 pass
 
     def on_order_fill(self, event: "Message") -> None:
-        """Handle EVT:ORDER_FILL events from adapter."""
+        """Handle adapter or canonical internal fill bookkeeping."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
         from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_cleared
 
         payload = event.pld or {}
+        skip_trade_lifecycle_log = bool(
+            payload.get("_skip_trade_lifecycle_on_fill"))
         order_id = payload.get("orderId")
         symbol = payload.get("symbol")
         filled_qty = payload.get("quantity")
@@ -461,7 +508,8 @@ class EPEventHandlers:
 
         # FILL-PIPELINE-FIX-AUDIT: include trade_id in dedup key so multiple
         # partial fills (each with unique Binance trade_id "t") are not suppressed.
-        _trade_id = str(payload.get("tradeId") or payload.get("trade_id") or "")
+        _trade_id = str(payload.get("tradeId")
+                        or payload.get("trade_id") or "")
         event_key = f"fill_{order_id}_{_trade_id}_{symbol}" if _trade_id else f"fill_{order_id}_{symbol}"
         if not self._fsm._mark_processed_event(event_key):
             LOG.debug(
@@ -482,7 +530,7 @@ class EPEventHandlers:
         except Exception:
             pass
 
-        if _trade_lifecycle is not None:
+        if _trade_lifecycle is not None and not skip_trade_lifecycle_log:
             try:
                 _trade_lifecycle.on_fill(
                     rid=str(rid) if rid else str(order_id),
@@ -571,7 +619,8 @@ class EPEventHandlers:
                     if order_id in self._fsm.watchdog.acked_orders:
                         self._fsm.watchdog.acked_orders[order_id].deadline_ms = (
                             get_clock().now_ms() + self._fsm.watchdog.fill_ttl_ms)
-                    LOG.info("PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", order_id)
+                    LOG.info(
+                        "PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", order_id)
         except Exception as e:
             LOG.warning(
                 f"[FILL] Failed to notify watchdog for {order_id}: {e}")
@@ -615,7 +664,8 @@ class EPEventHandlers:
                 try:
                     _oi_p2 = (
                         getattr(self._fsm, "order_index", None) or
-                        getattr(getattr(self._fsm, "fsm", None), "order_index", None)
+                        getattr(getattr(self._fsm, "fsm", None),
+                                "order_index", None)
                     )
                     if _oi_p2:
                         _p2_ref = (
@@ -624,7 +674,8 @@ class EPEventHandlers:
                             (_oi_p2.get(rid=str(rid)) if rid else None)
                         )
                         if _p2_ref and getattr(_p2_ref, "side", None):
-                            self._fsm._last_entry_side_by_symbol[symbol] = str(_p2_ref.side)
+                            self._fsm._last_entry_side_by_symbol[symbol] = str(
+                                _p2_ref.side)
                 except Exception:
                     pass
 
@@ -635,7 +686,8 @@ class EPEventHandlers:
         if symbol:
             try:
                 _fee = float(payload.get("commission") or 0.0)
-                _cur_fees = self._fsm._accumulated_fees_by_symbol.get(symbol, 0.0)
+                _cur_fees = self._fsm._accumulated_fees_by_symbol.get(
+                    symbol, 0.0)
                 self._fsm._accumulated_fees_by_symbol[symbol] = _cur_fees + _fee
             except Exception:
                 pass
@@ -669,13 +721,58 @@ class EPEventHandlers:
         # Create post-fill hold in exposure guard
         if hasattr(self._fsm, "exposure_guard"):
             postfill_key = f"postfill_{symbol}_{order_id}"
-            self._fsm.exposure_guard.state.postfill_reservations[postfill_key] = {
-                "symbol": symbol,
-                "qty": filled_qty,
-                "ts_ms": int(__import__('time').time() * 1000),
-                "rid": rid,
-            }
-            LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
+            fill_price = payload.get("price")
+            hold_notional = None
+            notional_source = ""
+            try:
+                hold_notional = abs(Decimal(str(filled_qty))) * \
+                    abs(Decimal(str(fill_price)))
+                notional_source = "fill_payload"
+            except (InvalidOperation, TypeError, ValueError):
+                pending_candidates = [
+                    payload.get("idempotent_key"),
+                    client_order_id,
+                    rid,
+                ]
+                for candidate in pending_candidates:
+                    if candidate in (None, ""):
+                        continue
+                    pending_item = self._fsm.exposure_guard.state.pending_exposure.get(
+                        str(candidate))
+                    if not isinstance(pending_item, dict):
+                        continue
+                    try:
+                        hold_notional = abs(
+                            Decimal(str(pending_item.get("notional"))))
+                        notional_source = f"pending_exposure:{candidate}"
+                        break
+                    except (InvalidOperation, TypeError, ValueError):
+                        continue
+                if hold_notional is None:
+                    hold_notional = Decimal("0")
+                    notional_source = "compat_zero_missing_fill_notional"
+                    LOG.warning(
+                        "[FILL] No authoritative fill notional for postfill hold %s; "
+                        "storing zero-notional canonical hold for compatibility",
+                        postfill_key,
+                    )
+
+            hold = self._fsm.exposure_guard.record_postfill_hold(
+                key=postfill_key,
+                notional_usd=hold_notional,
+                symbol=str(symbol),
+                side=str(payload.get("side") or "SELL"),
+                rid=str(rid) if rid not in (None, "") else None,
+                qty=filled_qty,
+                ts_ms=payload.get("ts_ms") or payload.get("ts"),
+                notional_source=notional_source,
+            )
+            LOG.debug(
+                "[FILL] Created postfill hold for %s exp_ts=%s source=%s",
+                postfill_key,
+                hold.get("exp_ts"),
+                hold.get("notional_source"),
+            )
 
         # LIMIT-ENTRY-DEFERRED-BRACKETS: Place brackets on fill
         if order_id in self._fsm._pending_brackets:
@@ -699,6 +796,10 @@ class EPEventHandlers:
                         order_id, bracket_data),
                     loop
                 )
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger="bracket_deferred_cleared:filled",
+                allow_empty=True,
+            )
 
         # Best-effort cleanup of orphaned brackets
         loop = self._fsm._get_async_loop()

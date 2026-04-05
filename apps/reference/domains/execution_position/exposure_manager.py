@@ -379,6 +379,10 @@ class ExposureManager:
                 )
             except Exception as e:
                 LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger="bracket_deferred_cleared:cancelled",
+                allow_empty=True,
+            )
             LOG.info(
                 f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id}"
             )

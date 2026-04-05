@@ -154,12 +154,13 @@ class TestProcessSnapshot:
         assert results == []
         assert worker._snapshots_failed == 1
 
-    def test_emits_two_phase_events_and_enriches_result_payload(self):
-        """Worker emits FEATURES then PROCESS and enriches collected score events."""
+    def test_emits_feature_and_ta_events_before_process_and_enriches_result_payload(self):
+        """Worker emits FE + TA cache events before PROCESS and enriches collected score events."""
         worker = _make_worker(scenario_id="S_PIPE")
         snapshot = _make_alpha_input(
             regime="TREND_UP",
-            warmup_status={"obi": True, "delta_price": False},
+            warmup_status={"obi": True,
+                           "delta_price": False, "ta_features": False},
         )
         emitted = []
 
@@ -187,13 +188,16 @@ class TestProcessSnapshot:
 
         assert [name for name, _, _ in emitted] == [
             "EVT:FEATURES_CALCULATED",
+            "EVT:TA_FEATURES_CALCULATED",
             "CMD:PROCESS_STRATEGY",
         ]
         assert emitted[0][1]["warmup_readiness"] == {
             "obi": True,
             "delta_price": False,
+            "ta_features": False,
         }
-        assert emitted[1][1]["regime"] == "TREND_UP"
+        assert emitted[1][1]["is_warm"] is False
+        assert emitted[2][1]["regime"] == "TREND_UP"
         assert results == [
             {
                 "scenario_id": "S_PIPE",
@@ -349,7 +353,8 @@ class TestAdaptiveThreshold:
 
         worker._apply_regime_adaptive_threshold("HIGH_VOLATILITY")
 
-        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(0.30)
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.30)
 
     def test_falls_back_to_default_multiplier_and_clamps(self):
         worker = _make_worker()
@@ -375,10 +380,12 @@ class TestAdaptiveThreshold:
         )
 
         worker._apply_regime_adaptive_threshold("BAD")
-        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(0.25)
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.25)
 
         worker._apply_regime_adaptive_threshold("LOW_VOLATILITY")
-        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(0.25)
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.25)
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +439,8 @@ class TestSummaryShutdown:
         with caplog.at_level(logging.WARNING):
             worker.shutdown()
 
-        assert any("Plugin shutdown error: boom" in message for message in caplog.messages)
+        assert any(
+            "Plugin shutdown error: boom" in message for message in caplog.messages)
 
     def test_threshold_sync_affects_side(self):
         """Overridden threshold changes side determination boundary."""

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.domains.execution_position.utils import (
@@ -44,6 +44,7 @@ class BracketManager:
         oco_group_id: Any,
         entry_resp: Dict[str, Any],
         decision: "Message",
+        owner_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Place SL/TP together for market entries.
 
@@ -157,11 +158,14 @@ class BracketManager:
             symbol=symbol, sl_resp=sl_resp, tp_resp=tp_resp,
             sl_id=sl_id, tp_id=tp_id,
             entry_resp=entry_resp, decision=decision,
-            corr_id=corr_id, oco_group_id=oco_group_id)
+            corr_id=corr_id, oco_group_id=oco_group_id,
+            owner_context=owner_context, placement_path="primary")
 
     def _register_bracket_results(
         self, *, symbol, sl_resp, tp_resp, sl_id, tp_id,
-        entry_resp, decision, corr_id, oco_group_id
+        entry_resp, decision, corr_id, oco_group_id,
+        owner_context: Optional[Dict[str, Any]] = None,
+        placement_path: str = "primary",
     ):
         """Mirror accepted bracket IDs into FSM, correlation, and guardian state."""
         corr_value = corr_id or decision.corr_id or ""
@@ -189,6 +193,98 @@ class BracketManager:
             self._fsm._symbol_brackets.setdefault(
                 symbol, {})["tp_order_id"] = tp_order_id
 
+        # --- CANONICAL OrderIndex registration for bracket children ---
+        # Binance algo orders: the placement response contains `clientAlgoId` which
+        # becomes the child order's `clientOrderId` in WS ORDER_TRADE_UPDATE fills.
+        # We register clientAlgoId (if present) as the primary clientOrderId lookup
+        # key so WS fills can be correlated.  The system-generated sl_id/tp_id
+        # ("SL-xxx"/"TP-xxx") is kept as a secondary registration for legacy paths.
+        sl_algo_client_id = str(sl_resp.get("clientAlgoId", "")).strip() if sl_resp else ""
+        tp_algo_client_id = str(tp_resp.get("clientAlgoId", "")).strip() if tp_resp else ""
+
+        order_index = getattr(self._fsm, "order_index", None) or getattr(
+            getattr(self._fsm, "fsm", None), "order_index", None
+        )
+        if order_index is not None:
+            bracket_side = opposite_side(
+                str(entry_resp.get("side", "")).upper()
+                or str(getattr(decision, "side", "") or "").upper()
+                or ""
+            )
+            parent_rid = decision.rid or str(entry_resp.get("orderId", ""))
+            idem_str = str(
+                getattr(decision, "idempotent_key", "")
+                or entry_resp.get("clientOrderId", "")
+                or ""
+            )
+            if sl_order_id and sl_id:
+                # Use clientAlgoId as the primary clientOrderId (matches WS fills)
+                sl_client_for_index = sl_algo_client_id or sl_id
+                try:
+                    order_index.register_bracket_child(
+                        rid=parent_rid,
+                        idempotent_key=idem_str,
+                        clientOrderId=sl_client_for_index,
+                        exchangeOrderId=sl_order_id,
+                        symbol=symbol,
+                        side=bracket_side,
+                        order_type="STOP_MARKET",
+                        order_kind="SL",
+                    )
+                except Exception as exc:
+                    LOG.error(
+                        "OrderIndex bracket child registration failed for SL %s/%s: %s",
+                        sl_client_for_index, sl_order_id, exc,
+                    )
+                # If clientAlgoId differs from sl_id, also register sl_id as secondary
+                # so legacy code paths that reference "SL-xxx" still resolve.
+                if sl_algo_client_id and sl_algo_client_id != sl_id:
+                    try:
+                        order_index.register_bracket_child(
+                            rid=parent_rid,
+                            idempotent_key=idem_str,
+                            clientOrderId=sl_id,
+                            exchangeOrderId=sl_order_id,
+                            symbol=symbol,
+                            side=bracket_side,
+                            order_type="STOP_MARKET",
+                            order_kind="SL",
+                        )
+                    except Exception:
+                        pass  # Best-effort secondary registration
+            if tp_order_id and tp_id:
+                tp_client_for_index = tp_algo_client_id or tp_id
+                try:
+                    order_index.register_bracket_child(
+                        rid=parent_rid,
+                        idempotent_key=idem_str,
+                        clientOrderId=tp_client_for_index,
+                        exchangeOrderId=tp_order_id,
+                        symbol=symbol,
+                        side=bracket_side,
+                        order_type="TAKE_PROFIT_MARKET",
+                        order_kind="TP",
+                    )
+                except Exception as exc:
+                    LOG.error(
+                        "OrderIndex bracket child registration failed for TP %s/%s: %s",
+                        tp_client_for_index, tp_order_id, exc,
+                    )
+                if tp_algo_client_id and tp_algo_client_id != tp_id:
+                    try:
+                        order_index.register_bracket_child(
+                            rid=parent_rid,
+                            idempotent_key=idem_str,
+                            clientOrderId=tp_id,
+                            exchangeOrderId=tp_order_id,
+                            symbol=symbol,
+                            side=bracket_side,
+                            order_type="TAKE_PROFIT_MARKET",
+                            order_kind="TP",
+                        )
+                    except Exception:
+                        pass  # Best-effort secondary registration
+
         if sl_order_id or tp_order_id:
             self._fsm.order_guardian.register_brackets(
                 symbol=symbol, entry_order_id=str(entry_resp["orderId"]),
@@ -213,7 +309,49 @@ class BracketManager:
             }
             manage_flow.set_bracket_ids(
                 sl_order_id=brackets.get("sl_order_id"),
-                tp_order_id=brackets.get("tp_order_id"))
+                tp_order_id=brackets.get("tp_order_id"),
+                sl_algo_client_id=sl_algo_client_id or None,
+                tp_algo_client_id=tp_algo_client_id or None,
+            )
+
+        if sl_order_id or tp_order_id:
+            owner_context = dict(owner_context or {})
+            lifecycle_active = self._fsm._has_active_lifecycle_for_symbol(
+                symbol)
+            owner_snapshot = self._fsm._remember_bracket_owner(
+                symbol=symbol,
+                strategy_id=owner_context.get("strategy_id"),
+                strategy_source=owner_context.get("strategy_source"),
+                owner_status=str(owner_context.get(
+                    "owner_status") or "missing"),
+                detail=owner_context.get(
+                    "detail") or owner_context.get("owner_detail"),
+                assigned_strategies=owner_context.get("assigned_strategies"),
+                placement_path=placement_path,
+                rid=decision.rid,
+                corr_id=corr_value,
+                entry_order_id=str(entry_resp.get("orderId") or ""),
+                entry_client_order_id=entry_resp.get("clientOrderId"),
+                lifecycle_active=lifecycle_active,
+            )
+            self._fsm._append_bracket_ownership_record(
+                event_type="EXECUTION_BRACKET_PRIMARY_PLACED",
+                symbol=symbol,
+                placement_path=placement_path,
+                strategy_id=owner_snapshot.get("strategy_id"),
+                strategy_source=owner_snapshot.get("strategy_source"),
+                owner_status=str(owner_snapshot.get(
+                    "owner_status") or "missing"),
+                detail=owner_snapshot.get("detail"),
+                assigned_strategies=owner_snapshot.get("assigned_strategies"),
+                rid=decision.rid,
+                corr_id=corr_value,
+                entry_order_id=str(entry_resp.get("orderId") or ""),
+                entry_client_order_id=entry_resp.get("clientOrderId"),
+                sl_order_id=sl_order_id,
+                tp_order_id=tp_order_id,
+                lifecycle_active=lifecycle_active,
+            )
 
     async def place_deferred_brackets(
         self, entry_order_id: str, bracket_data: Dict[str, Any]
@@ -315,6 +453,83 @@ class BracketManager:
             LOG.error(
                 f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
 
+        # --- CANONICAL OrderIndex registration for deferred bracket children ---
+        # Extract clientAlgoId for WS fill correlation (same pattern as primary path).
+        sl_algo_client_id = str(sl_resp.get("clientAlgoId", "")).strip() if sl_resp else ""
+        tp_algo_client_id = str(tp_resp.get("clientAlgoId", "")).strip() if tp_resp else ""
+
+        order_index = getattr(self._fsm, "order_index", None) or getattr(
+            getattr(self._fsm, "fsm", None), "order_index", None
+        )
+        if order_index is not None:
+            bracket_side = opposite_side(side)
+            parent_rid = rid or entry_order_id
+            idem_str = str(idem_key or entry_client_order_id or "")
+            if sl_resp:
+                sl_client_for_index = sl_algo_client_id or sl_id
+                try:
+                    order_index.register_bracket_child(
+                        rid=parent_rid,
+                        idempotent_key=idem_str,
+                        clientOrderId=sl_client_for_index,
+                        exchangeOrderId=str(sl_resp["orderId"]),
+                        symbol=symbol,
+                        side=bracket_side,
+                        order_type="STOP_MARKET",
+                        order_kind="SL",
+                    )
+                except Exception as exc:
+                    LOG.error(
+                        "OrderIndex deferred bracket child registration failed for SL %s: %s",
+                        sl_client_for_index, exc,
+                    )
+                if sl_algo_client_id and sl_algo_client_id != sl_id:
+                    try:
+                        order_index.register_bracket_child(
+                            rid=parent_rid,
+                            idempotent_key=idem_str,
+                            clientOrderId=sl_id,
+                            exchangeOrderId=str(sl_resp["orderId"]),
+                            symbol=symbol,
+                            side=bracket_side,
+                            order_type="STOP_MARKET",
+                            order_kind="SL",
+                        )
+                    except Exception:
+                        pass
+            if tp_resp:
+                tp_client_for_index = tp_algo_client_id or tp_id
+                try:
+                    order_index.register_bracket_child(
+                        rid=parent_rid,
+                        idempotent_key=idem_str,
+                        clientOrderId=tp_client_for_index,
+                        exchangeOrderId=str(tp_resp["orderId"]),
+                        symbol=symbol,
+                        side=bracket_side,
+                        order_type="TAKE_PROFIT_MARKET",
+                        order_kind="TP",
+                    )
+                except Exception as exc:
+                    LOG.error(
+                        "OrderIndex deferred bracket child registration failed for TP %s: %s",
+                        tp_client_for_index, exc,
+                    )
+                if tp_algo_client_id and tp_algo_client_id != tp_id:
+                    try:
+                        order_index.register_bracket_child(
+                            rid=parent_rid,
+                            idempotent_key=idem_str,
+                            clientOrderId=tp_id,
+                            exchangeOrderId=str(tp_resp["orderId"]),
+                            symbol=symbol,
+                            side=bracket_side,
+                            order_type="TAKE_PROFIT_MARKET",
+                            order_kind="TP",
+                        )
+                    except Exception:
+                        pass
+
         # Register with OrderGuardian
         if sl_resp:
             self._fsm.order_guardian.register_bracket(
@@ -326,6 +541,54 @@ class BracketManager:
                 symbol=symbol, parent_order_id=entry_order_id,
                 order_id=str(tp_resp["orderId"]), client_order_id=tp_id,
                 kind="TP", corr_id=corr_id, rid=rid)
+
+        # Sync bracket IDs (including algo client IDs) to ManageFlowFSM
+        manage_flow = self._fsm.manage_flows.get(symbol)
+        if manage_flow:
+            brackets = self._fsm._symbol_brackets.get(symbol, {})
+            manage_flow.set_bracket_ids(
+                sl_order_id=brackets.get("sl_order_id"),
+                tp_order_id=brackets.get("tp_order_id"),
+                sl_algo_client_id=sl_algo_client_id or None,
+                tp_algo_client_id=tp_algo_client_id or None,
+            )
+
+        if sl_resp or tp_resp:
+            lifecycle_active = self._fsm._has_active_lifecycle_for_symbol(
+                symbol)
+            owner_snapshot = self._fsm._remember_bracket_owner(
+                symbol=symbol,
+                strategy_id=bracket_data.get("strategy_id"),
+                strategy_source=bracket_data.get("strategy_source"),
+                owner_status=str(bracket_data.get(
+                    "owner_status") or "missing"),
+                detail=bracket_data.get("owner_detail"),
+                assigned_strategies=bracket_data.get("assigned_strategies"),
+                placement_path="deferred",
+                rid=rid,
+                corr_id=corr_id,
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                lifecycle_active=lifecycle_active,
+            )
+            self._fsm._append_bracket_ownership_record(
+                event_type="EXECUTION_BRACKET_DEFERRED_PLACED",
+                symbol=symbol,
+                placement_path="deferred",
+                strategy_id=owner_snapshot.get("strategy_id"),
+                strategy_source=owner_snapshot.get("strategy_source"),
+                owner_status=str(owner_snapshot.get(
+                    "owner_status") or "missing"),
+                detail=owner_snapshot.get("detail"),
+                assigned_strategies=owner_snapshot.get("assigned_strategies"),
+                rid=rid,
+                corr_id=corr_id,
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                sl_order_id=str(sl_resp["orderId"]) if sl_resp else None,
+                tp_order_id=str(tp_resp["orderId"]) if tp_resp else None,
+                lifecycle_active=lifecycle_active,
+            )
 
         LOG.info(
             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "

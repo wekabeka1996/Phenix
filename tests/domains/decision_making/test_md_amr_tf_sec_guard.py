@@ -62,7 +62,8 @@ def _make_config(symbol: str = "BNBUSDT"):
         weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
         objective=SimpleNamespace(enabled=False),
         execution=SimpleNamespace(
-            gtx_retry_max=2, gtx_fallback_to_market=True),
+            gtx_retry_max=2,
+            emit_market_fallback_marker_on_retry_exhaustion=True),
         llm_gate=SimpleNamespace(
             enabled=False, sentiment_block_threshold=-0.8, block_ttl_sec=14_400),
         concentration_guard=SimpleNamespace(

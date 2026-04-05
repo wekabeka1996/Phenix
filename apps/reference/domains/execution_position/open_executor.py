@@ -159,7 +159,8 @@ class OpenExecutor:
 
         # EP-01.3-SUPERSEDE-ACK: Check if already waiting for cancel
         if symbol in self._fsm._supersede_canceling:
-            LOG.info(f"EP-01.3: {symbol} already canceling pending entry, queueing new DEC:OPEN (supersede)")
+            LOG.info(
+                f"EP-01.3: {symbol} already canceling pending entry, queueing new DEC:OPEN (supersede)")
             self._fsm._supersede_queue[symbol] = {
                 "decision": decision, "queued_at": get_clock().now_sec()}
             return
@@ -180,11 +181,13 @@ class OpenExecutor:
             err = f"instruments.{symbol} is missing (required SSOT for tick_size/step_size/min_qty/min_notional)"
             LOG.error(f"❌ [{symbol}] INSTRUMENT_CONFIG_MISSING: {err}")
             order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
-                "symbol": symbol, "side": side, "quantity": str(raw_qty),
-                "nrr_code": "NRR-INSTRUMENT-CONFIG-MISSING", "why": err})
+                                "symbol": symbol, "side": side, "quantity": str(raw_qty),
+                                "nrr_code": "NRR-INSTRUMENT-CONFIG-MISSING", "why": err,
+                                "source_fsm": "ExecPosFSM", "origin_class": "execution_internal"})
             reject_payload = normalize_order_rejected_payload(
                 {"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
-                 "reason": "NRR-INSTRUMENT-CONFIG-MISSING", "details": err},
+                 "reason": "NRR-INSTRUMENT-CONFIG-MISSING", "details": err,
+                 "origin_class": "execution_internal"},
                 fallback_rid=decision.rid,
                 fallback_ts_ms=get_clock().now_ms(),
             )
@@ -202,12 +205,13 @@ class OpenExecutor:
 
         # Normalize qty
         norm_result = normalize_qty(raw_qty=raw_qty, price=mark,
-            step_size=step_size, min_qty=min_qty, min_notional=min_notional)
+                                    step_size=step_size, min_qty=min_qty, min_notional=min_notional)
         if not norm_result.ok:
-            LOG.warning(f"❌ [{symbol}] QTY_NORMALIZE_REJECTED: {norm_result.why}")
+            LOG.warning(
+                f"❌ [{symbol}] QTY_NORMALIZE_REJECTED: {norm_result.why}")
             order_logger.write({"rid": decision.rid, "event_type": "QTY_NORMALIZE_REJECTED",
-                "symbol": symbol, "side": side, "quantity": str(raw_qty),
-                "nrr_code": norm_result.why, "adapter_response": norm_result.to_dict()})
+                                "symbol": symbol, "side": side, "quantity": str(raw_qty),
+                                "nrr_code": norm_result.why, "adapter_response": norm_result.to_dict()})
             reject_payload = normalize_order_rejected_payload(
                 {"symbol": symbol, "side": side, "raw_qty": str(raw_qty),
                  "reason": norm_result.why, "norm_result": norm_result.to_dict()},
@@ -221,17 +225,22 @@ class OpenExecutor:
                 why=norm_result.why), logger=LOG)
             return
         qty = str(norm_result.qty)
-        LOG.info(f"✅ [{symbol}] QTY_NORMALIZED: raw={raw_qty} → normalized={qty}")
+        LOG.info(
+            f"✅ [{symbol}] QTY_NORMALIZED: raw={raw_qty} → normalized={qty}")
 
         # Resolve SL/TP
-        sl, tp, sl_source, tp_source = self._resolve_sl_tp(decision, symbol, side, mark)
+        sl, tp, sl_source, tp_source = self._resolve_sl_tp(
+            decision, symbol, side, mark)
         if sl is None or tp is None:
             return  # Already logged/rejected in _resolve_sl_tp
 
         # Quantize and validate
-        tp = quantize_stop_price(float(tp), tick_size, side="BUY" if side == "BUY" else "SELL")
-        sl = quantize_stop_price(float(sl), tick_size, side="SELL" if side == "BUY" else "BUY")
-        validate_not_immediate("LONG" if side == "BUY" else "SHORT", tp, sl, mark)
+        tp = quantize_stop_price(float(tp), tick_size,
+                                 side="BUY" if side == "BUY" else "SELL")
+        sl = quantize_stop_price(float(sl), tick_size,
+                                 side="SELL" if side == "BUY" else "BUY")
+        validate_not_immediate(
+            "LONG" if side == "BUY" else "SHORT", tp, sl, mark)
 
         # GATE: Check SYMBOL_TIDY
         if decision.verb == "OPEN":
@@ -240,13 +249,16 @@ class OpenExecutor:
                 return
 
         # Validate order policy
-        order_type, tif, price = self._validate_order_policy(decision, symbol, side, qty)
+        order_type, tif, price = self._validate_order_policy(
+            decision, symbol, side, qty)
         if order_type is None:
             return  # Already rejected
 
         # Generate entry ID and place order
-        idem_key = (decision.pld or {}).get("idempotent_key") or getattr(decision, "idempotent_key", None) or decision.rid
-        entry_id = generate_client_order_id("ENTRY", symbol, idempotent_key=str(idem_key) if idem_key else None)
+        idem_key = (decision.pld or {}).get("idempotent_key") or getattr(
+            decision, "idempotent_key", None) or decision.rid
+        entry_id = generate_client_order_id(
+            "ENTRY", symbol, idempotent_key=str(idem_key) if idem_key else None)
         entry_resp = None
 
         if order_type == "LIMIT" and price:
@@ -258,30 +270,43 @@ class OpenExecutor:
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
         # Post-entry: ORDER_INDEX, guardian, watchdog, logging
-        self._post_entry_registration(decision, symbol, side, qty, raw_qty, entry_id, entry_resp,
-                                       idem_key, norm_result, order_type, mark)
+        owner_context = self._post_entry_registration(
+            decision,
+            symbol,
+            side,
+            qty,
+            raw_qty,
+            entry_id,
+            entry_resp,
+            idem_key,
+            norm_result,
+            order_type,
+            mark,
+        )
 
         # LIMIT deferred brackets path
         if order_type == "LIMIT":
             self._store_pending_brackets(entry_resp, symbol, side, sl, tp, qty, decision,
-                                          idem_key, tick_size, entry_id)
+                                         idem_key, tick_size, entry_id, owner_context)
             return None
 
         # MARKET: Pre-flight + immediate bracket placement
         if not await self._fsm._bracket_mgr.preflight_position_check(symbol):
-            LOG.warning(f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
+            LOG.warning(
+                f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
             return None
 
         entry_order_id = str(entry_resp["orderId"])
         if not await self._fsm.order_guardian.should_place_brackets(symbol, entry_order_id):
-            LOG.warning(f"🚫 OrderGuardian blocked bracket placement for {symbol}")
+            LOG.warning(
+                f"🚫 OrderGuardian blocked bracket placement for {symbol}")
             return None
 
         await self._fsm._bracket_mgr.place_brackets_parallel(
             symbol=symbol, side=side, sl=sl, tp=tp, qty=qty,
             tick_size=tick_size, idem_key=idem_key,
             corr_id=decision.corr_id, oco_group_id=decision.oco_group_id,
-            entry_resp=entry_resp, decision=decision)
+            entry_resp=entry_resp, decision=decision, owner_context=owner_context)
 
     def _check_pending_entries(self, symbol: str):
         """Check if pending entries exist for this symbol."""
@@ -304,7 +329,8 @@ class OpenExecutor:
         try:
             pe_ttl_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
             if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_supersede:
-                guard_result = self._fsm._evaluate_supersede_reprice_guard(symbol, decision, pending_order_ids)
+                guard_result = self._fsm._evaluate_supersede_reprice_guard(
+                    symbol, decision, pending_order_ids)
                 if guard_result is not None and not bool(guard_result.get("allow_cancel")):
                     analyses = guard_result.get("analyses") or []
                     LOG.info(
@@ -314,7 +340,8 @@ class OpenExecutor:
                     )
                     if bool(guard_result.get("enforce")):
                         return True
-                LOG.info(f"EP-01.3: {symbol} has {len(pending_order_ids)} pending entries, queueing new DEC:OPEN")
+                LOG.info(
+                    f"EP-01.3: {symbol} has {len(pending_order_ids)} pending entries, queueing new DEC:OPEN")
                 self._fsm._supersede_canceling.add(symbol)
                 self._fsm._supersede_queue[symbol] = {
                     "decision": decision, "cancel_order_ids": pending_order_ids,
@@ -324,11 +351,14 @@ class OpenExecutor:
                 loop = self._fsm._get_async_loop()
                 if loop:
                     async def _supersede_timeout():
-                        timeout_sec = float(pe_ttl_cfg.supersede_cancel_timeout_sec)
+                        timeout_sec = float(
+                            pe_ttl_cfg.supersede_cancel_timeout_sec)
                         await get_clock().sleep_sec(timeout_sec)
                         if symbol in self._fsm._supersede_canceling:
-                            LOG.warning(f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open")
-                            self._fsm._entry_mgr.process_queued_supersede(symbol)
+                            LOG.warning(
+                                f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open")
+                            self._fsm._entry_mgr.process_queued_supersede(
+                                symbol)
                     self._fsm._submit_async(_supersede_timeout(), loop)
                 return True
         except AttributeError:
@@ -339,8 +369,10 @@ class OpenExecutor:
         """Resolve SL/TP from strategy-provided prices or config fallback."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
-        explicit_sl_raw = decision.pld.get("stop_price") if decision.pld else None
-        explicit_tp_raw = decision.pld.get("target_price") if decision.pld else None
+        explicit_sl_raw = decision.pld.get(
+            "stop_price") if decision.pld else None
+        explicit_tp_raw = decision.pld.get(
+            "target_price") if decision.pld else None
 
         explicit_sl: Optional[Decimal] = None
         explicit_tp: Optional[Decimal] = None
@@ -349,13 +381,15 @@ class OpenExecutor:
             try:
                 explicit_sl = Decimal(str(explicit_sl_raw))
             except Exception as e:
-                LOG.warning(f"[{symbol}] Invalid explicit stop_price '{explicit_sl_raw}': {e}")
+                LOG.warning(
+                    f"[{symbol}] Invalid explicit stop_price '{explicit_sl_raw}': {e}")
 
         if explicit_tp_raw not in (None, "", "None", "null"):
             try:
                 explicit_tp = Decimal(str(explicit_tp_raw))
             except Exception as e:
-                LOG.warning(f"[{symbol}] Invalid explicit target_price '{explicit_tp_raw}': {e}")
+                LOG.warning(
+                    f"[{symbol}] Invalid explicit target_price '{explicit_tp_raw}': {e}")
 
         sl_pct = tp_low_ratio = tp_high_ratio = None
         config_loaded = False
@@ -367,20 +401,24 @@ class OpenExecutor:
                     raise ValueError("strategies.aurora not configured")
                 instr_cfg = aurora.assets.get(symbol)
                 if instr_cfg is None:
-                    raise ValueError(f"strategies.aurora.assets.{symbol} not configured")
+                    raise ValueError(
+                        f"strategies.aurora.assets.{symbol} not configured")
                 exit_cfg = getattr(instr_cfg, "exit", None)
                 if exit_cfg is None or exit_cfg.sl_pct is None:
-                    raise ValueError(f"strategies.aurora.assets.{symbol}.exit.sl_pct is required")
+                    raise ValueError(
+                        f"strategies.aurora.assets.{symbol}.exit.sl_pct is required")
                 sl_pct = exit_cfg.sl_pct
                 tp_cfg = getattr(instr_cfg, "take_profit", None)
                 if tp_cfg is None or tp_cfg.tp_low_ratio is None:
-                    raise ValueError(f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required")
+                    raise ValueError(
+                        f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required")
                 tp_low_ratio = tp_cfg.tp_low_ratio
                 tp_high_ratio = getattr(tp_cfg, "tp_high_ratio", None)
                 config_loaded = True
             except (ValueError, AttributeError) as cfg_err:
                 if explicit_sl is None or explicit_tp is None:
-                    LOG.error(f"❌ [{symbol}] FAIL-CLOSED: Strategy did not provide SL/TP and config fallback missing: {cfg_err}")
+                    LOG.error(
+                        f"❌ [{symbol}] FAIL-CLOSED: Strategy did not provide SL/TP and config fallback missing: {cfg_err}")
                     # Rejection handled - return None
                     return None, None, None, None
 
@@ -390,7 +428,9 @@ class OpenExecutor:
             sl, sl_source = explicit_sl, "STRATEGY"
         elif config_loaded and sl_pct is not None:
             sl_pct_dec = Decimal(str(sl_pct))
-            sl = mark_dec * (Decimal("1") - sl_pct_dec) if side == "BUY" else mark_dec * (Decimal("1") + sl_pct_dec)
+            sl = mark_dec * \
+                (Decimal("1") - sl_pct_dec) if side == "BUY" else mark_dec * \
+                (Decimal("1") + sl_pct_dec)
             sl_source = "CONFIG_FALLBACK"
         else:
             LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No SL source available")
@@ -401,13 +441,15 @@ class OpenExecutor:
         elif config_loaded and sl_pct is not None and tp_low_ratio is not None:
             sl_pct_dec = Decimal(str(sl_pct))
             tp_low_ratio_dec = Decimal(str(tp_low_ratio))
-            tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec) if side == "BUY" else mark_dec * (Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
+            tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec) if side == "BUY" else mark_dec * (
+                Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
             tp_source = "CONFIG_FALLBACK"
         else:
             LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No TP source available")
             return None, None, None, None
 
-        LOG.info(f"[{symbol}] TP/SL_RESOLVED: mark={mark}, SL={sl} (source={sl_source}), TP={tp} (source={tp_source})")
+        LOG.info(
+            f"[{symbol}] TP/SL_RESOLVED: mark={mark}, SL={sl} (source={sl_source}), TP={tp} (source={tp_source})")
         return sl, tp, sl_source, tp_source
 
     def _validate_order_policy(self, decision, symbol, side, qty):
@@ -420,13 +462,16 @@ class OpenExecutor:
 
         def _reject(nrr_code, details):
             order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
-                "symbol": symbol, "side": side, "quantity": float(qty),
-                "nrr_code": nrr_code, "why": details[:80], "source_fsm": "ExecPosFSM"})
+                                "symbol": symbol, "side": side, "quantity": float(qty),
+                                "nrr_code": nrr_code, "why": details[:80], "source_fsm": "ExecPosFSM",
+                                "origin_class": "execution_internal"})
             loop = self._fsm._get_async_loop()
             if loop:
                 async def _do_reject():
                     reject_payload = normalize_order_rejected_payload(
-                        {"symbol": symbol, "side": side, "reason": nrr_code, "details": details},
+                        {"symbol": symbol, "side": side,
+                            "reason": nrr_code, "details": details,
+                            "origin_class": "execution_internal"},
                         fallback_rid=decision.rid,
                         fallback_ts_ms=get_clock().now_ms(),
                     )
@@ -451,14 +496,16 @@ class OpenExecutor:
                 _reject("NRR-050", "ORDER-POLICY-01: LIMIT requires price")
                 return None, None, None
             if tif is None:
-                _reject("NRR-052", "ORDER-POLICY-01: LIMIT requires tif (no default)")
+                _reject(
+                    "NRR-052", "ORDER-POLICY-01: LIMIT requires tif (no default)")
                 return None, None, None
             tif = str(tif).upper()
             if decision.pld.get("valid_for_ms") is None:
                 _reject("NRR-025", "EP-01.3-INT: LIMIT requires valid_for_ms")
                 return None, None, None
         else:
-            _reject("NRR-048", f"ORDER-POLICY-01: unsupported order_type={order_type}")
+            _reject(
+                "NRR-048", f"ORDER-POLICY-01: unsupported order_type={order_type}")
             return None, None, None
 
         return order_type, tif, price
@@ -547,7 +594,8 @@ class OpenExecutor:
             submit_meta.get("distance_to_touch"),
             decision.rid,
         )
-        LOG.info(f"Placing LIMIT entry: {symbol} {side} {qty} @ {price}, tif={tif}")
+        LOG.info(
+            f"Placing LIMIT entry: {symbol} {side} {qty} @ {price}, tif={tif}")
         try:
             entry_resp = await self._fsm.adapter.place_limit_entry(
                 symbol, side, price, qty, time_in_force=tif, new_client_order_id=entry_id)
@@ -557,10 +605,12 @@ class OpenExecutor:
             from .reasons import MAKER_ONLY_REJECT, is_maker_only_reject_error
             err_code = getattr(e, 'code', None)
             if err_code and is_maker_only_reject_error(err_code):
-                LOG.warning(f"MAKER_ONLY_REJECT: GTX order rejected (code={err_code}), symbol={symbol}")
+                LOG.warning(
+                    f"MAKER_ONLY_REJECT: GTX order rejected (code={err_code}), symbol={symbol}")
                 order_logger.write({"rid": decision.rid, "event_type": "ORDER_REJECTED",
-                    "symbol": symbol, "side": side, "quantity": float(qty),
-                    "nrr_code": "NRR-018", "why": MAKER_ONLY_REJECT, "source_fsm": "ExecPosFSM"})
+                                    "symbol": symbol, "side": side, "quantity": float(qty),
+                                    "nrr_code": "NRR-018", "why": MAKER_ONLY_REJECT,
+                                    "source_fsm": "ExecPosFSM", "origin_class": "execution_adapter"})
                 await emit_canonical_terminal_order_event(
                     fsm=self._fsm.fsm,
                     event_name="EVT:ORDER_REJECTED",
@@ -569,6 +619,7 @@ class OpenExecutor:
                         "side": side,
                         "reason": MAKER_ONLY_REJECT,
                         "error_code": err_code,
+                        "origin_class": "execution_adapter",
                     },
                     rid=decision.rid,
                     src="execution_position",
@@ -584,7 +635,7 @@ class OpenExecutor:
                 raise
 
     def _post_entry_registration(self, decision, symbol, side, qty, raw_qty, entry_id, entry_resp,
-                                  idem_key, norm_result, order_type, mark):
+                                 idem_key, norm_result, order_type, mark):
         """Register entry with ORDER_INDEX, guardian, watchdog, and logging."""
         from vfoundation.dr import wal
         from vfoundation.core.fsm_emit_compat import Message
@@ -607,12 +658,31 @@ class OpenExecutor:
             symbol=symbol, order_id=str(entry_resp["orderId"]),
             client_order_id=entry_id, side=side, qty=qty,
             corr_id=decision.corr_id, rid=decision.rid)
-        try:
-            metadata = decision.pld.get("metadata") if isinstance(decision.pld.get("metadata"), dict) else {}
-            strategy_id = metadata.get("strategy_id") or decision.pld.get("strategy") or "aurora"
-            self._fsm._open_strategy_by_symbol[symbol] = str(strategy_id)
-        except Exception:
-            pass
+        owner_context = self._fsm._resolve_strategy_owner_from_decision(
+            symbol=symbol,
+            decision=decision,
+        )
+        strategy_id = str(owner_context.get("strategy_id") or "").strip()
+        if strategy_id:
+            self._fsm._open_strategy_by_symbol[symbol] = strategy_id
+        else:
+            self._fsm._open_strategy_by_symbol.pop(symbol, None)
+        self._fsm._remember_bracket_owner(
+            symbol=symbol,
+            strategy_id=owner_context.get("strategy_id"),
+            strategy_source=owner_context.get("strategy_source"),
+            owner_status=str(owner_context.get("owner_status") or "missing"),
+            detail=owner_context.get("detail"),
+            assigned_strategies=owner_context.get("assigned_strategies"),
+            placement_path="deferred_pending" if str(
+                order_type).upper() == "LIMIT" else "primary",
+            rid=decision.rid,
+            corr_id=decision.corr_id,
+            entry_order_id=str(entry_resp.get("orderId") or ""),
+            entry_client_order_id=entry_id,
+            lifecycle_active=self._fsm._has_active_lifecycle_for_symbol(
+                symbol),
+        )
 
         # Polling tracking
         if hasattr(self._fsm.adapter, 'track_order'):
@@ -623,7 +693,8 @@ class OpenExecutor:
         valid_for_ms = None
         if decision.pld and "valid_for_ms" in decision.pld:
             try:
-                valid_for_ms = int(decision.pld["valid_for_ms"]) if decision.pld["valid_for_ms"] is not None else None
+                valid_for_ms = int(
+                    decision.pld["valid_for_ms"]) if decision.pld["valid_for_ms"] is not None else None
             except (ValueError, TypeError):
                 valid_for_ms = None
         self._fsm.watchdog.track_order_placed(
@@ -635,6 +706,7 @@ class OpenExecutor:
         # Order logger
         _open_regime = (decision.pld or {}).get("regime")
         _open_regime_confidence = (decision.pld or {}).get("regime_confidence")
+        _open_regime_provenance = (decision.pld or {}).get("regime_provenance")
         order_logger.write({
             "rid": decision.rid, "event_type": "ORDER_PLACED", "symbol": symbol,
             "side": side, "quantity": float(qty), "qty_raw": float(raw_qty) if raw_qty else None,
@@ -642,17 +714,31 @@ class OpenExecutor:
             "source_fsm": "ExecPosFSM", "reservation_id": decision.corr_id,
             "adapter_response": entry_resp, "regime": _open_regime,
             "regime_confidence": _open_regime_confidence,
+            "regime_provenance": _open_regime_provenance,
             "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}})
 
         self._fsm._open_regime_by_symbol[symbol] = {
-            "regime": _open_regime, "regime_confidence": _open_regime_confidence}
+            "regime": _open_regime,
+            "regime_confidence": _open_regime_confidence,
+            "regime_provenance": _open_regime_provenance,
+        }
 
         if _trade_lifecycle is not None:
             try:
                 price = decision.pld.get("price")
+                try:
+                    execution_confidence = float(
+                        _open_regime_confidence) if _open_regime_confidence not in (None, "") else None
+                except (TypeError, ValueError):
+                    execution_confidence = None
                 _trade_lifecycle.on_order_placed(
                     rid=decision.rid, order_id=str(entry_resp["orderId"]),
-                    price=float(price) if price else None)
+                    price=float(price) if price else None,
+                    regime=_open_regime or "",
+                    confidence=execution_confidence,
+                    regime_provenance=_open_regime_provenance if isinstance(
+                        _open_regime_provenance, dict) else None,
+                )
             except Exception:
                 pass
 
@@ -664,7 +750,9 @@ class OpenExecutor:
                 pld={"symbol": symbol, "side": side, "qty": str(qty), "order_type": order_type,
                      "client_order_id": entry_id, "exchange_order_id": str(entry_resp.get("orderId")),
                      "order_id": str(entry_resp.get("orderId")), "rid": decision.rid,
-                     "ts_ms": get_clock().now_ms(), "corr_id": decision.corr_id},
+                     "ts_ms": get_clock().now_ms(), "corr_id": decision.corr_id,
+                     "regime": _open_regime, "regime_confidence": _open_regime_confidence,
+                     "regime_provenance": _open_regime_provenance},
                 why="order_placed")
             wal.append(order_placed_msg.model_dump())
             if hasattr(self._fsm, "bus"):
@@ -695,26 +783,36 @@ class OpenExecutor:
             try:
                 from apps.reference.domains.execution_position.fsm import PendingEntryMeta
 
-                metadata = decision.pld.get("metadata") if isinstance(decision.pld.get("metadata"), dict) else {}
-                tf_sec = metadata.get("tf_sec") or decision.pld.get("tf_sec") or 0
+                metadata = decision.pld.get("metadata") if isinstance(
+                    decision.pld.get("metadata"), dict) else {}
+                tf_sec = metadata.get(
+                    "tf_sec") or decision.pld.get("tf_sec") or 0
                 try:
                     tf_sec_int = int(tf_sec)
                 except Exception:
                     tf_sec_int = 0
 
-                strategy_id = metadata.get("strategy_id") or decision.pld.get("strategy") or "aurora"
-                strategy_cfg = getattr(self._fsm.config.strategies, str(strategy_id), None)
-                assets = getattr(strategy_cfg, "assets", None) if strategy_cfg is not None else None
-                asset_cfg = assets.get(symbol) if isinstance(assets, dict) else None
-                allowed_regimes = getattr(asset_cfg, "allowed_regimes", None) if asset_cfg is not None else None
+                strategy_id = metadata.get(
+                    "strategy_id") or decision.pld.get("strategy") or "aurora"
+                strategy_cfg = getattr(
+                    self._fsm.config.strategies, str(strategy_id), None)
+                assets = getattr(strategy_cfg, "assets",
+                                 None) if strategy_cfg is not None else None
+                asset_cfg = assets.get(symbol) if isinstance(
+                    assets, dict) else None
+                allowed_regimes = getattr(
+                    asset_cfg, "allowed_regimes", None) if asset_cfg is not None else None
 
                 cancelable_regimes = None
                 pe_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
                 adv = getattr(pe_cfg, "advanced_stale_cancel", None)
                 if adv is not None and getattr(adv, "enabled", False) and isinstance(allowed_regimes, list):
-                    may_cancel = set(getattr(adv, "may_cancel_regimes", {}).get(str(side).upper(), []))
-                    never_cancel = set(getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
-                    cancelable_regimes = sorted((set(str(x) for x in allowed_regimes) & may_cancel) - never_cancel)
+                    may_cancel = set(
+                        getattr(adv, "may_cancel_regimes", {}).get(str(side).upper(), []))
+                    never_cancel = set(
+                        getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
+                    cancelable_regimes = sorted(
+                        (set(str(x) for x in allowed_regimes) & may_cancel) - never_cancel)
 
                 self._fsm._pending_entry_meta[entry_order_id] = PendingEntryMeta(
                     symbol=symbol,
@@ -725,23 +823,58 @@ class OpenExecutor:
                     cancelable_regimes=cancelable_regimes,
                 )
             except Exception as meta_err:
-                LOG.debug("Failed to record PendingEntryMeta for %s: %s", entry_order_id, meta_err)
+                LOG.debug("Failed to record PendingEntryMeta for %s: %s",
+                          entry_order_id, meta_err)
+
+        return owner_context
 
     def _store_pending_brackets(self, entry_resp, symbol, side, sl, tp, qty, decision,
-                                 idem_key, tick_size, entry_id):
+                                idem_key, tick_size, entry_id, owner_context=None):
         """Store pending bracket data for LIMIT deferred placement."""
         entry_order_id = str(entry_resp["orderId"])
+        owner_context = dict(owner_context or {})
         self._fsm._pending_brackets[entry_order_id] = {
             "symbol": symbol, "side": side, "sl": sl, "tp": tp, "qty": qty,
             "rid": decision.rid, "idem_key": idem_key, "tick_size": tick_size,
             "corr_id": decision.corr_id, "oco_group_id": decision.oco_group_id,
-            "entry_client_order_id": entry_id, "created_at": get_clock().now_sec()}
+            "entry_client_order_id": entry_id, "created_at": get_clock().now_sec(),
+            "strategy_id": owner_context.get("strategy_id"),
+            "strategy_source": owner_context.get("strategy_source"),
+            "owner_status": owner_context.get("owner_status"),
+            "owner_detail": owner_context.get("detail"),
+            "assigned_strategies": owner_context.get("assigned_strategies"),
+            "placement_path": "deferred_pending",
+        }
         try:
             write_pending_brackets_stored(
                 entry_order_id=entry_order_id, symbol=symbol, side=side,
                 sl=sl, tp=tp, qty=qty, rid=decision.rid, idem_key=idem_key,
                 tick_size=tick_size, corr_id=decision.corr_id,
-                oco_group_id=decision.oco_group_id, entry_client_order_id=entry_id)
+                oco_group_id=decision.oco_group_id, entry_client_order_id=entry_id,
+                strategy_id=owner_context.get("strategy_id"),
+                strategy_source=owner_context.get("strategy_source"),
+                owner_status=owner_context.get("owner_status"),
+                owner_detail=owner_context.get("detail"),
+                assigned_strategies=owner_context.get("assigned_strategies"),
+                placement_path="deferred_pending",
+            )
         except Exception as e:
             LOG.warning(f"Failed to persist pending brackets to WAL: {e}")
-        LOG.info(f"📌 [LIMIT-DEFERRED] Stored pending brackets for {symbol} entry {entry_order_id}, SL={sl}, TP={tp}")
+        self._fsm._append_bracket_ownership_record(
+            event_type="EXECUTION_BRACKET_DEFERRED_STORED",
+            symbol=symbol,
+            placement_path="deferred_pending",
+            strategy_id=owner_context.get("strategy_id"),
+            strategy_source=owner_context.get("strategy_source"),
+            owner_status=str(owner_context.get("owner_status") or "missing"),
+            detail=owner_context.get("detail"),
+            assigned_strategies=owner_context.get("assigned_strategies"),
+            rid=decision.rid,
+            corr_id=decision.corr_id,
+            entry_order_id=entry_order_id,
+            entry_client_order_id=entry_id,
+            lifecycle_active=self._fsm._has_active_lifecycle_for_symbol(
+                symbol),
+        )
+        LOG.info(
+            f"📌 [LIMIT-DEFERRED] Stored pending brackets for {symbol} entry {entry_order_id}, SL={sl}, TP={tp}")

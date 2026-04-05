@@ -5,7 +5,7 @@
 # Loaded by AlphaSearchBacktestPlugin (separate loader, no core changes).
 #
 # Architecture:
-# - Two-phase bridge: EVT:FEATURES_CALCULATED → cache → CMD:PROCESS_STRATEGY
+# - Two-phase bridge: EVT:FEATURES_CALCULATED + EVT:TA_FEATURES_CALCULATED → cache → CMD:PROCESS_STRATEGY
 # - Multi-provider: aurora + ta_ensemble can run simultaneously
 # - Shadow mode: signals logged but not traded (for analysis)
 # ==============================================================================
@@ -18,9 +18,10 @@ alpha_search:
   # Event Bridge Configuration (A3.1)
   # ============================================================================
   triggers:
-    feature_event: "EVT:FEATURES_CALCULATED"  # Provides features → cache
-    decision_event: "CMD:PROCESS_STRATEGY"    # Triggers scoring → read cache
-    emit_event: "EVT:ALPHA_SCORE_CALCULATED"  # Output event
+    feature_event: "EVT:FEATURES_CALCULATED"     # Primary FE source → cache
+    ta_feature_event: "EVT:TA_FEATURES_CALCULATED"  # Supplemental TA source for ta_ensemble → cache
+    decision_event: "CMD:PROCESS_STRATEGY"       # Triggers scoring → read cache
+    emit_event: "EVT:ALPHA_SCORE_CALCULATED"     # Output event
 
   # Cache for features between events
   cache:
@@ -106,6 +107,7 @@ alpha_search:
       min_tf_sec: 300          # Skip on 3m bars (BNBUSDT tf_sec=180); TA features only computed at 5m+
       threshold: 0.18           # було 0.15
       fail_closed: true
+      # Reads explicit EVT:TA_FEATURES_CALCULATED supplements via triggers.ta_feature_event.
 
       ensemble:
         rebalance_frequency_days: 7

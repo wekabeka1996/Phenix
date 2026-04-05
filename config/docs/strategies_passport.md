@@ -7,6 +7,7 @@
 > - **Audit mode:** Code-driven sync
 > - **Major drifts found:** `DOGEUSDT -> mean_reversion` is no longer present in `strategies.yaml`. The current live assigned strategy set is `aurora`, `md_amr`, and `llm_microstructure`; `mean_reversion.yaml` remains on disk but is not live-loaded because `mean_reversion` is unassigned. Registry-driven profile loading and arbitration logic remain structurally unchanged.
 > - **Overall confidence:** HIGH
+> - **Governance SSOT:** bounded verdicts for already-closed surfaces live in `reports/GOVERNANCE_BOUNDED_VERDICTS_AND_NEXT_PACKAGES_2026-04-04.md`; this passport should reference that note instead of reopening those questions.
 
 ---
 
@@ -277,11 +278,12 @@ Authoritative sources traced for this passport:
 
 ### strategies.llm_microstructure
 - Type: LLMMicrostructureStrategyConfig
-- Logic Owner: llm_microstructure profile + sentinel plugin + shadow telemetry bridge
+- Logic Owner: llm_microstructure profile + sentinel plugin + shadow telemetry bridge + execution_position external-open intake
 - Runtime Role: contract profile for bridge-driven external intents.
 - Actual Runtime Semantics:
   - Current profile exists and is loaded because `llm_microstructure` is assigned.
   - Boot path is allowlisted through StrategyRuntime, but the actual behavior is not implemented as a normal in-process trading handler.
+  - Current live owner chain is `trading.llm_orchestration` + shadow telemetry ingress + `CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1` + `execution_position.IntentRouter.on_external_open_request()`.
 - Status: ACTIVE
 
 ---
@@ -299,16 +301,17 @@ Authoritative sources traced for this passport:
     - `exit_order_type`
     - `exit_tif`
     - GTX retry policy fields
-  - IntentBuilder reads `entry_order_type` and `entry_tif` from the strategy execution config.
+  - For the normal in-process strategy-signal path, IntentBuilder reads `entry_order_type` and `entry_tif` from the strategy execution config.
   - Missing `entry_order_type` is fail-closed.
   - Unsupported order type is fail-closed.
   - `LIMIT` requires explicit TIF.
   - `MARKET` requires `tif = null`.
+  - Current live `llm_microstructure` external-open flow is an explicit exception: it enters execution_position through `CMD:EXTERNAL_OPEN_REQUEST_V1`, enforces LIMIT + explicit TIF in `IntentRouter`, and only uses `llm_microstructure.pending_entry_ttl_ms` as the fallback owner for `valid_for_ms`.
 - Current profile values:
   - `aurora`: `LIMIT + GTX`
   - `mean_reversion`: `MARKET + null`
   - `md_amr`: `LIMIT + GTX` for entries, `MARKET + null` for exits
-  - `llm_microstructure`: `LIMIT + GTC` for entries, `MARKET + null` for exits
+  - `llm_microstructure`: `LIMIT + GTC` for entries, `MARKET + null` for exits in the declared profile, but not the active owner contract for the live external-open path
 - Status: ACTIVE
 
 ---
@@ -320,14 +323,15 @@ Authoritative sources traced for this passport:
 - Logic Owner: strategy profile + DecisionMaking._propose_trade_intent + apply_safety_gates
 - Runtime Role: controls whether strategy-level directional sanity and price-motion safety checks are applied before intent emission.
 - Actual Runtime Semantics:
-  - DecisionMaking applies safety gates before building/emitting the trade intent.
+  - DecisionMaking applies safety gates before building/emitting the trade intent on the normal strategy-signal path.
   - Missing/invalid safety-gates config produces a fail-closed reject with `CONFIG_SAFETY_GATES_MISSING`.
   - A deny outcome from safety gates emits a blocked/rejected path.
+  - Current live `llm_microstructure` external-open flow bypasses `EVT:STRATEGY_SIGNAL_PRODUCED`, StrategyGateway, and DecisionMaking; do not treat its safety-gates flag as the live external owner.
 - Current profile values:
   - `aurora.safety_gates.enabled: true`
   - `mean_reversion.safety_gates.enabled: false`
   - `md_amr.safety_gates.enabled: true`
-  - `llm_microstructure.safety_gates.enabled: true`
+  - `llm_microstructure.safety_gates.enabled: false`
 - Status: ACTIVE
 
 ---
@@ -384,16 +388,24 @@ Authoritative sources traced for this passport:
   - Runtime behavior is bridge-driven, not a regular stateful handler loop.
 - Status: LEGACY
 
+### llm_microstructure through the normal strategy-signal gate chain
+- Type: stale assumption
+- Actual Runtime Semantics:
+  - The current live external LLM route does not go through `EVT:STRATEGY_SIGNAL_PRODUCED`, StrategyGateway, DecisionMaking safety gates, or IntentBuilder before execution_position intake.
+  - The active route is `trading.llm_orchestration` + shadow telemetry ingress + `CMD:EXTERNAL_OPEN_REQUEST_V1`.
+- Status: LEGACY
+
 ---
 
 ## 11. Final verdict
 
-Current strategy SSOT is centered on one chain:
+Current strategy SSOT is centered on one assignment-first model with one explicit external-path exception:
 
 1. `config/aurora/strategies.yaml` is the hard registry for symbol-to-strategy assignment and arbitration.
 2. Assigned strategy IDs drive profile loading from `config/aurora/strategies/<id>.yaml`.
 3. Assigned strategy IDs also drive plugin startup via StrategyRuntime.
-4. Strategy profiles own execution policy and safety-gate policy.
+4. For normal in-process strategies, strategy profiles own execution policy and safety-gate policy.
 5. Strategy handlers then apply stricter strategy-specific validity checks on top of assignments.
+6. Current live `llm_microstructure` external flow is the explicit exception: active ownership is `trading.llm_orchestration` + shadow telemetry bridge + `CMD:EXTERNAL_OPEN_REQUEST_V1` intake in execution_position, not the normal strategy-signal / DecisionMaking gate path.
 
 This passport supersedes the older narrative that treated strategy profiles as loosely wired metadata. In current Aurora/Phenix runtime, assignments, allowlisted plugins, and typed profile presence form a strict fail-closed activation contract.

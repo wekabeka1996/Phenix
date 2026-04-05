@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/position_policy_sidecar_mode_active_v1.json",
+  "title": "EVT:POSITION_POLICY_SIDECAR_MODE_ACTIVE payload schema",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ts_ms",
+    "trace_id",
+    "symbol",
+    "sidecar_version",
+    "mode",
+    "evaluation_mode",
+    "event_type",
+    "reason_codes",
+    "position_snapshot",
+    "feature_ref",
+    "regime_ref",
+    "freshness_snapshot"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "sidecar_version": { "type": "string", "minLength": 1 },
+    "mode": { "type": "string", "enum": ["disable", "shadow", "enable"] },
+    "evaluation_mode": { "type": "string", "minLength": 1 },
+    "event_type": { "type": "string", "const": "POSITION_POLICY_SIDECAR_MODE_ACTIVE" },
+    "reason_codes": { "type": "array", "items": { "type": "string" } },
+    "position_snapshot": { "type": "object" },
+    "feature_ref": { "type": "object" },
+    "regime_ref": { "type": "object" },
+    "freshness_snapshot": { "type": "object" }
+  }
+}

@@ -5,7 +5,7 @@ from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
 
 class DummyExecution:
     gtx_retry_max = 2
-    gtx_fallback_to_market = True
+    emit_market_fallback_marker_on_retry_exhaustion = True
 
 class DummyMDAMRConfig:
     enabled = False
@@ -78,7 +78,7 @@ class TestEventImportOrderRejected:
         assert handler._gtx_retries.get("BTCUSDT") == 0
 
     def test_order_rejected_gtx_no_fallback_resets_retries(self, handler):
-        handler._cfg.execution.gtx_fallback_to_market = False
+        handler._cfg.execution.emit_market_fallback_marker_on_retry_exhaustion = False
         event = Message(
             name="EVT:ORDER_REJECTED", op="EVT", verb="ORDER_REJECTED", src="execution", dst="decision_making",
             pld={

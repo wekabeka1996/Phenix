@@ -52,11 +52,15 @@ CALIBRATION_STANDARD = "CALIBRATION_STANDARD_V1"
 CALIBRATION_CLASS = "production"
 PRODUCTION_INPUT_SOURCE = "recorder-features-v2"
 RESEARCH_INPUT_SOURCE = "aurora-logs"
+PRIMARY_CANDIDATE_OVERLAY = "candidate_aurora_threshold_overlay.yaml"
+LEGACY_CANDIDATE_OVERLAY = "candidate_threshold_overlay.yaml"
 RECOMMENDED_ARTIFACTS = (
-    "candidate_threshold_overlay.yaml",
+    PRIMARY_CANDIDATE_OVERLAY,
     "run_manifest.json",
     "baseline_metrics.json",
     "candidate_metrics.json",
+    "validation_metrics.json",
+    "forward_metrics.json",
     "report.md",
 )
 THRESHOLD_SOURCE_MODE_ASSET_OVERRIDE_ONLY = "asset-override-only"
@@ -228,25 +232,39 @@ class ReplayMetrics:
 
 
 @dataclass(frozen=True)
+class ReplayWindowSpec:
+    train_days: list[str]
+    validation_days: list[str]
+    forward_days: list[str]
+
+
+@dataclass(frozen=True)
 class CandidateEvaluation:
     quantile: float
     surface: ThresholdSurface
     train_metrics: ReplayMetrics
     validation_metrics: ReplayMetrics
+    forward_metrics: ReplayMetrics
     train_guardrails_ok: bool
     validation_guardrails_ok: bool
-    guardrail_failures: list[str]
+    forward_guardrails_ok: bool
+    train_guardrail_failures: list[str]
+    validation_guardrail_failures: list[str]
+    forward_guardrail_failures: list[str]
+    promotable: bool
+    promotability_blockers: list[str]
 
 
 @dataclass(frozen=True)
 class V2SymbolCalibration:
     symbol: str
     surface: ThresholdSurface
-    split_date: date
+    window_spec: ReplayWindowSpec
     recorder_bar_count: int
     feature_log_audit: FeatureLogAudit
     current_train_metrics: ReplayMetrics
     current_validation_metrics: ReplayMetrics
+    current_forward_metrics: ReplayMetrics
     candidate: CandidateEvaluation | None
     candidate_blockers: list[str]
     warnings: list[str]
@@ -259,6 +277,8 @@ class CalibrationRunOutputs:
     verdict: str
     baseline_metrics: dict[str, Any]
     candidate_metrics: dict[str, Any]
+    validation_metrics: dict[str, Any]
+    forward_metrics: dict[str, Any]
     run_manifest: dict[str, Any]
 
 
@@ -322,11 +342,12 @@ def _parse_quantile_grid(values: Sequence[str]) -> list[float]:
     return parsed
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Production Aurora threshold calibrator for active runtime surfaces only. "
-            "Use --input-source recorder-features-v2 for production-aligned candidate validation; "
+            "Use --input-source recorder-features-v2 for production-aligned candidate validation across "
+            "train/validation/forward windows; "
             "aurora-logs is retained as a research and diagnostic evidence path only."
         ),
     )
@@ -401,7 +422,19 @@ def _parse_args() -> argparse.Namespace:
         "--validation-days",
         type=int,
         default=5,
-        help="Number of trailing unique dates reserved for validation in V2 replay mode.",
+        help="Number of trailing unique eligible dates reserved for validation in V2 replay mode.",
+    )
+    parser.add_argument(
+        "--forward-days",
+        type=int,
+        default=5,
+        help="Number of trailing unique eligible dates reserved for forward evaluation in V2 replay mode.",
+    )
+    parser.add_argument(
+        "--min-train-days",
+        type=int,
+        default=10,
+        help="Minimum unique eligible dates required in the train window after reserving validation and forward holdouts.",
     )
     parser.add_argument(
         "--quantile-grid",
@@ -428,30 +461,55 @@ def _parse_args() -> argparse.Namespace:
         help="Maximum allowed active-bar rate within any single validation day.",
     )
     parser.add_argument(
+        "--min-activation-ratio-vs-baseline",
+        type=float,
+        default=0.50,
+        help="Minimum allowed candidate activation-rate ratio versus baseline on validation/forward splits when baseline activation is non-zero.",
+    )
+    parser.add_argument(
+        "--max-activation-ratio-vs-baseline",
+        type=float,
+        default=2.50,
+        help="Maximum allowed candidate activation-rate ratio versus baseline on validation/forward splits when baseline activation is non-zero.",
+    )
+    parser.add_argument(
         "--min-forward-edge-bps",
         type=float,
         default=0.0,
-        help="Minimum required mean forward 3-bar proxy edge in basis points for GO guardrails.",
+        help="Minimum required mean forward 3-bar proxy edge in basis points on any guarded split.",
+    )
+    parser.add_argument(
+        "--min-validation-improvement-bps",
+        type=float,
+        default=0.0,
+        help="Minimum required validation improvement in mean forward 3-bar proxy edge versus baseline.",
+    )
+    parser.add_argument(
+        "--max-forward-degradation-bps",
+        type=float,
+        default=0.0,
+        help="Maximum allowed forward degradation in mean forward 3-bar proxy edge versus baseline.",
     )
     parser.add_argument(
         "--min-active-bars",
         type=int,
         default=8,
-        help="Minimum number of active bars required in a guarded V2 split.",
+        help="Minimum number of active bars required in any guarded V2 split.",
     )
     parser.add_argument(
         "--out-dir",
         default=None,
         help=(
-            "Output directory for candidate_threshold_overlay.yaml, run_manifest.json, "
-            "baseline_metrics.json, candidate_metrics.json, and report.md."
+            "Output directory for candidate_aurora_threshold_overlay.yaml, run_manifest.json, "
+            "baseline_metrics.json, candidate_metrics.json, validation_metrics.json, "
+            "forward_metrics.json, and report.md."
         ),
     )
     parser.add_argument(
         "--min-samples",
         type=int,
         default=20,
-        help="Minimum non-deferred samples required per symbol.",
+        help="Minimum eligible bars or non-deferred samples required in a guarded split, depending on mode.",
     )
     parser.add_argument(
         "--min-regime-samples",
@@ -468,14 +526,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--emit-overlay",
         action="store_true",
-        help="Write candidate_threshold_overlay.yaml overlay artifact only; never mutate canonical YAML.",
+        help="Write candidate_aurora_threshold_overlay.yaml overlay artifact only; never mutate canonical YAML.",
     )
     parser.add_argument(
         "--emit-report",
         action="store_true",
         help="Write report.md artifact. JSON manifest and metrics artifacts are always emitted with the run directory.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.to_date < args.from_date:
         raise SystemExit(
@@ -490,6 +548,10 @@ def _parse_args() -> argparse.Namespace:
         raise SystemExit("--tf-sec must be positive")
     if args.validation_days <= 0:
         raise SystemExit("--validation-days must be positive")
+    if args.forward_days <= 0:
+        raise SystemExit("--forward-days must be positive")
+    if args.min_train_days <= 0:
+        raise SystemExit("--min-train-days must be positive")
     if args.min_active_bars <= 0:
         raise SystemExit("--min-active-bars must be positive")
     if not (0.0 <= args.min_activation_rate < 1.0):
@@ -502,6 +564,17 @@ def _parse_args() -> argparse.Namespace:
     if not (0.0 < args.max_daily_activation_rate <= 1.0):
         raise SystemExit(
             "--max-daily-activation-rate must satisfy 0 < rate <= 1")
+    if not (0.0 < args.min_activation_ratio_vs_baseline):
+        raise SystemExit("--min-activation-ratio-vs-baseline must be positive")
+    if args.max_activation_ratio_vs_baseline < args.min_activation_ratio_vs_baseline:
+        raise SystemExit(
+            "--max-activation-ratio-vs-baseline must be greater than or equal to --min-activation-ratio-vs-baseline"
+        )
+    if float(args.min_validation_improvement_bps) < 0.0:
+        raise SystemExit(
+            "--min-validation-improvement-bps must be non-negative")
+    if float(args.max_forward_degradation_bps) < 0.0:
+        raise SystemExit("--max-forward-degradation-bps must be non-negative")
     if (
         args.threshold_source_mode == THRESHOLD_SOURCE_MODE_LIVE_EFFECTIVE
         and args.input_source != PRODUCTION_INPUT_SOURCE
@@ -927,6 +1000,7 @@ def _replay_metrics_payload(metrics: ReplayMetrics) -> dict[str, Any]:
         "sell_count": int(metrics.sell_count),
         "activation_rate": _round_metric(metrics.activation_rate),
         "max_daily_activation_rate": _round_metric(metrics.max_daily_activation_rate),
+        "selection_score": _round_metric(metrics.mean_forward_bps_3) if metrics.mean_forward_bps_3 is not None else None,
         "mean_forward_bps_1": _round_metric(metrics.mean_forward_bps_1) if metrics.mean_forward_bps_1 is not None else None,
         "mean_forward_bps_3": _round_metric(metrics.mean_forward_bps_3) if metrics.mean_forward_bps_3 is not None else None,
         "hit_rate_1": _round_metric(metrics.hit_rate_1) if metrics.hit_rate_1 is not None else None,
@@ -937,6 +1011,279 @@ def _replay_metrics_payload(metrics: ReplayMetrics) -> dict[str, Any]:
         "p90_abs_score": _round_metric(metrics.p90_abs_score) if metrics.p90_abs_score is not None else None,
         "regime_counts": dict(metrics.regime_counts),
     }
+
+
+def _window_spec_payload(window_spec: ReplayWindowSpec) -> dict[str, Any]:
+    return {
+        "train_days": list(window_spec.train_days),
+        "validation_days": list(window_spec.validation_days),
+        "forward_days": list(window_spec.forward_days),
+    }
+
+
+def _candidate_surface_contract_payload(
+    *,
+    symbol: str,
+    promotable: bool,
+    promotability_blockers: Sequence[str],
+) -> dict[str, Any]:
+    return {
+        "candidate_surface_policy": "per-asset-only",
+        "candidate_signal_threshold_path": f"assets.{symbol}.signal_threshold.value",
+        "candidate_regime_threshold_path": f"assets.{symbol}.regime_thresholds",
+        "promotable": promotable,
+        "promotability_blockers": list(promotability_blockers),
+    }
+
+
+def _metric_delta(candidate: float | None, baseline: float | None) -> float | None:
+    if candidate is None or baseline is None:
+        return None
+    return float(candidate - baseline)
+
+
+def _activation_ratio(
+    candidate_metrics: ReplayMetrics,
+    baseline_metrics: ReplayMetrics,
+) -> float | None:
+    if baseline_metrics.activation_rate <= 0.0:
+        return None
+    return float(candidate_metrics.activation_rate / baseline_metrics.activation_rate)
+
+
+def _guardrail_check(
+    *,
+    name: str,
+    passed: bool | None,
+    actual: Any,
+    requirement: str,
+) -> dict[str, Any]:
+    status = "not_applicable" if passed is None else (
+        "pass" if passed else "fail")
+    return {
+        "name": name,
+        "status": status,
+        "passed": passed,
+        "actual": actual,
+        "requirement": requirement,
+    }
+
+
+def _build_split_comparison_payload(
+    *,
+    split_name: str,
+    baseline_metrics: ReplayMetrics,
+    candidate_metrics: ReplayMetrics | None,
+    promotable: bool,
+    promotability_blockers: Sequence[str],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    candidate_present = candidate_metrics is not None
+    activation_ratio = (
+        _activation_ratio(candidate_metrics, baseline_metrics)
+        if candidate_metrics is not None
+        else None
+    )
+    delta_forward_edge = (
+        _metric_delta(candidate_metrics.mean_forward_bps_3,
+                      baseline_metrics.mean_forward_bps_3)
+        if candidate_metrics is not None
+        else None
+    )
+    guardrails: list[dict[str, Any]] = [
+        _guardrail_check(
+            name="candidate_present",
+            passed=candidate_present,
+            actual=candidate_present,
+            requirement="candidate surface must be selected",
+        ),
+        _guardrail_check(
+            name="candidate_promotable_under_source_mode",
+            passed=promotable if candidate_present else False,
+            actual={
+                "promotable": promotable,
+                "blockers": list(promotability_blockers),
+            },
+            requirement="candidate surface must map cleanly onto per-asset overlay paths",
+        ),
+    ]
+    if candidate_metrics is None:
+        guardrails.extend(
+            [
+                _guardrail_check(
+                    name="eligible_bars",
+                    passed=None,
+                    actual=None,
+                    requirement=f">= {int(args.min_samples)}",
+                ),
+                _guardrail_check(
+                    name="active_bars",
+                    passed=None,
+                    actual=None,
+                    requirement=f">= {int(args.min_active_bars)}",
+                ),
+                _guardrail_check(
+                    name="activation_rate_range",
+                    passed=None,
+                    actual=None,
+                    requirement=(
+                        f"between {float(args.min_activation_rate):.4f} and "
+                        f"{float(args.max_activation_rate):.4f}"
+                    ),
+                ),
+                _guardrail_check(
+                    name="max_daily_activation_rate",
+                    passed=None,
+                    actual=None,
+                    requirement=f"<= {float(args.max_daily_activation_rate):.4f}",
+                ),
+                _guardrail_check(
+                    name="mean_forward_bps_3_floor",
+                    passed=None,
+                    actual=None,
+                    requirement=f">= {float(args.min_forward_edge_bps):.4f}",
+                ),
+            ]
+        )
+    else:
+        guardrails.extend(
+            [
+                _guardrail_check(
+                    name="eligible_bars",
+                    passed=candidate_metrics.eligible_bars >= int(
+                        args.min_samples),
+                    actual=int(candidate_metrics.eligible_bars),
+                    requirement=f">= {int(args.min_samples)}",
+                ),
+                _guardrail_check(
+                    name="active_bars",
+                    passed=candidate_metrics.active_bars >= int(
+                        args.min_active_bars),
+                    actual=int(candidate_metrics.active_bars),
+                    requirement=f">= {int(args.min_active_bars)}",
+                ),
+                _guardrail_check(
+                    name="activation_rate_range",
+                    passed=(
+                        float(args.min_activation_rate)
+                        <= candidate_metrics.activation_rate
+                        <= float(args.max_activation_rate)
+                    ),
+                    actual=_round_metric(candidate_metrics.activation_rate),
+                    requirement=(
+                        f"between {float(args.min_activation_rate):.4f} and "
+                        f"{float(args.max_activation_rate):.4f}"
+                    ),
+                ),
+                _guardrail_check(
+                    name="max_daily_activation_rate",
+                    passed=candidate_metrics.max_daily_activation_rate <= float(
+                        args.max_daily_activation_rate),
+                    actual=_round_metric(
+                        candidate_metrics.max_daily_activation_rate),
+                    requirement=f"<= {float(args.max_daily_activation_rate):.4f}",
+                ),
+                _guardrail_check(
+                    name="mean_forward_bps_3_floor",
+                    passed=(candidate_metrics.mean_forward_bps_3 is not None)
+                    and candidate_metrics.mean_forward_bps_3 >= float(args.min_forward_edge_bps),
+                    actual=_round_metric(candidate_metrics.mean_forward_bps_3)
+                    if candidate_metrics.mean_forward_bps_3 is not None
+                    else None,
+                    requirement=f">= {float(args.min_forward_edge_bps):.4f}",
+                ),
+                _guardrail_check(
+                    name="activation_ratio_vs_baseline",
+                    passed=(
+                        None
+                        if activation_ratio is None
+                        else float(args.min_activation_ratio_vs_baseline)
+                        <= activation_ratio
+                        <= float(args.max_activation_ratio_vs_baseline)
+                    ),
+                    actual=_round_metric(
+                        activation_ratio) if activation_ratio is not None else None,
+                    requirement=(
+                        "not applicable when baseline activation is zero; otherwise between "
+                        f"{float(args.min_activation_ratio_vs_baseline):.4f} and "
+                        f"{float(args.max_activation_ratio_vs_baseline):.4f}"
+                    ),
+                ),
+            ]
+        )
+    if split_name == "validation":
+        guardrails.append(
+            _guardrail_check(
+                name="validation_improvement_bps",
+                passed=(
+                    None
+                    if delta_forward_edge is None
+                    else delta_forward_edge >= float(args.min_validation_improvement_bps)
+                ),
+                actual=_round_metric(
+                    delta_forward_edge) if delta_forward_edge is not None else None,
+                requirement=f">= {float(args.min_validation_improvement_bps):.4f}",
+            )
+        )
+    elif split_name == "forward":
+        guardrails.append(
+            _guardrail_check(
+                name="forward_degradation_bps",
+                passed=(
+                    None
+                    if delta_forward_edge is None
+                    else delta_forward_edge >= -float(args.max_forward_degradation_bps)
+                ),
+                actual=_round_metric(
+                    delta_forward_edge) if delta_forward_edge is not None else None,
+                requirement=f">= -{float(args.max_forward_degradation_bps):.4f}",
+            )
+        )
+    all_guardrails_pass = all(
+        check["passed"] is not False for check in guardrails)
+    return {
+        "window": split_name,
+        "decision_metric": "mean_forward_bps_3",
+        "candidate_present": candidate_present,
+        "candidate_promotable": promotable,
+        "promotability_blockers": list(promotability_blockers),
+        "baseline": _replay_metrics_payload(baseline_metrics),
+        "candidate": _replay_metrics_payload(candidate_metrics) if candidate_metrics is not None else None,
+        "delta": {
+            "activation_rate": _round_metric(
+                _metric_delta(
+                    candidate_metrics.activation_rate,
+                    baseline_metrics.activation_rate,
+                )
+            )
+            if candidate_metrics is not None
+            else None,
+            "active_bars": (
+                int(candidate_metrics.active_bars - baseline_metrics.active_bars)
+                if candidate_metrics is not None
+                else None
+            ),
+            "mean_forward_bps_3": _round_metric(delta_forward_edge) if delta_forward_edge is not None else None,
+            "hit_rate_3": _round_metric(
+                _metric_delta(candidate_metrics.hit_rate_3,
+                              baseline_metrics.hit_rate_3)
+            )
+            if candidate_metrics is not None
+            else None,
+            "activation_ratio_vs_baseline": _round_metric(activation_ratio) if activation_ratio is not None else None,
+        },
+        "guardrails": guardrails,
+        "all_guardrails_pass": all_guardrails_pass,
+    }
+
+
+def _candidate_status_blockers(
+    candidate: CandidateEvaluation | None,
+    candidate_blockers: Sequence[str],
+) -> list[str]:
+    if candidate is not None:
+        return list(candidate.promotability_blockers)
+    return list(candidate_blockers or ["candidate_missing"])
 
 
 def _build_v1_baseline_metrics(calibrations: Sequence[SymbolCalibration]) -> dict[str, Any]:
@@ -999,6 +1346,19 @@ def _build_v1_candidate_metrics(calibrations: Sequence[SymbolCalibration]) -> di
     }
 
 
+def _build_research_only_split_metrics(split_name: str) -> dict[str, Any]:
+    return {
+        "input_source": RESEARCH_INPUT_SOURCE,
+        "evidence_tier": "research-only",
+        "window": split_name,
+        "status": "unavailable_in_research_mode",
+        "reason": (
+            "aurora-logs mode does not replay live RegimeDetector, shield cascade, side-bias state, "
+            "or explicit train/validation/forward holdouts"
+        ),
+    }
+
+
 def _build_v2_baseline_metrics(calibrations: Sequence[V2SymbolCalibration]) -> dict[str, Any]:
     return {
         "input_source": PRODUCTION_INPUT_SOURCE,
@@ -1006,9 +1366,12 @@ def _build_v2_baseline_metrics(calibrations: Sequence[V2SymbolCalibration]) -> d
         "symbols": {
             calibration.symbol: {
                 "surface": _surface_payload(calibration.surface),
-                "calibration_target_supported": not calibration.candidate_blockers,
-                "calibration_target_blockers": list(calibration.candidate_blockers),
-                "split_date": calibration.split_date.isoformat(),
+                "candidate_surface_contract": _candidate_surface_contract_payload(
+                    symbol=calibration.symbol,
+                    promotable=not calibration.candidate_blockers,
+                    promotability_blockers=calibration.candidate_blockers,
+                ),
+                "window_spec": _window_spec_payload(calibration.window_spec),
                 "recorder_bar_count": int(calibration.recorder_bar_count),
                 "feature_log_audit": {
                     "exists": calibration.feature_log_audit.exists,
@@ -1020,6 +1383,8 @@ def _build_v2_baseline_metrics(calibrations: Sequence[V2SymbolCalibration]) -> d
                 },
                 "train": _replay_metrics_payload(calibration.current_train_metrics),
                 "validation": _replay_metrics_payload(calibration.current_validation_metrics),
+                "forward": _replay_metrics_payload(calibration.current_forward_metrics),
+                "warnings": list(calibration.warnings),
             }
             for calibration in calibrations
         },
@@ -1030,6 +1395,7 @@ def _build_v2_candidate_metrics(calibrations: Sequence[V2SymbolCalibration]) -> 
     return {
         "input_source": PRODUCTION_INPUT_SOURCE,
         "evidence_tier": "production-aligned",
+        "selection_metric": "validation.mean_forward_bps_3",
         "symbols": {
             calibration.symbol: {
                 "candidate_present": calibration.candidate is not None,
@@ -1037,12 +1403,97 @@ def _build_v2_candidate_metrics(calibrations: Sequence[V2SymbolCalibration]) -> 
                 "surface": _surface_payload(calibration.candidate.surface) if calibration.candidate is not None else None,
                 "train": _replay_metrics_payload(calibration.candidate.train_metrics) if calibration.candidate is not None else None,
                 "validation": _replay_metrics_payload(calibration.candidate.validation_metrics) if calibration.candidate is not None else None,
+                "forward": _replay_metrics_payload(calibration.candidate.forward_metrics) if calibration.candidate is not None else None,
                 "train_guardrails_ok": calibration.candidate.train_guardrails_ok if calibration.candidate is not None else False,
                 "validation_guardrails_ok": calibration.candidate.validation_guardrails_ok if calibration.candidate is not None else False,
-                "guardrail_failures": list(calibration.candidate.guardrail_failures) if calibration.candidate is not None else list(calibration.candidate_blockers or ["candidate_missing"]),
-                "candidate_blockers": list(calibration.candidate_blockers),
+                "forward_guardrails_ok": calibration.candidate.forward_guardrails_ok if calibration.candidate is not None else False,
+                "train_guardrail_failures": list(calibration.candidate.train_guardrail_failures) if calibration.candidate is not None else [],
+                "validation_guardrail_failures": list(calibration.candidate.validation_guardrail_failures) if calibration.candidate is not None else _candidate_status_blockers(calibration.candidate, calibration.candidate_blockers),
+                "forward_guardrail_failures": list(calibration.candidate.forward_guardrail_failures) if calibration.candidate is not None else _candidate_status_blockers(calibration.candidate, calibration.candidate_blockers),
+                "promotable": calibration.candidate.promotable if calibration.candidate is not None else False,
+                "promotability_blockers": _candidate_status_blockers(calibration.candidate, calibration.candidate_blockers),
+                "candidate_surface_contract": _candidate_surface_contract_payload(
+                    symbol=calibration.symbol,
+                    promotable=calibration.candidate.promotable if calibration.candidate is not None else False,
+                    promotability_blockers=_candidate_status_blockers(
+                        calibration.candidate, calibration.candidate_blockers),
+                ),
                 "warnings": list(calibration.warnings),
             }
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_v2_validation_metrics(
+    calibrations: Sequence[V2SymbolCalibration],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    return {
+        "input_source": PRODUCTION_INPUT_SOURCE,
+        "evidence_tier": "production-aligned",
+        "decision_metric": "mean_forward_bps_3",
+        "comparison_rule": (
+            "candidate validation mean_forward_bps_3 must beat baseline by at least "
+            f"{float(args.min_validation_improvement_bps):.4f} bps"
+        ),
+        "symbols": {
+            calibration.symbol: _build_split_comparison_payload(
+                split_name="validation",
+                baseline_metrics=calibration.current_validation_metrics,
+                candidate_metrics=(
+                    calibration.candidate.validation_metrics
+                    if calibration.candidate is not None
+                    else None
+                ),
+                promotable=(
+                    calibration.candidate.promotable
+                    if calibration.candidate is not None
+                    else False
+                ),
+                promotability_blockers=(
+                    _candidate_status_blockers(
+                        calibration.candidate, calibration.candidate_blockers)
+                ),
+                args=args,
+            )
+            for calibration in calibrations
+        },
+    }
+
+
+def _build_v2_forward_metrics(
+    calibrations: Sequence[V2SymbolCalibration],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    return {
+        "input_source": PRODUCTION_INPUT_SOURCE,
+        "evidence_tier": "production-aligned",
+        "decision_metric": "mean_forward_bps_3",
+        "comparison_rule": (
+            "candidate forward mean_forward_bps_3 must not degrade versus baseline by more than "
+            f"{float(args.max_forward_degradation_bps):.4f} bps"
+        ),
+        "symbols": {
+            calibration.symbol: _build_split_comparison_payload(
+                split_name="forward",
+                baseline_metrics=calibration.current_forward_metrics,
+                candidate_metrics=(
+                    calibration.candidate.forward_metrics
+                    if calibration.candidate is not None
+                    else None
+                ),
+                promotable=(
+                    calibration.candidate.promotable
+                    if calibration.candidate is not None
+                    else False
+                ),
+                promotability_blockers=(
+                    _candidate_status_blockers(
+                        calibration.candidate, calibration.candidate_blockers)
+                ),
+                args=args,
+            )
             for calibration in calibrations
         },
     }
@@ -1055,6 +1506,8 @@ def _build_run_manifest(
     threshold_surfaces: dict[str, ThresholdSurface],
     verdict: str,
     evidence_tier: str,
+    promotable: bool,
+    promotability_by_symbol: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     production_aligned = str(args.input_source) == PRODUCTION_INPUT_SOURCE
     return {
@@ -1065,7 +1518,8 @@ def _build_run_manifest(
         "evidence_tier": evidence_tier,
         "production_aligned": production_aligned,
         "verdict": verdict,
-        "promotion_eligible": production_aligned and verdict == "GO_FOR_TESTNET_RESTART",
+        "promotable": promotable,
+        "promotion_eligible": production_aligned and promotable and verdict == "GO_CANDIDATE",
         "writes_canonical_yaml": False,
         "threshold_source_mode": str(args.threshold_source_mode),
         "candidate_surface_policy": "per-asset-only",
@@ -1080,6 +1534,13 @@ def _build_run_manifest(
                 "signal_threshold_path": surface.signal_threshold_path,
                 "regime_threshold_source": surface.regime_threshold_source,
                 "regime_threshold_path": surface.regime_threshold_path,
+                **_candidate_surface_contract_payload(
+                    symbol=symbol,
+                    promotable=bool(promotability_by_symbol.get(
+                        symbol, {}).get("promotable")),
+                    promotability_blockers=promotability_by_symbol.get(
+                        symbol, {}).get("promotability_blockers", []),
+                ),
             }
             for symbol, surface in threshold_surfaces.items()
         },
@@ -1443,14 +1904,50 @@ def _bar_is_eligible(bar: RecorderBar) -> bool:
     return bar.ready and bar.pillar_sum is not None and math.isfinite(bar.close)
 
 
-def _split_date_for_bars(bars: Sequence[RecorderBar], validation_days: int) -> date:
-    eligible_dates = sorted({bar.timestamp.date()
-                            for bar in bars if _bar_is_eligible(bar)})
-    if len(eligible_dates) <= validation_days:
+def _window_spec_for_bars(
+    bars: Sequence[RecorderBar],
+    *,
+    validation_days: int,
+    forward_days: int,
+    min_train_days: int,
+) -> ReplayWindowSpec:
+    eligible_days = sorted(
+        {bar.timestamp.date().isoformat()
+         for bar in bars if _bar_is_eligible(bar)}
+    )
+    required_days = int(validation_days) + \
+        int(forward_days) + int(min_train_days)
+    if len(eligible_days) < required_days:
         raise CalibrationError(
-            f"V2 replay requires more than {validation_days} unique eligible dates; found only {len(eligible_dates)}"
+            "V2 replay requires at least "
+            f"{required_days} unique eligible dates for train/validation/forward windows; "
+            f"found only {len(eligible_days)}"
         )
-    return eligible_dates[-validation_days]
+
+    forward_start = len(eligible_days) - int(forward_days)
+    validation_start = forward_start - int(validation_days)
+    train_days = eligible_days[:validation_start]
+    validation_window = eligible_days[validation_start:forward_start]
+    forward_window = eligible_days[forward_start:]
+    if len(train_days) < int(min_train_days):
+        raise CalibrationError(
+            "V2 replay train window is too short after reserving validation and forward holdouts: "
+            f"train_days={len(train_days)} < min_train_days={int(min_train_days)}"
+        )
+    return ReplayWindowSpec(
+        train_days=train_days,
+        validation_days=validation_window,
+        forward_days=forward_window,
+    )
+
+
+def _split_for_bar_timestamp(timestamp: datetime, window_spec: ReplayWindowSpec) -> str:
+    day_iso = timestamp.date().isoformat()
+    if window_spec.forward_days and day_iso >= window_spec.forward_days[0]:
+        return "forward"
+    if window_spec.validation_days and day_iso >= window_spec.validation_days[0]:
+        return "validation"
+    return "train"
 
 
 def _build_scoring_features(bar: RecorderBar, regime_payload: dict[str, Any]) -> dict[str, Any]:
@@ -1719,7 +2216,7 @@ def _replay_symbol(
     bars: Sequence[RecorderBar],
     typed_config: Any,
     surface: ThresholdSurface,
-    split_date: date,
+    window_spec: ReplayWindowSpec,
 ) -> list[ReplayObservation]:
     from apps.reference.config_models import OperationalMode
     from apps.reference.domains.decision_making.operational_mode import ModeManager
@@ -1765,7 +2262,7 @@ def _replay_symbol(
         detector.handle_event(_build_detector_event(symbol, bar))
         regime_payload = fsm.latest_regime_payload(symbol)
         features = _build_scoring_features(bar, regime_payload)
-        split = "validation" if bar.timestamp.date() >= split_date else "train"
+        split = _split_for_bar_timestamp(bar.timestamp, window_spec)
 
         if basis_required_bars > 0 and bars_seen_since_restart < basis_required_bars:
             observations.append(
@@ -1931,34 +2428,73 @@ def _surface_from_observations(
     )
 
 
-def _guardrail_failures(metrics: ReplayMetrics, args: argparse.Namespace) -> list[str]:
+def _guardrail_failures(
+    metrics: ReplayMetrics,
+    args: argparse.Namespace,
+    *,
+    split_name: str,
+    baseline_metrics: ReplayMetrics | None = None,
+) -> list[str]:
     failures: list[str] = []
     if metrics.eligible_bars < int(args.min_samples):
         failures.append(
-            f"eligible_bars={metrics.eligible_bars} < min_samples={int(args.min_samples)}"
+            f"{split_name}:eligible_bars={metrics.eligible_bars} < min_samples={int(args.min_samples)}"
         )
     if metrics.active_bars < int(args.min_active_bars):
         failures.append(
-            f"active_bars={metrics.active_bars} < min_active_bars={int(args.min_active_bars)}"
+            f"{split_name}:active_bars={metrics.active_bars} < min_active_bars={int(args.min_active_bars)}"
         )
     if metrics.activation_rate < float(args.min_activation_rate):
         failures.append(
-            f"activation_rate={metrics.activation_rate:.4f} < min_activation_rate={float(args.min_activation_rate):.4f}"
+            f"{split_name}:activation_rate={metrics.activation_rate:.4f} < min_activation_rate={float(args.min_activation_rate):.4f}"
         )
     if metrics.activation_rate > float(args.max_activation_rate):
         failures.append(
-            f"activation_rate={metrics.activation_rate:.4f} > max_activation_rate={float(args.max_activation_rate):.4f}"
+            f"{split_name}:activation_rate={metrics.activation_rate:.4f} > max_activation_rate={float(args.max_activation_rate):.4f}"
         )
     if metrics.max_daily_activation_rate > float(args.max_daily_activation_rate):
         failures.append(
-            f"max_daily_activation_rate={metrics.max_daily_activation_rate:.4f} > max_daily_activation_rate={float(args.max_daily_activation_rate):.4f}"
+            f"{split_name}:max_daily_activation_rate={metrics.max_daily_activation_rate:.4f} > max_daily_activation_rate={float(args.max_daily_activation_rate):.4f}"
         )
     if metrics.mean_forward_bps_3 is None:
-        failures.append("mean_forward_bps_3 is unavailable on this split")
+        failures.append(
+            f"{split_name}:mean_forward_bps_3 is unavailable on this split")
     elif metrics.mean_forward_bps_3 < float(args.min_forward_edge_bps):
         failures.append(
-            f"mean_forward_bps_3={metrics.mean_forward_bps_3:.2f} < min_forward_edge_bps={float(args.min_forward_edge_bps):.2f}"
+            f"{split_name}:mean_forward_bps_3={metrics.mean_forward_bps_3:.2f} < min_forward_edge_bps={float(args.min_forward_edge_bps):.2f}"
         )
+    if baseline_metrics is not None and baseline_metrics.activation_rate > 0.0:
+        activation_ratio = metrics.activation_rate / baseline_metrics.activation_rate
+        if activation_ratio < float(args.min_activation_ratio_vs_baseline):
+            failures.append(
+                f"{split_name}:activation_ratio_vs_baseline={activation_ratio:.4f} < min_activation_ratio_vs_baseline={float(args.min_activation_ratio_vs_baseline):.4f}"
+            )
+        if activation_ratio > float(args.max_activation_ratio_vs_baseline):
+            failures.append(
+                f"{split_name}:activation_ratio_vs_baseline={activation_ratio:.4f} > max_activation_ratio_vs_baseline={float(args.max_activation_ratio_vs_baseline):.4f}"
+            )
+    if split_name == "validation":
+        baseline_edge = None if baseline_metrics is None else baseline_metrics.mean_forward_bps_3
+        if baseline_edge is None:
+            failures.append(
+                "validation:baseline mean_forward_bps_3 is unavailable")
+        elif metrics.mean_forward_bps_3 is not None:
+            delta_edge = metrics.mean_forward_bps_3 - baseline_edge
+            if delta_edge < float(args.min_validation_improvement_bps):
+                failures.append(
+                    f"validation:delta_mean_forward_bps_3={delta_edge:.2f} < min_validation_improvement_bps={float(args.min_validation_improvement_bps):.2f}"
+                )
+    if split_name == "forward":
+        baseline_edge = None if baseline_metrics is None else baseline_metrics.mean_forward_bps_3
+        if baseline_edge is None:
+            failures.append(
+                "forward:baseline mean_forward_bps_3 is unavailable")
+        elif metrics.mean_forward_bps_3 is not None:
+            delta_edge = metrics.mean_forward_bps_3 - baseline_edge
+            if delta_edge < -float(args.max_forward_degradation_bps):
+                failures.append(
+                    f"forward:delta_mean_forward_bps_3={delta_edge:.2f} < -max_forward_degradation_bps=-{float(args.max_forward_degradation_bps):.2f}"
+                )
     return failures
 
 
@@ -1982,16 +2518,22 @@ def _fit_v2_symbol_calibration(
     if not bars:
         raise CalibrationError(f"No recorder data found for {symbol}")
 
-    split_date = _split_date_for_bars(bars, int(args.validation_days))
+    window_spec = _window_spec_for_bars(
+        bars,
+        validation_days=int(args.validation_days),
+        forward_days=int(args.forward_days),
+        min_train_days=int(args.min_train_days),
+    )
     current_observations = _replay_symbol(
         symbol=symbol,
         bars=bars,
         typed_config=typed_config,
         surface=surface,
-        split_date=split_date,
+        window_spec=window_spec,
     )
     current_train = _summarize_metrics(current_observations, "train")
     current_validation = _summarize_metrics(current_observations, "validation")
+    current_forward = _summarize_metrics(current_observations, "forward")
 
     warnings = list(feature_log_audit.warnings)
     if current_train.eligible_bars < int(args.min_samples):
@@ -2005,11 +2547,12 @@ def _fit_v2_symbol_calibration(
         return V2SymbolCalibration(
             symbol=symbol,
             surface=surface,
-            split_date=split_date,
+            window_spec=window_spec,
             recorder_bar_count=len(bars),
             feature_log_audit=feature_log_audit,
             current_train_metrics=current_train,
             current_validation_metrics=current_validation,
+            current_forward_metrics=current_forward,
             candidate=None,
             candidate_blockers=candidate_blockers,
             warnings=warnings,
@@ -2028,29 +2571,47 @@ def _fit_v2_symbol_calibration(
             bars=bars,
             typed_config=typed_config,
             surface=candidate_surface,
-            split_date=split_date,
+            window_spec=window_spec,
         )
         train_metrics = _summarize_metrics(candidate_observations, "train")
         validation_metrics = _summarize_metrics(
             candidate_observations, "validation")
-        train_failures = _guardrail_failures(train_metrics, args)
-        validation_failures = _guardrail_failures(validation_metrics, args)
-        failures = [
-            *(f"train:{failure}" for failure in train_failures),
-            *(f"validation:{failure}" for failure in validation_failures),
-        ]
+        forward_metrics = _summarize_metrics(candidate_observations, "forward")
+        train_failures = _guardrail_failures(
+            train_metrics,
+            args,
+            split_name="train",
+        )
+        validation_failures = _guardrail_failures(
+            validation_metrics,
+            args,
+            split_name="validation",
+            baseline_metrics=current_validation,
+        )
+        forward_failures = _guardrail_failures(
+            forward_metrics,
+            args,
+            split_name="forward",
+            baseline_metrics=current_forward,
+        )
         evaluation = CandidateEvaluation(
             quantile=float(quantile),
             surface=candidate_surface,
             train_metrics=train_metrics,
             validation_metrics=validation_metrics,
+            forward_metrics=forward_metrics,
             train_guardrails_ok=not train_failures,
             validation_guardrails_ok=not validation_failures,
-            guardrail_failures=failures,
+            forward_guardrails_ok=not forward_failures,
+            train_guardrail_failures=train_failures,
+            validation_guardrail_failures=validation_failures,
+            forward_guardrail_failures=forward_failures,
+            promotable=True,
+            promotability_blockers=[],
         )
         if not evaluation.train_guardrails_ok:
             continue
-        if best_candidate is None or _candidate_objective(train_metrics) > _candidate_objective(best_candidate.train_metrics):
+        if best_candidate is None or _candidate_objective(validation_metrics) > _candidate_objective(best_candidate.validation_metrics):
             best_candidate = evaluation
 
     if best_candidate is None:
@@ -2061,11 +2622,12 @@ def _fit_v2_symbol_calibration(
     return V2SymbolCalibration(
         symbol=symbol,
         surface=surface,
-        split_date=split_date,
+        window_spec=window_spec,
         recorder_bar_count=len(bars),
         feature_log_audit=feature_log_audit,
         current_train_metrics=current_train,
         current_validation_metrics=current_validation,
+        current_forward_metrics=current_forward,
         candidate=best_candidate,
         candidate_blockers=[],
         warnings=warnings,
@@ -2089,14 +2651,18 @@ def _build_overlay_from_v2(calibrations: list[V2SymbolCalibration]) -> dict[str,
 
 def _v2_verdict(calibrations: Sequence[V2SymbolCalibration]) -> str:
     if not calibrations:
-        return "NO_GO"
+        return "NO_GO_CANDIDATE"
     for calibration in calibrations:
         candidate = calibration.candidate
         if candidate is None:
-            return "NO_GO"
+            return "NO_GO_CANDIDATE"
+        if not candidate.promotable:
+            return "NO_GO_CANDIDATE"
         if not candidate.validation_guardrails_ok:
-            return "NO_GO"
-    return "GO_FOR_TESTNET_RESTART"
+            return "NO_GO_CANDIDATE"
+        if not candidate.forward_guardrails_ok:
+            return "NO_GO_CANDIDATE"
+    return "GO_CANDIDATE"
 
 
 def _render_metrics_table_row(label: str, metrics: ReplayMetrics) -> str:
@@ -2124,20 +2690,15 @@ def _render_v2_report(
     lines.append(f"- {verdict}")
     lines.append("")
     lines.append("## Scope")
+    lines.append("- Calibration class: production.")
     lines.append(
-        "- Calibration class: production."
+        "- Objective: calibrate only active Aurora threshold surfaces that are currently consumed by live runtime scoring."
     )
     lines.append(
-        "- Objective: calibrate only live per-symbol Aurora threshold surface for assets.<SYMBOL>.signal_threshold.value and assets.<SYMBOL>.regime_thresholds."
+        "- Evidence tier for this run: production-aligned proxy because replay reuses live RegimeDetector, QuadraticScoringKernel, shield cascade, and sequential side-bias state over recorder bars."
     )
     lines.append(
-        f"- Threshold source mode: {args.threshold_source_mode}"
-    )
-    lines.append(
-        "- Evidence tier for this run: production-aligned because the replay reuses live RegimeDetector, QuadraticScoringKernel, shield cascade, and validation holdout."
-    )
-    lines.append(
-        "- Non-goals: no neutral_threshold tuning, no weight tuning, no cooldown/reentry/holding-period changes, no writeback into base YAML."
+        "- Non-goals: no signal_weights tuning, no direction_strength_scoring tuning, no feature_neutrals tuning, no neutral_threshold tuning, no cooldown/reentry/holding-period changes, no canonical YAML writeback."
     )
     lines.append(
         f"- Symbols: {', '.join(calibration.symbol for calibration in calibrations)}")
@@ -2145,8 +2706,30 @@ def _render_v2_report(
         f"- Date window: {args.from_date.isoformat()} through {args.to_date.isoformat()} inclusive"
     )
     lines.append(f"- Recorder timeframe: {int(args.tf_sec)}s")
+    lines.append("")
+    lines.append("## Active Runtime Surface Under Calibration")
     lines.append(
-        f"- Validation holdout: trailing {int(args.validation_days)} unique eligible recorder dates")
+        "- Tuned surfaces only: assets.<SYMBOL>.signal_threshold.value and assets.<SYMBOL>.regime_thresholds."
+    )
+    lines.append(
+        "- Baseline-only surfaces that may be observed but are never written by this tool: decision.signal_threshold and decision.regime_threshold_multipliers."
+    )
+    for calibration in calibrations:
+        lines.append(
+            f"- {calibration.symbol}: signal_threshold source={calibration.surface.signal_threshold_source} path={calibration.surface.signal_threshold_path}; regime_threshold source={calibration.surface.regime_threshold_source} path={calibration.surface.regime_threshold_path}"
+        )
+    lines.append("")
+    lines.append("## Threshold Source Mode")
+    lines.append(f"- Selected mode: {args.threshold_source_mode}")
+    lines.append(
+        "- Candidate overlay policy: per-asset-only. The calibrator emits candidate_aurora_threshold_overlay.yaml and never mutates canonical aurora YAML."
+    )
+    lines.append(
+        "- Promotable means the live baseline already resolves through the same per-asset surfaces that the candidate overlay can safely target."
+    )
+    lines.append(
+        "- Non-promotable means the baseline resolves through a global decision surface, so emitting a per-asset overlay would not preserve source-path parity and is therefore blocked fail-closed."
+    )
     lines.append("")
     lines.append("## Runtime Truth Anchors")
     lines.append(
@@ -2179,7 +2762,17 @@ def _render_v2_report(
         lines.append(
             f"- Recorder bars loaded: {calibration.recorder_bar_count}")
         lines.append(
-            f"- Validation split starts on: {calibration.split_date.isoformat()}")
+            "- Window spec: "
+            f"train_days={len(calibration.window_spec.train_days)}, "
+            f"validation_days={len(calibration.window_spec.validation_days)}, "
+            f"forward_days={len(calibration.window_spec.forward_days)}"
+        )
+        lines.append(
+            f"- Validation window: {calibration.window_spec.validation_days[0]} -> {calibration.window_spec.validation_days[-1]}"
+        )
+        lines.append(
+            f"- Forward window: {calibration.window_spec.forward_days[0]} -> {calibration.window_spec.forward_days[-1]}"
+        )
         lines.append(
             f"- Feature log: exists={audit.exists}, size_mb={audit.file_size_mb:.2f}, sampled_lines={audit.sampled_lines}, has_timestamp_fields={audit.has_timestamp_fields}"
         )
@@ -2199,10 +2792,15 @@ def _render_v2_report(
         "- Fail-closed rule: when the current live baseline resolves through a global decision threshold or global regime-threshold map, candidate emission is disabled because this tool still emits per-asset overlay surfaces only."
     )
     lines.append(
-        "- Candidate ranking objective: maximize validation-proxy desirability by train metrics tuple (mean_forward_bps_3, hit_rate_3, active_bars) after guardrail filtering."
+        "- Candidate ranking objective: among candidates that clear train guardrails, maximize validation metrics tuple (mean_forward_bps_3, hit_rate_3, active_bars)."
     )
     lines.append("")
     lines.append("## Guardrails")
+    lines.append(f"- min_train_days={int(args.min_train_days)}")
+    lines.append(f"- validation_days={int(args.validation_days)}")
+    lines.append(f"- forward_days={int(args.forward_days)}")
+    lines.append(f"- min_samples={int(args.min_samples)}")
+    lines.append(f"- min_active_bars={int(args.min_active_bars)}")
     lines.append(
         f"- min_activation_rate={float(args.min_activation_rate):.4f}")
     lines.append(
@@ -2210,13 +2808,59 @@ def _render_v2_report(
     lines.append(
         f"- max_daily_activation_rate={float(args.max_daily_activation_rate):.4f}")
     lines.append(
+        f"- activation_ratio_vs_baseline range=[{float(args.min_activation_ratio_vs_baseline):.4f}, {float(args.max_activation_ratio_vs_baseline):.4f}] when baseline activation is non-zero"
+    )
+    lines.append(
         f"- min_forward_edge_bps={float(args.min_forward_edge_bps):.2f}")
-    lines.append(f"- min_active_bars={int(args.min_active_bars)}")
+    lines.append(
+        f"- min_validation_improvement_bps={float(args.min_validation_improvement_bps):.2f}")
+    lines.append(
+        f"- max_forward_degradation_bps={float(args.max_forward_degradation_bps):.2f}")
     lines.append(
         f"- quantile_grid={list(float(value) for value in args.quantile_grid)}")
     lines.append("")
     lines.append("## Baseline vs Candidate")
     for calibration in calibrations:
+        validation_artifact = _build_split_comparison_payload(
+            split_name="validation",
+            baseline_metrics=calibration.current_validation_metrics,
+            candidate_metrics=(
+                calibration.candidate.validation_metrics
+                if calibration.candidate is not None
+                else None
+            ),
+            promotable=(
+                calibration.candidate.promotable
+                if calibration.candidate is not None
+                else False
+            ),
+            promotability_blockers=(
+                calibration.candidate.promotability_blockers
+                if calibration.candidate is not None
+                else calibration.candidate_blockers
+            ),
+            args=args,
+        )
+        forward_artifact = _build_split_comparison_payload(
+            split_name="forward",
+            baseline_metrics=calibration.current_forward_metrics,
+            candidate_metrics=(
+                calibration.candidate.forward_metrics
+                if calibration.candidate is not None
+                else None
+            ),
+            promotable=(
+                calibration.candidate.promotable
+                if calibration.candidate is not None
+                else False
+            ),
+            promotability_blockers=(
+                calibration.candidate.promotability_blockers
+                if calibration.candidate is not None
+                else calibration.candidate_blockers
+            ),
+            args=args,
+        )
         lines.append("")
         lines.append(f"### {calibration.symbol}")
         lines.append(
@@ -2229,6 +2873,8 @@ def _render_v2_report(
             "current/train", calibration.current_train_metrics))
         lines.append(_render_metrics_table_row(
             "current/validation", calibration.current_validation_metrics))
+        lines.append(_render_metrics_table_row(
+            "current/forward", calibration.current_forward_metrics))
         lines.append(
             f"- Current signal_threshold.value: {calibration.surface.signal_threshold_value:.6f}"
         )
@@ -2242,10 +2888,10 @@ def _render_v2_report(
             f"- Current regime_threshold source: {calibration.surface.regime_threshold_source} ({calibration.surface.regime_threshold_path})"
         )
         lines.append(
-            f"- Candidate target supported: {not calibration.candidate_blockers}"
+            f"- Promotable under current source mode: {not calibration.candidate_blockers}"
         )
         if calibration.candidate_blockers:
-            lines.append("- Candidate blockers:")
+            lines.append("- Promotability blockers:")
             for blocker in calibration.candidate_blockers:
                 lines.append(f"  - {blocker}")
         if calibration.candidate is not None:
@@ -2253,6 +2899,8 @@ def _render_v2_report(
                 "candidate/train", calibration.candidate.train_metrics))
             lines.append(_render_metrics_table_row(
                 "candidate/validation", calibration.candidate.validation_metrics))
+            lines.append(_render_metrics_table_row(
+                "candidate/forward", calibration.candidate.forward_metrics))
             lines.append(
                 f"- Candidate quantile: {calibration.candidate.quantile:.2f}")
             lines.append(
@@ -2264,16 +2912,109 @@ def _render_v2_report(
             lines.append(
                 f"- Validation guardrails ok: {calibration.candidate.validation_guardrails_ok}"
             )
-            if calibration.candidate.guardrail_failures:
-                lines.append("- Candidate guardrail failures:")
-                for failure in calibration.candidate.guardrail_failures:
+            lines.append(
+                f"- Forward guardrails ok: {calibration.candidate.forward_guardrails_ok}"
+            )
+            if calibration.candidate.train_guardrail_failures:
+                lines.append("- Train guardrail failures:")
+                for failure in calibration.candidate.train_guardrail_failures:
+                    lines.append(f"  - {failure}")
+            if calibration.candidate.validation_guardrail_failures:
+                lines.append("- Validation guardrail failures:")
+                for failure in calibration.candidate.validation_guardrail_failures:
+                    lines.append(f"  - {failure}")
+            if calibration.candidate.forward_guardrail_failures:
+                lines.append("- Forward guardrail failures:")
+                for failure in calibration.candidate.forward_guardrail_failures:
                     lines.append(f"  - {failure}")
         else:
             lines.append("- No candidate cleared train-time guardrails.")
+        lines.append(
+            f"- Validation delta mean_forward_bps_3: {validation_artifact['delta']['mean_forward_bps_3']}"
+        )
+        lines.append(
+            f"- Forward delta mean_forward_bps_3: {forward_artifact['delta']['mean_forward_bps_3']}"
+        )
         if calibration.warnings:
             lines.append("- Symbol warnings:")
             for warning in calibration.warnings:
                 lines.append(f"  - {warning}")
+    lines.append("")
+    lines.append("## Validation")
+    for calibration in calibrations:
+        validation_artifact = _build_split_comparison_payload(
+            split_name="validation",
+            baseline_metrics=calibration.current_validation_metrics,
+            candidate_metrics=(
+                calibration.candidate.validation_metrics
+                if calibration.candidate is not None
+                else None
+            ),
+            promotable=(
+                calibration.candidate.promotable
+                if calibration.candidate is not None
+                else False
+            ),
+            promotability_blockers=(
+                calibration.candidate.promotability_blockers
+                if calibration.candidate is not None
+                else calibration.candidate_blockers
+            ),
+            args=args,
+        )
+        lines.append("")
+        lines.append(f"### {calibration.symbol}")
+        lines.append(
+            f"- Candidate present: {validation_artifact['candidate_present']} | promotable: {validation_artifact['candidate_promotable']} | all_guardrails_pass: {validation_artifact['all_guardrails_pass']}"
+        )
+        lines.append(
+            f"- Validation delta mean_forward_bps_3: {validation_artifact['delta']['mean_forward_bps_3']}"
+        )
+        lines.append(
+            f"- Validation activation ratio vs baseline: {validation_artifact['delta']['activation_ratio_vs_baseline']}"
+        )
+        for check in validation_artifact["guardrails"]:
+            lines.append(
+                f"- {check['name']}: {check['status']} (actual={check['actual']}, requirement={check['requirement']})"
+            )
+    lines.append("")
+    lines.append("## Forward Evaluation")
+    for calibration in calibrations:
+        forward_artifact = _build_split_comparison_payload(
+            split_name="forward",
+            baseline_metrics=calibration.current_forward_metrics,
+            candidate_metrics=(
+                calibration.candidate.forward_metrics
+                if calibration.candidate is not None
+                else None
+            ),
+            promotable=(
+                calibration.candidate.promotable
+                if calibration.candidate is not None
+                else False
+            ),
+            promotability_blockers=(
+                calibration.candidate.promotability_blockers
+                if calibration.candidate is not None
+                else calibration.candidate_blockers
+            ),
+            args=args,
+        )
+        lines.append("")
+        lines.append(f"### {calibration.symbol}")
+        lines.append(
+            f"- Candidate present: {forward_artifact['candidate_present']} | promotable: {forward_artifact['candidate_promotable']} | all_guardrails_pass: {forward_artifact['all_guardrails_pass']}"
+        )
+        lines.append(
+            f"- Forward delta mean_forward_bps_3: {forward_artifact['delta']['mean_forward_bps_3']}"
+        )
+        lines.append(
+            f"- Forward activation ratio vs baseline: {forward_artifact['delta']['activation_ratio_vs_baseline']}"
+        )
+        for check in forward_artifact["guardrails"]:
+            lines.append(
+                f"- {check['name']}: {check['status']} (actual={check['actual']}, requirement={check['requirement']})"
+            )
     lines.append("")
     lines.append("## Candidate Overlay")
     lines.append("```yaml")
@@ -2294,7 +3035,7 @@ def _render_v2_report(
     lines.append("")
     lines.append("## Inferences")
     lines.append(
-        "- INFERENCE: if a V2 candidate clears both train and validation guardrails, the restart recommendation is bounded to threshold-surface changes only."
+        "- INFERENCE: if a V2 candidate clears train, validation, and forward guardrails while remaining promotable, it is a bounded GO_CANDIDATE for threshold-surface testing only."
     )
     lines.append(
         "- INFERENCE: if no candidate clears validation guardrails, the safest answer is NO_GO rather than widening scope into weight or shield changes."
@@ -2316,18 +3057,61 @@ def _render_v2_report(
         "- UNKNOWN: whether BTCUSDT control would suggest the same quantile family under the same date window if audited separately."
     )
     lines.append("")
-    lines.append("## Risks")
     lines.append(
-        "- Risk: offline replay still excludes full execution-routing, fill-quality, and objective-stack behavior, so GO_FOR_TESTNET_RESTART is bounded to threshold-surface restart testing, not direct production promotion."
+        "## Symptom / Root Cause / Contributing Factor / Masking Layer")
+    if verdict == "GO_CANDIDATE":
+        lines.append(
+            "- Symptom: each symbol produced a promotable candidate that beat or matched validation requirements and did not materially degrade on forward evaluation."
+        )
+        lines.append(
+            "- Root cause: train-fitted threshold surfaces aligned with observed score distribution without violating activation guardrails."
+        )
+    else:
+        lines.append(
+            "- Symptom: at least one symbol is non-promotable, candidate-missing, or fails validation/forward guardrails, so the package remains NO_GO_CANDIDATE."
+        )
+        lines.append(
+            "- Root cause: source-path mismatch or proxy-edge/activation guardrails did not support safe candidate carry-forward."
+        )
+    lines.append(
+        "- Contributing factor: sparse regime coverage, limited train support, or baseline source fallback to decision-level thresholds can all constrain candidate quality or promotability."
+    )
+    lines.append(
+        "- Masking layer: offline replay does not include execution routing, objective gating, fills, or market impact, so proxy edge can overstate deployable quality."
+    )
+    lines.append("")
+    lines.append("## Cause / Mechanism / Effect / Operational Risk")
+    lines.append(
+        "- Cause: threshold surfaces are fit from replayed train-split absolute score distributions under current live Aurora math."
+    )
+    lines.append(
+        "- Mechanism: candidate surfaces are re-run through the live detector and shield stack, then accepted or rejected by activation and proxy-edge guardrails on validation and forward windows."
+    )
+    lines.append(
+        "- Effect: the tool can emit either a bounded GO_CANDIDATE or a fail-closed NO_GO_CANDIDATE without silently widening into unrelated Aurora controls."
+    )
+    lines.append(
+        "- Operational risk: even GO_CANDIDATE remains a bounded offline proxy and must not be treated as execution-parity proof or direct production truth."
+    )
+    lines.append("")
+    lines.append("## Risks / Trust Boundary")
+    lines.append(
+        "- Risk: offline replay still excludes full execution-routing, fill-quality, and objective-stack behavior, so GO_CANDIDATE is bounded to threshold-surface candidate status, not direct production promotion."
     )
     lines.append(
         "- Risk: sparse regime coverage can produce DEFAULT-only overlays that are operationally safer than overfit regime factors but may miss true per-regime opportunities."
     )
+    lines.append(
+        "- Trust boundary: recorder bars are the time-axis truth for this tool; feature logs are schema evidence only; runtime truth outweighs documentation claims when conflicts appear."
+    )
+    lines.append(
+        "- Trust boundary: the script emits additive overlay artifacts only and never rewrites canonical aurora YAML."
+    )
     lines.append("")
     lines.append("## Next Action")
-    if verdict == "GO_FOR_TESTNET_RESTART":
+    if verdict == "GO_CANDIDATE":
         lines.append(
-            "- Next action: treat the emitted overlay as a restart candidate for threshold-surface testing only, with promotion still gated by downstream validation outside this script."
+            "- Next action: treat the emitted overlay as a candidate-only threshold-surface package for downstream testnet or controlled restart validation, with promotion still gated outside this script."
         )
     else:
         lines.append(
@@ -2386,6 +3170,16 @@ def _run_v1(
 
     overlay = _build_overlay_from_v1(calibrations)
     verdict = "NO_GO_RESEARCH_ONLY"
+    promotability_by_symbol = {
+        calibration.symbol: {
+            "promotable": False,
+            "promotability_blockers": [
+                "aurora-logs is research-only evidence and cannot produce a promotable writeback candidate",
+                *_candidate_blockers_for_surface(calibration.surface),
+            ],
+        }
+        for calibration in calibrations
+    }
     report_text = _render_v1_report(
         calibrations=calibrations,
         args=args,
@@ -2409,12 +3203,16 @@ def _run_v1(
         verdict=verdict,
         baseline_metrics=_build_v1_baseline_metrics(calibrations),
         candidate_metrics=_build_v1_candidate_metrics(calibrations),
+        validation_metrics=_build_research_only_split_metrics("validation"),
+        forward_metrics=_build_research_only_split_metrics("forward"),
         run_manifest=_build_run_manifest(
             args=args,
             ordered_symbols=ordered_symbols,
             threshold_surfaces=threshold_surfaces,
             verdict=verdict,
             evidence_tier="research-only",
+            promotable=False,
+            promotability_by_symbol=promotability_by_symbol,
         ),
     )
 
@@ -2457,6 +3255,19 @@ def _run_v2(
 
     overlay = _build_overlay_from_v2(calibrations)
     verdict = _v2_verdict(calibrations)
+    promotability_by_symbol = {
+        calibration.symbol: {
+            "promotable": bool(
+                calibration.candidate is not None and calibration.candidate.promotable
+            ),
+            "promotability_blockers": list(
+                calibration.candidate.promotability_blockers
+                if calibration.candidate is not None
+                else (calibration.candidate_blockers or ["candidate_missing"])
+            ),
+        }
+        for calibration in calibrations
+    }
     report_text = _render_v2_report(
         calibrations=calibrations,
         args=args,
@@ -2467,6 +3278,11 @@ def _run_v2(
     print(f"Verdict: {verdict}")
     for calibration in calibrations:
         candidate = calibration.candidate
+        if calibration.candidate_blockers:
+            print(
+                f"  {calibration.symbol}: non-promotable under current source mode ({'; '.join(calibration.candidate_blockers)})"
+            )
+            continue
         if candidate is None:
             print(
                 f"  {calibration.symbol}: no candidate cleared train-time guardrails")
@@ -2475,7 +3291,8 @@ def _run_v2(
             f"  {calibration.symbol}: q={candidate.quantile:.2f} current_validation_activation={_format_ratio(calibration.current_validation_metrics.activation_rate)} "
             f"candidate_validation_activation={_format_ratio(candidate.validation_metrics.activation_rate)} "
             f"candidate_validation_fwd3={_format_bps(candidate.validation_metrics.mean_forward_bps_3)}bps "
-            f"validation_guardrails_ok={candidate.validation_guardrails_ok}"
+            f"validation_guardrails_ok={candidate.validation_guardrails_ok} "
+            f"forward_guardrails_ok={candidate.forward_guardrails_ok}"
         )
 
     return CalibrationRunOutputs(
@@ -2484,18 +3301,26 @@ def _run_v2(
         verdict=verdict,
         baseline_metrics=_build_v2_baseline_metrics(calibrations),
         candidate_metrics=_build_v2_candidate_metrics(calibrations),
+        validation_metrics=_build_v2_validation_metrics(calibrations, args),
+        forward_metrics=_build_v2_forward_metrics(calibrations, args),
         run_manifest=_build_run_manifest(
             args=args,
             ordered_symbols=ordered_symbols,
             threshold_surfaces=threshold_surfaces,
             verdict=verdict,
             evidence_tier="production-aligned",
+            promotable=all(
+                payload["promotable"] for payload in promotability_by_symbol.values()
+            )
+            if promotability_by_symbol
+            else False,
+            promotability_by_symbol=promotability_by_symbol,
         ),
     )
 
 
-def main() -> int:
-    args = _parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
     aurora_yaml_path = Path(args.aurora_yaml)
     aurora = _load_aurora_profile(aurora_yaml_path)
 
@@ -2543,23 +3368,49 @@ def main() -> int:
     )
     print(f"Candidate metrics written to {candidate_metrics_path}")
 
+    validation_metrics_path = out_dir / "validation_metrics.json"
+    validation_metrics_path.write_text(
+        json.dumps(outputs.validation_metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"Validation metrics written to {validation_metrics_path}")
+
+    forward_metrics_path = out_dir / "forward_metrics.json"
+    forward_metrics_path.write_text(
+        json.dumps(outputs.forward_metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"Forward metrics written to {forward_metrics_path}")
+
     manifest = dict(outputs.run_manifest)
     manifest["artifacts"] = {
-        "candidate_threshold_overlay": str((out_dir / "candidate_threshold_overlay.yaml").as_posix()),
+        "candidate_aurora_threshold_overlay": str((out_dir / PRIMARY_CANDIDATE_OVERLAY).as_posix()) if args.emit_overlay else None,
+        "candidate_threshold_overlay_legacy": str((out_dir / LEGACY_CANDIDATE_OVERLAY).as_posix()) if args.emit_overlay else None,
         "run_manifest": str((out_dir / "run_manifest.json").as_posix()),
         "baseline_metrics": str(baseline_metrics_path.as_posix()),
         "candidate_metrics": str(candidate_metrics_path.as_posix()),
+        "validation_metrics": str(validation_metrics_path.as_posix()),
+        "forward_metrics": str(forward_metrics_path.as_posix()),
         "report": str((out_dir / "report.md").as_posix()),
     }
 
     if args.emit_overlay:
-        overlay_path = out_dir / "candidate_threshold_overlay.yaml"
-        overlay_path.write_text(
+        primary_overlay_path = out_dir / PRIMARY_CANDIDATE_OVERLAY
+        overlay_text = yaml.safe_dump(outputs.overlay, sort_keys=False,
+                                      allow_unicode=False)
+        primary_overlay_path.write_text(
+            overlay_text,
+            encoding="utf-8",
+        )
+        print(f"Overlay written to {primary_overlay_path}")
+
+        legacy_overlay_path = out_dir / LEGACY_CANDIDATE_OVERLAY
+        legacy_overlay_path.write_text(
             yaml.safe_dump(outputs.overlay, sort_keys=False,
                            allow_unicode=False),
             encoding="utf-8",
         )
-        print(f"Overlay written to {overlay_path}")
+        print(f"Legacy overlay written to {legacy_overlay_path}")
 
     if args.emit_report:
         report_path = out_dir / "report.md"

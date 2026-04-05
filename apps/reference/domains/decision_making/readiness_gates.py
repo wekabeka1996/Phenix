@@ -49,6 +49,7 @@ class ReadinessGates:
         degraded_context_critical_keys: Optional[set],
         degraded_context_critical_keys_by_strategy: Optional[dict],
         logger: logging.Logger,
+        degraded_context_contracts_by_strategy: Optional[dict] = None,
     ) -> None:
         self._clock = clock
         self.config = config
@@ -63,6 +64,7 @@ class ReadinessGates:
         self._degraded_context_critical_keys = degraded_context_critical_keys
         self._degraded_context_critical_keys_by_strategy = degraded_context_critical_keys_by_strategy
         self.logger = logger
+        self._degraded_context_contracts_by_strategy = degraded_context_contracts_by_strategy
         self._warmup_diag_by_symbol: Dict[str, Dict[str, Any]] = {}
 
     def _diag_for_symbol(self, symbol: str) -> Dict[str, Any]:
@@ -395,37 +397,37 @@ class ReadinessGates:
         When enabled, the gate forces lazy DecisionContext parsing, inspects
         only the configured critical keys, and emits INTENT_DEFERRED through
         the injected callback when those keys are missing or invalid.
-        Strategy-specific critical-key lists override the global list; if both
-        are empty, a conservative built-in default set is used.
+        Runtime strategy-scoped contracts are the SSOT when present. Hidden
+        global/default key bundles are not consulted on the redesigned path.
         """
 
         if not bool(self._fail_closed_on_degraded_context):
             return False
 
-        default_critical_keys = {
-            "price",
-            "ema_bias",
-            "obi",
-            "tfi",
-            "volatility_state",
-            "depth_imbalance",
-        }
-
-        by_strategy = self._degraded_context_critical_keys_by_strategy or {}
-        selected: set[str] | None = None
-        if strategy_id and isinstance(by_strategy, dict):
-            override = by_strategy.get(str(strategy_id))
-            if override:
-                selected = set(str(k) for k in override if str(k))
-
-        if selected is None:
-            global_keys = self._degraded_context_critical_keys
-            if global_keys:
-                selected = set(str(k) for k in global_keys if str(k))
-            else:
-                selected = set(default_critical_keys)
-
-        critical_keys = selected
+        critical_keys: set[str] = set()
+        contracts = self._degraded_context_contracts_by_strategy
+        if strategy_id and isinstance(contracts, dict):
+            contract = contracts.get(str(strategy_id))
+            if isinstance(contract, dict):
+                if not bool(contract.get("enabled", False)):
+                    return False
+                critical_keys = set(
+                    str(k) for k in (contract.get("critical_keys") or []) if str(k)
+                )
+                if not critical_keys:
+                    return False
+        else:
+            by_strategy = self._degraded_context_critical_keys_by_strategy or {}
+            if strategy_id and isinstance(by_strategy, dict):
+                override = by_strategy.get(str(strategy_id))
+                if override:
+                    critical_keys = set(str(k) for k in override if str(k))
+            if not critical_keys:
+                global_keys = self._degraded_context_critical_keys
+                if global_keys:
+                    critical_keys = set(str(k) for k in global_keys if str(k))
+                else:
+                    return False
 
         # DecisionContext populates missing_fields lazily through typed accessors.
         # Touch each slice before inspecting the degraded-field map.

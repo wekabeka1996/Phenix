@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
@@ -62,7 +63,8 @@ class IntentRouter:
             pld = msg.pld or {}
             symbol = pld.get("instrument") or pld.get("symbol")
             if not symbol:
-                LOG.error(f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
+                LOG.error(
+                    f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
                 return
             strategy_id = pld.get("strategy") or pld.get("strategy_id")
             intent_rid = str(pld.get("rid") or msg.rid or "unknown")
@@ -74,7 +76,8 @@ class IntentRouter:
                 qty=pld.get("order", {}).get("qty"),
                 price=pld.get("order", {}).get("price"),
                 features=pld.get("features"),
-                risk_score=pld.get("risk_budget", {}).get("trade_cvar95_max_bps")
+                risk_score=pld.get("risk_budget", {}).get(
+                    "trade_cvar95_max_bps")
             )
 
             order_info = pld.get("order", {})
@@ -104,7 +107,8 @@ class IntentRouter:
                     why=f"intent_reduce_only:{intent_rid}",
                     data_ref=msg.data_ref
                 )
-                LOG.info(f"[{symbol}] Processing TRADE_INTENT (reduce_only) -> CMD:CLOSE")
+                LOG.info(
+                    f"[{symbol}] Processing TRADE_INTENT (reduce_only) -> CMD:CLOSE")
                 self._mark_intent_routed(
                     rid=intent_rid,
                     symbol=str(symbol),
@@ -131,22 +135,29 @@ class IntentRouter:
 
                 order_type = order_info.get("order_type")
                 if not order_type:
-                    raise ValueError("NRR-INTENT-MISSING-ORDER_TYPE: Strategy must provide explicit order_type (LIMIT/MARKET)")
+                    raise ValueError(
+                        "NRR-INTENT-MISSING-ORDER_TYPE: Strategy must provide explicit order_type (LIMIT/MARKET)")
 
-                price = str(order_info.get("price")) if order_info.get("price") else None
+                price = str(order_info.get("price")) if order_info.get(
+                    "price") else None
                 tif = order_info.get("tif")
 
                 if order_type == "LIMIT":
                     if not price:
-                        raise ValueError("NRR-INTENT-MISSING-PRICE: LIMIT order requires price")
+                        raise ValueError(
+                            "NRR-INTENT-MISSING-PRICE: LIMIT order requires price")
                     if not tif:
-                        raise ValueError("NRR-INTENT-MISSING-TIF: LIMIT order requires tif (GTC/GTX/IOC/FOK)")
+                        raise ValueError(
+                            "NRR-INTENT-MISSING-TIF: LIMIT order requires tif (GTC/GTX/IOC/FOK)")
                 elif order_type == "MARKET":
                     if tif:
-                        raise ValueError(f"NRR-INTENT-INVALID-TIF: MARKET order must not have tif (got {tif})")
+                        raise ValueError(
+                            f"NRR-INTENT-INVALID-TIF: MARKET order must not have tif (got {tif})")
 
                 stop_price_raw = self._fsm._resolve_price(pld, "stop_price")
-                target_price_raw = self._fsm._resolve_price(pld, "target_price")
+                target_price_raw = self._fsm._resolve_price(
+                    pld, "target_price")
+                regime_provenance = pld.get("regime_provenance")
 
                 cmd_payload = {
                     "rid": intent_rid,
@@ -162,6 +173,9 @@ class IntentRouter:
                     "idempotent_key": pld.get("idempotent_key"),
                     "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
                     "strategy": strategy_id,
+                    "regime": pld.get("regime"),
+                    "regime_confidence": pld.get("regime_confidence"),
+                    "regime_provenance": deepcopy(regime_provenance) if isinstance(regime_provenance, dict) else None,
                 }
 
                 cmd_metadata: Dict[str, Any] = {}
@@ -187,7 +201,8 @@ class IntentRouter:
                     data_ref=msg.data_ref
                 )
 
-                LOG.info(f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN (qty={cmd_payload['qty']} side={cmd_payload.get('side')} type={order_type})")
+                LOG.info(
+                    f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN (qty={cmd_payload['qty']} side={cmd_payload.get('side')} type={order_type})")
                 self._mark_intent_routed(
                     rid=intent_rid,
                     symbol=str(symbol),
@@ -199,7 +214,8 @@ class IntentRouter:
 
             # Handle Result
             if result:
-                LOG.info(f"[{symbol}] TRADE_INTENT processed: {result.op}:{result.verb}")
+                LOG.info(
+                    f"[{symbol}] TRADE_INTENT processed: {result.op}:{result.verb}")
 
                 if result.op == "EVT" and result.verb == "TRADE_INTENT_REJECTED":
                     emit_canonical_trade_intent_rejected_event(
@@ -210,7 +226,8 @@ class IntentRouter:
                         why=result.why or "execution_rejected",
                         logger=LOG,
                         lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
-                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        write_wal=bool(
+                            getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
                         fallback_symbol=symbol,
                         fallback_reason_code="NRR-EXECUTION-REJECTED",
                         fallback_stage="EXECUTION",
@@ -247,8 +264,10 @@ class IntentRouter:
                             src="execution_position",
                             why="execution_rejected",
                             logger=LOG,
-                            lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
-                            write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                            lifecycle=getattr(
+                                self._fsm, "_trade_lifecycle", None),
+                            write_wal=bool(
+                                getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
                             fallback_symbol=symbol,
                             fallback_reason_code="NRR-EXECUTION-REJECTED",
                             fallback_stage="EXECUTION",
@@ -256,7 +275,8 @@ class IntentRouter:
                             data_ref=list(msg.data_ref or []),
                         )
             else:
-                LOG.warning(f"[{symbol}] TRADE_INTENT processed but no result returned from handle()")
+                LOG.warning(
+                    f"[{symbol}] TRADE_INTENT processed but no result returned from handle()")
                 if hasattr(self._fsm, "bus"):
                     emit_canonical_trade_intent_rejected_event(
                         fsm=self._fsm.bus,
@@ -275,7 +295,8 @@ class IntentRouter:
                         why="execution_no_result",
                         logger=LOG,
                         lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
-                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        write_wal=bool(
+                            getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
                         fallback_symbol=symbol,
                         fallback_reason_code="NRR-EXECUTION-INTERNAL-ERROR",
                         fallback_stage="EXECUTION",
@@ -284,11 +305,13 @@ class IntentRouter:
                     )
 
         except Exception as e:
-            LOG.error(f"Failed to process TRADE_INTENT_PROPOSED: {e}", exc_info=True)
+            LOG.error(
+                f"Failed to process TRADE_INTENT_PROPOSED: {e}", exc_info=True)
             if hasattr(self._fsm, "bus"):
                 try:
                     pld = msg.pld or {}
-                    symbol = pld.get("instrument") or pld.get("symbol") or "unknown"
+                    symbol = pld.get("instrument") or pld.get(
+                        "symbol") or "unknown"
                     intent_rid = str(pld.get("rid") or msg.rid or "unknown")
                     emit_canonical_trade_intent_rejected_event(
                         fsm=self._fsm.bus,
@@ -308,7 +331,8 @@ class IntentRouter:
                         why="execution_exception",
                         logger=LOG,
                         lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
-                        write_wal=bool(getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+                        write_wal=bool(
+                            getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
                         fallback_symbol=symbol,
                         fallback_reason_code="NRR-EXECUTION-EXCEPTION",
                         fallback_stage="EXECUTION",
@@ -335,7 +359,8 @@ class IntentRouter:
         pld = msg.pld or {}
         symbol = pld.get("symbol") or "unknown"
         intent_id = pld.get("intent_id")
-        rid = str(pld.get("rid") or msg.rid or f"ext-{int(time.time() * 1000)}")
+        rid = str(pld.get("rid")
+                  or msg.rid or f"ext-{int(time.time() * 1000)}")
 
         try:
             # GATE 1: intent_id must be present (forensic traceability)
@@ -446,6 +471,9 @@ class IntentRouter:
                 "idempotent_key": pld.get("idempotent_key"),
                 "price_ref": price,
                 "strategy": "llm_microstructure",
+                "regime": None,
+                "regime_confidence": None,
+                "regime_provenance": None,
                 "metadata": {
                     "strategy_id": "llm_microstructure",
                     "source": "external_llm",
@@ -481,7 +509,8 @@ class IntentRouter:
 
             # Route result to bus (same pattern as on_trade_intent_proposed)
             if result:
-                LOG.info("[%s] External open request processed: %s:%s", symbol, result.op, result.verb)
+                LOG.info("[%s] External open request processed: %s:%s",
+                         symbol, result.op, result.verb)
 
                 if hasattr(self._fsm, "bus"):
                     out_pld = dict(result.pld or {})
@@ -494,16 +523,19 @@ class IntentRouter:
                     )
 
                 if result.op == "ERR":
-                    LOG.warning("[%s] External open rejected by EP guard: %s", symbol, result.why)
+                    LOG.warning(
+                        "[%s] External open rejected by EP guard: %s", symbol, result.why)
                     self._emit_external_rejection(
                         reason_code="NRR-EXECUTION-REJECTED",
                         symbol=symbol, intent_id=intent_id, rid=rid,
                         reason_text=result.why[:240] if result.why else "execution_rejected",
-                        details={"rid": rid, "idempotent_key": pld.get("idempotent_key")},
+                        details={"rid": rid, "idempotent_key": pld.get(
+                            "idempotent_key")},
                         data_ref=msg.data_ref,
                     )
             else:
-                LOG.warning("[%s] External open processed but no result from handle()", symbol)
+                LOG.warning(
+                    "[%s] External open processed but no result from handle()", symbol)
                 self._emit_external_rejection(
                     reason_code="NRR-EXECUTION-INTERNAL-ERROR",
                     symbol=symbol, intent_id=intent_id, rid=rid,
@@ -512,7 +544,8 @@ class IntentRouter:
                 )
 
         except Exception as e:
-            LOG.error("Failed to process CMD:EXTERNAL_OPEN_REQUEST_V1: %s", e, exc_info=True)
+            LOG.error(
+                "Failed to process CMD:EXTERNAL_OPEN_REQUEST_V1: %s", e, exc_info=True)
             try:
                 self._emit_external_rejection(
                     reason_code="NRR-EXECUTION-EXCEPTION",
@@ -522,7 +555,8 @@ class IntentRouter:
                     data_ref=msg.data_ref,
                 )
             except Exception as emit_e:
-                LOG.error("Failed to emit external exception rejection: %s", emit_e)
+                LOG.error(
+                    "Failed to emit external exception rejection: %s", emit_e)
 
     def _emit_external_rejection(
         self,
@@ -574,8 +608,10 @@ class IntentRouter:
                 rid=msg.rid or "unknown",
                 symbol=symbol,
                 side=pld.get("side", "unknown"),
-                guard_type=pld.get("reason_code") or pld.get("reason") or "DECISION_REJECT",
-                reason=pld.get("why") or pld.get("context") or pld.get("details", "") or "Strategy rejection",
+                guard_type=pld.get("reason_code") or pld.get(
+                    "reason") or "DECISION_REJECT",
+                reason=pld.get("why") or pld.get("context") or pld.get(
+                    "details", "") or "Strategy rejection",
                 strategy_id=pld.get("strategy_id")
             )
         except Exception as e:

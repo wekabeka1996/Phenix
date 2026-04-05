@@ -679,6 +679,97 @@ class OrderGuardian:
 
     # ---- Query API ----
 
+    @staticmethod
+    def _normalize_terminal_bracket_kind(order_meta: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not isinstance(order_meta, dict):
+            return None
+
+        explicit_kind = str(order_meta.get("kind") or "").strip().upper()
+        if explicit_kind in {"SL", "TP", "TP1", "TP2"}:
+            return explicit_kind
+
+        order_type = str(order_meta.get("type") or "").strip().upper()
+        if order_type == "STOP_MARKET":
+            return "SL"
+        if order_type == "TAKE_PROFIT_MARKET":
+            return "TP"
+        return None
+
+    def resolve_terminal_bracket_context(
+        self,
+        *,
+        client_order_id: Optional[str],
+        exchange_order_id: Optional[str],
+        symbol: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Best-effort recovery for close-bearing bracket WS updates.
+
+        This recovers bracket truth from explicit guardian ownership metadata
+        when narrow OrderIndex correlation misses on child/algo exchange events.
+        Fail closed on symbol mismatch or when metadata does not prove a tracked
+        SL/TP path.
+        """
+        symbol_key = str(symbol or "").strip().upper()
+
+        def _build_context(
+            *,
+            tracked_order_id: Optional[str],
+            order_meta: Optional[Dict[str, Any]],
+            correlation_source: str,
+        ) -> Optional[Dict[str, Any]]:
+            kind = self._normalize_terminal_bracket_kind(order_meta)
+            if kind is None or not isinstance(order_meta, dict):
+                return None
+
+            meta_symbol = str(order_meta.get("symbol") or "").strip().upper()
+            if symbol_key and meta_symbol and meta_symbol != symbol_key:
+                return None
+
+            return {
+                "symbol": meta_symbol or symbol_key,
+                "rid": str(order_meta.get("rid") or "").strip() or None,
+                "corr_id": str(order_meta.get("corr_id") or "").strip() or None,
+                "parent_entry_order_id": str(
+                    order_meta.get("parent_entry_id") or ""
+                ).strip() or None,
+                "tracked_bracket_order_id": str(
+                    tracked_order_id or exchange_order_id or ""
+                ).strip() or None,
+                "tracked_client_order_id": str(
+                    order_meta.get("client_order_id") or client_order_id or ""
+                ).strip() or None,
+                "bracket_role": kind,
+                "order_type": str(order_meta.get("type") or "").strip() or None,
+                "reduce_only": bool(order_meta.get("reduce_only", False)),
+                "close_position": bool(order_meta.get("close_position", False)),
+                "correlation_source": correlation_source,
+            }
+
+        if exchange_order_id:
+            exact_meta = self.store.get(f"order:{exchange_order_id}")
+            exact_context = _build_context(
+                tracked_order_id=str(exchange_order_id),
+                order_meta=exact_meta,
+                correlation_source="order_guardian_exchange_order_id",
+            )
+            if exact_context is not None:
+                return exact_context
+
+        if client_order_id:
+            mapped_order_id = self.store.get(f"client:{client_order_id}")
+            mapped_order_id_str = str(mapped_order_id).strip() if mapped_order_id else ""
+            if mapped_order_id_str:
+                mapped_meta = self.store.get(f"order:{mapped_order_id_str}")
+                mapped_context = _build_context(
+                    tracked_order_id=mapped_order_id_str,
+                    order_meta=mapped_meta,
+                    correlation_source="order_guardian_client_order_id",
+                )
+                if mapped_context is not None:
+                    return mapped_context
+
+        return None
+
     def get_brackets_for_entry(self, parent_order_id: str) -> Dict[str, Any]:
         """Get bracket orders for entry"""
         entry_key = f"entry:{parent_order_id}"

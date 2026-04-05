@@ -143,8 +143,9 @@ def test_ws_thread_safety():
         # Verify loop.call_soon_threadsafe called
         loop.call_soon_threadsafe.assert_called_once()
         args = loop.call_soon_threadsafe.call_args[0]
-        assert args[0] == fsm_core.emit
-        assert args[1] == "TEST_EVENT"
+        assert callable(args[0])
+        args[0]()
+        fsm_core.emit.assert_called_once_with("TEST_EVENT", {"a": 1}, "TEST_REASON")
         print("SUCCESS: _safe_emit uses loop.call_soon_threadsafe")
 
 # --- Test D: Strict Cancel ---

@@ -161,6 +161,21 @@ class TestExternalOpenRequestHappyPath:
         cmd_open = fsm.handle.call_args[0][0]
         assert cmd_open.pld["strategy"] == "llm_microstructure"
 
+    def test_external_cmd_open_carries_explicit_null_regime_contract(self):
+        router, fsm, emitted = _build_router(config_ttl=120000)
+        fsm.handle.return_value = MagicMock(op="DEC", verb="OPEN", rid="r1", pld={}, why="ok", data_ref=None)
+
+        msg = _make_msg(_make_external_payload())
+        router.on_external_open_request(msg)
+
+        cmd_open = fsm.handle.call_args[0][0]
+        assert "regime" in cmd_open.pld
+        assert "regime_confidence" in cmd_open.pld
+        assert "regime_provenance" in cmd_open.pld
+        assert cmd_open.pld["regime"] is None
+        assert cmd_open.pld["regime_confidence"] is None
+        assert cmd_open.pld["regime_provenance"] is None
+
     def test_preserves_intent_id_through_to_cmd_open_metadata(self):
         router, fsm, emitted = _build_router(config_ttl=120000)
         fsm.handle.return_value = MagicMock(op="DEC", verb="OPEN", rid="r1", pld={}, why="ok", data_ref=None)

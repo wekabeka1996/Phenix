@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
@@ -22,6 +23,10 @@ from apps.reference.telemetry.shadow_journal import (
     attach_shadow_journal,
     get_shadow_journal,
     snapshot_position_tracking_state,
+)
+from apps.reference.telemetry.trade_lifecycle_logger import (
+    POSITION_DISAPPEARANCE_RECORD_KIND,
+    append_trade_lifecycle_record,
 )
 from apps.reference.domains.execution_position.truth_hardening import (
     attach_execution_truth_hardening,
@@ -148,6 +153,65 @@ class PositionTracking:
         self.flat_position_threshold = decimal.Decimal(
             str(precision.flat_position_threshold))
         self.decimal_places = int(precision.decimal_places)
+
+    def _get_execution_position_domain(self) -> Optional[Any]:
+        try:
+            domains = getattr(self.fsm, "domains", None)
+            if isinstance(domains, dict):
+                domain = domains.get("execution_position")
+                if domain is not None:
+                    return domain
+        except Exception:
+            pass
+        return getattr(self.fsm, "execution_position", None)
+
+    def _get_recent_execution_close_proof(self, symbol: str) -> Optional[Dict[str, Any]]:
+        exec_pos = self._get_execution_position_domain()
+        if exec_pos is None or not hasattr(exec_pos, "get_recent_terminal_close_proof"):
+            return None
+        try:
+            proof = exec_pos.get_recent_terminal_close_proof(symbol)
+        except Exception:
+            return None
+        if not isinstance(proof, Mapping):
+            return None
+        return dict(proof) if proof else None
+
+    def _append_disappearance_record(
+        self,
+        *,
+        symbol: str,
+        attribution: str,
+        position_details: Dict[str, Any],
+        proof: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = {
+            "record_kind": POSITION_DISAPPEARANCE_RECORD_KIND,
+            "event_type": "POSITION_DISAPPEARANCE_ATTRIBUTED",
+            "ts_ms": get_clock().now_ms(),
+            "symbol": symbol,
+            "attribution": attribution,
+            "position_details": position_details or {},
+        }
+        if proof:
+            record.update(
+                {
+                    "rid": proof.get("rid"),
+                    "close_reason": proof.get("close_reason"),
+                    "proof_source": proof.get("source"),
+                    "terminal_correlation_source": proof.get(
+                        "terminal_correlation_source"
+                    ),
+                    "tracked_bracket_order_id": proof.get(
+                        "tracked_bracket_order_id"
+                    ),
+                    "parent_entry_order_id": proof.get(
+                        "parent_entry_order_id"
+                    ),
+                    "proof_ts_ms": proof.get("ts_ms"),
+                }
+            )
+        append_trade_lifecycle_record(record)
 
     def on_market_tick(self, event: Message) -> None:
         """
@@ -431,6 +495,51 @@ class PositionTracking:
         # Check for positions in our state that are NOT in Binance (manual close)
         our_symbols = set(self._positions.keys())
         manually_closed = our_symbols - binance_symbols
+
+        if manually_closed:
+            self.logger.warning(
+                f"SYNC: Detected positions missing from Binance snapshot: {manually_closed}"
+            )
+            for symbol in list(manually_closed):
+                position_details = self._positions[symbol] if symbol in self._positions else {
+                }
+                close_proof = self._get_recent_execution_close_proof(symbol)
+
+                if close_proof is not None:
+                    self.logger.info(
+                        "SYNC: Removing %s from internal state after proven bracket close (%s)",
+                        symbol,
+                        close_proof.get("close_reason"),
+                    )
+                    self._append_disappearance_record(
+                        symbol=symbol,
+                        attribution="proven_exchange_bracket_close",
+                        position_details=position_details,
+                        proof=close_proof,
+                    )
+                    self._positions.pop(symbol, None)
+                    continue
+
+                self.manual_intervention_detected_total += 1
+                if self.alert_manager and hasattr(
+                    self.alert_manager, "check_position_disappearance"
+                ):
+                    self.alert_manager.check_position_disappearance(
+                        symbol=symbol,
+                        position_details=position_details,
+                        mechanism="unknown_disappearance",
+                    )
+                self._append_disappearance_record(
+                    symbol=symbol,
+                    attribution="unknown_disappearance",
+                    position_details=position_details,
+                )
+                self.logger.info(
+                    "SYNC: Removing %s from internal state after unproven disappearance",
+                    symbol,
+                )
+                self._positions.pop(symbol, None)
+            manually_closed = set()
 
         if manually_closed:
             self.logger.warning(

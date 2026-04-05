@@ -88,7 +88,6 @@ from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
 from vfoundation.core import FSMCore
 from vfoundation.core.schema_registry import init_global_registry
 from vfoundation.core.protocol import Message
-from vfoundation.core.protocol import Message
 import json
 import logging
 import sys
@@ -111,6 +110,77 @@ def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
     """Run the shared asyncio loop in a dedicated thread."""
     asyncio.set_event_loop(loop)
     loop.run_forever()
+
+
+def build_emit_with_monitoring(
+    *,
+    original_emit,
+    entropy_monitor: Any,
+    shadow_event_tap_getter,
+    logger: logging.Logger,
+):
+    """Wrap FSM emit so Message-based canonical events preserve monitoring taps."""
+
+    def emit_with_monitoring(
+        event_name,
+        payload: dict | None = None,
+        why: str = "",
+        data_ref=None,
+        **emit_kwargs,
+    ):
+        tracking_event_name = event_name
+        tracking_payload = payload if isinstance(payload, dict) else {}
+        tracking_why = why
+
+        if isinstance(event_name, Message):
+            tracking_msg = event_name
+            tracking_event_name = f"{tracking_msg.op}:{tracking_msg.verb}"
+            tracking_payload = dict(tracking_msg.pld or {})
+            tracking_why = tracking_msg.why or why
+        else:
+            rid = emit_kwargs.get("rid")
+            tracking_msg_kwargs = {
+                "op": event_name.split(":")[0] if ":" in event_name else "EVT",
+                "verb": event_name.split(":")[1] if ":" in event_name else event_name,
+                "src": "fsm_core",
+                "dst": "any",
+                "pld": payload,
+                "why": why,
+            }
+            if isinstance(rid, str) and rid:
+                tracking_msg_kwargs["rid"] = rid
+            tracking_msg = Message(**tracking_msg_kwargs)
+
+        entropy_monitor.track_event(tracking_msg)
+
+        if isinstance(event_name, Message):
+            result = original_emit(event_name)
+        else:
+            result = original_emit(
+                event_name,
+                payload,
+                why,
+                data_ref=data_ref,
+                **emit_kwargs,
+            )
+
+        shadow_event_tap_publisher = shadow_event_tap_getter()
+        if shadow_event_tap_publisher is not None:
+            try:
+                shadow_event_tap_publisher.publish(
+                    event_name=tracking_event_name,
+                    payload=tracking_payload,
+                    why=tracking_why,
+                )
+            except Exception as bridge_error:
+                logger.warning(
+                    "Shadow event tap publish failed for %s: %s",
+                    tracking_event_name,
+                    bridge_error,
+                )
+        return result
+
+    return emit_with_monitoring
 
 
 # Import domain classes
@@ -448,56 +518,12 @@ def main() -> None:
     shadow_event_tap_publisher: Optional[ShadowEventTapPublisher] = None
     llm_intent_ingress_bridge: Optional[LLMIntentIngressBridge] = None
 
-    # Wrap FSMCore.emit to track events with EntropyMonitor
-    original_emit = fsm.emit
-
-    def emit_with_monitoring(
-        event_name: str,
-        payload: dict | None = None,
-        why: str = "",
-        data_ref=None,
-        **emit_kwargs,
-    ):
-        """Emit with entropy monitoring"""
-        # Track event for anomaly detection
-        from vfoundation.core.protocol import Message
-        rid = emit_kwargs.get("rid")
-        tracking_msg_kwargs = {
-            "op": event_name.split(":")[0] if ":" in event_name else "EVT",
-            "verb": event_name.split(":")[1] if ":" in event_name else event_name,
-            "src": "fsm_core",
-            "dst": "any",
-            "pld": payload,
-            "why": why,
-        }
-        if isinstance(rid, str) and rid:
-            tracking_msg_kwargs["rid"] = rid
-        tracking_msg = Message(
-            **tracking_msg_kwargs,
-        )
-        entropy_monitor.track_event(tracking_msg)
-
-        # Call original emit
-        result = original_emit(
-            event_name,
-            payload,
-            why,
-            data_ref=data_ref,
-            **emit_kwargs,
-        )
-        if shadow_event_tap_publisher is not None:
-            try:
-                shadow_event_tap_publisher.publish(
-                    event_name=event_name,
-                    payload=payload if isinstance(payload, dict) else {},
-                    why=why,
-                )
-            except Exception as bridge_error:
-                LOG.warning(
-                    f"Shadow event tap publish failed for {event_name}: {bridge_error}")
-        return result
-
-    fsm.emit = emit_with_monitoring
+    fsm.emit = build_emit_with_monitoring(
+        original_emit=fsm.emit,
+        entropy_monitor=entropy_monitor,
+        shadow_event_tap_getter=lambda: shadow_event_tap_publisher,
+        logger=LOG,
+    )
     LOG.info(" FSMCore initialized with EntropyMonitor tracking")
 
     # Step 2: Create event listeners

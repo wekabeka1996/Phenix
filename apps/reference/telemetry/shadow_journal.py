@@ -19,6 +19,7 @@ DEFAULT_CRITICAL_EVENTS = (
     "EVT:TRADE_INTENT_REJECTED",
     "EVT:INTENT_DEFERRED",
     "EVT:DECISION_BLOCKED",
+    "EVT:REGIME_DETECTED",
     "EVT:STRATEGY_DECISION_BLOCKED",
     "CMD:OPEN",
     "DEC:OPEN",
@@ -239,7 +240,8 @@ class ShadowCriticalEventJournal:
             origin_type=origin_type,
             identity=identity,
         )
-        repeated_close = self._detect_repeated_close(event_name=event_name, identity=identity)
+        repeated_close = self._detect_repeated_close(
+            event_name=event_name, identity=identity)
         partial_identity = detect_partial_identity(identity)
         notes: list[str] = []
         if duplicate_heuristic:
@@ -304,7 +306,8 @@ class ShadowCriticalEventJournal:
             origin_type=event_origin_type,
             identity=identity,
         )
-        repeated_close = self._detect_repeated_close(event_name=event_name, identity=identity)
+        repeated_close = self._detect_repeated_close(
+            event_name=event_name, identity=identity)
         partial_identity = detect_partial_identity(identity)
         op, verb = parse_event_name(event_name)
         record = ShadowJournalRecord(
@@ -331,8 +334,10 @@ class ShadowCriticalEventJournal:
             qty=identity["qty"],
             price=identity["price"],
             truth_owner=truth_owner,
-            local_state_before=_to_jsonable(before) if before is not None else None,
-            local_state_after=_to_jsonable(after) if after is not None else None,
+            local_state_before=_to_jsonable(
+                before) if before is not None else None,
+            local_state_after=_to_jsonable(
+                after) if after is not None else None,
             restore_marker=restore_marker,
             suspected_duplicate=suspected_duplicate,
             duplicate_kind=duplicate_kind,
@@ -416,6 +421,22 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
     keep = (
         "symbol",
         "instrument",
+        "regime",
+        "confidence",
+        "regime_confidence",
+        "changed",
+        "raw_regime",
+        "raw_confidence",
+        "stable_confidence",
+        "structural_regime_ref",
+        "regime_layer",
+        "regime_scope",
+        "regime_clock",
+        "regime_owner",
+        "last_update_ts_ms",
+        "calc_lag_ms",
+        "hysteresis_confirm_count",
+        "cache_write_ts_ms",
         "orderId",
         "order_id",
         "clientOrderId",
@@ -426,6 +447,7 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "event_ts_ms",
         "terminal_non_fill",
         "terminal_state_kind",
+        "origin_class",
         "identity_quality",
         "canonical_identity_key",
         "stage",
@@ -451,6 +473,9 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "side",
         "source",
         "trace",
+        "warmup",
+        "data_quality",
+        "regime_provenance",
         "restore_marker",
     )
     fragment = {key: payload.get(key) for key in keep if key in payload}
@@ -591,7 +616,8 @@ def _attach_order_index(journal: ShadowCriticalEventJournal, order_index: Any) -
         try:
             attach_fn(journal)
         except Exception:
-            LOG.debug("Failed to attach shadow journal to OrderIndex", exc_info=True)
+            LOG.debug(
+                "Failed to attach shadow journal to OrderIndex", exc_info=True)
 
 
 def get_shadow_journal(owner: Any) -> Optional[ShadowCriticalEventJournal]:

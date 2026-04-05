@@ -1,3 +1,5 @@
+import logging
+import time
 """Stateful ingress handlers for the DecisionMaking domain.
 
 This module owns the FSM listeners that cache feature, risk, portfolio, and
@@ -34,6 +36,24 @@ from .dm_log_adapter import DecisionLog
 if TYPE_CHECKING:
     from apps.reference.config_models import AuroraConfig
     from apps.reference.core.time.clock import Clock
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class DMEventHandlers:
@@ -461,15 +481,66 @@ class DMEventHandlers:
                 regime_val = normalize_structural_regime_label(
                     event.pld.get("regime") or event.pld.get("overall_regime")
                 )
+                detector_ts_ms = _optional_int(
+                    event.pld.get("ts_ms") or event.pld.get("ts"))
+                detector_last_update_ts_ms = _optional_int(
+                    event.pld.get("last_update_ts_ms"))
+                detector_structural_ref = event.pld.get(
+                    "structural_regime_ref") or structural_regime_ref(symbol, detector_ts_ms)
+                cache_write_ts_ms = int(time.time() * 1000)
+                cache_confidence = _optional_float(event.pld.get("confidence"))
+                regime_provenance = {
+                    "source_kind": "detector_event",
+                    "detector_event": {
+                        "event_name": "EVT:REGIME_DETECTED",
+                        "rid": getattr(event, "rid", None),
+                        "ts_ms": detector_ts_ms,
+                        "last_update_ts_ms": detector_last_update_ts_ms,
+                        "structural_regime_ref": detector_structural_ref,
+                        "basis_tf_sec": event.pld.get("basis_tf_sec"),
+                        "bar_close_ts_ms": event.pld.get("bar_close_ts_ms"),
+                        "changed": event.pld.get("changed"),
+                        "regime": regime_val,
+                        "confidence": event.pld.get("confidence"),
+                        "stable_confidence": event.pld.get("stable_confidence"),
+                        "source_model": event.pld.get("source_model"),
+                        "pre_cutoff_source_model": event.pld.get("pre_cutoff_source_model"),
+                        "confidence_min": event.pld.get("confidence_min"),
+                        "confidence_max": event.pld.get("confidence_max"),
+                        "pre_cutoff_regime": event.pld.get("pre_cutoff_regime"),
+                        "pre_cutoff_confidence": event.pld.get("pre_cutoff_confidence"),
+                        "pre_cutoff_clamped_to_min": event.pld.get("pre_cutoff_clamped_to_min"),
+                        "pre_cutoff_clamped_to_max": event.pld.get("pre_cutoff_clamped_to_max"),
+                        "pre_cutoff_boundary_reason": event.pld.get("pre_cutoff_boundary_reason"),
+                        "uncertain_cutoff": event.pld.get("uncertain_cutoff"),
+                        "demoted_to_uncertain": event.pld.get("demoted_to_uncertain"),
+                        "raw_regime": event.pld.get("raw_regime"),
+                        "raw_confidence": event.pld.get("raw_confidence"),
+                        "raw_boundary_reason": event.pld.get("raw_boundary_reason"),
+                        "hysteresis_bars": event.pld.get("hysteresis_bars"),
+                        "hysteresis_confirm_count": event.pld.get("hysteresis_confirm_count"),
+                        "carried_previous_stable": event.pld.get("carried_previous_stable"),
+                        "emitted_confidence_kind": event.pld.get("emitted_confidence_kind"),
+                        "reason_summary": event.pld.get("reason_summary"),
+                    },
+                    "cache_snapshot": {
+                        "cache_write_ts_ms": cache_write_ts_ms,
+                        "regime": regime_val,
+                        "confidence": cache_confidence,
+                    },
+                }
                 latest_structural_regimes = self._shared.setdefault(
                     "latest_structural_regime_by_symbol", {})
                 if isinstance(latest_structural_regimes, dict):
-                    latest_structural_regimes[symbol] = dict(event.pld)
+                    snapshot = dict(event.pld)
+                    snapshot["cache_write_ts_ms"] = cache_write_ts_ms
+                    snapshot["regime_provenance"] = regime_provenance
+                    latest_structural_regimes[symbol] = snapshot
                 latest_structural_warmup = self._shared.setdefault(
                     "latest_structural_warmup_by_symbol", {})
                 if isinstance(latest_structural_warmup, dict):
                     latest_structural_warmup[symbol] = warmup
-                ts_ms = event.pld.get("ts_ms") or event.pld.get("ts")
+                ts_ms = detector_ts_ms
                 self._per_symbol_regimes[symbol] = {
                     "symbol": symbol,
                     "regime": regime_val,
@@ -480,7 +551,32 @@ class DMEventHandlers:
                     "scope": event.pld.get("regime_scope", "per_symbol"),
                     "clock": event.pld.get("regime_clock", "bar"),
                     "ts_ms": ts_ms,
-                    "structural_regime_ref": event.pld.get("structural_regime_ref") or structural_regime_ref(symbol, ts_ms),
+                    "structural_regime_ref": detector_structural_ref,
+                    "changed": event.pld.get("changed"),
+                    "basis_tf_sec": event.pld.get("basis_tf_sec"),
+                    "bar_close_ts_ms": event.pld.get("bar_close_ts_ms"),
+                    "source_model": event.pld.get("source_model"),
+                    "pre_cutoff_source_model": event.pld.get("pre_cutoff_source_model"),
+                    "confidence_min": event.pld.get("confidence_min"),
+                    "confidence_max": event.pld.get("confidence_max"),
+                    "pre_cutoff_regime": event.pld.get("pre_cutoff_regime"),
+                    "pre_cutoff_confidence": event.pld.get("pre_cutoff_confidence"),
+                    "pre_cutoff_clamped_to_min": event.pld.get("pre_cutoff_clamped_to_min"),
+                    "pre_cutoff_clamped_to_max": event.pld.get("pre_cutoff_clamped_to_max"),
+                    "pre_cutoff_boundary_reason": event.pld.get("pre_cutoff_boundary_reason"),
+                    "uncertain_cutoff": event.pld.get("uncertain_cutoff"),
+                    "demoted_to_uncertain": event.pld.get("demoted_to_uncertain"),
+                    "raw_regime": event.pld.get("raw_regime"),
+                    "raw_confidence": event.pld.get("raw_confidence"),
+                    "raw_boundary_reason": event.pld.get("raw_boundary_reason"),
+                    "stable_confidence": event.pld.get("stable_confidence"),
+                    "hysteresis_bars": event.pld.get("hysteresis_bars"),
+                    "last_update_ts_ms": detector_last_update_ts_ms,
+                    "cache_write_ts_ms": cache_write_ts_ms,
+                    "carried_previous_stable": event.pld.get("carried_previous_stable"),
+                    "emitted_confidence_kind": event.pld.get("emitted_confidence_kind"),
+                    "reason_summary": event.pld.get("reason_summary"),
+                    "regime_provenance": regime_provenance,
                 }
                 self.logger.debug(
                     f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"

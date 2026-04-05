@@ -29,6 +29,7 @@ class _FakeSG:
     regime = "TREND_UP"
     regime_confidence = 0.9
     trend_dir = 1
+    trend_run_length = None
     delta_price = 0
     pm_norm_10s = pm_norm_60s = pm_norm_300s = 0
     vol_pct_10s = vol_pct_60s = vol_pct_300s = 0
@@ -78,7 +79,7 @@ _COMMON_KWARGS = dict(
 @pytest.fixture(autouse=True)
 def _side_effect_sinks():
     with patch("apps.reference.domains.decision_making.intent_builder.order_logger.write") as mock_order_write, \
-         patch("apps.reference.domains.decision_making.intent_builder.print"):
+            patch("apps.reference.domains.decision_making.intent_builder.print"):
         yield mock_order_write
 
 
@@ -249,3 +250,53 @@ class TestIntentBuilderDstRouting:
         assert "EVT:TRADE_INTENT_PROPOSED" in log_line
         assert "RID=rid-dst-001" in log_line
         assert "Additional properties are not allowed" in log_line
+
+    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    def test_builder_propagates_tpsl_owner_context_to_trace_and_intent(
+        self,
+        mock_policy,
+        mock_wal,
+    ):
+        mock_policy.return_value = ("LIMIT", "GTC", 10000)
+        mock_wal.return_value = "wal-ok"
+
+        builder = _make_builder()
+        owner_ctx = {
+            "intended_owner": "regime_tpsl",
+            "final_owner": "entry_plan",
+            "owner_loss_reason": "TPSL_GUARDRAIL_TP_MIN_DIST_BPS",
+        }
+
+        builder.build_and_emit(
+            **{
+                **_COMMON_KWARGS,
+                "tpsl_owner_ctx": owner_ctx,
+            }
+        )
+
+        wal_dict = mock_wal.call_args[0][0]
+        assert wal_dict["pld"]["tpsl_owner_ctx"] == owner_ctx
+
+        decision_trace_payload = None
+        trade_intent_payload = None
+        for call in builder._fsm.emit.call_args_list:
+            if call.args[0] == "EVT:DECISION_TRACE_EMITTED":
+                decision_trace_payload = call.kwargs["payload"]
+            if call.args[0] == "EVT:TRADE_INTENT_PROPOSED":
+                trade_intent_payload = call.kwargs["payload"]
+
+        assert decision_trace_payload is not None
+        assert trade_intent_payload is not None
+        assert decision_trace_payload["tpsl_owner_ctx"] == owner_ctx
+        assert trade_intent_payload["tpsl_owner_ctx"] == owner_ctx
+        assert any(
+            call.args == (
+                "[%s] TPSL_OWNER_INTENT intended=%s final=%s reason=%s",
+                "BTCUSDT",
+                "regime_tpsl",
+                "entry_plan",
+                "TPSL_GUARDRAIL_TP_MIN_DIST_BPS",
+            )
+            for call in builder.logger.info.call_args_list
+        )

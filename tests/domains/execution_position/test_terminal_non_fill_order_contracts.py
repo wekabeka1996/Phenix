@@ -26,6 +26,7 @@ def test_normalize_order_rejected_payload_promotes_canonical_fields():
             "orderId": "12345",
             "clientOrderId": "ENTRY_BNB_1",
             "reason": "maker_only_reject",
+            "origin_class": "execution_adapter",
         },
         fallback_rid="rid-1",
         fallback_ts_ms=123456,
@@ -38,6 +39,7 @@ def test_normalize_order_rejected_payload_promotes_canonical_fields():
     assert payload["reject_reason"] == "MAKER_ONLY_REJECT"
     assert payload["reject_reason_normalized"] == "MAKER_ONLY_REJECT"
     assert payload["reject_reason_source"] == "reason"
+    assert payload["origin_class"] == "execution_adapter"
     assert payload["terminal_non_fill"] is True
     assert payload["terminal_state_kind"] == "REJECTED"
     assert payload["identity_quality"] == "order_identity_exact"
@@ -74,6 +76,7 @@ def test_shadow_payload_fragment_keeps_canonical_terminal_order_fields():
             "event_ts_ms": 10000,
             "terminal_non_fill": True,
             "terminal_state_kind": "CANCELED",
+            "origin_class": "execution_adapter",
             "identity_quality": "order_identity_exact",
             "canonical_identity_key": "evt:order_state_changed:symbol=BTCUSDT:order_id=o2",
             "reject_reason_normalized": "MAKER_ONLY_REJECT",
@@ -83,6 +86,7 @@ def test_shadow_payload_fragment_keeps_canonical_terminal_order_fields():
 
     assert fragment["terminal_non_fill"] is True
     assert fragment["terminal_state_kind"] == "CANCELED"
+    assert fragment["origin_class"] == "execution_adapter"
     assert fragment["identity_quality"] == "order_identity_exact"
     assert fragment["canonical_identity_key"] == "evt:order_state_changed:symbol=BTCUSDT:order_id=o2"
     assert fragment["reject_reason_normalized"] == "MAKER_ONLY_REJECT"
@@ -103,6 +107,7 @@ def test_terminal_non_fill_schemas_accept_normalized_payloads():
             "rid": "rid-1",
             "reason_code": "ADAPTER_ERROR",
             "reason_text": "timeout",
+            "origin_class": "execution_adapter",
         },
         fallback_ts_ms=1,
     )

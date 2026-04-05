@@ -46,6 +46,7 @@ def _make_mock_fsm():
     mock_fsm.exposure_guard.get_exposure_summary.return_value = {}
     mock_fsm._get_async_loop.return_value = None
     mock_fsm._latest_portfolio_state = {}
+    mock_fsm.get_recent_terminal_close_proof.return_value = None
     return mock_fsm
 
 
@@ -132,6 +133,9 @@ def _run_portfolio_close(
     mock_fsm,
     trade_id: str = "99001",
     entry_side: str = "BUY",
+    close_reason: str | None = None,
+    recent_close_proof=None,
+    trade_lifecycle=None,
 ):
     """
     Run EPEventHandlers.on_portfolio_state_updated to trigger POSITION_CLOSED write.
@@ -149,6 +153,10 @@ def _run_portfolio_close(
     # Phase 2 caches
     mock_fsm._last_trade_id_by_symbol = {"BTCUSDT": trade_id}
     mock_fsm._last_entry_side_by_symbol = {"BTCUSDT": entry_side}
+    mock_fsm._last_close_reason_by_symbol = (
+        {"BTCUSDT": close_reason} if close_reason is not None else {}
+    )
+    mock_fsm.get_recent_terminal_close_proof.return_value = recent_close_proof
 
     event = SimpleNamespace(
         pld={"positions": [{"symbol": "BTCUSDT", "positionAmt": 0.0}]}
@@ -156,7 +164,7 @@ def _run_portfolio_close(
 
     written = []
 
-    with patch.object(handlers_mod, "_trade_lifecycle", None), \
+    with patch.object(handlers_mod, "_trade_lifecycle", trade_lifecycle), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
             patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_sec.return_value = 1_700_000.0
@@ -419,3 +427,50 @@ class TestPositionClosedIdentity:
         assert "BTCUSDT" not in mock_fsm._last_entry_side_by_symbol, (
             "_last_entry_side_by_symbol[BTCUSDT] must be popped after POSITION_CLOSED write"
         )
+
+
+class TestPositionClosedCloseReason:
+    def test_position_closed_uses_recent_proven_terminal_reason_when_fill_cache_missing(self):
+        mock_fsm = _make_mock_fsm()
+        written = _run_portfolio_close(
+            mock_fsm,
+            recent_close_proof={"close_reason": "SL"},
+        )
+
+        closed_writes = [
+            w for w in written
+            if isinstance(w, dict) and w.get("event_type") == "POSITION_CLOSED"
+        ]
+        assert len(closed_writes) == 1
+        assert closed_writes[0]["close_reason"] == "SL"
+        assert closed_writes[0]["why"] == "SL"
+        mock_fsm.get_recent_terminal_close_proof.assert_called_once_with(
+            "BTCUSDT")
+
+    def test_trade_lifecycle_close_uses_recent_proven_terminal_reason_when_fill_cache_missing(self):
+        mock_fsm = _make_mock_fsm()
+        trade_lifecycle = MagicMock()
+
+        _run_portfolio_close(
+            mock_fsm,
+            recent_close_proof={"close_reason": "TP"},
+            trade_lifecycle=trade_lifecycle,
+        )
+
+        trade_lifecycle.on_close.assert_called_once()
+        assert trade_lifecycle.on_close.call_args.kwargs["close_reason"] == "TP"
+
+    def test_position_closed_prefers_cached_fill_reason_over_recent_proof(self):
+        mock_fsm = _make_mock_fsm()
+        written = _run_portfolio_close(
+            mock_fsm,
+            close_reason="TP",
+            recent_close_proof={"close_reason": "SL"},
+        )
+
+        closed_writes = [
+            w for w in written
+            if isinstance(w, dict) and w.get("event_type") == "POSITION_CLOSED"
+        ]
+        assert len(closed_writes) == 1
+        assert closed_writes[0]["close_reason"] == "TP"

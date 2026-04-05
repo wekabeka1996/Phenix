@@ -196,6 +196,10 @@ class TriggersConfig(BaseModel):
         default="EVT:FEATURES_CALCULATED",
         description="Event that provides features → cache"
     )
+    ta_feature_event: str = Field(
+        default="EVT:TA_FEATURES_CALCULATED",
+        description="Supplemental event that provides explicit TA features → cache"
+    )
     decision_event: str = Field(
         default="CMD:PROCESS_STRATEGY",
         description="Event that triggers scoring → read cache"
@@ -266,23 +270,29 @@ class ObjectiveFeedbackConfig(BaseModel):
             "min_provider_weight": self.min_provider_weight,
             "max_provider_weight": self.max_provider_weight,
         }
-        missing = [name for name, value in required_fields.items() if value is None]
+        missing = [name for name, value in required_fields.items()
+                   if value is None]
         if missing:
             raise ValueError(
                 "objective_feedback.enabled=True requires explicit fields: "
                 + ",".join(sorted(missing))
             )
         if not self.quality_metric_weights:
-            raise ValueError("objective_feedback.quality_metric_weights must be non-empty when enabled")
-        weight_mass = sum(abs(float(weight)) for weight in self.quality_metric_weights.values())
+            raise ValueError(
+                "objective_feedback.quality_metric_weights must be non-empty when enabled")
+        weight_mass = sum(abs(float(weight))
+                          for weight in self.quality_metric_weights.values())
         if weight_mass <= 0.0:
-            raise ValueError("objective_feedback.quality_metric_weights must have non-zero weight mass")
+            raise ValueError(
+                "objective_feedback.quality_metric_weights must have non-zero weight mass")
         if self.min_provider_weight is not None and self.max_provider_weight is not None:
             if self.min_provider_weight > self.max_provider_weight:
-                raise ValueError("objective_feedback requires min_provider_weight <= max_provider_weight")
+                raise ValueError(
+                    "objective_feedback requires min_provider_weight <= max_provider_weight")
         if self.window_trades is not None and self.min_trades_before_reweight is not None:
             if self.min_trades_before_reweight > self.window_trades:
-                raise ValueError("objective_feedback.min_trades_before_reweight must be <= window_trades")
+                raise ValueError(
+                    "objective_feedback.min_trades_before_reweight must be <= window_trades")
         return self
 
 

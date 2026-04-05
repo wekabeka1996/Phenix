@@ -184,6 +184,8 @@ def load_all_cases():
             if not line.strip():
                 continue
             r = json.loads(line)
+            if r.get("record_kind") == "position_policy_sidecar":
+                continue
             rid = r.get("rid", "")
             if rid and r.get("regime_confidence") is not None:
                 lifecycle_data[rid] = {

@@ -480,7 +480,7 @@ aurora:
           sl_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.65        # Tight for flat low
-            LOW_VOLATILITY: 0.06  # LOW_VOL scalp: ~0.114% SL (2148 corridor $2.45)
+            LOW_VOLATILITY: 0.6  # LOW_VOL scalp: ~0.114% SL (2148 corridor $2.45)
             FLAT_NORMAL: 0.80
             MEAN_REVERSION: 0.90
             TREND_UP: 1.05        #
@@ -490,7 +490,7 @@ aurora:
           tp_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.70
-            LOW_VOLATILITY: 0.11  # LOW_VOL scalp: ~0.209% TP (net +0.11% after fees)
+            LOW_VOLATILITY: 0.75  # LOW_VOL scalp: ~0.209% TP (net +0.11% after fees)
             FLAT_NORMAL: 0.85
             MEAN_REVERSION: 0.80
             TREND_UP: 1.20        # ETH trend-following  higher TP
@@ -538,7 +538,7 @@ aurora:
     SOLUSDT:
       # Holding period: SOL
       holding_period:
-        min_duration_sec: 900
+        min_duration_sec: 1800
         emergency_exit_threshold: 0.90
 
       # P1: Active Leverage Management
@@ -598,7 +598,7 @@ aurora:
           sl_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.60        # Tight SL  flat
-            LOW_VOLATILITY: 0.40  # LOW_VOL scalp: ~0.54% SL (tight, 88 USDT corridor)
+            LOW_VOLATILITY: 0.80  # LOW_VOL scalp: ~0.54% SL (tight, 88 USDT corridor)
             FLAT_NORMAL: 0.75
             MEAN_REVERSION: 0.85
             TREND_UP: 1.15        # Wide SL

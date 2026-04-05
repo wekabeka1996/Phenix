@@ -6,6 +6,7 @@
 > - **Audit mode:** Code-driven deep sync
 > - **Major drifts found:** No structural drifts since the previous audit. The profile correctly documents that the strategy relies on both registry assignment (`XRPUSDT`, `BNBUSDT`) and `md_amr.yaml`. Constants and fail-closed contracts remain perfectly aligned with current active codebase logic.
 > - **Overall confidence:** HIGH
+> - **Governance SSOT:** bounded verdicts for already-closed surfaces live in `reports/GOVERNANCE_BOUNDED_VERDICTS_AND_NEXT_PACKAGES_2026-04-04.md`; the legacy `gtx_fallback_to_market` naming question is closed there and narrowed here to marker-only semantics.
 
 Цей паспорт описує лише фактичний live/runtime контракт стратегії `md_amr`, підтверджений через YAML, Pydantic, composition root, handler, gateway та тести.
 
@@ -147,7 +148,7 @@ MD-AMR має кілька реальних блокувальних шарів 
 
 Що реально підтверджено в handler:
 - `gtx_retry_max` використовується для локального лічильника повторів після `ORDER_REJECTED`
-- `gtx_fallback_to_market` не виконує реальний fallback сам по собі; handler лише логгує намір fallback і скидає retry counter
+- `emit_market_fallback_marker_on_retry_exhaustion` не виконує реальний fallback сам по собі; handler лише логгує marker fallback і скидає retry counter
 
 Що не варто документувати як handler-owned behavior без застереження:
 - реальне перевиставлення ордера або автоматичний market fallback з цього місця не простежено
@@ -168,7 +169,7 @@ MD-AMR має кілька реальних блокувальних шарів 
 Старий документ був занадто декларативним і змішував profile surface з підтвердженою live поведінкою. Після code trace коректніше формулювати так:
 - `md_amr.enabled` не достатній для активації без registry assignment
 - не всі asset blocks у YAML є live-active
-- `gtx_fallback_to_market` зараз слабший за назву поля: у traced handler path це не автоматичний fallback, а лише retry/fallback bookkeeping
+- legacy `gtx_fallback_to_market` був слабший за свою назву; поточний чесний контракт це `emit_market_fallback_marker_on_retry_exhaustion`, тобто лише retry/fallback marker bookkeeping без MARKET submit
 - `reconciliation` має локальний код, але повна runtime wiring не підтверджена цим аудитом
 
 ## 11. Підсумок

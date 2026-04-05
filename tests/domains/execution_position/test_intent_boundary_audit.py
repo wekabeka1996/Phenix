@@ -46,7 +46,8 @@ def test_boundary_audit_clears_pending_after_routed_order_event() -> None:
     bus = _DispatchingBus()
     audit = IntentBoundaryAudit(
         bus=bus,
-        config=type("Cfg", (), {"enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+        config=type("Cfg", (), {
+                    "enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
     )
     audit.register_bus_listeners()
 
@@ -66,7 +67,8 @@ def test_boundary_audit_clears_pending_after_routed_order_event() -> None:
     )
 
     assert audit.pending_count == 0
-    rejects = [event for event in bus.events if event[0] == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
     assert rejects == []
 
 
@@ -74,15 +76,18 @@ def test_boundary_audit_emits_bridge_timeout_reject_when_not_routed() -> None:
     bus = _DispatchingBus()
     audit = IntentBoundaryAudit(
         bus=bus,
-        config=type("Cfg", (), {"enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+        config=type("Cfg", (), {
+                    "enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
     )
     audit.register_bus_listeners()
 
-    proposal = _proposal_payload(rid="RID-BRIDGE-TIMEOUT", ts_ms=1_700_000_000_000)
+    proposal = _proposal_payload(
+        rid="RID-BRIDGE-TIMEOUT", ts_ms=1_700_000_000_000)
     bus.emit("EVT:TRADE_INTENT_PROPOSED", proposal, "test")
     audit.sweep(now_ms=1_700_000_002_000)
 
-    rejects = [event for event in bus.events if event[0] == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
     reject_payload = rejects[0][1]
     assert reject_payload["reason_code"] == "NRR-EXECUTION-BRIDGE-TIMEOUT"
@@ -95,7 +100,8 @@ def test_boundary_audit_emits_no_downstream_reject_when_routed_but_stalled() -> 
     bus = _DispatchingBus()
     audit = IntentBoundaryAudit(
         bus=bus,
-        config=type("Cfg", (), {"enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+        config=type("Cfg", (), {
+                    "enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
     )
     audit.register_bus_listeners()
 
@@ -113,7 +119,8 @@ def test_boundary_audit_emits_no_downstream_reject_when_routed_but_stalled() -> 
 
     audit.sweep(now_ms=pending.routed_ts_ms + 5000)
 
-    rejects = [event for event in bus.events if event[0] == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
     reject_payload = rejects[0][1]
     assert reject_payload["reason_code"] == "NRR-EXECUTION-NO-DOWNSTREAM-EVENT"
@@ -125,7 +132,8 @@ def test_boundary_audit_clears_pending_after_trade_executed_without_order_placed
     bus = _DispatchingBus()
     audit = IntentBoundaryAudit(
         bus=bus,
-        config=type("Cfg", (), {"enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+        config=type("Cfg", (), {
+                    "enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
     )
     audit.register_bus_listeners()
 
@@ -153,7 +161,8 @@ def test_boundary_audit_clears_pending_after_trade_executed_without_order_placed
     )
 
     assert audit.pending_count == 0
-    rejects = [event for event in bus.events if event[0] == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
     assert rejects == []
 
 
@@ -210,6 +219,26 @@ class _AllowSafetyGate:
     vol_pct_10s = 0
     vol_pct_60s = 0
     vol_pct_300s = 0
+    regime_provenance = {
+        "source_kind": "detector_cache",
+        "detector_event": {
+            "event_name": "EVT:REGIME_DETECTED",
+            "rid": "rid-detector-btc-proof",
+            "ts_ms": 1_700_000_000_000,
+            "last_update_ts_ms": 1_700_000_000_123,
+            "structural_regime_ref": "structural:BTCUSDT:1700000000000",
+            "changed": False,
+            "regime": "TREND_UP",
+            "confidence": "0.87",
+            "raw_regime": "TREND_UP",
+            "raw_confidence": "0.87",
+        },
+        "cache_snapshot": {
+            "cache_write_ts_ms": 1_700_000_000_456,
+            "regime": "TREND_UP",
+            "confidence": 0.87,
+        },
+    }
 
 
 def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_execpos_routing() -> None:
@@ -218,13 +247,14 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
     bus = FSMCore()
     observed_intents: list[dict] = []
     observed_open: list[Message] = []
-    bus.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed_intents.append(msg.pld))
+    bus.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed_intents.append(msg.pld))
     bus.listen("DEC:OPEN", lambda msg: observed_open.append(msg))
 
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), \
-         patch("apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"), \
-         patch("apps.reference.domains.execution_position.fsm.MetricsCollector"), \
-         patch("apps.reference.domains.execution_position.fsm.read_pending_brackets_from_wal", return_value={}):
+            patch("apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"), \
+            patch("apps.reference.domains.execution_position.fsm.MetricsCollector"), \
+            patch("apps.reference.domains.execution_position.fsm.read_pending_brackets_from_wal", return_value={}):
         from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
         ep = ExecPosFSM(config=cfg, fsm=bus, shadow_mode=True)
@@ -249,8 +279,10 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
             "trade_cvar95_max_bps": 50,
             "session_cvar95_max_bps": 100,
         }
-        dm._builder._resolve_order_policy = MagicMock(return_value=("MARKET", None, None))
-        dm._builder._check_strategy_arbitration = MagicMock(return_value={"allowed": True})
+        dm._builder._resolve_order_policy = MagicMock(
+            return_value=("MARKET", None, None))
+        dm._builder._check_strategy_arbitration = MagicMock(
+            return_value={"allowed": True})
 
         strategy_trace = {
             "objective": {"score": 0.93, "winner": "aurora"},
@@ -285,6 +317,9 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
 
     assert observed_intents
     assert observed_intents[0]["trace"] == strategy_trace
+    assert observed_intents[0]["regime_provenance"]["source_kind"] == "detector_cache"
+    assert observed_intents[0]["regime_provenance"]["detector_event"][
+        "structural_regime_ref"] == "structural:BTCUSDT:1700000000000"
     pending = ep._intent_boundary_audit.get_pending("RID-TRACE-BOUNDARY")
     assert pending is not None
     assert pending.routed_via == "CMD:OPEN"
@@ -292,5 +327,8 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
     assert observed_open[0].rid == "RID-TRACE-BOUNDARY"
     assert observed_open[0].pld["symbol"] == "BTCUSDT"
     assert observed_open[0].pld["order_type"] == "MARKET"
+    assert observed_open[0].pld["regime"] == "TREND_UP"
+    assert observed_open[0].pld["regime_confidence"] == 0.87
+    assert observed_open[0].pld["regime_provenance"] == observed_intents[0]["regime_provenance"]
     assert "rid" not in (observed_open[0].pld or {})
     assert "trace" not in (observed_open[0].pld or {})

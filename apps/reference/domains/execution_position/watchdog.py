@@ -60,6 +60,8 @@ class OrderTimeoutWatchdog:
         ack_ttl_ms: int = 8000,  # 8 seconds for order acknowledgment
         fill_ttl_ms: int = 30000,  # 30 seconds for order fill
         check_interval_ms: int = 1000,  # Check every 1 second
+        # Max REST poll requests per second (P1: canonical param)
+        rps_limit: int = 10,
         on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None
     ):
         self.config = config or {}
@@ -94,8 +96,9 @@ class OrderTimeoutWatchdog:
         self._rest_detected_cancels_total = 0
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
-        # Max 10 requests per second globally
-        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10
+        # P1_EXECUTION_TIMEOUT_TRUTH_RESTORATION: rps_limit is now a named param,
+        # wired from canonical trading.execution.watchdog.rps_limit in fsm.py.
+        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else rps_limit
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0

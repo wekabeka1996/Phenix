@@ -47,7 +47,8 @@ def test_fsmcore_normalizes_trade_executed_payload_to_schema_valid_runtime_shape
     bus = FSMCore()
 
     seen: list[dict] = []
-    bus.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(dict(msg.pld or {})))
+    bus.listen("EVT:TRADE_EXECUTED",
+               lambda msg: seen.append(dict(msg.pld or {})))
 
     bus.emit(
         "EVT:TRADE_EXECUTED",
@@ -87,10 +88,12 @@ def test_raced_boundary_reject_chain_converges_to_closed_lifecycle_without_orpha
     config = ConfigLoader().load_config()
     config.observability.shadow_journal.enabled = True
     config.observability.shadow_journal.path = str(journal_path)
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     PositionTracking(bus, config)
 
-    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     lifecycle.on_intent(
         rid="aurora_ETHUSDT_1774428903370",
         symbol="ETHUSDT",
@@ -153,16 +156,21 @@ def test_raced_boundary_reject_chain_converges_to_closed_lifecycle_without_orpha
         )
 
     lifecycle_rows = _read_jsonl(lifecycle_path)
-    assert len(lifecycle_rows) == 2
+    assert len(lifecycle_rows) == 3
     assert lifecycle_rows[0]["status"] == "REJECTED"
-    assert lifecycle_rows[1]["status"] == "CLOSED"
-    assert lifecycle_rows[1]["prior_terminal_status"] == "REJECTED"
-    assert lifecycle_rows[1]["reconciliation_source"] == "order_placed"
+    assert lifecycle_rows[1]["event_type"] == "TRADE_LIFECYCLE_ORDERED"
+    assert lifecycle_rows[1]["status"] == "ORDERED"
+    assert lifecycle_rows[1]["order_id"] == "8617505424"
+    assert lifecycle_rows[2]["status"] == "CLOSED"
+    assert lifecycle_rows[2]["prior_terminal_status"] == "REJECTED"
+    assert lifecycle_rows[2]["reconciliation_source"] == "order_placed"
     assert not any(row["status"] == "ORPHANED_TTL" for row in lifecycle_rows)
 
     shadow_rows = _read_jsonl(journal_path)
-    reject_events = [r for r in shadow_rows if r["event_name"] == "EVT:TRADE_INTENT_REJECTED"]
-    fill_events = [r for r in shadow_rows if r["event_name"] == "EVT:TRADE_EXECUTED"]
+    reject_events = [r for r in shadow_rows if r["event_name"]
+                     == "EVT:TRADE_INTENT_REJECTED"]
+    fill_events = [r for r in shadow_rows if r["event_name"]
+                   == "EVT:TRADE_EXECUTED"]
     assert len(reject_events) == 1
     assert len(fill_events) >= 1
     assert "reason" not in reject_events[0]["payload_fragment"]
