@@ -14,6 +14,14 @@ from apps.reference.domains.execution_position.utils import BoundedEventDeduper
 
 LOG = logging.getLogger(__name__)
 
+TERMINAL_IDENTITY_CACHE_SCHEMA_VERSION = "1.0.0"
+TERMINAL_IDENTITY_CACHE_STATE_TYPE = "execution_terminal_identity_cache_v1"
+TERMINAL_IDENTITY_CACHE_KIND = "exact_terminal_fill_identity_dedupe_seed"
+TERMINAL_IDENTITY_CACHE_TRUTH_CLASS = "cache_only"
+TERMINAL_IDENTITY_CACHE_DEFAULT_PATH = "logs/execution_terminal_identity_cache_v1.json"
+TERMINAL_IDENTITY_CACHE_LEGACY_PATH = "logs/execution_truth_warm_state_v1.json"
+TERMINAL_IDENTITY_CACHE_LEGACY_STATE_TYPE = "execution_truth_warm_state_v1"
+
 
 @dataclass(frozen=True)
 class TradeExecutedDecision:
@@ -72,6 +80,12 @@ class _WarmStateEntry:
 class WarmStateLoadResult:
     status: str
     path: Optional[str]
+    configured_path: Optional[str] = None
+    legacy_alias_path: Optional[str] = None
+    compatibility_mode: str = "configured_path"
+    truth_class: str = TERMINAL_IDENTITY_CACHE_TRUTH_CLASS
+    authoritative: bool = False
+    cache_kind: str = TERMINAL_IDENTITY_CACHE_KIND
     loaded_entries: int = 0
     skipped_expired: int = 0
     skipped_invalid: int = 0
@@ -87,7 +101,7 @@ class ExecutionTruthHardening:
     - shared dedupe seam for EVT:TRADE_EXECUTED
     - source-boundary repeated CMD:CLOSE suppression
     - non-CMD DEC:CLOSE execution-path suppression
-    - bounded warm-state continuity for recent exact terminal fill identities
+    - bounded cache-only continuity for recent exact terminal fill identities
 
     This object is intentionally bounded and fail-open. It is not a new SSOT.
     """
@@ -120,6 +134,21 @@ class ExecutionTruthHardening:
         self._warm_state_entries: OrderedDict[str, _WarmStateEntry] = OrderedDict()
         self._warm_seeded_fill_keys: set[str] = set()
         self._lock = RLock()
+        self._last_warm_state_load_result = WarmStateLoadResult(
+            status="not_attempted",
+            path=str(self.warm_state_storage_path) if self.warm_state_storage_path else None,
+            configured_path=str(self.warm_state_storage_path) if self.warm_state_storage_path else None,
+            legacy_alias_path=(
+                str(self._legacy_warm_state_alias_path())
+                if self._legacy_warm_state_alias_path() is not None
+                else None
+            ),
+            compatibility_mode=(
+                "legacy_configured_path"
+                if self._uses_legacy_warm_state_path()
+                else "configured_path"
+            ),
+        )
 
     def evaluate_trade_executed(
         self,
@@ -255,38 +284,82 @@ class ExecutionTruthHardening:
                 self._close_guard.pop(storage_key, None)
 
     def load_warm_state(self) -> WarmStateLoadResult:
+        configured_path = self.warm_state_storage_path
+        configured_path_text = str(configured_path) if configured_path else None
+        legacy_alias_path = self._legacy_warm_state_alias_path()
+        legacy_alias_text = str(legacy_alias_path) if legacy_alias_path else None
         if not self._warm_state_active():
-            return WarmStateLoadResult(
+            result = WarmStateLoadResult(
                 status="disabled",
-                path=str(self.warm_state_storage_path) if self.warm_state_storage_path else None,
+                path=configured_path_text,
+                configured_path=configured_path_text,
+                legacy_alias_path=legacy_alias_text,
+                compatibility_mode="disabled",
             )
+            self._last_warm_state_load_result = result
+            return result
 
-        path = self.warm_state_storage_path
+        path = configured_path
         assert path is not None
 
-        if not path.exists():
-            return WarmStateLoadResult(status="empty", path=str(path))
+        load_path = path
+        compatibility_mode = (
+            "legacy_configured_path"
+            if self._uses_legacy_warm_state_path()
+            else "configured_path"
+        )
+        if not load_path.exists() and legacy_alias_path is not None and legacy_alias_path.exists():
+            load_path = legacy_alias_path
+            compatibility_mode = "legacy_path_alias"
+        elif not load_path.exists():
+            result = WarmStateLoadResult(
+                status="empty",
+                path=str(path),
+                configured_path=str(path),
+                legacy_alias_path=legacy_alias_text,
+                compatibility_mode=compatibility_mode,
+            )
+            self._last_warm_state_load_result = result
+            return result
 
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(load_path, "r", encoding="utf-8") as fh:
                 payload = json.load(fh)
         except FileNotFoundError:
-            return WarmStateLoadResult(status="empty", path=str(path))
-        except Exception as exc:
-            LOG.warning("Execution truth warm-state load failed: %s", exc)
-            return WarmStateLoadResult(
-                status="load_failed",
+            result = WarmStateLoadResult(
+                status="empty",
                 path=str(path),
+                configured_path=str(path),
+                legacy_alias_path=legacy_alias_text,
+                compatibility_mode=compatibility_mode,
+            )
+            self._last_warm_state_load_result = result
+            return result
+        except Exception as exc:
+            LOG.warning("Execution terminal identity cache load failed: %s", exc)
+            result = WarmStateLoadResult(
+                status="load_failed",
+                path=str(load_path),
+                configured_path=str(path),
+                legacy_alias_path=legacy_alias_text,
+                compatibility_mode=compatibility_mode,
                 failure=f"{type(exc).__name__}:{exc}",
             )
+            self._last_warm_state_load_result = result
+            return result
 
         raw_entries = payload.get("entries")
         if not isinstance(raw_entries, list):
-            return WarmStateLoadResult(
+            result = WarmStateLoadResult(
                 status="load_failed",
-                path=str(path),
+                path=str(load_path),
+                configured_path=str(path),
+                legacy_alias_path=legacy_alias_text,
+                compatibility_mode=compatibility_mode,
                 failure="ValueError:invalid_warm_state_entries",
             )
+            self._last_warm_state_load_result = result
+            return result
 
         loaded = 0
         skipped_expired = 0
@@ -342,14 +415,19 @@ class ExecutionTruthHardening:
             self._prune_warm_state(now_ms)
             self._fill_deduper.prune(now_ms)
 
-        return WarmStateLoadResult(
+        result = WarmStateLoadResult(
             status="loaded" if loaded > 0 else "empty",
-            path=str(path),
+            path=str(load_path),
+            configured_path=str(path),
+            legacy_alias_path=legacy_alias_text,
+            compatibility_mode=compatibility_mode,
             loaded_entries=loaded,
             skipped_expired=skipped_expired,
             skipped_invalid=skipped_invalid,
             skipped_non_exact=skipped_non_exact,
         )
+        self._last_warm_state_load_result = result
+        return result
 
     def _warm_state_active(self) -> bool:
         return (
@@ -357,6 +435,37 @@ class ExecutionTruthHardening:
             and self.warm_state_storage_path is not None
             and self.warm_state_max_entries > 0
         )
+
+    def _uses_legacy_warm_state_path(self) -> bool:
+        return (
+            self.warm_state_storage_path is not None
+            and self.warm_state_storage_path.name == Path(TERMINAL_IDENTITY_CACHE_LEGACY_PATH).name
+        )
+
+    def _legacy_warm_state_alias_path(self) -> Optional[Path]:
+        if self.warm_state_storage_path is None or self._uses_legacy_warm_state_path():
+            return None
+        if self.warm_state_storage_path.name != Path(TERMINAL_IDENTITY_CACHE_DEFAULT_PATH).name:
+            return None
+        legacy_path = self.warm_state_storage_path.with_name(
+            Path(TERMINAL_IDENTITY_CACHE_LEGACY_PATH).name
+        )
+        return legacy_path if legacy_path != self.warm_state_storage_path else None
+
+    def cache_status_snapshot(self) -> dict[str, Any]:
+        result = self._last_warm_state_load_result
+        return {
+            "legacy_config_key": "event_dedup.warm_state",
+            "truth_class": TERMINAL_IDENTITY_CACHE_TRUTH_CLASS,
+            "authoritative": False,
+            "cache_kind": TERMINAL_IDENTITY_CACHE_KIND,
+            "status": str(result.status or "not_attempted"),
+            "configured_path": result.configured_path,
+            "active_path": result.path,
+            "legacy_alias_path": result.legacy_alias_path,
+            "compatibility_mode": str(result.compatibility_mode or "configured_path"),
+            "entries_loaded": int(result.loaded_entries),
+        }
 
     def _remember_exact_terminal_identity_unlocked(
         self,
@@ -395,11 +504,19 @@ class ExecutionTruthHardening:
         path = self.warm_state_storage_path
         assert path is not None
         payload = {
-            "schema_version": "1.0.0",
-            "state_type": "execution_truth_warm_state_v1",
+            "schema_version": TERMINAL_IDENTITY_CACHE_SCHEMA_VERSION,
+            "state_type": TERMINAL_IDENTITY_CACHE_STATE_TYPE,
+            "truth_class": TERMINAL_IDENTITY_CACHE_TRUTH_CLASS,
+            "authoritative": False,
+            "cache_kind": TERMINAL_IDENTITY_CACHE_KIND,
             "generated_at_ms": int(now_ms),
             "retention_ms": int(self.fill_dedup_ttl_ms),
             "max_entries": int(self.warm_state_max_entries),
+            "compatibility": {
+                "legacy_state_type": TERMINAL_IDENTITY_CACHE_LEGACY_STATE_TYPE,
+                "legacy_storage_path_alias": TERMINAL_IDENTITY_CACHE_LEGACY_PATH,
+                "legacy_config_key": "event_dedup.warm_state",
+            },
             "entries": [
                 {
                     "key": entry.key,
@@ -421,7 +538,7 @@ class ExecutionTruthHardening:
             )
             tmp.replace(path)
         except Exception as exc:
-            LOG.warning("Execution truth warm-state persist failed: %s", exc)
+            LOG.warning("Execution terminal identity cache persist failed: %s", exc)
 
     def _prune_warm_state(self, now_ms: int) -> None:
         while self._warm_state_entries:
@@ -696,28 +813,30 @@ def attach_execution_truth_hardening(
                 truth_owner="ExecutionTruthHardening",
                 payload={
                     "restore_marker": True,
-                    "fill_dedup_persistence": (
-                        "restart_seeded_exact_terminal_fill_identity"
+                    "terminal_identity_cache_truth_class": TERMINAL_IDENTITY_CACHE_TRUTH_CLASS,
+                    "terminal_identity_cache_authoritative": False,
+                    "terminal_identity_cache_persistence": (
+                        TERMINAL_IDENTITY_CACHE_KIND
                         if is_bus_owner and hardening._warm_state_active()
                         else "process_local_only"
                     ),
                     "close_guard_persistence": "process_local_only",
                     "restart_behavior": (
-                        "state_reset_before_warm_state_seed"
+                        "state_reset_before_cache_seed"
                         if is_bus_owner and hardening._warm_state_active()
                         else "state_reset_on_attach"
                     ),
                     "fill_dedup_entries": 0,
                     "close_guard_entries": 0,
-                    "warm_state_owner": "FSMCore" if is_bus_owner else "non_bus_owner",
+                    "cache_owner": "FSMCore" if is_bus_owner else "non_bus_owner",
                 },
                 restore_marker=True,
                 notes=[
                     "process_local_only_state",
                     (
-                        "warm_state_seed_capable"
+                        "cache_seed_capable"
                         if is_bus_owner and hardening._warm_state_active()
-                        else "warm_state_not_loaded_here"
+                        else "cache_seed_not_loaded_here"
                     ),
                     "restart_reset_explicit",
                 ],
@@ -769,7 +888,7 @@ def resolve_execution_truth_hardening_config(config: Any) -> Optional[dict[str, 
         warm_state_storage_path = getattr(
             warm_state_cfg,
             "storage_path",
-            "logs/execution_truth_warm_state_v1.json",
+            TERMINAL_IDENTITY_CACHE_DEFAULT_PATH,
         )
         warm_state_max_entries = _coerce_int(getattr(warm_state_cfg, "max_entries", None))
         if warm_state_max_entries is None:
@@ -801,15 +920,15 @@ def _record_warm_state_load_outcome(
 ) -> None:
     if load_result.status == "loaded":
         LOG.info(
-            "Execution truth warm-state loaded: entries=%s path=%s",
+            "Execution terminal identity cache loaded: entries=%s path=%s",
             load_result.loaded_entries,
             load_result.path,
         )
     elif load_result.status == "empty":
-        LOG.info("Execution truth warm-state empty start: path=%s", load_result.path)
+        LOG.info("Execution terminal identity cache empty start: path=%s", load_result.path)
     elif load_result.status == "load_failed":
         LOG.warning(
-            "Execution truth warm-state load failed: path=%s failure=%s",
+            "Execution terminal identity cache load failed: path=%s failure=%s",
             load_result.path,
             load_result.failure,
         )
@@ -820,14 +939,20 @@ def _record_warm_state_load_outcome(
     try:
         if load_result.status == "loaded":
             journal.record_transition(
-                event_name="RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED",
+                event_name="CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED",
                 source_component="execution_truth_hardening",
-                source_path="restore:execution_truth_warm_state",
-                event_origin_type="restore",
+                source_path="cache:execution_terminal_identity_cache",
+                event_origin_type="cache",
                 truth_owner="ExecutionTruthHardening",
-                restore_marker=True,
+                restore_marker=False,
                 payload={
-                    "storage_path": load_result.path,
+                    "truth_class": load_result.truth_class,
+                    "authoritative": load_result.authoritative,
+                    "cache_kind": load_result.cache_kind,
+                    "configured_path": load_result.configured_path,
+                    "active_path": load_result.path,
+                    "legacy_alias_path": load_result.legacy_alias_path,
+                    "compatibility_mode": load_result.compatibility_mode,
                     "entries_loaded": load_result.loaded_entries,
                     "skipped_expired": load_result.skipped_expired,
                     "skipped_invalid": load_result.skipped_invalid,
@@ -835,40 +960,52 @@ def _record_warm_state_load_outcome(
                     "retention_ms": hardening.fill_dedup_ttl_ms,
                     "max_entries": hardening.warm_state_max_entries,
                 },
-                notes=["warm_state_seed_loaded", "terminal_fill_exact_only"],
+                notes=["cache_only_seed_loaded", "terminal_fill_exact_only"],
             )
         elif load_result.status == "empty":
             journal.record_transition(
-                event_name="RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
+                event_name="CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY",
                 source_component="execution_truth_hardening",
-                source_path="restore:execution_truth_warm_state",
-                event_origin_type="restore",
+                source_path="cache:execution_terminal_identity_cache",
+                event_origin_type="cache",
                 truth_owner="ExecutionTruthHardening",
-                restore_marker=True,
+                restore_marker=False,
                 payload={
-                    "storage_path": load_result.path,
+                    "truth_class": load_result.truth_class,
+                    "authoritative": load_result.authoritative,
+                    "cache_kind": load_result.cache_kind,
+                    "configured_path": load_result.configured_path,
+                    "active_path": load_result.path,
+                    "legacy_alias_path": load_result.legacy_alias_path,
+                    "compatibility_mode": load_result.compatibility_mode,
                     "entries_loaded": 0,
                     "retention_ms": hardening.fill_dedup_ttl_ms,
                     "max_entries": hardening.warm_state_max_entries,
                 },
-                notes=["warm_state_empty_start", "terminal_fill_exact_only"],
+                notes=["cache_only_empty_start", "terminal_fill_exact_only"],
             )
         elif load_result.status == "load_failed":
             journal.record_transition(
-                event_name="RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED",
+                event_name="CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED",
                 source_component="execution_truth_hardening",
-                source_path="restore:execution_truth_warm_state",
-                event_origin_type="restore",
+                source_path="cache:execution_terminal_identity_cache",
+                event_origin_type="cache",
                 truth_owner="ExecutionTruthHardening",
-                restore_marker=True,
+                restore_marker=False,
                 payload={
-                    "storage_path": load_result.path,
+                    "truth_class": load_result.truth_class,
+                    "authoritative": load_result.authoritative,
+                    "cache_kind": load_result.cache_kind,
+                    "configured_path": load_result.configured_path,
+                    "active_path": load_result.path,
+                    "legacy_alias_path": load_result.legacy_alias_path,
+                    "compatibility_mode": load_result.compatibility_mode,
                     "failure": load_result.failure,
                     "entries_loaded": 0,
                     "retention_ms": hardening.fill_dedup_ttl_ms,
                     "max_entries": hardening.warm_state_max_entries,
                 },
-                notes=["warm_state_load_failed", "fail_open_empty_seed"],
+                notes=["cache_only_load_failed", "fail_open_empty_seed"],
             )
     except Exception:
         LOG.debug("Failed to record warm-state load outcome", exc_info=True)

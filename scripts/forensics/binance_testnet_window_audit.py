@@ -1453,7 +1453,9 @@ def _build_report(
     validation_summary: Dict[str, Any],
 ) -> str:
     lines: List[str] = []
-    lines.append("# REPORT_BINANCE_TESTNET_TRADES_2026-03-25_2026-03-29")
+    lines.append(
+        f"# REPORT_BINANCE_TESTNET_TRADES_{requested_start_local.date().isoformat()}_{requested_end_local.date().isoformat()}"
+    )
     lines.append("")
     lines.append(f"Status: **{status}**")
     lines.append("")

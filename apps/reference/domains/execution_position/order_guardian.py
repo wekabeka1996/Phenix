@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
+from apps.reference.domains.execution_position.utils import coerce_exchange_bool
 from decimal import Decimal
 import threading
 
@@ -606,14 +607,12 @@ class OrderGuardian:
 
     @staticmethod
     def _is_guardian_client_order_id(client_order_id: Optional[str]) -> bool:
-        """Fallback heuristic to identify guardian-managed client order ids."""
-        if not client_order_id:
-            return False
+        """Fallback heuristic to identify guardian-managed client order ids.
 
-        cid = str(client_order_id).upper()
-        guardian_prefixes = ("SL-", "TP-", "RID-",
-                             "ENTRY-", "CLOSE-", "GUARD-")
-        return cid.startswith(guardian_prefixes)
+        PREFIX-CANON-01: Delegates to canonical prefix registry.
+        """
+        from apps.reference.domains.execution_position.utils import is_guardian_managed_prefix
+        return is_guardian_managed_prefix(client_order_id)
 
     async def link_existing_from_rest(self, symbol: str) -> None:
         """Builds mapping from /openOrders for existing orders"""
@@ -641,10 +640,8 @@ class OrderGuardian:
 
                 is_reduce_only_raw = order.get("reduceOnly", False)
                 is_close_position_raw = order.get("closePosition", False)
-                is_reduce_only = str(is_reduce_only_raw).lower() == "true" if isinstance(
-                    is_reduce_only_raw, str) else bool(is_reduce_only_raw)
-                is_close_position = str(is_close_position_raw).lower() == "true" if isinstance(
-                    is_close_position_raw, str) else bool(is_close_position_raw)
+                is_reduce_only = coerce_exchange_bool(is_reduce_only_raw)
+                is_close_position = coerce_exchange_bool(is_close_position_raw)
                 order_type = order.get("type", "")
 
                 guardian_like = self._is_guardian_client_order_id(
@@ -757,7 +754,8 @@ class OrderGuardian:
 
         if client_order_id:
             mapped_order_id = self.store.get(f"client:{client_order_id}")
-            mapped_order_id_str = str(mapped_order_id).strip() if mapped_order_id else ""
+            mapped_order_id_str = str(
+                mapped_order_id).strip() if mapped_order_id else ""
             if mapped_order_id_str:
                 mapped_meta = self.store.get(f"order:{mapped_order_id_str}")
                 mapped_context = _build_context(
@@ -1045,10 +1043,8 @@ class OrderGuardian:
                 client_order_id = order.get("clientOrderId")
                 is_reduce_only_raw = order.get("reduceOnly", False)
                 is_close_position_raw = order.get("closePosition", False)
-                is_reduce_only = str(is_reduce_only_raw).lower() == "true" if isinstance(
-                    is_reduce_only_raw, str) else bool(is_reduce_only_raw)
-                is_close_position = str(is_close_position_raw).lower() == "true" if isinstance(
-                    is_close_position_raw, str) else bool(is_close_position_raw)
+                is_reduce_only = coerce_exchange_bool(is_reduce_only_raw)
+                is_close_position = coerce_exchange_bool(is_close_position_raw)
                 guardian_like = self._is_guardian_client_order_id(
                     client_order_id)
 
@@ -1138,10 +1134,8 @@ class OrderGuardian:
                 order_type = order.get("type", "")
                 is_reduce_only_raw = order.get("reduceOnly", False)
                 is_close_position_raw = order.get("closePosition", False)
-                is_reduce_only = str(is_reduce_only_raw).lower() == "true" if isinstance(
-                    is_reduce_only_raw, str) else bool(is_reduce_only_raw)
-                is_close_position = str(is_close_position_raw).lower() == "true" if isinstance(
-                    is_close_position_raw, str) else bool(is_close_position_raw)
+                is_reduce_only = coerce_exchange_bool(is_reduce_only_raw)
+                is_close_position = coerce_exchange_bool(is_close_position_raw)
                 guardian_like = self._is_guardian_client_order_id(
                     client_order_id)
 
@@ -1299,16 +1293,8 @@ class OrderGuardian:
 
                 is_reduce_only_raw = order.get("reduceOnly", False)
                 is_close_position_raw = order.get("closePosition", False)
-                is_reduce_only = (
-                    str(is_reduce_only_raw).lower() == "true"
-                    if isinstance(is_reduce_only_raw, str)
-                    else bool(is_reduce_only_raw)
-                )
-                is_close_position = (
-                    str(is_close_position_raw).lower() == "true"
-                    if isinstance(is_close_position_raw, str)
-                    else bool(is_close_position_raw)
-                )
+                is_reduce_only = coerce_exchange_bool(is_reduce_only_raw)
+                is_close_position = coerce_exchange_bool(is_close_position_raw)
 
                 guardian_like = self._is_guardian_client_order_id(
                     client_order_id)

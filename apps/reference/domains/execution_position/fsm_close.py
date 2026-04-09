@@ -49,6 +49,9 @@ class CloseFlowFSM:
         self.state = CloseState.FLAT
         self.position_open_ts: float = 0.0
         self.position_active = False
+        self.last_close_reason: Optional[str] = None
+        self.last_close_qty: Optional[str] = None
+        self.last_close_symbol: Optional[str] = None
         self._shadow_journal: Optional[Any] = None
         self._metrics: Dict[str, int] = {
             "fsm_close_decisions_total": 0,
@@ -66,7 +69,8 @@ class CloseFlowFSM:
             self.state = CloseState.OPENED
             self.position_active = True
             self.position_open_ts = float(
-                position_data["open_ts"] if "open_ts" in position_data else get_clock().now_sec()
+                position_data["open_ts"] if "open_ts" in position_data else get_clock(
+                ).now_sec()
             )
 
             print(
@@ -91,11 +95,15 @@ class CloseFlowFSM:
             DEC:CLOSE if rules trigger, None otherwise.
         """
         journal = get_shadow_journal(self)
-        before = snapshot_close_flow_state(self) if journal is not None else None
+        before = snapshot_close_flow_state(
+            self) if journal is not None else None
         result: Optional[Message] = None
         try:
             if msg.op == "CMD" and msg.verb == "CLOSE":
                 cmd_pld = msg.pld or {}
+                self.last_close_reason = cmd_pld.get("reason")
+                self.last_close_qty = cmd_pld.get("qty")
+                self.last_close_symbol = cmd_pld.get("symbol")
                 result = self._emit_close(
                     msg,
                     "MANUAL_CLOSE",
@@ -135,19 +143,36 @@ class CloseFlowFSM:
             return None
         finally:
             if journal is not None:
-                notes = []
+                after = snapshot_close_flow_state(self)
+                if result is not None:
+                    # OUTPUT record: authoritative state-change record
+                    journal.record_transition(
+                        event_name=f"{result.op}:{result.verb}",
+                        source_component="execution_position.fsm_close",
+                        source_path="execution:close_flow_output",
+                        event_origin_type="execution",
+                        truth_owner="CloseFlowFSM",
+                        payload=result.pld or {},
+                        rid=getattr(result, "rid", None) or getattr(
+                            msg, "rid", None),
+                        before=before,
+                        after=after,
+                        notes=[f"input={msg.op}:{msg.verb}"],
+                    )
+                # INPUT record: triggering event context only (no transition window)
+                notes = ["record_role=input"]
                 if result is not None:
                     notes.append(f"result={result.op}:{result.verb}")
                 journal.record_transition(
                     event_name=f"{msg.op}:{msg.verb}",
                     source_component="execution_position.fsm_close",
-                    source_path="execution:close_flow_handle",
+                    source_path="execution:close_flow_input",
                     event_origin_type="execution",
                     truth_owner="CloseFlowFSM",
                     payload=msg.pld or {},
                     rid=getattr(msg, "rid", None),
-                    before=before,
-                    after=snapshot_close_flow_state(self),
+                    before=None,
+                    after=None,
                     notes=notes,
                 )
 
@@ -170,6 +195,9 @@ class CloseFlowFSM:
         self._metrics["fsm_close_decisions_total"] += 1
 
         symbol = (msg.pld or {}).get("symbol")
+        self.last_close_reason = details.get("reason") or why
+        self.last_close_qty = details.get("qty")
+        self.last_close_symbol = symbol
 
         dec = Message(
             op="DEC",
@@ -200,3 +228,6 @@ class CloseFlowFSM:
         self.state = CloseState.FLAT
         self.position_open_ts = 0.0
         self.position_active = False
+        self.last_close_reason = None
+        self.last_close_qty = None
+        self.last_close_symbol = None

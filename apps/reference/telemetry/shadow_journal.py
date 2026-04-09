@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 from unittest import mock
 
+from apps.reference.core.time import get_clock
 from pydantic import BaseModel, ConfigDict, Field
 
 LOG = logging.getLogger(__name__)
@@ -23,11 +24,21 @@ DEFAULT_CRITICAL_EVENTS = (
     "EVT:STRATEGY_DECISION_BLOCKED",
     "CMD:OPEN",
     "DEC:OPEN",
+    "DEC:ADJUST",
+    "DEC:PLACE_ORDER",
+    "DEC:CANCEL_ORDER",
     "EVT:ORDER_ACK",
     "EVT:ORDER_REJECTED",
     "EVT:ORDER_STATE_CHANGED",
     "EVT:ORDER_PLACED",
     "EVT:TRADE_EXECUTED",
+    "EVT:MANAGE_SKIPPED",
+    "EVT:EXIT_MATCH_ATTEMPTED",
+    "EVT:EXIT_MATCH_FAILED",
+    "EVT:EXECUTION_GUARD_BLOCKED",
+    "EVT:EXECUTION_DIVERGENCE_DETECTED",
+    "EVT:EXECUTION_TIDY_PERFORMED",
+    "EVT:EXECUTION_CLOSE_RECONCILED",
     "DEC:BATCH",
     "CMD:CLOSE",
     "DEC:CLOSE",
@@ -42,14 +53,14 @@ DEFAULT_CRITICAL_EVENTS = (
     "ORDER_INDEX:CANCEL_RESERVATION",
     "HARDENING:TRADE_EXECUTED_SUPPRESSED",
     "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED",
-    "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT",
-    "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+    "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT",
+    "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
     "HARDENING:CMD_CLOSE_SUPPRESSED",
     "HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED",
     "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
-    "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED",
-    "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
-    "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED",
+    "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED",
+    "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY",
+    "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED",
 )
 
 
@@ -113,6 +124,19 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
         except Exception:
             return {}
     return {}
+
+
+def _is_placeholder_text(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() == "unknown"
+
+
+def _coerce_text(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text or _is_placeholder_text(text):
+        return None
+    return text
 
 
 def _read_bool(value: Any, default: bool) -> bool:
@@ -455,6 +479,41 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "context",
         "why_chain",
         "reason",
+        "trigger",
+        "block_reason",
+        "current_local_state",
+        "local_manage_state",
+        "portfolio_truth_state",
+        "portfolio_state",
+        "divergence_detected",
+        "has_active_lifecycle",
+        "closing_position",
+        "position_qty",
+        "position_entry_price",
+        "position_open_ts",
+        "entry_order_id",
+        "entry_client_order_id",
+        "sl_order_id",
+        "tp_order_id",
+        "tp1_order_id",
+        "tp2_order_id",
+        "matched",
+        "match_reason",
+        "inferred_role",
+        "normalized_client_order_id",
+        "local_expected_ids",
+        "local_expected_ids_after",
+        "position_qty_before",
+        "position_qty_after",
+        "partial_close",
+        "requested_qty",
+        "business_close_reconciled",
+        "tidy_reason",
+        "current_rid",
+        "tracked_rid",
+        "elapsed_sec",
+        "max_hold_sec",
+        "hold_duration_sec",
         "reject_reason",
         "reject_reason_normalized",
         "reject_reason_source",
@@ -479,6 +538,31 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "restore_marker",
     )
     fragment = {key: payload.get(key) for key in keep if key in payload}
+    # Strip bare "unknown" placeholders from attribution-critical fields.
+    # These fields drive forensic attribution; a bare "unknown" is a placeholder
+    # from upstream (e.g. missing close_reason), not a meaningful domain value.
+    # Legitimate compound values like "unknown_disappearance" survive because
+    # _is_placeholder_text only matches the exact word "unknown".
+    _attribution_critical = (
+        "reason",
+        "trigger",
+        "block_reason",
+        "reject_reason",
+        "reject_reason_normalized",
+        "reject_reason_source",
+        "reason_code",
+        "tidy_reason",
+        "match_reason",
+        "close_reason",
+        "side",
+        "source",
+        "strategy",
+        "strategy_id",
+        "inferred_role",
+    )
+    for field in _attribution_critical:
+        if field in fragment and _is_placeholder_text(fragment[field]):
+            fragment[field] = None
     return _safe_dict(_to_jsonable(fragment))
 
 
@@ -489,9 +573,10 @@ def extract_identity(
     data_ref: Optional[list[Any]] = None,
 ) -> Dict[str, Optional[str]]:
     order = _safe_dict(payload.get("order"))
-    symbol = payload.get("symbol") or payload.get("instrument")
-    resolved_rid = payload.get("rid") or rid
-    causation_rid = (
+    symbol = _coerce_text(payload.get("symbol") or payload.get(
+        "instrument") or order.get("symbol"))
+    resolved_rid = _coerce_text(payload.get("rid") or rid)
+    causation_rid = _coerce_text(
         payload.get("causation_rid")
         or payload.get("parent_rid")
         or order.get("parent_rid")
@@ -499,30 +584,32 @@ def extract_identity(
     if causation_rid is None and data_ref:
         for item in data_ref:
             if isinstance(item, str) and "rid" in item.lower():
-                causation_rid = item
+                causation_rid = _coerce_text(item)
                 break
-    qty = payload.get("qty") or payload.get("quantity") or order.get("qty")
-    price = payload.get("price") or order.get("price")
+    qty = _coerce_text(payload.get("qty") or payload.get(
+        "quantity") or order.get("qty") or order.get("quantity"))
+    price = _coerce_text(payload.get("price") or order.get("price"))
     return {
-        "rid": str(resolved_rid) if resolved_rid not in (None, "") else None,
-        "causation_rid": str(causation_rid) if causation_rid not in (None, "") else None,
-        "symbol": str(symbol) if symbol not in (None, "") else None,
+        "rid": resolved_rid,
+        "causation_rid": causation_rid,
+        "symbol": symbol,
         "order_id": _first_str(payload, "orderId", "order_id"),
         "client_order_id": _first_str(payload, "clientOrderId", "client_order_id"),
-        "position_id": _first_str(payload, "position_id"),
-        "lifecycle_id": _first_str(payload, "lifecycle_id", "idempotent_key"),
-        "strategy_id": _first_str(payload, "strategy_id", "strategy") or _first_str(order, "strategy_id"),
-        "side": _first_str(payload, "side"),
-        "qty": str(qty) if qty not in (None, "") else None,
-        "price": str(price) if price not in (None, "") else None,
+        "position_id": _first_str(payload, "positionId", "position_id"),
+        "lifecycle_id": _first_str(payload, "lifecycleId", "lifecycle_id", "idempotent_key"),
+        "strategy_id": _first_str(payload, "strategyId", "strategy_id", "strategy") or _first_str(order, "strategyId", "strategy_id"),
+        "side": _first_str(payload, "side") or _first_str(order, "side"),
+        "qty": qty,
+        "price": price,
     }
 
 
 def _first_str(mapping: Dict[str, Any], *keys: str) -> Optional[str]:
     for key in keys:
         value = mapping.get(key)
-        if value not in (None, ""):
-            return str(value)
+        coerced = _coerce_text(value)
+        if coerced is not None:
+            return coerced
     return None
 
 
@@ -558,6 +645,22 @@ def infer_emit_source(
         return ("execution_position", "execution:decision", "execution")
     if event_name.startswith("EVT:ORDER_") or event_name == "EVT:TRADE_EXECUTED":
         return ("execution_position", "execution:event_bus", "execution")
+    if event_name in (
+        "EVT:MANAGE_SKIPPED",
+        "EVT:EXIT_MATCH_ATTEMPTED",
+        "EVT:EXIT_MATCH_FAILED",
+    ):
+        return ("execution_position.fsm_manage", "execution:manage_flow", "execution")
+    if event_name in (
+        "EVT:EXECUTION_GUARD_BLOCKED",
+        "EVT:EXECUTION_DIVERGENCE_DETECTED",
+    ):
+        return ("execution_position.fsm", "execution:guard", "execution")
+    if event_name in (
+        "EVT:EXECUTION_TIDY_PERFORMED",
+        "EVT:EXECUTION_CLOSE_RECONCILED",
+    ):
+        return ("execution_position.order_guardian", "guardian:cleanup", "execution")
     return ("unknown", "unknown", "unknown")
 
 
@@ -654,26 +757,46 @@ def snapshot_execpos_state(fsm: Any, symbol: Optional[str]) -> Dict[str, Any]:
 
 
 def snapshot_manage_flow_state(flow: Any) -> Dict[str, Any]:
+    position_open_ts = getattr(flow, "position_open_ts", 0.0)
     return _safe_dict(_to_jsonable({
         "state": _state_value(flow),
         "symbol": getattr(flow, "symbol", None),
         "position_qty": getattr(flow, "position_qty", None),
+        "position_entry_price": getattr(flow, "position_entry_price", None),
+        "position_open_ts": position_open_ts,
+        "position_hold_sec": _position_hold_sec(position_open_ts),
         "position_side": getattr(flow, "position_side", None),
         "closing_position": getattr(flow, "_closing_position", False),
+        "closing_position_ts": getattr(flow, "_closing_position_ts", 0.0),
         "entry_order_id": getattr(flow, "entry_order_id", None),
         "entry_client_order_id": getattr(flow, "entry_client_order_id", None),
         "sl_order_id": getattr(flow, "sl_order_id", None),
         "tp_order_id": getattr(flow, "tp_order_id", None),
         "tp1_order_id": getattr(flow, "tp1_order_id", None),
         "tp2_order_id": getattr(flow, "tp2_order_id", None),
+        "sl_price": getattr(flow, "sl_price", None),
+        "tp_price": getattr(flow, "tp_price", None),
+        "tp1_price": getattr(flow, "tp1_price", None),
+        "tp2_price": getattr(flow, "tp2_price", None),
+        "partial_exit_pct": getattr(flow, "partial_exit_pct", None),
+        "trailing_activated": getattr(flow, "trailing_activated", False),
+        "last_trailing_ts": getattr(flow, "last_trailing_ts", 0.0),
+        "peak_price": getattr(flow, "peak_price", None),
     }))
 
 
 def snapshot_close_flow_state(flow: Any) -> Dict[str, Any]:
+    position_open_ts = getattr(flow, "position_open_ts", 0.0)
     return _safe_dict(_to_jsonable({
         "state": _state_value(flow),
         "position_active": getattr(flow, "position_active", False),
-        "position_open_ts": getattr(flow, "position_open_ts", 0.0),
+        "position_open_ts": position_open_ts,
+        "position_hold_sec": _position_hold_sec(position_open_ts),
+        "position_qty": getattr(flow, "position_qty", None),
+        "position_side": getattr(flow, "position_side", None),
+        "last_close_reason": getattr(flow, "last_close_reason", None),
+        "last_close_qty": getattr(flow, "last_close_qty", None),
+        "last_close_symbol": getattr(flow, "last_close_symbol", None),
     }))
 
 
@@ -695,3 +818,16 @@ def _state_value(owner: Any) -> Optional[str]:
         return None
     state = getattr(owner, "state", None)
     return str(getattr(state, "value", state)) if state is not None else None
+
+
+def _position_hold_sec(position_open_ts: Any) -> Optional[float]:
+    try:
+        open_ts = float(position_open_ts)
+    except Exception:
+        return None
+    if open_ts <= 0:
+        return None
+    try:
+        return max(0.0, float(get_clock().now_sec()) - open_ts)
+    except Exception:
+        return None

@@ -152,6 +152,29 @@ def _make_execpos_config(path: Path):
     return cfg
 
 
+def _trade_executed_payload(
+    order_id: str,
+    *,
+    client_order_id: str | None = None,
+    side: str = "buy",
+    quantity: str = "0.01",
+    price: str = "50000",
+) -> dict:
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": side,
+        "price": price,
+        "quantity": quantity,
+        "qty": quantity,
+        "venue": "binance",
+        "orderId": order_id,
+    }
+    if client_order_id is not None:
+        payload["clientOrderId"] = client_order_id
+        payload["client_order_id"] = client_order_id
+    return payload
+
+
 def test_shared_trade_executed_dedupe_suppresses_cross_origin_duplicate_before_callbacks(tmp_path):
     path = tmp_path / "journal.jsonl"
     config = ConfigLoader().load_config()
@@ -169,15 +192,10 @@ def test_shared_trade_executed_dedupe_suppresses_cross_origin_duplicate_before_c
     seen = []
     fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
 
-    payload = {
-        "symbol": "BTCUSDT",
-        "orderId": "12345",
-        "clientOrderId": "ENTRY-BTCUSDT-1",
-        "client_order_id": "ENTRY-BTCUSDT-1",
-        "quantity": "0.01",
-        "qty": "0.01",
-        "price": "50000",
-    }
+    payload = _trade_executed_payload(
+        "12345",
+        client_order_id="ENTRY-BTCUSDT-1",
+    )
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
     fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="polling_fill", rid="rid-1")
@@ -208,22 +226,16 @@ def test_shared_trade_executed_dedupe_allows_distinct_orders(tmp_path):
     seen = []
     fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
 
-    payload_a = {
-        "symbol": "BTCUSDT",
-        "orderId": "12345",
-        "clientOrderId": "ENTRY-BTCUSDT-1",
-        "quantity": "0.01",
-        "qty": "0.01",
-        "price": "50000",
-    }
-    payload_b = {
-        "symbol": "BTCUSDT",
-        "orderId": "12346",
-        "clientOrderId": "ENTRY-BTCUSDT-2",
-        "quantity": "0.02",
-        "qty": "0.02",
-        "price": "50010",
-    }
+    payload_a = _trade_executed_payload(
+        "12345",
+        client_order_id="ENTRY-BTCUSDT-1",
+    )
+    payload_b = _trade_executed_payload(
+        "12346",
+        client_order_id="ENTRY-BTCUSDT-2",
+        quantity="0.02",
+        price="50010",
+    )
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=payload_a, why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
     fsm.emit("EVT:TRADE_EXECUTED", payload=payload_b, why="polling_fill", rid="rid-2")

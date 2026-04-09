@@ -49,7 +49,13 @@ class DummyManageFlow:
         return self._active
 
 
-def _sidecar_config(tmp_path: Path, *, mode: str = "shadow", recommend_soft_close_at: float = 0.70) -> PositionPolicySidecarConfig:
+def _sidecar_config(
+    tmp_path: Path,
+    *,
+    mode: str = "shadow",
+    recommend_soft_close_at: float = 0.70,
+    profitability_guard_enabled: bool = True,
+) -> PositionPolicySidecarConfig:
     return PositionPolicySidecarConfig.model_validate(
         {
             "mode": mode,
@@ -67,7 +73,7 @@ def _sidecar_config(tmp_path: Path, *, mode: str = "shadow", recommend_soft_clos
                 "min_regime_updates": 1,
             },
             "profitability_guard": {
-                "enabled": True,
+                "enabled": profitability_guard_enabled,
                 "min_unrealized_pnl_pct": 0.25,
                 "min_unrealized_pnl_usdt": 0.0,
             },
@@ -178,6 +184,105 @@ def test_position_policy_sidecar_recommends_and_skips_action_in_enable_mode(tmp_
         tmp_path / "trade_lifecycle.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert any(
         '"record_kind": "position_policy_sidecar"' in line for line in log_lines)
+
+
+def test_position_policy_sidecar_does_not_recommend_below_threshold(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow()
+    now_ms = get_clock().now_ms()
+    sidecar = PositionPolicySidecar(
+        config=_sidecar_config(
+            tmp_path,
+            mode="shadow",
+            profitability_guard_enabled=False,
+        ),
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions_last_ts_ms=now_ms,
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "0.10",
+                    "entryPrice": "100.0",
+                    "markPrice": "100.0",
+                    "unrealizedProfit": "0.0",
+                }
+            ],
+        )
+    )
+    sidecar.on_features_calculated(
+        _event(
+            symbol="BTCUSDT",
+            ts_ms=now_ms + 1,
+            orderbook_imbalance=0.0,
+            signal_score=0.0,
+        )
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2,
+               regime="TREND_DOWN", confidence=0.10)
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_EVALUATED" in _topics(bus)
+    assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" not in _topics(bus)
+
+    evaluated = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_EVALUATED")[-1]
+    assert evaluated["score_snapshot"]["soft_close_pressure"] == 0.3
+
+
+def test_position_policy_sidecar_recommends_at_threshold_boundary(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow()
+    now_ms = get_clock().now_ms()
+    sidecar = PositionPolicySidecar(
+        config=_sidecar_config(
+            tmp_path,
+            mode="shadow",
+            recommend_soft_close_at=0.30,
+            profitability_guard_enabled=False,
+        ),
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions_last_ts_ms=now_ms,
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "0.10",
+                    "entryPrice": "100.0",
+                    "markPrice": "100.0",
+                    "unrealizedProfit": "0.0",
+                }
+            ],
+        )
+    )
+    sidecar.on_features_calculated(
+        _event(
+            symbol="BTCUSDT",
+            ts_ms=now_ms + 1,
+            orderbook_imbalance=0.0,
+            signal_score=0.0,
+        )
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2,
+               regime="TREND_DOWN", confidence=0.10)
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_EVALUATED" in _topics(bus)
+    assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" in _topics(bus)
+
+    recommended = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED")[-1]
+    assert recommended["score_snapshot"]["soft_close_pressure"] == 0.3
 
 
 def test_position_policy_sidecar_profitability_guard_suppresses(tmp_path: Path) -> None:

@@ -1,5 +1,5 @@
 basis_tf_sec: 300       # Bar-Only updates (5 min)
-uncertain_cutoff: 0.22  #  : 0.35  0.22 (  )
+uncertain_cutoff: 0.15  # P0-BUY-RECOVERY: was 0.22 → demoted marginal regimes to UNCERTAIN; lowered to match confidence_min floor (0.15) to reduce overblocking
 
 # DM-CRITICAL-PATCHES-02: Liveness guard factor
 # If no heartbeat received within (basis_tf_sec * liveness_factor) ms, block trading.
@@ -16,7 +16,7 @@ basis_import_buffer: 20
 # FIX-HYST-01: Increased from 35 bars (25 min confirmation at 5m basis).
 # Prevents rapid regime flipping that causes mass CANCEL_STALE_REGIME.
 # Original: 3 bars (15 min)  too responsive, median regime life = 5 min.
-hysteresis_bars: 3
+hysteresis_bars: 2  # P0-BUY-RECOVERY: was 3 → each regime transition produced 2 UNCERTAIN carry bars (dominant driver of 32-44% UNCERTAIN rate); reduced to 2 (1 carry bar per transition)
 vol_slope_gate_enabled: true
 vol_slope_gate_eps: -0.005
 vol_slope_gate_confirm_bars: 5

@@ -25,6 +25,15 @@
     "portfolio_truth_state": { "type": "string", "minLength": 1 },
     "portfolio_state": { "type": "string", "minLength": 1 },
     "divergence_detected": { "type": "boolean" },
+    "has_active_lifecycle": { "type": "boolean" },
+    "closing_position": { "type": "boolean" },
+    "position_qty": { "type": ["string", "null"] },
+    "entry_order_id": { "type": ["string", "null"] },
+    "entry_client_order_id": { "type": ["string", "null"] },
+    "sl_order_id": { "type": ["string", "null"] },
+    "tp_order_id": { "type": ["string", "null"] },
+    "tp1_order_id": { "type": ["string", "null"] },
+    "tp2_order_id": { "type": ["string", "null"] },
     "why": { "type": "string", "maxLength": 80 }
   }
 }

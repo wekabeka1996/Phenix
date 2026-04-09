@@ -20,6 +20,7 @@ from apps.reference.domains.execution_position.truth_hardening import (
     build_position_signature,
     get_execution_truth_hardening,
 )
+from apps.reference.domains.execution_position.utils import classify_client_order_id
 from apps.reference.utils.accessors import aget, dget
 
 if TYPE_CHECKING:
@@ -486,17 +487,10 @@ class EPEventHandlers:
         client_order_id = payload.get(
             "clientOrderId") or payload.get("client_order_id")
 
-        # Infer order_kind from clientOrderId prefix
-        _coid = str(payload.get("clientOrderId") or "").upper()
-        if _coid.startswith("ENTRY-"):
-            order_kind = "ENTRY"
-        elif _coid.startswith("SL-"):
-            order_kind = "SL"
-        elif _coid.startswith("TP-"):
-            order_kind = "TP"
-        elif _coid.startswith("CLOSE-"):
-            order_kind = "CLOSE"
-        else:
+        # PREFIX-CANON-01: Classify order role from canonical prefix registry
+        _coid = str(payload.get("clientOrderId") or "")
+        order_kind = classify_client_order_id(_coid)
+        if order_kind == "UNKNOWN":
             order_kind = payload.get("close_reason", "UNKNOWN")
 
         if not order_id or not symbol or filled_qty is None:
@@ -599,7 +593,7 @@ class EPEventHandlers:
                 LOG.error(f"Failed to write ORDER_FILLED to order_logger: {e}")
 
         # Cache realized PnL and close_reason per symbol for POSITION_CLOSED logging
-        if symbol and order_kind in ("SL", "TP", "CLOSE", "MARKET_FILLED"):
+        if symbol and order_kind in ("SL", "TP", "TP1", "TP2", "BHSL", "BHTP", "CLOSE", "MARKET_FILLED"):
             try:
                 self._fsm._last_realized_pnl_by_symbol[symbol] = float(
                     payload.get("realizedPnl") or 0.0)

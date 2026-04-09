@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.domains.execution_position.bracket_math import compute_bracket_targets
 from apps.reference.domains.execution_position.utils import (
     generate_client_order_id,
     quantize_stop_price,
@@ -391,7 +392,7 @@ class OpenExecutor:
                 LOG.warning(
                     f"[{symbol}] Invalid explicit target_price '{explicit_tp_raw}': {e}")
 
-        sl_pct = tp_low_ratio = tp_high_ratio = None
+        sl_pct = tp_low_ratio = None
         config_loaded = False
 
         if explicit_sl is None or explicit_tp is None:
@@ -413,7 +414,6 @@ class OpenExecutor:
                     raise ValueError(
                         f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required")
                 tp_low_ratio = tp_cfg.tp_low_ratio
-                tp_high_ratio = getattr(tp_cfg, "tp_high_ratio", None)
                 config_loaded = True
             except (ValueError, AttributeError) as cfg_err:
                 if explicit_sl is None or explicit_tp is None:
@@ -423,14 +423,19 @@ class OpenExecutor:
                     return None, None, None, None
 
         mark_dec = Decimal(str(mark))
+        fallback_targets = None
+        if config_loaded and sl_pct is not None and tp_low_ratio is not None:
+            fallback_targets = compute_bracket_targets(
+                reference_price=mark_dec,
+                position_side=side,
+                sl_pct=sl_pct,
+                tp_low_ratio=tp_low_ratio,
+            )
 
         if explicit_sl is not None:
             sl, sl_source = explicit_sl, "STRATEGY"
-        elif config_loaded and sl_pct is not None:
-            sl_pct_dec = Decimal(str(sl_pct))
-            sl = mark_dec * \
-                (Decimal("1") - sl_pct_dec) if side == "BUY" else mark_dec * \
-                (Decimal("1") + sl_pct_dec)
+        elif fallback_targets is not None:
+            sl = fallback_targets.sl_price
             sl_source = "CONFIG_FALLBACK"
         else:
             LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No SL source available")
@@ -438,11 +443,8 @@ class OpenExecutor:
 
         if explicit_tp is not None:
             tp, tp_source = explicit_tp, "STRATEGY"
-        elif config_loaded and sl_pct is not None and tp_low_ratio is not None:
-            sl_pct_dec = Decimal(str(sl_pct))
-            tp_low_ratio_dec = Decimal(str(tp_low_ratio))
-            tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec) if side == "BUY" else mark_dec * (
-                Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
+        elif fallback_targets is not None:
+            tp = fallback_targets.tp1_price
             tp_source = "CONFIG_FALLBACK"
         else:
             LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No TP source available")

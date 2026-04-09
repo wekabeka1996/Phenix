@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 from apps.reference.config_loader import ConfigLoader
@@ -28,17 +29,38 @@ def _make_config(journal_path: Path, warm_state_path: Path):
     return config
 
 
+def _trade_executed_payload(
+    order_id: str,
+    *,
+    client_order_id: str | None = None,
+    side: str = "buy",
+    price: str = "50000",
+    quantity: str = "0.01",
+) -> dict:
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": side,
+        "price": price,
+        "quantity": quantity,
+        "qty": quantity,
+        "venue": "binance",
+        "orderId": order_id,
+    }
+    if client_order_id is not None:
+        payload["clientOrderId"] = client_order_id
+        payload["client_order_id"] = client_order_id
+    return payload
+
+
 def test_restart_seeded_warm_state_suppresses_exact_terminal_fill_after_restart(tmp_path):
     journal_path = tmp_path / "journal.jsonl"
     warm_state_path = tmp_path / "warm_state.json"
     config = _make_config(journal_path, warm_state_path)
 
-    payload = {
-        "symbol": "BTCUSDT",
-        "orderId": "7777",
-        "clientOrderId": "ENTRY-BTCUSDT-WS-1",
-        "client_order_id": "ENTRY-BTCUSDT-WS-1",
-    }
+    payload = _trade_executed_payload(
+        "7777",
+        client_order_id="ENTRY-BTCUSDT-WS-1",
+    )
 
     fsm_a = FSMCore()
     attach_shadow_journal(fsm_a, config)
@@ -60,14 +82,19 @@ def test_restart_seeded_warm_state_suppresses_exact_terminal_fill_after_restart(
 
     with open(warm_state_path, "r", encoding="utf-8") as fh:
         state = json.load(fh)
+    assert state["state_type"] == "execution_terminal_identity_cache_v1"
+    assert state["truth_class"] == "cache_only"
+    assert state["authoritative"] is False
+    assert state["cache_kind"] == "exact_terminal_fill_identity_dedupe_seed"
+    assert state["compatibility"]["legacy_state_type"] == "execution_truth_warm_state_v1"
     assert len(state["entries"]) == 1
     assert state["entries"][0]["order_id"] == "7777"
 
     records = _read_jsonl(journal_path)
-    assert len([r for r in records if r["event_name"] == "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY"]) == 1
-    assert len([r for r in records if r["event_name"] == "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED"]) == 1
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS"]) == 1
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT"]) == 1
+    assert len([r for r in records if r["event_name"] == "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY"]) == 1
+    assert len([r for r in records if r["event_name"] == "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED"]) == 1
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS"]) == 1
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT"]) == 1
     assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]) == 1
 
 
@@ -76,18 +103,15 @@ def test_restart_seeded_warm_state_allows_distinct_exact_terminal_fill_after_res
     warm_state_path = tmp_path / "warm_state.json"
     config = _make_config(journal_path, warm_state_path)
 
-    payload_a = {
-        "symbol": "BTCUSDT",
-        "orderId": "7777",
-        "clientOrderId": "ENTRY-BTCUSDT-WS-A",
-        "client_order_id": "ENTRY-BTCUSDT-WS-A",
-    }
-    payload_b = {
-        "symbol": "BTCUSDT",
-        "orderId": "7788",
-        "clientOrderId": "ENTRY-BTCUSDT-WS-B",
-        "client_order_id": "ENTRY-BTCUSDT-WS-B",
-    }
+    payload_a = _trade_executed_payload(
+        "7777",
+        client_order_id="ENTRY-BTCUSDT-WS-A",
+    )
+    payload_b = _trade_executed_payload(
+        "7788",
+        client_order_id="ENTRY-BTCUSDT-WS-B",
+        price="50010",
+    )
 
     fsm_a = FSMCore()
     attach_shadow_journal(fsm_a, config)
@@ -103,8 +127,8 @@ def test_restart_seeded_warm_state_allows_distinct_exact_terminal_fill_after_res
 
     assert seen_b == ["7788"]
     records = _read_jsonl(journal_path)
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT"]) == 0
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS"]) == 2
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT"]) == 0
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS"]) == 2
 
 
 def test_degraded_identity_is_not_seeded_and_remains_visible_after_restart(tmp_path):
@@ -112,7 +136,7 @@ def test_degraded_identity_is_not_seeded_and_remains_visible_after_restart(tmp_p
     warm_state_path = tmp_path / "warm_state.json"
     config = _make_config(journal_path, warm_state_path)
 
-    payload = {"symbol": "BTCUSDT", "orderId": "8899"}
+    payload = _trade_executed_payload("8899")
 
     fsm_a = FSMCore()
     attach_shadow_journal(fsm_a, config)
@@ -134,8 +158,8 @@ def test_degraded_identity_is_not_seeded_and_remains_visible_after_restart(tmp_p
 
     records = _read_jsonl(journal_path)
     assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED"]) == 2
-    assert len([r for r in records if r["event_name"] == "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY"]) == 2
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT"]) == 0
+    assert len([r for r in records if r["event_name"] == "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY"]) == 2
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT"]) == 0
 
 
 def test_corrupt_warm_state_load_is_observable_and_fail_open(tmp_path):
@@ -151,19 +175,63 @@ def test_corrupt_warm_state_load_is_observable_and_fail_open(tmp_path):
     fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
     fsm.emit(
         "EVT:TRADE_EXECUTED",
-        payload={
-            "symbol": "BTCUSDT",
-            "orderId": "9900",
-            "clientOrderId": "ENTRY-BTCUSDT-CORRUPT",
-            "client_order_id": "ENTRY-BTCUSDT-CORRUPT",
-        },
+        payload=_trade_executed_payload(
+            "9900",
+            client_order_id="ENTRY-BTCUSDT-CORRUPT",
+        ),
         why="WS_ORDER_UPDATE_FILLED",
         rid="rid-corrupt",
     )
 
     assert seen == ["9900"]
     records = _read_jsonl(journal_path)
-    failed = [r for r in records if r["event_name"] == "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED"]
+    failed = [r for r in records if r["event_name"] == "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED"]
     assert len(failed) == 1
-    assert failed[0]["restore_marker"] is True
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS"]) == 1
+    assert failed[0]["restore_marker"] is False
+    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS"]) == 1
+
+
+def test_legacy_warm_state_path_alias_is_loaded_as_cache_only_compatibility(tmp_path):
+    journal_path = tmp_path / "journal.jsonl"
+    configured_path = tmp_path / "execution_terminal_identity_cache_v1.json"
+    legacy_path = tmp_path / "execution_truth_warm_state_v1.json"
+    config = _make_config(journal_path, configured_path)
+    payload = _trade_executed_payload(
+        "7777",
+        client_order_id="ENTRY-BTCUSDT-WS-LEGACY",
+    )
+    now_ms = int(time.time() * 1000)
+    legacy_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "state_type": "execution_truth_warm_state_v1",
+                "generated_at_ms": now_ms,
+                "retention_ms": 86400000,
+                "max_entries": 2000,
+                "entries": [
+                    {
+                        "key": "trade_executed:BTCUSDT:order_id=7777:client_order_id=ENTRY-BTCUSDT-WS-LEGACY",
+                        "ts_ms": now_ms,
+                        "symbol": "BTCUSDT",
+                        "order_id": "7777",
+                        "client_order_id": "ENTRY-BTCUSDT-WS-LEGACY",
+                        "identity_quality": "order_lifecycle_contract_identity",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, config)
+    attach_execution_truth_hardening(fsm, config)
+    seen = []
+    fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
+    fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="WS_ORDER_UPDATE_FILLED", rid="rid-legacy")
+
+    assert seen == []
+    records = _read_jsonl(journal_path)
+    loaded = [r for r in records if r["event_name"] == "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED"]
+    assert len(loaded) == 1

@@ -602,17 +602,9 @@ def main() -> None:
                 # ==========================================
                 LOG.info("Hydrating FSMs from restored positions...")
                 restored_positions = position_tracking.get_positions()
-                hydrated_count = 0
-                for symbol, position_data in restored_positions.items():
-                    # Reformat data for hydrate method
-                    hydrate_data = {
-                        "symbol": symbol,
-                        "qty": position_data["quantity"],
-                        "entry_price": position_data["avg_price"],
-                        "side": "BUY" if position_data["quantity"] > 0 else "SELL",
-                    }
-                    execution_position.hydrate(hydrate_data)
-                    hydrated_count += 1
+                hydrated_count = execution_position.restore_startup_from_snapshot_positions(
+                    restored_positions
+                )
                 LOG.info(f" Hydrated {hydrated_count} FSMs.")
                 # ==========================================
 

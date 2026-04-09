@@ -188,7 +188,7 @@ class FSMCore:
 
                 if shadow_journal is not None and decision.warm_state_miss:
                     shadow_journal.record_transition(
-                        event_name="HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+                        event_name="HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
                         source_component=source_component,
                         source_path=source_path,
                         event_origin_type=event_origin_type,
@@ -196,7 +196,7 @@ class FSMCore:
                         payload=payload,
                         rid=rid,
                         notes=[
-                            "warm_state_exact_identity_not_seeded",
+                            "terminal_identity_cache_exact_identity_not_seeded",
                             f"fill_key={decision.key}",
                             decision.identity_quality,
                         ],
@@ -206,7 +206,7 @@ class FSMCore:
                     if shadow_journal is not None:
                         if decision.warm_state_hit:
                             shadow_journal.record_transition(
-                                event_name="HARDENING:TRADE_EXECUTED_WARM_STATE_HIT",
+                                event_name="HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT",
                                 source_component=source_component,
                                 source_path=source_path,
                                 event_origin_type=event_origin_type,
@@ -214,7 +214,7 @@ class FSMCore:
                                 payload=payload,
                                 rid=rid,
                                 notes=[
-                                    "restart_seeded_terminal_identity_hit",
+                                    "restart_seeded_terminal_identity_cache_hit",
                                     f"fill_key={decision.key}",
                                     decision.identity_quality,
                                 ],
@@ -232,7 +232,7 @@ class FSMCore:
                                 f"fill_key={decision.key}",
                                 decision.identity_quality,
                                 "exact_identity" if decision.exact_identity else "non_exact_identity",
-                                "warm_state_hit" if decision.warm_state_hit else "process_local_hit",
+                                "cache_seed_hit" if decision.warm_state_hit else "process_local_hit",
                                 *[f"missing_{field}" for field in decision.missing_fields],
                             ],
                         )

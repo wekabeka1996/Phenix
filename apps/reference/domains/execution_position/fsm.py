@@ -9,11 +9,13 @@ the vFoundation BinanceAdapter to execute trades in the configured environment.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
@@ -25,13 +27,16 @@ from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIEr
 from apps.reference.config_models import (
     AuroraConfig,
     ExecutionPositionRestoreArtifactConfig,
+    ExecutionPositionRestoreArtifactMode,
+    ExecutionPositionStartupTruthArtifactConfig,
     PositionPolicySidecarConfig,
 )
 from apps.reference.utils.accessors import aget, dget
 
 from .fsm_open import OpenFlowFSM
 from .fsm_manage import ManageFlowFSM, ManageState
-from .fsm_close import CloseFlowFSM
+from .fsm_close import CloseFlowFSM, CloseState
+from .bracket_math import compute_bracket_targets
 from .exposure_guard import ExposureGuard
 from .watchdog import OrderTimeoutWatchdog, OrderDeadline
 from .utils import (
@@ -40,6 +45,7 @@ from .utils import (
     validate_not_immediate,
     opposite_side,
     BoundedEventDeduper,
+    coerce_exchange_bool,
 )
 from .aurora_log_adapter import AuroraLogAdapter
 from .terminal_order_contracts import (
@@ -115,8 +121,28 @@ from apps.reference.domains.execution_position.restore_artifact import (
     BRACKET_STATE_UNKNOWN,
     RESTORE_PHASE_UNKNOWN,
     DeferredBracketRef,
+    ExecutionPositionRestoreArtifactDarkReader,
     ExecutionPositionRestoreArtifactWriter,
+    ExecutionPositionRestoreAuthoritativeStatus,
+    ExecutionPositionRestoreAuthoritativeSymbolStatus,
+    ExecutionPositionRestoreDarkReadStatus,
+    ExecutionPositionRestoreEnvelope,
     ExecutionPositionRestoreLifecycleRecord,
+    ExecutionPositionStartupTruthArtifactWriter,
+    ExecutionPositionStartupTruthCacheStatus,
+    ExecutionPositionStartupTruthInputSnapshot,
+    ExecutionPositionStartupTruthRecord,
+    ExecutionPositionStartupTruthRestoreArtifactStatus,
+    ExecutionPositionStartupTruthSummary,
+    ExecutionPositionStartupTruthSymbolRecord,
+    STARTUP_TRUTH_ARTIFACT_SCHEMA_VERSION,
+    STARTUP_TRUTH_ARTIFACT_TYPE,
+    STARTUP_TRUTH_ARTIFACT_WRITER_COMPONENT,
+    TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
+    TRUTH_SOURCE_RESTORE_ARTIFACT,
+    TRUTH_SOURCE_RESTORED_PENDING_WAL,
+    TRUTH_SOURCE_RUNTIME_LOCAL,
+    TRUTH_SOURCE_UNKNOWN,
 )
 
 # Phase 14.2: Additional Strangler Fig micro-extractions
@@ -348,6 +374,8 @@ class ExecPosFSM(
         self.correlation_store = CorrelationStore()
         # Track SL/TP bracket orders per symbol for atomic cleanup on close
         self._symbol_brackets: Dict[str, Dict[str, str]] = {}
+        self._symbol_bracket_truth_source: Dict[str, str] = {}
+        self._symbol_manage_truth_source: Dict[str, str] = {}
         # Background task started flag
         self._bg_started: bool = False
         self._guardian_start_scheduled: bool = False
@@ -510,6 +538,8 @@ class ExecPosFSM(
         )
         self._trade_lifecycle = _trade_lifecycle
         self._restore_artifact_writer = self._create_restore_artifact_writer()
+        self._restore_artifact_dark_reader = self._create_restore_artifact_dark_reader()
+        self._startup_truth_artifact_writer = self._create_startup_truth_artifact_writer()
         self._restore_artifact_loop_started: bool = False
         self._emit_trade_intent_reject_wal = True
         self.position_policy_close_request_type = PositionPolicyCloseRequest
@@ -1137,11 +1167,83 @@ class ExecPosFSM(
             logger=LOG,
         )
 
+    def _restore_artifact_mode(self) -> Optional[ExecutionPositionRestoreArtifactMode]:
+        try:
+            candidate = self.config.domains.execution_position.restore_artifact
+        except Exception:
+            return None
+        if not isinstance(candidate, ExecutionPositionRestoreArtifactConfig):
+            return None
+        return candidate.mode
+
+    def _authoritative_restore_enabled(self) -> bool:
+        return self._restore_artifact_mode() == ExecutionPositionRestoreArtifactMode.AUTHORITATIVE
+
+    def _manage_truth_source_for(self, symbol: str) -> str:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return TRUTH_SOURCE_UNKNOWN
+        if symbol_key in self.manage_flows:
+            return self._symbol_manage_truth_source.get(
+                symbol_key,
+                TRUTH_SOURCE_RUNTIME_LOCAL,
+            )
+        return TRUTH_SOURCE_UNKNOWN
+
+    def _set_manage_truth_source(self, symbol: str, truth_source: str) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+        self._symbol_manage_truth_source[symbol_key] = (
+            str(truth_source or TRUTH_SOURCE_UNKNOWN).strip().upper()
+            or TRUTH_SOURCE_UNKNOWN
+        )
+
+    def _clear_manage_truth_source(self, symbol: str) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+        self._symbol_manage_truth_source.pop(symbol_key, None)
+
+    def _create_restore_artifact_dark_reader(
+        self,
+    ) -> Optional[ExecutionPositionRestoreArtifactDarkReader]:
+        try:
+            candidate = self.config.domains.execution_position.restore_artifact
+        except Exception:
+            return None
+
+        if not isinstance(candidate, ExecutionPositionRestoreArtifactConfig):
+            return None
+
+        return ExecutionPositionRestoreArtifactDarkReader(
+            candidate,
+            logger=LOG,
+        )
+
+    def _create_startup_truth_artifact_writer(
+        self,
+    ) -> Optional[ExecutionPositionStartupTruthArtifactWriter]:
+        try:
+            candidate = self.config.domains.execution_position.startup_truth_artifact
+        except Exception:
+            return None
+
+        if not isinstance(candidate, ExecutionPositionStartupTruthArtifactConfig):
+            return None
+
+        return ExecutionPositionStartupTruthArtifactWriter(
+            candidate,
+            observability_hook=self._emit_observability_event,
+            logger=LOG,
+        )
+
     def _restore_artifact_symbol_candidates(self) -> List[str]:
         symbols: Set[str] = set()
         symbols.update(str(sym).upper() for sym in self.manage_flows.keys())
         symbols.update(str(sym).upper() for sym in self.close_flows.keys())
-        symbols.update(str(sym).upper() for sym in self._symbol_brackets.keys())
+        symbols.update(str(sym).upper()
+                       for sym in self._symbol_brackets.keys())
         for pending in dict(self._pending_brackets).values():
             if not isinstance(pending, dict):
                 continue
@@ -1149,6 +1251,79 @@ class ExecPosFSM(
             if symbol:
                 symbols.add(symbol)
         return sorted(symbols)
+
+    def _set_symbol_bracket_order(
+        self,
+        symbol: str,
+        *,
+        order_role: str,
+        order_id: str,
+        truth_source: str = TRUTH_SOURCE_RUNTIME_LOCAL,
+    ) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        order_id_str = str(order_id or "").strip()
+        role_key = str(order_role or "").strip().upper()
+        if not symbol_key or not order_id_str or role_key not in {"SL", "TP"}:
+            return
+        bracket_key = "sl_order_id" if role_key == "SL" else "tp_order_id"
+        self._symbol_brackets.setdefault(symbol_key, {})[
+            bracket_key] = order_id_str
+        self._symbol_bracket_truth_source[symbol_key] = str(
+            truth_source or TRUTH_SOURCE_UNKNOWN
+        ).strip().upper() or TRUTH_SOURCE_UNKNOWN
+
+    def _set_symbol_brackets_snapshot(
+        self,
+        symbol: str,
+        *,
+        sl_order_id: Optional[str] = None,
+        tp_order_id: Optional[str] = None,
+        truth_source: str = TRUTH_SOURCE_RUNTIME_LOCAL,
+    ) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+
+        brackets: Dict[str, str] = {}
+        sl_order_id_str = str(sl_order_id or "").strip()
+        tp_order_id_str = str(tp_order_id or "").strip()
+        if sl_order_id_str:
+            brackets["sl_order_id"] = sl_order_id_str
+        if tp_order_id_str:
+            brackets["tp_order_id"] = tp_order_id_str
+
+        if not brackets:
+            self._clear_symbol_brackets(symbol_key)
+            return
+
+        self._symbol_brackets[symbol_key] = brackets
+        self._symbol_bracket_truth_source[symbol_key] = str(
+            truth_source or TRUTH_SOURCE_UNKNOWN
+        ).strip().upper() or TRUTH_SOURCE_UNKNOWN
+
+    def _clear_symbol_brackets(self, symbol: str) -> None:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+        self._symbol_brackets.pop(symbol_key, None)
+        self._symbol_bracket_truth_source.pop(symbol_key, None)
+
+    def _symbol_bracket_truth_source_for(self, symbol: str) -> str:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return TRUTH_SOURCE_UNKNOWN
+        if symbol_key in self._symbol_brackets:
+            return self._symbol_bracket_truth_source.get(
+                symbol_key,
+                TRUTH_SOURCE_RUNTIME_LOCAL,
+            )
+        return TRUTH_SOURCE_UNKNOWN
+
+    def _runtime_order_index(self) -> Any:
+        direct_index = getattr(self, "order_index", None)
+        if direct_index is not None:
+            return direct_index
+        return getattr(self.fsm, "order_index", None)
 
     def _resolve_restore_artifact_bracket_snapshot(
         self,
@@ -1166,12 +1341,14 @@ class ExecPosFSM(
         if len(pending_order_ids) == 1:
             return {
                 "bracket_state": BRACKET_STATE_DEFERRED_PENDING_WAL,
+                "bracket_truth_source": TRUTH_SOURCE_RESTORED_PENDING_WAL,
                 "deferred_entry_order_id": pending_order_ids[0],
                 "restore_relevant": True,
             }
         if len(pending_order_ids) > 1:
             return {
                 "bracket_state": BRACKET_STATE_UNKNOWN,
+                "bracket_truth_source": TRUTH_SOURCE_UNKNOWN,
                 "deferred_entry_order_id": None,
                 "restore_relevant": True,
             }
@@ -1182,17 +1359,24 @@ class ExecPosFSM(
         if has_sl and has_tp:
             return {
                 "bracket_state": BRACKET_STATE_LINKED_ACTIVE,
+                "bracket_truth_source": self._symbol_bracket_truth_source_for(
+                    symbol_key
+                ),
                 "deferred_entry_order_id": None,
                 "restore_relevant": True,
             }
         if has_sl or has_tp:
             return {
                 "bracket_state": BRACKET_STATE_PARTIAL_LINKAGE,
+                "bracket_truth_source": self._symbol_bracket_truth_source_for(
+                    symbol_key
+                ),
                 "deferred_entry_order_id": None,
                 "restore_relevant": True,
             }
         return {
             "bracket_state": BRACKET_STATE_UNKNOWN,
+            "bracket_truth_source": TRUTH_SOURCE_UNKNOWN,
             "deferred_entry_order_id": None,
             "restore_relevant": False,
         }
@@ -1217,9 +1401,12 @@ class ExecPosFSM(
 
         manage_flow = self.manage_flows.get(symbol_key)
         close_flow = self.close_flows.get(symbol_key)
-        manage_phase = self._manage_state_value(manage_flow) or RESTORE_PHASE_UNKNOWN
-        close_phase = self._close_state_value(close_flow) or RESTORE_PHASE_UNKNOWN
-        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(symbol_key)
+        manage_phase = self._manage_state_value(
+            manage_flow) or RESTORE_PHASE_UNKNOWN
+        close_phase = self._close_state_value(
+            close_flow) or RESTORE_PHASE_UNKNOWN
+        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(
+            symbol_key)
 
         has_active_manage = self._has_active_lifecycle_for_symbol(symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
@@ -1229,8 +1416,10 @@ class ExecPosFSM(
         record_kwargs: Dict[str, Any] = {
             "symbol": symbol_key,
             "manage_phase": manage_phase,
+            "manage_truth_source": self._manage_truth_source_for(symbol_key),
             "close_phase": close_phase,
             "bracket_state": bracket_snapshot["bracket_state"],
+            "bracket_truth_source": bracket_snapshot["bracket_truth_source"],
             "live_reconcile_required": True,
         }
         if (
@@ -1238,7 +1427,8 @@ class ExecPosFSM(
             and bracket_snapshot["deferred_entry_order_id"]
         ):
             record_kwargs["deferred_bracket_ref"] = DeferredBracketRef(
-                entry_order_id=str(bracket_snapshot["deferred_entry_order_id"]),
+                entry_order_id=str(
+                    bracket_snapshot["deferred_entry_order_id"]),
             )
         return ExecutionPositionRestoreLifecycleRecord(**record_kwargs)
 
@@ -1247,9 +1437,12 @@ class ExecPosFSM(
         symbol: str,
     ) -> Tuple[str, str, str, Optional[str], bool]:
         symbol_key = str(symbol or "").strip().upper()
-        manage_phase = self._manage_state_value(self.manage_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
-        close_phase = self._close_state_value(self.close_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
-        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(symbol_key)
+        manage_phase = self._manage_state_value(
+            self.manage_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
+        close_phase = self._close_state_value(
+            self.close_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
+        bracket_snapshot = self._resolve_restore_artifact_bracket_snapshot(
+            symbol_key)
         has_active_manage = self._has_active_lifecycle_for_symbol(symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
         return (
@@ -1261,8 +1454,242 @@ class ExecPosFSM(
                 if bracket_snapshot["deferred_entry_order_id"]
                 else None
             ),
-            bool(has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]),
+            bool(
+                has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]),
         )
+
+    def _append_restart_truth_record(
+        self,
+        *,
+        event_type: str,
+        symbol: str,
+        sl_order_id: Optional[str],
+        tp_order_id: Optional[str],
+        order_index_registrations: int,
+        unresolved_reasons: Optional[List[str]] = None,
+    ) -> None:
+        record = {
+            "record_kind": "execution_restart_truth",
+            "event_type": event_type,
+            "ts_ms": get_clock().now_ms(),
+            "symbol": str(symbol or "").strip().upper() or None,
+            "sl_order_id": str(sl_order_id or "").strip() or None,
+            "tp_order_id": str(tp_order_id or "").strip() or None,
+            "bracket_truth_source": self._symbol_bracket_truth_source_for(symbol),
+            "manage_truth_source": self._manage_truth_source_for(symbol),
+            "order_index_registrations": int(order_index_registrations),
+            "unresolved_reasons": list(unresolved_reasons or []) or None,
+        }
+        filtered = {key: value for key,
+                    value in record.items() if value is not None}
+        append_trade_lifecycle_record(
+            filtered,
+            log_file=self._trade_lifecycle_log_path(),
+        )
+        self._emit_observability_event(event_type, filtered)
+
+    def _startup_reconstruct_runtime_bracket_truth(
+        self,
+        open_orders: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        order_index = self._runtime_order_index()
+        if self.order_guardian is None or order_index is None:
+            return {
+                "summary": {
+                    "symbols_reconstructed": 0,
+                    "order_index_registrations": 0,
+                    "unresolved_symbols": 0,
+                },
+                "records": [],
+            }
+
+        resolved_orders: Dict[str, Dict[str, str]] = {}
+        unresolved_reasons: Dict[str, List[str]] = {}
+        duplicate_roles: Dict[str, Set[str]] = {}
+        order_index_registrations = 0
+        order_index_registrations_by_symbol: Dict[str, int] = {}
+        runtime_truth_records: List[Dict[str, Any]] = []
+
+        def _note_unresolved(symbol_key: str, reason: str) -> None:
+            unresolved_reasons.setdefault(symbol_key, []).append(reason)
+
+        for raw_order in open_orders:
+            order = raw_order if isinstance(raw_order, dict) else {}
+            symbol_key = str(order.get("symbol") or "").strip().upper()
+            exchange_order_id = str(
+                order.get("orderId") or order.get("order_id") or ""
+            ).strip()
+            client_order_id = str(
+                order.get("clientOrderId") or order.get(
+                    "client_order_id") or ""
+            ).strip()
+            if not symbol_key or not exchange_order_id:
+                continue
+
+            context = self.order_guardian.resolve_terminal_bracket_context(
+                client_order_id=client_order_id or None,
+                exchange_order_id=exchange_order_id,
+                symbol=symbol_key,
+            )
+            if context is None:
+                continue
+
+            role = str(context.get("bracket_role") or "").strip().upper()
+            tracked_order_id = str(
+                context.get(
+                    "tracked_bracket_order_id") or exchange_order_id or ""
+            ).strip()
+            tracked_client_order_id = str(
+                context.get("tracked_client_order_id") or client_order_id or ""
+            ).strip()
+            if role not in {"SL", "TP", "TP1", "TP2"}:
+                _note_unresolved(
+                    symbol_key, f"unsupported_role:{role or 'missing'}")
+                continue
+            if not tracked_order_id:
+                _note_unresolved(
+                    symbol_key, f"missing_tracked_order_id:{exchange_order_id}")
+                continue
+            if not tracked_client_order_id:
+                _note_unresolved(
+                    symbol_key, f"missing_tracked_client_order_id:{tracked_order_id}")
+                continue
+
+            order_kind = "SL" if role == "SL" else "TP"
+            resolved_for_symbol = resolved_orders.setdefault(symbol_key, {})
+            existing_order_id = resolved_for_symbol.get(order_kind)
+            if existing_order_id and existing_order_id != tracked_order_id:
+                duplicate_roles.setdefault(symbol_key, set()).add(order_kind)
+                _note_unresolved(
+                    symbol_key,
+                    f"duplicate_{order_kind.lower()}:{existing_order_id},{tracked_order_id}",
+                )
+            else:
+                resolved_for_symbol[order_kind] = tracked_order_id
+
+            if order_index.get(exchangeOrderId=tracked_order_id) is None:
+                try:
+                    order_index.register_bracket_child(
+                        rid=str(context.get("rid") or tracked_order_id),
+                        idempotent_key=None,
+                        clientOrderId=tracked_client_order_id,
+                        exchangeOrderId=tracked_order_id,
+                        symbol=symbol_key,
+                        side=str(order.get("side") or "").upper(),
+                        order_type=str(
+                            order.get("type")
+                            or order.get("order_type")
+                            or context.get("order_type")
+                            or ""
+                        ),
+                        order_kind=order_kind,
+                    )
+                    order_index_registrations += 1
+                    order_index_registrations_by_symbol[symbol_key] = (
+                        order_index_registrations_by_symbol.get(
+                            symbol_key, 0) + 1
+                    )
+                except Exception as exc:
+                    _note_unresolved(
+                        symbol_key,
+                        f"order_index_registration_failed:{type(exc).__name__}",
+                    )
+
+        symbols_reconstructed = 0
+        unresolved_symbols = 0
+        for symbol_key in sorted(set(resolved_orders.keys()) | set(unresolved_reasons.keys())):
+            duplicate_for_symbol = duplicate_roles.get(symbol_key, set())
+            sl_order_id = None
+            tp_order_id = None
+            manage_truth_source = self._manage_truth_source_for(symbol_key)
+            if symbol_key in resolved_orders:
+                if "SL" not in duplicate_for_symbol:
+                    sl_order_id = resolved_orders[symbol_key].get("SL")
+                if "TP" not in duplicate_for_symbol:
+                    tp_order_id = resolved_orders[symbol_key].get("TP")
+
+            if sl_order_id or tp_order_id:
+                self._set_symbol_brackets_snapshot(
+                    symbol_key,
+                    sl_order_id=sl_order_id,
+                    tp_order_id=tp_order_id,
+                    truth_source=TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
+                )
+                manage_flow = self.manage_flows.get(symbol_key)
+                if manage_flow is not None and self._manage_state_value(manage_flow) not in {
+                    "",
+                    "FLAT",
+                }:
+                    manage_flow.set_bracket_ids(
+                        sl_order_id=sl_order_id,
+                        tp_order_id=tp_order_id,
+                    )
+                symbols_reconstructed += 1
+                self._append_restart_truth_record(
+                    event_type="EXECUTION_RESTART_RUNTIME_TRUTH_RECONSTRUCTED",
+                    symbol=symbol_key,
+                    sl_order_id=sl_order_id,
+                    tp_order_id=tp_order_id,
+                    order_index_registrations=order_index_registrations_by_symbol.get(
+                        symbol_key,
+                        0,
+                    ),
+                    unresolved_reasons=unresolved_reasons.get(symbol_key),
+                )
+                runtime_truth_records.append(
+                    {
+                        "symbol": symbol_key,
+                        "status": "reconstructed",
+                        "sl_order_id": sl_order_id,
+                        "tp_order_id": tp_order_id,
+                        "bracket_truth_source": self._symbol_bracket_truth_source_for(symbol_key),
+                        "manage_truth_source": manage_truth_source,
+                        "order_index_registrations": order_index_registrations_by_symbol.get(
+                            symbol_key,
+                            0,
+                        ),
+                        "unresolved_reasons": list(unresolved_reasons.get(symbol_key) or []),
+                    }
+                )
+            elif unresolved_reasons.get(symbol_key):
+                self._clear_symbol_brackets(symbol_key)
+                self._append_restart_truth_record(
+                    event_type="EXECUTION_RESTART_RUNTIME_TRUTH_UNRESOLVED",
+                    symbol=symbol_key,
+                    sl_order_id=None,
+                    tp_order_id=None,
+                    order_index_registrations=0,
+                    unresolved_reasons=unresolved_reasons.get(symbol_key),
+                )
+                runtime_truth_records.append(
+                    {
+                        "symbol": symbol_key,
+                        "status": "unresolved",
+                        "sl_order_id": None,
+                        "tp_order_id": None,
+                        "bracket_truth_source": self._symbol_bracket_truth_source_for(symbol_key),
+                        "manage_truth_source": manage_truth_source,
+                        "order_index_registrations": 0,
+                        "unresolved_reasons": list(unresolved_reasons.get(symbol_key) or []),
+                    }
+                )
+
+            if unresolved_reasons.get(symbol_key):
+                unresolved_symbols += 1
+
+        summary = {
+            "symbols_reconstructed": symbols_reconstructed,
+            "order_index_registrations": order_index_registrations,
+            "unresolved_symbols": unresolved_symbols,
+        }
+        self._emit_observability_event(
+            "RESTORE:EXECUTION_POSITION_RUNTIME_TRUTH_RECONCILED",
+            summary,
+        )
+        return {
+            "summary": summary,
+            "records": runtime_truth_records,
+        }
 
     def _restore_artifact_has_state(self) -> bool:
         return any(self._build_execution_restore_artifact_records())
@@ -1277,6 +1704,537 @@ class ExecPosFSM(
         if writer is None:
             return False
         return writer.persist(self, trigger=trigger, allow_empty=allow_empty)
+
+    def _append_startup_truth_artifact_record(
+        self,
+        *,
+        trigger: str,
+        failure_reason: Optional[str],
+        input_snapshot: Dict[str, Any],
+        symbols_considered: List[str],
+        fresh_open_order_count: int,
+        runtime_truth: Dict[str, Any],
+        restore_artifact_write_attempted: bool,
+        restore_artifact_write_succeeded: bool,
+        restore_authoritative: Optional[ExecutionPositionRestoreAuthoritativeStatus] = None,
+        restore_dark_read: Optional[ExecutionPositionRestoreDarkReadStatus] = None,
+        execution_truth_cache: Optional[ExecutionPositionStartupTruthCacheStatus] = None,
+    ) -> bool:
+        writer = self._startup_truth_artifact_writer
+        if writer is None:
+            return False
+
+        runtime_summary = runtime_truth.get(
+            "summary") if isinstance(runtime_truth, dict) else {}
+        runtime_records = runtime_truth.get(
+            "records") if isinstance(runtime_truth, dict) else []
+        restore_writer = self._restore_artifact_writer
+        restore_artifact_path = restore_writer.storage_path if restore_writer is not None else None
+
+        try:
+            record = ExecutionPositionStartupTruthRecord(
+                schema_version=STARTUP_TRUTH_ARTIFACT_SCHEMA_VERSION,
+                artifact_type=STARTUP_TRUTH_ARTIFACT_TYPE,
+                ts_ms=get_clock().now_ms(),
+                writer_component=STARTUP_TRUTH_ARTIFACT_WRITER_COMPONENT,
+                startup_trigger=trigger,
+                failure_reason=str(failure_reason or "").strip() or None,
+                reconcile_sequence=[
+                    "authoritative_restore_read",
+                    "collect_startup_symbols",
+                    "guardian_link_existing_from_rest",
+                    "guardian_cleanup_orphans",
+                    "fetch_post_cleanup_open_orders",
+                    "reconstruct_runtime_bracket_truth",
+                    "dark_read_compare",
+                    "persist_restore_artifact_snapshot",
+                ],
+                symbols_considered=sorted(
+                    {
+                        str(symbol).strip().upper()
+                        for symbol in symbols_considered
+                        if str(symbol).strip()
+                    }
+                ),
+                fresh_open_order_count=int(fresh_open_order_count),
+                input_snapshot=ExecutionPositionStartupTruthInputSnapshot(
+                    positions_fetch_succeeded=bool(
+                        input_snapshot.get("positions_fetch_succeeded", False)
+                    ),
+                    pre_cleanup_open_orders_fetch_succeeded=bool(
+                        input_snapshot.get(
+                            "pre_cleanup_open_orders_fetch_succeeded", False)
+                    ),
+                    post_cleanup_open_orders_fetch_succeeded=bool(
+                        input_snapshot.get(
+                            "post_cleanup_open_orders_fetch_succeeded", False)
+                    ),
+                    guardian_link_existing_invoked=bool(
+                        input_snapshot.get(
+                            "guardian_link_existing_invoked", False)
+                    ),
+                    guardian_cleanup_invoked=bool(
+                        input_snapshot.get("guardian_cleanup_invoked", False)
+                    ),
+                    position_symbols_observed=sorted(
+                        {
+                            str(symbol).strip().upper()
+                            for symbol in input_snapshot.get("position_symbols_observed", [])
+                            if str(symbol).strip()
+                        }
+                    ),
+                    pre_cleanup_order_symbols_observed=sorted(
+                        {
+                            str(symbol).strip().upper()
+                            for symbol in input_snapshot.get(
+                                "pre_cleanup_order_symbols_observed",
+                                [],
+                            )
+                            if str(symbol).strip()
+                        }
+                    ),
+                    guardian_symbols_observed=sorted(
+                        {
+                            str(symbol).strip().upper()
+                            for symbol in input_snapshot.get("guardian_symbols_observed", [])
+                            if str(symbol).strip()
+                        }
+                    ),
+                    fresh_order_symbols_observed=sorted(
+                        {
+                            str(symbol).strip().upper()
+                            for symbol in input_snapshot.get("fresh_order_symbols_observed", [])
+                            if str(symbol).strip()
+                        }
+                    ),
+                ),
+                runtime_truth_summary=ExecutionPositionStartupTruthSummary(
+                    symbols_reconstructed=int(
+                        runtime_summary.get("symbols_reconstructed", 0)
+                    ),
+                    order_index_registrations=int(
+                        runtime_summary.get("order_index_registrations", 0)
+                    ),
+                    unresolved_symbols=int(
+                        runtime_summary.get("unresolved_symbols", 0)
+                    ),
+                ),
+                runtime_truth_records=[
+                    ExecutionPositionStartupTruthSymbolRecord(
+                        symbol=str(item.get("symbol") or "").strip().upper(),
+                        status=(
+                            "unresolved"
+                            if str(item.get("status") or "").strip().lower()
+                            == "unresolved"
+                            else "reconstructed"
+                        ),
+                        sl_order_id=str(item.get("sl_order_id")
+                                        or "").strip() or None,
+                        tp_order_id=str(item.get("tp_order_id")
+                                        or "").strip() or None,
+                        bracket_truth_source=str(
+                            item.get(
+                                "bracket_truth_source") or TRUTH_SOURCE_UNKNOWN
+                        ).strip()
+                        or TRUTH_SOURCE_UNKNOWN,
+                        manage_truth_source=str(
+                            item.get(
+                                "manage_truth_source") or TRUTH_SOURCE_UNKNOWN
+                        ).strip()
+                        or TRUTH_SOURCE_UNKNOWN,
+                        order_index_registrations=int(
+                            item.get("order_index_registrations", 0)
+                        ),
+                        unresolved_reasons=[
+                            str(reason)
+                            for reason in item.get("unresolved_reasons", [])
+                            if str(reason).strip()
+                        ],
+                    )
+                    for item in runtime_records
+                    if str(item.get("symbol") or "").strip()
+                ],
+                restore_artifact=ExecutionPositionStartupTruthRestoreArtifactStatus(
+                    path=restore_artifact_path,
+                    write_attempted=bool(restore_artifact_write_attempted),
+                    write_succeeded=bool(restore_artifact_write_succeeded),
+                ),
+                restore_authoritative=(
+                    restore_authoritative
+                    or ExecutionPositionRestoreAuthoritativeStatus()
+                ),
+                restore_dark_read=restore_dark_read or ExecutionPositionRestoreDarkReadStatus(),
+                execution_truth_cache=(
+                    execution_truth_cache or self._execution_truth_cache_status()
+                ),
+            )
+        except Exception as exc:
+            self._emit_observability_event(
+                "RESTORE:EXECUTION_POSITION_STARTUP_TRUTH_BUILD_FAILED",
+                {
+                    "startup_trigger": trigger,
+                    "failure_reason": type(exc).__name__,
+                },
+            )
+            return False
+
+        return writer.append_record(record)
+
+    def _execution_truth_cache_status(self) -> ExecutionPositionStartupTruthCacheStatus:
+        hardening = get_execution_truth_hardening(self)
+        if hardening is None:
+            return ExecutionPositionStartupTruthCacheStatus()
+        try:
+            return ExecutionPositionStartupTruthCacheStatus.model_validate(
+                hardening.cache_status_snapshot()
+            )
+        except Exception:
+            return ExecutionPositionStartupTruthCacheStatus()
+
+    def _run_restore_artifact_dark_read_comparison(
+        self,
+        *,
+        now_ms: Optional[int] = None,
+    ) -> ExecutionPositionRestoreDarkReadStatus:
+        reader = self._restore_artifact_dark_reader
+        if reader is None:
+            return ExecutionPositionRestoreDarkReadStatus()
+
+        heuristic_records = self._build_execution_restore_artifact_records()
+        result = reader.compare_against(heuristic_records, now_ms=now_ms)
+        if not result.attempted:
+            return result
+
+        if result.artifact_state == "missing":
+            LOG.info(
+                "Execution restore dark-read: artifact missing at startup (%s)",
+                result.artifact_path,
+            )
+        elif result.artifact_state == "corrupt":
+            LOG.warning(
+                "Execution restore dark-read: artifact corrupt at startup (%s)",
+                result.artifact_path,
+            )
+        elif result.artifact_state == "not_readable":
+            LOG.warning(
+                "Execution restore dark-read: artifact not readable at startup (%s)",
+                result.artifact_path,
+            )
+        elif result.artifact_state == "stale":
+            LOG.warning(
+                "Execution restore dark-read: artifact stale at startup (%s, age_ms=%s, stale_after_ms=%s)",
+                result.artifact_path,
+                result.artifact_age_ms,
+                result.stale_after_ms,
+            )
+
+        if result.comparison_outcome == "mismatch":
+            LOG.warning(
+                "Execution restore dark-read mismatch: path=%s artifact_state=%s exact_field_mismatch=%s heuristic_only=%s artifact_only=%s unknown_vs_guessed=%s mixed_certainty=%s",
+                result.artifact_path,
+                result.artifact_state,
+                result.mismatch_counts.exact_field_mismatch,
+                result.mismatch_counts.heuristic_only_field,
+                result.mismatch_counts.artifact_only_field,
+                result.mismatch_counts.unknown_vs_guessed_mismatch,
+                result.mixed_certainty,
+            )
+        elif result.comparison_outcome == "exact_match":
+            LOG.info(
+                "Execution restore dark-read exact match: path=%s artifact_state=%s record_count=%s",
+                result.artifact_path,
+                result.artifact_state,
+                result.artifact_record_count,
+            )
+        return result
+
+    def _run_restore_artifact_authoritative_read(
+        self,
+        *,
+        now_ms: Optional[int] = None,
+    ) -> ExecutionPositionRestoreAuthoritativeStatus:
+        mode = self._restore_artifact_mode()
+        status = ExecutionPositionRestoreAuthoritativeStatus(
+            mode=mode.value if mode is not None else "off",
+            attempted=True,
+        )
+        if mode != ExecutionPositionRestoreArtifactMode.AUTHORITATIVE:
+            status.attempted = False
+            return status
+
+        try:
+            reader_cfg = self.config.domains.execution_position.restore_artifact
+        except Exception:
+            reader_cfg = None
+        if not isinstance(reader_cfg, ExecutionPositionRestoreArtifactConfig):
+            status.artifact_state = "not_attempted"
+            status.attempted = False
+            return status
+
+        artifact_path = str(reader_cfg.storage_path)
+        status.artifact_path = artifact_path
+        status.stale_after_ms = reader_cfg.dark_read_max_artifact_age_ms
+        path = Path(artifact_path)
+
+        if not path.exists():
+            status.artifact_state = "missing"
+            LOG.warning(
+                "Execution restore authoritative read: artifact missing at startup (%s)",
+                artifact_path,
+            )
+            return status
+
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            status.artifact_state = "not_readable"
+            LOG.warning(
+                "Execution restore authoritative read: artifact not readable at startup (%s): %s",
+                artifact_path,
+                exc,
+            )
+            return status
+
+        if not raw.strip():
+            status.artifact_state = "corrupt"
+            LOG.warning(
+                "Execution restore authoritative read: artifact empty/corrupt at startup (%s)",
+                artifact_path,
+            )
+            return status
+
+        try:
+            payload = json.loads(raw)
+            envelope = ExecutionPositionRestoreEnvelope.model_validate(payload)
+        except Exception as exc:
+            status.artifact_state = "corrupt"
+            LOG.warning(
+                "Execution restore authoritative read: artifact corrupt at startup (%s): %s",
+                artifact_path,
+                exc,
+            )
+            return status
+
+        status.parse_success = True
+        status.artifact_generated_at_ms = envelope.generated_at_ms
+        status.artifact_record_count = len(envelope.active_lifecycles)
+        effective_now_ms = int(now_ms if now_ms is not None else get_clock().now_ms())
+        if envelope.generated_at_ms <= effective_now_ms:
+            status.artifact_age_ms = effective_now_ms - envelope.generated_at_ms
+        if (
+            status.stale_after_ms is not None
+            and status.artifact_age_ms is not None
+            and status.artifact_age_ms > status.stale_after_ms
+        ):
+            status.artifact_state = "stale"
+            LOG.warning(
+                "Execution restore authoritative read: artifact stale at startup (%s, age_ms=%s, stale_after_ms=%s)",
+                artifact_path,
+                status.artifact_age_ms,
+                status.stale_after_ms,
+            )
+            return status
+
+        status.artifact_state = "valid"
+        status.mixed_certainty_symbols = sorted(
+            {
+                record.symbol
+                for record in envelope.active_lifecycles
+                if any(
+                    value == RESTORE_PHASE_UNKNOWN
+                    for value in (
+                        str(record.manage_phase).strip().upper(),
+                        str(record.close_phase).strip().upper(),
+                        str(record.bracket_state).strip().upper(),
+                    )
+                )
+                and len(
+                    {
+                        str(record.manage_phase).strip().upper(),
+                        str(record.close_phase).strip().upper(),
+                        str(record.bracket_state).strip().upper(),
+                    }
+                    - {RESTORE_PHASE_UNKNOWN}
+                )
+                > 0
+            }
+        )
+        status.mixed_certainty = bool(status.mixed_certainty_symbols)
+
+        for record in envelope.active_lifecycles:
+            symbol_status = self._apply_authoritative_restore_record(record)
+            status.symbol_statuses.append(symbol_status)
+            status.applied_record_count += 1
+            for field_name in (
+                "manage_phase_restore_status",
+                "close_phase_restore_status",
+                "bracket_state_restore_status",
+            ):
+                if getattr(symbol_status, field_name) == "exact":
+                    status.restored_exact_field_count += 1
+                else:
+                    status.restored_unknown_field_count += 1
+
+        LOG.info(
+            "Execution restore authoritative read applied: path=%s records=%s exact_fields=%s unknown_fields=%s mixed_certainty=%s",
+            artifact_path,
+            status.applied_record_count,
+            status.restored_exact_field_count,
+            status.restored_unknown_field_count,
+            status.mixed_certainty,
+        )
+        return status
+
+    def _apply_authoritative_restore_record(
+        self,
+        record: ExecutionPositionRestoreLifecycleRecord,
+    ) -> ExecutionPositionRestoreAuthoritativeSymbolStatus:
+        symbol_key = str(record.symbol or "").strip().upper()
+        symbol_status = ExecutionPositionRestoreAuthoritativeSymbolStatus(
+            symbol=symbol_key,
+            manage_phase_value=RESTORE_PHASE_UNKNOWN,
+            close_phase_value=RESTORE_PHASE_UNKNOWN,
+            bracket_state_value=BRACKET_STATE_UNKNOWN,
+            live_reconcile_required=bool(record.live_reconcile_required),
+            deferred_entry_order_id=(
+                str(record.deferred_bracket_ref.entry_order_id).strip()
+                if record.deferred_bracket_ref is not None
+                else None
+            ),
+        )
+
+        manage_phase = str(record.manage_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        if manage_phase == RESTORE_PHASE_UNKNOWN:
+            symbol_status.manage_phase_value = RESTORE_PHASE_UNKNOWN
+            symbol_status.manage_phase_restore_status = "unknown"
+        else:
+            try:
+                manage_state = ManageState(manage_phase)
+            except Exception:
+                symbol_status.unresolved_reasons.append(
+                    f"unsupported_manage_phase:{manage_phase}"
+                )
+            else:
+                manage_flow = self._get_or_create_manage_flow(symbol_key)
+                manage_flow.state = manage_state
+                manage_flow.symbol = symbol_key
+                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RESTORE_ARTIFACT)
+                symbol_status.manage_phase_value = manage_state.value
+                symbol_status.manage_phase_restore_status = "exact"
+
+        close_phase = str(record.close_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        if close_phase == RESTORE_PHASE_UNKNOWN:
+            symbol_status.close_phase_value = RESTORE_PHASE_UNKNOWN
+            symbol_status.close_phase_restore_status = "unknown"
+        else:
+            try:
+                close_state = CloseState(close_phase)
+            except Exception:
+                symbol_status.unresolved_reasons.append(
+                    f"unsupported_close_phase:{close_phase}"
+                )
+            else:
+                close_flow = self._get_or_create_close_flow(symbol_key)
+                close_flow.state = close_state
+                close_flow.position_active = close_state not in {
+                    CloseState.FLAT,
+                    CloseState.DONE,
+                }
+                symbol_status.close_phase_value = close_state.value
+                symbol_status.close_phase_restore_status = "exact"
+
+        bracket_state = str(record.bracket_state or "").strip().upper() or BRACKET_STATE_UNKNOWN
+        self._clear_symbol_brackets(symbol_key)
+        if bracket_state == BRACKET_STATE_DEFERRED_PENDING_WAL:
+            deferred_entry_order_id = (
+                str(record.deferred_bracket_ref.entry_order_id).strip()
+                if record.deferred_bracket_ref is not None
+                else ""
+            )
+            pending = self._pending_brackets.get(deferred_entry_order_id)
+            pending_symbol = (
+                str(pending.get("symbol") or "").strip().upper()
+                if isinstance(pending, dict)
+                else ""
+            )
+            if deferred_entry_order_id and pending_symbol == symbol_key:
+                symbol_status.bracket_state_value = BRACKET_STATE_DEFERRED_PENDING_WAL
+                symbol_status.bracket_state_restore_status = "exact"
+            else:
+                symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
+                symbol_status.bracket_state_restore_status = "unknown"
+                symbol_status.unresolved_reasons.append(
+                    "deferred_pending_missing_in_wal"
+                )
+        elif bracket_state == BRACKET_STATE_UNKNOWN:
+            symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
+            symbol_status.bracket_state_restore_status = "unknown"
+        elif bracket_state in {BRACKET_STATE_LINKED_ACTIVE, BRACKET_STATE_PARTIAL_LINKAGE}:
+            symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
+            symbol_status.bracket_state_restore_status = "unknown"
+            symbol_status.unresolved_reasons.append(
+                "bracket_lineage_not_restorable_from_envelope"
+            )
+        else:
+            symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
+            symbol_status.bracket_state_restore_status = "unknown"
+            symbol_status.unresolved_reasons.append(
+                f"unsupported_bracket_state:{bracket_state}"
+            )
+
+        return symbol_status
+
+    def _finalize_restore_authoritative_status(
+        self,
+        status: ExecutionPositionRestoreAuthoritativeStatus,
+        *,
+        positions_fetch_succeeded: bool,
+        position_symbols: Set[str],
+    ) -> ExecutionPositionRestoreAuthoritativeStatus:
+        if not status.attempted or not status.symbol_statuses:
+            return status
+
+        current_records = {
+            record.symbol: record
+            for record in self._build_execution_restore_artifact_records()
+        }
+        for symbol_status in status.symbol_statuses:
+            symbol_key = str(symbol_status.symbol or "").strip().upper()
+            if positions_fetch_succeeded:
+                symbol_status.portfolio_presence = (
+                    "present" if symbol_key in position_symbols else "absent"
+                )
+            if (
+                symbol_status.portfolio_presence == "absent"
+                and (
+                    symbol_status.manage_phase_restore_status == "exact"
+                    or symbol_status.close_phase_restore_status == "exact"
+                    or symbol_status.bracket_state_restore_status == "exact"
+                )
+            ):
+                symbol_status.unresolved_reasons.append("portfolio_symbol_absent")
+            if (
+                symbol_status.portfolio_presence == "present"
+                and symbol_status.manage_phase_restore_status == "unknown"
+                and symbol_status.close_phase_restore_status == "unknown"
+                and symbol_status.bracket_state_restore_status == "unknown"
+            ):
+                symbol_status.unresolved_reasons.append(
+                    "portfolio_present_without_restored_lifecycle_truth"
+                )
+
+            current_record = current_records.get(symbol_key)
+            if current_record is None:
+                continue
+
+            if symbol_status.manage_phase_value != str(current_record.manage_phase):
+                symbol_status.runtime_override_fields.append("manage_phase")
+            if symbol_status.close_phase_value != str(current_record.close_phase):
+                symbol_status.runtime_override_fields.append("close_phase")
+            if symbol_status.bracket_state_value != str(current_record.bracket_state):
+                symbol_status.runtime_override_fields.append("bracket_state")
+
+        return status
 
     def _trade_lifecycle_log_path(self) -> str:
         try:
@@ -2359,16 +3317,8 @@ class ExecPosFSM(
             order_type = str(order_dict.get("type") or "").upper()
             reduce_only_raw = order_dict.get("reduceOnly", False)
             close_position_raw = order_dict.get("closePosition", False)
-            reduce_only = (
-                str(reduce_only_raw).lower() == "true"
-                if isinstance(reduce_only_raw, str)
-                else bool(reduce_only_raw)
-            )
-            close_position = (
-                str(close_position_raw).lower() == "true"
-                if isinstance(close_position_raw, str)
-                else bool(close_position_raw)
-            )
+            reduce_only = coerce_exchange_bool(reduce_only_raw)
+            close_position = coerce_exchange_bool(close_position_raw)
 
             if order_type == "STOP_MARKET" and (reduce_only or close_position):
                 has_sl = True
@@ -2506,22 +3456,21 @@ class ExecPosFSM(
             if sl_pct_eff is None or tp_rr_eff is None:
                 return None, None, f"recovery_exit_profile_missing:{strategy_id}"
 
-            tp_pct_eff = sl_pct_eff * tp_rr_eff
             instrument_spec = self.config.instruments.get(symbol)
             tick_size = Decimal(str(instrument_spec.tick_size)
                                 ) if instrument_spec is not None else Decimal("0.01")
 
-            if side == "BUY":
-                sl_price = entry_price * (1.0 - sl_pct_eff)
-                tp_price = entry_price * (1.0 + tp_pct_eff)
-            else:
-                sl_price = entry_price * (1.0 + sl_pct_eff)
-                tp_price = entry_price * (1.0 - tp_pct_eff)
+            recovery_targets = compute_bracket_targets(
+                reference_price=entry_price,
+                position_side=side,
+                sl_pct=sl_pct_eff,
+                tp_low_ratio=tp_rr_eff,
+            )
 
             return (
-                float(quantize_stop_price(sl_price, float(tick_size),
+                float(quantize_stop_price(float(recovery_targets.sl_price), float(tick_size),
                       side="SELL" if side == "BUY" else "BUY")),
-                float(quantize_stop_price(tp_price, float(tick_size),
+                float(quantize_stop_price(float(recovery_targets.tp1_price), float(tick_size),
                       side="BUY" if side == "BUY" else "SELL")),
                 None,
             )
@@ -2582,8 +3531,11 @@ class ExecPosFSM(
                     else getattr(sl_resp, "order_id", "")
                 )
                 if sl_order_id:
-                    self._symbol_brackets.setdefault(
-                        symbol, {})["sl_order_id"] = sl_order_id
+                    self._set_symbol_bracket_order(
+                        symbol,
+                        order_role="SL",
+                        order_id=sl_order_id,
+                    )
                     self.order_guardian.register_bracket(
                         symbol=symbol,
                         parent_order_id=parent_order_id,
@@ -2613,8 +3565,11 @@ class ExecPosFSM(
                     else getattr(tp_resp, "order_id", "")
                 )
                 if tp_order_id:
-                    self._symbol_brackets.setdefault(
-                        symbol, {})["tp_order_id"] = tp_order_id
+                    self._set_symbol_bracket_order(
+                        symbol,
+                        order_role="TP",
+                        order_id=tp_order_id,
+                    )
                     self.order_guardian.register_bracket(
                         symbol=symbol,
                         parent_order_id=parent_order_id,
@@ -2685,58 +3640,93 @@ class ExecPosFSM(
     # Phase 14.2: _initialize_adapter
     #  extracted to AdapterInitMixin (adapter_init.py)
 
+    def _create_open_flow(self, symbol: str) -> OpenFlowFSM:
+        try:
+            exec_config = self.config.trading.execution if self.config.trading else None
+        except AttributeError:
+            exec_config = None
+
+        cooldown_ms = float(aget(exec_config, "cooldown_ms", 1000))
+        guard_enabled = bool(aget(exec_config, "guard_enabled", True))
+        cooldown_sec = cooldown_ms / 1000.0
+        return OpenFlowFSM(
+            cooldown_sec=cooldown_sec,
+            guard_enabled=guard_enabled,
+            config=self.config,
+            metrics_collector=self.metrics_collector,
+            leverage_service=self.leverage_service,
+            is_live_execution=self.is_live_execution,
+        )
+
+    def _wire_manage_flow(self, symbol: str, manage_flow: ManageFlowFSM) -> None:
+        self._set_manage_truth_source(symbol, self._manage_truth_source_for(symbol))
+        if hasattr(manage_flow, "set_observability_hook"):
+            manage_flow.set_observability_hook(
+                self._emit_execution_bus_event,
+            )
+        if hasattr(manage_flow, "set_shadow_journal") and self._shadow_journal is not None:
+            manage_flow.set_shadow_journal(self._shadow_journal)
+
+    def _wire_close_flow(self, close_flow: CloseFlowFSM) -> None:
+        if hasattr(close_flow, "set_shadow_journal") and self._shadow_journal is not None:
+            close_flow.set_shadow_journal(self._shadow_journal)
+
+    def _get_or_create_open_flow(self, symbol: str) -> OpenFlowFSM:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            raise ValueError("symbol is required")
+        with self._flows_lock:
+            if symbol_key not in self.open_flows:
+                self.open_flows[symbol_key] = self._create_open_flow(symbol_key)
+            return self.open_flows[symbol_key]
+
+    def _get_or_create_manage_flow(self, symbol: str) -> ManageFlowFSM:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            raise ValueError("symbol is required")
+        with self._flows_lock:
+            if symbol_key not in self.manage_flows:
+                LOG.info(f"Creating new manage flow for symbol: {symbol_key}")
+                self.manage_flows[symbol_key] = ManageFlowFSM(config=self.config)
+                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
+            self._wire_manage_flow(symbol_key, self.manage_flows[symbol_key])
+            return self.manage_flows[symbol_key]
+
+    def _get_or_create_close_flow(self, symbol: str) -> CloseFlowFSM:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            raise ValueError("symbol is required")
+        with self._flows_lock:
+            if symbol_key not in self.close_flows:
+                LOG.info(f"Creating new close flow for symbol: {symbol_key}")
+                self.close_flows[symbol_key] = CloseFlowFSM()
+            self._wire_close_flow(self.close_flows[symbol_key])
+            return self.close_flows[symbol_key]
+
     def _get_or_create_flows(
         self, symbol: str
     ) -> Tuple[OpenFlowFSM, ManageFlowFSM, CloseFlowFSM]:
         """Get or create the set of FSMs for a given symbol (thread-safe)."""
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            raise ValueError("symbol is required")
         with self._flows_lock:
-            if symbol not in self.manage_flows:
-                LOG.info(f"Creating new set of FSMs for symbol: {symbol}")
-                try:
-                    exec_config = self.config.trading.execution if self.config.trading else None
-                except AttributeError:
-                    exec_config = None
+            if symbol_key not in self.open_flows:
+                self.open_flows[symbol_key] = self._create_open_flow(symbol_key)
+            if symbol_key not in self.manage_flows:
+                LOG.info(f"Creating new set of FSMs for symbol: {symbol_key}")
+                self.manage_flows[symbol_key] = ManageFlowFSM(config=self.config)
+                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
+            if symbol_key not in self.close_flows:
+                self.close_flows[symbol_key] = CloseFlowFSM()
 
-                # Safe extraction of execution config settings
-                cooldown_ms = float(aget(exec_config, "cooldown_ms", 1000))
-                guard_enabled = bool(aget(exec_config, "guard_enabled", True))
-                cooldown_sec = cooldown_ms / 1000.0
-
-                self.open_flows[symbol] = OpenFlowFSM(
-                    cooldown_sec=cooldown_sec,
-                    guard_enabled=guard_enabled,
-                    config=self.config,
-                    metrics_collector=self.metrics_collector,
-                    leverage_service=self.leverage_service,
-                    is_live_execution=self.is_live_execution,
-                )
-                self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
-                if hasattr(self.manage_flows[symbol], "set_observability_hook"):
-                    self.manage_flows[symbol].set_observability_hook(
-                        self._emit_execution_bus_event,
-                    )
-                if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                    self.manage_flows[symbol].set_shadow_journal(
-                        self._shadow_journal)
-                self.close_flows[symbol] = CloseFlowFSM()
-                if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                    self.close_flows[symbol].set_shadow_journal(
-                        self._shadow_journal)
-            elif hasattr(self.manage_flows[symbol], "set_observability_hook"):
-                self.manage_flows[symbol].set_observability_hook(
-                    self._emit_execution_bus_event,
-                )
-            if hasattr(self.manage_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                self.manage_flows[symbol].set_shadow_journal(
-                    self._shadow_journal)
-            if hasattr(self.close_flows[symbol], "set_shadow_journal") and self._shadow_journal is not None:
-                self.close_flows[symbol].set_shadow_journal(
-                    self._shadow_journal)
+            self._wire_manage_flow(symbol_key, self.manage_flows[symbol_key])
+            self._wire_close_flow(self.close_flows[symbol_key])
 
             return (
-                self.open_flows[symbol],
-                self.manage_flows[symbol],
-                self.close_flows[symbol],
+                self.open_flows[symbol_key],
+                self.manage_flows[symbol_key],
+                self.close_flows[symbol_key],
             )
 
     def hydrate(self, position_data: Dict[str, Any]):
@@ -2769,6 +3759,28 @@ class ExecPosFSM(
                 restore_marker=True,
             )
 
+    def restore_startup_from_snapshot_positions(
+        self,
+        restored_positions: Dict[str, Dict[str, Any]],
+    ) -> int:
+        if self._authoritative_restore_enabled():
+            LOG.info(
+                "Skipping heuristic execution hydrate from snapshot positions because restore_artifact.mode=authoritative"
+            )
+            return 0
+
+        hydrated_count = 0
+        for symbol, position_data in restored_positions.items():
+            hydrate_data = {
+                "symbol": symbol,
+                "qty": position_data["quantity"],
+                "entry_price": position_data["avg_price"],
+                "side": "BUY" if position_data["quantity"] > 0 else "SELL",
+            }
+            self.hydrate(hydrate_data)
+            hydrated_count += 1
+        return hydrated_count
+
     def handle(self, msg: Message) -> Optional[Message]:
         """Route message to the appropriate flow and handle execution decisions."""
         journal = get_shadow_journal(self)
@@ -2790,7 +3802,9 @@ class ExecPosFSM(
 
             open_flow, manage_flow, close_flow = self._get_or_create_flows(
                 symbol)
-            restore_signature_before = self._restore_semantics_signature(symbol)
+            self._set_manage_truth_source(symbol, TRUTH_SOURCE_RUNTIME_LOCAL)
+            restore_signature_before = self._restore_semantics_signature(
+                symbol)
 
             if msg.verb == "OPEN":
                 now = get_clock().now_sec()
@@ -3363,13 +4377,45 @@ class ExecPosFSM(
         This ensures OrderGuardian has accurate tracking of existing orders/positions
         after restart, enabling proper orphan detection and cleanup.
         """
+        fresh_orders: List[Dict[str, Any]] = []
+        position_symbols: Set[str] = set()
+        pre_cleanup_order_symbols: Set[str] = set()
+        fresh_order_symbols: Set[str] = set()
+        guardian_symbols: Set[str] = set()
+        positions_fetch_succeeded = False
+        pre_cleanup_open_orders_fetch_succeeded = False
+        post_cleanup_open_orders_fetch_succeeded = False
+        guardian_link_existing_invoked = False
+        guardian_cleanup_invoked = False
+        runtime_truth: Dict[str, Any] = {
+            "summary": {
+                "symbols_reconstructed": 0,
+                "order_index_registrations": 0,
+                "unresolved_symbols": 0,
+            },
+            "records": [],
+        }
+        restore_authoritative = ExecutionPositionRestoreAuthoritativeStatus()
+        restore_dark_read = ExecutionPositionRestoreDarkReadStatus()
+        execution_truth_cache = self._execution_truth_cache_status()
+        restore_artifact_write_attempted = False
+        restore_artifact_write_succeeded = False
+        failure_reason: Optional[str] = None
         try:
             LOG.info(" Starting OrderGuardian startup reconciliation...")
+            fresh_orders: List[Dict[str, Any]] = []
+            restore_authoritative = self._run_restore_artifact_authoritative_read()
+            authoritative_symbols = {
+                str(item.symbol).strip().upper()
+                for item in restore_authoritative.symbol_statuses
+                if str(item.symbol).strip()
+            }
 
             #  FIX: First link existing orders from REST API for all symbols with positions
             if self.adapter:
                 try:
                     positions = await self.adapter.get_open_positions()
+                    positions_fetch_succeeded = True
                     symbols_with_positions = set()
 
                     # Convert positions to dict if needed and collect symbols
@@ -3382,10 +4428,12 @@ class ExecPosFSM(
                     for pos in positions_list:
                         symbol = pos.get("symbol")
                         if symbol:
+                            position_symbols.add(str(symbol).strip().upper())
                             symbols_with_positions.add(symbol)
 
                     # Also check for symbols with open orders
                     all_orders = await self.adapter.get_open_orders()
+                    pre_cleanup_open_orders_fetch_succeeded = True
                     orders_list = [
                         o.to_dict() if hasattr(o, 'to_dict') else (
                             o.__dict__ if not isinstance(o, dict) else o)
@@ -3395,12 +4443,17 @@ class ExecPosFSM(
                     for order in orders_list:
                         symbol = order.get("symbol")
                         if symbol:
+                            pre_cleanup_order_symbols.add(
+                                str(symbol).strip().upper())
                             symbols_with_positions.add(symbol)
 
-                    symbols_with_positions.update(
-                        self._collect_guardian_symbols())
+                    guardian_symbols.update(self._collect_guardian_symbols())
+                    symbols_with_positions.update(guardian_symbols)
+                    symbols_with_positions.update(authoritative_symbols)
 
                     # Link existing orders for each symbol
+                    guardian_link_existing_invoked = bool(
+                        symbols_with_positions)
                     for symbol in symbols_with_positions:
                         await self.order_guardian.link_existing_from_rest(symbol)
                         LOG.debug(f" Linked existing orders for {symbol}")
@@ -3413,9 +4466,74 @@ class ExecPosFSM(
                         f"Failed to link existing orders during startup: {e}")
 
             # Then run cleanup to remove orphans
+            guardian_cleanup_invoked = True
             await self.order_guardian.cleanup_orphans()
+            if self.adapter:
+                try:
+                    fresh_open_orders = await self.adapter.get_open_orders()
+                    post_cleanup_open_orders_fetch_succeeded = True
+                    fresh_orders = [
+                        o.to_dict() if hasattr(o, 'to_dict') else (
+                            o.__dict__ if not isinstance(o, dict) else o)
+                        for o in fresh_open_orders
+                    ]
+                    for order in fresh_orders:
+                        symbol = str(order.get("symbol") or "").strip().upper()
+                        if symbol:
+                            fresh_order_symbols.add(symbol)
+                except Exception as e:
+                    LOG.warning(
+                        f"Failed to fetch fresh open orders after startup reconcile: {e}")
+            runtime_truth = self._startup_reconstruct_runtime_bracket_truth(
+                fresh_orders)
+            restore_authoritative = self._finalize_restore_authoritative_status(
+                restore_authoritative,
+                positions_fetch_succeeded=positions_fetch_succeeded,
+                position_symbols=position_symbols,
+            )
+            restore_dark_read = self._run_restore_artifact_dark_read_comparison()
+            restore_artifact_write_attempted = True
+            restore_artifact_write_succeeded = self._persist_restore_artifact_snapshot(
+                trigger="startup_order_guardian_reconcile",
+                allow_empty=True,
+            )
             LOG.info(" OrderGuardian startup reconciliation completed")
         except Exception as e:
+            failure_reason = type(e).__name__
             LOG.error(f" OrderGuardian startup reconciliation failed: {e}")
+        finally:
+            self._append_startup_truth_artifact_record(
+                trigger="startup_order_guardian_reconcile",
+                failure_reason=failure_reason,
+                input_snapshot={
+                    "positions_fetch_succeeded": positions_fetch_succeeded,
+                    "pre_cleanup_open_orders_fetch_succeeded": pre_cleanup_open_orders_fetch_succeeded,
+                    "post_cleanup_open_orders_fetch_succeeded": post_cleanup_open_orders_fetch_succeeded,
+                    "guardian_link_existing_invoked": guardian_link_existing_invoked,
+                    "guardian_cleanup_invoked": guardian_cleanup_invoked,
+                    "position_symbols_observed": sorted(position_symbols),
+                    "pre_cleanup_order_symbols_observed": sorted(pre_cleanup_order_symbols),
+                    "guardian_symbols_observed": sorted(guardian_symbols),
+                    "fresh_order_symbols_observed": sorted(fresh_order_symbols),
+                },
+                symbols_considered=sorted(
+                    position_symbols
+                    | pre_cleanup_order_symbols
+                    | guardian_symbols
+                    | fresh_order_symbols
+                    | {
+                        str(item.symbol).strip().upper()
+                        for item in restore_authoritative.symbol_statuses
+                        if str(item.symbol).strip()
+                    }
+                ),
+                fresh_open_order_count=len(fresh_orders),
+                runtime_truth=runtime_truth,
+                restore_artifact_write_attempted=restore_artifact_write_attempted,
+                restore_artifact_write_succeeded=restore_artifact_write_succeeded,
+                restore_authoritative=restore_authoritative,
+                restore_dark_read=restore_dark_read,
+                execution_truth_cache=execution_truth_cache,
+            )
     # Phase 14.2: handle_tick_async, handle_tick, is_healthy
     #  extracted to HealthMetricsMixin (health_metrics.py)

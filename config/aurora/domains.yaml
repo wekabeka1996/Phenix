@@ -162,8 +162,8 @@ feature_engineering:
     min_window_volume_usd: 0.0 # was 1000.0
 
   volatility:
-    sma_length: 2 # was 10 (min allowed: 2)
-    window_sec: 5 # was 60
+    sma_length: 10 # P0-BUY-RECOVERY: was 2 (caused unstable DZ denominator → 57% DZ veto rate); restored to prior production value 10
+    window_sec: 60 # P0-BUY-RECOVERY: was 5 (too short → range ratio spike → volatility_state=1.0 on 57% bars); restored to prior production value 60
 
   liquidity:
     depth_half: 1000.0
@@ -369,7 +369,7 @@ feature_engineering:
       enabled: true
       # Real historical values now supported via Pillar Backfill
       sma_period: 200           # SMA period for territory (D1 bars)
-      sensitivity: 3.0          # tanh sensitivity
+      sensitivity: 1.5          # P0-BUY-RECOVERY: was 3.0 → causes deep tanh saturation (strat<-0.5 on 100% bars in audit window); 1.5 preserves bearish signal while preventing saturation
       min_bars: 200             # Min D1 bars before ready
 
     weights:
@@ -495,15 +495,20 @@ execution_position:
   event_dedup:
     max_size: 100000
     ttl_ms: 86400000  # 24 hours
-    warm_state:
+    warm_state:  # legacy config key; cache-only exact terminal fill identity seed, not restart authority
       enabled: true
-      storage_path: logs/execution_truth_warm_state_v1.json
+      storage_path: logs/execution_terminal_identity_cache_v1.json
       max_entries: 2000
 
   restore_artifact:
-    mode: writer_only
+    mode: authoritative
     storage_path: ops/restore/execution_position_restore_envelope_v1.json
     flush_interval_ms: 30000
+    dark_read_max_artifact_age_ms: 300000
+
+  startup_truth_artifact:
+    mode: writer_only
+    storage_path: ops/restore/execution_position_startup_truth_v1.jsonl
 
   # EP-01.3-INT: Per-timeframe pending entry TTL
   # When LIMIT entry order is placed, valid_for_ms = ttl_by_tf_sec[tf_sec] * 1000
@@ -606,7 +611,7 @@ execution_position:
         conviction_decay: 1.0
         unrealized_loss_pressure: 1.0
     thresholds:
-      recommend_soft_close_at: 0.70
+      recommend_soft_close_at: 0.30
       loss_bps_full_pressure: 50.0
       adverse_price_distance_bps_full_pressure: 25.0
       book_imbalance_full_pressure: 0.35

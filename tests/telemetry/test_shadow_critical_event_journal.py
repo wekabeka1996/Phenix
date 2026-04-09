@@ -433,10 +433,20 @@ def test_close_flow_transition_captures_before_after_state(tmp_path):
     assert result is not None
     assert result.op == "DEC"
     records = _read_jsonl(path)
-    assert len(records) == 1
-    assert records[0]["truth_owner"] == "CloseFlowFSM"
-    assert records[0]["local_state_before"]["state"] == "FLAT"
-    assert records[0]["local_state_after"]["state"] == "DONE"
+    assert len(records) == 2
+    close_record = next(
+        record for record in records if record["event_name"] == "DEC:CLOSE")
+    input_record = next(
+        record for record in records if record["event_name"] == "CMD:CLOSE")
+    assert close_record["truth_owner"] == "CloseFlowFSM"
+    assert close_record["local_state_before"]["state"] == "FLAT"
+    assert close_record["local_state_after"]["state"] == "DONE"
+    assert close_record["local_state_after"]["last_close_reason"] == "MANUAL_CLOSE"
+    # Input record no longer carries state snapshots (semantic fix);
+    # only the output record is authoritative for the transition window.
+    assert input_record["local_state_before"] is None
+    assert input_record["local_state_after"] is None
+    assert "record_role=input" in input_record["notes"]
 
 
 def test_execpos_hydrate_writes_restore_record(tmp_path):

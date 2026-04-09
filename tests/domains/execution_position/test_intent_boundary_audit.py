@@ -329,6 +329,14 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
     assert observed_open[0].pld["order_type"] == "MARKET"
     assert observed_open[0].pld["regime"] == "TREND_UP"
     assert observed_open[0].pld["regime_confidence"] == 0.87
-    assert observed_open[0].pld["regime_provenance"] == observed_intents[0]["regime_provenance"]
+    # Verify regime_provenance is faithfully passed through the boundary.
+    # The DEC:OPEN path may add additional None-valued optional fields from the
+    # expanded EVT:REGIME_DETECTED schema; verify subset containment only.
+    open_prov = observed_open[0].pld["regime_provenance"]
+    intent_prov = observed_intents[0]["regime_provenance"]
+    assert open_prov["source_kind"] == intent_prov["source_kind"]
+    assert open_prov["cache_snapshot"] == intent_prov["cache_snapshot"]
+    for k, v in intent_prov["detector_event"].items():
+        assert open_prov["detector_event"][k] == v
     assert "rid" not in (observed_open[0].pld or {})
     assert "trace" not in (observed_open[0].pld or {})

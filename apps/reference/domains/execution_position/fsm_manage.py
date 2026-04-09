@@ -19,12 +19,15 @@ from apps.reference.core.time import get_clock
 from typing import Callable, Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
+from apps.reference.domains.execution_position.bracket_math import compute_bracket_targets
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
 from apps.reference.config_models import AuroraConfig, AuroraInstrumentConfig
 from apps.reference.utils.accessors import aget, dget
 from apps.reference.domains.execution_position.utils import (
+    classify_client_order_id,
     generate_client_order_id,
     quantize_stop_price,
+    coerce_exchange_bool,
 )
 from apps.reference.telemetry.shadow_journal import (
     get_shadow_journal,
@@ -511,12 +514,10 @@ class ManageFlowFSM:
             payload.get("bracket_role") or payload.get("close_reason") or ""
         ).strip().upper()
         close_position = (
-            str(payload["closePosition"]
-                if "closePosition" in payload else "").lower() == "true"
-            or str(payload["cp"] if "cp" in payload else "").lower() == "true"
+            coerce_exchange_bool(payload.get("closePosition"))
+            or coerce_exchange_bool(payload.get("cp"))
         )
-        is_reduce_only = str(
-            payload["reduceOnly"] if "reduceOnly" in payload else "").lower() == "true"
+        is_reduce_only = coerce_exchange_bool(payload.get("reduceOnly"))
         return bool(
             order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]
             or bracket_role in {"SL", "TP", "TP1", "TP2"}
@@ -725,6 +726,26 @@ class ManageFlowFSM:
             data_ref=msg.data_ref.copy() if msg.data_ref else [],
         )
 
+    def _should_route_pending_fill_to_check_rules(self, msg: Message) -> bool:
+        """Route only deferred-path exit-like fills through the bracket handler.
+
+        BRACKETS_PENDING is intentionally narrow: we do not open the full rule path
+        for generic pending-state traffic. The only additional routing we allow here
+        is for fills that are already identifiable as bracket/exit lifecycle events.
+        """
+        if self.state != ManageState.BRACKETS_PENDING:
+            return False
+        if msg.verb not in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED"):
+            return False
+
+        pld = msg.pld or {}
+        order_id = pld.get("orderId")
+        client_order_id = self._client_order_id_from_payload(pld)
+        return self._is_exit_fill_payload(pld) or self._matches_tracked_bracket(
+            order_id,
+            client_order_id,
+        )
+
     def handle(self, msg: Message) -> Optional[Message]:
         """
         Process incoming events and emit DEC:ADJUST if rules trigger.
@@ -796,12 +817,10 @@ class ManageFlowFSM:
                 order_type = pld.get("order_type") or (
                     pld["type"] if "type" in pld else "")
                 close_position = (
-                    str(pld["closePosition"]
-                        if "closePosition" in pld else "").lower() == "true"
-                    or str(pld["cp"] if "cp" in pld else "").lower() == "true"
+                    coerce_exchange_bool(pld.get("closePosition"))
+                    or coerce_exchange_bool(pld.get("cp"))
                 )
-                is_reduce_only = str(
-                    pld["reduceOnly"] if "reduceOnly" in pld else "").lower() == "true"
+                is_reduce_only = coerce_exchange_bool(pld.get("reduceOnly"))
 
                 LOG.debug(
                     f"FILL event in FLAT: verb={msg.verb}, "
@@ -869,6 +888,10 @@ class ManageFlowFSM:
                 result = self._on_bracket_placed(msg)
                 return result
 
+            if self._should_route_pending_fill_to_check_rules(msg):
+                result = self._check_rules(msg)
+                return result
+
             if self.state in (ManageState.TRACKING, ManageState.BRACKETS_PLACED):
                 result = self._check_rules(msg)
                 return result
@@ -876,19 +899,36 @@ class ManageFlowFSM:
             return None
         finally:
             if journal is not None:
-                notes = []
+                after = snapshot_manage_flow_state(self)
+                if result is not None:
+                    # OUTPUT record: authoritative state-change record
+                    journal.record_transition(
+                        event_name=f"{result.op}:{result.verb}",
+                        source_component="execution_position.fsm_manage",
+                        source_path="execution:manage_flow_output",
+                        event_origin_type="execution",
+                        truth_owner="ManageFlowFSM",
+                        payload=result.pld or {},
+                        rid=getattr(result, "rid", None) or getattr(
+                            msg, "rid", None),
+                        before=before,
+                        after=after,
+                        notes=[f"input={msg.op}:{msg.verb}"],
+                    )
+                # INPUT record: triggering event context only (no transition window)
+                notes = ["record_role=input"]
                 if result is not None:
                     notes.append(f"result={result.op}:{result.verb}")
                 journal.record_transition(
                     event_name=f"{msg.op}:{msg.verb}",
                     source_component="execution_position.fsm_manage",
-                    source_path="execution:manage_flow_handle",
+                    source_path="execution:manage_flow_input",
                     event_origin_type="execution",
                     truth_owner="ManageFlowFSM",
                     payload=msg.pld or {},
                     rid=getattr(msg, "rid", None),
-                    before=before,
-                    after=snapshot_manage_flow_state(self),
+                    before=None,
+                    after=None,
                     notes=notes,
                 )
 
@@ -1267,7 +1307,14 @@ class ManageFlowFSM:
                 f"Add 'exit.sl_pct' to config/aurora/strategies/aurora.yaml for this symbol. "
                 f"No fallback allowed - explicit config required."
             )
-        sl_price = self._calculate_sl_from_pct(entry_price, sl_pct)
+        fallback_targets = compute_bracket_targets(
+            reference_price=entry_price,
+            position_side=self.position_side,
+            sl_pct=sl_pct,
+            tp_low_ratio=tp_low_ratio,
+            tp_high_ratio=tp_high_ratio,
+        )
+        sl_price = fallback_targets.sl_price
         LOG.info(
             f"BRACKET_CALC [{symbol}]: Using per-symbol sl_pct={sl_pct}, SL={sl_price}")
 
@@ -1280,39 +1327,14 @@ class ManageFlowFSM:
                 f"No fallback allowed - explicit config required."
             )
 
-        tp1_price: Optional[Decimal] = None
-        tp2_price: Optional[Decimal] = None
-
-        # Phase A2: Risk-ratio based TP1/TP2
-        risk_pct = Decimal(str(sl_pct))  # SL distance as risk unit
-        tp1_off = risk_pct * Decimal(str(tp_low_ratio))
-
-        if self.position_side == "BUY":
-            tp1_price = entry_price * (Decimal("1") + tp1_off)
-        else:
-            tp1_price = entry_price * (Decimal("1") - tp1_off)
-
-        # TP2 is optional (further target)
-        if tp_high_ratio is not None:
-            tp2_off = risk_pct * Decimal(str(tp_high_ratio))
-            if self.position_side == "BUY":
-                tp2_price = entry_price * (Decimal("1") + tp2_off)
-            else:
-                tp2_price = entry_price * (Decimal("1") - tp2_off)
+        tp1_price = fallback_targets.tp1_price
+        tp2_price = fallback_targets.tp2_price
 
         # ========== Quantize prices to tick_size ==========
         sl_price, tp1_price, tp2_price = self._quantize_prices(
             symbol, sl_price, tp1_price, tp2_price)
 
         return sl_price, tp1_price, tp2_price
-
-    def _calculate_sl_from_pct(self, entry_price: Decimal, sl_pct: float) -> Decimal:
-        """Calculate SL price from percentage."""
-        sl_pct_dec = Decimal(str(sl_pct))
-        if self.position_side == "BUY":
-            return entry_price * (Decimal("1") - sl_pct_dec)
-        else:
-            return entry_price * (Decimal("1") + sl_pct_dec)
 
     # NOTE: _calculate_sl_from_bps and _calculate_tp_from_bps REMOVED
     # FAIL-CLOSED policy: No fallback to bps. Config must be explicit.
@@ -1421,16 +1443,28 @@ class ManageFlowFSM:
         order_id = pld.get("orderId")
 
         if client_order_id and order_id:
-            if "_sl" in client_order_id:
+            role = classify_client_order_id(client_order_id)
+            if role in {"SL", "BHSL"}:
                 self.sl_order_id = order_id
-            elif "_tp" in client_order_id:
+            elif role == "TP1":
+                self.tp1_order_id = order_id
+                self.tp_order_id = order_id
+            elif role == "TP2":
+                self.tp2_order_id = order_id
+                if not self.tp_order_id:
+                    self.tp_order_id = order_id
+            elif role in {"TP", "BHTP"}:
                 self.tp_order_id = order_id
 
             # Check if both brackets are placed
-            if self.sl_order_id and self.tp_order_id:
+            if self.sl_order_id and (self.tp_order_id or self.tp1_order_id or self.tp2_order_id):
                 self.state = ManageState.BRACKETS_PLACED
                 LOG.info(
-                    f"Both brackets placed: SL={self.sl_order_id}, TP={self.tp_order_id}"
+                    "Both brackets placed: SL=%s, TP=%s, TP1=%s, TP2=%s",
+                    self.sl_order_id,
+                    self.tp_order_id,
+                    self.tp1_order_id,
+                    self.tp2_order_id,
                 )
 
         return None
@@ -1490,9 +1524,20 @@ class ManageFlowFSM:
                             self.state = ManageState.WAIT_MODE
                             new_sl = (self.position_entry_price * (Decimal("1") - sl_em_bps / Decimal("10000"))) if self.position_side == "BUY" else (
                                 self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))
+                            emergency_symbol = (
+                                (msg.pld or {}).get(
+                                    "symbol") or self.symbol or ""
+                            )
+                            emergency_idem = (
+                                f"{aget(msg, 'rid', '')}_{int(self.position_open_ts)}_emergency"
+                            )
                             return self._emit_place_order(
                                 msg,
-                                client_id=f"{aget(msg, 'rid', '')}_emergency_sl",
+                                client_id=generate_client_order_id(
+                                    "SL",
+                                    emergency_symbol,
+                                    idempotent_key=emergency_idem,
+                                ),
                                 order_type="STOP_MARKET",
                                 side=self.position_side or "",
                                 qty=str(self.position_qty),

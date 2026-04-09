@@ -92,9 +92,10 @@ class OrderIndex:
         # EP-01.6: Prefer order_kind (SSOT) if set
         if ref.order_kind:
             return str(ref.order_kind).upper() == "ENTRY"
-        # Legacy fallback: clientOrderId starts with "ENTRY-"
-        if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
-            return True
+        # PREFIX-CANON-01: Legacy fallback uses canonical classifier
+        if ref.clientOrderId:
+            from apps.reference.domains.execution_position.utils import classify_client_order_id
+            return classify_client_order_id(ref.clientOrderId) == "ENTRY"
         if str(ref.order_type or "").upper() == "ENTRY_INTENT":
             return True
         return False
@@ -161,7 +162,7 @@ class OrderIndex:
         self,
         *,
         rid: str,
-        idempotent_key: str,
+        idempotent_key: Optional[str],
         clientOrderId: str,
         exchangeOrderId: str,
         symbol: str,

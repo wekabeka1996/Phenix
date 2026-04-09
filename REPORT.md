@@ -1,107 +1,120 @@
-# Canonical TIMER / TTL / COOLDOWN / HYSTERESIS Census
+# EXECUTION_POSITION_AUXILIARY_BRACKET_REGISTRATION_PATH_AUDIT_AND_HARDENING_PACKAGE_05
 
-Scope: Aurora/Phenix current runtime version.
+## 1. Scope
 
-Method:
-- Facts are separated from inference.
-- Units are normalized as milliseconds, seconds, bars, per-minute, booleans, or unitless multipliers.
-- A surface is marked active only when a live consumer was found in the inspected runtime path.
-- A surface is marked declared-only, not wired, legacy, or code-default-only when the current sweep did not prove a live config-to-runtime path.
+- Target: auxiliary and internal bracket registration only.
+- In scope:
+  - DEC:PLACE_ORDER path in execution_position.
+  - Live legacy bracket-role detection around auxiliary/internal child orders.
+  - Synchronization across _symbol_brackets, OrderIndex, ManageFlowFSM, and OrderGuardian for the audited auxiliary path.
+- Explicitly out of scope:
+  - strategy math,
+  - restart logic,
+  - sidecar policy,
+  - broad execution flow redesign.
+- Protocol note:
+  - FACT: the repo instruction attachment referenced docs/ai report protocol files.
+  - FACT: docs/ai/AGENT_REPORT_SCHEMA.md and docs/ai/DONE_CRITERIA.md were not present in the current workspace.
+  - INFERENCE: this report follows the requested FACT / INFERENCE / UNKNOWN discipline directly and fails closed on missing schema docs.
 
-Status legend:
-- Active: config is wired into runtime behavior.
-- Active-disabled: wired, but a live kill switch currently disables the behavior.
-- Not wired: a config value exists, but the runtime composition root does not pass it through.
-- Legacy / declared-only: present in config or docs, but no live consumer was found in the audited runtime path.
-- Code-default-only: active in code, but the current sweep did not find a YAML SSOT path.
+## 2. Evidence Summary
 
-## Executive Verdict
+- FACT: fsm.py routes decision.verb == PLACE_ORDER into CloseExecutor.execute_place_order().
+- FACT: BracketManager primary and deferred paths already used the explicit registration surface:
+  - _set_symbol_bracket_order,
+  - OrderIndex.register_bracket_child,
+  - OrderGuardian.register_bracket or register_brackets,
+  - ManageFlowFSM.set_bracket_ids.
+- FACT: before this package, CloseExecutor.execute_place_order() only:
+  - upserted generic open-order state into OrderIndex,
+  - attached exchange order ids,
+  - used brittle substring checks on _sl and _tp,
+  - partially updated _symbol_brackets,
+  - partially synced ManageFlowFSM.
+- FACT: before this package, CloseExecutor.execute_place_order() did not explicitly register auxiliary bracket children through OrderIndex.register_bracket_child.
+- FACT: before this package, CloseExecutor.execute_place_order() did not explicitly register auxiliary bracket metadata through OrderGuardian.register_bracket.
+- FACT: before this package, ManageFlowFSM._on_bracket_placed() still depended on substring logic _sl and _tp.
+- FACT: before this package, emergency stop activation emitted a legacy client id of the form rid_emergency_sl.
+- FACT: the legacy emitter was live.
 
-- System freshness is wired end-to-end. The market-data worker consumes websocket heartbeat and receive timeouts, the proxy consumes queue timeout and idle sleep, and the downstream regime and decision gates consume bar and tick freshness values. The tick TTL is real, but only on the tick branch; the bar branch uses bar_ttl_ms plus bar_event_age_mode.
-- Decision-making has three separate timing layers: features TTL, QoS cooldown/rate limits, and risk-skew defer windows. Aurora adds its own anti-churn timers, shield TTLs, holding/reentry windows, and per-symbol overrides.
-- The main drift surfaces are the top-level system.trailing.min_update_interval_sec key, the trading.execution.exposure duplicate TTLs, watchdog check and rate-limit knobs that are not threaded through ExecPosFSM, the legacy Aurora root cooldown, and the MD-AMR reconciliation cadence that is declared but not proven wired.
+## 3. Defect Matrix
 
-## Master Timing Census
+| Surface | Primary / deferred good path | Auxiliary path before package | Auxiliary path after package |
+|---|---|---|---|
+| Role detection | Canonical prefix registry | Brittle substring _sl / _tp | Canonical classify_client_order_id |
+| _symbol_brackets | Explicit role write | Partial substring-based write | Explicit canonical role write |
+| OrderIndex | register_bracket_child | generic upsert_from_open only | register_bracket_child for auxiliary SL/TP |
+| OrderGuardian | explicit bracket registration | missing | explicit register_bracket |
+| ManageFlowFSM sync | set_bracket_ids with bracket context | partial two-id sync only | set_bracket_ids with preserved paired-side context and algo ids |
+| Emergency auxiliary emit | canonical prefixes elsewhere | legacy rid_emergency_sl | canonical generate_client_order_id SL |
+| Placement ack hook | canonical role aware | substring dependent | canonical TP / TP1 / TP2 / SL / BH* aware |
 
-| Group | Surface(s) | Config path | Unit | Runtime consumer | Effect | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| System / market data | tick_ttl_ms, bar_ttl_ms, bar_event_age_mode, ws_heartbeat_sec, ws_receive_timeout_sec, proxy_queue_get_timeout_sec, proxy_idle_sleep_sec | [config/aurora/system.yaml](config/aurora/system.yaml#L14) | ms / sec / enum | [apps/reference/domains/market_data/worker.py](apps/reference/domains/market_data/worker.py#L171), [apps/reference/domains/market_data/worker.py](apps/reference/domains/market_data/worker.py#L434), [apps/reference/domains/market_data/proxy.py](apps/reference/domains/market_data/proxy.py#L113), [apps/reference/domains/market_data/proxy.py](apps/reference/domains/market_data/proxy.py#L324), [apps/reference/domains/market_data/proxy.py](apps/reference/domains/market_data/proxy.py#L373), [apps/reference/domains/regime_detector/regime_detector.py](apps/reference/domains/regime_detector/regime_detector.py#L372), [apps/reference/domains/decision_making/readiness_gates.py](apps/reference/domains/decision_making/readiness_gates.py#L313) | Transport liveness and freshness gating. Bar events use bar_ttl_ms and bar_event_age_mode; tick events use tick_ttl_ms. | Active |
-| Regime detector | basis_tf_sec, liveness_factor, basis_import_buffer, hysteresis_bars, vol_slope_gate_confirm_bars | [config/aurora/regime.yaml](config/aurora/regime.yaml#L1) | sec / bars / multiplier | [apps/reference/domains/decision_making/aurora_handler.py](apps/reference/domains/decision_making/aurora_handler.py#L411), [apps/reference/domains/decision_making/aurora_handler.py](apps/reference/domains/decision_making/aurora_handler.py#L470), [apps/reference/domains/regime_detector/regime_detector.py](apps/reference/domains/regime_detector/regime_detector.py#L606), [apps/reference/domains/regime_detector/regime_detector.py](apps/reference/domains/regime_detector/regime_detector.py#L708) | Regime heartbeat deadline, warmup buffer, slope confirmation, and regime flip damping. | Active |
-| Decision freshness | features.ttl_sec | [config/aurora/domains.yaml](config/aurora/domains.yaml#L52) | sec | [apps/reference/domains/decision_making/decision_making.py](apps/reference/domains/decision_making/decision_making.py#L173), [apps/reference/domains/decision_making/readiness_gates.py](apps/reference/domains/decision_making/readiness_gates.py#L313), [apps/reference/domains/decision_making/strategy_gateway.py](apps/reference/domains/decision_making/strategy_gateway.py#L788) | Stale feature rejection on the tick path. | Active |
-| Decision QoS | qos.exposure_block_cooldown_sec, qos.symbol_cooldown_sec, qos.max_intents_per_minute_per_symbol | [config/aurora/domains.yaml](config/aurora/domains.yaml#L37) | sec / per_min | [apps/reference/domains/decision_making/decision_making.py](apps/reference/domains/decision_making/decision_making.py#L156), [apps/reference/domains/decision_making/qos_rate_control.py](apps/reference/domains/decision_making/qos_rate_control.py#L28), [apps/reference/domains/decision_making/qos_rate_control.py](apps/reference/domains/decision_making/qos_rate_control.py#L108), [apps/reference/domains/decision_making/qos_rate_control.py](apps/reference/domains/decision_making/qos_rate_control.py#L176), [apps/reference/domains/decision_making/config_resolver.py](apps/reference/domains/decision_making/config_resolver.py#L222) | Exposure spam throttle, per-symbol cooldown, and minute rate limit. | Active |
-| Decision risk skew | risk_skew.max_skew_sec, defer_cooldown_sec, defer_window_sec, until_refresh_retry_sec | [config/aurora/domains.yaml](config/aurora/domains.yaml#L66) | sec | [apps/reference/domains/decision_making/strategy_gateway.py](apps/reference/domains/decision_making/strategy_gateway.py#L536), [apps/reference/domains/decision_making/strategy_gateway.py](apps/reference/domains/decision_making/strategy_gateway.py#L882), [apps/reference/domains/decision_making/strategy_gateway.py](apps/reference/domains/decision_making/strategy_gateway.py#L904) | Stale feature/risk skew blocking and defer ladders. | Active |
-| Aurora anti-churn and shields | side_bias_window_sec, retry_ttl_ms, scoring_engine.context_shield.ttl_ms, scoring_engine.memory_shield.flush_interval_sec, gates.motion_window_sec, holding_period.min_duration_sec, reentry_cooldown_sec | [config/aurora/strategies/aurora.yaml](config/aurora/strategies/aurora.yaml#L226) | sec / ms / bars | [apps/reference/domains/decision_making/aurora_scoring_helpers.py](apps/reference/domains/decision_making/aurora_scoring_helpers.py#L44), [apps/reference/domains/decision_making/aurora_scoring_helpers.py](apps/reference/domains/decision_making/aurora_scoring_helpers.py#L198), [apps/reference/domains/decision_making/aurora_scoring_helpers.py](apps/reference/domains/decision_making/aurora_scoring_helpers.py#L378), [apps/reference/domains/decision_making/aurora_holding_period.py](apps/reference/domains/decision_making/aurora_holding_period.py#L24), [apps/reference/domains/decision_making/intent_emitter.py](apps/reference/domains/decision_making/intent_emitter.py#L88), [apps/reference/domains/decision_making/intent_emitter.py](apps/reference/domains/decision_making/intent_emitter.py#L224) | Windowed side-bias, retry expiry, regime staleness attenuation, optional memory flush, motion gate, minimum hold, and re-entry delay. The loader also consumes anti_churn regime-inertia windows if present, but no current YAML/schema anchor was found in this sweep. | Active |
-| Aurora per-symbol overrides | strategies.aurora.assets.<SYM>.cooldown_sec, strategies.aurora.assets.<SYM>.trailing_stop.min_update_interval_sec | [config/aurora/strategies/aurora.yaml](config/aurora/strategies/aurora.yaml#L246), [config/aurora/strategies/aurora.yaml](config/aurora/strategies/aurora.yaml#L500) | sec | [apps/reference/domains/decision_making/config_resolver.py](apps/reference/domains/decision_making/config_resolver.py#L222), [apps/reference/main.py](apps/reference/main.py#L239), [apps/reference/domains/execution_position/fsm_manage.py](apps/reference/domains/execution_position/fsm_manage.py#L295) | Per-symbol cooldown override and per-instrument trailing-stop update cadence. | Active |
-| MD-AMR | md_amr.timeframe_sec, defer_ttl_sec, hysteresis_mult, reconciliation.interval_sec | [config/aurora/strategies/md_amr.yaml](config/aurora/strategies/md_amr.yaml#L1) | sec / multiplier | [apps/reference/domains/decision_making/md_amr_handler.py](apps/reference/domains/decision_making/md_amr_handler.py#L1186), [apps/reference/domains/decision_making/md_amr_handler.py](apps/reference/domains/decision_making/md_amr_handler.py#L1534), [apps/reference/domains/feature_engineering/md_amr_strategy.py](apps/reference/domains/feature_engineering/md_amr_strategy.py#L48), [apps/reference/domains/feature_engineering/md_amr_strategy.py](apps/reference/domains/feature_engineering/md_amr_strategy.py#L238) | Strict 15m contract, feature-deferral TTL, and score hysteresis. Reconciliation cadence is declared in YAML, but no live consumer was found in this sweep. | Active for timeframe / defer / hysteresis; reconciliation.interval_sec declared-only |
-| Mean reversion | timeframe_sec, strategy.min_bars, strategy.cooldown_sec | [config/aurora/strategies/mean_reversion.yaml](config/aurora/strategies/mean_reversion.yaml#L22) | sec / bars | [apps/reference/domains/feature_engineering/mean_reversion_strategy.py](apps/reference/domains/feature_engineering/mean_reversion_strategy.py#L136), [apps/reference/domains/feature_engineering/mean_reversion_strategy.py](apps/reference/domains/feature_engineering/mean_reversion_strategy.py#L284), [apps/reference/domains/feature_engineering/mean_reversion_strategy.py](apps/reference/domains/feature_engineering/mean_reversion_strategy.py#L452) | Warmup and post-signal cooldown around the 5m pipeline. | Active |
-| Flip orchestration | flip.enabled, flip.hysteresis_mult | [config/aurora/instruments.yaml](config/aurora/instruments.yaml#L24) | bool / multiplier | [apps/reference/domains/decision_making/config_resolver.py](apps/reference/domains/decision_making/config_resolver.py#L360), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L260), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L304), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L372) | Global killswitch plus per-symbol reversal hysteresis. The current global flip.enabled=false disables all flips even though per-symbol blocks are enabled in instruments.yaml. | Active-disabled globally |
-| Position tracking stale TTL | domains.position_tracking.positions_stale_ttl_sec | [config/aurora/domains.yaml](config/aurora/domains.yaml#L404) | sec | [apps/reference/domains/decision_making/strategy_gateway.py](apps/reference/domains/decision_making/strategy_gateway.py#L636), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L304), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L372) | Flip defer horizon and stale-position gate. This is a live clock distinct from exposure_guard.stale_ttl_sec. | Active |
-| Exposure guard | domains.execution_position.exposure_guard.pending_ttl_sec, post_fill_ttl_sec, stale_ttl_sec | [config/aurora/domains.yaml](config/aurora/domains.yaml#L423) | sec | [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L95), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L487), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L877), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L910) | Pending order age, post-fill hold TTL, and stale-exposure rejection. | Active |
-| Guardian cleanup | domains.execution_position.guardian.cleanup_ttl_ms, symbol_cooldown_ms | [config/aurora/domains.yaml](config/aurora/domains.yaml#L594) | ms | [apps/reference/domains/execution_position/event_handlers.py](apps/reference/domains/execution_position/event_handlers.py#L765), [apps/reference/domains/execution_position/config_resolver.py](apps/reference/domains/execution_position/config_resolver.py#L56), [apps/reference/domains/execution_position/lifecycle.py](apps/reference/domains/execution_position/lifecycle.py#L177) | Fresh tidy-event window and post-tidy symbol cooldown before new entries are allowed. | Active |
-| Orphan monitor and close hardening | trading.execution.manage.orphan_monitor.periodic_interval_sec, min_order_age_sec, batch_cancel_limit, rate_limit_per_min, emergency.wait_mode_bars, cooldown_after_close_ms, anti_race_close_ms | [config/aurora/trading.yaml](config/aurora/trading.yaml#L103) | sec / bars / ms / per_min | [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L402), [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L2182), [apps/reference/domains/execution_position/fsm_manage.py](apps/reference/domains/execution_position/fsm_manage.py#L131), [apps/reference/domains/execution_position/fsm_manage.py](apps/reference/domains/execution_position/fsm_manage.py#L866), [apps/reference/domains/execution_position/health_metrics.py](apps/reference/domains/execution_position/health_metrics.py#L59) | Orphan sweep cadence, emergency bar wait, post-close lockout, and anti-race close window. | Active |
-| Watchdog | trading.execution.watchdog.ack_ttl_ms, fill_ttl_ms, check_interval_ms, rps_limit | [config/aurora/trading.yaml](config/aurora/trading.yaml#L151) | ms / rps | [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L540), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L54), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L88), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L374), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L448) | Ack timeout, fill timeout, polling cadence, and REST poll throttle. Ack and fill TTLs are wired from ExecPosFSM; check_interval_ms and rps_limit are declared in config but not threaded through the FSM composition root, so constructor defaults apply. | Active for ack/fill; check_interval_ms and rps_limit not wired from FSM boundary |
-| Order correlation and inflight reconcile | domains.execution_position.fsm_open.idempotency_window_sec, order_index.ttl_sec, order_index.entry_guard_ttl_sec, inflight_reconcile.inflight_ttl_sec, max_ttl_sec, reconcile_interval_sec | [config/aurora/domains.yaml](config/aurora/domains.yaml#L439) | sec | [apps/reference/domains/execution_position/fsm_open.py](apps/reference/domains/execution_position/fsm_open.py#L160), [apps/reference/main.py](apps/reference/main.py#L239), [apps/reference/domains/execution_position/order_index.py](apps/reference/domains/execution_position/order_index.py#L43), [apps/reference/domains/inflight_reconcile/reconciler.py](apps/reference/domains/inflight_reconcile/reconciler.py#L214), [apps/reference/domains/inflight_reconcile/reconciler.py](apps/reference/domains/inflight_reconcile/reconciler.py#L409) | Open idempotency, order-ref TTL, one-open-entry guard, and reconciliation retry loop. entry_guard_ttl_sec is a constructor-only default. | Active; entry_guard_ttl_sec code-default only |
-| Intent boundary audit | route_ttl_ms, downstream_ttl_ms | [config/aurora/domains.yaml](config/aurora/domains.yaml#L599) | ms | [apps/reference/domains/execution_position/intent_boundary_audit.py](apps/reference/domains/execution_position/intent_boundary_audit.py#L52), [apps/reference/domains/execution_position/intent_boundary_audit.py](apps/reference/domains/execution_position/intent_boundary_audit.py#L124) | Boundary sweep TTL for routing and downstream acknowledgement. | Active |
-| Shadow telemetry | domains.shadow_telemetry.api.write.idempotency_ttl_sec, rate_limit_per_min | [config/aurora/domains.yaml](config/aurora/domains.yaml#L640) | sec / per_min | [apps/reference/domains/shadow_telemetry/main.py](apps/reference/domains/shadow_telemetry/main.py#L195), [apps/reference/domains/shadow_telemetry/main.py](apps/reference/domains/shadow_telemetry/main.py#L270), [apps/reference/domains/shadow_telemetry/main.py](apps/reference/domains/shadow_telemetry/main.py#L652) | Write idempotency expiry and write-ingress throttling. | Active |
-| Trade lifecycle logger | orphan_ttl_sec, auto_sweep_interval_sec | Constructor defaults only; no YAML path found in this sweep | sec | [apps/reference/telemetry/trade_lifecycle_logger.py](apps/reference/telemetry/trade_lifecycle_logger.py#L118), [apps/reference/telemetry/trade_lifecycle_logger.py](apps/reference/telemetry/trade_lifecycle_logger.py#L205) | Stale open-record sweep and ORPHANED_TTL marking. | Active, code-default only |
-| Open-flow guard | OpenFlowFSM.cooldown_sec, derived from exec_config.cooldown_ms fallback | Hidden fallback; no current YAML anchor found in this sweep | sec / ms | [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L1535), [apps/reference/domains/execution_position/fsm_open.py](apps/reference/domains/execution_position/fsm_open.py#L119), [apps/reference/domains/execution_position/fsm_open.py](apps/reference/domains/execution_position/fsm_open.py#L436) | Local open guard between ENTRY attempts. | Active, hidden fallback |
+## 4. Implemented Changes
 
-## Grouped Appendix
+### FACT
 
-### System / Market Data
+- apps/reference/domains/execution_position/close_executor.py now classifies auxiliary client ids through classify_client_order_id.
+- apps/reference/domains/execution_position/close_executor.py now maps TP, TP1, TP2, and BHTP into canonical TP auxiliary registration and maps SL and BHSL into canonical SL auxiliary registration.
+- apps/reference/domains/execution_position/close_executor.py now explicitly registers auxiliary bracket children through OrderIndex.register_bracket_child.
+- apps/reference/domains/execution_position/close_executor.py now explicitly registers auxiliary bracket metadata through OrderGuardian.register_bracket.
+- apps/reference/domains/execution_position/close_executor.py now updates ManageFlowFSM only when the lifecycle state is non-FLAT.
+- apps/reference/domains/execution_position/close_executor.py now preserves the opposite-side algo-client-id when that side is already tracked in _symbol_brackets.
+- apps/reference/domains/execution_position/close_executor.py now logs a fail-closed warning when a reduce-only or stop/take-profit auxiliary order is accepted with a noncanonical client id, instead of silently treating it as a bracket.
+- apps/reference/domains/execution_position/fsm_manage.py now uses classify_client_order_id inside _on_bracket_placed().
+- apps/reference/domains/execution_position/fsm_manage.py now recognizes TP1 and TP2 explicitly in placement acknowledgements.
+- apps/reference/domains/execution_position/fsm_manage.py now emits emergency stop auxiliary orders with generate_client_order_id("SL", ...), removing the live legacy rid_emergency_sl form.
+- tests/domains/execution_position/test_auxiliary_bracket_registration_hardening.py was added with focused regression coverage for the audited surfaces.
 
-The market-data worker is the first live consumer of the transport timers, and the proxy adds an additional queue/idle cadence on top. In the regime detector, tick TTL is only meaningful on the tick branch; bars use bar_ttl_ms and bar_event_age_mode. The top-level trailing.min_update_interval_sec key exists in system.yaml, but the live trailing-stop cadence comes from per-instrument trailing_stop.min_update_interval_sec, not from the top-level key.
+### INFERENCE
 
-### Regime
+- INFERENCE: the audited auxiliary PLACE_ORDER path now uses the same canonical contract surface as the primary and deferred bracket placement paths, without adding a second registration contract.
+- INFERENCE: the runtime dependency on legacy substring detection for auxiliary bracket registration has been removed from the audited path.
 
-basis_tf_sec and liveness_factor are not just documentation values; aurora_handler multiplies them into a concrete heartbeat deadline. hysteresis_bars and vol_slope_gate_confirm_bars dampen regime churn by requiring repeated confirmation before a regime transition is accepted.
+## 5. Validation Evidence
 
-### Decision-Making
+### FACT
 
-There are three separate clocks here: feature freshness, QoS throttling, and risk-skew deferral. feature freshness uses features.ttl_sec. QoS uses exposure_block_cooldown_sec, symbol_cooldown_sec, and max_intents_per_minute_per_symbol. Risk skew uses max_skew_sec, defer_cooldown_sec, defer_window_sec, and until_refresh_retry_sec to decide whether to defer, block, or require refresh.
+- Static diagnostics after edits:
+  - close_executor.py: no errors.
+  - fsm_manage.py: no errors.
+  - test_auxiliary_bracket_registration_hardening.py: no errors.
+- Focused pytest command executed:
 
-### Strategy-Specific
+```text
+c:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest tests/domains/execution_position/test_auxiliary_bracket_registration_hardening.py tests/domains/execution_position/test_bracket_algo_client_id_correlation.py tests/domains/execution_position/test_bracket_child_orderindex_canonical.py tests/domains/execution_position/test_fsm_manage_bracket_fixes.py -q
+```
 
-Aurora anti-churn is layered. side_bias_window_sec, holding_period.min_duration_sec, and reentry_cooldown_sec are explicit timers. retry_ttl_ms bounds the open-retry contract. context_shield.ttl_ms and memory_shield.flush_interval_sec are scoring-shield timers, and motion_window_sec feeds the motion gate. MD-AMR and mean reversion each carry their own timeframe and cooldown semantics, with MD-AMR also exposing a declared-but-unwired reconciliation.interval_sec.
+- Result:
 
-### Execution / Position
+```text
+78 passed in 0.79s
+```
 
-This is the densest clock cluster in the repo. exposure_guard uses its own pending, post-fill, and stale TTLs. position_tracking.positions_stale_ttl_sec is a separate live clock used by flip orchestration and strategy gating. guardian.cleanup_ttl_ms and symbol_cooldown_ms gate tidy-event freshness. orphan_monitor runs on its own periodic interval and also enforces a minimum order age and per-minute throttle. watchdog is only partially wired from ExecPosFSM; ack and fill TTLs are passed through, but check_interval_ms and rps_limit are not. order_index.entry_guard_ttl_sec and OpenFlowFSM.cooldown_sec are active code-default timers rather than YAML-backed SSOT values.
+- New focused proofs added:
+  - auxiliary SL PLACE_ORDER uses canonical registration contract,
+  - auxiliary TP1 PLACE_ORDER no longer depends on legacy substring matching,
+  - noncanonical reduce-only PLACE_ORDER does not mutate bracket truth,
+  - emergency stop emit uses canonical SL prefix,
+  - _on_bracket_placed handles TP1 and TP2 via canonical prefix classification.
 
-### Telemetry / Lifecycle
+## 6. Files Changed
 
-shadow_telemetry uses idempotency_ttl_sec and rate_limit_per_min to protect the write ingress. TradeLifecycleLogger is a separate lifecycle sweep path: it marks ORPHANED_TTL once orphan_ttl_sec elapses and advances its own auto_sweep_interval_sec. That logger is not the source of execution truth; it is a durability / forensic surface.
+- apps/reference/domains/execution_position/close_executor.py
+- apps/reference/domains/execution_position/fsm_manage.py
+- tests/domains/execution_position/test_auxiliary_bracket_registration_hardening.py
 
-### Flip Orchestration
+## 7. Residual Risks And Boundaries
 
-The flip path has two clocks that matter most: positions_stale_ttl_sec, which delays flip retries on stale positions, and the per-symbol flip hysteresis multiplier, which raises the evidence threshold before a reversal can pass. The global flip.enabled=false switch currently short-circuits all per-symbol flip blocks.
+- FACT: recovery health-check bracket placement remains a separate path and was not modified here.
+- FACT: that path was left untouched because the user explicitly excluded restart logic changes from this package.
+- FACT: noncanonical auxiliary client ids are now warned and reference-registered only; they are not silently coerced into bracket truth.
+- INFERENCE: this is the correct fail-closed posture for unknown auxiliary ids.
+- UNKNOWN: whether any nonaudited future auxiliary emitter might reintroduce a noncanonical client id outside the exercised surfaces.
 
-## Not Wired / Misleading / Doc Drift Timers
+## 8. Final Verdict
 
-| Surface | What is wrong | Proof | Verdict |
-| --- | --- | --- | --- |
-| system.trailing.min_update_interval_sec | The top-level system key exists, but ManageFlowFSM reads per-instrument trailing_stop.min_update_interval_sec instead. | [apps/reference/domains/execution_position/fsm_manage.py](apps/reference/domains/execution_position/fsm_manage.py#L295), [apps/reference/domains/execution_position/fsm_manage.py](apps/reference/domains/execution_position/fsm_manage.py#L306), [config/aurora/system.yaml](config/aurora/system.yaml#L36) | Misleading / not wired |
-| trading.execution.exposure.pending_ttl_sec and trading.execution.exposure.post_fill_hold_ttl_sec | The trading-side duplicate exposure TTLs are documented, but the live hard guard uses domains.execution_position.exposure_guard.pending_ttl_sec and post_fill_ttl_sec. | [config/aurora/trading.yaml](config/aurora/trading.yaml#L129), [config/aurora/trading.yaml](config/aurora/trading.yaml#L131), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L96), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L97) | Stale duplicate / doc drift |
-| trading.execution.watchdog.check_interval_ms and rps_limit | ExecPosFSM instantiates OrderTimeoutWatchdog without passing a config dict, so these values fall back to constructor defaults. | [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L540), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L54), [apps/reference/domains/execution_position/watchdog.py](apps/reference/domains/execution_position/watchdog.py#L98) | Declared, not wired from FSM boundary |
-| strategies.aurora.cooldown_sec | The Aurora root cooldown is present in YAML, but no live consumer was found in the audited runtime path. | [config/aurora/strategies/aurora.yaml](config/aurora/strategies/aurora.yaml#L230) | Legacy / declared-only |
-| strategies.md_amr.reconciliation.interval_sec | The cadence exists in YAML, but no runtime consumer was found in this sweep. | [config/aurora/strategies/md_amr.yaml](config/aurora/strategies/md_amr.yaml#L215) | Declared-only |
-| domains.position_tracking.positions_stale_ttl_sec versus domains.execution_position.exposure_guard.stale_ttl_sec | Both are live, but they are different clocks owned by different consumers. They should not be collapsed into one SSOT. | [config/aurora/domains.yaml](config/aurora/domains.yaml#L404), [config/aurora/domains.yaml](config/aurora/domains.yaml#L425), [apps/reference/domains/decision_making/flip_orchestration.py](apps/reference/domains/decision_making/flip_orchestration.py#L304), [apps/reference/domains/execution_position/exposure_guard.py](apps/reference/domains/execution_position/exposure_guard.py#L98) | Split live ownership / SSOT tension |
-| OpenFlowFSM.cooldown_sec | The open-flow cooldown is active, but the current sweep did not find a YAML SSOT anchor; fsm.py falls back to exec_config.cooldown_ms or the constructor default. | [apps/reference/domains/execution_position/fsm.py](apps/reference/domains/execution_position/fsm.py#L1535), [apps/reference/domains/execution_position/fsm_open.py](apps/reference/domains/execution_position/fsm_open.py#L119) | Code-default only |
-| OrderIndex.entry_guard_ttl_sec | The entry guard is active, but it is only a constructor default in OrderIndex and has no YAML path in the current sweep. | [apps/reference/domains/execution_position/order_index.py](apps/reference/domains/execution_position/order_index.py#L43), [apps/reference/domains/execution_position/order_index.py](apps/reference/domains/execution_position/order_index.py#L273) | Code-default only |
-| TradeLifecycleLogger.orphan_ttl_sec and auto_sweep_interval_sec | The logger is active, but the sweep window is constructor-driven and no YAML path was found. | [apps/reference/telemetry/trade_lifecycle_logger.py](apps/reference/telemetry/trade_lifecycle_logger.py#L118), [apps/reference/telemetry/trade_lifecycle_logger.py](apps/reference/telemetry/trade_lifecycle_logger.py#L205) | Code-default only |
-| Aurora anti-churn regime inertia windows | aurora_config_loader.py and aurora_handler.py consume regime-inertia windows, but no current YAML or config-model anchor was found in this sweep. | [apps/reference/domains/decision_making/aurora_config_loader.py](apps/reference/domains/decision_making/aurora_config_loader.py#L335), [apps/reference/domains/decision_making/aurora_handler.py](apps/reference/domains/decision_making/aurora_handler.py#L411) | Code-active, config path unproven |
-
-## End-to-End Timing Chain Example
-
-1. BAR_CLOSED / FEATURES_CALCULATED arrives with a timestamp. readiness_gates.features_ready checks bar freshness using bar_ttl_ms and bar_event_age_mode, while the regime detector uses bar_ttl_ms for bar events and tick_ttl_ms only for tick events.
-2. DecisionMaking.strategy_gateway then gates the signal using features.ttl_sec, QoS cooldowns, risk-skew skew windows, and positions_stale_ttl_sec.
-3. intent_emitter turns a deferred or retrying decision into an intent with retry_ttl_ms and retry_max_count, so retries expire instead of accumulating forever.
-4. ExecPosFSM finally configures the watchdog with ack_ttl_ms and fill_ttl_ms. The watchdog loop polls until those deadlines expire; its poll cadence defaults to check_interval_ms when the FSM does not pass a config dict through.
-
-## Unit Consistency Notes
-
-- Millisecond surfaces stay in milliseconds until code explicitly divides or multiplies. Example: cooldown_after_close_ms becomes seconds in ExecPosFSM, while retry_ttl_ms and context_shield.ttl_ms stay in milliseconds.
-- Bar counts are kept in bars, not silently converted to seconds, unless code multiplies by the active timeframe.
-- liveness_factor is unitless. Its effective deadline is basis_tf_sec × liveness_factor seconds.
-- positions_stale_ttl_sec and exposure_guard.stale_ttl_sec are both seconds, but they feed different consumers and should not be merged without a contract change.
-- The watchdog and OpenFlow timing paths contain hidden defaults. The report treats those as code-default-only surfaces rather than silently assuming the YAML value is wired.
+- FACT: a real defect was proven in the auxiliary DEC:PLACE_ORDER bracket registration path.
+- FACT: the defect was narrow and localized to canonical registration and legacy role-detection seams.
+- FACT: the package hardened that seam without changing strategy math, restart logic, or sidecar policy.
+- FACT: focused validation passed with 78 passing tests across the new regression file and adjacent canonical bracket suites.
+- FINAL: PASS for the requested auxiliary bracket registration hardening scope.

@@ -13,6 +13,12 @@ from apps.reference.config_models import (
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from apps.reference.domains.execution_position.fsm_close import CloseState
 from apps.reference.domains.execution_position.fsm_manage import ManageState
+from apps.reference.domains.execution_position.restore_artifact import (
+    TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
+    TRUTH_SOURCE_RESTORED_PENDING_WAL,
+    TRUTH_SOURCE_RUNTIME_LOCAL,
+    TRUTH_SOURCE_UNKNOWN,
+)
 
 
 class _Bus:
@@ -50,6 +56,7 @@ def _set_runtime_state(
     fsm.close_flows.clear()
     fsm._pending_brackets.clear()
     fsm._symbol_brackets.clear()
+    fsm._symbol_bracket_truth_source.clear()
     manage_flow = MagicMock()
     manage_flow.state = manage_state
     manage_flow.has_active_lifecycle.return_value = manage_active
@@ -86,7 +93,8 @@ def test_restore_artifact_writes_minimum_envelope_shape_from_runtime_state(
 ) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_writer(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.WAIT_MODE, close_state=CloseState.CLOSE_COND)
+    _set_runtime_state(fsm, manage_state=ManageState.WAIT_MODE,
+                       close_state=CloseState.CLOSE_COND)
 
     wrote = fsm._persist_restore_artifact_snapshot(
         trigger="transition:manage",
@@ -106,8 +114,10 @@ def test_restore_artifact_writes_minimum_envelope_shape_from_runtime_state(
     assert record == {
         "symbol": "BTCUSDT",
         "manage_phase": "WAIT_MODE",
+        "manage_truth_source": TRUTH_SOURCE_RUNTIME_LOCAL,
         "close_phase": "CLOSE_COND",
         "bracket_state": "UNKNOWN",
+        "bracket_truth_source": TRUTH_SOURCE_UNKNOWN,
         "live_reconcile_required": True,
     }
     assert "contour_id" not in json.dumps(payload)
@@ -134,6 +144,8 @@ def test_close_phase_unknown_and_bracket_state_unknown_when_exact_truth_absent(
     record = _load_json(path)["active_lifecycles"][0]
     assert record["close_phase"] == "UNKNOWN"
     assert record["bracket_state"] == "UNKNOWN"
+    assert record["manage_truth_source"] == TRUTH_SOURCE_RUNTIME_LOCAL
+    assert record["bracket_truth_source"] == TRUTH_SOURCE_UNKNOWN
 
 
 def test_deferred_bracket_ref_is_emitted_when_pending_wal_state_exists(
@@ -142,7 +154,8 @@ def test_deferred_bracket_ref_is_emitted_when_pending_wal_state_exists(
 ) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_writer(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.OPENED, close_state=CloseState.OPENED)
+    _set_runtime_state(fsm, manage_state=ManageState.OPENED,
+                       close_state=CloseState.OPENED)
     fsm._pending_brackets["8631999001"] = {"symbol": "BTCUSDT"}
 
     fsm._persist_restore_artifact_snapshot(
@@ -152,6 +165,7 @@ def test_deferred_bracket_ref_is_emitted_when_pending_wal_state_exists(
 
     record = _load_json(path)["active_lifecycles"][0]
     assert record["bracket_state"] == "DEFERRED_PENDING_WAL"
+    assert record["bracket_truth_source"] == TRUTH_SOURCE_RESTORED_PENDING_WAL
     assert record["deferred_bracket_ref"] == {"entry_order_id": "8631999001"}
 
 
@@ -172,7 +186,34 @@ def test_bracket_state_becomes_unknown_when_pending_bracket_lineage_is_ambiguous
 
     record = _load_json(path)["active_lifecycles"][0]
     assert record["bracket_state"] == "UNKNOWN"
+    assert record["bracket_truth_source"] == TRUTH_SOURCE_UNKNOWN
     assert "deferred_bracket_ref" not in record
+
+
+def test_guardian_reconstructed_bracket_truth_source_is_emitted(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_writer(fsm, tmp_path)
+    _set_runtime_state(fsm, manage_state=ManageState.FLAT, manage_active=False)
+    fsm._set_symbol_brackets_snapshot(
+        "BTCUSDT",
+        sl_order_id="8631000001",
+        tp_order_id="8631000002",
+        truth_source=TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
+    )
+
+    fsm._persist_restore_artifact_snapshot(
+        trigger="startup_order_guardian_reconcile",
+        allow_empty=True,
+    )
+
+    record = _load_json(path)["active_lifecycles"][0]
+    assert record["manage_phase"] == "FLAT"
+    assert record["manage_truth_source"] == TRUTH_SOURCE_RUNTIME_LOCAL
+    assert record["bracket_state"] == "LINKED_ACTIVE"
+    assert record["bracket_truth_source"] == TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN
 
 
 def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
@@ -182,9 +223,11 @@ def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
     fsm, _, _ = fsm_harness
     events = []
     path = _configure_writer(fsm, tmp_path)
-    fsm._restore_artifact_writer._observability_hook = lambda event, payload: events.append((event, payload))
+    fsm._restore_artifact_writer._observability_hook = lambda event, payload: events.append(
+        (event, payload))
     _set_runtime_state(fsm, manage_state=ManageState.OPENED)
-    assert fsm._persist_restore_artifact_snapshot(trigger="transition:open", allow_empty=True) is True
+    assert fsm._persist_restore_artifact_snapshot(
+        trigger="transition:open", allow_empty=True) is True
     previous = path.read_text(encoding="utf-8")
 
     _set_runtime_state(fsm, manage_state=ManageState.TRACKING)
@@ -196,7 +239,8 @@ def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
 
     assert wrote is False
     assert path.read_text(encoding="utf-8") == previous
-    assert any(event == "RESTORE:EXECUTION_POSITION_ARTIFACT_WRITE_FAILED" for event, _ in events)
+    assert any(
+        event == "RESTORE:EXECUTION_POSITION_ARTIFACT_WRITE_FAILED" for event, _ in events)
 
 
 def test_successful_write_does_not_leave_partial_authoritative_target(

@@ -182,7 +182,7 @@ mean_reversion:
         min_bb_width: 0.005  # (min_vol_atr from report)
         entry_threshold: 0.05
         # Exit parameters
-        sl_atr_mult: 0.75    # Base, overridden below
+        sl_atr_mult: 2.0     # P0.5: widened from 0.75 — 3/4 BUY orders hit SL instantly at old value
         tp_to_mid: false     # False for outer band target
         cooldown_sec: 210
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for ""

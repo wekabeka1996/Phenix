@@ -533,6 +533,28 @@ class BinanceWebSocketClient:
                 payload["close_reason"] = order_kind
                 payload["bracket_role"] = order_kind
                 payload["terminal_correlation_source"] = "order_index_canonical"
+                _bracket_exchange_id = getattr(
+                    order_ref, "exchangeOrderId", None)
+                if _bracket_exchange_id:
+                    payload["tracked_bracket_order_id"] = str(
+                        _bracket_exchange_id)
+                # Write hit-path audit record for every terminal bracket fill
+                if standardized_status == "FILLED":
+                    self._append_terminal_ws_record(
+                        event_type="EXECUTION_WS_TERMINAL_CORRELATED",
+                        symbol=symbol,
+                        client_order_id=client_order_id or "",
+                        exchange_order_id=exchange_order_id or "",
+                        order_status=standardized_status,
+                        order_type=str(order_data.get("o", "")),
+                        event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                        context={
+                            "rid": getattr(order_ref, "rid", None),
+                            "correlation_source": "order_index_canonical",
+                            "bracket_role": order_kind,
+                            "tracked_bracket_order_id": str(_bracket_exchange_id) if _bracket_exchange_id else None,
+                        },
+                    )
 
             # EP-01.5: Add MAKER_ONLY_REJECT reason if detected
             if is_maker_only_reject:

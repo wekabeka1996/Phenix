@@ -55,6 +55,9 @@ class _SymbolState:
     last_reconcile_ts_ms: int = 0
     last_evaluation_ts_ms: int = 0
     last_suppression_reason: str = ""
+    last_recommendation_signature: Optional[tuple] = None
+    last_recommendation_ts_ms: int = 0
+    recommendation_dedup_suppressed_count: int = 0
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
@@ -302,6 +305,8 @@ class PositionPolicySidecar:
             state = self._state(symbol)
             state.last_reconcile_ts_ms = 0
             state.order_state = _Envelope()
+            state.last_recommendation_signature = None
+            state.recommendation_dedup_suppressed_count = 0
         self._evaluate_symbol(symbol, trigger_event=trigger_event)
 
     def on_order_state_changed(self, event: "Message") -> None:
@@ -442,6 +447,38 @@ class PositionPolicySidecar:
 
         if score_snapshot["soft_close_pressure"] < self.config.thresholds.recommend_soft_close_at:
             return
+
+        position_snapshot = base_payload["position_snapshot"]
+        fill_correlation = base_payload["fill_correlation"]
+        signature = self._recommendation_signature(
+            score_snapshot=score_snapshot,
+            position_snapshot=position_snapshot,
+            fill_correlation=fill_correlation,
+        )
+
+        if state.last_recommendation_signature == signature:
+            state.recommendation_dedup_suppressed_count += 1
+            dedup_payload = dict(base_payload)
+            dedup_payload["event_type"] = "POSITION_POLICY_SIDECAR_SUPPRESSED"
+            dedup_payload["reason_codes"] = [
+                f"trigger:{trigger_event.lower()}",
+                "recommendation_duplicate_same_state",
+            ]
+            dedup_payload["suppression_reason"] = "recommendation_duplicate_same_state"
+            dedup_payload["score_snapshot"] = score_snapshot
+            dedup_payload["dedup_detail"] = {
+                "suppressed_count": state.recommendation_dedup_suppressed_count,
+                "last_recommendation_ts_ms": state.last_recommendation_ts_ms,
+                "signature_fields": list(signature),
+            }
+            state.last_suppression_reason = "recommendation_duplicate_same_state"
+            self._publish(
+                "EVT:POSITION_POLICY_SIDECAR_SUPPRESSED", dedup_payload)
+            return
+
+        state.last_recommendation_signature = signature
+        state.last_recommendation_ts_ms = now_ms
+        state.recommendation_dedup_suppressed_count = 0
 
         recommended_payload = dict(base_payload)
         recommended_payload["event_type"] = "POSITION_POLICY_SIDECAR_RECOMMENDED"
@@ -710,6 +747,28 @@ class PositionPolicySidecar:
             "conviction_decay": conviction_decay,
             "unrealized_loss_pressure": unrealized_loss_pressure,
         }
+
+    def _recommendation_signature(
+        self,
+        *,
+        score_snapshot: Dict[str, float],
+        position_snapshot: Dict[str, Any],
+        fill_correlation: Dict[str, Any],
+    ) -> tuple:
+        """Build a hashable state-signature for recommendation dedup.
+
+        Two evaluations with the same signature in the same lifecycle
+        represent no meaningful state change and the second should be
+        suppressed as a duplicate.
+        """
+        return (
+            round(score_snapshot.get("soft_close_pressure", 0.0), 4),
+            position_snapshot.get("manage_state"),
+            position_snapshot.get("side"),
+            position_snapshot.get("position_qty"),
+            str(position_snapshot.get("portfolio_position_amt")),
+            fill_correlation.get("canonical_fill_trace_id"),
+        )
 
     def _base_payload(
         self,

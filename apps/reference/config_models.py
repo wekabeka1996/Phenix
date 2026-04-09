@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Literal, Tuple
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
 
 from apps.reference.contracts.runtime_regime_layers import normalize_structural_regime_label
+from apps.reference.telemetry.shadow_journal import DEFAULT_CRITICAL_EVENTS
 
 
 def _coerce_positive_decimal(value: Any) -> Decimal:
@@ -3669,12 +3670,12 @@ class EventDedupConfig(BaseModel):
         default=86400000, description="Event TTL in milliseconds (24h)")
     warm_state: "EventDedupWarmStateConfig" = Field(
         default_factory=lambda: EventDedupWarmStateConfig(),
-        description="Restart-seeded warm-state for recent exact terminal fill identities",
+        description="Legacy config key for cache-only restart seed persistence of recent exact terminal fill identities",
     )
 
 
 class EventDedupWarmStateConfig(BaseModel):
-    """Restart-seeded warm-state configuration for exact terminal fill identities."""
+    """Legacy-named cache-only configuration for exact terminal fill identity seeds."""
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
@@ -3682,8 +3683,8 @@ class EventDedupWarmStateConfig(BaseModel):
         description="Enable restart-seeded warm-state for exact terminal fill identity continuity",
     )
     storage_path: Optional[str] = Field(
-        default="logs/execution_truth_warm_state_v1.json",
-        description="Atomic JSON path for bounded warm-state seed persistence",
+        default="logs/execution_terminal_identity_cache_v1.json",
+        description="Atomic JSON path for cache-only exact terminal fill identity seed persistence",
     )
     max_entries: int = Field(
         default=2000,
@@ -4239,6 +4240,32 @@ class ExecutionPositionRestoreArtifactConfig(BaseModel):
         gt=0,
         description="Bounded periodic flush interval while active restore state exists.",
     )
+    dark_read_max_artifact_age_ms: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Optional stale-age threshold for startup dark-read comparisons.",
+    )
+
+
+class ExecutionPositionStartupTruthArtifactMode(str, Enum):
+    """Writer rollout mode for the dedicated execution startup truth artifact."""
+
+    OFF = "off"
+    WRITER_ONLY = "writer_only"
+
+
+class ExecutionPositionStartupTruthArtifactConfig(BaseModel):
+    """Strict SSOT for the dedicated execution startup truth artifact."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    mode: ExecutionPositionStartupTruthArtifactMode = Field(
+        description="Dedicated startup truth artifact rollout mode."
+    )
+    storage_path: str = Field(
+        min_length=1,
+        description="Canonical append-only JSONL path for execution startup truth summaries.",
+    )
 
 
 class ExecutionPositionDomainConfig(BaseModel):
@@ -4302,6 +4329,9 @@ class ExecutionPositionDomainConfig(BaseModel):
     )
     restore_artifact: ExecutionPositionRestoreArtifactConfig = Field(
         description="Writer/read rollout config for the canonical execution restore artifact.",
+    )
+    startup_truth_artifact: ExecutionPositionStartupTruthArtifactConfig = Field(
+        description="Writer rollout config for the dedicated execution startup truth artifact.",
     )
     position_policy_sidecar: PositionPolicySidecarConfig = Field(
         description="Position Policy Sidecar typed config for open-position recommendation logic.",
@@ -5614,43 +5644,7 @@ class ShadowCriticalEventJournalConfig(BaseModel):
         description="Instrumentation package version written into each journal record.",
     )
     critical_events: List[str] = Field(
-        default_factory=lambda: list((
-            "EVT:TRADE_INTENT_PROPOSED",
-            "EVT:TRADE_INTENT_REJECTED",
-            "EVT:INTENT_DEFERRED",
-            "EVT:DECISION_BLOCKED",
-            "EVT:REGIME_DETECTED",
-            "EVT:STRATEGY_DECISION_BLOCKED",
-            "CMD:OPEN",
-            "DEC:OPEN",
-            "EVT:ORDER_ACK",
-            "EVT:ORDER_REJECTED",
-            "EVT:ORDER_STATE_CHANGED",
-            "EVT:ORDER_PLACED",
-            "EVT:TRADE_EXECUTED",
-            "DEC:BATCH",
-            "CMD:CLOSE",
-            "DEC:CLOSE",
-            "EVT:PORTFOLIO_STATE_UPDATED",
-            "EVT:EXPOSURE_SUMMARY_UPDATED",
-            "RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD",
-            "RESTORE:EXECUTION_POSITION_HYDRATE",
-            "ORDER_INDEX:RESERVE_ENTRY",
-            "ORDER_INDEX:UPSERT_OPEN",
-            "ORDER_INDEX:ATTACH_EXCHANGE_ID",
-            "ORDER_INDEX:MARK_TERMINAL",
-            "ORDER_INDEX:CANCEL_RESERVATION",
-            "HARDENING:TRADE_EXECUTED_SUPPRESSED",
-            "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED",
-            "HARDENING:TRADE_EXECUTED_WARM_STATE_HIT",
-            "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
-            "HARDENING:CMD_CLOSE_SUPPRESSED",
-            "HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED",
-            "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
-            "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOADED",
-            "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
-            "RESTORE:EXECUTION_TRUTH_WARM_STATE_LOAD_FAILED",
-        )),
+        default_factory=lambda: list(DEFAULT_CRITICAL_EVENTS),
         description="Critical events/transitions captured by the shadow journal.",
     )
 

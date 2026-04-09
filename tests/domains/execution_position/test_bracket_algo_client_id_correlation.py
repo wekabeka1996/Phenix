@@ -15,9 +15,11 @@ Proves:
 
 import pytest
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Optional, Dict, Any
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from apps.reference.domains.execution_position.bracket_manager import BracketManager
 from apps.reference.domains.execution_position.order_index import (
     OrderIndex,
     OrderRef,
@@ -44,6 +46,40 @@ def _make_manage_flow():
 
     flow = ManageFlowFSM(config=config)
     return flow
+
+
+def _make_bracket_manager_fsm():
+    order_index = OrderIndex(ttl_sec=600)
+    fsm = SimpleNamespace(
+        order_index=order_index,
+        fsm=SimpleNamespace(order_index=order_index),
+        order_guardian=MagicMock(),
+        correlation_store=MagicMock(),
+        manage_flows={},
+        _symbol_brackets={},
+        _orphan_metrics={"tp_sl_placed_success": 0},
+        config=SimpleNamespace(
+            domains=SimpleNamespace(
+                execution_position=SimpleNamespace(
+                    bracket_placement=SimpleNamespace(tp_widen_first_bps=10)
+                )
+            )
+        ),
+    )
+
+    def _set_symbol_bracket_order(symbol, *, order_role, order_id):
+        brackets = fsm._symbol_brackets.setdefault(symbol, {})
+        if order_role == "SL":
+            brackets["sl_order_id"] = order_id
+        elif order_role == "TP":
+            brackets["tp_order_id"] = order_id
+
+    fsm._set_symbol_bracket_order = MagicMock(
+        side_effect=_set_symbol_bracket_order)
+    fsm._remember_bracket_owner = MagicMock(return_value={})
+    fsm._append_bracket_ownership_record = MagicMock()
+    fsm._has_active_lifecycle_for_symbol = MagicMock(return_value=True)
+    return fsm
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +319,112 @@ class TestClearLifecycleAlgoClientId:
 
 
 # ---------------------------------------------------------------------------
-# 5. Exchange fragmentation safety
+# 5. BracketManager persists actual child identity into guardian
+# ---------------------------------------------------------------------------
+
+
+class TestBracketManagerGuardianClientIdentity:
+    """Bracket placement persists the exact child client identity into guardian."""
+
+    def test_primary_registration_prefers_algo_client_id_for_guardian(self):
+        fsm = _make_bracket_manager_fsm()
+        manager = BracketManager(fsm)
+        decision = SimpleNamespace(
+            corr_id="corr-1",
+            oco_group_id="oco-1",
+            rid="rid-1",
+            idempotent_key="idem-1",
+            side="BUY",
+        )
+
+        manager._register_bracket_results(
+            symbol="BTCUSDT",
+            sl_resp={"orderId": "500001", "clientAlgoId": "algo-sl-1"},
+            tp_resp={"orderId": "600001", "clientAlgoId": "algo-tp-1"},
+            sl_id="SL-legacy-1",
+            tp_id="TP-legacy-1",
+            entry_resp={"orderId": "entry-1",
+                        "clientOrderId": "ENTRY-1", "side": "BUY"},
+            decision=decision,
+            corr_id="corr-1",
+            oco_group_id="oco-1",
+            owner_context=None,
+            placement_path="primary",
+        )
+
+        guardian_call = fsm.order_guardian.register_brackets.call_args.kwargs
+        assert guardian_call["sl_client_id"] == "algo-sl-1"
+        assert guardian_call["tp_client_id"] == "algo-tp-1"
+
+    def test_primary_registration_falls_back_to_legacy_client_id_when_algo_missing(self):
+        fsm = _make_bracket_manager_fsm()
+        manager = BracketManager(fsm)
+        decision = SimpleNamespace(
+            corr_id="corr-1",
+            oco_group_id="oco-1",
+            rid="rid-1",
+            idempotent_key="idem-1",
+            side="BUY",
+        )
+
+        manager._register_bracket_results(
+            symbol="BTCUSDT",
+            sl_resp={"orderId": "500001"},
+            tp_resp=None,
+            sl_id="SL-legacy-1",
+            tp_id="TP-legacy-1",
+            entry_resp={"orderId": "entry-1",
+                        "clientOrderId": "ENTRY-1", "side": "BUY"},
+            decision=decision,
+            corr_id="corr-1",
+            oco_group_id="oco-1",
+            owner_context=None,
+            placement_path="primary",
+        )
+
+        guardian_call = fsm.order_guardian.register_brackets.call_args.kwargs
+        assert guardian_call["sl_client_id"] == "SL-legacy-1"
+
+    @pytest.mark.asyncio
+    async def test_deferred_registration_prefers_algo_client_id_for_guardian(self):
+        fsm = _make_bracket_manager_fsm()
+        fsm.adapter = SimpleNamespace(
+            place_stop_market_close_position=AsyncMock(
+                return_value={"orderId": "500001", "clientAlgoId": "algo-sl-1"}
+            ),
+            place_take_profit_market_close_position=AsyncMock(
+                return_value={"orderId": "600001", "clientAlgoId": "algo-tp-1"}
+            ),
+        )
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+
+        manager = BracketManager(fsm)
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        await manager.place_deferred_brackets(
+            "entry-1",
+            {
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "sl": Decimal("99"),
+                "tp": Decimal("101"),
+                "rid": "rid-1",
+                "idem_key": "idem-1",
+                "tick_size": Decimal("0.1"),
+                "corr_id": "corr-1",
+                "oco_group_id": "oco-1",
+                "entry_client_order_id": "ENTRY-1",
+            },
+        )
+
+        sl_call = fsm.order_guardian.register_bracket.call_args_list[0].kwargs
+        tp_call = fsm.order_guardian.register_bracket.call_args_list[1].kwargs
+        assert sl_call["client_order_id"] == "algo-sl-1"
+        assert tp_call["client_order_id"] == "algo-tp-1"
+
+
+# ---------------------------------------------------------------------------
+# 6. Exchange fragmentation safety
 # ---------------------------------------------------------------------------
 
 class TestExchangeFragmentationSafety:

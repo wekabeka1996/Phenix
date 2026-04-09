@@ -23,7 +23,7 @@ instruments:
     flip:
       enabled: true
       hysteresis_mult: 1.3
-    
+
   ETHUSDT:
     symbol: "ETHUSDT"
     step_size: "0.001"
@@ -32,7 +32,7 @@ instruments:
     min_notional: "20"
     execution:
       margin_mode: "isolated"
-      target_leverage: 41
+      target_leverage: 20
       leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
@@ -40,7 +40,7 @@ instruments:
     flip:
       enabled: true
       hysteresis_mult: 1.3
-    
+
   BTCUSDT:
     symbol: "BTCUSDT"
     step_size: "0.001"
@@ -59,7 +59,7 @@ instruments:
     flip:
       enabled: true
       hysteresis_mult: 3.0
-    
+
   DOGEUSDT:
     symbol: "DOGEUSDT"
     step_size: "1"
@@ -76,7 +76,7 @@ instruments:
     flip:
       enabled: true
       hysteresis_mult: 1.3
-    
+
   XRPUSDT:
     symbol: "XRPUSDT"
     step_size: "0.1"

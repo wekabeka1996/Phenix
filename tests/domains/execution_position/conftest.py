@@ -46,7 +46,7 @@ def fsm_config():
     event_dedup.ttl_ms = 86400000
     warm_state = MagicMock()
     warm_state.enabled = True
-    warm_state.storage_path = "logs/test_execution_truth_warm_state.json"
+    warm_state.storage_path = "logs/test_execution_terminal_identity_cache.json"
     warm_state.max_entries = 2000
     event_dedup.warm_state = warm_state
     cfg.domains.execution_position.event_dedup = event_dedup

@@ -23,6 +23,7 @@ def test_production_config_exposes_position_policy_sidecar_contract() -> None:
 
     sidecar = cfg.domains.execution_position.position_policy_sidecar
     assert sidecar.mode.value == "shadow"
+    assert sidecar.thresholds.recommend_soft_close_at == 0.30
     assert sidecar.allowed_actions.soft_close_symbol_current_net_only is True
     assert sidecar.allowed_actions.partial_reduce is False
 
@@ -98,4 +99,5 @@ def test_unproven_sidecar_regime_labels_are_rejected(tmp_path: Path, invalid_lab
         ConfigLoader(config_dir=cfg_dir).load_config()
 
     assert invalid_label in str(exc_info.value)
-    assert "structural labels" in str(exc_info.value) or "strategy-local flat buckets" in str(exc_info.value)
+    assert "structural labels" in str(
+        exc_info.value) or "strategy-local flat buckets" in str(exc_info.value)

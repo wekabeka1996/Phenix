@@ -1,0 +1,231 @@
+{
+  "total_records": 44,
+  "unique_event_names": [
+    "EVT:EXPOSURE_SUMMARY_UPDATED",
+    "EVT:EXECUTION_CLOSE_RECONCILED",
+    "EVT:ORDER_PLACED",
+    "EVT:TRADE_INTENT_PROPOSED",
+    "EVT:ORDER_STATE_CHANGED",
+    "EVT:TRADE_EXECUTED",
+    "EVT:PORTFOLIO_STATE_UPDATED",
+    "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+    "EVT:EXECUTION_TIDY_PERFORMED",
+    "CMD:OPEN",
+    "CMD:CLOSE",
+    "DEC:CLOSE",
+    "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
+    "EVT:REGIME_DETECTED",
+    "EVT:TRADE_INTENT_REJECTED",
+    "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
+    "EVT:MANAGE_SKIPPED"
+  ],
+  "unique_op_verb_pairs": [
+    "EVT:EXPOSURE_SUMMARY_UPDATED",
+    "EVT:EXECUTION_CLOSE_RECONCILED",
+    "EVT:ORDER_PLACED",
+    "EVT:TRADE_INTENT_PROPOSED",
+    "EVT:ORDER_STATE_CHANGED",
+    "EVT:TRADE_EXECUTED",
+    "EVT:PORTFOLIO_STATE_UPDATED",
+    "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS",
+    "EVT:EXECUTION_TIDY_PERFORMED",
+    "CMD:OPEN",
+    "CMD:CLOSE",
+    "DEC:CLOSE",
+    "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
+    "EVT:REGIME_DETECTED",
+    "EVT:TRADE_INTENT_REJECTED",
+    "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY",
+    "EVT:MANAGE_SKIPPED"
+  ],
+  "family_counts": {
+    "RESTORE:EXECUTION_TRUTH_HARDENING_RESET": 1,
+    "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY": 1,
+    "EVT:REGIME_DETECTED": 5,
+    "EVT:PORTFOLIO_STATE_UPDATED": 8,
+    "EVT:EXPOSURE_SUMMARY_UPDATED": 9,
+    "EVT:TRADE_INTENT_PROPOSED": 1,
+    "CMD:OPEN": 1,
+    "EVT:ORDER_PLACED": 1,
+    "EVT:ORDER_STATE_CHANGED": 1,
+    "EVT:TRADE_EXECUTED": 5,
+    "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS": 1,
+    "DEC:CLOSE": 4,
+    "EVT:MANAGE_SKIPPED": 1,
+    "CMD:CLOSE": 1,
+    "EVT:EXECUTION_TIDY_PERFORMED": 1,
+    "EVT:EXECUTION_CLOSE_RECONCILED": 1,
+    "EVT:TRADE_INTENT_REJECTED": 2
+  },
+  "family_fields": {
+    "RESTORE:EXECUTION_TRUTH_HARDENING_RESET": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "truth_owner": 1,
+      "restore_marker": 1
+    },
+    "RESTORE:EXECUTION_TRUTH_WARM_STATE_EMPTY": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "truth_owner": 1,
+      "restore_marker": 1
+    },
+    "EVT:REGIME_DETECTED": {
+      "rid": 5,
+      "restore_marker": 5
+    },
+    "EVT:PORTFOLIO_STATE_UPDATED": {
+      "source_component": 8,
+      "source_path": 8,
+      "event_origin_type": 8,
+      "rid": 4,
+      "restore_marker": 8
+    },
+    "EVT:EXPOSURE_SUMMARY_UPDATED": {
+      "source_component": 9,
+      "source_path": 9,
+      "event_origin_type": 9,
+      "rid": 5,
+      "lifecycle_id": 4,
+      "restore_marker": 9
+    },
+    "EVT:TRADE_INTENT_PROPOSED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "lifecycle_id": 1,
+      "strategy_id": 1,
+      "side": 1,
+      "qty": 1,
+      "price": 1,
+      "restore_marker": 1
+    },
+    "CMD:OPEN": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "lifecycle_id": 1,
+      "side": 1,
+      "qty": 1,
+      "truth_owner": 1,
+      "local_state_before": 1,
+      "local_state_after": 1,
+      "restore_marker": 1
+    },
+    "EVT:ORDER_PLACED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "order_id": 1,
+      "client_order_id": 1,
+      "side": 1,
+      "qty": 1,
+      "restore_marker": 1
+    },
+    "EVT:ORDER_STATE_CHANGED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "order_id": 1,
+      "client_order_id": 1,
+      "restore_marker": 1
+    },
+    "EVT:TRADE_EXECUTED": {
+      "source_component": 5,
+      "source_path": 5,
+      "event_origin_type": 5,
+      "rid": 5,
+      "order_id": 5,
+      "client_order_id": 5,
+      "side": 5,
+      "qty": 5,
+      "price": 5,
+      "restore_marker": 5,
+      "truth_owner": 4
+    },
+    "HARDENING:TRADE_EXECUTED_WARM_STATE_MISS": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "order_id": 1,
+      "client_order_id": 1,
+      "side": 1,
+      "qty": 1,
+      "price": 1,
+      "truth_owner": 1,
+      "restore_marker": 1
+    },
+    "DEC:CLOSE": {
+      "source_component": 4,
+      "source_path": 4,
+      "event_origin_type": 4,
+      "rid": 4,
+      "side": 3,
+      "qty": 4,
+      "truth_owner": 4,
+      "local_state_before": 4,
+      "local_state_after": 4,
+      "restore_marker": 4
+    },
+    "EVT:MANAGE_SKIPPED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "truth_owner": 1,
+      "local_state_before": 1,
+      "local_state_after": 1,
+      "restore_marker": 1
+    },
+    "CMD:CLOSE": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "qty": 1,
+      "truth_owner": 1,
+      "restore_marker": 1
+    },
+    "EVT:EXECUTION_TIDY_PERFORMED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "restore_marker": 1
+    },
+    "EVT:EXECUTION_CLOSE_RECONCILED": {
+      "source_component": 1,
+      "source_path": 1,
+      "event_origin_type": 1,
+      "rid": 1,
+      "restore_marker": 1
+    },
+    "EVT:TRADE_INTENT_REJECTED": {
+      "source_component": 2,
+      "source_path": 2,
+      "event_origin_type": 2,
+      "rid": 2,
+      "side": 2,
+      "restore_marker": 2,
+      "strategy_id": 1
+    }
+  },
+  "family_placeholder_fields": {
+    "EVT:REGIME_DETECTED": {
+      "source_component": 5,
+      "source_path": 5,
+      "event_origin_type": 5
+    }
+  },
+  "record_types": {
+    "restore": 2,
+    "event": 30,
+    "transition": 12
+  }
+}

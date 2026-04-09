@@ -181,6 +181,65 @@ class TestRegisterAndLink:
         assert "sl" in entry_data["brackets"]
         assert "tp" in entry_data["brackets"]
 
+    def test_resolve_terminal_bracket_context_tracks_registered_client_identity(self):
+        """Guardian recovery returns the persisted child client identity when it was stored."""
+        self.guardian.register_entry(
+            symbol="BTCUSDT",
+            order_id="12345",
+            client_order_id="client_123",
+            side="BUY",
+            qty=1.0,
+        )
+        self.guardian.register_bracket(
+            symbol="BTCUSDT",
+            parent_order_id="12345",
+            order_id="12346",
+            client_order_id="algo_sl_123",
+            kind="SL",
+            corr_id="corr-1",
+            rid="rid-1",
+        )
+
+        context = self.guardian.resolve_terminal_bracket_context(
+            client_order_id="algo_sl_123",
+            exchange_order_id="child-exchange-id",
+            symbol="BTCUSDT",
+        )
+
+        assert context is not None
+        assert context["tracked_bracket_order_id"] == "12346"
+        assert context["tracked_client_order_id"] == "algo_sl_123"
+        assert context["parent_entry_order_id"] == "12345"
+        assert context["bracket_role"] == "SL"
+        assert context["correlation_source"] == "order_guardian_client_order_id"
+
+    def test_resolve_terminal_bracket_context_misses_when_actual_child_identity_was_not_stored(self):
+        """Guardian cannot recover a child client identity that was never persisted."""
+        self.guardian.register_entry(
+            symbol="BTCUSDT",
+            order_id="12345",
+            client_order_id="client_123",
+            side="BUY",
+            qty=1.0,
+        )
+        self.guardian.register_bracket(
+            symbol="BTCUSDT",
+            parent_order_id="12345",
+            order_id="12346",
+            client_order_id="SL-legacy-123",
+            kind="SL",
+            corr_id="corr-1",
+            rid="rid-1",
+        )
+
+        context = self.guardian.resolve_terminal_bracket_context(
+            client_order_id="algo_sl_123",
+            exchange_order_id="child-exchange-id",
+            symbol="BTCUSDT",
+        )
+
+        assert context is None
+
     def test_register_bracket_nonexistent_parent(self):
         """Test registering bracket for non-existent parent entry"""
         # Try to register bracket without parent entry

@@ -180,8 +180,11 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 sl_order_id, entry_resp["clientOrderId"],
                 corr_value, oco_group_value, decision.rid or "")
-            self._fsm._symbol_brackets.setdefault(
-                symbol, {})["sl_order_id"] = sl_order_id
+            self._fsm._set_symbol_bracket_order(
+                symbol,
+                order_role="SL",
+                order_id=sl_order_id,
+            )
 
         if tp_resp:
             LOG.info(f"✅ TP placed: {tp_resp}")
@@ -190,8 +193,11 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 tp_order_id, entry_resp["clientOrderId"],
                 corr_value, oco_group_value, decision.rid or "")
-            self._fsm._symbol_brackets.setdefault(
-                symbol, {})["tp_order_id"] = tp_order_id
+            self._fsm._set_symbol_bracket_order(
+                symbol,
+                order_role="TP",
+                order_id=tp_order_id,
+            )
 
         # --- CANONICAL OrderIndex registration for bracket children ---
         # Binance algo orders: the placement response contains `clientAlgoId` which
@@ -199,8 +205,10 @@ class BracketManager:
         # We register clientAlgoId (if present) as the primary clientOrderId lookup
         # key so WS fills can be correlated.  The system-generated sl_id/tp_id
         # ("SL-xxx"/"TP-xxx") is kept as a secondary registration for legacy paths.
-        sl_algo_client_id = str(sl_resp.get("clientAlgoId", "")).strip() if sl_resp else ""
-        tp_algo_client_id = str(tp_resp.get("clientAlgoId", "")).strip() if tp_resp else ""
+        sl_algo_client_id = str(sl_resp.get(
+            "clientAlgoId", "")).strip() if sl_resp else ""
+        tp_algo_client_id = str(tp_resp.get(
+            "clientAlgoId", "")).strip() if tp_resp else ""
 
         order_index = getattr(self._fsm, "order_index", None) or getattr(
             getattr(self._fsm, "fsm", None), "order_index", None
@@ -286,11 +294,19 @@ class BracketManager:
                         pass  # Best-effort secondary registration
 
         if sl_order_id or tp_order_id:
+            # Persist the exchange child client identity into guardian when Binance
+            # returns clientAlgoId; restart/runtime reconstruction consumes this field.
+            sl_client_for_guardian = (
+                (sl_algo_client_id or sl_id) if sl_resp else None
+            )
+            tp_client_for_guardian = (
+                (tp_algo_client_id or tp_id) if tp_resp else None
+            )
             self._fsm.order_guardian.register_brackets(
                 symbol=symbol, entry_order_id=str(entry_resp["orderId"]),
                 sl_order_id=sl_order_id, tp_order_id=tp_order_id,
-                sl_client_id=sl_id if sl_resp else None,
-                tp_client_id=tp_id if tp_resp else None,
+                sl_client_id=sl_client_for_guardian,
+                tp_client_id=tp_client_for_guardian,
                 corr_id=corr_value, rid=decision.rid)
 
             try:
@@ -408,8 +424,11 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 sl_order_id, entry_client_order_id or "", corr_id or "",
                 oco_group_id or "", rid or "")
-            self._fsm._symbol_brackets.setdefault(
-                symbol, {})["sl_order_id"] = sl_order_id
+            self._fsm._set_symbol_bracket_order(
+                symbol,
+                order_role="SL",
+                order_id=sl_order_id,
+            )
         except Exception as e:
             LOG.error(
                 f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
@@ -423,8 +442,11 @@ class BracketManager:
             self._fsm.correlation_store.put_sl_tp_ack(
                 tp_order_id, entry_client_order_id or "", corr_id or "",
                 oco_group_id or "", rid or "")
-            self._fsm._symbol_brackets.setdefault(
-                symbol, {})["tp_order_id"] = tp_order_id
+            self._fsm._set_symbol_bracket_order(
+                symbol,
+                order_role="TP",
+                order_id=tp_order_id,
+            )
         except BinanceAPIError as e:
             if e.code == -2021:
                 LOG.warning(
@@ -441,8 +463,11 @@ class BracketManager:
                     self._fsm.correlation_store.put_sl_tp_ack(
                         tp_order_id, entry_client_order_id or "", corr_id or "",
                         oco_group_id or "", rid or "")
-                    self._fsm._symbol_brackets.setdefault(
-                        symbol, {})["tp_order_id"] = tp_order_id
+                    self._fsm._set_symbol_bracket_order(
+                        symbol,
+                        order_role="TP",
+                        order_id=tp_order_id,
+                    )
                 except Exception as e2:
                     LOG.error(
                         f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
@@ -455,8 +480,10 @@ class BracketManager:
 
         # --- CANONICAL OrderIndex registration for deferred bracket children ---
         # Extract clientAlgoId for WS fill correlation (same pattern as primary path).
-        sl_algo_client_id = str(sl_resp.get("clientAlgoId", "")).strip() if sl_resp else ""
-        tp_algo_client_id = str(tp_resp.get("clientAlgoId", "")).strip() if tp_resp else ""
+        sl_algo_client_id = str(sl_resp.get(
+            "clientAlgoId", "")).strip() if sl_resp else ""
+        tp_algo_client_id = str(tp_resp.get(
+            "clientAlgoId", "")).strip() if tp_resp else ""
 
         order_index = getattr(self._fsm, "order_index", None) or getattr(
             getattr(self._fsm, "fsm", None), "order_index", None
@@ -530,16 +557,19 @@ class BracketManager:
                     except Exception:
                         pass
 
-        # Register with OrderGuardian
+        # Persist the exchange child client identity into guardian when Binance
+        # returns clientAlgoId; restart/runtime reconstruction consumes this field.
         if sl_resp:
+            sl_client_for_guardian = sl_algo_client_id or sl_id
             self._fsm.order_guardian.register_bracket(
                 symbol=symbol, parent_order_id=entry_order_id,
-                order_id=str(sl_resp["orderId"]), client_order_id=sl_id,
+                order_id=str(sl_resp["orderId"]), client_order_id=sl_client_for_guardian,
                 kind="SL", corr_id=corr_id, rid=rid)
         if tp_resp:
+            tp_client_for_guardian = tp_algo_client_id or tp_id
             self._fsm.order_guardian.register_bracket(
                 symbol=symbol, parent_order_id=entry_order_id,
-                order_id=str(tp_resp["orderId"]), client_order_id=tp_id,
+                order_id=str(tp_resp["orderId"]), client_order_id=tp_client_for_guardian,
                 kind="TP", corr_id=corr_id, rid=rid)
 
         # Sync bracket IDs (including algo client IDs) to ManageFlowFSM

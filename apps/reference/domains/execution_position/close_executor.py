@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
-from apps.reference.domains.execution_position.utils import generate_client_order_id
+from apps.reference.domains.execution_position.utils import (
+    classify_client_order_id,
+    coerce_exchange_bool,
+    generate_client_order_id,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
@@ -25,6 +29,217 @@ class CloseExecutor:
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    @staticmethod
+    def _response_value(response: Any, *keys: str) -> Any:
+        if isinstance(response, dict):
+            for key in keys:
+                if key in response:
+                    return response.get(key)
+            return None
+        for key in keys:
+            if hasattr(response, key):
+                return getattr(response, key)
+        return None
+
+    @staticmethod
+    def _canonical_auxiliary_bracket_role(
+        client_order_id: Optional[str],
+    ) -> Optional[str]:
+        role = classify_client_order_id(client_order_id)
+        if role in {"SL", "BHSL"}:
+            return "SL"
+        if role in {"TP", "TP1", "TP2", "BHTP"}:
+            return "TP"
+        return None
+
+    def _runtime_order_index(self) -> Any:
+        direct_index = getattr(self._fsm, "order_index", None)
+        if direct_index is not None:
+            return direct_index
+        return getattr(getattr(self._fsm, "fsm", None), "order_index", None)
+
+    @staticmethod
+    def _manage_flow_allows_bracket_sync(manage_flow: Any) -> bool:
+        state = getattr(manage_flow, "state", None)
+        state_value = getattr(state, "value", state)
+        return str(state_value or "").strip().upper() not in {"", "FLAT"}
+
+    def _resolve_auxiliary_parent_order_id(
+        self,
+        *,
+        symbol: str,
+        payload: dict[str, Any],
+        manage_flow: Any,
+    ) -> str:
+        explicit_parent = str(
+            payload.get("parent_order_id") or payload.get(
+                "entry_order_id") or ""
+        ).strip()
+        if explicit_parent:
+            return explicit_parent
+
+        tracked_entry_order_id = str(
+            getattr(manage_flow, "entry_order_id", "") or ""
+        ).strip()
+        if tracked_entry_order_id:
+            return tracked_entry_order_id
+
+        fallback_parent = f"auxiliary:{str(symbol or '').strip().upper()}"
+        LOG.warning(
+            "Auxiliary bracket registration missing parent entry order for %s; using %s",
+            symbol,
+            fallback_parent,
+        )
+        return fallback_parent
+
+    def _register_auxiliary_bracket_order(
+        self,
+        *,
+        decision: "Message",
+        payload: dict[str, Any],
+        symbol: str,
+        side: Any,
+        order_type: Any,
+        client_order_id: str,
+        response: Any,
+    ) -> bool:
+        bracket_role = self._canonical_auxiliary_bracket_role(client_order_id)
+        if bracket_role is None:
+            return False
+
+        exchange_order_id = str(
+            self._response_value(response, "orderId", "order_id") or ""
+        ).strip()
+        if not exchange_order_id:
+            LOG.error(
+                "PLACE_ORDER bracket registration missing exchange order id for %s client_order_id=%s",
+                symbol,
+                client_order_id,
+            )
+            return False
+
+        client_algo_id = str(
+            self._response_value(response, "clientAlgoId",
+                                 "client_algo_id") or ""
+        ).strip()
+
+        self._fsm._set_symbol_bracket_order(
+            symbol,
+            order_role=bracket_role,
+            order_id=exchange_order_id,
+        )
+
+        order_index = self._runtime_order_index()
+        if order_index is None:
+            LOG.warning(
+                "Auxiliary bracket accepted without OrderIndex available for %s client_order_id=%s",
+                symbol,
+                client_order_id,
+            )
+        else:
+            rid_for_index = str(getattr(decision, "rid", "")
+                                or exchange_order_id)
+            idem_key = str(
+                payload.get("idempotent_key")
+                or getattr(decision, "idempotent_key", None)
+                or client_order_id
+                or rid_for_index
+            )
+            primary_client_order_id = client_algo_id or client_order_id
+            try:
+                order_index.register_bracket_child(
+                    rid=rid_for_index,
+                    idempotent_key=idem_key,
+                    clientOrderId=primary_client_order_id,
+                    exchangeOrderId=exchange_order_id,
+                    symbol=symbol,
+                    side=str(side).upper() if side else "",
+                    order_type=str(order_type),
+                    order_kind=bracket_role,
+                )
+            except Exception as exc:
+                LOG.error(
+                    "Auxiliary bracket OrderIndex registration failed for %s %s/%s: %s",
+                    symbol,
+                    primary_client_order_id,
+                    exchange_order_id,
+                    exc,
+                )
+
+            if client_algo_id and client_algo_id != client_order_id:
+                try:
+                    order_index.register_bracket_child(
+                        rid=rid_for_index,
+                        idempotent_key=idem_key,
+                        clientOrderId=client_order_id,
+                        exchangeOrderId=exchange_order_id,
+                        symbol=symbol,
+                        side=str(side).upper() if side else "",
+                        order_type=str(order_type),
+                        order_kind=bracket_role,
+                    )
+                except Exception as exc:
+                    LOG.debug(
+                        "Auxiliary bracket secondary OrderIndex registration skipped for %s %s/%s: %s",
+                        symbol,
+                        client_order_id,
+                        exchange_order_id,
+                        exc,
+                    )
+
+        manage_flow = self._fsm.manage_flows.get(symbol)
+        parent_order_id = self._resolve_auxiliary_parent_order_id(
+            symbol=symbol,
+            payload=payload,
+            manage_flow=manage_flow,
+        )
+
+        guardian = getattr(self._fsm, "order_guardian", None)
+        if guardian is None:
+            LOG.warning(
+                "Auxiliary bracket accepted without OrderGuardian available for %s client_order_id=%s",
+                symbol,
+                client_order_id,
+            )
+        else:
+            guardian.register_bracket(
+                symbol=symbol,
+                parent_order_id=parent_order_id,
+                order_id=exchange_order_id,
+                client_order_id=client_order_id,
+                kind=bracket_role,
+                corr_id=getattr(decision, "corr_id", None),
+                rid=getattr(decision, "rid", None),
+            )
+
+        if manage_flow is not None and self._manage_flow_allows_bracket_sync(manage_flow):
+            brackets = self._fsm._symbol_brackets.get(symbol, {})
+            current_sl_order_id = brackets.get("sl_order_id")
+            current_tp_order_id = brackets.get("tp_order_id")
+            current_sl_algo_client_id = (
+                getattr(manage_flow, "sl_algo_client_id", None)
+                if current_sl_order_id and bracket_role != "SL"
+                else None
+            )
+            current_tp_algo_client_id = (
+                getattr(manage_flow, "tp_algo_client_id", None)
+                if current_tp_order_id and bracket_role != "TP"
+                else None
+            )
+            if bracket_role == "SL":
+                current_sl_algo_client_id = client_algo_id or None
+            else:
+                current_tp_algo_client_id = client_algo_id or None
+
+            manage_flow.set_bracket_ids(
+                sl_order_id=current_sl_order_id,
+                tp_order_id=current_tp_order_id,
+                sl_algo_client_id=current_sl_algo_client_id,
+                tp_algo_client_id=current_tp_algo_client_id,
+            )
+
+        return True
 
     async def execute_cancel_order(self, decision: "Message") -> None:
         """Cancel a specific order_id for the symbol in the decision payload."""
@@ -85,7 +300,7 @@ class CloseExecutor:
                     amt = 0.0
             if abs(amt) < 1e-10:
                 LOG.info(f"No open position to close for {symbol}")
-                self._fsm._symbol_brackets.pop(symbol, None)
+                self._fsm._clear_symbol_brackets(symbol)
                 self._fsm._persist_restore_artifact_snapshot(
                     trigger="close_executor:no_position_partial",
                     allow_empty=True,
@@ -212,7 +427,7 @@ class CloseExecutor:
                 amt = 0.0
         if abs(amt) < 1e-10:
             LOG.info(f"No open position to close for {symbol}")
-            self._fsm._symbol_brackets.pop(symbol, None)
+            self._fsm._clear_symbol_brackets(symbol)
             self._fsm._persist_restore_artifact_snapshot(
                 trigger="close_executor:no_position_full",
                 allow_empty=True,
@@ -228,7 +443,7 @@ class CloseExecutor:
         await self._fsm.adapter.place_market_reduce_only(symbol, close_side, close_qty, new_client_order_id=close_id)
         LOG.info(
             f"Close executed for {symbol}: side={close_side} qty={close_qty}")
-        self._fsm._symbol_brackets.pop(symbol, None)
+        self._fsm._clear_symbol_brackets(symbol)
         self._fsm._persist_restore_artifact_snapshot(
             trigger="close_executor:close_executed",
             allow_empty=True,
@@ -251,10 +466,8 @@ class CloseExecutor:
             cancel_tasks = []
             for o in open_orders_list:
                 otype = (o.get("type") or "").upper()
-                reduce_only = str(
-                    o["reduceOnly"] if "reduceOnly" in o else "").lower() == "true"
-                close_pos = str(
-                    o["closePosition"] if "closePosition" in o else "").lower() == "true"
+                reduce_only = coerce_exchange_bool(o.get("reduceOnly"))
+                close_pos = coerce_exchange_bool(o.get("closePosition"))
                 if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
                     oid = o.get("orderId")
                     cancel_tasks.append(
@@ -349,50 +562,70 @@ class CloseExecutor:
 
             LOG.info(f"✅ PLACE_ORDER success: {resp}")
 
-            # Attach exchange IDs for internally issued bracket/aux orders so the
-            # order index can reconcile later websocket/REST updates.
-            try:
-                if client_id and resp and hasattr(self._fsm.fsm, "order_index") and self._fsm.fsm.order_index:
-                    ex_order_id = str(resp.get("orderId"))
-                    rid_for_index = str(
-                        getattr(decision, "rid", "") or "") or ex_order_id
-                    idem_key = (
-                        (decision.pld or {}).get("idempotent_key")
-                        or getattr(decision, "idempotent_key", None)
-                        or rid_for_index or client_id
-                    )
-                    self._fsm.fsm.order_index.upsert_from_open(
-                        rid=rid_for_index, idempotent_key=str(idem_key),
-                        clientOrderId=client_id, symbol=symbol,
-                        side=str(side).upper() if side else "", order_type=str(order_type),
-                    )
-                    self._fsm.fsm.order_index.attach_exchange_id(
-                        clientOrderId=client_id, exchangeOrderId=ex_order_id,
-                    )
-            except Exception:
-                pass
-
-            # Register brackets if applicable
             if client_id and resp:
-                order_id = str(resp.get("orderId"))
-                if "_sl" in client_id:
-                    self._fsm._symbol_brackets.setdefault(
-                        symbol, {})["sl_order_id"] = order_id
-                elif "_tp" in client_id:
-                    self._fsm._symbol_brackets.setdefault(
-                        symbol, {})["tp_order_id"] = order_id
+                exchange_order_id = str(
+                    self._response_value(resp, "orderId", "order_id") or ""
+                ).strip()
+                bracket_role = self._canonical_auxiliary_bracket_role(
+                    client_id)
 
-                manage_flow = self._fsm.manage_flows.get(symbol)
-                if manage_flow:
-                    brackets = self._fsm._symbol_brackets[symbol] if symbol in self._fsm._symbol_brackets else {
-                    }
-                    current_sl = brackets.get("sl_order_id")
-                    current_tp = brackets.get("tp_order_id")
-                    manage_flow.set_bracket_ids(current_sl, current_tp)
-                self._fsm._persist_restore_artifact_snapshot(
-                    trigger="close_executor:aux_bracket_registered",
-                    allow_empty=True,
-                )
+                if bracket_role is not None:
+                    if self._register_auxiliary_bracket_order(
+                        decision=decision,
+                        payload=pld,
+                        symbol=symbol,
+                        side=side,
+                        order_type=order_type,
+                        client_order_id=client_id,
+                        response=resp,
+                    ):
+                        self._fsm._persist_restore_artifact_snapshot(
+                            trigger="close_executor:aux_bracket_registered",
+                            allow_empty=True,
+                        )
+                else:
+                    order_index = self._runtime_order_index()
+                    if order_index is not None and exchange_order_id:
+                        try:
+                            rid_for_index = str(
+                                getattr(decision, "rid",
+                                        "") or exchange_order_id
+                            )
+                            idem_key = str(
+                                pld.get("idempotent_key")
+                                or getattr(decision, "idempotent_key", None)
+                                or client_id
+                                or rid_for_index
+                            )
+                            order_index.upsert_from_open(
+                                rid=rid_for_index,
+                                idempotent_key=idem_key,
+                                clientOrderId=client_id,
+                                symbol=symbol,
+                                side=str(side).upper() if side else "",
+                                order_type=str(order_type),
+                            )
+                            order_index.attach_exchange_id(
+                                clientOrderId=client_id,
+                                exchangeOrderId=exchange_order_id,
+                            )
+                        except Exception as exc:
+                            LOG.error(
+                                "Auxiliary order reference registration failed for %s %s/%s: %s",
+                                symbol,
+                                client_id,
+                                exchange_order_id,
+                                exc,
+                            )
+
+                    order_type_upper = str(order_type).upper()
+                    if order_type_upper in {"STOP_MARKET", "TAKE_PROFIT_MARKET"} or reduce_only:
+                        LOG.warning(
+                            "PLACE_ORDER accepted noncanonical auxiliary client_order_id without bracket registration: %s %s %s",
+                            symbol,
+                            client_id,
+                            order_type_upper,
+                        )
 
         except Exception as e:
             LOG.error(f"❌ PLACE_ORDER failed: {e}")
