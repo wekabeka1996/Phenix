@@ -434,6 +434,20 @@ async def test_startup_reconcile_authoritative_missing_artifact_does_not_guess_f
     ]
     assert fsm.manage_flows == {}
     assert fsm.close_flows == {}
+    assert row["unknown_truth_records"] == [
+        {
+            "symbol": "BTCUSDT",
+            "lifecycle_truth_class": "unknown",
+            "authoritative_artifact_state": "missing",
+            "portfolio_presence": "present",
+            "reconstructed_exact_truth_present": False,
+            "observed_inputs": ["position_symbols_observed", "symbols_considered"],
+            "reason_codes": [
+                "authoritative_artifact_missing",
+                "portfolio_present_without_restored_lifecycle_truth",
+            ],
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -566,6 +580,20 @@ async def test_authoritative_startup_loaded_cache_does_not_fabricate_lifecycle_t
     assert row["restore_authoritative"]["artifact_state"] == artifact_state
     assert fsm.manage_flows == {}
     assert fsm.close_flows == {}
+    assert row["unknown_truth_records"] == [
+        {
+            "symbol": "BTCUSDT",
+            "lifecycle_truth_class": "unknown",
+            "authoritative_artifact_state": artifact_state,
+            "portfolio_presence": "present",
+            "reconstructed_exact_truth_present": False,
+            "observed_inputs": ["position_symbols_observed", "symbols_considered"],
+            "reason_codes": [
+                f"authoritative_artifact_{artifact_state}",
+                "portfolio_present_without_restored_lifecycle_truth",
+            ],
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -653,6 +681,7 @@ async def test_startup_reconcile_preserves_restored_exact_phase_when_portfolio_a
     row = rows[0]
     assert row["restore_authoritative"]["artifact_state"] == "valid"
     assert row["restore_dark_read"]["attempted"] is False
+    assert row["unknown_truth_records"] == []
     symbol_status = row["restore_authoritative"]["symbol_statuses"][0]
     assert symbol_status["portfolio_presence"] == "absent"
     assert "portfolio_symbol_absent" in symbol_status["unresolved_reasons"]
@@ -754,7 +783,312 @@ async def test_startup_reconcile_surfaces_positive_runtime_override_after_author
     assert len(rows) == 1
     row = rows[0]
     assert row["runtime_truth_summary"]["symbols_reconstructed"] == 1
+    assert row["unknown_truth_records"] == []
     symbol_status = row["restore_authoritative"]["symbol_statuses"][0]
     assert symbol_status["bracket_state_restore_status"] == "exact"
     assert "bracket_state" in symbol_status["runtime_override_fields"]
     assert row["runtime_truth_records"][0]["manage_truth_source"] == TRUTH_SOURCE_RESTORE_ARTIFACT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("artifact_state", "age_ms"),
+    [
+        ("missing", None),
+        ("corrupt", None),
+        ("stale", 1000),
+    ],
+)
+async def test_degraded_authoritative_startup_emits_explicit_unknown_rows_for_observed_symbols(
+    fsm_harness,
+    tmp_path: Path,
+    artifact_state: str,
+    age_ms: int | None,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_authoritative(fsm, tmp_path, age_ms=age_ms)
+    startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
+    fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
+    fsm.order_guardian.link_existing_from_rest = AsyncMock(return_value=None)
+    fsm.adapter = AsyncMock()
+    fsm.adapter.get_open_positions = AsyncMock(
+        return_value=[{"symbol": "ETHUSDT", "positionAmt": "0.10"}]
+    )
+    fsm.adapter.get_open_orders = AsyncMock(side_effect=[[], []])
+
+    if artifact_state == "corrupt":
+        path.write_text("{not-json", encoding="utf-8")
+    elif artifact_state == "stale":
+        _write_envelope(
+            path,
+            ExecutionPositionRestoreEnvelope(
+                schema_version="1.0.0",
+                artifact_type="execution_position_restore_envelope_v1",
+                generated_at_ms=1_775_000_000_000,
+                writer_component="execution_position",
+                requires_live_reconcile=True,
+                active_lifecycles=[_record(symbol="ETHUSDT")],
+            ),
+        )
+
+    await fsm._startup_order_guardian_reconcile()
+
+    row = _load_startup_truth_rows(startup_truth_path)[0]
+    assert row["restore_authoritative"]["artifact_state"] == artifact_state
+    assert row["restore_authoritative"]["symbol_statuses"] == []
+    assert row["runtime_truth_records"] == []
+    assert row["unknown_truth_records"] == [
+        {
+            "symbol": "ETHUSDT",
+            "lifecycle_truth_class": "unknown",
+            "authoritative_artifact_state": artifact_state,
+            "portfolio_presence": "present",
+            "reconstructed_exact_truth_present": False,
+            "observed_inputs": ["position_symbols_observed", "symbols_considered"],
+            "reason_codes": [
+                f"authoritative_artifact_{artifact_state}",
+                "portfolio_present_without_restored_lifecycle_truth",
+            ],
+        }
+    ]
+    assert fsm.manage_flows == {}
+    assert fsm.close_flows == {}
+
+
+@pytest.mark.asyncio
+async def test_degraded_authoritative_startup_emits_unknown_row_for_not_readable_artifact(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_authoritative(fsm, tmp_path, age_ms=None)
+    startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
+    path.write_text("{}", encoding="utf-8")
+    fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
+    fsm.order_guardian.link_existing_from_rest = AsyncMock(return_value=None)
+    fsm.adapter = AsyncMock()
+    fsm.adapter.get_open_positions = AsyncMock(
+        return_value=[{"symbol": "ETHUSDT", "positionAmt": "0.10"}]
+    )
+    fsm.adapter.get_open_orders = AsyncMock(side_effect=[[], []])
+
+    with patch.object(
+        Path,
+        "read_text",
+        autospec=True,
+        side_effect=PermissionError("denied"),
+    ):
+        await fsm._startup_order_guardian_reconcile()
+
+    row = _load_startup_truth_rows(startup_truth_path)[0]
+    assert row["restore_authoritative"]["artifact_state"] == "not_readable"
+    assert row["unknown_truth_records"] == [
+        {
+            "symbol": "ETHUSDT",
+            "lifecycle_truth_class": "unknown",
+            "authoritative_artifact_state": "not_readable",
+            "portfolio_presence": "present",
+            "reconstructed_exact_truth_present": False,
+            "observed_inputs": ["position_symbols_observed", "symbols_considered"],
+            "reason_codes": [
+                "authoritative_artifact_not_readable",
+                "portfolio_present_without_restored_lifecycle_truth",
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_degraded_authoritative_startup_does_not_emit_unknown_row_when_runtime_reconstruction_is_exact(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    symbol = "ETHUSDT"
+    path = _configure_authoritative(fsm, tmp_path, age_ms=1000)
+    startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
+    fsm._trade_lifecycle_log_path = lambda: str(tmp_path / "trade_lifecycle.jsonl")
+    fsm.fsm.order_index = OrderIndex(ttl_sec=600)
+    _write_envelope(
+        path,
+        ExecutionPositionRestoreEnvelope(
+            schema_version="1.0.0",
+            artifact_type="execution_position_restore_envelope_v1",
+            generated_at_ms=1_775_000_000_000,
+            writer_component="execution_position",
+            requires_live_reconcile=True,
+            active_lifecycles=[_record(symbol=symbol)],
+        ),
+    )
+    fsm.order_guardian.link_existing_from_rest = AsyncMock(return_value=None)
+    fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
+
+    def _resolve_context(*, client_order_id, exchange_order_id, symbol=None):
+        if exchange_order_id == "8631145709":
+            return {
+                "symbol": symbol,
+                "rid": "aurora_ETHUSDT_1775247901546",
+                "parent_entry_order_id": "entry-eth-1",
+                "tracked_bracket_order_id": "8631145709",
+                "tracked_client_order_id": "SL-ETHUSDT-1",
+                "bracket_role": "SL",
+                "order_type": "STOP_MARKET",
+                "reduce_only": True,
+                "close_position": True,
+            }
+        if exchange_order_id == "8631145710":
+            return {
+                "symbol": symbol,
+                "rid": "aurora_ETHUSDT_1775247901546",
+                "parent_entry_order_id": "entry-eth-1",
+                "tracked_bracket_order_id": "8631145710",
+                "tracked_client_order_id": "TP-ETHUSDT-1",
+                "bracket_role": "TP",
+                "order_type": "TAKE_PROFIT_MARKET",
+                "reduce_only": True,
+                "close_position": True,
+            }
+        return None
+
+    fsm.order_guardian.resolve_terminal_bracket_context = _resolve_context
+    fsm.adapter = AsyncMock()
+    fsm.adapter.get_open_positions = AsyncMock(
+        return_value=[{"symbol": symbol, "positionAmt": "0.10"}]
+    )
+    open_orders = [
+        {
+            "symbol": symbol,
+            "orderId": "8631145709",
+            "clientOrderId": "exchange-algo-sl",
+            "side": "SELL",
+            "type": "STOP_MARKET",
+        },
+        {
+            "symbol": symbol,
+            "orderId": "8631145710",
+            "clientOrderId": "exchange-algo-tp",
+            "side": "SELL",
+            "type": "TAKE_PROFIT_MARKET",
+        },
+    ]
+    fsm.adapter.get_open_orders = AsyncMock(side_effect=[open_orders, open_orders])
+
+    await fsm._startup_order_guardian_reconcile()
+
+    row = _load_startup_truth_rows(startup_truth_path)[0]
+    assert row["restore_authoritative"]["artifact_state"] == "stale"
+    assert row["runtime_truth_records"][0]["status"] == "reconstructed"
+    assert row["unknown_truth_records"] == []
+
+
+@pytest.mark.asyncio
+async def test_degraded_startup_truth_surface_makes_unknown_reconstructed_and_cache_only_categories_visible(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    restore_path = _configure_authoritative(fsm, tmp_path, age_ms=1000)
+    startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
+    cache_path = _configure_terminal_identity_cache(fsm, tmp_path)
+    _write_terminal_identity_cache(cache_path)
+    fsm._execution_truth_hardening.load_warm_state()
+    fsm._trade_lifecycle_log_path = lambda: str(tmp_path / "trade_lifecycle.jsonl")
+    fsm.fsm.order_index = OrderIndex(ttl_sec=600)
+    _write_envelope(
+        restore_path,
+        ExecutionPositionRestoreEnvelope(
+            schema_version="1.0.0",
+            artifact_type="execution_position_restore_envelope_v1",
+            generated_at_ms=1_775_000_000_000,
+            writer_component="execution_position",
+            requires_live_reconcile=True,
+            active_lifecycles=[_record(symbol="ETHUSDT")],
+        ),
+    )
+    fsm.order_guardian.link_existing_from_rest = AsyncMock(return_value=None)
+    fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
+
+    def _resolve_context(*, client_order_id, exchange_order_id, symbol=None):
+        if exchange_order_id == "8631145709":
+            return {
+                "symbol": symbol,
+                "rid": "aurora_BTCUSDT_1775247901546",
+                "parent_entry_order_id": "entry-btc-1",
+                "tracked_bracket_order_id": "8631145709",
+                "tracked_client_order_id": "SL-BTCUSDT-1",
+                "bracket_role": "SL",
+                "order_type": "STOP_MARKET",
+                "reduce_only": True,
+                "close_position": True,
+            }
+        if exchange_order_id == "8631145710":
+            return {
+                "symbol": symbol,
+                "rid": "aurora_BTCUSDT_1775247901546",
+                "parent_entry_order_id": "entry-btc-1",
+                "tracked_bracket_order_id": "8631145710",
+                "tracked_client_order_id": "TP-BTCUSDT-1",
+                "bracket_role": "TP",
+                "order_type": "TAKE_PROFIT_MARKET",
+                "reduce_only": True,
+                "close_position": True,
+            }
+        return None
+
+    fsm.order_guardian.resolve_terminal_bracket_context = _resolve_context
+    fsm.adapter = AsyncMock()
+    fsm.adapter.get_open_positions = AsyncMock(
+        return_value=[
+            {"symbol": "BTCUSDT", "positionAmt": "0.10"},
+            {"symbol": "ETHUSDT", "positionAmt": "0.20"},
+        ]
+    )
+    open_orders = [
+        {
+            "symbol": "BTCUSDT",
+            "orderId": "8631145709",
+            "clientOrderId": "exchange-algo-sl",
+            "side": "SELL",
+            "type": "STOP_MARKET",
+        },
+        {
+            "symbol": "BTCUSDT",
+            "orderId": "8631145710",
+            "clientOrderId": "exchange-algo-tp",
+            "side": "SELL",
+            "type": "TAKE_PROFIT_MARKET",
+        },
+    ]
+    fsm.adapter.get_open_orders = AsyncMock(side_effect=[open_orders, open_orders])
+
+    await fsm._startup_order_guardian_reconcile()
+
+    row = _load_startup_truth_rows(startup_truth_path)[0]
+    assert row["restore_authoritative"]["artifact_state"] == "stale"
+    assert row["runtime_truth_records"] == [
+        {
+            "symbol": "BTCUSDT",
+            "status": "reconstructed",
+            "sl_order_id": "8631145709",
+            "tp_order_id": "8631145710",
+            "bracket_truth_source": "RECONSTRUCTED_GUARDIAN",
+            "manage_truth_source": "UNKNOWN",
+            "order_index_registrations": 2,
+            "unresolved_reasons": [],
+        }
+    ]
+    assert row["unknown_truth_records"] == [
+        {
+            "symbol": "ETHUSDT",
+            "lifecycle_truth_class": "unknown",
+            "authoritative_artifact_state": "stale",
+            "portfolio_presence": "present",
+            "reconstructed_exact_truth_present": False,
+            "observed_inputs": ["position_symbols_observed", "symbols_considered"],
+            "reason_codes": [
+                "authoritative_artifact_stale",
+                "portfolio_present_without_restored_lifecycle_truth",
+            ],
+        }
+    ]
+    assert row["execution_truth_cache"]["truth_class"] == "cache_only"

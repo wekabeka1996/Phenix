@@ -1,0 +1,65 @@
+{
+  "v": 1,
+  "op": "CMD",
+  "verb": "OPEN",
+  "src": "execution_position",
+  "dst": "execution_position",
+  "rid": "RID-PHASE6-PROOF-1",
+  "span_id": "0e9967f6c54c49a7a6a2eb378c1e65bd",
+  "parent_span_id": null,
+  "ts": 1776017327288,
+  "ttl_ms": 2000,
+  "key": null,
+  "idempotent_key": null,
+  "pld": {
+    "rid": "RID-PHASE6-PROOF-1",
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "qty": "0.01",
+    "order_type": "LIMIT",
+    "price": "50000",
+    "tif": "GTC",
+    "stop_price": "49000",
+    "target_price": "51000",
+    "valid_for_ms": 15000,
+    "idempotent_key": "KEY-PHASE6-PROOF-1",
+    "price_ref": "50000",
+    "strategy": "aurora",
+    "regime": "TREND_UP",
+    "regime_confidence": 0.81,
+    "regime_provenance": {
+      "source_kind": "detector_cache",
+      "detector_event": null,
+      "cache_snapshot": {
+        "cache_write_ts_ms": 1700000000456,
+        "regime": "TREND_UP",
+        "confidence": 0.81
+      }
+    },
+    "metadata": {
+      "execution_intake_contract": "trade_intent_open_intake_v1",
+      "execution_intake_path": "EVT:TRADE_INTENT_PROPOSED->CMD:OPEN",
+      "strategy_id": "aurora",
+      "tca_budget": {
+        "max_slippage_bps": "10",
+        "max_latency_ms": 100,
+        "maker_preference": "False"
+      },
+      "risk_context": {
+        "risk_score": 0.55
+      }
+    }
+  },
+  "why": "intent_execution:RID-PHASE6-PROOF-1",
+  "why_explain_ref": null,
+  "intent": null,
+  "data_ref": [],
+  "sig": null,
+  "mode": "live",
+  "mode_contract": null,
+  "corr_id": null,
+  "oco_group_id": null,
+  "parent_client_order_id": null,
+  "link_ack_id": null,
+  "link_fill_id": null
+}

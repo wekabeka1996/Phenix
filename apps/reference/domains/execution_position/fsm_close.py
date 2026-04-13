@@ -112,6 +112,7 @@ class CloseFlowFSM:
                         "reason": cmd_pld.get("reason"),
                         "qty": cmd_pld.get("qty"),
                         "trace": cmd_pld.get("trace"),
+                        "policy_context": cmd_pld.get("policy_context"),
                     },
                 )
                 return result

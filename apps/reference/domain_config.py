@@ -201,6 +201,13 @@ class DomainConfigResolver:
         """Get position_tracking domain configuration."""
         return self._domains.position_tracking
 
+    def get_strategies_registry(self) -> Optional["StrategiesRegistryConfig"]:
+        """
+        Get canonical strategies registry mapping.
+        CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION
+        """
+        return self._config.strategies_registry
+
     # =========================================================================
     # LEGACY ACCESSORS (DEPRECATED)
     # =========================================================================

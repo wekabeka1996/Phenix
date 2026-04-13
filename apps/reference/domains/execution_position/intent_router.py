@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import logging
 import time
-from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
     emit_canonical_trade_intent_rejected_event,
+)
+from apps.reference.domains.execution_position.trade_intent_open_intake import (
+    INTENT_OPEN_INTAKE_CONTRACT,
+    TradeIntentOpenIntakeError,
+    parse_trade_intent_open_intake,
 )
 
 if TYPE_CHECKING:
@@ -46,6 +50,44 @@ class IntentRouter:
             route=route,
             strategy_id=strategy_id,
             side=side,
+        )
+
+    def _emit_typed_open_intake_reject(
+        self,
+        *,
+        symbol: str,
+        intent_rid: str,
+        error: TradeIntentOpenIntakeError,
+        data_ref: Any,
+    ) -> None:
+        if not hasattr(self._fsm, "bus"):
+            return
+        emit_canonical_trade_intent_rejected_event(
+            fsm=self._fsm.bus,
+            payload={
+                "ts_ms": int(time.time() * 1000),
+                "symbol": symbol,
+                "reason_code": error.reason_code,
+                "stage": "EXECUTION",
+                "why": error.why[:240],
+                "details": {
+                    "rid": intent_rid,
+                    "execution_intake_contract": INTENT_OPEN_INTAKE_CONTRACT,
+                    "execution_intake_stage": "typed_open_intake",
+                },
+            },
+            rid=intent_rid,
+            src="execution_position",
+            why="execution_typed_open_intake_rejected",
+            logger=LOG,
+            lifecycle=getattr(self._fsm, "_trade_lifecycle", None),
+            write_wal=bool(
+                getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
+            fallback_symbol=symbol,
+            fallback_reason_code=error.reason_code,
+            fallback_stage="EXECUTION",
+            fallback_why=error.why[:240],
+            data_ref=list(data_ref or []),
         )
 
     def on_trade_intent_proposed(self, msg: "Message") -> None:
@@ -119,8 +161,29 @@ class IntentRouter:
                 result = self._fsm.handle(cmd_close)
 
             else:
-                tca_budget = pld.get("tca_budget") or {}
-                risk_ctx = pld.get("risk_context") or {}
+                try:
+                    intake = parse_trade_intent_open_intake(
+                        pld,
+                        fallback_rid=intent_rid,
+                    )
+                except TradeIntentOpenIntakeError as intake_error:
+                    LOG.warning(
+                        "[%s] Typed open intake rejected rid=%s contract=%s why=%s",
+                        symbol,
+                        intent_rid,
+                        INTENT_OPEN_INTAKE_CONTRACT,
+                        intake_error.why,
+                    )
+                    self._emit_typed_open_intake_reject(
+                        symbol=str(symbol),
+                        intent_rid=intent_rid,
+                        error=intake_error,
+                        data_ref=msg.data_ref,
+                    )
+                    return
+
+                tca_budget = intake.tca_budget or {}
+                risk_ctx = intake.risk_context or {}
                 slippage_limit = tca_budget.get("max_slippage_bps")
                 latency_limit = tca_budget.get("max_latency_ms")
                 maker_pref = tca_budget.get("maker_preference")
@@ -128,67 +191,14 @@ class IntentRouter:
                 cvar_budget = risk_ctx.get("trade_cvar95_bps")
 
                 LOG.info(
-                    f"[{symbol}] Intent Metadata: Strategy={strategy_id} "
+                    f"[{intake.symbol}] Intent Metadata: Strategy={intake.strategy_id} "
                     f"TCA={{slippage={slippage_limit}bps, latency={latency_limit}ms, maker={maker_pref}}} "
                     f"Risk={{score={risk_score}, cvar={cvar_budget}bps}}"
                 )
 
-                order_type = order_info.get("order_type")
-                if not order_type:
-                    raise ValueError(
-                        "NRR-INTENT-MISSING-ORDER_TYPE: Strategy must provide explicit order_type (LIMIT/MARKET)")
-
-                price = str(order_info.get("price")) if order_info.get(
-                    "price") else None
-                tif = order_info.get("tif")
-
-                if order_type == "LIMIT":
-                    if not price:
-                        raise ValueError(
-                            "NRR-INTENT-MISSING-PRICE: LIMIT order requires price")
-                    if not tif:
-                        raise ValueError(
-                            "NRR-INTENT-MISSING-TIF: LIMIT order requires tif (GTC/GTX/IOC/FOK)")
-                elif order_type == "MARKET":
-                    if tif:
-                        raise ValueError(
-                            f"NRR-INTENT-INVALID-TIF: MARKET order must not have tif (got {tif})")
-
-                stop_price_raw = self._fsm._resolve_price(pld, "stop_price")
-                target_price_raw = self._fsm._resolve_price(
-                    pld, "target_price")
-                regime_provenance = pld.get("regime_provenance")
-
-                cmd_payload = {
-                    "rid": intent_rid,
-                    "symbol": symbol,
-                    "side": pld.get("side"),
-                    "qty": str(order_info.get("qty")),
-                    "order_type": order_type,
-                    "price": price,
-                    "tif": tif,
-                    "stop_price": stop_price_raw,
-                    "target_price": target_price_raw,
-                    "valid_for_ms": pld.get("valid_for_ms"),
-                    "idempotent_key": pld.get("idempotent_key"),
-                    "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
-                    "strategy": strategy_id,
-                    "regime": pld.get("regime"),
-                    "regime_confidence": pld.get("regime_confidence"),
-                    "regime_provenance": deepcopy(regime_provenance) if isinstance(regime_provenance, dict) else None,
-                }
-
-                cmd_metadata: Dict[str, Any] = {}
-                if strategy_id:
-                    cmd_metadata["strategy_id"] = str(strategy_id)
-                if pld.get("tf_sec") is not None:
-                    cmd_metadata["tf_sec"] = pld.get("tf_sec")
-                if isinstance(tca_budget, dict) and tca_budget:
-                    cmd_metadata["tca_budget"] = dict(tca_budget)
-                if isinstance(risk_ctx, dict) and risk_ctx:
-                    cmd_metadata["risk_context"] = dict(risk_ctx)
-                if cmd_metadata:
-                    cmd_payload["metadata"] = cmd_metadata
+                cmd_payload = intake.to_cmd_open_payload()
+                symbol = intake.symbol
+                strategy_id = intake.strategy_id
 
                 cmd_open = Message(
                     op="CMD",
@@ -202,7 +212,9 @@ class IntentRouter:
                 )
 
                 LOG.info(
-                    f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN (qty={cmd_payload['qty']} side={cmd_payload.get('side')} type={order_type})")
+                    f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN "
+                    f"(qty={cmd_payload['qty']} side={cmd_payload.get('side')} "
+                    f"type={cmd_payload.get('order_type')} contract={INTENT_OPEN_INTAKE_CONTRACT})")
                 self._mark_intent_routed(
                     rid=intent_rid,
                     symbol=str(symbol),

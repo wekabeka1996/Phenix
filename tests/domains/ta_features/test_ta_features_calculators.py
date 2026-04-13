@@ -16,11 +16,17 @@ from apps.reference.config_models import TAFeaturesDomainConfig
 from apps.reference.domains.ta_features.bar_buffer import BarBuffer
 from apps.reference.domains.ta_features.calculators import (
     MIN_WARM_BARS,
+    compute_atr,
+    compute_bb_width_change,
+    compute_macd_signal,
     compute_price_momentum,
+    compute_price_range_ratio,
     compute_price_sma_deviation,
+    compute_realized_volatility,
     compute_stochastic,
     compute_ta_bb,
     compute_ta_rsi,
+    compute_volume_momentum,
     compute_volume_sma_ratio,
 )
 from apps.reference.domains.ta_features.ta_features import TAFeaturesEngine
@@ -373,6 +379,162 @@ class TestComputePriceMomentum:
 
 
 # ============================================================================
+# compute_macd_signal
+# ============================================================================
+
+
+class TestComputeMacdSignal:
+    def test_insufficient_data(self):
+        closes = _flat(100.0, 20)
+        assert compute_macd_signal(closes) == 0.0
+
+    def test_sufficient_data_nonzero(self):
+        # 40 bars trending up → MACD signal should be positive
+        closes = _ramp(100.0, 140.0, 40)
+        sig = compute_macd_signal(closes)
+        assert sig > 0.0
+
+    def test_downtrend_negative(self):
+        closes = _ramp(140.0, 100.0, 40)
+        sig = compute_macd_signal(closes)
+        assert sig < 0.0
+
+    def test_flat_price_near_zero(self):
+        closes = _flat(100.0, 40)
+        sig = compute_macd_signal(closes)
+        assert sig == pytest.approx(0.0, abs=1e-6)
+
+
+# ============================================================================
+# compute_atr
+# ============================================================================
+
+
+class TestComputeAtr:
+    def test_insufficient_data(self):
+        h = _flat(101.0, 10)
+        l = _flat(99.0, 10)
+        c = _flat(100.0, 10)
+        assert compute_atr(h, l, c, period=14) == 0.0
+
+    def test_positive_on_valid_data(self):
+        n = 20
+        h = [_d(100.0 + i + 1) for i in range(n)]
+        l = [_d(100.0 + i - 1) for i in range(n)]
+        c = [_d(100.0 + i) for i in range(n)]
+        atr = compute_atr(h, l, c)
+        assert atr > 0.0
+
+    def test_known_value_flat_range(self):
+        # Bar range = 2 for all bars, prev_close = close → TR = max(2, 0, 0) = 2
+        n = 16
+        h = _flat(101.0, n)
+        l = _flat(99.0, n)
+        c = _flat(100.0, n)
+        atr = compute_atr(h, l, c, period=14)
+        assert atr == pytest.approx(2.0, rel=1e-4)
+
+
+# ============================================================================
+# compute_realized_volatility
+# ============================================================================
+
+
+class TestComputeRealizedVolatility:
+    def test_flat_prices_zero(self):
+        closes = _flat(100.0, 20)
+        rv = compute_realized_volatility(closes, lookback=12)
+        assert rv == pytest.approx(0.0, abs=1e-10)
+
+    def test_positive_on_varied_prices(self):
+        closes = _ramp(100.0, 110.0, 20)
+        rv = compute_realized_volatility(closes, lookback=12)
+        assert rv > 0.0
+
+    def test_insufficient_data(self):
+        closes = _flat(100.0, 5)
+        assert compute_realized_volatility(closes, lookback=12) == 0.0
+
+    def test_lookback_too_small(self):
+        closes = _flat(100.0, 5)
+        assert compute_realized_volatility(closes, lookback=1) == 0.0
+
+
+# ============================================================================
+# compute_volume_momentum
+# ============================================================================
+
+
+class TestComputeVolumeMomentum:
+    def test_insufficient_data(self):
+        assert compute_volume_momentum([_d(100.0)]) == 0.0
+
+    def test_equal_volumes_zero(self):
+        vols = [_d(100.0), _d(100.0)]
+        assert compute_volume_momentum(vols) == pytest.approx(0.0)
+
+    def test_positive_direction(self):
+        vols = [_d(100.0), _d(150.0)]
+        m = compute_volume_momentum(vols)
+        assert m == pytest.approx(0.5, rel=1e-5)
+
+    def test_negative_direction(self):
+        vols = [_d(200.0), _d(100.0)]
+        m = compute_volume_momentum(vols)
+        assert m == pytest.approx(-0.5, rel=1e-5)
+
+    def test_zero_prev_volume_fallback(self):
+        vols = [_d(0.0), _d(100.0)]
+        assert compute_volume_momentum(vols) == 0.0
+
+
+# ============================================================================
+# compute_price_range_ratio
+# ============================================================================
+
+
+class TestComputePriceRangeRatio:
+    def test_flat_bar_zero(self):
+        assert compute_price_range_ratio(
+            _d(100.0), _d(100.0), _d(100.0)) == 0.0
+
+    def test_positive_range(self):
+        ratio = compute_price_range_ratio(_d(105.0), _d(95.0), _d(100.0))
+        assert ratio == pytest.approx(0.10, rel=1e-5)
+
+    def test_zero_close_fallback(self):
+        assert compute_price_range_ratio(_d(105.0), _d(95.0), _d(0.0)) == 0.0
+
+
+# ============================================================================
+# compute_bb_width_change
+# ============================================================================
+
+
+class TestComputeBbWidthChange:
+    def test_insufficient_data(self):
+        closes = _flat(100.0, 15)
+        assert compute_bb_width_change(closes) == 0.0
+
+    def test_flat_prices_zero_change(self):
+        # 21 flat prices → both windows identical → delta = 0
+        closes = _flat(100.0, 21)
+        assert compute_bb_width_change(closes) == pytest.approx(0.0, abs=1e-9)
+
+    def test_widening_bands_positive(self):
+        # First 20 bars flat, then last bar spikes → width increases → positive
+        closes = _flat(100.0, 20) + [_d(120.0)]
+        change = compute_bb_width_change(closes)
+        assert change > 0.0
+
+    def test_narrowing_bands_negative(self):
+        # First bar is outlier, rest flat → width decreases → negative
+        closes = [_d(120.0)] + _flat(100.0, 20)
+        change = compute_bb_width_change(closes)
+        assert change < 0.0
+
+
+# ============================================================================
 # TAFeaturesEngine integration (stub FSM)
 # ============================================================================
 
@@ -474,9 +636,17 @@ class TestTAFeaturesEngine:
         pld = ta_events[-1]
         for field in (
             "ts", "symbol", "tf_sec", "bar_close_ts", "close",
+            # Original 8
             "bb_position", "bb_width", "rsi_14",
             "price_sma_20_deviation", "volume_sma_ratio",
             "stoch_k", "stoch_d", "price_momentum_5m",
+            # New 10
+            "price_momentum_1h", "price_momentum_1d",
+            "volume_momentum_5m", "macd_signal",
+            "atr_14", "atr_ratio", "bb_width_change",
+            "realized_volatility_1h", "realized_volatility_1d",
+            "price_range_ratio",
+            # Metadata
             "warm_up_bars", "required_warm_up_bars", "is_warm", "source",
         ):
             assert field in pld, f"Missing field: {field}"
@@ -494,6 +664,11 @@ class TestTAFeaturesEngine:
         assert 0.0 <= pld["stoch_k"] <= 100.0
         assert 0.0 <= pld["stoch_d"] <= 100.0
         assert pld["volume_sma_ratio"] >= 0.0
+        assert pld["atr_14"] >= 0.0
+        assert pld["atr_ratio"] >= 0.0
+        assert pld["realized_volatility_1h"] >= 0.0
+        assert pld["realized_volatility_1d"] >= 0.0
+        assert pld["price_range_ratio"] >= 0.0
         assert pld["is_warm"] is True
         assert pld["source"] == "ta_features"
 

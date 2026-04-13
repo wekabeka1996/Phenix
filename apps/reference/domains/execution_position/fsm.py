@@ -58,6 +58,7 @@ from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.telemetry.trade_lifecycle_logger import (
     EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND,
     EXECUTION_FILL_INGRESS_RECORD_KIND,
+    POSITION_POLICY_SIDECAR_RECORD_KIND,
     append_trade_lifecycle_record,
 )
 
@@ -100,6 +101,8 @@ from apps.reference.domains.execution_position.close_executor import CloseExecut
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
 from apps.reference.domains.execution_position.position_policy_sidecar import (
+    ACTION_PACKAGE_VERSION,
+    CLOSE_REQUEST_COMMAND_TOPIC,
     PositionPolicyCloseRequest,
     PositionPolicySidecar,
 )
@@ -134,6 +137,7 @@ from apps.reference.domains.execution_position.restore_artifact import (
     ExecutionPositionStartupTruthRecord,
     ExecutionPositionStartupTruthRestoreArtifactStatus,
     ExecutionPositionStartupTruthSummary,
+    ExecutionPositionStartupTruthUnknownSymbolRecord,
     ExecutionPositionStartupTruthSymbolRecord,
     STARTUP_TRUTH_ARTIFACT_SCHEMA_VERSION,
     STARTUP_TRUTH_ARTIFACT_TYPE,
@@ -412,6 +416,7 @@ class ExecPosFSM(
         self._last_realized_pnl_by_symbol: Dict[str, float] = {}
         self._last_close_reason_by_symbol: Dict[str, str] = {}
         self._proven_terminal_close_by_symbol: Dict[str, Dict[str, Any]] = {}
+        self._position_policy_close_requests: Dict[str, Dict[str, Any]] = {}
 
         # PHASE 1: Stable lifecycle identity per symbol for downstream neocortex correlation.
         # Populated from OrderIndex.ref.idempotent_key at fill time (TASK40 block).
@@ -581,6 +586,10 @@ class ExecPosFSM(
         # LLM external intent path: wire CMD:EXTERNAL_OPEN_REQUEST_V1
         self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
                         self._on_external_open_request)
+        self.bus.listen(
+            CLOSE_REQUEST_COMMAND_TOPIC,
+            self._on_position_policy_close_request,
+        )
 
         # Phase 14D: DomainBridge for orphan domains
         self._domain_bridge = DomainBridge("execution_position", bus=self.bus)
@@ -1728,6 +1737,12 @@ class ExecPosFSM(
             "summary") if isinstance(runtime_truth, dict) else {}
         runtime_records = runtime_truth.get(
             "records") if isinstance(runtime_truth, dict) else []
+        unknown_truth_records = self._build_startup_truth_unknown_records(
+            symbols_considered=symbols_considered,
+            input_snapshot=input_snapshot,
+            runtime_truth_records=runtime_records,
+            restore_authoritative=restore_authoritative,
+        )
         restore_writer = self._restore_artifact_writer
         restore_artifact_path = restore_writer.storage_path if restore_writer is not None else None
 
@@ -1854,6 +1869,7 @@ class ExecPosFSM(
                     for item in runtime_records
                     if str(item.get("symbol") or "").strip()
                 ],
+                unknown_truth_records=unknown_truth_records,
                 restore_artifact=ExecutionPositionStartupTruthRestoreArtifactStatus(
                     path=restore_artifact_path,
                     write_attempted=bool(restore_artifact_write_attempted),
@@ -1879,6 +1895,98 @@ class ExecPosFSM(
             return False
 
         return writer.append_record(record)
+
+    def _build_startup_truth_unknown_records(
+        self,
+        *,
+        symbols_considered: List[str],
+        input_snapshot: Dict[str, Any],
+        runtime_truth_records: List[Dict[str, Any]],
+        restore_authoritative: Optional[ExecutionPositionRestoreAuthoritativeStatus],
+    ) -> List[ExecutionPositionStartupTruthUnknownSymbolRecord]:
+        status = restore_authoritative or ExecutionPositionRestoreAuthoritativeStatus()
+        if status.artifact_state not in {"missing", "not_readable", "corrupt", "stale"}:
+            return []
+
+        artifact_reason = {
+            "missing": "authoritative_artifact_missing",
+            "not_readable": "authoritative_artifact_not_readable",
+            "corrupt": "authoritative_artifact_corrupt",
+            "stale": "authoritative_artifact_stale",
+        }.get(status.artifact_state)
+        if not artifact_reason:
+            return []
+
+        observed_input_map: Dict[str, Set[str]] = {}
+
+        def _remember(symbols: List[str], source: str) -> None:
+            for raw_symbol in symbols:
+                symbol = str(raw_symbol or "").strip().upper()
+                if not symbol:
+                    continue
+                observed_input_map.setdefault(symbol, set()).add(source)
+
+        _remember(symbols_considered, "symbols_considered")
+        _remember(
+            list(input_snapshot.get("position_symbols_observed", [])),
+            "position_symbols_observed",
+        )
+        _remember(
+            list(input_snapshot.get("pre_cleanup_order_symbols_observed", [])),
+            "pre_cleanup_order_symbols_observed",
+        )
+        _remember(
+            list(input_snapshot.get("guardian_symbols_observed", [])),
+            "guardian_symbols_observed",
+        )
+        _remember(
+            list(input_snapshot.get("fresh_order_symbols_observed", [])),
+            "fresh_order_symbols_observed",
+        )
+
+        authoritative_symbols = {
+            str(item.symbol).strip().upper()
+            for item in status.symbol_statuses
+            if str(item.symbol).strip()
+        }
+        reconstructed_symbols = {
+            str(item.get("symbol") or "").strip().upper()
+            for item in runtime_truth_records
+            if str(item.get("status") or "").strip().lower() == "reconstructed"
+            and str(item.get("symbol") or "").strip()
+        }
+        portfolio_symbols = {
+            str(symbol).strip().upper()
+            for symbol in input_snapshot.get("position_symbols_observed", [])
+            if str(symbol).strip()
+        }
+        positions_fetch_succeeded = bool(input_snapshot.get("positions_fetch_succeeded", False))
+
+        unknown_rows: List[ExecutionPositionStartupTruthUnknownSymbolRecord] = []
+        for symbol in sorted(observed_input_map):
+            if symbol in authoritative_symbols or symbol in reconstructed_symbols:
+                continue
+
+            portfolio_presence = "unknown"
+            if positions_fetch_succeeded:
+                portfolio_presence = "present" if symbol in portfolio_symbols else "absent"
+
+            reason_codes = [artifact_reason]
+            if portfolio_presence == "present":
+                reason_codes.append("portfolio_present_without_restored_lifecycle_truth")
+
+            unknown_rows.append(
+                ExecutionPositionStartupTruthUnknownSymbolRecord(
+                    symbol=symbol,
+                    authoritative_artifact_state=status.artifact_state,
+                    portfolio_presence=portfolio_presence,
+                    reconstructed_exact_truth_present=False,
+                    observed_inputs=sorted(observed_input_map.get(symbol) or []),
+                    reason_codes=reason_codes,
+                )
+            )
+
+        return unknown_rows
 
     def _execution_truth_cache_status(self) -> ExecutionPositionStartupTruthCacheStatus:
         hardening = get_execution_truth_hardening(self)
@@ -3034,8 +3142,320 @@ class ExecPosFSM(
 
     def _on_execution_close_reconciled(self, event: Message) -> None:
         """Forward authoritative close reconciliation after incumbent ownership resolves."""
+        payload = dict(getattr(event, "pld", None) or {})
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        request_context = self._position_policy_close_requests.get(symbol)
+        if request_context is not None:
+            self._emit_position_policy_close_request_state(
+                request_context,
+                request_state="reconciled",
+                why="position_policy_sidecar:close_reconciled",
+                extra={
+                    "business_close_reconciled": bool(
+                        payload.get("business_close_reconciled")
+                    ),
+                    "reconcile_source": payload.get("source"),
+                    "reconcile_rid": payload.get("rid"),
+                    "reconcile_why": payload.get("why"),
+                },
+            )
+            self._position_policy_close_requests.pop(symbol, None)
         if self._position_policy_sidecar is not None:
             self._position_policy_sidecar.on_execution_close_reconciled(event)
+
+    def _on_position_policy_close_request(self, event: Message) -> None:
+        payload = dict(getattr(event, "pld", None) or {})
+        request, request_payload, parse_error = self._parse_position_policy_close_request(
+            payload
+        )
+        if request is None:
+            self._emit_position_policy_close_request_state(
+                request_payload,
+                request_state="suppressed",
+                why="position_policy_sidecar:close_request_invalid",
+                extra={"suppression_reason": parse_error or "invalid_request"},
+            )
+            return
+
+        symbol = request.symbol
+        allowed_scope = self._position_policy_allowed_scope()
+        request_payload["allowed_action_scope"] = dict(allowed_scope)
+
+        suppression_reason: Optional[str] = None
+        incumbent_owner: Optional[str] = None
+        manage_flow = self.manage_flows.get(symbol)
+        if request.policy_source != "position_policy_sidecar":
+            suppression_reason = "invalid_policy_source"
+        elif request.requested_action != "SOFT_CLOSE":
+            suppression_reason = "unsupported_requested_action"
+        elif request.target_mode != "symbol_current_net_only":
+            suppression_reason = "exact_targeting_forbidden"
+        elif request.requested_qty not in (None, "", "0", 0):
+            suppression_reason = "partial_reduce_forbidden"
+        elif not bool(allowed_scope.get("soft_close_symbol_current_net_only")):
+            suppression_reason = "soft_close_scope_disabled"
+        elif bool(allowed_scope.get("partial_reduce")):
+            suppression_reason = "partial_reduce_forbidden"
+        elif bool(allowed_scope.get("bracket_mutation")):
+            suppression_reason = "bracket_mutation_forbidden"
+        elif bool(allowed_scope.get("exact_targeting")):
+            suppression_reason = "exact_targeting_forbidden"
+        elif manage_flow is None:
+            suppression_reason = "no_manage_flow_for_symbol"
+        elif hasattr(manage_flow, "has_active_lifecycle") and not manage_flow.has_active_lifecycle():
+            suppression_reason = "manage_flow_has_no_active_lifecycle"
+        elif bool(getattr(manage_flow, "_closing_position", False)):
+            suppression_reason = "manage_flow_close_in_progress"
+            incumbent_owner = "ManageFlowFSM"
+
+        portfolio_state = self._get_portfolio_state_for_symbol(symbol)
+        position_signature = self._get_portfolio_position_signature(symbol)
+        if suppression_reason is None and portfolio_state == "UNKNOWN":
+            suppression_reason = "portfolio_state_unknown"
+        elif suppression_reason is None and portfolio_state == "FLAT":
+            suppression_reason = "portfolio_flat_no_live_net_position"
+        elif suppression_reason is None and position_signature == "UNKNOWN":
+            suppression_reason = "portfolio_position_signature_unknown"
+
+        hardening = get_execution_truth_hardening(self)
+        if suppression_reason is None and hardening is not None:
+            close_decision = hardening.evaluate_close_command(
+                symbol=symbol,
+                requested_qty=request.requested_qty,
+                position_signature=position_signature,
+                rid=request.request_id,
+            )
+            if close_decision.suppress:
+                suppression_reason = f"close_guard:{close_decision.reason}"
+                incumbent_owner = incumbent_owner or "ExecutionTruthHardening"
+
+        if suppression_reason is not None:
+            self._emit_position_policy_close_request_state(
+                request_payload,
+                request_state="suppressed",
+                why="position_policy_sidecar:close_request_suppressed",
+                extra={
+                    "suppression_reason": suppression_reason,
+                    "incumbent_owner": incumbent_owner,
+                    "portfolio_state": portfolio_state,
+                    "portfolio_position_signature": position_signature,
+                },
+            )
+            return
+
+        policy_context = self._position_policy_context_from_request_payload(
+            request_payload
+        )
+        self._position_policy_close_requests[symbol] = dict(policy_context)
+        close_msg = Message(
+            op="CMD",
+            verb="CLOSE",
+            src="execution_position.position_policy_sidecar",
+            dst="execution_position",
+            rid=request.request_id,
+            why="position_policy_sidecar_soft_close",
+            pld={
+                "symbol": symbol,
+                "reason": "position_policy_sidecar_soft_close",
+                "trigger": CLOSE_REQUEST_COMMAND_TOPIC,
+                "trace": request.trace_id,
+                "idempotent_key": request.request_id,
+                "close_guard_prevalidated": True,
+                "policy_context": policy_context,
+            },
+        )
+        result = self.handle(close_msg)
+        if result is None or result.op != "DEC" or result.verb not in {"CLOSE", "CLOSE_POSITION"}:
+            self._position_policy_close_requests.pop(symbol, None)
+            self._emit_position_policy_close_request_state(
+                request_payload,
+                request_state="suppressed",
+                why="position_policy_sidecar:close_command_not_emitted",
+                extra={
+                    "suppression_reason": "close_command_not_emitted",
+                    "portfolio_state": portfolio_state,
+                    "portfolio_position_signature": position_signature,
+                },
+            )
+            return
+
+        self._emit_position_policy_close_request_state(
+            request_payload,
+            request_state="close_command_emitted",
+            why="position_policy_sidecar:close_command_emitted",
+            extra={
+                "close_cmd_rid": request.request_id,
+                "execution_shadow_mode": bool(self.shadow_mode),
+                "adapter_present": bool(self.adapter),
+                "portfolio_state": portfolio_state,
+                "portfolio_position_signature": position_signature,
+            },
+        )
+
+    def _parse_position_policy_close_request(
+        self,
+        payload: Dict[str, Any],
+    ) -> tuple[Optional[PositionPolicyCloseRequest], Dict[str, Any], Optional[str]]:
+        normalized = dict(payload)
+        symbol = str(normalized.get("symbol") or "").strip().upper()
+        normalized["symbol"] = symbol
+        normalized.setdefault("event_type", "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED")
+        normalized.setdefault("policy_source", "position_policy_sidecar")
+        normalized.setdefault(
+            "source_event_type", "POSITION_POLICY_SIDECAR_RECOMMENDED"
+        )
+        normalized.setdefault("requested_action", "SOFT_CLOSE")
+        normalized.setdefault("target_mode", "symbol_current_net_only")
+        normalized.setdefault("action_package_version", ACTION_PACKAGE_VERSION)
+        normalized.setdefault("allowed_action_scope", {})
+        normalized.setdefault("reason_codes", [])
+        normalized.setdefault("score_snapshot", {})
+        normalized.setdefault("position_snapshot", {})
+        normalized.setdefault("feature_ref", {})
+        normalized.setdefault("regime_ref", {})
+        normalized.setdefault("freshness_snapshot", {})
+        normalized.setdefault("fill_correlation", {})
+        normalized.setdefault("portfolio_correlation", {})
+        normalized["request_id"] = str(normalized.get("request_id") or "").strip()
+        normalized["trace_id"] = str(normalized.get("trace_id") or "").strip()
+        normalized["requested_qty"] = normalized.get("requested_qty")
+        try:
+            normalized["ts_ms"] = int(normalized.get("ts_ms") or get_clock().now_ms())
+        except (TypeError, ValueError):
+            normalized["ts_ms"] = get_clock().now_ms()
+
+        if not normalized["request_id"]:
+            return None, normalized, "missing_request_id"
+        if not normalized["trace_id"]:
+            return None, normalized, "missing_trace_id"
+        if not symbol:
+            return None, normalized, "missing_symbol"
+
+        request = self.position_policy_close_request_type(
+            ts_ms=normalized["ts_ms"],
+            request_id=normalized["request_id"],
+            trace_id=normalized["trace_id"],
+            symbol=symbol,
+            source_event_type=str(normalized.get("source_event_type") or "POSITION_POLICY_SIDECAR_RECOMMENDED"),
+            event_type=str(normalized.get("event_type") or "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"),
+            requested_action=str(normalized.get("requested_action") or "SOFT_CLOSE"),
+            requested_qty=(
+                None
+                if normalized.get("requested_qty") in (None, "", "0", 0)
+                else str(normalized.get("requested_qty"))
+            ),
+            target_mode=str(normalized.get("target_mode") or "symbol_current_net_only"),
+            policy_source=str(normalized.get("policy_source") or "position_policy_sidecar"),
+            action_package_version=str(normalized.get("action_package_version") or ACTION_PACKAGE_VERSION),
+            allowed_action_scope=dict(normalized.get("allowed_action_scope") or {}),
+            reason_codes=tuple(str(code) for code in (normalized.get("reason_codes") or [])),
+            score_snapshot=dict(normalized.get("score_snapshot") or {}),
+            position_snapshot=dict(normalized.get("position_snapshot") or {}),
+            feature_ref=dict(normalized.get("feature_ref") or {}),
+            regime_ref=dict(normalized.get("regime_ref") or {}),
+            freshness_snapshot=dict(normalized.get("freshness_snapshot") or {}),
+            fill_correlation=dict(normalized.get("fill_correlation") or {}),
+            portfolio_correlation=dict(normalized.get("portfolio_correlation") or {}),
+        )
+        request_payload = dict(normalized)
+        request_payload.update(request.to_payload())
+        return request, request_payload, None
+
+    def _position_policy_allowed_scope(self) -> Dict[str, bool]:
+        try:
+            candidate = self.config.domains.execution_position.position_policy_sidecar
+        except Exception:
+            candidate = None
+        if not isinstance(candidate, PositionPolicySidecarConfig):
+            return {
+                "soft_close_symbol_current_net_only": False,
+                "partial_reduce": False,
+                "bracket_mutation": False,
+                "exact_targeting": False,
+            }
+        return {
+            "soft_close_symbol_current_net_only": bool(
+                candidate.allowed_actions.soft_close_symbol_current_net_only
+            ),
+            "partial_reduce": bool(candidate.allowed_actions.partial_reduce),
+            "bracket_mutation": bool(candidate.allowed_actions.bracket_mutation),
+            "exact_targeting": bool(candidate.allowed_actions.exact_targeting),
+        }
+
+    @staticmethod
+    def _position_policy_context_from_request_payload(
+        request_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "symbol": request_payload.get("symbol"),
+            "policy_source": request_payload.get("policy_source"),
+            "source_event_type": request_payload.get("source_event_type"),
+            "source_trace_id": request_payload.get("trace_id"),
+            "request_id": request_payload.get("request_id"),
+            "request_event_type": request_payload.get("event_type"),
+            "requested_action": request_payload.get("requested_action"),
+            "requested_qty": request_payload.get("requested_qty"),
+            "target_mode": request_payload.get("target_mode"),
+            "allowed_action_scope": dict(
+                request_payload.get("allowed_action_scope") or {}
+            ),
+            "reason_codes": list(request_payload.get("reason_codes") or []),
+            "score_snapshot": dict(request_payload.get("score_snapshot") or {}),
+            "position_snapshot": dict(request_payload.get("position_snapshot") or {}),
+            "feature_ref": dict(request_payload.get("feature_ref") or {}),
+            "regime_ref": dict(request_payload.get("regime_ref") or {}),
+            "freshness_snapshot": dict(
+                request_payload.get("freshness_snapshot") or {}
+            ),
+            "fill_correlation": dict(request_payload.get("fill_correlation") or {}),
+            "portfolio_correlation": dict(
+                request_payload.get("portfolio_correlation") or {}
+            ),
+            "action_package_version": request_payload.get("action_package_version"),
+            "request_ts_ms": request_payload.get("ts_ms"),
+        }
+
+    def _emit_position_policy_close_request_state(
+        self,
+        request_context: Dict[str, Any],
+        *,
+        request_state: str,
+        why: str,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        payload = {
+            "ts_ms": int(get_clock().now_sec() * 1000),
+            "event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE",
+            "request_state": request_state,
+            "symbol": request_context.get("symbol")
+            or (
+                request_context.get("position_snapshot") or {}
+            ).get("symbol"),
+            "request_id": request_context.get("request_id"),
+            "trace_id": request_context.get("trace_id")
+            or request_context.get("source_trace_id"),
+            "policy_source": request_context.get("policy_source")
+            or "position_policy_sidecar",
+            "policy_context": self._position_policy_context_from_request_payload(
+                request_context
+            )
+            if "trace_id" in request_context
+            else dict(request_context),
+            "why": why,
+        }
+        if extra:
+            payload.update({k: v for k, v in extra.items() if v is not None})
+        self._emit_execution_bus_event(
+            "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE",
+            payload,
+        )
+        append_trade_lifecycle_record(
+            {
+                "record_kind": POSITION_POLICY_SIDECAR_RECORD_KIND,
+                **payload,
+            },
+            log_file=self._trade_lifecycle_log_path(),
+        )
 
     def _position_policy_known_symbols(self) -> Set[str]:
         symbols: Set[str] = set(self.manage_flows.keys())
@@ -3891,7 +4311,8 @@ class ExecPosFSM(
             elif msg.verb == "CLOSE":
                 symbol = msg.pld.get("symbol") if msg.pld else None
                 hardening = get_execution_truth_hardening(self)
-                if symbol and hardening is not None:
+                skip_close_guard = bool((msg.pld or {}).get("close_guard_prevalidated"))
+                if symbol and hardening is not None and not skip_close_guard:
                     close_decision = hardening.evaluate_close_command(
                         symbol=symbol,
                         requested_qty=(msg.pld or {}).get("qty"),

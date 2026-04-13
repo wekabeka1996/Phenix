@@ -496,9 +496,18 @@ class IntentBuilder:
             strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
             exec_cfg = getattr(strat_cfg, "execution",
                                None) if strat_cfg else None
-            order_type = getattr(exec_cfg, "entry_order_type",
-                                 None) if exec_cfg else None
-            tif = getattr(exec_cfg, "entry_tif", None) if exec_cfg else None
+            if reduce_only and exec_cfg is not None:
+                # Close orders use exit_order_type/exit_tif when configured,
+                # falling back to entry fields for backward compatibility.
+                order_type = getattr(exec_cfg, "exit_order_type",
+                                     None) or getattr(exec_cfg, "entry_order_type", None)
+                tif = getattr(exec_cfg, "exit_tif",
+                              None) if getattr(exec_cfg, "exit_order_type", None) else getattr(exec_cfg, "entry_tif", None)
+            else:
+                order_type = getattr(exec_cfg, "entry_order_type",
+                                     None) if exec_cfg else None
+                tif = getattr(exec_cfg, "entry_tif",
+                              None) if exec_cfg else None
         except Exception:
             pass
 
@@ -551,12 +560,35 @@ class IntentBuilder:
             tif = None
 
         # ── valid_for_ms (LIMIT only) ─────────────────────────
-        # Close-path exemption: reduce_only intents (position closes) must NOT
-        # be subject to pending-entry TTL semantics. Applying valid_for_ms to
-        # closes causes spurious rejections (no tf_sec → no valid_for_ms → reject)
-        # for regime-flip / stop-loss closes. Normal entry (reduce_only=False) unchanged.
+        # Close-path exemption: reduce_only LIMIT intents use exit_limit_ttl_ms
+        # from config (if set), avoiding the entry-path tf_sec → ttl_by_tf_sec
+        # pipeline.  Normal entry (reduce_only=False) unchanged.
         valid_for_ms: Optional[int] = None
-        if order_type_u == "LIMIT" and not reduce_only:
+        if order_type_u == "LIMIT" and reduce_only:
+            # Reduce-only LIMIT close: schema still requires valid_for_ms as
+            # integer.  Use exit_limit_ttl_ms from strategy execution config.
+            try:
+                strat_cfg = getattr(self.config.strategies,
+                                    str(strategy_id), None)
+                exec_cfg = getattr(strat_cfg, "execution",
+                                   None) if strat_cfg else None
+                exit_ttl = getattr(exec_cfg, "exit_limit_ttl_ms",
+                                   None) if exec_cfg else None
+                if exit_ttl is not None:
+                    valid_for_ms = int(exit_ttl)
+            except Exception:
+                pass
+            if valid_for_ms is None:
+                # No exit_limit_ttl_ms configured; LIMIT close without TTL
+                # would violate the schema.  Reject with clear diagnostics.
+                self._reject(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                    context="ORDER-POLICY-01: reduce_only LIMIT requires "
+                            "execution.exit_limit_ttl_ms",
+                    why_chain=why_chain)
+                return None, None, None
+        elif order_type_u == "LIMIT" and not reduce_only:
             if tf_sec is None:
                 self._reject(symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
                              reason_code=NormalizedRejectReasons.MISSING_TF_SEC,

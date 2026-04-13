@@ -35,6 +35,7 @@ def test_md_amr_process_strategy_blocks_cold_start_until_basis_bars_seen() -> No
     handler._bars_held = {}
     handler._last_ingested_bar_ts_ms = {}
     handler._deferred = {}
+    handler._entry_anchor = {}
     handler._strategies = {
         "BTCUSDT": SimpleNamespace(on_bar=lambda **_kwargs: {"status": "SIGNAL"})
     }
@@ -94,6 +95,7 @@ def test_md_amr_seeded_basis_bars_bypass_cold_start_gate() -> None:
     handler._bars_held = {}
     handler._last_ingested_bar_ts_ms = {}
     handler._deferred = {}
+    handler._entry_anchor = {}
     handler._strategies = {
         "BTCUSDT": SimpleNamespace(
             on_bar=lambda **kwargs: on_bar_calls.append(

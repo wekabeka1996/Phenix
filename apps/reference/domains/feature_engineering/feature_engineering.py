@@ -120,14 +120,30 @@ class FeatureEngineering:
             elif isinstance(config, AuroraConfig):
                 resolver = DomainConfigResolver(config)
             else:
-                raise TypeError(
-                    f"Unsupported config type for price_motion_sanity: {type(config)}")
+                raise TypeError(f"Unsupported config type for price_motion_sanity: {type(config)}")
 
+            self._resolver = resolver
             self._price_motion_sanity_cfg = resolver.get_decision_making().price_motion_sanity
+
+            # VALIDATE: degraded_allowed_strategies must use recognized strategy IDs
+            allowed_degraded = getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
+            registry = self._resolver.get_strategies_registry()
+            if allowed_degraded and registry:
+                known_strats = registry.arbitration.priority.keys()
+                for strat in allowed_degraded:
+                    if strat not in known_strats:
+                        raise ConfigContractError(
+                            path="domains.feature_engineering.warmup.degraded_allowed_strategies",
+                            why=f"Unknown strategy ID '{strat}'. Valid known strategies: {list(known_strats)}"
+                        )
+
+        except ConfigContractError:
+            # Preserve original ConfigContractError path (e.g. degraded_allowed_strategies validation).
+            raise
         except Exception as e:
             raise ConfigContractError(
                 path="domains.decision_making.price_motion_sanity",
-                why="Missing/invalid SSOT price_motion_sanity config (required for LIVE).",
+                why=f"Missing/invalid SSOT config: {e}",
             ) from e
 
         # FTR-04: Initialize calculation engine
@@ -282,6 +298,30 @@ class FeatureEngineering:
             1, int(self.cfg.legacy_features_log_sample_every_n)
         )
         self._legacy_features_log_counter: Dict[str, int] = defaultdict(int)
+
+    def _is_degraded_allowed_for_symbol(self, symbol: str) -> bool:
+        """
+        Check if the symbol's ENTIRE assigned strategy set is explicitly degraded-eligible.
+        """
+        degraded_allowed = getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
+        if not degraded_allowed:
+            return False
+
+        registry = getattr(self, "_resolver", None)
+        if registry:
+            registry = registry.get_strategies_registry()
+        if not registry:
+            return False
+
+        assigned_strats = registry.assignments.get(symbol, [])
+        if not assigned_strats:
+            return False
+
+        for strat in assigned_strats:
+            if strat not in degraded_allowed:
+                return False
+
+        return True
 
     def _log_features_to_file(self, symbol: str, features: dict) -> None:
         """
@@ -2056,14 +2096,23 @@ class FeatureEngineering:
                         f"enforcement_mode={warmup_mode})"
                     )
                     if warmup_mode == "fail_fast":
-                        self.logger.warning(f"{msg} -> rejected")
-                        _emit_cmd_blocked(
-                            "WARMUP_NOT_FULL_READY", "warmup full_ready=false")
-                        # ATR-WARMUP-SEED: seed TR buffer so ATR is ready when warmup lifts.
-                        self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
-                        return
-                    # warn_only / disabled: allow strategy processing to proceed
-                    self.logger.warning(f"{msg} -> allowed")
+                        if self._is_degraded_allowed_for_symbol(symbol):
+                            self.logger.warning(f"{msg} -> allowed (exclusive degraded-eligible bypass for assigned strategies)")
+                            # EXPLICIT METADATA PROVENANCE
+                            if isinstance(warmup, dict):
+                                warmup["degraded_emit"] = True
+                                warmup["degraded_emit_reason"] = "symbol_assigned_set_is_entirely_degraded_eligible"
+                                warmup["degraded_allowed_strategies"] = list(getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", []))
+                        else:
+                            self.logger.warning(f"{msg} -> rejected")
+                            _emit_cmd_blocked(
+                                "WARMUP_NOT_FULL_READY", "warmup full_ready=false")
+                            # ATR-WARMUP-SEED: seed TR buffer so ATR is ready when warmup lifts.
+                            self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
+                            return
+                    else:
+                        # warn_only / disabled: allow strategy processing to proceed
+                        self.logger.warning(f"{msg} -> allowed")
 
                 # Gate 4: Extract bar_close_ts from canonical bar identity.
                 # Legacy bridge keeps bar_close_ts mapped to bar_end_ts_ms.

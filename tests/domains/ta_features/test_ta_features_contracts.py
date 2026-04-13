@@ -15,6 +15,8 @@ RETIRED_CONFIG = PROJECT_ROOT / "config" / "ta_features.yaml"
 
 def _load_registry() -> list[dict]:
     data = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and "registry" in data:
+        data = data["registry"]
     assert isinstance(data, list)
     return data
 
@@ -26,7 +28,7 @@ class TestTAFeaturesContracts:
         assert isinstance(ta_features, dict)
         assert ta_features["enabled"] is True
         assert ta_features["timeframes_sec"] == [180, 300, 900]
-        assert ta_features["warm_up_bars"] == 20
+        assert ta_features["warm_up_bars"] == 30
         assert ta_features["buffer_max_bars"] >= ta_features["warm_up_bars"]
 
     def test_retired_sidechannel_config_removed(self):

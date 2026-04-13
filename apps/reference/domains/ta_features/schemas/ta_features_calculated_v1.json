@@ -17,6 +17,16 @@
     "stoch_k",
     "stoch_d",
     "price_momentum_5m",
+    "price_momentum_1h",
+    "price_momentum_1d",
+    "volume_momentum_5m",
+    "macd_signal",
+    "atr_14",
+    "atr_ratio",
+    "bb_width_change",
+    "realized_volatility_1h",
+    "realized_volatility_1d",
+    "price_range_ratio",
     "warm_up_bars",
     "required_warm_up_bars",
     "is_warm",
@@ -84,6 +94,51 @@
     "price_momentum_5m": {
       "type": "number",
       "description": "Price momentum over a 5-minute window (adaptive lookback by tf_sec)"
+    },
+    "price_momentum_1h": {
+      "type": "number",
+      "description": "Price momentum over a 1-hour window (adaptive lookback by tf_sec)"
+    },
+    "price_momentum_1d": {
+      "type": "number",
+      "description": "Price momentum over a 1-day window (adaptive lookback by tf_sec)"
+    },
+    "volume_momentum_5m": {
+      "type": "number",
+      "description": "Volume change rate: (current_vol - prev_vol) / prev_vol"
+    },
+    "macd_signal": {
+      "type": "number",
+      "description": "MACD signal line: EMA-9 of (EMA-12 - EMA-26)"
+    },
+    "atr_14": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Average True Range over 14 bars"
+    },
+    "atr_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Normalized ATR: 1.0 + atr_14/close (centered on 1.0 for model convention)"
+    },
+    "bb_width_change": {
+      "type": "number",
+      "description": "Change in Bollinger Band width vs previous bar"
+    },
+    "realized_volatility_1h": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Std of log-returns over 1-hour lookback"
+    },
+    "realized_volatility_1d": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Std of log-returns over 1-day lookback"
+    },
+    "price_range_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Current bar range: 1.0 + (high - low)/close (centered on 1.0 for model convention)"
     },
     "warm_up_bars": {
       "type": "integer",

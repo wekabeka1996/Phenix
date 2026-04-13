@@ -4,10 +4,12 @@ from unittest.mock import MagicMock, patch
 
 from apps.reference.config_models import PositionPolicySidecarConfig
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.fsm_manage import ManageState
 from apps.reference.domains.execution_position.position_policy_sidecar import (
     PositionPolicySidecar,
 )
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
+from vfoundation.core.protocol import Message
 
 
 class RecordingBus:
@@ -129,7 +131,7 @@ def _payloads(bus: RecordingBus, topic: str) -> list[dict]:
     return [payload for recorded_topic, payload, _ in bus.events if recorded_topic == topic]
 
 
-def test_position_policy_sidecar_recommends_and_skips_action_in_enable_mode(tmp_path: Path) -> None:
+def test_position_policy_sidecar_recommends_and_emits_bounded_close_request_in_enable_mode(tmp_path: Path) -> None:
     bus = RecordingBus()
     manage_flow = DummyManageFlow()
     now_ms = get_clock().now_ms()
@@ -172,18 +174,71 @@ def test_position_policy_sidecar_recommends_and_skips_action_in_enable_mode(tmp_
     assert "EVT:POSITION_POLICY_SIDECAR_SCORES" in _topics(bus)
     assert "EVT:POSITION_POLICY_SIDECAR_EVALUATED" in _topics(bus)
     assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" in _topics(bus)
-    assert "EVT:POSITION_POLICY_SIDECAR_ACTION_SKIPPED" in _topics(bus)
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" in _topics(bus)
+    assert "EVT:POSITION_POLICY_SIDECAR_ACTION_SKIPPED" not in _topics(bus)
 
     recommended = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED")[-1]
-    skipped = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_ACTION_SKIPPED")[-1]
-    assert recommended["trace_id"] == skipped["trace_id"]
+    request = _payloads(bus, "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST")[-1]
+    assert recommended["trace_id"] == request["trace_id"]
+    assert request["request_id"].startswith("ppsreq:pps:BTCUSDT:")
     assert 0.0 <= recommended["score_snapshot"]["soft_close_pressure"] <= 1.0
-    assert skipped["allowed_action_scope"]["soft_close_symbol_current_net_only"] is True
+    assert request["policy_source"] == "position_policy_sidecar"
+    assert request["requested_action"] == "SOFT_CLOSE"
+    assert request["target_mode"] == "symbol_current_net_only"
+    assert request["allowed_action_scope"]["soft_close_symbol_current_net_only"] is True
+    assert request["allowed_action_scope"]["partial_reduce"] is False
+    assert request["allowed_action_scope"]["bracket_mutation"] is False
+    assert request["allowed_action_scope"]["exact_targeting"] is False
 
     log_lines = (
         tmp_path / "trade_lifecycle.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert any(
         '"record_kind": "position_policy_sidecar"' in line for line in log_lines)
+    assert any(
+        '"event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"' in line
+        for line in log_lines
+    )
+
+
+def test_position_policy_sidecar_shadow_mode_does_not_emit_close_request(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow()
+    now_ms = get_clock().now_ms()
+    sidecar = PositionPolicySidecar(
+        config=_sidecar_config(
+            tmp_path,
+            mode="shadow",
+            recommend_soft_close_at=0.30,
+            profitability_guard_enabled=False,
+        ),
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions_last_ts_ms=now_ms,
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "0.10",
+                    "entryPrice": "100.0",
+                    "markPrice": "100.0",
+                    "unrealizedProfit": "0.0",
+                }
+            ],
+        )
+    )
+    sidecar.on_features_calculated(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 1, orderbook_imbalance=0.0, signal_score=0.0)
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" in _topics(bus)
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)
 
 
 def test_position_policy_sidecar_does_not_recommend_below_threshold(tmp_path: Path) -> None:
@@ -709,6 +764,313 @@ def test_execpos_position_policy_sidecar_mode_wiring_and_ordering(fsm_config, tm
         symbol="BTCUSDT", ts_ms=42, source="guardian", business_close_reconciled=True, why="test"))
 
     assert call_order == ["incumbent", "sidecar", "reconcile"]
+
+
+def test_execpos_position_policy_close_request_state_links_request_to_reconcile(fsm_config, tmp_path: Path) -> None:
+    fsm_config.trading.execution.watchdog.check_interval_ms = 1_000
+    fsm_config.trading.execution.watchdog.rps_limit = 10
+    fsm_config.domains.execution_position.position_policy_sidecar = _sidecar_config(
+        tmp_path, mode="enable", recommend_soft_close_at=0.45
+    )
+
+    bus = RecordingBus()
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), patch(
+        "apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"
+    ):
+        fsm = ExecPosFSM(config=fsm_config, fsm=bus, shadow_mode=True)
+
+    now_ms = get_clock().now_ms()
+    manage_flow = fsm.manage_flow("BTCUSDT")
+    manage_flow.state = ManageState.TRACKING
+    manage_flow.symbol = "BTCUSDT"
+    manage_flow.position_side = "BUY"
+    manage_flow.position_qty = "0.10"
+    manage_flow.position_entry_price = "100.0"
+    manage_flow.position_open_ts = 1_000.0
+
+    portfolio_payload = {
+        "positions_last_ts_ms": now_ms,
+        "positions": [
+            {
+                "symbol": "BTCUSDT",
+                "positionAmt": "0.10",
+                "entryPrice": "100.0",
+                "markPrice": "99.2",
+                "unrealizedProfit": "-0.08",
+            }
+        ],
+    }
+    fsm._latest_portfolio_state = dict(portfolio_payload)
+
+    sidecar = fsm._position_policy_sidecar
+    assert sidecar is not None
+    sidecar.on_portfolio_state_updated(_event(**portfolio_payload))
+    sidecar.on_features_calculated(
+        _event(
+            symbol="BTCUSDT",
+            ts_ms=now_ms + 1,
+            orderbook_imbalance=-1.0,
+            price_vs_vwap_bps=-80.0,
+            signal_score=-0.5,
+        )
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+    )
+
+    request = _payloads(bus, "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST")[-1]
+    states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
+    emitted = [row for row in states if row["request_state"] == "close_command_emitted"]
+    assert len(emitted) == 1
+    assert emitted[0]["request_id"] == request["request_id"]
+    assert emitted[0]["trace_id"] == request["trace_id"]
+    assert emitted[0]["policy_context"]["policy_source"] == "position_policy_sidecar"
+    assert emitted[0]["policy_context"]["allowed_action_scope"]["soft_close_symbol_current_net_only"] is True
+    assert emitted[0]["execution_shadow_mode"] is True
+    assert emitted[0]["adapter_present"] is False
+    close_flow = fsm.close_flow("BTCUSDT")
+    assert close_flow.last_close_reason == "position_policy_sidecar_soft_close"
+    assert close_flow.last_close_symbol == "BTCUSDT"
+    assert close_flow.last_close_qty is None
+
+    fsm._on_execution_close_reconciled(
+        Message(
+            op="EVT",
+            verb="EXECUTION_CLOSE_RECONCILED",
+            src="execution_position",
+            dst="execution_position",
+            rid=request["request_id"],
+            why="guardian:close_reconciled",
+            pld={
+                "symbol": "BTCUSDT",
+                "rid": request["request_id"],
+                "source": "guardian_reconcile",
+                "ts_ms": 1_000_100,
+                "business_close_reconciled": True,
+                "why": "guardian:close_reconciled",
+            },
+        )
+    )
+
+    reconciled = [
+        row
+        for row in _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
+        if row["request_state"] == "reconciled"
+    ]
+    assert len(reconciled) == 1
+    assert reconciled[0]["request_id"] == request["request_id"]
+    assert reconciled[0]["business_close_reconciled"] is True
+    assert reconciled[0]["reconcile_source"] == "guardian_reconcile"
+
+
+def test_execpos_position_policy_close_request_suppresses_when_manage_flow_closing(fsm_config, tmp_path: Path) -> None:
+    fsm_config.trading.execution.watchdog.check_interval_ms = 1_000
+    fsm_config.trading.execution.watchdog.rps_limit = 10
+    fsm_config.domains.execution_position.position_policy_sidecar = _sidecar_config(
+        tmp_path, mode="enable", recommend_soft_close_at=0.45
+    )
+
+    bus = RecordingBus()
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), patch(
+        "apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"
+    ):
+        fsm = ExecPosFSM(config=fsm_config, fsm=bus, shadow_mode=True)
+
+    now_ms = get_clock().now_ms()
+    manage_flow = fsm.manage_flow("BTCUSDT")
+    manage_flow.state = ManageState.TRACKING
+    manage_flow.symbol = "BTCUSDT"
+    manage_flow.position_side = "BUY"
+    manage_flow.position_qty = "0.10"
+    manage_flow.position_entry_price = "100.0"
+    manage_flow.position_open_ts = 1_000.0
+    manage_flow._closing_position = True
+
+    fsm._latest_portfolio_state = {
+        "positions_last_ts_ms": now_ms,
+        "positions": [
+            {
+                "symbol": "BTCUSDT",
+                "positionAmt": "0.10",
+                "entryPrice": "100.0",
+                "markPrice": "99.2",
+                "unrealizedProfit": "-0.08",
+            }
+        ],
+    }
+
+    request_payload = {
+        "ts_ms": now_ms + 10,
+        "request_id": "ppsreq:test-closing",
+        "trace_id": "pps:BTCUSDT:test-closing:1",
+        "symbol": "BTCUSDT",
+        "sidecar_version": "1.0.0",
+        "mode": "enable",
+        "evaluation_mode": "phase1_recommendation_only",
+        "event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        "source_event_type": "POSITION_POLICY_SIDECAR_RECOMMENDED",
+        "requested_action": "SOFT_CLOSE",
+        "requested_qty": None,
+        "target_mode": "symbol_current_net_only",
+        "policy_source": "position_policy_sidecar",
+        "action_package_version": "phase2_action_package_v1",
+        "allowed_action_scope": {
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+        "reason_codes": ["trigger:regime_detected", "recommend_soft_close_threshold_met"],
+        "score_snapshot": {"soft_close_pressure": 0.6},
+        "position_snapshot": {"symbol": "BTCUSDT", "side": "BUY"},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {},
+        "fill_correlation": {},
+        "portfolio_correlation": {},
+    }
+
+    fsm._on_position_policy_close_request(_event(**request_payload))
+
+    states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
+    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    assert len(suppressed) == 1
+    assert suppressed[0]["request_id"] == "ppsreq:test-closing"
+    assert suppressed[0]["suppression_reason"] == "manage_flow_close_in_progress"
+    assert suppressed[0]["incumbent_owner"] == "ManageFlowFSM"
+    assert fsm.close_flow("BTCUSDT").last_close_reason is None
+
+
+def test_execpos_position_policy_close_request_forbidden_capabilities_fail_closed(fsm_config, tmp_path: Path) -> None:
+    fsm_config.trading.execution.watchdog.check_interval_ms = 1_000
+    fsm_config.trading.execution.watchdog.rps_limit = 10
+    fsm_config.domains.execution_position.position_policy_sidecar = _sidecar_config(
+        tmp_path, mode="enable", recommend_soft_close_at=0.45
+    )
+
+    bus = RecordingBus()
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), patch(
+        "apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"
+    ):
+        fsm = ExecPosFSM(config=fsm_config, fsm=bus, shadow_mode=True)
+
+    manage_flow = fsm.manage_flow("BTCUSDT")
+    manage_flow.state = ManageState.TRACKING
+    manage_flow.symbol = "BTCUSDT"
+    manage_flow.position_side = "BUY"
+    manage_flow.position_qty = "0.10"
+    manage_flow.position_entry_price = "100.0"
+    manage_flow.position_open_ts = 1_000.0
+    fsm._latest_portfolio_state = {
+        "positions_last_ts_ms": 1_000_000,
+        "positions": [{"symbol": "BTCUSDT", "positionAmt": "0.10"}],
+    }
+
+    request_payload = {
+        "ts_ms": 1_000_010,
+        "request_id": "ppsreq:test-forbidden",
+        "trace_id": "pps:BTCUSDT:1000010:1",
+        "symbol": "BTCUSDT",
+        "sidecar_version": "1.0.0",
+        "mode": "enable",
+        "evaluation_mode": "phase1_recommendation_only",
+        "event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        "source_event_type": "POSITION_POLICY_SIDECAR_RECOMMENDED",
+        "requested_action": "SOFT_CLOSE",
+        "requested_qty": "0.01",
+        "target_mode": "order_id_targeted",
+        "policy_source": "position_policy_sidecar",
+        "action_package_version": "phase2_action_package_v1",
+        "allowed_action_scope": {
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+        "reason_codes": ["trigger:regime_detected", "recommend_soft_close_threshold_met"],
+        "score_snapshot": {"soft_close_pressure": 0.6},
+        "position_snapshot": {"symbol": "BTCUSDT", "side": "BUY"},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {},
+        "fill_correlation": {},
+        "portfolio_correlation": {},
+    }
+
+    fsm._on_position_policy_close_request(_event(**request_payload))
+
+    states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
+    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    assert len(suppressed) == 1
+    assert suppressed[0]["request_id"] == "ppsreq:test-forbidden"
+    assert suppressed[0]["suppression_reason"] == "exact_targeting_forbidden"
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)
+
+
+def test_execpos_position_policy_close_request_rejects_bracket_mutation_scope(fsm_config, tmp_path: Path) -> None:
+    fsm_config.trading.execution.watchdog.check_interval_ms = 1_000
+    fsm_config.trading.execution.watchdog.rps_limit = 10
+    sidecar_cfg = _sidecar_config(tmp_path, mode="enable", recommend_soft_close_at=0.45)
+    sidecar_cfg.allowed_actions.bracket_mutation = True
+    fsm_config.domains.execution_position.position_policy_sidecar = sidecar_cfg
+
+    bus = RecordingBus()
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"), patch(
+        "apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog"
+    ):
+        fsm = ExecPosFSM(config=fsm_config, fsm=bus, shadow_mode=True)
+
+    manage_flow = fsm.manage_flow("BTCUSDT")
+    manage_flow.state = ManageState.TRACKING
+    manage_flow.symbol = "BTCUSDT"
+    manage_flow.position_side = "BUY"
+    manage_flow.position_qty = "0.10"
+    manage_flow.position_entry_price = "100.0"
+    manage_flow.position_open_ts = 1_000.0
+    fsm._latest_portfolio_state = {
+        "positions_last_ts_ms": 1_000_000,
+        "positions": [{"symbol": "BTCUSDT", "positionAmt": "0.10"}],
+    }
+
+    request_payload = {
+        "ts_ms": 1_000_010,
+        "request_id": "ppsreq:test-bracket-mutation",
+        "trace_id": "pps:BTCUSDT:1000010:2",
+        "symbol": "BTCUSDT",
+        "sidecar_version": "1.0.0",
+        "mode": "enable",
+        "evaluation_mode": "phase1_recommendation_only",
+        "event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        "source_event_type": "POSITION_POLICY_SIDECAR_RECOMMENDED",
+        "requested_action": "SOFT_CLOSE",
+        "requested_qty": None,
+        "target_mode": "symbol_current_net_only",
+        "policy_source": "position_policy_sidecar",
+        "action_package_version": "phase2_action_package_v1",
+        "allowed_action_scope": {
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": True,
+            "exact_targeting": False,
+        },
+        "reason_codes": ["trigger:regime_detected", "recommend_soft_close_threshold_met"],
+        "score_snapshot": {"soft_close_pressure": 0.6},
+        "position_snapshot": {"symbol": "BTCUSDT", "side": "BUY"},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {},
+        "fill_correlation": {},
+        "portfolio_correlation": {},
+    }
+
+    fsm._on_position_policy_close_request(_event(**request_payload))
+
+    states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
+    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    assert len(suppressed) == 1
+    assert suppressed[0]["request_id"] == "ppsreq:test-bracket-mutation"
+    assert suppressed[0]["suppression_reason"] == "bracket_mutation_forbidden"
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)
 
 
 def test_execpos_disable_mode_skips_sidecar_bootstrap(fsm_config, tmp_path: Path) -> None:

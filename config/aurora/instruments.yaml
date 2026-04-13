@@ -68,7 +68,7 @@ instruments:
     min_notional: "5"
     execution:
       margin_mode: "isolated"
-      target_leverage: 20
+      target_leverage: 10
       leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:

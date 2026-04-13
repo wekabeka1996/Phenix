@@ -60,6 +60,35 @@ class CloseExecutor:
         return getattr(getattr(self._fsm, "fsm", None), "order_index", None)
 
     @staticmethod
+    def _position_policy_context(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+        candidate = payload.get("policy_context")
+        if not isinstance(candidate, dict):
+            return None
+        if str(candidate.get("policy_source") or "") != "position_policy_sidecar":
+            return None
+        return dict(candidate)
+
+    def _emit_position_policy_close_state(
+        self,
+        payload: dict[str, Any],
+        *,
+        request_state: str,
+        why: str,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        context = self._position_policy_context(payload)
+        if context is None:
+            return
+        context.setdefault("symbol", payload.get("symbol"))
+        context.setdefault("trace_id", context.get("source_trace_id"))
+        self._fsm._emit_position_policy_close_request_state(
+            context,
+            request_state=request_state,
+            why=why,
+            extra=extra,
+        )
+
+    @staticmethod
     def _manage_flow_allows_bracket_sync(manage_flow: Any) -> bool:
         state = getattr(manage_flow, "state", None)
         state_value = getattr(state, "value", state)
@@ -300,6 +329,15 @@ class CloseExecutor:
                     amt = 0.0
             if abs(amt) < 1e-10:
                 LOG.info(f"No open position to close for {symbol}")
+                self._emit_position_policy_close_state(
+                    pld,
+                    request_state="execution_noop",
+                    why="position_policy_sidecar:execution_noop",
+                    extra={
+                        "execution_result": "no_live_net_position",
+                        "close_cmd_rid": getattr(decision, "rid", None),
+                    },
+                )
                 self._fsm._clear_symbol_brackets(symbol)
                 self._fsm._persist_restore_artifact_snapshot(
                     trigger="close_executor:no_position_partial",
@@ -321,6 +359,18 @@ class CloseExecutor:
                     close_side,
                     str(requested_close_qty),
                     new_client_order_id=close_id,
+                )
+                self._emit_position_policy_close_state(
+                    pld,
+                    request_state="execution_submitted",
+                    why="position_policy_sidecar:execution_submitted",
+                    extra={
+                        "close_cmd_rid": getattr(decision, "rid", None),
+                        "execution_client_order_id": close_id,
+                        "execution_close_side": close_side,
+                        "execution_close_qty": str(requested_close_qty),
+                        "partial_close": True,
+                    },
                 )
                 LOG.info(
                     "Partial close executed for %s: side=%s qty=%s",
@@ -427,6 +477,15 @@ class CloseExecutor:
                 amt = 0.0
         if abs(amt) < 1e-10:
             LOG.info(f"No open position to close for {symbol}")
+            self._emit_position_policy_close_state(
+                pld,
+                request_state="execution_noop",
+                why="position_policy_sidecar:execution_noop",
+                extra={
+                    "execution_result": "no_live_net_position",
+                    "close_cmd_rid": getattr(decision, "rid", None),
+                },
+            )
             self._fsm._clear_symbol_brackets(symbol)
             self._fsm._persist_restore_artifact_snapshot(
                 trigger="close_executor:no_position_full",
@@ -441,6 +500,18 @@ class CloseExecutor:
                 "idempotent_key") or decision.rid or "manual-close"),
         )
         await self._fsm.adapter.place_market_reduce_only(symbol, close_side, close_qty, new_client_order_id=close_id)
+        self._emit_position_policy_close_state(
+            pld,
+            request_state="execution_submitted",
+            why="position_policy_sidecar:execution_submitted",
+            extra={
+                "close_cmd_rid": getattr(decision, "rid", None),
+                "execution_client_order_id": close_id,
+                "execution_close_side": close_side,
+                "execution_close_qty": close_qty,
+                "partial_close": False,
+            },
+        )
         LOG.info(
             f"Close executed for {symbol}: side={close_side} qty={close_qty}")
         self._fsm._clear_symbol_brackets(symbol)

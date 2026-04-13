@@ -2710,6 +2710,10 @@ class WarmupEnforcementConfig(BaseModel):
         default=True,
         description='Invariant: full_ready=True ⇒ all declared_keys present'
     )
+    degraded_allowed_strategies: List[str] = Field(
+        default_factory=list,
+        description='Strategy IDs allowed to receive CMD:PROCESS_STRATEGY even if full_ready=False. Handlers must perform their own specific checks.'
+    )
 
     @model_validator(mode="after")
     def _warn_if_not_fail_fast(self) -> "WarmupEnforcementConfig":
@@ -5073,6 +5077,48 @@ class MDAMROptunaConfig(BaseModel):
     min_oos_calmar_ratio: float = Field(default=0.3, ge=0.0)
 
 
+class MDAMRHoldQualityConfig(BaseModel):
+    """Package C.3 hold-quality / soft-decay overlay configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    expected_progress_grace_frac: float = Field(
+        default=0.25,
+        ge=0.0,
+        lt=1.0,
+        description=(
+            "Initial fraction of max_hold_bars during which anchored progress is "
+            "not yet expected. After the grace window, expected progress ramps "
+            "linearly to 1.0 by timeout."
+        ),
+    )
+    time_decay_weight: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Penalty weight applied to time_decay when deriving hold_quality."
+        ),
+    )
+    progress_deficit_weight: float = Field(
+        default=0.45,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Penalty weight applied to progress_deficit when deriving hold_quality."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def _validate_penalty_budget(self) -> 'MDAMRHoldQualityConfig':
+        penalty_budget = float(self.time_decay_weight) + \
+            float(self.progress_deficit_weight)
+        if penalty_budget > 1.0:
+            raise ValueError(
+                "MDAMR hold_quality penalty weights must sum to <= 1.0"
+            )
+        return self
+
+
 class MDAMRExitConfig(BaseModel):
     """Per-symbol exit/TP/SL config for md_amr strategy."""
     model_config = ConfigDict(extra='forbid')
@@ -5104,7 +5150,38 @@ class MDAMRStrategyConfig(BaseModel):
     thr_base: float = Field(ge=0.05, le=0.99)
     thr_floor: float = Field(default=0.10, ge=0.01, le=0.50)
     alpha: float = Field(ge=0.0, le=1.0)
-    conf_min: float = Field(ge=0.0, le=1.0)
+    conf_min: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "DEPRECATED in exit path (Package A): conf_min no longer triggers "
+            "EDGE_GONE_KILLSWITCH. Retained for config backward-compatibility and "
+            "potential Package B semantic cleanup. Runtime kill threshold is now "
+            "hold_edge_min. See MD_AMR_PACKAGE_A_REPORT.md."
+        ),
+    )
+    hold_edge_min: float = Field(
+        default=-0.5,
+        ge=-1.0,
+        lt=0.0,
+        description=(
+            "Package A (Exit Semantics Repair): minimum hold_edge before EDGE_GONE_KILLSWITCH. "
+            "hold_edge = dir_score (LONG) or -dir_score (SHORT). "
+            "Values <= hold_edge_min trigger FULL_CLOSE. "
+            "Default -0.5 requires significant directional inversion. Range (-1.0, 0.0)."
+        ),
+    )
+    target_approach_pct: float = Field(
+        default=0.002,
+        ge=0.0,
+        lt=0.05,
+        description=(
+            "Package B (Hold Calibration): tolerance for FEE_AWARE_SCALEOUT target zone. "
+            "reached_target = close_now >= avg_close * (1 - target_approach_pct). "
+            "Default 0.002 (0.2%) allows scaleout when price is within 0.2%% of avg_close. "
+            "Set to 0.0 for strict exact-target semantics (Package A baseline behavior)."
+        ),
+    )
     max_hold_bars: int = Field(ge=1, le=10000)
     atr_zscore_clamp: float = Field(default=10.0, ge=1.0, le=100.0)
     atr_std_floor_pct: float = Field(default=0.05, ge=0.0, le=1.0)
@@ -5122,6 +5199,8 @@ class MDAMRStrategyConfig(BaseModel):
         default_factory=MDAMRReconciliationConfig)
     concentration_guard: MDAMRConcentrationGuardConfig = Field(
         default_factory=MDAMRConcentrationGuardConfig)
+    hold_quality: MDAMRHoldQualityConfig = Field(
+        description="Package C.3 hold-quality / soft-decay overlay")
     optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
     assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
     objective: Optional[StrategyObjectiveConfig] = Field(

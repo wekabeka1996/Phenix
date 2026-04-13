@@ -28,14 +28,18 @@ assignments:
   SOLUSDT:
     - aurora
 
-  #XRPUSDT:
-
+  # Package 4: Testnet Activation — XRPUSDT assigned to md_amr.
+  # Asset config exists and validated in md_amr.yaml line 382+.
+  XRPUSDT:
+    - md_amr
 
   BTCUSDT:
     - aurora
 
-  # New symbols  added with data 2023-06..2024-03
-  #BNBUSDT:
+  # Package 4: Testnet Activation — BNBUSDT assigned to md_amr.
+  # Asset config exists and validated in md_amr.yaml line 420+.
+  BNBUSDT:
+    - md_amr
 
   DOGEUSDT:
       - mean_reversion

@@ -22,20 +22,59 @@ LOG = logging.getLogger(__name__)
 SIDECAR_VERSION = "1.0.0"
 EVALUATION_MODE = "phase1_recommendation_only"
 POLICY_RECORD_KIND = "position_policy_sidecar"
+ACTION_PACKAGE_VERSION = "phase2_action_package_v1"
+CLOSE_REQUEST_EVENT_TYPE = "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"
+CLOSE_REQUEST_COMMAND_TOPIC = "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST"
 
 
 @dataclass(frozen=True)
 class PositionPolicyCloseRequest:
     """Deferred Phase-2 request object for EP-owned soft-close translation."""
 
+    ts_ms: int
+    request_id: str
     trace_id: str
     symbol: str
+    source_event_type: str = "POSITION_POLICY_SIDECAR_RECOMMENDED"
+    event_type: str = CLOSE_REQUEST_EVENT_TYPE
     requested_action: str = "SOFT_CLOSE"
     requested_qty: Optional[str] = None
     target_mode: str = "symbol_current_net_only"
     policy_source: str = "position_policy_sidecar"
+    action_package_version: str = ACTION_PACKAGE_VERSION
+    allowed_action_scope: Dict[str, bool] = field(default_factory=dict)
     reason_codes: tuple[str, ...] = ()
     score_snapshot: Dict[str, float] = field(default_factory=dict)
+    position_snapshot: Dict[str, Any] = field(default_factory=dict)
+    feature_ref: Dict[str, Any] = field(default_factory=dict)
+    regime_ref: Dict[str, Any] = field(default_factory=dict)
+    freshness_snapshot: Dict[str, Any] = field(default_factory=dict)
+    fill_correlation: Dict[str, Any] = field(default_factory=dict)
+    portfolio_correlation: Dict[str, Any] = field(default_factory=dict)
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "ts_ms": int(self.ts_ms),
+            "request_id": self.request_id,
+            "trace_id": self.trace_id,
+            "symbol": self.symbol,
+            "source_event_type": self.source_event_type,
+            "event_type": self.event_type,
+            "requested_action": self.requested_action,
+            "requested_qty": self.requested_qty,
+            "target_mode": self.target_mode,
+            "policy_source": self.policy_source,
+            "action_package_version": self.action_package_version,
+            "allowed_action_scope": dict(self.allowed_action_scope),
+            "reason_codes": list(self.reason_codes),
+            "score_snapshot": dict(self.score_snapshot),
+            "position_snapshot": dict(self.position_snapshot),
+            "feature_ref": dict(self.feature_ref),
+            "regime_ref": dict(self.regime_ref),
+            "freshness_snapshot": dict(self.freshness_snapshot),
+            "fill_correlation": dict(self.fill_correlation),
+            "portfolio_correlation": dict(self.portfolio_correlation),
+        }
 
 
 @dataclass
@@ -491,21 +530,24 @@ class PositionPolicySidecar:
                       recommended_payload)
 
         if self.mode == PositionPolicySidecarMode.ENABLE:
-            skipped_payload = dict(recommended_payload)
-            skipped_payload["event_type"] = "POSITION_POLICY_SIDECAR_ACTION_SKIPPED"
-            skipped_payload["reason_codes"] = [
-                f"trigger:{trigger_event.lower()}",
-                "phase1_recommendation_only",
-            ]
-            skipped_payload["why"] = "phase1_enable_mode_does_not_request_close"
-            skipped_payload["allowed_action_scope"] = {
-                "soft_close_symbol_current_net_only": self.config.allowed_actions.soft_close_symbol_current_net_only,
-                "partial_reduce": self.config.allowed_actions.partial_reduce,
-                "bracket_mutation": self.config.allowed_actions.bracket_mutation,
-                "exact_targeting": self.config.allowed_actions.exact_targeting,
-            }
-            self._publish(
-                "EVT:POSITION_POLICY_SIDECAR_ACTION_SKIPPED", skipped_payload)
+            close_request = self.position_policy_close_request_type(
+                ts_ms=now_ms,
+                request_id=f"ppsreq:{trace_id}",
+                trace_id=trace_id,
+                symbol=symbol,
+                allowed_action_scope=self._allowed_action_scope(),
+                reason_codes=tuple(recommended_payload["reason_codes"]),
+                score_snapshot=dict(score_snapshot),
+                position_snapshot=dict(recommended_payload["position_snapshot"]),
+                feature_ref=dict(recommended_payload["feature_ref"]),
+                regime_ref=dict(recommended_payload["regime_ref"]),
+                freshness_snapshot=dict(recommended_payload["freshness_snapshot"]),
+                fill_correlation=dict(recommended_payload["fill_correlation"]),
+                portfolio_correlation=dict(recommended_payload["portfolio_correlation"]),
+            )
+            request_payload = dict(recommended_payload)
+            request_payload.update(close_request.to_payload())
+            self._publish(CLOSE_REQUEST_COMMAND_TOPIC, request_payload)
 
     def _determine_suppression(
         self,
@@ -958,6 +1000,18 @@ class PositionPolicySidecar:
     def _next_trace_id(self, symbol: str) -> str:
         self._trace_counter += 1
         return f"pps:{symbol}:{get_clock().now_ms()}:{self._trace_counter}"
+
+    @property
+    def position_policy_close_request_type(self) -> type[PositionPolicyCloseRequest]:
+        return PositionPolicyCloseRequest
+
+    def _allowed_action_scope(self) -> Dict[str, bool]:
+        return {
+            "soft_close_symbol_current_net_only": self.config.allowed_actions.soft_close_symbol_current_net_only,
+            "partial_reduce": self.config.allowed_actions.partial_reduce,
+            "bracket_mutation": self.config.allowed_actions.bracket_mutation,
+            "exact_targeting": self.config.allowed_actions.exact_targeting,
+        }
 
     def _publish(self, topic: str, payload: Dict[str, Any]) -> None:
         why = f"position_policy_sidecar:{payload['event_type'].lower()}"

@@ -178,6 +178,11 @@ class MDAMRHandler:
         self._tf_sec_reject_cooldown: Dict[str, float] = {}
         self._TF_SEC_REJECT_COOLDOWN_SEC = 300
         self._signal_ready_logged: set[str] = set()
+        # Package C.1 (Anchored Target + Progress Tracking):
+        # Stores per-symbol {entry_price, entry_target_price} set at ENTRY,
+        # cleared at full position close. Passed into position_ctx on every on_bar call
+        # so the strategy math can compute frozen-anchor progress without mutating state.
+        self._entry_anchor: Dict[str, Dict[str, float]] = {}
 
         self._position_queries = _maybe_build_position_queries(
             config=self.config,
@@ -743,6 +748,14 @@ class MDAMRHandler:
                 atr_std_floor_pct=float(self._cfg.atr_std_floor_pct),
                 thr_floor=float(self._cfg.thr_floor),
                 scaleout_cost_model=self._cfg.scaleout_cost_model,
+                hold_edge_min=float(self._cfg.hold_edge_min),
+                target_approach_pct=float(self._cfg.target_approach_pct),
+                hold_quality_expected_progress_grace_frac=float(
+                    self._cfg.hold_quality.expected_progress_grace_frac),
+                hold_quality_time_decay_weight=float(
+                    self._cfg.hold_quality.time_decay_weight),
+                hold_quality_progress_deficit_weight=float(
+                    self._cfg.hold_quality.progress_deficit_weight),
                 weights={
                     "d1": float(self._cfg.weights.d1),
                     "h1": float(self._cfg.weights.h1),
@@ -918,8 +931,12 @@ class MDAMRHandler:
         pos_qty = self._position_qty.get(symbol, Decimal("0"))
         strategy.on_bar(
             bar=bar,
-            position_ctx={"qty_signed": float(pos_qty), "bars_held": int(
-                self._bars_held.get(symbol, 0))},
+            position_ctx={
+                "qty_signed": float(pos_qty),
+                "bars_held": int(self._bars_held.get(symbol, 0)),
+                # Package C.1: pass frozen entry anchors if available.
+                **self._entry_anchor.get(symbol, {})
+            },
             llm_blocked=False,
         )
         self._last_ingested_bar_ts_ms[symbol] = int(close_ts_ms)
@@ -972,6 +989,8 @@ class MDAMRHandler:
             self._bars_held[symbol] = 0
             self._pending_close[symbol] = False
             self._last_close_ts[symbol] = get_clock().now_ms()
+            # Package C.1: clear entry anchor on full position close.
+            self._entry_anchor.pop(symbol, None)
         self._position_qty[symbol] = now
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
@@ -1091,6 +1110,8 @@ class MDAMRHandler:
             self._position_qty[symbol] = exchange_qty
             if abs(exchange_qty) < tolerance:
                 self._bars_held[symbol] = 0
+                # Package C.1: clear entry anchor when position drifted to flat.
+                self._entry_anchor.pop(symbol, None)
 
     @staticmethod
     def _normalize_order_reject_reason(pld: dict) -> str:
@@ -1350,8 +1371,12 @@ class MDAMRHandler:
         if should_ingest_bar:
             result = strategy.on_bar(
                 bar=bar_data,
-                position_ctx={"qty_signed": float(pos_qty), "bars_held": int(
-                    self._bars_held.get(symbol, 0))},
+                position_ctx={
+                    "qty_signed": float(pos_qty),
+                    "bars_held": int(self._bars_held.get(symbol, 0)),
+                    # Package C.1: pass frozen entry anchors if available.
+                    **self._entry_anchor.get(symbol, {})
+                },
                 llm_blocked=llm_blocked,
             )
             self._last_ingested_bar_ts_ms[symbol] = int(bar_close_ts)
@@ -2002,6 +2027,22 @@ class MDAMRHandler:
             reason_code=str(signal.reason_code),
             bars_seen=_bars_seen,
         )
+        # Package C.1: Set frozen entry anchor at ENTRY so subsequent bars
+        # can compute progress toward the original reversion target.
+        # entry_target_price = avg_close from the entry-bar channel state.
+        # This is the mean-reversion reference price frozen at entry-time.
+        # Cleared on full position close in _on_trade_executed.
+        if str(signal.intent_kind) == "ENTRY":
+            _ch = dict(signal.channel_state)
+            _avg_close = float(_ch.get("avg_close_12", float(signal.price_ref)))
+            self._entry_anchor[symbol] = {
+                "entry_price": float(signal.price_ref),
+                "entry_target_price": _avg_close,
+            }
+            self.mlog.info(
+                "MD_AMR_C1_ANCHOR_SET sym=%s entry_price=%s entry_target_price=%s",
+                symbol, float(signal.price_ref), _avg_close,
+            )
         self.mlog.info(
             "MD_AMR_SIGNAL %s",
             json.dumps(

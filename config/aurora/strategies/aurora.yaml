@@ -425,112 +425,113 @@ aurora:
         target: 20
         mode: "ISOLATED"
 
-      # Holding period: ETH trend-following, longer holding
+      # Holding period: P1.5 mirror BTC
       holding_period:
-        min_duration_sec: 360
-        emergency_exit_threshold: 0.68
+        enabled: true
+        min_duration_sec: 20              # P1.5: was 360 (mirror BTC)
+        emergency_exit_threshold: 0.7     # P1.5: was 0.68 (mirror BTC)
+        apply_to_flips: true              # P1.5: added (mirror BTC)
 
-      # Re-entry cooldown: conservative for trend-following
-      reentry_cooldown_sec: 120
+      # Re-entry cooldown: P1.5 mirror BTC
+      reentry_cooldown_sec: 300           # P1.5: was 120 (mirror BTC)
 
-      # Adjusted weights: Liquidity moved to Gate
+      # P1.5: weights mirrored from BTC
       weights:
-        ema_bias: 0.20
-        volume_spike: 0.20
-        # R1: macro_resid replaces macro_sync
-        macro_resid: 0.25
-        # macro_sync: 0.0  # DEPRECATED (telemetry only)
-        # liquidity_kappa: 0.341 (Moved to Gate)
-        obi: 0.15
-        tfi: 0.093
-        volatility_state: 0.036
-        depth_imbalance: -0.256
-        delta_price: 0.10
-        absorption: 0.0    # R2: conservative start weight for ETHUSDT
+        ema_bias: -0.119873              # P1.5: was 0.20
+        volume_spike: 0.243661           # P1.5: was 0.20
+        macro_resid: -0.0689669          # P1.5: was 0.25
+        obi: 0.101274                    # P1.5: was 0.15
+        tfi: 0.134215                    # P1.5: was 0.093
+        volatility_state: 0.00633937     # P1.5: was 0.036
+        depth_imbalance: -0.0894987      # P1.5: was -0.256
+        delta_price: 0.181047            # P1.5: was 0.10
+        absorption: 0.0551244            # P1.5: was 0.0
 
       liquidity_gate:
         enabled: true
-        kappa_min: 0.2
+        kappa_min: 0.1                   # P1.5: was 0.2 (mirror BTC)
         kappa_max: 1.0
         failsafe_qty_check: true
 
       side_bias:
-        penalty_factor: 0.9
+        penalty_factor: 0.5              # P1.5: was 0.9 (mirror BTC)
         window_sec: 600
-        target_ratio: 0.6
+        target_ratio: 0.60
 
+      # P1.5: regime_thresholds mirrored from BTC
       regime_thresholds:
-        HIGH_VOLATILITY: 1.3
-        LOW_VOLATILITY: 0.85
-        MEAN_REVERSION: 1.05
-        DEFAULT: 1.0
+        HIGH_VOLATILITY: 0.18            # P1.5: was 1.3
+        LOW_VOLATILITY: 0.12             # P1.5: was 0.85
+        TREND_UP: 0.1                    # P1.5: added (mirror BTC)
+        TREND_DOWN: 0.1                  # P1.5: added (mirror BTC)
+        MEAN_REVERSION: 0.07             # P1.5: was 1.05
+        UNCERTAIN: 99.0                  # P1.5: added (mirror BTC)
+        DEFAULT: 99.0                    # P1.5: was 1.0
 
+      # P1.5: regime_sizing mirrored from BTC
       regime_sizing:
-        HIGH_VOLATILITY: 0.7   # R3A-2026-03-01: raised from 0.3 (TREND_DOWN|HIGH_VOL ETH n=11,717 sizing_mult=1.100)
-        LOW_VOLATILITY: 0.8    # R3A-2026-03-01: lowered from 1.0 (ETH FLAT|LOW_VOL mean=-0.000096 at 24b; LOW_VOL|TREND_UP exactly neutral)
-        MEAN_REVERSION: 0.8
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.7              # P1.5: was 0.8
+        TREND_UP: 1.3                    # P1.5: added (mirror BTC)
+        TREND_DOWN: 1.3                  # P1.5: added (mirror BTC)
+        MEAN_REVERSION: 0.7              # P1.5: was 0.8
 
+      # P1.5: exit block mirrored from BTC
       exit:
-        sl_pct: 0.0095
+        sl_pct: 0.005                    # P1.5: was 0.0095 (mirror BTC base 0.5%)
         max_hold_sec: null
         regime_tpsl:
           enabled: true
           mode: "pct_mult"
-          # ETH
           sl_mult:
+            LOW_VOLATILITY: 0.65         # P1.5: was 0.55 (mirror BTC)
+            HIGH_VOLATILITY: 1.3         # P1.5: was 1.30
+            TREND_UP: 1.0               # P1.5: was 1.05
+            TREND_DOWN: 1.0             # P1.5: was 1.05
             DEFAULT: 1.0
-            FLAT_LOW: 0.65        # Tight for flat low
-            LOW_VOLATILITY: 0.55  # P0.5: tightened from 0.6 (−8.3%) → SL_eff=52.3 bps
-            FLAT_NORMAL: 0.80
-            MEAN_REVERSION: 0.90
-            TREND_UP: 1.05        #
-            TREND_DOWN: 1.05
-            HIGH_VOLATILITY: 1.30 # Wider for high vol
-            UNCERTAIN: 1.00
           tp_mult:
-            DEFAULT: 1.0
-            FLAT_LOW: 0.70
-            LOW_VOLATILITY: 0.70  # P0.5: tightened from 0.75 (−6.7%) → TP_dist=14.6 bps
-            FLAT_NORMAL: 0.85
-            MEAN_REVERSION: 0.80
-            TREND_UP: 1.20        # ETH trend-following  higher TP
-            TREND_DOWN: 1.20
-            HIGH_VOLATILITY: 1.60
-            UNCERTAIN: 1.00
-          min_sl_pct: 0.0008      # 0.08% - lowered for LOW_VOL narrow range scalping
-          max_sl_pct: 0.015       # 1.5% max (  )
-          min_tp_rr: 0.3
-          max_tp_rr: 3.5          #
-          min_dist_bps: 5         # 5 bps - lowered for ETH narrow range scalping
+            LOW_VOLATILITY: 1.25         # P1.5: was 0.70 (mirror BTC)
+            HIGH_VOLATILITY: 1.6
+            TREND_UP: 3.5               # P1.5: was 1.20 (mirror BTC)
+            TREND_DOWN: 3.5             # P1.5: was 1.20 (mirror BTC)
+            DEFAULT: 1.5                # P1.5: was 1.0
+          # Guardrails mirrored from BTC
+          min_sl_pct: 0.003              # P1.5: was 0.0008
+          max_sl_pct: 0.06              # P1.5: was 0.015
+          min_tp_rr: 0.5               # P1.5: was 0.3
+          max_tp_rr: 5.0               # P1.5: was 3.5
+          min_dist_bps: 15              # P1.5: was 5
 
+      # P1.5: take_profit mirrored from BTC
       take_profit:
-        tp_low_ratio: 0.4
-        tp_high_ratio: 1.4
-        partial_exit_pct: 0.7
+        tp_low_ratio: 1.0               # P1.5: was 0.4
+        tp_high_ratio: 2.0              # P1.5: was 1.4
+        partial_exit_pct: 0.5           # P1.5: was 0.7
 
+      # P1.5: trailing_stop mirrored from BTC
       trailing_stop:
         enabled: false
-        activation_pct: 0.003
-        trail_pct: 0.006
+        activation_pct: 0.02            # P1.5: was 0.003
+        trail_pct: 0.01                 # P1.5: was 0.006
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # P1.5: LOW_VOLATILITY removed — worst regime by net PnL (-141 USDT)
       signal_threshold:
-        enabled: true
-        value: 0.0221
+        enabled: false  # P1.5: mirror BTC (BTC has signal_threshold disabled)
+        value: null     # P1.5: mirror BTC
       cooldown_sec: null
 
-      # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
+      # P1.5: volatility_entry_logic mirrored from BTC
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
-          HIGH_VOLATILITY: 0.32   # ETH less volatile than SOL
-          LOW_VOLATILITY: 0.17
-          MEAN_REVERSION: 0.25
-          TREND_UP: 0.22
-          TREND_DOWN: 0.22
-          UNCERTAIN: 0.25
-          DEFAULT: 0.22
+          HIGH_VOLATILITY: 0.15          # P1.5: was 0.32
+          LOW_VOLATILITY: 0.08           # P1.5: was 0.17
+          TREND_UP: 0.10                 # P1.5: was 0.22
+          TREND_DOWN: 0.10               # P1.5: was 0.22
+          MEAN_REVERSION: 0.12           # P1.5: was 0.25
+          UNCERTAIN: 0.13                # P1.5: was 0.25
+          DEFAULT: 0.12                  # P1.5: was 0.22
 
       timeframe_sec: null
 
@@ -626,7 +627,7 @@ aurora:
         tp_high_ratio: 0.60
         partial_exit_pct: 0.31
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # P1.5: LOW_VOLATILITY removed
 
       trailing_stop:
         enabled: true
@@ -737,8 +738,8 @@ aurora:
           tp_mult:
             LOW_VOLATILITY: 1.25  # P0.5: tightened from 1.5 (−16.7%) → TP_dist=40.6 bps
             HIGH_VOLATILITY: 1.6  # Target ~2.0% (Big Win)
-            TREND_UP: 3.5
-            TREND_DOWN: 3.5
+            TREND_UP: 1.9
+            TREND_DOWN: 1.9
             DEFAULT: 1.5
           # Guardrails
           min_sl_pct: 0.003
@@ -758,7 +759,7 @@ aurora:
         trail_pct: 0.01
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]  # P1.5: LOW_VOLATILITY removed
       signal_threshold:
         enabled: false
         value: null

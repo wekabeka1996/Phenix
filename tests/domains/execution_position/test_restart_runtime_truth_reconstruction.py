@@ -181,6 +181,7 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
             "unresolved_reasons": [],
         }
     ]
+    assert startup_row["unknown_truth_records"] == []
     assert startup_row["restore_artifact"] == {
         "path": str(restore_path),
         "write_attempted": True,

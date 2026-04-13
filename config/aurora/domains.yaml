@@ -245,6 +245,8 @@ feature_engineering:
     # TASK-ZOMBIE-FIX: Removed validate_essential_subset (dead, never read in runtime)
     # Invariant: full_ready=True  all declared_keys present
     check_full_ready_invariant: true
+    degraded_allowed_strategies:
+      - "md_amr"
 
   #
   # P0-1: VOLATILITY STATE HARD FLOOR + CAP + FIREWALL
@@ -388,8 +390,8 @@ ta_features:
   # Keep TA core on the same canonical BAR_CLOSED surface as feature_engineering.
   # Consumers subscribe explicitly to EVT:TA_FEATURES_CALCULATED.
   timeframes_sec: [180, 300, 900]
-  warm_up_bars: 20
-  buffer_max_bars: 50
+  warm_up_bars: 30
+  buffer_max_bars: 300
   log_calculations: true
   log_max_bytes: 10485760
   log_backup_count: 5
@@ -583,7 +585,7 @@ execution_position:
     max_placements_per_cycle: 2
 
   position_policy_sidecar:
-    mode: shadow
+    mode: enable
     freshness:
       portfolio_max_age_ms: 15000
       features_max_age_ms: 15000

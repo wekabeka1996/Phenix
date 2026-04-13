@@ -6,7 +6,7 @@ Isolated bar-based technical indicator computation and logging.
 Lifecycle:
     1. Subscribes to EVT:BAR_CLOSED (emitted by BarAggregator from live WebSocket bars).
     2. Maintains a rolling BarBuffer per (symbol, tf_sec).
-    3. Computes 8 TA features on every configured bar close.
+    3. Computes 18 TA features on every configured bar close.
     4. Emits EVT:TA_FEATURES_CALCULATED with explicit warmup state.
     5. Writes a JSONL record to logs/ta_features/{SYMBOL}.jsonl for observability.
 
@@ -26,11 +26,17 @@ from typing import Any, Dict, Tuple
 from apps.reference.config_models import TAFeaturesDomainConfig
 from apps.reference.domains.ta_features.bar_buffer import BarBuffer
 from apps.reference.domains.ta_features.calculators import (
+    compute_atr,
+    compute_bb_width_change,
+    compute_macd_signal,
     compute_price_momentum,
+    compute_price_range_ratio,
     compute_price_sma_deviation,
+    compute_realized_volatility,
     compute_stochastic,
     compute_ta_bb,
     compute_ta_rsi,
+    compute_volume_momentum,
     compute_volume_sma_ratio,
 )
 from apps.reference.domains.ta_features.contracts import TA_FEATURE_EVENT
@@ -63,7 +69,7 @@ class TAFeaturesEngine:
     """
     Isolated TA feature computation engine.
 
-    Listens to EVT:BAR_CLOSED, computes 8 bar-based features, emits
+    Listens to EVT:BAR_CLOSED, computes 18 bar-based features, emits
     EVT:TA_FEATURES_CALCULATED and writes per-symbol JSONL logs.
 
     Subscription (future consumers):
@@ -182,6 +188,36 @@ class TAFeaturesEngine:
         # Adaptive momentum lookback: represent ~5 minutes regardless of timeframe
         momentum_lookback = max(1, 300 // tf_sec)
         momentum = compute_price_momentum(closes, lookback=momentum_lookback)
+
+        # --- Multi-timeframe momentum (1h, 1d) ---
+        momentum_1h_lookback = max(1, 3600 // tf_sec)
+        momentum_1d_lookback = max(1, 86400 // tf_sec)
+        price_momentum_1h = compute_price_momentum(
+            closes, lookback=momentum_1h_lookback)
+        price_momentum_1d = compute_price_momentum(
+            closes, lookback=momentum_1d_lookback)
+        vol_momentum = compute_volume_momentum(volumes)
+        macd_sig = compute_macd_signal(closes)
+
+        # --- Volatility features ---
+        atr_val = compute_atr(highs, lows, closes)
+        close_f = float(closes[-1]) if closes else 0.0
+        # atr_ratio convention: 1.0 + atr_14/close (centered on 1.0)
+        # Volatility model expects: atr_signal = atr_ratio - 1.0
+        # Alias bridge from FE applies: 1.0 + atr_pct → same convention.
+        atr_ratio = (1.0 + atr_val / close_f) if (atr_val and close_f > 0) else 1.0
+        bb_w_change = compute_bb_width_change(closes)
+        rv_1h_lookback = max(2, 3600 // tf_sec)
+        rv_1d_lookback = max(2, 86400 // tf_sec)
+        rv_1h = compute_realized_volatility(closes, lookback=rv_1h_lookback)
+        rv_1d = compute_realized_volatility(closes, lookback=rv_1d_lookback)
+        pr_ratio_raw = compute_price_range_ratio(
+            highs[-1], lows[-1], closes[-1]) if closes else 0.0
+        # price_range_ratio convention: 1.0 + (high-low)/close (centered on 1.0)
+        # Volatility model expects: range_signal = price_range_ratio - 1.0
+        # Alias bridge from FE applies: 1.0 + range_pct → same convention.
+        pr_ratio = 1.0 + pr_ratio_raw
+
         warm_up_bars = len(buf)
         is_warm = warm_up_bars >= self._min_bars
 
@@ -191,6 +227,7 @@ class TAFeaturesEngine:
             "tf_sec": tf_sec,
             "bar_close_ts": bar_close_ts,
             "close": float(closes[-1]),
+            # Original 8 features
             "bb_position": bb_position,
             "bb_width": bb_width,
             "rsi_14": rsi_14,
@@ -199,6 +236,18 @@ class TAFeaturesEngine:
             "stoch_k": stoch_k,
             "stoch_d": stoch_d,
             "price_momentum_5m": momentum,
+            # New 10 features
+            "price_momentum_1h": price_momentum_1h,
+            "price_momentum_1d": price_momentum_1d,
+            "volume_momentum_5m": vol_momentum,
+            "macd_signal": macd_sig,
+            "atr_14": atr_val,
+            "atr_ratio": atr_ratio,
+            "bb_width_change": bb_w_change,
+            "realized_volatility_1h": rv_1h,
+            "realized_volatility_1d": rv_1d,
+            "price_range_ratio": pr_ratio,
+            # Metadata
             "warm_up_bars": warm_up_bars,
             "required_warm_up_bars": self._min_bars,
             "is_warm": is_warm,

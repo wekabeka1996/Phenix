@@ -974,6 +974,30 @@ class ManageFlowFSM:
             LOG.warning(f"Failed to process fill event: {e}")
             self._metrics["fsm_errors_total"] += 1
 
+    def _has_presynced_exchange_brackets(self) -> bool:
+        """Return True when bracket identities already came from exchange placement.
+
+        Primary/deferred bracket placement can sync exchange algo IDs into the
+        local ManageFlow before the eventual entry fill is processed. In that
+        case, clearing local bracket IDs on the fill path destroys the only
+        identities that can later match the exit fill child order.
+        """
+        tracked_ids = (
+            self.sl_order_id,
+            self.tp_order_id,
+            self.tp1_order_id,
+            self.tp2_order_id,
+        )
+        if not any(tracked_ids):
+            return False
+        if self.sl_algo_client_id or self.tp_algo_client_id:
+            return True
+        return any(
+            tracked_id
+            and classify_client_order_id(str(tracked_id)) == "UNKNOWN"
+            for tracked_id in tracked_ids
+        )
+
     def _place_brackets(self, msg: Message) -> Optional[Message]:
         """Place SL and TP bracket orders after position opens."""
 
@@ -1000,6 +1024,13 @@ class ManageFlowFSM:
         # DO THIS BEFORE _should_place_brackets() check so IDs are always cleared
 
         if self.sl_order_id or self.tp_order_id or self.tp1_order_id or self.tp2_order_id:
+            if self._has_presynced_exchange_brackets():
+                LOG.info(
+                    f"[BRK] exchange-synced bracket IDs already present (SL={self.sl_order_id}, TP={self.tp_order_id}, "
+                    f"TP1={self.tp1_order_id}, TP2={self.tp2_order_id})  preserving existing bracket identity")
+                self.state = ManageState.BRACKETS_PLACED
+                return None
+
             # Local IDs present - likely phantoms if we're placing new brackets
             LOG.info(
                 f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}, "

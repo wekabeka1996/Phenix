@@ -195,6 +195,7 @@ def test_md_amr_trading_gate_blocks_on_contract_resolution_failure() -> None:
     handler._bars_held = {}
     handler._last_ingested_bar_ts_ms = {}
     handler._deferred = {}
+    handler._entry_anchor = {}
     on_bar_calls: list = []
     handler._strategies = {
         "BTCUSDT": SimpleNamespace(on_bar=lambda **kw: on_bar_calls.append(kw) or {"status": "SIGNAL"})

@@ -1,0 +1,13 @@
+{
+  "ts_ms": 1776017327289,
+  "symbol": "BTCUSDT",
+  "reason_code": "NRR-INTENT-MISSING-ORDER_TYPE",
+  "rid": "RID-PHASE6-PROOF-REJECT",
+  "stage": "EXECUTION",
+  "why": "NRR-INTENT-MISSING-ORDER_TYPE: Strategy must provide explicit order_type (LIMIT/MARKET)",
+  "details": {
+    "rid": "RID-PHASE6-PROOF-REJECT",
+    "execution_intake_contract": "trade_intent_open_intake_v1",
+    "execution_intake_stage": "typed_open_intake"
+  }
+}

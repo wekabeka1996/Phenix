@@ -16,10 +16,24 @@ md_amr:
   thr_base: 0.55
   thr_floor: 0.10
   alpha: 0.25
+  # DEPRECATED in exit path (Package A): conf_min no longer drives EDGE_GONE_KILLSWITCH.
+  # Retained for backward-compatibility. Runtime kill threshold is hold_edge_min below.
   conf_min: 0.22
+  # Package A (Exit Semantics Repair): hold-health threshold for EDGE_GONE_KILLSWITCH.
+  # hold_edge = dir_score (LONG) or -dir_score (SHORT). Fire when <= hold_edge_min.
+  # Range: (-1.0, 0.0). Default -0.5 requires significant structural inversion.
+  hold_edge_min: -0.50
+  # Package B code support retained. Package B.1 verdict: revert to 16 (Package A.1 baseline).
+  # Economic normalization shows max_hold_bars=32 alone degrades net PnL/1k-bars.
+  # Re-evaluate in Package C with live data.
   max_hold_bars: 16
+  # Package B.1: reverted to 0.0 (strict equality = Package A.1 baseline).
+  # Economic normalization shows target_approach_pct=0.002 causes early exit before
+  # full mean-reversion completes. net_pnl/1k-bars negative in TOLERANCE and COMBINED.
+  # Re-enable in Package C if per-symbol live data confirms net improvement.
+  target_approach_pct: 0.0
 
-  # V1.2: Z-Score robustness (Fix 3)
+  # V1.2: Z-Score robustness
   atr_zscore_clamp: 10.0
   atr_std_floor_pct: 0.05
 
@@ -219,6 +233,15 @@ md_amr:
   concentration_guard:
     enabled: true
     max_simultaneous_entries_per_bar: 2
+
+  # Package C.3: Hold Quality / Soft Decay
+  # expected_progress_pct = 0 during grace window, then ramps linearly to 1.0 by timeout.
+  # hold_quality = structural_hold_quality - time_decay_weight*time_decay
+  #                - progress_deficit_weight*progress_deficit
+  hold_quality:
+    expected_progress_grace_frac: 0.25
+    time_decay_weight: 0.35
+    progress_deficit_weight: 0.45
 
   assets:
     BTCUSDT:

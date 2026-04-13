@@ -52,6 +52,8 @@ def _make_config(symbol: str = "BNBUSDT"):
         thr_floor=0.10,
         alpha=0.25,
         conf_min=0.22,
+        hold_edge_min=-0.5,
+        target_approach_pct=0.0,
         max_hold_bars=16,
         atr_zscore_clamp=10.0,
         atr_std_floor_pct=0.05,
@@ -59,6 +61,11 @@ def _make_config(symbol: str = "BNBUSDT"):
         slippage_buffer_bps=2.0,
         scaleout_fraction=0.50,
         scaleout_cost_model="round_trip",
+        hold_quality=SimpleNamespace(
+            expected_progress_grace_frac=0.25,
+            time_decay_weight=0.35,
+            progress_deficit_weight=0.45,
+        ),
         weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
         objective=SimpleNamespace(enabled=False),
         execution=SimpleNamespace(

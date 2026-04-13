@@ -228,6 +228,23 @@ class ExecutionPositionStartupTruthSymbolRecord(BaseModel):
     unresolved_reasons: List[str] = Field(default_factory=list)
 
 
+class ExecutionPositionStartupTruthUnknownSymbolRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1)
+    lifecycle_truth_class: Literal["unknown"] = "unknown"
+    authoritative_artifact_state: Literal[
+        "missing",
+        "not_readable",
+        "corrupt",
+        "stale",
+    ]
+    portfolio_presence: Literal["unknown", "present", "absent"] = "unknown"
+    reconstructed_exact_truth_present: bool = False
+    observed_inputs: List[str] = Field(default_factory=list)
+    reason_codes: List[str] = Field(default_factory=list)
+
+
 class ExecutionPositionStartupTruthRestoreArtifactStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -275,6 +292,9 @@ class ExecutionPositionStartupTruthRecord(BaseModel):
     input_snapshot: ExecutionPositionStartupTruthInputSnapshot
     runtime_truth_summary: ExecutionPositionStartupTruthSummary
     runtime_truth_records: List[ExecutionPositionStartupTruthSymbolRecord] = Field(
+        default_factory=list
+    )
+    unknown_truth_records: List[ExecutionPositionStartupTruthUnknownSymbolRecord] = Field(
         default_factory=list
     )
     restore_artifact: ExecutionPositionStartupTruthRestoreArtifactStatus = Field(

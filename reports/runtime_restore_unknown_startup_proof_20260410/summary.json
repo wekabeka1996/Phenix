@@ -1,0 +1,14 @@
+{
+  "artifact_state": "stale",
+  "cache_authoritative": false,
+  "cache_truth_class": "cache_only",
+  "categories_visible": {
+    "cache_only": true,
+    "reconstructed": true,
+    "restored_exact": false,
+    "unknown": true
+  },
+  "reconstructed_symbol_count": 1,
+  "restored_exact_symbol_count": 0,
+  "unknown_symbol_count": 1
+}
