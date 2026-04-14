@@ -62,7 +62,8 @@ class TradeIntentOpenOrder(BaseModel):
     order_type: str
     price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     tif: Optional[str] = None
-    price_ref: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    price_ref: Optional[str] = Field(
+        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
 
     @field_validator("order_type", mode="before")
     @classmethod
@@ -78,6 +79,7 @@ class TradeIntentOpenOrder(BaseModel):
             return None
         return str(value).strip().upper()
 
+
 class TradeIntentOpenIntake(BaseModel):
     """Execution-side typed bridge for normal open-intent intake."""
 
@@ -90,14 +92,15 @@ class TradeIntentOpenIntake(BaseModel):
     order: TradeIntentOpenOrder
     valid_for_ms: Optional[int] = Field(default=None, ge=1000)
     idempotent_key: Optional[str] = None
-    stop_price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
-    target_price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    stop_price: Optional[str] = Field(
+        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    target_price: Optional[str] = Field(
+        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     regime: Optional[str] = None
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     regime_provenance: Optional[Dict[str, Any]] = None
     tca_budget: Optional[Dict[str, Any]] = None
     risk_context: Optional[Dict[str, Any]] = None
-    tf_sec: Optional[int] = None
     trace: Optional[Dict[str, Any]] = None
 
     @field_validator("symbol", mode="before")
@@ -141,8 +144,6 @@ class TradeIntentOpenIntake(BaseModel):
         }
         if self.strategy_id:
             metadata["strategy_id"] = self.strategy_id
-        if self.tf_sec is not None:
-            metadata["tf_sec"] = self.tf_sec
         if isinstance(self.tca_budget, dict) and self.tca_budget:
             metadata["tca_budget"] = dict(self.tca_budget)
         if isinstance(self.risk_context, dict) and self.risk_context:
@@ -160,7 +161,8 @@ def parse_trade_intent_open_intake(
 ) -> TradeIntentOpenIntake:
     """Validate and normalize one execution-side open intent."""
     raw = dict(payload or {})
-    symbol = _stringify_optional(raw.get("instrument")) or _stringify_optional(raw.get("symbol"))
+    symbol = _stringify_optional(
+        raw.get("instrument")) or _stringify_optional(raw.get("symbol"))
     if symbol is None:
         keys = sorted(str(key) for key in raw.keys())
         raise TradeIntentOpenIntakeError(
@@ -168,7 +170,8 @@ def parse_trade_intent_open_intake(
             f"NRR-INTENT-MISSING-SYMBOL: TRADE_INTENT_PROPOSED missing symbol/instrument: keys={keys}",
         )
 
-    strategy_id = _stringify_optional(raw.get("strategy")) or _stringify_optional(raw.get("strategy_id"))
+    strategy_id = _stringify_optional(
+        raw.get("strategy")) or _stringify_optional(raw.get("strategy_id"))
     order_block = raw.get("order")
     if not isinstance(order_block, Mapping):
         raise TradeIntentOpenIntakeError(
@@ -216,7 +219,6 @@ def parse_trade_intent_open_intake(
                 "regime_provenance": raw.get("regime_provenance"),
                 "tca_budget": raw.get("tca_budget"),
                 "risk_context": raw.get("risk_context"),
-                "tf_sec": raw.get("tf_sec"),
                 "trace": raw.get("trace"),
             }
         )

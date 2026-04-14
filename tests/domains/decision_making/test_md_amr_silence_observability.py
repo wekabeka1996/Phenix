@@ -86,10 +86,34 @@ def _make_config(symbol: str = "BNBUSDT"):
         slippage_buffer_bps=2.0,
         scaleout_fraction=0.50,
         scaleout_cost_model="round_trip",
+        progress_tracking=SimpleNamespace(
+            early_progress_max_pct=0.25,
+            partial_progress_max_pct=0.70,
+            near_completion_max_pct=1.00,
+        ),
+        setup_quality=SimpleNamespace(
+            penetration_depth_full_scale=0.50,
+            channel_width_pct_full_scale=1.00,
+            volatility_z_full_penalty=3.00,
+        ),
         hold_quality=SimpleNamespace(
             expected_progress_grace_frac=0.25,
             time_decay_weight=0.35,
             progress_deficit_weight=0.45,
+        ),
+        context_validity=SimpleNamespace(
+            regime_confidence_floor=0.35,
+            regime_confidence_valid=0.60,
+            volatility_z_weakening=1.50,
+            volatility_z_invalid=3.00,
+            channel_width_pct_floor=0.10,
+            channel_width_pct_valid=1.00,
+            regime_weight=0.35,
+            volatility_weight=0.20,
+            structure_weight=0.20,
+            progress_alignment_weight=0.25,
+            valid_score_min=0.70,
+            invalid_score_max=0.35,
         ),
         weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
         objective=SimpleNamespace(enabled=False),
@@ -234,6 +258,29 @@ def test_md_amr_first_entry_becomes_possible_after_required_history() -> None:
         scaleout_cost_model="round_trip",
         atr_window=14,
         atr_stats_window=64,
+        hold_edge_min=-0.50,
+        target_approach_pct=0.0,
+        progress_tracking_early_progress_max_pct=0.25,
+        progress_tracking_partial_progress_max_pct=0.70,
+        progress_tracking_near_completion_max_pct=1.00,
+        setup_quality_penetration_depth_full_scale=0.50,
+        setup_quality_channel_width_pct_full_scale=1.00,
+        setup_quality_volatility_z_full_penalty=3.00,
+        hold_quality_expected_progress_grace_frac=0.25,
+        hold_quality_time_decay_weight=0.35,
+        hold_quality_progress_deficit_weight=0.45,
+        context_validity_regime_confidence_floor=0.35,
+        context_validity_regime_confidence_valid=0.60,
+        context_validity_volatility_z_weakening=1.50,
+        context_validity_volatility_z_invalid=3.00,
+        context_validity_channel_width_pct_floor=0.10,
+        context_validity_channel_width_pct_valid=1.00,
+        context_validity_regime_weight=0.35,
+        context_validity_volatility_weight=0.20,
+        context_validity_structure_weight=0.20,
+        context_validity_progress_alignment_weight=0.25,
+        context_validity_valid_score_min=0.70,
+        context_validity_invalid_score_max=0.35,
     )
 
     last_result = None
@@ -419,7 +466,8 @@ def test_md_amr_objective_multiplier_keeps_payload_and_trace_aligned() -> None:
                 is_blocked=False,
                 multiplier=0.5,
                 objective_score=0.42,
-                trace=SimpleNamespace(model_dump=lambda: dict(objective_trace)),
+                trace=SimpleNamespace(
+                    model_dump=lambda: dict(objective_trace)),
             ),
         ),
     ):
@@ -443,7 +491,8 @@ def test_md_amr_objective_multiplier_keeps_payload_and_trace_aligned() -> None:
     assert payload["trace"]["conf_ratio"] == pytest.approx(0.4)
     assert payload["score"] == pytest.approx(0.42)
     assert payload["trace"]["objective"]["trace_id"] == "obj-md-amr-1"
-    assert payload["scoring"]["objective"]["objective_score"] == pytest.approx(0.42)
+    assert payload["scoring"]["objective"]["objective_score"] == pytest.approx(
+        0.42)
 
 
 def test_md_amr_restored_execution_snapshot_allows_open_new_risk_on_signal() -> None:

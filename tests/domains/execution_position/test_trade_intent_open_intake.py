@@ -76,7 +76,6 @@ def _make_intent_payload(**overrides) -> dict:
         "why": ["typed_open_intake_test"],
         "dto_version": "1.0.0",
         "schema_ref": "trade_intent_v1.json",
-        "tf_sec": 300,
     }
     payload.update(overrides)
     return payload
@@ -128,16 +127,19 @@ def test_valid_trade_intent_passes_through_typed_open_intake_and_builds_cmd_open
     assert cmd_open.pld["valid_for_ms"] == 15000
     assert cmd_open.pld["metadata"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
     assert cmd_open.pld["metadata"]["execution_intake_path"] == "EVT:TRADE_INTENT_PROPOSED->CMD:OPEN"
+    assert "tf_sec" not in cmd_open.pld["metadata"]
 
 
 def test_invalid_trade_intent_missing_order_type_is_rejected_fail_closed_at_typed_intake() -> None:
     router, fsm, bus = _make_router()
-    msg = _make_intent_message(order={"qty": "0.01", "price": "50000", "reduce_only": False, "tif": "GTC"})
+    msg = _make_intent_message(
+        order={"qty": "0.01", "price": "50000", "reduce_only": False, "tif": "GTC"})
 
     router.on_trade_intent_proposed(msg)
 
     fsm.handle.assert_not_called()
-    rejects = [payload for topic, payload, _why, _data_ref in bus.emitted if topic == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [payload for topic, payload, _why,
+               _data_ref in bus.emitted if topic == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
     assert "NRR-INTENT-MISSING-ORDER_TYPE" in rejects[0]["why"]
     assert rejects[0]["details"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
@@ -186,6 +188,42 @@ def test_live_execpos_open_path_does_not_bypass_typed_intake(fsm_harness) -> Non
     assert wrapped_parse.call_count == 1
 
 
+def test_schema_active_live_seam_rejects_out_of_range_regime_confidence_at_typed_intake(fsm_config) -> None:
+    init_global_registry(project_root=".")
+    bus = FSMCore()
+    rejects: list[dict] = []
+    opened: list[dict] = []
+    bus.listen("EVT:TRADE_INTENT_REJECTED",
+               lambda msg: rejects.append(msg.pld))
+    bus.listen("DEC:OPEN", lambda msg: opened.append(msg.pld))
+
+    with patch("apps.reference.domains.execution_position.fsm.OrderGuardian") as mock_guardian_cls:
+        fsm = __import__(
+            "apps.reference.domains.execution_position.fsm",
+            fromlist=["ExecPosFSM"],
+        ).ExecPosFSM(config=fsm_config, fsm=bus, shadow_mode=True)
+        fsm.order_guardian = mock_guardian_cls.return_value
+
+    payload = _make_intent_payload(
+        rid="RID-SCHEMA-ACTIVE-TYPED-REJECT-1",
+        idempotent_key="KEY-SCHEMA-ACTIVE-TYPED-REJECT-1",
+        regime_confidence=1.5,
+        why=["schema_active_typed_reject"],
+    )
+
+    bus.emit(
+        "EVT:TRADE_INTENT_PROPOSED",
+        payload=payload,
+        why="schema_active_typed_reject",
+    )
+
+    assert opened == []
+    assert len(rejects) == 1
+    assert rejects[0]["reason_code"] == "NRR-INTENT-OPEN-INTAKE-INVALID"
+    assert rejects[0]["details"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
+    assert rejects[0]["details"]["execution_intake_stage"] == "typed_open_intake"
+
+
 def test_downstream_cmd_open_payload_validation_still_runs_after_typed_intake(fsm_harness) -> None:
     fsm, _bus, _cfg = fsm_harness
     fsm._latest_portfolio_state = {
@@ -215,9 +253,9 @@ def test_schema_validation_for_trade_intent_proposed_remains_compatible() -> Non
     init_global_registry(project_root=".")
     bus = FSMCore()
     observed: list[dict] = []
-    bus.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed.append(msg.pld))
+    bus.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
     payload = _make_intent_payload()
-    payload.pop("tf_sec", None)
 
     bus.emit(
         "EVT:TRADE_INTENT_PROPOSED",
@@ -231,12 +269,14 @@ def test_schema_validation_for_trade_intent_proposed_remains_compatible() -> Non
 
 def test_typed_intake_rejection_diagnostics_are_operator_visible() -> None:
     router, fsm, bus = _make_router()
-    msg = _make_intent_message(order={"qty": "0.01", "reduce_only": False, "order_type": "LIMIT", "tif": "GTC"})
+    msg = _make_intent_message(
+        order={"qty": "0.01", "reduce_only": False, "order_type": "LIMIT", "tif": "GTC"})
 
     router.on_trade_intent_proposed(msg)
 
     fsm.handle.assert_not_called()
-    rejects = [payload for topic, payload, _why, _data_ref in bus.emitted if topic == "EVT:TRADE_INTENT_REJECTED"]
+    rejects = [payload for topic, payload, _why,
+               _data_ref in bus.emitted if topic == "EVT:TRADE_INTENT_REJECTED"]
     assert len(rejects) == 1
     assert rejects[0]["details"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
     assert rejects[0]["details"]["execution_intake_stage"] == "typed_open_intake"

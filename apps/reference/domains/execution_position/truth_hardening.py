@@ -131,13 +131,16 @@ class ExecutionTruthHardening:
             ttl_ms=self.fill_dedup_ttl_ms,
         )
         self._close_guard: dict[str, _CloseGuardEntry] = {}
-        self._warm_state_entries: OrderedDict[str, _WarmStateEntry] = OrderedDict()
+        self._warm_state_entries: OrderedDict[str,
+                                              _WarmStateEntry] = OrderedDict()
         self._warm_seeded_fill_keys: set[str] = set()
         self._lock = RLock()
         self._last_warm_state_load_result = WarmStateLoadResult(
             status="not_attempted",
-            path=str(self.warm_state_storage_path) if self.warm_state_storage_path else None,
-            configured_path=str(self.warm_state_storage_path) if self.warm_state_storage_path else None,
+            path=str(
+                self.warm_state_storage_path) if self.warm_state_storage_path else None,
+            configured_path=str(
+                self.warm_state_storage_path) if self.warm_state_storage_path else None,
             legacy_alias_path=(
                 str(self._legacy_warm_state_alias_path())
                 if self._legacy_warm_state_alias_path() is not None
@@ -156,7 +159,8 @@ class ExecutionTruthHardening:
         *,
         order_index: Any = None,
     ) -> TradeExecutedDecision:
-        identity = resolve_trade_executed_identity(payload, order_index=order_index)
+        identity = resolve_trade_executed_identity(
+            payload, order_index=order_index)
         key = identity.key
         if key is None:
             return TradeExecutedDecision(
@@ -183,7 +187,8 @@ class ExecutionTruthHardening:
                 if warm_seeded:
                     self._warm_seeded_fill_keys.discard(key)
                 if identity.exact_identity:
-                    self._remember_exact_terminal_identity_unlocked(identity, now_ms)
+                    self._remember_exact_terminal_identity_unlocked(
+                        identity, now_ms)
                 return TradeExecutedDecision(
                     suppress=True,
                     key=key,
@@ -204,7 +209,8 @@ class ExecutionTruthHardening:
 
             if identity.exact_identity:
                 warm_state_miss = self._warm_state_active() and not warm_seeded
-                self._remember_exact_terminal_identity_unlocked(identity, now_ms)
+                self._remember_exact_terminal_identity_unlocked(
+                    identity, now_ms)
 
         return TradeExecutedDecision(
             suppress=False,
@@ -285,9 +291,11 @@ class ExecutionTruthHardening:
 
     def load_warm_state(self) -> WarmStateLoadResult:
         configured_path = self.warm_state_storage_path
-        configured_path_text = str(configured_path) if configured_path else None
+        configured_path_text = str(
+            configured_path) if configured_path else None
         legacy_alias_path = self._legacy_warm_state_alias_path()
-        legacy_alias_text = str(legacy_alias_path) if legacy_alias_path else None
+        legacy_alias_text = str(
+            legacy_alias_path) if legacy_alias_path else None
         if not self._warm_state_active():
             result = WarmStateLoadResult(
                 status="disabled",
@@ -336,7 +344,8 @@ class ExecutionTruthHardening:
             self._last_warm_state_load_result = result
             return result
         except Exception as exc:
-            LOG.warning("Execution terminal identity cache load failed: %s", exc)
+            LOG.warning(
+                "Execution terminal identity cache load failed: %s", exc)
             result = WarmStateLoadResult(
                 status="load_failed",
                 path=str(load_path),
@@ -378,7 +387,8 @@ class ExecutionTruthHardening:
                 symbol = _first_non_empty_str(item, "symbol")
                 order_id = _first_non_empty_str(item, "order_id")
                 client_order_id = _first_non_empty_str(item, "client_order_id")
-                identity_quality = _first_non_empty_str(item, "identity_quality")
+                identity_quality = _first_non_empty_str(
+                    item, "identity_quality")
                 ts_ms = _coerce_int(item.get("ts_ms"))
 
                 if (
@@ -538,7 +548,8 @@ class ExecutionTruthHardening:
             )
             tmp.replace(path)
         except Exception as exc:
-            LOG.warning("Execution terminal identity cache persist failed: %s", exc)
+            LOG.warning(
+                "Execution terminal identity cache persist failed: %s", exc)
 
     def _prune_warm_state(self, now_ms: int) -> None:
         while self._warm_state_entries:
@@ -646,7 +657,8 @@ def resolve_trade_executed_identity(
     *,
     order_index: Any = None,
 ) -> TradeExecutedIdentity:
-    symbol = str(payload.get("symbol") or payload.get("instrument") or "").upper()
+    symbol = str(payload.get("symbol") or payload.get(
+        "instrument") or "").upper()
     order_id = _first_non_empty_str(
         payload,
         "orderId",
@@ -654,8 +666,10 @@ def resolve_trade_executed_identity(
         "exchangeOrderId",
         "exchange_order_id",
     )
-    client_order_id = _first_non_empty_str(payload, "clientOrderId", "client_order_id")
-    lifecycle_id = _first_non_empty_str(payload, "lifecycle_id", "idempotent_key")
+    client_order_id = _first_non_empty_str(
+        payload, "clientOrderId", "client_order_id")
+    lifecycle_id = _first_non_empty_str(
+        payload, "lifecycle_id", "idempotent_key")
     rid = _first_non_empty_str(payload, "rid")
     trade_id = _first_non_empty_str(payload, "tradeId", "trade_id")
 
@@ -670,7 +684,8 @@ def resolve_trade_executed_identity(
             except Exception:
                 ref = None
         if ref is not None:
-            client_order_id = client_order_id or getattr(ref, "clientOrderId", None)
+            client_order_id = client_order_id or getattr(
+                ref, "clientOrderId", None)
             lifecycle_id = lifecycle_id or getattr(ref, "idempotent_key", None)
             rid = rid or getattr(ref, "rid", None)
 
@@ -758,7 +773,7 @@ def build_position_signature(portfolio_payload: dict[str, Any], symbol: str) -> 
             continue
         if str(pos.get("symbol") or "").upper() != symbol_upper:
             continue
-        qty = _to_decimal(pos.get("positionAmt"))
+        qty = _to_decimal(pos.get("net_position") or pos.get("positionAmt"))
         if qty is None:
             return "UNKNOWN"
         if abs(qty) <= Decimal("1e-9"):
@@ -842,7 +857,8 @@ def attach_execution_truth_hardening(
                 ],
             )
         except Exception:
-            LOG.debug("Failed to record execution truth hardening reset", exc_info=True)
+            LOG.debug(
+                "Failed to record execution truth hardening reset", exc_info=True)
 
     if is_bus_owner:
         load_result = hardening.load_warm_state()
@@ -865,14 +881,18 @@ def get_execution_truth_hardening(owner: Any) -> Optional[ExecutionTruthHardenin
 
 def resolve_execution_truth_hardening_config(config: Any) -> Optional[dict[str, Any]]:
     try:
-        exec_pos = getattr(getattr(config, "domains", None), "execution_position", None)
+        exec_pos = getattr(getattr(config, "domains", None),
+                           "execution_position", None)
         event_dedup = getattr(exec_pos, "event_dedup", None)
-        trading_exec = getattr(getattr(config, "trading", None), "execution", None)
+        trading_exec = getattr(
+            getattr(config, "trading", None), "execution", None)
         warm_state_cfg = getattr(event_dedup, "warm_state", None)
 
-        fill_dedup_max_size = _coerce_int(getattr(event_dedup, "max_size", None))
+        fill_dedup_max_size = _coerce_int(
+            getattr(event_dedup, "max_size", None))
         fill_dedup_ttl_ms = _coerce_int(getattr(event_dedup, "ttl_ms", None))
-        close_guard_ttl_ms = _coerce_int(getattr(trading_exec, "anti_race_close_ms", None))
+        close_guard_ttl_ms = _coerce_int(
+            getattr(trading_exec, "anti_race_close_ms", None))
 
         if (
             fill_dedup_max_size is None
@@ -890,7 +910,8 @@ def resolve_execution_truth_hardening_config(config: Any) -> Optional[dict[str, 
             "storage_path",
             TERMINAL_IDENTITY_CACHE_DEFAULT_PATH,
         )
-        warm_state_max_entries = _coerce_int(getattr(warm_state_cfg, "max_entries", None))
+        warm_state_max_entries = _coerce_int(
+            getattr(warm_state_cfg, "max_entries", None))
         if warm_state_max_entries is None:
             raise ValueError(
                 "execution truth hardening requires event_dedup.warm_state.max_entries"
@@ -925,7 +946,8 @@ def _record_warm_state_load_outcome(
             load_result.path,
         )
     elif load_result.status == "empty":
-        LOG.info("Execution terminal identity cache empty start: path=%s", load_result.path)
+        LOG.info(
+            "Execution terminal identity cache empty start: path=%s", load_result.path)
     elif load_result.status == "load_failed":
         LOG.warning(
             "Execution terminal identity cache load failed: path=%s failure=%s",

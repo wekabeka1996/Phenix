@@ -266,11 +266,13 @@ def test_fsm_emit_validates_trade_intent_proposed_with_trace() -> None:
     init_global_registry(project_root=".")
     fsm = FSMCore()
     observed: list[dict] = []
-    fsm.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed.append(msg.pld))
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
 
     payload = _trade_intent_payload()
 
-    fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=payload, why="trace_contract")
+    fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+             payload=payload, why="trace_contract")
 
     assert observed
     assert observed[0]["trace"]["objective"]["score"] == 0.42
@@ -286,7 +288,21 @@ def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_top_level_field(
     payload["unexpected_top_level"] = "boom"
 
     with pytest.raises(InvalidMessagePayloadError, match="unexpected_top_level"):
-        fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=payload, why="strict_root")
+        fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+                 payload=payload, why="strict_root")
+
+
+def test_fsm_emit_rejects_trade_intent_proposed_with_tf_sec_top_level_field() -> None:
+    """tf_sec is not part of the live trade-intent schema and must fail at the bus boundary."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+
+    payload = _trade_intent_payload()
+    payload["tf_sec"] = 300
+
+    with pytest.raises(InvalidMessagePayloadError, match="tf_sec"):
+        fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+                 payload=payload, why="strict_tf_sec")
 
 
 def test_old_style_trade_intent_contract_rejects_trace_before_listener_dispatch() -> None:
@@ -301,11 +317,13 @@ def test_old_style_trade_intent_contract_rejects_trace_before_listener_dispatch(
 
     fsm = FSMCore()
     observed: list[dict] = []
-    fsm.listen("EVT:TRADE_INTENT_PROPOSED", lambda msg: observed.append(msg.pld))
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
 
     payload = deepcopy(_trade_intent_payload())
 
     with pytest.raises(InvalidMessagePayloadError, match="trace"):
-        fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=payload, why="historical_regression")
+        fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+                 payload=payload, why="historical_regression")
 
     assert observed == []

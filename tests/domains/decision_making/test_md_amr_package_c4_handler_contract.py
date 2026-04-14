@@ -129,27 +129,24 @@ class _Event:
         self.pld = payload
 
 
-def test_md_amr_init_strategies_passes_baseline_and_c3_contract() -> None:
+def test_md_amr_init_strategies_passes_c4_contract() -> None:
     handler = MDAMRHandler(fsm=_FSMStub(), config=_make_config())
 
     strategy = handler._strategies["BNBUSDT"]
-    assert strategy.hold_edge_min == -0.5
-    assert strategy.target_approach_pct == 0.0
-    assert strategy.progress_tracking_early_progress_max_pct == 0.25
-    assert strategy.setup_quality_penetration_depth_full_scale == 0.50
-    assert strategy.hold_quality_expected_progress_grace_frac == 0.25
-    assert strategy.hold_quality_time_decay_weight == 0.35
-    assert strategy.hold_quality_progress_deficit_weight == 0.45
+    assert strategy.progress_tracking_partial_progress_max_pct == 0.70
+    assert strategy.setup_quality_channel_width_pct_full_scale == 1.00
     assert strategy.context_validity_regime_confidence_floor == 0.35
+    assert strategy.context_validity_regime_confidence_valid == 0.60
     assert strategy.context_validity_valid_score_min == 0.70
+    assert strategy.context_validity_invalid_score_max == 0.35
 
 
-def test_md_amr_on_process_strategy_preserves_anchor_surface_with_c3() -> None:
+def test_md_amr_on_process_strategy_passes_context_inputs_without_breaking_anchors() -> None:
     handler = object.__new__(MDAMRHandler)
     captured: list[dict] = []
 
-    handler.logger = logging.getLogger("tests.md_amr.c3")
-    handler.mlog = logging.getLogger("tests.md_amr.c3")
+    handler.logger = logging.getLogger("tests.md_amr.c4")
+    handler.mlog = logging.getLogger("tests.md_amr.c4")
     handler._enabled = True
     handler._enabled_symbols = {"BNBUSDT"}
     handler._cfg = SimpleNamespace(
@@ -179,7 +176,7 @@ def test_md_amr_on_process_strategy_preserves_anchor_surface_with_c3() -> None:
         }
     }
     handler._regime = {"BNBUSDT": "MEAN_REVERSION"}
-    handler._regime_confidence = {"BNBUSDT": 0.82}
+    handler._regime_confidence = {"BNBUSDT": 0.77}
     handler._strategies = {
         "BNBUSDT": SimpleNamespace(
             on_bar=lambda **kwargs: captured.append(kwargs) or {
@@ -190,7 +187,7 @@ def test_md_amr_on_process_strategy_preserves_anchor_surface_with_c3() -> None:
     handler._expire_defer_if_needed = lambda symbol, now_ms: None
     handler._is_mandatory_live_warmup_active = lambda now_ms: False
     handler._emit_trade_intent_rejected_gate = lambda **kwargs: None
-    handler._rid = lambda **_kwargs: "md-amr-c3-anchor"
+    handler._rid = lambda **_kwargs: "md-amr-c4-anchor"
     handler._signal_ready_logged = set()
 
     event = _Event(
@@ -221,5 +218,5 @@ def test_md_amr_on_process_strategy_preserves_anchor_surface_with_c3() -> None:
     assert position_ctx["entry_price"] == 600.0
     assert position_ctx["entry_target_price"] == 610.0
     assert position_ctx["context_regime"] == "MEAN_REVERSION"
-    assert position_ctx["context_regime_confidence"] == 0.82
+    assert position_ctx["context_regime_confidence"] == 0.77
     assert position_ctx["context_regime_allowed"] is True

@@ -28,21 +28,26 @@ assignments:
   SOLUSDT:
     - aurora
 
-  # Package 4: Testnet Activation — XRPUSDT assigned to md_amr.
-  # Asset config exists and validated in md_amr.yaml line 382+.
+  # Calibrated 2026-04-14: XRPUSDT added to aurora (priority 1) + md_amr (priority 3)
+  # Aurora gets arbitration priority; md_amr runs as fallback within window_ms.
   XRPUSDT:
+    - aurora
     - md_amr
 
   BTCUSDT:
     - aurora
 
-  # Package 4: Testnet Activation — BNBUSDT assigned to md_amr.
-  # Asset config exists and validated in md_amr.yaml line 420+.
+  # Calibrated 2026-04-14: BNBUSDT added to aurora (priority 1) + md_amr (priority 3)
+  # Aurora gets arbitration priority; md_amr runs as fallback within window_ms.
   BNBUSDT:
+    - aurora
     - md_amr
 
+  # Calibrated 2026-04-14: DOGEUSDT added to aurora (priority 1) + mean_reversion (priority 2)
+  # Aurora gets arbitration priority; MR runs as fallback within window_ms.
   DOGEUSDT:
-      - mean_reversion
+    - aurora
+    - mean_reversion
   1000PEPEUSDT:
     - llm_microstructure
 

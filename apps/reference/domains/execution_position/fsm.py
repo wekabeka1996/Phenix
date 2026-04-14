@@ -1960,7 +1960,8 @@ class ExecPosFSM(
             for symbol in input_snapshot.get("position_symbols_observed", [])
             if str(symbol).strip()
         }
-        positions_fetch_succeeded = bool(input_snapshot.get("positions_fetch_succeeded", False))
+        positions_fetch_succeeded = bool(
+            input_snapshot.get("positions_fetch_succeeded", False))
 
         unknown_rows: List[ExecutionPositionStartupTruthUnknownSymbolRecord] = []
         for symbol in sorted(observed_input_map):
@@ -1973,7 +1974,8 @@ class ExecPosFSM(
 
             reason_codes = [artifact_reason]
             if portfolio_presence == "present":
-                reason_codes.append("portfolio_present_without_restored_lifecycle_truth")
+                reason_codes.append(
+                    "portfolio_present_without_restored_lifecycle_truth")
 
             unknown_rows.append(
                 ExecutionPositionStartupTruthUnknownSymbolRecord(
@@ -1981,7 +1983,8 @@ class ExecPosFSM(
                     authoritative_artifact_state=status.artifact_state,
                     portfolio_presence=portfolio_presence,
                     reconstructed_exact_truth_present=False,
-                    observed_inputs=sorted(observed_input_map.get(symbol) or []),
+                    observed_inputs=sorted(
+                        observed_input_map.get(symbol) or []),
                     reason_codes=reason_codes,
                 )
             )
@@ -2126,7 +2129,8 @@ class ExecPosFSM(
         status.parse_success = True
         status.artifact_generated_at_ms = envelope.generated_at_ms
         status.artifact_record_count = len(envelope.active_lifecycles)
-        effective_now_ms = int(now_ms if now_ms is not None else get_clock().now_ms())
+        effective_now_ms = int(
+            now_ms if now_ms is not None else get_clock().now_ms())
         if envelope.generated_at_ms <= effective_now_ms:
             status.artifact_age_ms = effective_now_ms - envelope.generated_at_ms
         if (
@@ -2211,7 +2215,8 @@ class ExecPosFSM(
             ),
         )
 
-        manage_phase = str(record.manage_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        manage_phase = str(record.manage_phase or "").strip(
+        ).upper() or RESTORE_PHASE_UNKNOWN
         if manage_phase == RESTORE_PHASE_UNKNOWN:
             symbol_status.manage_phase_value = RESTORE_PHASE_UNKNOWN
             symbol_status.manage_phase_restore_status = "unknown"
@@ -2226,11 +2231,13 @@ class ExecPosFSM(
                 manage_flow = self._get_or_create_manage_flow(symbol_key)
                 manage_flow.state = manage_state
                 manage_flow.symbol = symbol_key
-                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RESTORE_ARTIFACT)
+                self._set_manage_truth_source(
+                    symbol_key, TRUTH_SOURCE_RESTORE_ARTIFACT)
                 symbol_status.manage_phase_value = manage_state.value
                 symbol_status.manage_phase_restore_status = "exact"
 
-        close_phase = str(record.close_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        close_phase = str(record.close_phase or "").strip(
+        ).upper() or RESTORE_PHASE_UNKNOWN
         if close_phase == RESTORE_PHASE_UNKNOWN:
             symbol_status.close_phase_value = RESTORE_PHASE_UNKNOWN
             symbol_status.close_phase_restore_status = "unknown"
@@ -2251,7 +2258,8 @@ class ExecPosFSM(
                 symbol_status.close_phase_value = close_state.value
                 symbol_status.close_phase_restore_status = "exact"
 
-        bracket_state = str(record.bracket_state or "").strip().upper() or BRACKET_STATE_UNKNOWN
+        bracket_state = str(record.bracket_state or "").strip(
+        ).upper() or BRACKET_STATE_UNKNOWN
         self._clear_symbol_brackets(symbol_key)
         if bracket_state == BRACKET_STATE_DEFERRED_PENDING_WAL:
             deferred_entry_order_id = (
@@ -2320,7 +2328,8 @@ class ExecPosFSM(
                     or symbol_status.bracket_state_restore_status == "exact"
                 )
             ):
-                symbol_status.unresolved_reasons.append("portfolio_symbol_absent")
+                symbol_status.unresolved_reasons.append(
+                    "portfolio_symbol_absent")
             if (
                 symbol_status.portfolio_presence == "present"
                 and symbol_status.manage_phase_restore_status == "unknown"
@@ -2828,7 +2837,9 @@ class ExecPosFSM(
         for position in positions:
             if str(position.get("symbol") or "").upper() != symbol.upper():
                 continue
-            value = position.get("positionAmt")
+            value = position.get("net_position")
+            if value is None:
+                value = position.get("positionAmt")
             return None if value is None else str(value)
         return None
 
@@ -3299,7 +3310,8 @@ class ExecPosFSM(
         normalized = dict(payload)
         symbol = str(normalized.get("symbol") or "").strip().upper()
         normalized["symbol"] = symbol
-        normalized.setdefault("event_type", "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED")
+        normalized.setdefault(
+            "event_type", "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED")
         normalized.setdefault("policy_source", "position_policy_sidecar")
         normalized.setdefault(
             "source_event_type", "POSITION_POLICY_SIDECAR_RECOMMENDED"
@@ -3316,11 +3328,13 @@ class ExecPosFSM(
         normalized.setdefault("freshness_snapshot", {})
         normalized.setdefault("fill_correlation", {})
         normalized.setdefault("portfolio_correlation", {})
-        normalized["request_id"] = str(normalized.get("request_id") or "").strip()
+        normalized["request_id"] = str(
+            normalized.get("request_id") or "").strip()
         normalized["trace_id"] = str(normalized.get("trace_id") or "").strip()
         normalized["requested_qty"] = normalized.get("requested_qty")
         try:
-            normalized["ts_ms"] = int(normalized.get("ts_ms") or get_clock().now_ms())
+            normalized["ts_ms"] = int(normalized.get(
+                "ts_ms") or get_clock().now_ms())
         except (TypeError, ValueError):
             normalized["ts_ms"] = get_clock().now_ms()
 
@@ -3336,26 +3350,36 @@ class ExecPosFSM(
             request_id=normalized["request_id"],
             trace_id=normalized["trace_id"],
             symbol=symbol,
-            source_event_type=str(normalized.get("source_event_type") or "POSITION_POLICY_SIDECAR_RECOMMENDED"),
-            event_type=str(normalized.get("event_type") or "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"),
-            requested_action=str(normalized.get("requested_action") or "SOFT_CLOSE"),
+            source_event_type=str(normalized.get(
+                "source_event_type") or "POSITION_POLICY_SIDECAR_RECOMMENDED"),
+            event_type=str(normalized.get("event_type")
+                           or "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"),
+            requested_action=str(normalized.get(
+                "requested_action") or "SOFT_CLOSE"),
             requested_qty=(
                 None
                 if normalized.get("requested_qty") in (None, "", "0", 0)
                 else str(normalized.get("requested_qty"))
             ),
-            target_mode=str(normalized.get("target_mode") or "symbol_current_net_only"),
-            policy_source=str(normalized.get("policy_source") or "position_policy_sidecar"),
-            action_package_version=str(normalized.get("action_package_version") or ACTION_PACKAGE_VERSION),
-            allowed_action_scope=dict(normalized.get("allowed_action_scope") or {}),
-            reason_codes=tuple(str(code) for code in (normalized.get("reason_codes") or [])),
+            target_mode=str(normalized.get("target_mode")
+                            or "symbol_current_net_only"),
+            policy_source=str(normalized.get("policy_source")
+                              or "position_policy_sidecar"),
+            action_package_version=str(normalized.get(
+                "action_package_version") or ACTION_PACKAGE_VERSION),
+            allowed_action_scope=dict(
+                normalized.get("allowed_action_scope") or {}),
+            reason_codes=tuple(str(code) for code in (
+                normalized.get("reason_codes") or [])),
             score_snapshot=dict(normalized.get("score_snapshot") or {}),
             position_snapshot=dict(normalized.get("position_snapshot") or {}),
             feature_ref=dict(normalized.get("feature_ref") or {}),
             regime_ref=dict(normalized.get("regime_ref") or {}),
-            freshness_snapshot=dict(normalized.get("freshness_snapshot") or {}),
+            freshness_snapshot=dict(
+                normalized.get("freshness_snapshot") or {}),
             fill_correlation=dict(normalized.get("fill_correlation") or {}),
-            portfolio_correlation=dict(normalized.get("portfolio_correlation") or {}),
+            portfolio_correlation=dict(
+                normalized.get("portfolio_correlation") or {}),
         )
         request_payload = dict(normalized)
         request_payload.update(request.to_payload())
@@ -3643,7 +3667,8 @@ class ExecPosFSM(
 
             try:
                 position_amt = float(
-                    pos_dict.get("positionAmt")
+                    pos_dict.get("net_position")
+                    or pos_dict.get("positionAmt")
                     or pos_dict.get("position_amount")
                     or 0.0
                 )
@@ -4079,7 +4104,8 @@ class ExecPosFSM(
         )
 
     def _wire_manage_flow(self, symbol: str, manage_flow: ManageFlowFSM) -> None:
-        self._set_manage_truth_source(symbol, self._manage_truth_source_for(symbol))
+        self._set_manage_truth_source(
+            symbol, self._manage_truth_source_for(symbol))
         if hasattr(manage_flow, "set_observability_hook"):
             manage_flow.set_observability_hook(
                 self._emit_execution_bus_event,
@@ -4097,7 +4123,8 @@ class ExecPosFSM(
             raise ValueError("symbol is required")
         with self._flows_lock:
             if symbol_key not in self.open_flows:
-                self.open_flows[symbol_key] = self._create_open_flow(symbol_key)
+                self.open_flows[symbol_key] = self._create_open_flow(
+                    symbol_key)
             return self.open_flows[symbol_key]
 
     def _get_or_create_manage_flow(self, symbol: str) -> ManageFlowFSM:
@@ -4107,8 +4134,10 @@ class ExecPosFSM(
         with self._flows_lock:
             if symbol_key not in self.manage_flows:
                 LOG.info(f"Creating new manage flow for symbol: {symbol_key}")
-                self.manage_flows[symbol_key] = ManageFlowFSM(config=self.config)
-                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
+                self.manage_flows[symbol_key] = ManageFlowFSM(
+                    config=self.config)
+                self._set_manage_truth_source(
+                    symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
             self._wire_manage_flow(symbol_key, self.manage_flows[symbol_key])
             return self.manage_flows[symbol_key]
 
@@ -4132,11 +4161,14 @@ class ExecPosFSM(
             raise ValueError("symbol is required")
         with self._flows_lock:
             if symbol_key not in self.open_flows:
-                self.open_flows[symbol_key] = self._create_open_flow(symbol_key)
+                self.open_flows[symbol_key] = self._create_open_flow(
+                    symbol_key)
             if symbol_key not in self.manage_flows:
                 LOG.info(f"Creating new set of FSMs for symbol: {symbol_key}")
-                self.manage_flows[symbol_key] = ManageFlowFSM(config=self.config)
-                self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
+                self.manage_flows[symbol_key] = ManageFlowFSM(
+                    config=self.config)
+                self._set_manage_truth_source(
+                    symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
             if symbol_key not in self.close_flows:
                 self.close_flows[symbol_key] = CloseFlowFSM()
 
@@ -4311,7 +4343,8 @@ class ExecPosFSM(
             elif msg.verb == "CLOSE":
                 symbol = msg.pld.get("symbol") if msg.pld else None
                 hardening = get_execution_truth_hardening(self)
-                skip_close_guard = bool((msg.pld or {}).get("close_guard_prevalidated"))
+                skip_close_guard = bool(
+                    (msg.pld or {}).get("close_guard_prevalidated"))
                 if symbol and hardening is not None and not skip_close_guard:
                     close_decision = hardening.evaluate_close_command(
                         symbol=symbol,
@@ -4585,6 +4618,20 @@ class ExecPosFSM(
         except Exception:
             pass
 
+    @staticmethod
+    def _read_position_amt(pos: Dict[str, Any]) -> Any:
+        """Read position amount from either canonical or legacy field name.
+
+        The position_tracking domain emits ``net_position`` (the canonical
+        field per ``portfolio_state_v1.json``).  Some external/Binance-direct
+        payloads may still carry ``positionAmt``.  We check both, preferring
+        ``net_position``.
+        """
+        val = pos.get("net_position")
+        if val is not None:
+            return val
+        return pos.get("positionAmt")
+
     def _get_portfolio_state_for_symbol(self, symbol: str) -> str:
         """Best-effort portfolio snapshot for split-brain guard telemetry."""
         portfolio = self._latest_portfolio_state or {}
@@ -4600,7 +4647,9 @@ class ExecPosFSM(
                 continue
             if str(pos.get("symbol") or "").upper() != symbol.upper():
                 continue
-            qty_raw = pos.get("positionAmt", "0")
+            qty_raw = self._read_position_amt(pos)
+            if qty_raw is None:
+                qty_raw = "0"
             try:
                 qty = Decimal(str(qty_raw))
             except Exception:

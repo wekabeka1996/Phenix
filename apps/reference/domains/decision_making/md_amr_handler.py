@@ -750,12 +750,48 @@ class MDAMRHandler:
                 scaleout_cost_model=self._cfg.scaleout_cost_model,
                 hold_edge_min=float(self._cfg.hold_edge_min),
                 target_approach_pct=float(self._cfg.target_approach_pct),
+                progress_tracking_early_progress_max_pct=float(
+                    self._cfg.progress_tracking.early_progress_max_pct),
+                progress_tracking_partial_progress_max_pct=float(
+                    self._cfg.progress_tracking.partial_progress_max_pct),
+                progress_tracking_near_completion_max_pct=float(
+                    self._cfg.progress_tracking.near_completion_max_pct),
+                setup_quality_penetration_depth_full_scale=float(
+                    self._cfg.setup_quality.penetration_depth_full_scale),
+                setup_quality_channel_width_pct_full_scale=float(
+                    self._cfg.setup_quality.channel_width_pct_full_scale),
+                setup_quality_volatility_z_full_penalty=float(
+                    self._cfg.setup_quality.volatility_z_full_penalty),
                 hold_quality_expected_progress_grace_frac=float(
                     self._cfg.hold_quality.expected_progress_grace_frac),
                 hold_quality_time_decay_weight=float(
                     self._cfg.hold_quality.time_decay_weight),
                 hold_quality_progress_deficit_weight=float(
                     self._cfg.hold_quality.progress_deficit_weight),
+                context_validity_regime_confidence_floor=float(
+                    self._cfg.context_validity.regime_confidence_floor),
+                context_validity_regime_confidence_valid=float(
+                    self._cfg.context_validity.regime_confidence_valid),
+                context_validity_volatility_z_weakening=float(
+                    self._cfg.context_validity.volatility_z_weakening),
+                context_validity_volatility_z_invalid=float(
+                    self._cfg.context_validity.volatility_z_invalid),
+                context_validity_channel_width_pct_floor=float(
+                    self._cfg.context_validity.channel_width_pct_floor),
+                context_validity_channel_width_pct_valid=float(
+                    self._cfg.context_validity.channel_width_pct_valid),
+                context_validity_regime_weight=float(
+                    self._cfg.context_validity.regime_weight),
+                context_validity_volatility_weight=float(
+                    self._cfg.context_validity.volatility_weight),
+                context_validity_structure_weight=float(
+                    self._cfg.context_validity.structure_weight),
+                context_validity_progress_alignment_weight=float(
+                    self._cfg.context_validity.progress_alignment_weight),
+                context_validity_valid_score_min=float(
+                    self._cfg.context_validity.valid_score_min),
+                context_validity_invalid_score_max=float(
+                    self._cfg.context_validity.invalid_score_max),
                 weights={
                     "d1": float(self._cfg.weights.d1),
                     "h1": float(self._cfg.weights.h1),
@@ -870,6 +906,37 @@ class MDAMRHandler:
             }
         }
 
+    def _build_context_validity_position_ctx(self, symbol: str) -> Dict[str, Any]:
+        regime_map = getattr(self, "_regime", {}) or {}
+        regime = self._normalize_regime_label(regime_map.get(symbol))
+
+        regime_confidence_map = getattr(self, "_regime_confidence", {}) or {}
+        regime_confidence = regime_confidence_map.get(symbol)
+
+        context_regime_allowed: Optional[bool] = None
+        assets_cfg = getattr(getattr(self, "_cfg", None), "assets", None)
+        asset_cfg = assets_cfg.get(symbol) if isinstance(
+            assets_cfg, dict) else None
+        if regime and asset_cfg is not None:
+            allowed_regimes = list(
+                getattr(asset_cfg, "allowed_regimes", None) or [])
+            effective_allowed_regimes = self._expand_allowed_regimes(
+                allowed_regimes)
+            context_regime_allowed = bool(
+                RegimeAllowlistContract.is_regime_allowed(
+                    current_regime=str(regime),
+                    allowed_regimes=effective_allowed_regimes,
+                )
+            )
+
+        return {
+            "context_regime": regime or None,
+            "context_regime_confidence": (
+                float(regime_confidence) if regime_confidence is not None else None
+            ),
+            "context_regime_allowed": context_regime_allowed,
+        }
+
     def _on_features_calculated(self, event: Message) -> None:
         """Cache feature payloads and optionally advance warmup-only bar state.
 
@@ -935,7 +1002,8 @@ class MDAMRHandler:
                 "qty_signed": float(pos_qty),
                 "bars_held": int(self._bars_held.get(symbol, 0)),
                 # Package C.1: pass frozen entry anchors if available.
-                **self._entry_anchor.get(symbol, {})
+                **self._entry_anchor.get(symbol, {}),
+                **self._build_context_validity_position_ctx(symbol),
             },
             llm_blocked=False,
         )
@@ -1189,7 +1257,8 @@ class MDAMRHandler:
                 getattr(
                     self._cfg.execution,
                     "emit_market_fallback_marker_on_retry_exhaustion",
-                    getattr(self._cfg.execution, "gtx_fallback_to_market", False),
+                    getattr(self._cfg.execution,
+                            "gtx_fallback_to_market", False),
                 )
             ):
                 self.mlog.warning(
@@ -1375,7 +1444,8 @@ class MDAMRHandler:
                     "qty_signed": float(pos_qty),
                     "bars_held": int(self._bars_held.get(symbol, 0)),
                     # Package C.1: pass frozen entry anchors if available.
-                    **self._entry_anchor.get(symbol, {})
+                    **self._entry_anchor.get(symbol, {}),
+                    **self._build_context_validity_position_ctx(symbol),
                 },
                 llm_blocked=llm_blocked,
             )
@@ -2034,7 +2104,8 @@ class MDAMRHandler:
         # Cleared on full position close in _on_trade_executed.
         if str(signal.intent_kind) == "ENTRY":
             _ch = dict(signal.channel_state)
-            _avg_close = float(_ch.get("avg_close_12", float(signal.price_ref)))
+            _avg_close = float(
+                _ch.get("avg_close_12", float(signal.price_ref)))
             self._entry_anchor[symbol] = {
                 "entry_price": float(signal.price_ref),
                 "entry_target_price": _avg_close,

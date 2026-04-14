@@ -44,6 +44,27 @@ def _make_strategy(**overrides) -> MDAMRStrategyV11:
         atr_stats_window=64,
         hold_edge_min=-0.50,
         target_approach_pct=0.0,
+        progress_tracking_early_progress_max_pct=0.25,
+        progress_tracking_partial_progress_max_pct=0.70,
+        progress_tracking_near_completion_max_pct=1.00,
+        setup_quality_penetration_depth_full_scale=0.50,
+        setup_quality_channel_width_pct_full_scale=1.00,
+        setup_quality_volatility_z_full_penalty=3.00,
+        hold_quality_expected_progress_grace_frac=0.25,
+        hold_quality_time_decay_weight=0.35,
+        hold_quality_progress_deficit_weight=0.45,
+        context_validity_regime_confidence_floor=0.35,
+        context_validity_regime_confidence_valid=0.60,
+        context_validity_volatility_z_weakening=1.50,
+        context_validity_volatility_z_invalid=3.00,
+        context_validity_channel_width_pct_floor=0.10,
+        context_validity_channel_width_pct_valid=1.00,
+        context_validity_regime_weight=0.35,
+        context_validity_volatility_weight=0.20,
+        context_validity_structure_weight=0.20,
+        context_validity_progress_alignment_weight=0.25,
+        context_validity_valid_score_min=0.70,
+        context_validity_invalid_score_max=0.35,
     )
     defaults.update(overrides)
     return MDAMRStrategyV11(**defaults)
@@ -54,7 +75,8 @@ def _make_strategy(**overrides) -> MDAMRStrategyV11:
 # ---------------------------------------------------------------------------
 
 class TestComputeSetupQualityHelper:
-    SQ_KEYS = {"setup_quality", "sq_penetration", "sq_channel_quality", "sq_coherence", "sq_volatility"}
+    SQ_KEYS = {"setup_quality", "sq_penetration",
+               "sq_channel_quality", "sq_coherence", "sq_volatility"}
 
     def _call(self, **kwargs):
         s = _make_strategy()
@@ -154,7 +176,8 @@ class TestComputeSetupQualityHelper:
 # ---------------------------------------------------------------------------
 
 class TestSetupQualityInEntryTrace:
-    SQ_KEYS = {"setup_quality", "sq_penetration", "sq_channel_quality", "sq_coherence", "sq_volatility"}
+    SQ_KEYS = {"setup_quality", "sq_penetration",
+               "sq_channel_quality", "sq_coherence", "sq_volatility"}
 
     def _warm_and_get_signal(self) -> tuple[dict, str | None]:
         """Feed 200 flat bars then a sharp drop to force a LONG ENTRY signal."""
@@ -162,7 +185,8 @@ class TestSetupQualityInEntryTrace:
         for _ in range(200):
             price = Decimal("1.000")
             s.on_bar(
-                bar={"open": price, "high": price, "low": price, "close": price},
+                bar={"open": price, "high": price,
+                     "low": price, "close": price},
                 position_ctx={"qty_signed": 0.0, "bars_held": 0},
             )
         result = s.on_bar(
@@ -180,7 +204,8 @@ class TestSetupQualityInEntryTrace:
     def test_setup_quality_present_if_entry_signal_emitted(self) -> None:
         result, intent = self._warm_and_get_signal()
         if intent != "ENTRY":
-            pytest.skip("No ENTRY signal produced — bar params may need adjustment")
+            pytest.skip(
+                "No ENTRY signal produced — bar params may need adjustment")
         trace = result["signal"].trace
         for key in self.SQ_KEYS:
             assert key in trace, f"Missing key: {key} in trace"
@@ -200,11 +225,13 @@ class TestSetupQualityInEntryTrace:
         for _ in range(200):
             price = Decimal("1.000")
             s.on_bar(
-                bar={"open": price, "high": price, "low": price, "close": price},
+                bar={"open": price, "high": price,
+                     "low": price, "close": price},
                 position_ctx={"qty_signed": 0.0, "bars_held": 0},
             )
         result = s.on_bar(
-            bar={"open": Decimal("1.0"), "high": Decimal("1.001"), "low": Decimal("0.999"), "close": Decimal("1.0")},
+            bar={"open": Decimal("1.0"), "high": Decimal(
+                "1.001"), "low": Decimal("0.999"), "close": Decimal("1.0")},
             position_ctx={"qty_signed": 0.0, "bars_held": 0},
         )
         assert result.get("status") == "NOOP"

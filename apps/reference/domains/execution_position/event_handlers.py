@@ -213,7 +213,8 @@ class EPEventHandlers:
                 if not sym:
                     continue
                 try:
-                    current_amts[sym] = float(pos.get("positionAmt") or 0.0)
+                    current_amts[sym] = float(
+                        pos.get("net_position") or pos.get("positionAmt") or 0.0)
                 except Exception:
                     current_amts[sym] = 0.0
 

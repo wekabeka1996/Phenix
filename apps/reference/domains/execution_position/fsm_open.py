@@ -28,6 +28,13 @@ from .contracts import (
     PRICE_STEP,
 )
 from .metrics_collector import MetricsCollector
+from .open_dispatch_adapter import (
+    OPEN_DISPATCH_CONTRACT,
+    OPEN_DISPATCH_PATH,
+    OpenDispatchAdapterError,
+    OpenDispatchPayload,
+    build_open_dispatch_trace_ref,
+)
 from apps.reference.config_models import AuroraConfig
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal
@@ -454,6 +461,9 @@ class OpenFlowFSM:
                 # Convert to Decimal
                 qty_dec = Decimal(str(qty)) if qty is not None else None
                 price_dec = Decimal(str(price)) if price is not None else None
+                qty_was_normalized = False
+                price_was_normalized = False
+                price_before_rounding = price_dec
                 price_ref = (
                     Decimal(str(validated_pld.price_ref))
                     if validated_pld.price_ref is not None
@@ -472,6 +482,7 @@ class OpenFlowFSM:
                 # Guard: qty step (round down to step_size)
                 qty_rounded = (qty_dec // step_size) * step_size
                 if qty_rounded != qty_dec:
+                    qty_was_normalized = True
                     self.logger.warning(
                         f"GUARD_ADJUST: Quantity rounded down - original={qty_dec}, rounded={qty_rounded}, step={step_size}, rid={msg.rid}"
                     )
@@ -493,6 +504,7 @@ class OpenFlowFSM:
                         price_dec, tick_size, side
                     )
                     if price_rounded != price_dec:
+                        price_was_normalized = True
                         self.logger.warning(
                             f"GUARD_ADJUST: Price rounded to tick - side={side}, mode={rounding_label}, original={price_dec}, rounded={price_rounded}, tick={tick_size}, rid={msg.rid}"
                         )
@@ -538,43 +550,78 @@ class OpenFlowFSM:
                         self.metrics_collector.record_qos_cooldown_hit()
                     return self._reject(msg, "OPEN_GUARD_FAIL", "cooldown active")
 
-                # All guards passed → generate DEC:OPEN
-                dec_pld = {
-                    "symbol": symbol,
-                    "side": side,
-                    "qty": str(qty_dec),
-                    "order_type": order_type,
-                    "regime": validated_pld.regime,
-                    "regime_confidence": float(validated_pld.regime_confidence) if validated_pld.regime_confidence is not None else None,
-                    "regime_provenance": validated_pld.regime_provenance.model_dump() if validated_pld.regime_provenance is not None else None,
-                }
-                if tif is not None:
-                    dec_pld["tif"] = tif
-                if price_dec is not None:
-                    dec_pld["price"] = str(price_dec)
-                if validated_pld.valid_for_ms is not None:
-                    dec_pld["valid_for_ms"] = int(validated_pld.valid_for_ms)
-
-                # Pass through TP/SL intent data (PHASE A2 fix)
-                if "stop_price" in pld:
-                    dec_pld["stop_price"] = str(pld["stop_price"])
-                if "target_price" in pld:
-                    dec_pld["target_price"] = str(pld["target_price"])
-                if "sl_pct" in pld:
-                    dec_pld["sl_pct"] = str(pld["sl_pct"])
-
-                # Pass through idempotent_key from CMD:OPEN payload (AURORA_IDEMPOTENCY_V1)
-                if "idempotent_key" in msg.pld:
-                    dec_pld["idempotent_key"] = msg.pld["idempotent_key"]
-                    self.logger.info(
-                        f"IDEMPOTENCY: Passing key {msg.pld['idempotent_key']} to DEC:OPEN"
+                try:
+                    dispatch_payload = OpenDispatchPayload.from_cmd_open(
+                        symbol=symbol,
+                        side=side,
+                        normalized_qty=qty_dec,
+                        order_type=order_type,
+                        normalized_price=price_dec,
+                        tif=tif,
+                        valid_for_ms=validated_pld.valid_for_ms,
+                        stop_price=validated_pld.stop_price,
+                        target_price=validated_pld.target_price,
+                        sl_pct=validated_pld.sl_pct,
+                        idempotent_key=validated_pld.idempotent_key,
+                        regime=validated_pld.regime,
+                        regime_confidence=validated_pld.regime_confidence,
+                        regime_provenance=validated_pld.regime_provenance.model_dump()
+                        if validated_pld.regime_provenance is not None
+                        else None,
                     )
+                except OpenDispatchAdapterError as dispatch_err:
+                    self.logger.error(
+                        "OPEN_DISPATCH_REJECT: contract=%s path=%s rid=%s reason=%s",
+                        OPEN_DISPATCH_CONTRACT,
+                        OPEN_DISPATCH_PATH,
+                        msg.rid,
+                        dispatch_err,
+                    )
+                    return self._reject(
+                        msg,
+                        "OPEN_DISPATCH_FAIL",
+                        f"dispatch adapter rejected: {dispatch_err}",
+                        data_ref=[
+                            build_open_dispatch_trace_ref(
+                                status="reject",
+                                qty_normalized=qty_was_normalized,
+                                price_normalized=price_was_normalized,
+                                reason="adapter_validation",
+                            )
+                        ],
+                    )
+
+                dec_pld = dispatch_payload.to_dec_open_payload()
+
+                if dispatch_payload.idempotent_key is not None:
+                    self.logger.info(
+                        f"IDEMPOTENCY: Passing key {dispatch_payload.idempotent_key} to DEC:OPEN"
+                    )
+
+                self.logger.info(
+                    "OPEN_DISPATCH_SUCCESS: contract=%s path=%s rid=%s symbol=%s side=%s order_type=%s qty_normalized=%s price_normalized=%s",
+                    OPEN_DISPATCH_CONTRACT,
+                    OPEN_DISPATCH_PATH,
+                    msg.rid,
+                    dispatch_payload.symbol,
+                    dispatch_payload.side,
+                    dispatch_payload.order_type,
+                    qty_was_normalized,
+                    price_was_normalized,
+                )
 
                 self.logger.info(
                     f"GUARD_PASSED: All guards OK - symbol={symbol}, side={side}, qty={qty_dec}, price={price_dec}, order_type={order_type}, rid={msg.rid}"
                 )
 
                 data_ref = msg.data_ref.copy() if msg.data_ref else []
+                data_ref.append(
+                    build_open_dispatch_trace_ref(
+                        status="success",
+                        qty_normalized=qty_was_normalized,
+                        price_normalized=price_was_normalized,
+                    )
+                )
                 if order_type == "LIMIT" and price_dec is not None:
                     data_ref.append(
                         self._build_limit_rounding_trace_ref(
@@ -636,7 +683,7 @@ class OpenFlowFSM:
 
         return None
 
-    def _reject(self, msg: Message, why: str, reason: str) -> Message:
+    def _reject(self, msg: Message, why: str, reason: str, data_ref: Optional[list[str]] = None) -> Message:
         """Generate ERR message for guard failures."""
         self._metrics["fsm_guard_rejects_total"] += 1
         if reason != "cooldown active":
@@ -649,6 +696,7 @@ class OpenFlowFSM:
             rid=msg.rid,
             why=why[:80],
             pld={"reason": reason},
+            data_ref=list(data_ref or []),
         )
 
     def get_metrics(self) -> Dict[str, int]:

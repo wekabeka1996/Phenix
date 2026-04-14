@@ -342,6 +342,8 @@ def _extract_base_params(md_amr_cfg: dict[str, Any]) -> dict[str, Any]:
         "scaleout_cost_model",
         "atr_window",
         "atr_stats_window",
+        "hold_edge_min",
+        "target_approach_pct",
     ]
     missing = [key for key in required_keys if key not in md_amr_cfg]
     if missing:
@@ -349,6 +351,30 @@ def _extract_base_params(md_amr_cfg: dict[str, Any]) -> dict[str, Any]:
             "CONFIG_INVALID",
             f"md_amr config missing required keys: {missing}",
             details={"missing_keys": missing},
+        )
+    progress_tracking = md_amr_cfg.get("progress_tracking")
+    if not isinstance(progress_tracking, dict):
+        raise CalibrationError(
+            "CONFIG_INVALID",
+            "md_amr.progress_tracking missing or invalid in strategy profile",
+        )
+    setup_quality = md_amr_cfg.get("setup_quality")
+    if not isinstance(setup_quality, dict):
+        raise CalibrationError(
+            "CONFIG_INVALID",
+            "md_amr.setup_quality missing or invalid in strategy profile",
+        )
+    hold_quality = md_amr_cfg.get("hold_quality")
+    if not isinstance(hold_quality, dict):
+        raise CalibrationError(
+            "CONFIG_INVALID",
+            "md_amr.hold_quality missing or invalid in strategy profile",
+        )
+    context_validity = md_amr_cfg.get("context_validity")
+    if not isinstance(context_validity, dict):
+        raise CalibrationError(
+            "CONFIG_INVALID",
+            "md_amr.context_validity missing or invalid in strategy profile",
         )
     return {
         "channel_window_bars": int(md_amr_cfg["channel_window_bars"]),
@@ -368,6 +394,29 @@ def _extract_base_params(md_amr_cfg: dict[str, Any]) -> dict[str, Any]:
         "scaleout_cost_model": str(md_amr_cfg["scaleout_cost_model"]),
         "atr_window": int(md_amr_cfg["atr_window"]),
         "atr_stats_window": int(md_amr_cfg["atr_stats_window"]),
+        "hold_edge_min": float(md_amr_cfg["hold_edge_min"]),
+        "target_approach_pct": float(md_amr_cfg["target_approach_pct"]),
+        "progress_tracking_early_progress_max_pct": float(progress_tracking["early_progress_max_pct"]),
+        "progress_tracking_partial_progress_max_pct": float(progress_tracking["partial_progress_max_pct"]),
+        "progress_tracking_near_completion_max_pct": float(progress_tracking["near_completion_max_pct"]),
+        "setup_quality_penetration_depth_full_scale": float(setup_quality["penetration_depth_full_scale"]),
+        "setup_quality_channel_width_pct_full_scale": float(setup_quality["channel_width_pct_full_scale"]),
+        "setup_quality_volatility_z_full_penalty": float(setup_quality["volatility_z_full_penalty"]),
+        "hold_quality_expected_progress_grace_frac": float(hold_quality["expected_progress_grace_frac"]),
+        "hold_quality_time_decay_weight": float(hold_quality["time_decay_weight"]),
+        "hold_quality_progress_deficit_weight": float(hold_quality["progress_deficit_weight"]),
+        "context_validity_regime_confidence_floor": float(context_validity["regime_confidence_floor"]),
+        "context_validity_regime_confidence_valid": float(context_validity["regime_confidence_valid"]),
+        "context_validity_volatility_z_weakening": float(context_validity["volatility_z_weakening"]),
+        "context_validity_volatility_z_invalid": float(context_validity["volatility_z_invalid"]),
+        "context_validity_channel_width_pct_floor": float(context_validity["channel_width_pct_floor"]),
+        "context_validity_channel_width_pct_valid": float(context_validity["channel_width_pct_valid"]),
+        "context_validity_regime_weight": float(context_validity["regime_weight"]),
+        "context_validity_volatility_weight": float(context_validity["volatility_weight"]),
+        "context_validity_structure_weight": float(context_validity["structure_weight"]),
+        "context_validity_progress_alignment_weight": float(context_validity["progress_alignment_weight"]),
+        "context_validity_valid_score_min": float(context_validity["valid_score_min"]),
+        "context_validity_invalid_score_max": float(context_validity["invalid_score_max"]),
     }
 
 
@@ -596,6 +645,50 @@ def _make_strategy(base_params: dict[str, Any], weights: dict[str, float]) -> An
         scaleout_cost_model=str(base_params["scaleout_cost_model"]),
         atr_window=int(base_params["atr_window"]),
         atr_stats_window=int(base_params["atr_stats_window"]),
+        hold_edge_min=float(base_params["hold_edge_min"]),
+        target_approach_pct=float(base_params["target_approach_pct"]),
+        progress_tracking_early_progress_max_pct=float(
+            base_params["progress_tracking_early_progress_max_pct"]),
+        progress_tracking_partial_progress_max_pct=float(
+            base_params["progress_tracking_partial_progress_max_pct"]),
+        progress_tracking_near_completion_max_pct=float(
+            base_params["progress_tracking_near_completion_max_pct"]),
+        setup_quality_penetration_depth_full_scale=float(
+            base_params["setup_quality_penetration_depth_full_scale"]),
+        setup_quality_channel_width_pct_full_scale=float(
+            base_params["setup_quality_channel_width_pct_full_scale"]),
+        setup_quality_volatility_z_full_penalty=float(
+            base_params["setup_quality_volatility_z_full_penalty"]),
+        hold_quality_expected_progress_grace_frac=float(
+            base_params["hold_quality_expected_progress_grace_frac"]),
+        hold_quality_time_decay_weight=float(
+            base_params["hold_quality_time_decay_weight"]),
+        hold_quality_progress_deficit_weight=float(
+            base_params["hold_quality_progress_deficit_weight"]),
+        context_validity_regime_confidence_floor=float(
+            base_params["context_validity_regime_confidence_floor"]),
+        context_validity_regime_confidence_valid=float(
+            base_params["context_validity_regime_confidence_valid"]),
+        context_validity_volatility_z_weakening=float(
+            base_params["context_validity_volatility_z_weakening"]),
+        context_validity_volatility_z_invalid=float(
+            base_params["context_validity_volatility_z_invalid"]),
+        context_validity_channel_width_pct_floor=float(
+            base_params["context_validity_channel_width_pct_floor"]),
+        context_validity_channel_width_pct_valid=float(
+            base_params["context_validity_channel_width_pct_valid"]),
+        context_validity_regime_weight=float(
+            base_params["context_validity_regime_weight"]),
+        context_validity_volatility_weight=float(
+            base_params["context_validity_volatility_weight"]),
+        context_validity_structure_weight=float(
+            base_params["context_validity_structure_weight"]),
+        context_validity_progress_alignment_weight=float(
+            base_params["context_validity_progress_alignment_weight"]),
+        context_validity_valid_score_min=float(
+            base_params["context_validity_valid_score_min"]),
+        context_validity_invalid_score_max=float(
+            base_params["context_validity_invalid_score_max"]),
     )
 
 

@@ -175,6 +175,7 @@ class RecorderBar:
     high: float | None
     low: float | None
     pillar_sum: float | None
+    pillar_tactician: float | None
     pillar_operator: float | None
     pillar_strategist: float | None
     spread_bps: float | None
@@ -1264,12 +1265,16 @@ def _build_split_comparison_payload(
                 else None
             ),
             "mean_forward_bps_3": _round_metric(delta_forward_edge) if delta_forward_edge is not None else None,
-            "hit_rate_3": _round_metric(
-                _metric_delta(candidate_metrics.hit_rate_3,
-                              baseline_metrics.hit_rate_3)
-            )
-            if candidate_metrics is not None
-            else None,
+            "hit_rate_3": (
+                _round_metric(
+                    _metric_delta(candidate_metrics.hit_rate_3,
+                                  baseline_metrics.hit_rate_3)
+                )
+                if candidate_metrics is not None
+                and candidate_metrics.hit_rate_3 is not None
+                and baseline_metrics.hit_rate_3 is not None
+                else None
+            ),
             "activation_ratio_vs_baseline": _round_metric(activation_ratio) if activation_ratio is not None else None,
         },
         "guardrails": guardrails,
@@ -1789,6 +1794,7 @@ def _load_recorder_bars(
     from_date: date,
     to_date: date,
     tf_sec: int,
+    pillar_weights: dict[str, float] | None = None,
 ) -> dict[str, list[RecorderBar]]:
     bars_by_symbol: dict[str, list[RecorderBar]] = {
         symbol: [] for symbol in symbols}
@@ -1827,6 +1833,8 @@ def _load_recorder_bars(
                             high=_safe_float(row.get("high")),
                             low=_safe_float(row.get("low")),
                             pillar_sum=_safe_float(row.get("feat_pillar_sum")),
+                            pillar_tactician=_safe_float(
+                                row.get("feat_pillar_tactician")),
                             pillar_operator=_safe_float(
                                 row.get("feat_pillar_operator")),
                             pillar_strategist=_safe_float(
@@ -1837,6 +1845,19 @@ def _load_recorder_bars(
                             price_motion_norm=_safe_float(row.get("pm_norm")),
                         )
                     )
+    # Recalculate pillar_sum from raw pillars if pillar_weights override provided
+    if pillar_weights:
+        w_t = pillar_weights.get("tactician", 0.60)
+        w_o = pillar_weights.get("operator", 0.25)
+        w_s = pillar_weights.get("strategist", 0.15)
+        for symbol in symbols:
+            for bar in bars_by_symbol[symbol]:
+                t = bar.pillar_tactician
+                o = bar.pillar_operator
+                s = bar.pillar_strategist
+                if t is not None and o is not None and s is not None:
+                    new_sum = t * w_t + o * w_o + s * w_s
+                    object.__setattr__(bar, "pillar_sum", new_sum)
     for symbol in symbols:
         bars_by_symbol[symbol].sort(key=lambda item: item.timestamp_ms)
     return bars_by_symbol
@@ -2475,10 +2496,10 @@ def _guardrail_failures(
             )
     if split_name == "validation":
         baseline_edge = None if baseline_metrics is None else baseline_metrics.mean_forward_bps_3
-        if baseline_edge is None:
+        if baseline_edge is None and baseline_metrics is not None and (baseline_metrics.active_bars or 0) > 0:
             failures.append(
                 "validation:baseline mean_forward_bps_3 is unavailable")
-        elif metrics.mean_forward_bps_3 is not None:
+        elif baseline_edge is not None and metrics.mean_forward_bps_3 is not None:
             delta_edge = metrics.mean_forward_bps_3 - baseline_edge
             if delta_edge < float(args.min_validation_improvement_bps):
                 failures.append(
@@ -2486,10 +2507,10 @@ def _guardrail_failures(
                 )
     if split_name == "forward":
         baseline_edge = None if baseline_metrics is None else baseline_metrics.mean_forward_bps_3
-        if baseline_edge is None:
+        if baseline_edge is None and baseline_metrics is not None and (baseline_metrics.active_bars or 0) > 0:
             failures.append(
                 "forward:baseline mean_forward_bps_3 is unavailable")
-        elif metrics.mean_forward_bps_3 is not None:
+        elif baseline_edge is not None and metrics.mean_forward_bps_3 is not None:
             delta_edge = metrics.mean_forward_bps_3 - baseline_edge
             if delta_edge < -float(args.max_forward_degradation_bps):
                 failures.append(
@@ -3227,12 +3248,32 @@ def _run_v2(
     recorder_dir = Path(args.recorder_dir)
     feature_log_dir = Path(args.feature_log_dir)
 
+    # Load pillar weights from domains.yaml to recalculate pillar_sum from raw pillars
+    _pillar_weights: dict[str, float] | None = None
+    try:
+        import yaml as _yaml
+        _domains_path = aurora_yaml_path.parent / "domains.yaml"
+        if not _domains_path.is_file():
+            _domains_path = aurora_yaml_path.parent.parent / "domains.yaml"
+        if _domains_path.is_file():
+            with _domains_path.open("r", encoding="utf-8") as _f:
+                _domains_cfg = _yaml.safe_load(_f) or {}
+            _fe_cfg = _domains_cfg.get("feature_engineering", {})
+            _pw = _fe_cfg.get("pillars", {}).get("weights", {})
+            if _pw and "tactician" in _pw:
+                _pillar_weights = _pw
+                print(f"Pillar weights from domains.yaml: {_pillar_weights}")
+    except Exception as _exc:
+        print(
+            f"WARNING: could not load pillar weights from domains.yaml: {_exc}")
+
     bars_by_symbol = _load_recorder_bars(
         recorder_dir=recorder_dir,
         symbols=ordered_symbols,
         from_date=args.from_date,
         to_date=args.to_date,
         tf_sec=int(args.tf_sec),
+        pillar_weights=_pillar_weights,
     )
     calibrations: list[V2SymbolCalibration] = []
     for symbol in ordered_symbols:

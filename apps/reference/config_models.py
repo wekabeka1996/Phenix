@@ -4983,6 +4983,20 @@ class MDAMRWeightsConfig(BaseModel):
     m30: float = Field(ge=0.0)
     m15: float = Field(ge=0.0)
 
+    @model_validator(mode='after')
+    def _validate_positive_weight_budget(self) -> 'MDAMRWeightsConfig':
+        total_weight = (
+            float(self.d1)
+            + float(self.h1)
+            + float(self.m30)
+            + float(self.m15)
+        )
+        if total_weight <= 0.0:
+            raise ValueError(
+                "MDAMR weights must sum to > 0.0; runtime equal-weight fallback is forbidden"
+            )
+        return self
+
 
 class MDAMRLLMGateConfig(BaseModel):
     """LLM macro shock binary block gate."""
@@ -5077,12 +5091,76 @@ class MDAMROptunaConfig(BaseModel):
     min_oos_calmar_ratio: float = Field(default=0.3, ge=0.0)
 
 
+class MDAMRProgressTrackingConfig(BaseModel):
+    """Package C.1 progress-state thresholds."""
+    model_config = ConfigDict(extra='forbid')
+
+    early_progress_max_pct: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Upper bound for EARLY_PROGRESS classification.",
+    )
+    partial_progress_max_pct: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Upper bound for PARTIAL_PROGRESS classification.",
+    )
+    near_completion_max_pct: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Upper bound for NEAR_COMPLETION classification. Values at or above "
+            "this threshold are COMPLETE."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def _validate_progress_threshold_order(self) -> 'MDAMRProgressTrackingConfig':
+        if float(self.early_progress_max_pct) >= float(self.partial_progress_max_pct):
+            raise ValueError(
+                "MDAMR progress_tracking requires early_progress_max_pct < partial_progress_max_pct"
+            )
+        if float(self.partial_progress_max_pct) >= float(self.near_completion_max_pct):
+            raise ValueError(
+                "MDAMR progress_tracking requires partial_progress_max_pct < near_completion_max_pct"
+            )
+        return self
+
+
+class MDAMRSetupQualityConfig(BaseModel):
+    """Package C.2 setup-quality thresholds."""
+    model_config = ConfigDict(extra='forbid')
+
+    penetration_depth_full_scale: float = Field(
+        gt=0.0,
+        le=10.0,
+        description=(
+            "Penetration depth at which the penetration setup-quality sub-score "
+            "saturates at 1.0."
+        ),
+    )
+    channel_width_pct_full_scale: float = Field(
+        gt=0.0,
+        le=100.0,
+        description=(
+            "Channel width percentage at which the channel-quality sub-score "
+            "saturates at 1.0."
+        ),
+    )
+    volatility_z_full_penalty: float = Field(
+        gt=0.0,
+        le=100.0,
+        description=(
+            "ATR z-score at which the setup-quality volatility sub-score reaches 0.0."
+        ),
+    )
+
+
 class MDAMRHoldQualityConfig(BaseModel):
     """Package C.3 hold-quality / soft-decay overlay configuration."""
     model_config = ConfigDict(extra='forbid')
 
     expected_progress_grace_frac: float = Field(
-        default=0.25,
         ge=0.0,
         lt=1.0,
         description=(
@@ -5092,7 +5170,6 @@ class MDAMRHoldQualityConfig(BaseModel):
         ),
     )
     time_decay_weight: float = Field(
-        default=0.35,
         ge=0.0,
         le=1.0,
         description=(
@@ -5100,7 +5177,6 @@ class MDAMRHoldQualityConfig(BaseModel):
         ),
     )
     progress_deficit_weight: float = Field(
-        default=0.45,
         ge=0.0,
         le=1.0,
         description=(
@@ -5115,6 +5191,125 @@ class MDAMRHoldQualityConfig(BaseModel):
         if penalty_budget > 1.0:
             raise ValueError(
                 "MDAMR hold_quality penalty weights must sum to <= 1.0"
+            )
+        return self
+
+
+class MDAMRContextValidityConfig(BaseModel):
+    """Package C.4 lightweight context-validity overlay configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    regime_confidence_floor: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence at or below this level contributes zero regime-validity "
+            "score even when the current regime remains allowlisted."
+        ),
+    )
+    regime_confidence_valid: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence at or above this level contributes full regime-validity "
+            "score when the current regime remains allowlisted."
+        ),
+    )
+    volatility_z_weakening: float = Field(
+        ge=0.0,
+        le=100.0,
+        description=(
+            "ATR z-score where elevated local volatility starts weakening "
+            "context validity."
+        ),
+    )
+    volatility_z_invalid: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="ATR z-score where volatility-validity reaches zero.",
+    )
+    channel_width_pct_floor: float = Field(
+        ge=0.0,
+        le=100.0,
+        description=(
+            "Channel width percentage at or below which local channel context "
+            "is treated as structurally invalid for mean reversion."
+        ),
+    )
+    channel_width_pct_valid: float = Field(
+        ge=0.0,
+        le=100.0,
+        description=(
+            "Channel width percentage at or above which channel sanity "
+            "contributes fully to context validity."
+        ),
+    )
+    regime_weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Weight of the regime-validity component.",
+    )
+    volatility_weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Weight of the local volatility-validity component.",
+    )
+    structure_weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Weight of the local structure-validity component.",
+    )
+    progress_alignment_weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Weight of the thesis-progress alignment component derived from "
+            "existing C.3 overlays."
+        ),
+    )
+    valid_score_min: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum context_validity score required to classify the context as VALID."
+        ),
+    )
+    invalid_score_max: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Maximum context_validity score still classified as INVALID. Scores "
+            "between invalid_score_max and valid_score_min are WEAKENING."
+        ),
+    )
+
+    @model_validator(mode='after')
+    def _validate_context_validity_contract(self) -> 'MDAMRContextValidityConfig':
+        if float(self.regime_confidence_valid) <= float(self.regime_confidence_floor):
+            raise ValueError(
+                "MDAMR context_validity requires regime_confidence_valid > regime_confidence_floor"
+            )
+        if float(self.volatility_z_invalid) <= float(self.volatility_z_weakening):
+            raise ValueError(
+                "MDAMR context_validity requires volatility_z_invalid > volatility_z_weakening"
+            )
+        if float(self.channel_width_pct_valid) <= float(self.channel_width_pct_floor):
+            raise ValueError(
+                "MDAMR context_validity requires channel_width_pct_valid > channel_width_pct_floor"
+            )
+        total_weight = (
+            float(self.regime_weight)
+            + float(self.volatility_weight)
+            + float(self.structure_weight)
+            + float(self.progress_alignment_weight)
+        )
+        if abs(total_weight - 1.0) > 1e-9:
+            raise ValueError(
+                "MDAMR context_validity weights must sum exactly to 1.0"
+            )
+        if float(self.valid_score_min) <= float(self.invalid_score_max):
+            raise ValueError(
+                "MDAMR context_validity requires valid_score_min > invalid_score_max"
             )
         return self
 
@@ -5140,15 +5335,15 @@ class MDAMRStrategyConfig(BaseModel):
     description: str = Field(description='Human-readable profile description')
     timeframe_sec: int = Field(ge=60, le=86400)
     defer_ttl_sec: int = Field(default=60, ge=1, le=300)
-    channel_window_bars: int = Field(default=12, ge=3, le=256)
+    channel_window_bars: int = Field(ge=3, le=256)
     channel_robust_pct: float = Field(default=0.0, ge=0.0, le=0.25)
-    atr_window: int = Field(default=14, ge=2, le=256)
-    atr_stats_window: int = Field(default=64, ge=8, le=512)
+    atr_window: int = Field(ge=2, le=256)
+    atr_stats_window: int = Field(ge=8, le=512)
     hysteresis_mult: float = Field(ge=1.0, le=3.0)
     threshold_z: float = Field(ge=0.1, le=10.0)
     volatility_dampening_factor: float = Field(ge=0.0, le=1.0)
     thr_base: float = Field(ge=0.05, le=0.99)
-    thr_floor: float = Field(default=0.10, ge=0.01, le=0.50)
+    thr_floor: float = Field(ge=0.01, le=0.50)
     alpha: float = Field(ge=0.0, le=1.0)
     conf_min: float = Field(
         ge=0.0,
@@ -5161,7 +5356,6 @@ class MDAMRStrategyConfig(BaseModel):
         ),
     )
     hold_edge_min: float = Field(
-        default=-0.5,
         ge=-1.0,
         lt=0.0,
         description=(
@@ -5172,7 +5366,6 @@ class MDAMRStrategyConfig(BaseModel):
         ),
     )
     target_approach_pct: float = Field(
-        default=0.002,
         ge=0.0,
         lt=0.05,
         description=(
@@ -5183,13 +5376,13 @@ class MDAMRStrategyConfig(BaseModel):
         ),
     )
     max_hold_bars: int = Field(ge=1, le=10000)
-    atr_zscore_clamp: float = Field(default=10.0, ge=1.0, le=100.0)
-    atr_std_floor_pct: float = Field(default=0.05, ge=0.0, le=1.0)
-    fee_bps: float = Field(default=4.0, ge=0.0)
-    slippage_buffer_bps: float = Field(default=2.0, ge=0.0)
-    scaleout_fraction: float = Field(default=0.5, ge=0.01, le=1.0)
+    atr_zscore_clamp: float = Field(ge=1.0, le=100.0)
+    atr_std_floor_pct: float = Field(ge=0.0, le=1.0)
+    fee_bps: float = Field(ge=0.0)
+    slippage_buffer_bps: float = Field(ge=0.0)
+    scaleout_fraction: float = Field(ge=0.01, le=1.0)
     scaleout_cost_model: Literal["one_way",
-                                 "round_trip"] = Field(default="round_trip")
+                                 "round_trip"] = Field()
     weights: MDAMRWeightsConfig = Field()
     execution: StrategyExecutionConfig = Field(
         description="Execution policy (SSOT)")
@@ -5199,14 +5392,34 @@ class MDAMRStrategyConfig(BaseModel):
         default_factory=MDAMRReconciliationConfig)
     concentration_guard: MDAMRConcentrationGuardConfig = Field(
         default_factory=MDAMRConcentrationGuardConfig)
+    progress_tracking: MDAMRProgressTrackingConfig = Field(
+        description="Package C.1 progress-state thresholds")
+    setup_quality: MDAMRSetupQualityConfig = Field(
+        description="Package C.2 setup-quality thresholds")
     hold_quality: MDAMRHoldQualityConfig = Field(
         description="Package C.3 hold-quality / soft-decay overlay")
+    context_validity: MDAMRContextValidityConfig = Field(
+        description="Package C.4 lightweight context-validity overlay")
     optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
     assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
     objective: Optional[StrategyObjectiveConfig] = Field(
         default=None,
         description="Strategy objective configuration"
     )
+
+    @model_validator(mode='after')
+    def _validate_md_amr_runtime_weight_contract(self) -> 'MDAMRStrategyConfig':
+        dampened_total = (
+            float(self.weights.m30)
+            + float(self.weights.m15)
+            + float(self.volatility_dampening_factor)
+            * (float(self.weights.d1) + float(self.weights.h1))
+        )
+        if dampened_total <= 0.0:
+            raise ValueError(
+                "MDAMR weights and volatility_dampening_factor produce zero post-dampening budget; runtime fallback is forbidden"
+            )
+        return self
 
 
 class LLMMicrostructureStrategyConfig(BaseModel):

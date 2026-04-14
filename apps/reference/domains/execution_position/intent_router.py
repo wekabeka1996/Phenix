@@ -103,6 +103,8 @@ class IntentRouter:
 
         try:
             pld = msg.pld or {}
+            # Router still reads early context for logging and reject fallback,
+            # but non-reduce_only open normalization is owned by the typed intake.
             symbol = pld.get("instrument") or pld.get("symbol")
             if not symbol:
                 LOG.error(
@@ -123,6 +125,8 @@ class IntentRouter:
             )
 
             order_info = pld.get("order", {})
+            # Route split remains router-owned. The typed intake governs only
+            # the bounded non-reduce_only open seam.
             reduce_only = (
                 pld.get("reduce_only")
                 or order_info.get("reduce_only")

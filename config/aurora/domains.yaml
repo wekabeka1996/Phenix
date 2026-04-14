@@ -357,27 +357,27 @@ feature_engineering:
     tactician:
       enabled: true
       roc_period: 14            # ROC lookback (M15 bars)
-      sensitivity: 3.0          # tanh sensitivity
+      sensitivity: 8.0          # was 3.0: amplify small M15 ROC values
       min_bars: 20              # Min M15 bars before ready
 
     operator:
       enabled: true
       linreg_period: 20         # LinReg slope window (H4 bars)
       adx_period: 14            # ADX period (H4 bars)
-      sensitivity: 3.0          # tanh sensitivity
+      sensitivity: 6.0          # was 3.0: amplify H4 slope+ADX signal
       min_bars: 50              # Min H4 bars before ready
 
     strategist:
       enabled: true
       # Real historical values now supported via Pillar Backfill
       sma_period: 200           # SMA period for territory (D1 bars)
-      sensitivity: 1.5          # P0-BUY-RECOVERY: was 3.0 → causes deep tanh saturation (strat<-0.5 on 100% bars in audit window); 1.5 preserves bearish signal while preventing saturation
+      sensitivity: 0.8          # was 1.5: prevent D1 tanh saturation that causes permanent bearish dominance
       min_bars: 200             # Min D1 bars before ready
 
     weights:
-      tactician: 0.60           # M15 weight in pillar sum
-      operator: 0.25            # H4 weight (balanced signal)
-      strategist: 0.15          # D1 weight in pillar sum
+      tactician: 0.65           # was 0.60: M15 primary tactical signal
+      operator: 0.30            # was 0.25: H4 balanced signal
+      strategist: 0.05          # was 0.15: D1 reduced to prevent bearish override
 
     backfill:
       enabled: true             # Enable backfill at live startup

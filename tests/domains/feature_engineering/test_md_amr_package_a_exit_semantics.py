@@ -44,6 +44,29 @@ def _make_strategy(**overrides) -> MDAMRStrategyV11:
         scaleout_cost_model="round_trip",
         atr_window=14,
         atr_stats_window=64,
+        hold_edge_min=-0.50,
+        target_approach_pct=0.0,
+        progress_tracking_early_progress_max_pct=0.25,
+        progress_tracking_partial_progress_max_pct=0.70,
+        progress_tracking_near_completion_max_pct=1.00,
+        setup_quality_penetration_depth_full_scale=0.50,
+        setup_quality_channel_width_pct_full_scale=1.00,
+        setup_quality_volatility_z_full_penalty=3.00,
+        hold_quality_expected_progress_grace_frac=0.25,
+        hold_quality_time_decay_weight=0.35,
+        hold_quality_progress_deficit_weight=0.45,
+        context_validity_regime_confidence_floor=0.35,
+        context_validity_regime_confidence_valid=0.60,
+        context_validity_volatility_z_weakening=1.50,
+        context_validity_volatility_z_invalid=3.00,
+        context_validity_channel_width_pct_floor=0.10,
+        context_validity_channel_width_pct_valid=1.00,
+        context_validity_regime_weight=0.35,
+        context_validity_volatility_weight=0.20,
+        context_validity_structure_weight=0.20,
+        context_validity_progress_alignment_weight=0.25,
+        context_validity_valid_score_min=0.70,
+        context_validity_invalid_score_max=0.35,
     )
     defaults.update(overrides)
     return MDAMRStrategyV11(**defaults)
@@ -65,7 +88,8 @@ def _warm_up_strategy(strategy: MDAMRStrategyV11, base_price: float = 100.0, n_e
     # Need 96 bars for dir_score, atr_stats_window (64) for atr_stats
     n_bars = 96 + strategy.atr_stats_window + n_extra
     for _ in range(n_bars):
-        strategy.on_bar(bar=_bar(base_price), position_ctx={"qty_signed": 0.0, "bars_held": 0})
+        strategy.on_bar(bar=_bar(base_price), position_ctx={
+                        "qty_signed": 0.0, "bars_held": 0})
 
 
 # ---------------------------------------------------------------------------
@@ -337,3 +361,22 @@ class TestZombieTimeoutSafetyPreserved:
         )
         assert action == "PARTIAL_CLOSE"
         assert reason == "FEE_AWARE_SCALEOUT"
+
+
+class TestFailClosedRuntimeContracts:
+    def test_constructor_rejects_missing_weight_key(self) -> None:
+        with pytest.raises(ValueError, match="weights must define exactly d1,h1,m30,m15"):
+            _make_strategy(weights={"d1": 0.35, "h1": 0.30, "m30": 0.20})
+
+    def test_resolve_exit_action_rejects_missing_required_score_ctx(self) -> None:
+        strategy = _make_strategy()
+        with pytest.raises(ValueError, match="score_ctx"):
+            strategy.resolve_exit_action(
+                position_ctx={"bars_held": 3, "qty_signed": 1.0},
+                score_ctx={
+                    "hold_edge": 0.3,
+                    "hold_edge_min": -0.5,
+                    "reached_channel_target": False,
+                },
+                cost_ctx={"fee_bps": 4.0, "slippage_buffer_bps": 2.0},
+            )

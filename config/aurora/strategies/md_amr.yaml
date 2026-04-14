@@ -48,6 +48,18 @@ md_amr:
     m30: 0.20
     m15: 0.15
 
+  # Package C.1: explicit progress-state thresholds.
+  progress_tracking:
+    early_progress_max_pct: 0.25
+    partial_progress_max_pct: 0.70
+    near_completion_max_pct: 1.00
+
+  # Package C.2: explicit setup-quality scales.
+  setup_quality:
+    penetration_depth_full_scale: 0.50
+    channel_width_pct_full_scale: 1.00
+    volatility_z_full_penalty: 3.00
+
   objective:
     enabled: true
     regimes:
@@ -242,6 +254,23 @@ md_amr:
     expected_progress_grace_frac: 0.25
     time_decay_weight: 0.35
     progress_deficit_weight: 0.45
+
+  # Package C.4: Lightweight Context Validity
+  # context_validity is advisory only in this package. It stays trace-visible,
+  # deterministic, and strategy-local; it does not own exits or execution truth.
+  context_validity:
+    regime_confidence_floor: 0.35
+    regime_confidence_valid: 0.60
+    volatility_z_weakening: 1.50
+    volatility_z_invalid: 3.00
+    channel_width_pct_floor: 0.10
+    channel_width_pct_valid: 1.00
+    regime_weight: 0.35
+    volatility_weight: 0.20
+    structure_weight: 0.20
+    progress_alignment_weight: 0.25
+    valid_score_min: 0.70
+    invalid_score_max: 0.35
 
   assets:
     BTCUSDT:

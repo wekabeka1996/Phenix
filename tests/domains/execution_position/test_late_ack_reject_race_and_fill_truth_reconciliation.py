@@ -92,6 +92,12 @@ def test_raced_boundary_reject_chain_converges_to_closed_lifecycle_without_orpha
         DEFAULT_CRITICAL_EVENTS)
     PositionTracking(bus, config)
 
+    # Disable execution truth hardening AFTER PositionTracking (which attaches
+    # it from the terminal identity cache on disk).  Without this, a stale
+    # cache hit can suppress EVT:TRADE_EXECUTED causing a non-deterministic
+    # lifecycle row count.
+    bus._execution_truth_hardening = None
+
     lifecycle = TradeLifecycleLogger(
         log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     lifecycle.on_intent(
@@ -156,14 +162,20 @@ def test_raced_boundary_reject_chain_converges_to_closed_lifecycle_without_orpha
         )
 
     lifecycle_rows = _read_jsonl(lifecycle_path)
-    assert len(lifecycle_rows) == 3
+    # Full race-recovery lifecycle: REJECTED → ORDERED (reconciled) → FILLED → CLOSED
+    # The FILLED row is produced by on_trade_executed calling lifecycle.on_fill().
+    assert len(lifecycle_rows) == 4
     assert lifecycle_rows[0]["status"] == "REJECTED"
     assert lifecycle_rows[1]["event_type"] == "TRADE_LIFECYCLE_ORDERED"
     assert lifecycle_rows[1]["status"] == "ORDERED"
     assert lifecycle_rows[1]["order_id"] == "8617505424"
-    assert lifecycle_rows[2]["status"] == "CLOSED"
-    assert lifecycle_rows[2]["prior_terminal_status"] == "REJECTED"
-    assert lifecycle_rows[2]["reconciliation_source"] == "order_placed"
+    assert lifecycle_rows[2]["event_type"] == "TRADE_LIFECYCLE_FILLED"
+    assert lifecycle_rows[2]["status"] == "FILLED"
+    assert lifecycle_rows[2]["fill_price"] == 2176.61
+    assert lifecycle_rows[2]["fill_qty"] == 0.01
+    assert lifecycle_rows[3]["status"] == "CLOSED"
+    assert lifecycle_rows[3]["prior_terminal_status"] == "REJECTED"
+    assert lifecycle_rows[3]["reconciliation_source"] == "order_placed"
     assert not any(row["status"] == "ORPHANED_TTL" for row in lifecycle_rows)
 
     shadow_rows = _read_jsonl(journal_path)

@@ -42,7 +42,29 @@ def _make_strategy(**overrides) -> MDAMRStrategyV11:
         scaleout_cost_model="round_trip",
         atr_window=14,
         atr_stats_window=64,
+        hold_edge_min=-0.50,
         target_approach_pct=0.002,
+        progress_tracking_early_progress_max_pct=0.25,
+        progress_tracking_partial_progress_max_pct=0.70,
+        progress_tracking_near_completion_max_pct=1.00,
+        setup_quality_penetration_depth_full_scale=0.50,
+        setup_quality_channel_width_pct_full_scale=1.00,
+        setup_quality_volatility_z_full_penalty=3.00,
+        hold_quality_expected_progress_grace_frac=0.25,
+        hold_quality_time_decay_weight=0.35,
+        hold_quality_progress_deficit_weight=0.45,
+        context_validity_regime_confidence_floor=0.35,
+        context_validity_regime_confidence_valid=0.60,
+        context_validity_volatility_z_weakening=1.50,
+        context_validity_volatility_z_invalid=3.00,
+        context_validity_channel_width_pct_floor=0.10,
+        context_validity_channel_width_pct_valid=1.00,
+        context_validity_regime_weight=0.35,
+        context_validity_volatility_weight=0.20,
+        context_validity_structure_weight=0.20,
+        context_validity_progress_alignment_weight=0.25,
+        context_validity_valid_score_min=0.70,
+        context_validity_invalid_score_max=0.35,
     )
     defaults.update(overrides)
     return MDAMRStrategyV11(**defaults)
@@ -61,7 +83,8 @@ def _bar(close: float, high: float | None = None, low: float | None = None) -> D
 def _warm_up_strategy(strategy: MDAMRStrategyV11, base_price: float = 100.0) -> None:
     n_bars = 96 + strategy.atr_stats_window + 10
     for _ in range(n_bars):
-        strategy.on_bar(bar=_bar(base_price), position_ctx={"qty_signed": 0.0, "bars_held": 0})
+        strategy.on_bar(bar=_bar(base_price), position_ctx={
+                        "qty_signed": 0.0, "bars_held": 0})
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +102,8 @@ class TestTargetApproachPct:
         LONG position: price reaches avg_close * (1 - 0.002) — i.e., 0.2% before target.
         resolve_exit_action should return FEE_AWARE_SCALEOUT.
         """
-        strategy = _make_strategy(target_approach_pct=0.002, fee_bps=0.0, slippage_buffer_bps=0.0)
+        strategy = _make_strategy(
+            target_approach_pct=0.002, fee_bps=0.0, slippage_buffer_bps=0.0)
         # Directly test resolve_exit_action with tolerance-zone semantics
         avg_close = 100.0
         tolerance = strategy.target_approach_pct

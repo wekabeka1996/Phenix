@@ -157,14 +157,16 @@ Result:
 40 passed, 1 skipped in 4.47s
 ```
 
-Representative runtime-like seam proof artifacts:
+Historical legacy snapshot artifacts retained for traceability only:
 - [`summary.json`](C:/Users/user/Music/Phenix/reports/runtime_phase6_package1_open_intake_proof_20260412/summary.json)
 - [`success_cmd_open.json`](C:/Users/user/Music/Phenix/reports/runtime_phase6_package1_open_intake_proof_20260412/success_cmd_open.json)
 - [`reject_event.json`](C:/Users/user/Music/Phenix/reports/runtime_phase6_package1_open_intake_proof_20260412/reject_event.json)
 
-What the proof shows:
-- one typed success path produced a `CMD:OPEN` envelope with `execution_intake_contract`
-- one typed failure path emitted explicit reject diagnostics with the same contract marker
+Evidence status after proof hardening:
+- these files have no reproducible generation path in the repository and are not runtime-grade proof
+- they are preserved as historical snapshots only
+- reproducible harness-grade evidence now lives in `reports/runtime_phase6_package1_open_intake_harness_proof_20260414/`
+- final evidence taxonomy and validation moved to `reports/PHASE6_PACKAGE1_PROOF_HARDENING_REPORT_20260414.md`
 
 ## 12. Residual Risks
 
