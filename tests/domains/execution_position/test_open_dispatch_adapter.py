@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ from apps.reference.domains.execution_position.open_dispatch_adapter import (
     OpenDispatchAdapterError,
     OpenDispatchPayload,
 )
+from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.protocol import Message
 from vfoundation.core.schema_registry import get_global_registry, init_global_registry
@@ -122,6 +124,39 @@ def _make_router() -> tuple[IntentRouter, MagicMock]:
     return IntentRouter(fsm), fsm
 
 
+def _external_open_request_message(
+    rid: str = "RID-EXT-OPEN-DISPATCH",
+) -> Message:
+    return Message(
+        op="CMD",
+        verb="EXTERNAL_OPEN_REQUEST_V1",
+        src="shadow_telemetry",
+        dst="execution_position",
+        rid=rid,
+        pld={
+            "rid": rid,
+            "intent_id": f"intent-{rid}",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "qty": "0.0104",
+            "source": "external_llm",
+            "order_type": "LIMIT",
+            "price": "10000.05",
+            "tif": "GTC",
+            "valid_for_ms": 60_000,
+            "stop_price": "9800",
+            "target_price": "10200",
+            "idempotent_key": f"KEY-{rid}",
+            "snapshot_ref": {
+                "snapshot_id": f"snap-{rid}",
+                "inputs_digest": "digest-12345678",
+            },
+            "why_short": "pkg2 seam proof",
+        },
+        why="external_open_dispatch_test",
+    )
+
+
 def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
     payload = OpenDispatchPayload.from_cmd_open(
         symbol="BTCUSDT",
@@ -228,6 +263,99 @@ def test_downstream_dec_open_schema_validation_still_runs_after_typed_dispatch()
     validator = registry.get_validator("DEC", "OPEN")
     assert validator is not None
     validator.validate(result.pld)
+
+
+def test_external_open_request_routes_through_runtime_typed_open_dispatch_adapter() -> None:
+    init_global_registry(project_root=".")
+    fsm, bus = _build_execpos_with_real_bus()
+    observed_decisions: list[Message] = []
+    bus.listen("DEC:OPEN", lambda msg: observed_decisions.append(msg))
+    open_flow = fsm._get_or_create_open_flow("BTCUSDT")
+
+    with patch.object(fsm, "handle", wraps=fsm.handle) as wrapped_fsm_handle, patch.object(
+        open_flow,
+        "handle",
+        wraps=open_flow.handle,
+    ) as wrapped_open_flow_handle, patch(
+        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        wraps=OpenDispatchPayload.from_cmd_open,
+    ) as wrapped_dispatch, patch(
+        "apps.reference.domains.execution_position.fsm.wal.append",
+        return_value="wal-ok",
+    ):
+        fsm._intent_router.on_external_open_request(
+            _external_open_request_message(),
+        )
+
+    wrapped_fsm_handle.assert_called_once()
+    wrapped_open_flow_handle.assert_called_once()
+    assert wrapped_dispatch.call_count == 1
+    assert observed_decisions
+    assert observed_decisions[0].verb == "OPEN"
+    assert any(
+        isinstance(ref, str)
+        and ref.startswith("obs://execution_position/open_dispatch?")
+        and f"contract={OPEN_DISPATCH_CONTRACT}" in ref
+        for ref in (observed_decisions[0].data_ref or [])
+    )
+
+
+def test_handle_async_routes_through_same_typed_open_dispatch_adapter(fsm_config) -> None:
+    fsm = OpenFlowFSM(cooldown_sec=0.0, guard_enabled=True, config=fsm_config)
+
+    with patch(
+        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        wraps=OpenDispatchPayload.from_cmd_open,
+    ) as wrapped_dispatch:
+        result = asyncio.run(
+            fsm.handle_async(_cmd_open_message(rid="RID-OPEN-DISPATCH-ASYNC")),
+        )
+
+    assert wrapped_dispatch.call_count == 1
+    assert result is not None
+    assert result.op == "DEC" and result.verb == "OPEN"
+    assert any(
+        isinstance(ref, str)
+        and ref.startswith("obs://execution_position/open_dispatch?")
+        and f"contract={OPEN_DISPATCH_CONTRACT}" in ref
+        for ref in (result.data_ref or [])
+    )
+
+
+def test_real_router_emit_path_auto_enforces_dec_open_schema() -> None:
+    init_global_registry(project_root=".")
+    fsm, bus = _build_execpos_with_real_bus()
+    observed_decisions: list[Message] = []
+    observed_rejects: list[Message] = []
+    bus.listen("DEC:OPEN", lambda msg: observed_decisions.append(msg))
+    bus.listen(
+        "EVT:EXTERNAL_OPEN_REQUEST_REJECTED_V1",
+        lambda msg: observed_rejects.append(msg),
+    )
+    original_to_dec_open_payload = OpenDispatchPayload.to_dec_open_payload
+
+    def _invalid_payload(self: OpenDispatchPayload) -> dict:
+        payload = original_to_dec_open_payload(self)
+        payload["rid"] = "RID-DRIFT"
+        return payload
+
+    with patch(
+        "apps.reference.domains.execution_position.fsm.wal.append",
+        return_value="wal-ok",
+    ), patch.object(
+        OpenDispatchPayload,
+        "to_dec_open_payload",
+        autospec=True,
+        side_effect=_invalid_payload,
+    ):
+        fsm._intent_router.on_external_open_request(
+            _external_open_request_message(rid="RID-EXT-OPEN-DISPATCH-SCHEMA"),
+        )
+
+    assert observed_decisions == []
+    assert observed_rejects, "Expected external rejection after DEC:OPEN schema validation failure"
+    assert observed_rejects[0].pld["reason_code"] == "NRR-EXECUTION-EXCEPTION"
+    assert "rid" in str(observed_rejects[0].pld["reason_text"])
 
 
 def test_package1_intake_markers_remain_unaffected_before_dispatch_adapter_runs(fsm_harness) -> None:

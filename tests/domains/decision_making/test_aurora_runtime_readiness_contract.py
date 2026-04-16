@@ -840,7 +840,8 @@ def test_aurora_seeded_basis_bars_bypass_cold_start_gate_into_anomaly_deferred()
         },
     )
 
-    deferred = [payload for name, payload in emitted if name == "EVT:INTENT_DEFERRED"]
+    deferred = [payload for name,
+                payload in emitted if name == "EVT:INTENT_DEFERRED"]
     assert not blocked
     assert deferred
     assert deferred[0]["reason_code"] == "NRR-DATA-NOT-READY"
@@ -983,3 +984,290 @@ def test_aurora_objective_missing_exposure_summary_blocks_explicitly() -> None:
     assert len(blocked) == 1
     assert blocked[0]["reason_code"] == "OBJECTIVE_PRECONDITION_NOT_MET"
     assert blocked[0]["details"]["precondition"] == "OBJECTIVE_EXPOSURE_SUMMARY_MISSING"
+
+
+def test_aurora_objective_missing_regime_confidence_blocks_explicitly() -> None:
+    blocked: list[dict] = []
+    emitted: list[tuple[str, dict]] = []
+
+    def emit_fn(name: str, payload: dict) -> None:
+        emitted.append((name, payload))
+
+    config = SimpleNamespace(
+        strategies=SimpleNamespace(
+            aurora=SimpleNamespace(
+                decision=SimpleNamespace(scoring_version="v2"),
+                objective=SimpleNamespace(enabled=True),
+            )
+        ),
+        domains=SimpleNamespace(
+            objective_engine=SimpleNamespace(
+                enabled=True,
+                components={
+                    "cost": SimpleNamespace(
+                        enabled=True,
+                        parameters={
+                            "base_fee_bps": 1.0,
+                            "slippage_from_spread_ratio": 0.5,
+                        },
+                    ),
+                    "behavior": SimpleNamespace(
+                        enabled=True,
+                        parameters={"window_sec": 60.0},
+                    ),
+                },
+            )
+        ),
+        regime_shift_inception=None,
+        instruments=None,
+    )
+
+    scoring_result = SimpleNamespace(
+        side="buy",
+        score=Decimal("0.9"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=["enter:buy"],
+        psi_vector={},
+        deferred=False,
+        defer_reason=None,
+        shield_multiplier=1.0,
+    )
+    scoring_kernel_cls = type(
+        "StubAuroraKernel",
+        (),
+        {"compute": staticmethod(lambda **_kwargs: scoring_result)},
+    )
+
+    with (
+        patch.object(AuroraHandler, "_load_config", lambda self: None),
+        patch(
+            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            return_value=SimpleNamespace(state="NOT_REQUESTED"),
+        ),
+    ):
+        handler = AuroraHandler(
+            config=config,
+            emit_fn=emit_fn,
+            monotonic_fn=lambda: 1_700_000_000.0,
+            wall_time_fn=lambda: 1_700_000_000.0,
+        )
+
+    handler.timeframe_sec = 300
+    handler._basis_required_bars_override = 0
+    handler._is_symbol_enabled = lambda symbol: True
+    handler._check_regime_liveness = lambda symbol, state: None
+    handler._get_instrument_config = lambda symbol: SimpleNamespace(
+        allowed_regimes=["LOW_VOLATILITY"],
+        tick_size=None,
+        volatility_entry_logic=None,
+    )
+    handler._get_signal_weights = lambda symbol, instr_cfg: {}
+    handler._get_feature_neutrals = lambda symbol, instr_cfg: {}
+    handler._get_essential_features = lambda symbol, instr_cfg: []
+    handler._get_side_bias_state = lambda symbol: None
+    handler._get_regime_thresholds = lambda symbol, instr_cfg: {
+        "LOW_VOLATILITY": 1.0,
+        "DEFAULT": 1.0,
+    }
+    handler._apply_vol_adj_gates = lambda *args, **kwargs: False
+    handler._should_suppress_soft_exit = lambda *args, **kwargs: False
+    handler._get_reentry_cooldown_sec = lambda symbol: 0.0
+    handler._emit_strategy_blocked = lambda **kwargs: blocked.append(kwargs)
+    handler.scoring_kernel_cls = scoring_kernel_cls
+    handler.signal_threshold = Decimal("0.1")
+    handler.neutral_threshold = Decimal("0.05")
+    handler.direction_strength_cfg = {}
+    handler.delta_price_cap_pct = Decimal("0.01")
+    handler.normalize_signals_mode = "signed_v2"
+    handler.score_multiplier = 1.0
+    handler._quadratic_shadow_shield_fn = None
+    handler._regime_smoother = None
+    handler.execution_gate = object()
+    handler.exit_manager = SimpleNamespace(
+        check_exit=lambda **_kwargs: (False, None, None)
+    )
+    handler.entry_plan_calculator = SimpleNamespace(
+        compute=lambda **_kwargs: SimpleNamespace(
+            entry_price=Decimal("100.0"),
+            stop_loss_price=Decimal("99.0"),
+            take_profit_price=Decimal("101.0"),
+        )
+    )
+    handler._latest_portfolio = {}
+    handler._latest_exposure_summary = {}
+
+    state = handler._symbol_states["BTCUSDT"]
+    state.regime = "LOW_VOLATILITY"
+    state.regime_ts_ms = 1_700_000_000_000
+    state.regime_confidence = None
+
+    with patch(
+        "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective_gate",
+        side_effect=AssertionError("evaluator must not run"),
+    ):
+        handler._process_decision(
+            "BTCUSDT",
+            {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1_700_000_000_000,
+                "warmup": {"full_ready": True, "ready": {}},
+                "features": {
+                    "price": "100.0",
+                    "atr": 1.0,
+                    "obi": 0.1,
+                },
+            },
+        )
+
+    assert not any(
+        name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
+    assert len(blocked) == 1
+    assert blocked[0]["reason_code"] == "OBJECTIVE_PRECONDITION_NOT_MET"
+    assert blocked[0]["details"]["precondition"] == "OBJECTIVE_REGIME_CONFIDENCE_MISSING"
+    assert blocked[0]["why_chain"] == [
+        "OBJECTIVE_ENGINE",
+        "PRECONDITION_NOT_MET",
+        "OBJECTIVE_REGIME_CONFIDENCE_MISSING",
+    ]
+
+
+def test_aurora_restore_blocked_execution_with_ready_quadratic_htf_denies_nested_rollout() -> None:
+    """Regression: nested quadratic_rollout must use restore-merged permissions.
+
+    When EXECUTION_STATE is COLD (restore blocks open-new-risk) but
+    PILLAR_STATE is RESTORED (quadratic_htf_ready resolves to READY),
+    both top-level and nested rollout must deny can_open_new_risk.
+    """
+    emitted: list[tuple[str, dict]] = []
+
+    def emit_fn(name: str, payload: dict) -> None:
+        emitted.append((name, payload))
+
+    config = SimpleNamespace(strategies=SimpleNamespace(
+        aurora=SimpleNamespace()), instruments=None)
+
+    with patch.object(AuroraHandler, "_load_config", lambda self: None):
+        handler = AuroraHandler(
+            config=config,
+            emit_fn=emit_fn,
+            monotonic_fn=lambda: 1_700_000_000.0,
+            wall_time_fn=lambda: 1_700_000_000.0,
+        )
+
+    handler.timeframe_sec = 300
+    handler._get_instrument_config = lambda symbol: None
+    handler._compute_regime_tpsl = lambda **kwargs: {
+        "stop_price": Decimal("99"),
+        "target_price": Decimal("101"),
+        "tpsl_ctx": {
+            "regime_used": "LOW_VOLATILITY",
+            "mode": "pct_mult",
+            "sl_pct_eff": 0.01,
+            "tp_rr_eff": 2.0,
+            "rr_post": 2.0,
+        },
+    }
+
+    state = handler._symbol_states["BTCUSDT"]
+    state.warmup_full_ready = True
+    state.regime = "LOW_VOLATILITY"
+    state.regime_ts_ms = 1_700_000_000_000
+    state.regime_confidence = 0.42
+
+    # EXECUTION_STATE=COLD → blocks can_open_new_risk via restore merge
+    # PILLAR_STATE=RESTORED → quadratic_htf_ready becomes READY
+    restore_snapshot = make_strategy_restore_snapshot(
+        strategy_id="aurora",
+        symbol="BTCUSDT",
+        updated_at=1_700_000_000_000,
+        scopes={
+            RuntimeAnalyticsRestoreScope.EXECUTION_STATE.value: cold_restore_status(
+                why=["execution_restore_missing"],
+                updated_at=1_700_000_000_000,
+                source="execution_position:startup_restore",
+                evidence_ref="execution:BTCUSDT:1700000000000",
+            ),
+            RuntimeAnalyticsRestoreScope.PILLAR_STATE.value: restored_restore_status(
+                why=["pillar_state_restored"],
+                updated_at=1_700_000_000_000,
+                source="feature_engineering:startup_restore",
+                evidence_ref="pillars:BTCUSDT:1700000000000",
+            ),
+            RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE.value: cold_restore_status(
+                why=["fe_cache_restore_missing"],
+                updated_at=1_700_000_000_000,
+                source="feature_engineering:startup_restore",
+                evidence_ref="fe_cache:BTCUSDT:1700000000000",
+            ),
+            RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE.value: cold_restore_status(
+                why=["regime_restore_missing"],
+                updated_at=1_700_000_000_000,
+                source="regime_detector:startup_restore",
+                evidence_ref="regime:BTCUSDT:1700000000000",
+            ),
+            RuntimeAnalyticsRestoreScope.DECISION_CACHE.value: cold_restore_status(
+                why=["decision_cache_restore_missing"],
+                updated_at=1_700_000_000_000,
+                source="decision_making:startup_restore",
+                evidence_ref="decision_cache:BTCUSDT:1700000000000",
+            ),
+        },
+        source="startup:test",
+        has_open_position=True,
+    )
+    handler.apply_runtime_analytics_restore_snapshot(restore_snapshot)
+
+    result = SimpleNamespace(
+        side="buy",
+        score=Decimal("0.9"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=["enter:buy"],
+        psi_vector={},
+        regime="LOW_VOLATILITY",
+    )
+    identity = build_canonical_bar_identity(
+        symbol="BTCUSDT",
+        timeframe_sec=300,
+        bar_start_ts_ms=1_699_999_700_000,
+        close_boundary_ts_ms=1_700_000_000_000,
+        source_mode=RuntimeBarSourceMode.LIVE,
+    )
+
+    handler._emit_signal(
+        "BTCUSDT",
+        result,
+        {
+            "price": "100.0",
+            "pillar_sum": 0.5,
+            "volatility": {"atr_14": 1.0, "atr_ready": True},
+            "liquidity": {"obi_close": "0.1"},
+        },
+        {
+            "bar_close_ts": identity.bar_end_ts_ms,
+            "source_mode": "live",
+            "bar_identity": identity.to_payload(),
+            "replay_identity": identity.to_replay_identity().to_payload(),
+            "replay_generation": 0,
+        },
+    )
+
+    assert len(emitted) == 1
+    _, payload = emitted[0]
+
+    # Top-level: restore blocks open-new-risk
+    assert payload["runtime_permissions"]["can_open_new_risk"] is False
+    assert payload["runtime_permissions"]["can_manage_existing_risk"] is True
+    assert payload["runtime_permissions"]["mode"] == "PROTECT_ONLY"
+
+    # Nested quadratic rollout must agree with top-level
+    assert payload["quadratic_rollout"]["quadratic_can_open_new_risk"] is False
+
+    # Quadratic HTF is READY (pillar_sum present + PILLAR_STATE restored)
+    assert payload["runtime_readiness"]["scopes"]["quadratic_htf_ready"]["state"] == "READY"
+
+    # Blocking chain must contain execution restore token
+    assert "protect_only" in payload["runtime_readiness"]["blocking_reason_chain"]
+    assert "execution_context_restore_cold" in payload["runtime_readiness"]["blocking_reason_chain"]

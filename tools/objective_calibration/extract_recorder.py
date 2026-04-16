@@ -39,7 +39,11 @@ def load_recorder_rows(
             csv_path = day_dir / f"{symbol}_{int(tf_sec)}.csv"
             if not csv_path.exists():
                 continue
-            frame = pd.read_csv(csv_path)
+            try:
+                frame = pd.read_csv(csv_path)
+            except pd.errors.ParserError:
+                frame = pd.read_csv(
+                    csv_path, engine="python", on_bad_lines="skip")
             if frame.empty:
                 continue
             frame["symbol"] = symbol
@@ -65,7 +69,8 @@ def load_recorder_rows(
         dt = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
         df["timestamp"] = (dt.view("int64") // 1_000_000).astype("float64")
     else:
-        raise ValueError("Recorder data must contain timestamp or datetime column")
+        raise ValueError(
+            "Recorder data must contain timestamp or datetime column")
 
     if "tf_sec" in df.columns:
         df["tf_sec"] = pd.to_numeric(df["tf_sec"], errors="coerce")

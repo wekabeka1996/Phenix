@@ -23,17 +23,8 @@ from apps.reference.contracts.runtime_analytics_restore import (
     RuntimeAnalyticsRestoreScope,
     StrategyAnalyticsRestoreSnapshot,
     cold_restore_status,
-    combine_restore_permissions_live_first,
-    lookup_restore_status,
-    merge_restore_readiness_live_first,
-    restore_execution_blocking_tokens,
-    restore_status_to_readiness_status,
     restored_restore_status,
     upgrade_cold_execution_restore_if_clean_start,
-)
-from apps.reference.bootstrap.startup_warmup import (
-    apply_startup_warmup_permission_overlay,
-    startup_warmup_gate_tokens,
 )
 from apps.reference.contracts.runtime_bar_identity import (
     RuntimeBarSourceMode,
@@ -42,11 +33,7 @@ from apps.reference.contracts.runtime_bar_identity import (
 )
 from apps.reference.contracts.runtime_gap_policy import (
     attach_gap_status_payload,
-    build_basis_bar_status_from_gap,
-    build_trading_status_from_gap,
     extract_gap_status,
-    gap_blocking_tokens,
-    gap_blocks_open_new_risk,
 )
 from apps.reference.contracts.runtime_regime_layers import (
     is_structural_regime_payload,
@@ -54,17 +41,17 @@ from apps.reference.contracts.runtime_regime_layers import (
 )
 from apps.reference.contracts.runtime_readiness import (
     RuntimeReadinessScope,
-    cold_status,
-    make_permissions,
-    make_snapshot,
-    partial_status,
-    ready_status,
 )
 from vfoundation.core.protocol import Message
 from apps.reference.core.time import get_clock
 from apps.reference.domains.decision_making.strategy_bridge import MDAMRStrategyV11, MDAMRSignal
 from apps.reference.config_models import AuroraConfig, MDAMRStrategyConfig
 from apps.reference.domains.decision_making.position_queries import PositionQueries
+from apps.reference.domains.decision_making.runtime_readiness_builder import (
+    RestoreScopeSpec,
+    RuntimeReadinessBuildRequest,
+    build_runtime_readiness,
+)
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.telemetry.metrics import inc_decision_blocked, inc_warmup_block
 from apps.reference.utils import get_domain_mode_from_mapping
@@ -1691,119 +1678,122 @@ class MDAMRHandler:
                                  "objective_engine", None)
             strategy_cfg = getattr(
                 self._cfg, "objective", None) if self._cfg else None
-            try:
-                from apps.reference.domains.objective_engine.adapters import (
-                    build_behavior_input,
-                    build_execution_input,
-                    build_exposure_input,
-                    build_market_input,
-                    build_objective_input,
-                    build_signal_input,
-                    build_structure_input_from_prices,
-                    compute_projected_order_notional,
-                    compute_readiness_completeness,
+            if domain_cfg and strategy_cfg and domain_cfg.enabled and strategy_cfg.enabled:
+                from apps.reference.domains.decision_making.objective_gate_evaluator import (
+                    ObjectiveBehaviorAdapter,
+                    ObjectiveGateRequest,
+                    ObjectiveGateStatus,
+                    ObjectiveSignalAdapter,
+                    ObjectiveSizingAdapter,
+                    ObjectiveStructureAdapter,
+                    evaluate_objective_gate,
                 )
-                from apps.reference.domains.objective_engine.engine import evaluate_objective
 
-                if domain_cfg and strategy_cfg and domain_cfg.enabled and strategy_cfg.enabled:
-                    cost_cfg = domain_cfg.components.get("cost")
-                    behavior_cfg = domain_cfg.components.get("behavior")
-
-                    if cost_cfg is None or not cost_cfg.enabled:
-                        raise ValueError("OBJECTIVE_COMPONENT_MISSING:cost")
-                    if behavior_cfg is None or not behavior_cfg.enabled:
-                        raise ValueError(
-                            "OBJECTIVE_COMPONENT_MISSING:behavior")
-                    if not isinstance(self._latest_portfolio, dict):
-                        raise ValueError("OBJECTIVE_PORTFOLIO_MISSING")
-                    if not isinstance(self._latest_exposure_summary, dict):
-                        raise ValueError("OBJECTIVE_EXPOSURE_SUMMARY_MISSING")
-
+                try:
                     _regime = self._regime.get(symbol)
-                    if not _regime:
-                        raise ValueError("OBJECTIVE_REGIME_MISSING")
                     regime_ts_ms = int(self._regime_ts_ms.get(symbol, 0) or 0)
-                    if regime_ts_ms <= 0:
-                        raise ValueError("OBJECTIVE_REGIME_TS_MISSING")
                     regime_confidence = self._regime_confidence.get(symbol)
                     if regime_confidence is None:
-                        raise ValueError("OBJECTIVE_REGIME_CONFIDENCE_MISSING")
+                        if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                            self._emit_trade_intent_rejected_gate(
+                                symbol=symbol,
+                                side=signal.side,
+                                rid=rid,
+                                ts_ms=now_ms,
+                                reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                                stage="STRATEGY",
+                                why="OBJECTIVE_REGIME_CONFIDENCE_MISSING",
+                                why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
+                                details={
+                                    "error": "OBJECTIVE_REGIME_CONFIDENCE_MISSING"}
+                            )
+                            inc_decision_blocked(
+                                stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
+                            return
                     if tpsl_result is None:
-                        raise ValueError("OBJECTIVE_TPSL_MISSING")
-                    if trace.get("thr_buy") is None or trace.get("thr_sell") is None:
-                        raise ValueError("OBJECTIVE_TRACE_THRESHOLD_MISSING")
+                        if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                            self._emit_trade_intent_rejected_gate(
+                                symbol=symbol,
+                                side=signal.side,
+                                rid=rid,
+                                ts_ms=now_ms,
+                                reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                                stage="STRATEGY",
+                                why="OBJECTIVE_TPSL_MISSING",
+                                why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
+                                details={"error": "OBJECTIVE_TPSL_MISSING"}
+                            )
+                            inc_decision_blocked(
+                                stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
+                            return
 
                     # Inject top-level atr from signal for objective engine
                     # (FE emits atr nested under features["volatility"]["atr_14"])
                     features.setdefault("atr", float(signal.atr))
-                    objective_market = build_market_input(features=features)
-                    signal_input = build_signal_input(
+
+                    readiness_source = (
+                        warmup.get("ready", {}) if isinstance(
+                            warmup.get("ready"), dict) else warmup
+                    )
+
+                    obj_gate_result = evaluate_objective_gate(ObjectiveGateRequest(
                         strategy_id="md_amr",
                         symbol=symbol,
-                        signal_score=float(signal.signal_score),
-                        signal_direction=1 if signal.side.upper() == "BUY" else -1,
-                        regime=_regime,
-                        regime_age_sec=max(0.0, float(
-                            (now_ms - regime_ts_ms) / 1000.0)),
-                        regime_confidence=float(regime_confidence),
-                        readiness_completeness=compute_readiness_completeness(
-                            warmup.get("ready", {}) if isinstance(
-                                warmup.get("ready"), dict) else warmup
-                        ),
-                    )
-                    structure_input = build_structure_input_from_prices(
-                        signal_score=float(signal.signal_score),
-                        active_threshold=float(
-                            trace["thr_buy"] if signal.side.upper() == "BUY" else trace["thr_sell"]),
-                        entry_price=Decimal(str(signal.price_ref)),
-                        stop_price=Decimal(str(tpsl_result["stop_price"])),
-                        target_price=Decimal(str(tpsl_result["target_price"])),
-                        atr=Decimal(str(signal.atr)),
-                    )
-                    projected_notional_usd = compute_projected_order_notional(
-                        symbol=symbol,
-                        side=str(signal.side).upper(),
-                        entry_price=Decimal(str(signal.price_ref)),
-                        position_queries=self._position_queries,
-                        portfolio=self._latest_portfolio,
-                        features_payload=features,
-                    )
-                    exposure_input = build_exposure_input(
                         config=self.config,
+                        domain_cfg=domain_cfg,
+                        strategy_cfg=strategy_cfg,
+                        market_features=features,
+                        signal=ObjectiveSignalAdapter(
+                            signal_score=float(signal.signal_score),
+                            signal_direction=1 if signal.side.upper() == "BUY" else -1,
+                            regime_name=str(_regime) if _regime else "",
+                            regime_ts_ms=regime_ts_ms,
+                            regime_confidence=float(regime_confidence),
+                            readiness_source=readiness_source if isinstance(
+                                readiness_source, dict) else {},
+                            active_threshold=float(
+                                trace["thr_buy"] if signal.side.upper() == "BUY" else trace["thr_sell"]),
+                        ),
+                        structure=ObjectiveStructureAdapter(
+                            mode="price_ctx",
+                            entry_price=Decimal(str(signal.price_ref)),
+                            stop_price=Decimal(str(tpsl_result["stop_price"])),
+                            target_price=Decimal(
+                                str(tpsl_result["target_price"])),
+                            atr=Decimal(str(signal.atr)),
+                        ),
+                        sizing=ObjectiveSizingAdapter(
+                            side=str(signal.side).upper(),
+                            entry_price=Decimal(str(signal.price_ref)),
+                            features_payload=features,
+                        ),
+                        behavior=ObjectiveBehaviorAdapter(
+                            now_ms=now_ms,
+                            cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(
+                                symbol, deque()),
+                            blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(
+                                symbol, deque()),
+                            reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(
+                                symbol, deque()),
+                        ),
                         portfolio=self._latest_portfolio,
                         exposure_summary=self._latest_exposure_summary,
-                        projected_order_notional_usd=projected_notional_usd,
-                    )
-                    behavior_input = build_behavior_input(
-                        now_ms=now_ms,
-                        window_sec=float(
-                            behavior_cfg.parameters["window_sec"]),
-                        cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(
-                            symbol, deque()),
-                        blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(
-                            symbol, deque()),
-                        reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(
-                            symbol, deque()),
-                    )
-                    execution_input = build_execution_input(
-                        expected_fee_bps=float(
-                            cost_cfg.parameters["base_fee_bps"]),
-                        expected_slippage_bps=objective_market.spread_bps *
-                        float(
-                            cost_cfg.parameters["slippage_from_spread_ratio"]),
-                    )
-                    obj_input = build_objective_input(
-                        signal=signal_input,
-                        market=objective_market,
-                        structure=structure_input,
-                        exposure=exposure_input,
-                        behavior=behavior_input,
-                        execution=execution_input,
-                    )
-                    obj_score = evaluate_objective(
-                        obj_input, domain_cfg, strategy_cfg)
+                        position_queries=self._position_queries,
+                    ))
 
-                    if obj_score.is_blocked:
+                    if obj_gate_result.status == ObjectiveGateStatus.PASSED:
+                        obj_score = obj_gate_result.objective_score
+                        signal = replace(
+                            signal,
+                            conf_ratio=float(signal.conf_ratio) *
+                            obj_score.multiplier,
+                            signal_score=obj_score.objective_score,
+                        )
+                        trace["conf_ratio"] = float(signal.conf_ratio)
+                        trace["objective"] = obj_gate_result.trace_payload
+
+                    elif obj_gate_result.status == ObjectiveGateStatus.GATE_BLOCKED:
+                        obj_score = obj_gate_result.objective_score
                         self._emit_trade_intent_rejected_gate(
                             symbol=symbol,
                             side=signal.side,
@@ -1822,33 +1812,57 @@ class MDAMRHandler:
                             stage="strategy", reason_code="OBJECTIVE_GATE_BLOCKED")
                         return
 
-                    # MDAMRSignal is frozen; replace it so trace and payload stay aligned.
-                    signal = replace(
-                        signal,
-                        conf_ratio=float(signal.conf_ratio) *
-                        obj_score.multiplier,
-                        signal_score=obj_score.objective_score,
-                    )
+                    elif obj_gate_result.status == ObjectiveGateStatus.PRECONDITION_FAILED:
+                        if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                            self._emit_trade_intent_rejected_gate(
+                                symbol=symbol,
+                                side=signal.side,
+                                rid=rid,
+                                ts_ms=now_ms,
+                                reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                                stage="STRATEGY",
+                                why=str(obj_gate_result.precondition_code),
+                                why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
+                                details={"error": str(
+                                    obj_gate_result.precondition_code)}
+                            )
+                            inc_decision_blocked(
+                                stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
+                            return
 
-                    trace["conf_ratio"] = float(signal.conf_ratio)
-                    trace["objective"] = obj_score.trace.model_dump()
+                    elif obj_gate_result.status == ObjectiveGateStatus.EVALUATION_ERROR:
+                        if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                            self._emit_trade_intent_rejected_gate(
+                                symbol=symbol,
+                                side=signal.side,
+                                rid=rid,
+                                ts_ms=now_ms,
+                                reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                                stage="STRATEGY",
+                                why=str(obj_gate_result.error),
+                                why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
+                                details={"error": str(obj_gate_result.error)}
+                            )
+                            inc_decision_blocked(
+                                stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
+                            return
 
-            except Exception as e:
-                if domain_cfg and getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
-                    self._emit_trade_intent_rejected_gate(
-                        symbol=symbol,
-                        side=signal.side,
-                        rid=rid,
-                        ts_ms=now_ms,
-                        reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
-                        stage="STRATEGY",
-                        why=str(e),
-                        why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
-                        details={"error": str(e)}
-                    )
-                    inc_decision_blocked(
-                        stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
-                    return
+                except Exception as e:
+                    if domain_cfg and getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                        self._emit_trade_intent_rejected_gate(
+                            symbol=symbol,
+                            side=signal.side,
+                            rid=rid,
+                            ts_ms=now_ms,
+                            reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                            stage="STRATEGY",
+                            why=str(e),
+                            why_chain=["OBJECTIVE_ENGINE", "FAIL_CLOSED"],
+                            details={"error": str(e)}
+                        )
+                        inc_decision_blocked(
+                            stage="strategy", reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED")
+                        return
 
         payload = {
             "schema_version": 1,
@@ -1897,168 +1911,80 @@ class MDAMRHandler:
                 replay_identity.replay_generation)
         restore_snapshot = self.get_runtime_analytics_restore_snapshot(symbol)
         base_can_open_new_risk = str(signal.intent_kind) == "ENTRY"
-        base_runtime_permissions = make_permissions(
-            can_manage_existing_risk=True,
-            can_open_new_risk=base_can_open_new_risk and not gap_blocks_open_new_risk(
-                gap_status),
-        )
-        runtime_permissions = combine_restore_permissions_live_first(
-            base_runtime_permissions,
-            restore_snapshot,
-        )
-        blocking_reason_chain = list(gap_blocking_tokens(gap_status)) + list(
-            restore_execution_blocking_tokens(restore_snapshot)
-        )
-        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
-            blocking_reason_chain.append("protect_only")
-            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        # Build live runtime-readiness evidence first, then merge restore state
-        # per scope without letting restored status overwrite current live gaps.
-        runtime_scopes = {
-            RuntimeReadinessScope.BASIS_BAR_READY.value: build_basis_bar_status_from_gap(
-                gap_status,
-                updated_at=int(bar_close_ts),
-                source="market_data:payload_bridge",
-                evidence_ref=(bar_identity.to_ref()
-                              if bar_identity is not None else None),
-            ),
-            RuntimeReadinessScope.MICROSTRUCTURE_READY.value: (
-                ready_status(
-                    why=["fe_warmup_full_ready"],
-                    updated_at=int(bar_close_ts),
-                    source="feature_engineering:payload_bridge",
-                    evidence_ref=f"warmup:{symbol}:{int(bar_close_ts)}",
-                )
-                if warmup.get("full_ready") is True
-                else cold_status(
-                    why=["fe_warmup_not_ready"],
-                    updated_at=int(bar_close_ts),
-                    source="feature_engineering:payload_bridge",
-                    evidence_ref=f"warmup:{symbol}:{int(bar_close_ts)}",
-                )
-            ),
-            RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value: ready_status(
-                why=[f"signal_emitted:{str(signal.intent_kind).lower()}"],
-                updated_at=int(bar_close_ts),
-                source="decision_making:md_amr",
-                evidence_ref=rid,
-            ),
-            RuntimeReadinessScope.TRADING_READY.value: build_trading_status_from_gap(
-                gap_status,
-                updated_at=int(bar_close_ts),
-                source="decision_making:md_amr",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            ),
-        }
-        runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = (
-            ready_status(
-                why=["regime_heartbeat_present"],
-                updated_at=int(self._regime_ts_ms.get(
-                    symbol, bar_close_ts) or bar_close_ts),
-                source="regime_detector:payload_bridge",
-                evidence_ref=f"regime:{symbol}:{int(self._regime_ts_ms.get(symbol, bar_close_ts) or bar_close_ts)}",
-            )
-            if self._regime.get(symbol) and int(self._regime_ts_ms.get(symbol, 0) or 0) > 0
-            else partial_status(
-                why=["regime_heartbeat_missing"],
-                updated_at=int(bar_close_ts),
-                source="regime_detector:payload_bridge",
-                evidence_ref=f"regime:{symbol}:{int(bar_close_ts)}",
-            )
-        )
+
+        # ── Restore specs ────────────────────────────────────────────
+        restore_specs: tuple[RestoreScopeSpec, ...] = ()
         if restore_snapshot is not None:
-            runtime_scopes[RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value] = restore_status_to_readiness_status(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+            restore_specs = (
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+                    target_scope=RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value,
+                    mode="restore_only",
+                    source="execution_position:startup_restore",
+                    evidence_ref=rid,
                 ),
-                updated_at=int(bar_close_ts),
-                source="execution_position:startup_restore",
-                evidence_ref=rid,
-            )
-            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                    target_scope=RuntimeReadinessScope.MICROSTRUCTURE_READY.value,
+                    mode="merge_live_first",
+                    source="feature_engineering:startup_restore",
+                    evidence_ref=rid,
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value],
-                updated_at=int(bar_close_ts),
-                source="feature_engineering:startup_restore",
-                evidence_ref=rid,
-                live_evidence_present=True,
-            )
-            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                    target_scope=RuntimeReadinessScope.REGIME_READY.value,
+                    mode="merge_live_first",
+                    source="regime_detector:startup_restore",
+                    evidence_ref=rid,
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
-                updated_at=int(bar_close_ts),
-                source="regime_detector:startup_restore",
-                evidence_ref=rid,
-                live_evidence_present=True,
-            )
-            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE,
+                    target_scope=RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value,
+                    mode="merge_live_first",
+                    source="decision_making:md_amr",
+                    evidence_ref=rid,
+                    restored_why=(
+                        f"signal_emitted:{str(signal.intent_kind).lower()}",),
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
-                updated_at=int(bar_close_ts),
-                source="decision_making:md_amr",
-                evidence_ref=rid,
-                restored_why=[
-                    f"signal_emitted:{str(signal.intent_kind).lower()}"],
-                live_evidence_present=True,
             )
-            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-                gap_status,
-                updated_at=int(bar_close_ts),
-                source="decision_making:md_amr",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            )
-        runtime_permissions = apply_startup_warmup_permission_overlay(
-            runtime_permissions,
+
+        regime_ts = int(self._regime_ts_ms.get(
+            symbol, bar_close_ts) or bar_close_ts)
+        regime_present = bool(
+            self._regime.get(symbol) and int(
+                self._regime_ts_ms.get(symbol, 0) or 0) > 0
         )
-        blocking_reason_chain.extend(startup_warmup_gate_tokens())
-        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-            gap_status,
-            updated_at=int(bar_close_ts),
-            source="decision_making:md_amr",
-            evidence_ref=rid,
-            allow_open_new_risk=runtime_permissions.can_open_new_risk,
-            open_ready_why=["open_new_risk_allowed"],
-            blocked_why=blocking_reason_chain,
-        )
-        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
-            blocking_reason_chain.append("protect_only")
-            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-                gap_status,
+
+        builder_result = build_runtime_readiness(
+            RuntimeReadinessBuildRequest(
+                strategy_id="md_amr",
+                symbol=symbol,
                 updated_at=int(bar_close_ts),
-                source="decision_making:md_amr",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            )
-        runtime_snapshot = make_snapshot(
-            strategy_id="md_amr",
-            symbol=symbol,
-            updated_at=int(bar_close_ts),
-            scopes=runtime_scopes,
-            source="decision_making:md_amr",
-            permissions=runtime_permissions,
-            blocking_reason_chain=blocking_reason_chain,
+                source_prefix="decision_making:md_amr",
+                gap_status=gap_status,
+                restore_snapshot=restore_snapshot,
+                bar_identity=bar_identity,
+                base_can_open_new_risk=base_can_open_new_risk,
+                warmup_ready=warmup.get("full_ready") is True,
+                regime_present=regime_present,
+                regime_ts_ms=regime_ts if regime_present else None,
+                regime_ready_why="regime_heartbeat_present",
+                regime_missing_why="regime_heartbeat_missing",
+                regime_live_source="regime_detector:payload_bridge",
+                regime_ready_evidence_ref=f"regime:{symbol}:{regime_ts}" if regime_present else None,
+                regime_missing_evidence_ref=f"regime:{symbol}:{int(bar_close_ts)}",
+                signal_evidence_ref=rid,
+                strategy_ready_why=(
+                    f"signal_emitted:{str(signal.intent_kind).lower()}",),
+                restore_specs=restore_specs,
+            ),
         )
+        runtime_permissions = builder_result.permissions
+        runtime_snapshot = builder_result.snapshot
+        blocking_reason_chain = list(builder_result.blocking_reason_chain)
         payload["runtime_permissions"] = runtime_permissions.to_payload()
         payload["runtime_readiness"] = runtime_snapshot.to_payload()
         if gap_status is not None:

@@ -1017,6 +1017,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--report-out",
         default="config/docs/MD_AMR_INTEGRATED_VALIDATION_REPORT.md",
     )
+    parser.add_argument(
+        "--trades-out",
+        default="reports/md_amr_integrated_validation_trades.csv",
+    )
     return parser
 
 
@@ -1207,9 +1211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     cohorts_out = Path(args.cohorts_out)
     summary_out = Path(args.summary_out)
     report_out = Path(args.report_out)
-    for path in (by_symbol_out, cohorts_out, summary_out, report_out):
+    trades_out = Path(args.trades_out)
+    for path in (by_symbol_out, cohorts_out, summary_out, report_out, trades_out):
         _ensure_parent(path)
 
+    trade_df.to_csv(trades_out, index=False)
     by_symbol_df.sort_values(["symbol", "arm"], kind="mergesort").to_csv(
         by_symbol_out, index=False)
     cohort_df.sort_values(["symbol", "arm", "cohort_type", "cohort"],

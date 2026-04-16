@@ -128,6 +128,21 @@ class TAEnsembleConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class JudgeExpertProviderConfig(BaseModel):
+    """Configuration for a judge expert provider.
+
+    Specifies which judge expert type to instantiate. The detailed expert
+    config (weights, neutrals, etc.) lives in judge.experts config block.
+    """
+
+    expert_type: str = Field(
+        ...,
+        description="Expert type key: 'signal_weights' or 'feature_neutrals'"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class ProviderConfig(BaseModel):
     """Configuration for a single alpha provider."""
 
@@ -155,19 +170,24 @@ class ProviderConfig(BaseModel):
     # Provider-specific config (only one should be set)
     adapter: Optional[AuroraAdapterConfig] = None
     ensemble: Optional[TAEnsembleConfig] = None
+    judge_expert: Optional["JudgeExpertProviderConfig"] = None
 
     model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")
     def validate_provider_type(self):
-        """Ensure exactly one provider type is configured."""
+        """Ensure at most one provider type is configured."""
         has_adapter = self.adapter is not None
         has_ensemble = self.ensemble is not None
+        has_judge = self.judge_expert is not None
+        count = sum([has_adapter, has_ensemble, has_judge])
 
-        if has_adapter and has_ensemble:
+        if count > 1:
             raise ValueError(
-                "Provider cannot have both 'adapter' and 'ensemble' config")
-        if not has_adapter and not has_ensemble:
+                "Provider must have at most one of 'adapter', 'ensemble', "
+                "or 'judge_expert' config"
+            )
+        if count == 0:
             # Default to ensemble if neither specified (for backwards compat)
             pass  # OK, will use default ensemble
         return self
@@ -308,6 +328,9 @@ class AlphaSearchSystemConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+from apps.reference.domains.alpha_search.judge.config_models import JudgeCortexConfig  # noqa: E402
+
+
 class AlphaSearchConfig(BaseModel):
     """
     Root configuration for alpha_search domain.
@@ -341,6 +364,12 @@ class AlphaSearchConfig(BaseModel):
     )
     objective_feedback: ObjectiveFeedbackConfig = Field(
         default_factory=ObjectiveFeedbackConfig
+    )
+
+    # LLM Judge cortex config (Phase 1: contracts-only, mode='off' enforced)
+    judge: Optional[JudgeCortexConfig] = Field(
+        default=None,
+        description="LLM Judge cortex configuration. None = judge not configured."
     )
 
     # Explicit legacy bucket — allows old fields without breaking strict validation.

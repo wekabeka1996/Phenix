@@ -274,10 +274,10 @@ md_amr:
 
   assets:
     BTCUSDT:
-      enabled: true
+      enabled: false  # Per-regime calibration 2026-04-15: loss-making in ALL regimes (best: TREND_DOWN PF=1.00 +0.07%)
       cooldown_sec: 60
       position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["TREND_DOWN"]  # breakeven regime only; disabled until SL/TP tuned
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml BTCUSDT (verbatim)
       exit:
         sl_pct: 0.005       # 0.5% base SL
@@ -345,7 +345,7 @@ md_amr:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["LOW_VOLATILITY"]  # Per-regime calibration 2026-04-15: ONLY profitable regime (PF=1.74 +8.08% net)
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml SOLUSDT (verbatim)
       exit:
         sl_pct: 0.00675     # 0.675% base SL
@@ -380,10 +380,10 @@ md_amr:
           min_dist_bps: 18
 
     DOGEUSDT:
-      enabled: true
+      enabled: false  # Per-regime calibration 2026-04-15: loss-making in ALL regimes (PF 0.51-0.70)
       cooldown_sec: 60
       position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["MEAN_REVERSION"]  # placeholder (asset disabled)
       # MD-AMR-TPSL-01: TP/SL  averaged values from BTC+ETH+SOL aurora configs
       exit:
         sl_pct: 0.0065      # 0.65% base SL (halved)
@@ -421,7 +421,7 @@ md_amr:
       enabled: true
       cooldown_sec: 60
       position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["MEAN_REVERSION", "TREND_DOWN"]  # Per-regime calibration 2026-04-15: MR PF=1.04 +0.78%, TD PF=1.15 +2.55%
       # MD-AMR-TPSL-01: TP/SL  averaged values from BTC+ETH+SOL aurora configs (same as DOGE)
       exit:
         sl_pct: 0.013       # avg(0.005, 0.019, 0.0135)
@@ -456,10 +456,10 @@ md_amr:
           min_dist_bps: 15
 
     BNBUSDT:
-      enabled: true
+      enabled: false  # Per-regime calibration 2026-04-15: loss-making in ALL regimes (PF 0.65-0.68)
       cooldown_sec: 60
       position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      allowed_regimes: ["MEAN_REVERSION"]  # placeholder (asset disabled)
       exit:
         sl_pct: 0.013
         tp_rr: 0.60

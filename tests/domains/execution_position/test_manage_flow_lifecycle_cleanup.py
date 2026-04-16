@@ -1,7 +1,10 @@
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from vfoundation.core.protocol import Message
 
+from apps.reference.domains.execution_position.fsm_close import CloseState
 from apps.reference.domains.execution_position.fsm_manage import (
     ManageFlowFSM,
     ManageState,
@@ -116,3 +119,156 @@ def test_local_open_guard_blocks_real_active_lifecycle(fsm_harness) -> None:
     assert guard_payload["has_active_lifecycle"] is True
     assert guard_payload["entry_order_id"] == "entry-order"
     assert guard_payload["position_qty"] == "0.01"
+
+
+def test_authoritative_local_close_reset_clears_runtime_residue_and_is_idempotent(
+    fsm_harness,
+) -> None:
+    fsm, _, _ = fsm_harness
+    symbol = "BTCUSDT"
+    manage_flow = fsm.manage_flow(symbol)
+    close_flow = fsm.close_flow(symbol)
+
+    manage_flow.state = ManageState.BRACKETS_PENDING
+    manage_flow.symbol = symbol
+    manage_flow.position_qty = Decimal("0.01")
+    manage_flow.position_entry_price = Decimal("1000")
+    manage_flow.position_side = "BUY"
+    manage_flow.entry_order_id = "entry-order"
+    manage_flow.entry_client_order_id = "ENTRY-1"
+    manage_flow.sl_order_id = "sl-order"
+    manage_flow.tp_order_id = "tp-order"
+
+    close_flow.state = CloseState.OPENED
+    close_flow.position_active = True
+    close_flow.last_close_reason = "position_policy_sidecar_soft_close"
+
+    fsm._set_symbol_brackets_snapshot(
+        symbol,
+        sl_order_id="sl-order",
+        tp_order_id="tp-order",
+    )
+    fsm._pending_brackets["entry-order"] = {
+        "symbol": symbol,
+        "sl_price": "990",
+        "tp_price": "1010",
+    }
+
+    with patch(
+        "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+    ) as pending_cleared:
+        changed = fsm._apply_authoritative_local_close_reset(
+            symbol,
+            reason="unit_test_reset",
+            source="unit_test",
+        )
+
+        assert changed is True
+        assert manage_flow.state == ManageState.FLAT
+        assert manage_flow.has_active_lifecycle() is False
+        assert manage_flow.symbol is None
+        assert close_flow.state == CloseState.FLAT
+        assert close_flow.last_close_reason is None
+        assert symbol not in fsm._symbol_brackets
+        assert symbol not in fsm._symbol_bracket_truth_source
+        assert "entry-order" not in fsm._pending_brackets
+        pending_cleared.assert_called_once_with(
+            entry_order_id="entry-order",
+            reason="unit_test_reset",
+            symbol=symbol,
+        )
+
+        changed_again = fsm._apply_authoritative_local_close_reset(
+            symbol,
+            reason="unit_test_reset",
+            source="unit_test",
+        )
+        assert changed_again is False
+        pending_cleared.assert_called_once()
+
+
+def test_portfolio_close_reset_allows_follow_on_open_guard(fsm_harness) -> None:
+    fsm, _, _ = fsm_harness
+    symbol = "BTCUSDT"
+    manage_flow = fsm.manage_flow(symbol)
+    close_flow = fsm.close_flow(symbol)
+
+    manage_flow.state = ManageState.BRACKETS_PENDING
+    manage_flow.symbol = symbol
+    manage_flow.position_qty = Decimal("0.01")
+    manage_flow.position_entry_price = Decimal("1000")
+    manage_flow.position_side = "BUY"
+    manage_flow.entry_order_id = "entry-order"
+    manage_flow.entry_client_order_id = "ENTRY-1"
+    manage_flow.sl_order_id = "sl-order"
+    manage_flow.tp_order_id = "tp-order"
+
+    close_flow.state = CloseState.OPENED
+    close_flow.position_active = True
+    close_flow.last_close_reason = "position_policy_sidecar_soft_close"
+
+    fsm._set_symbol_brackets_snapshot(
+        symbol,
+        sl_order_id="sl-order",
+        tp_order_id="tp-order",
+    )
+    fsm._pending_brackets["entry-order"] = {
+        "symbol": symbol,
+        "sl_price": "990",
+        "tp_price": "1010",
+    }
+    fsm._prev_position_amts = {symbol: 0.01}
+    fsm._last_lifecycle_rid_by_symbol[symbol] = "rid-close"
+    fsm._last_lifecycle_fill_price_by_symbol[symbol] = Decimal("1001")
+    fsm._last_lifecycle_ikey_by_symbol[symbol] = "lifecycle-1"
+    fsm._last_trade_id_by_symbol[symbol] = "trade-1"
+    fsm._last_entry_side_by_symbol[symbol] = "BUY"
+    fsm._accumulated_fees_by_symbol[symbol] = 0.25
+    fsm._get_async_loop = MagicMock(return_value=None)
+
+    event = Message(
+        op="EVT",
+        verb="PORTFOLIO_STATE_UPDATED",
+        src="portfolio",
+        dst="execution_position",
+        rid="rid-portfolio-close",
+        why="test_portfolio_close",
+        pld={
+            "positions_last_ts_ms": 1_000_000,
+            "positions": [],
+        },
+    )
+
+    with patch(
+        "apps.reference.domains.execution_position.event_handlers._trade_lifecycle",
+        SimpleNamespace(on_close=lambda **kwargs: None),
+    ), patch(
+        "apps.reference.domains.execution_position.event_handlers._get_order_logger",
+        return_value=SimpleNamespace(write=lambda payload: None),
+    ), patch(
+        "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+    ) as pending_cleared:
+        fsm._evt_handlers.on_portfolio_state_updated(event)
+
+    assert manage_flow.state == ManageState.FLAT
+    assert manage_flow.has_active_lifecycle() is False
+    assert close_flow.state == CloseState.FLAT
+    assert symbol not in fsm._symbol_brackets
+    assert symbol not in fsm._symbol_bracket_truth_source
+    assert "entry-order" not in fsm._pending_brackets
+    pending_cleared.assert_called_once_with(
+        entry_order_id="entry-order",
+        reason="position_closed_detected",
+        symbol=symbol,
+    )
+
+    msg = Message(
+        op="CMD",
+        verb="OPEN",
+        src="decision_making",
+        dst="execution_position",
+        rid="rid-open-after-close",
+        why="test_open_after_close",
+        pld={"symbol": symbol, "side": "BUY", "qty": "0.01", "price": "1000"},
+    )
+    assert fsm._local_open_guard(msg, manage_flow) is None

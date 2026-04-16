@@ -80,7 +80,8 @@ class TestNormalizeOrderRejectReason:
 
     # --- 1. reject_reason only ---
     def test_reject_reason_normalized_field_used_first(self):
-        assert self.norm({"reject_reason_normalized": "maker_only_reject"}) == "MAKER_ONLY_REJECT"
+        assert self.norm(
+            {"reject_reason_normalized": "maker_only_reject"}) == "MAKER_ONLY_REJECT"
 
     def test_reject_reason_field_used(self):
         assert self.norm({"reject_reason": "POST_ONLY_REJECT"}
@@ -107,6 +108,15 @@ class TestNormalizeOrderRejectReason:
         result = self.norm(
             {"reason_code": "ADAPTER_ERROR", "reason_text": "timeout"})
         assert result == "ADAPTER_ERROR: TIMEOUT"
+
+    def test_uncertain_submit_reason_code_with_reason_text(self):
+        result = self.norm(
+            {
+                "reason_code": "UNCERTAIN_SUBMIT_UNRECOVERED",
+                "reason_text": "status unknown",
+            }
+        )
+        assert result == "UNCERTAIN_SUBMIT_UNRECOVERED: STATUS UNKNOWN"
 
     def test_reason_code_empty_text_ignored(self):
         result = self.norm({"reason_code": "ADAPTER_ERROR", "reason_text": ""})
@@ -192,6 +202,17 @@ class TestOnOrderRejectedIntegration:
     def test_adapter_error_reason_code_no_retry(self, handler):
         evt = _evt(
             {"symbol": "BTCUSDT", "reason_code": "ADAPTER_ERROR", "reason_text": "timeout"})
+        handler._on_order_rejected(evt)
+        assert handler._gtx_retries.get("BTCUSDT", 0) == 0
+
+    def test_uncertain_submit_reason_code_no_retry(self, handler):
+        evt = _evt(
+            {
+                "symbol": "BTCUSDT",
+                "reason_code": "UNCERTAIN_SUBMIT_UNRECOVERED",
+                "reason_text": "status unknown",
+            }
+        )
         handler._on_order_rejected(evt)
         assert handler._gtx_retries.get("BTCUSDT", 0) == 0
 

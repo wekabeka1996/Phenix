@@ -37,11 +37,10 @@ assignments:
   BTCUSDT:
     - aurora
 
-  # Calibrated 2026-04-14: BNBUSDT added to aurora (priority 1) + md_amr (priority 3)
-  # Aurora gets arbitration priority; md_amr runs as fallback within window_ms.
+  # Calibrated 2026-04-14: BNBUSDT added to aurora
+  # md_amr removed 2026-04-15: loss-making in ALL regimes (PF 0.65-0.68)
   BNBUSDT:
     - aurora
-    - md_amr
 
   # Calibrated 2026-04-14: DOGEUSDT added to aurora (priority 1) + mean_reversion (priority 2)
   # Aurora gets arbitration priority; MR runs as fallback within window_ms.

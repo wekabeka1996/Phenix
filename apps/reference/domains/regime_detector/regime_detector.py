@@ -29,6 +29,7 @@ from apps.reference.contracts.runtime_regime_layers import (
     RuntimeRegimeClock,
     RuntimeRegimeLayer,
     RuntimeRegimeScope,
+    attach_regime_provenance,
     structural_regime_ref,
 )
 from apps.reference.telemetry.regime_confidence_audit import (
@@ -460,6 +461,8 @@ class RegimeDetector:
                 "regime_clock": RuntimeRegimeClock.BAR.value,
                 "regime_owner": "regime_detector",
                 "structural_regime_ref": structural_regime_ref(symbol, ts_ms),
+                "basis_tf_sec": int(self._basis_tf_sec),
+                "bar_close_ts_ms": int(close_boundary_ts_ms),
                 "warmup": warmup,
                 "diagnostics": {
                     "rd": {
@@ -473,6 +476,10 @@ class RegimeDetector:
                 },
                 "data_quality": {"drops": data_drops, "notes": data_notes},
             }
+            payload = attach_regime_provenance(
+                payload,
+                bar_close_ts_ms=int(close_boundary_ts_ms),
+            )
             self.fsm.emit(
                 "EVT:REGIME_DETECTED",
                 payload,
@@ -904,6 +911,10 @@ class RegimeDetector:
             "emitted_confidence_kind": emitted_confidence_kind,
             "reason_summary": reason_summary,
         }
+        payload = attach_regime_provenance(
+            payload,
+            bar_close_ts_ms=int(close_boundary_ts_ms),
+        )
         rd_diag = self._update_basis_diag(
             symbol=str(symbol),
             close_boundary_ts_ms=int(close_boundary_ts_ms),

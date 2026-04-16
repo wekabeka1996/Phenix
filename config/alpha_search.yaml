@@ -121,6 +121,22 @@ alpha_search:
           volatility_v1:
             enabled: true
 
+    judge_sw:
+      enabled: true
+      symbols: null
+      threshold: 0.162
+      fail_closed: true
+      judge_expert:
+        expert_type: "signal_weights"
+
+    judge_fn:
+      enabled: true
+      symbols: null
+      threshold: 0.162
+      fail_closed: true
+      judge_expert:
+        expert_type: "feature_neutrals"
+
   # ============================================================================
   # Virtual Trader (shadow PnL tracking)
   # ============================================================================
@@ -147,6 +163,104 @@ alpha_search:
       duration_efficiency: 0.25
     min_provider_weight: 0.15
     max_provider_weight: 0.70
+
+  # ============================================================================
+  # LLM Judge Cortex (Phase 2: shadow mode with revived legacy experts)
+  # Phase 2 admits: "off", "shadow". Default "off" — shadow requires operator opt-in.
+  # ============================================================================
+  judge:
+    enabled: false
+    mode: "off"
+
+    experts:
+      signal_weights:
+        enabled: true
+        expert_id: "judge.signal_weights_v1"
+        expert_version: "1.0.0"
+        symbols: null                     # null = all aurora symbols
+        signal_threshold: 0.162
+        normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
+        essential_features: [obi, delta_price, macro_resid]
+        # Externalized from aurora.yaml legacy (Phase 9 deprecated values)
+        # These are REVIVAL DEFAULTS, not active production tuning.
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          volume_spike: 0.10
+          volatility_state: 0.10
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          absorption: 0.0
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+          absorption: 0.0
+
+      feature_neutrals:
+        enabled: true
+        expert_id: "judge.feature_neutrals_v1"
+        expert_version: "1.0.0"
+        symbols: null
+        signal_threshold: 0.162
+        normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
+        essential_features: [obi, delta_price, macro_resid]
+        directional_features: [obi, tfi, delta_price, ema_bias, depth_imbalance, macro_resid, macro_sync, absorption]
+        strength_features: [volume_spike, volatility_state]
+        strength_alpha: 0.5
+        strength_cap: 1.0
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          volume_spike: 0.10
+          volatility_state: 0.10
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          absorption: 0.0
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+          absorption: 0.0
+
+    shadow_log:
+      enabled: true
+      log_dir: "logs/judge_experts"
+      max_file_size_mb: 50
+      rotation: "daily"
+
+    # Phase 3: Chamber aggregation config
+    chamber:
+      min_quorum: 1
+      max_staleness_ms: 30000
+      entry_enabled: true
+      lifecycle_enabled: false
+
+    # Phase 4: Verdict assembly config
+    verdict:
+      entry_enabled: true
+      lifecycle_enabled: false
+      strategy_id: "aurora"
+      cortex_version: "phase4_shadow_v1"
+      split_confidence_discount: 0.5
 
   # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation

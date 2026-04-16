@@ -216,3 +216,99 @@ def test_mean_reversion_guardrail_artifact_fails_closed_on_forward_degradation()
     failed_names = {item["name"]
                     for item in artifact["guardrails"] if not item["passed"]}
     assert "forward_no_degradation_vs_baseline" in failed_names
+
+
+def test_csv_fallback_on_bad_lines(tmp_path: Path) -> None:
+    """CSV with bad lines must not crash _validate_requested_recorder_csvs."""
+    day_dir = tmp_path / "recorder" / "2026-04-01"
+    day_dir.mkdir(parents=True)
+    csv_path = day_dir / "DOGEUSDT_300.csv"
+    # Write a CSV with a legitimate header + some good rows + a bad row
+    csv_path.write_text(
+        "timestamp,tf_sec,symbol,open,high,low,close,volume,regime,regime_conf\n"
+        "1743465600000,300,DOGEUSDT,0.17,0.175,0.165,0.17,1000,MEAN_REVERSION,0.8\n"
+        "badrow,extra_col,DOGEUSDT,oops,this,is,broken,row,with,too,many,cols\n"
+        "1743465900000,300,DOGEUSDT,0.17,0.175,0.165,0.172,1100,MEAN_REVERSION,0.8\n",
+        encoding="utf-8",
+    )
+    # Must not raise
+    calibrator._validate_requested_recorder_csvs(
+        tmp_path / "recorder",
+        start=date(2026, 4, 1),
+        end=date(2026, 4, 2),
+        symbols=["DOGEUSDT"],
+        tf_sec=300,
+    )
+
+
+def test_compute_regime_labels_300s_valid_labels() -> None:
+    """_compute_regime_labels_300s must produce only valid regime strings."""
+    valid_regimes = {
+        "HIGH_VOLATILITY", "LOW_VOLATILITY", "MEAN_REVERSION",
+        "TREND_UP", "TREND_DOWN", "UNCERTAIN",
+    }
+    # Build 500 bars of synthetic 5-min OHLCV with a trend then oscillation
+    n = 500
+    close = [100.0 + i * 0.3 for i in range(250)] + \
+        [175.0 + 5 * ((-1) ** i) for i in range(250)]
+    df = pd.DataFrame({
+        "open": [close[max(0, i - 1)] for i in range(n)],
+        "high": [c + 1.0 for c in close],
+        "low": [c - 1.0 for c in close],
+        "close": close,
+        "volume": [1000] * n,
+    })
+    result = calibrator._compute_regime_labels_300s(df)
+
+    assert len(result) == n
+    unique_labels = set(result.dropna().unique())
+    assert unique_labels, "Expected at least one non-NaN regime label"
+    assert unique_labels.issubset(
+        valid_regimes), f"Invalid labels: {unique_labels - valid_regimes}"
+
+
+def test_tpsl_surface_produces_artifacts(tmp_path: Path) -> None:
+    """Run with --tpsl-surface → tpsl_surface.json + mfe_mae_analysis.json must exist."""
+    recorder_root = tmp_path / "recorder"
+    _write_mr_recorder(recorder_root, symbol="DOGEUSDT",
+                       start_day=date(2026, 4, 1), day_count=8)
+    out_dir = tmp_path / "tpsl_artifacts"
+
+    rc = calibrator.main(
+        [
+            "--recorder-dir",
+            str(recorder_root),
+            "--symbols",
+            "DOGEUSDT",
+            "--start",
+            "2026-04-01",
+            "--end",
+            "2026-04-09",
+            "--validation-days",
+            "2",
+            "--forward-days",
+            "2",
+            "--min-train-days",
+            "2",
+            "--trials",
+            "4",
+            "--top-k",
+            "2",
+            "--min-trades",
+            "1",
+            "--tpsl-surface",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert rc == 0
+    tpsl_path = out_dir / "tpsl_surface.json"
+    mfe_path = out_dir / "mfe_mae_analysis.json"
+    assert tpsl_path.exists(), f"Missing {tpsl_path}"
+    assert mfe_path.exists(), f"Missing {mfe_path}"
+
+    tpsl = json.loads(tpsl_path.read_text(encoding="utf-8"))
+    assert len(
+        tpsl["grid"]) == 12, f"Expected 12 cells (6×2), got {len(tpsl['grid'])}"
+    assert tpsl.get("best_cell") is not None

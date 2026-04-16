@@ -45,9 +45,11 @@ def _make_handler(restore_snapshot=None) -> tuple[MeanReversionHandler, _FSMStub
     handler.mlog = logging.getLogger("tests.mean_reversion.runtime")
     handler.timeframe_sec = 300
     handler.config = SimpleNamespace(
-        domains=SimpleNamespace(objective_engine=SimpleNamespace(enabled=False)),
+        domains=SimpleNamespace(
+            objective_engine=SimpleNamespace(enabled=False)),
         strategies=SimpleNamespace(
-            mean_reversion=SimpleNamespace(objective=SimpleNamespace(enabled=False))
+            mean_reversion=SimpleNamespace(
+                objective=SimpleNamespace(enabled=False))
         ),
     )
     handler._signal_counts = {}
@@ -134,7 +136,8 @@ def test_mean_reversion_live_warmup_overrides_cold_restore_snapshot() -> None:
 
     with patch(
         "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
-        return_value=SimpleNamespace(now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
+        return_value=SimpleNamespace(
+            now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
     ):
         handler._emit_signal(
             _signal(),
@@ -147,6 +150,48 @@ def test_mean_reversion_live_warmup_overrides_cold_restore_snapshot() -> None:
     assert payload["runtime_permissions"]["can_open_new_risk"] is True
     assert payload["runtime_permissions"]["mode"] == "OPEN_AND_MANAGE"
     assert payload["runtime_readiness"]["scopes"]["microstructure_ready"]["state"] == "READY"
+
+    # BUG-1 regression guard: REGIME_READY.source must reflect detector origin
+    assert (
+        payload["runtime_readiness"]["scopes"]["regime_ready"]["source"]
+        == "regime_detector:payload_bridge"
+    ), "BUG-1: REGIME_READY.source must be 'regime_detector:payload_bridge'"
+
+
+def test_mean_reversion_warmup_not_ready_emits_cold_microstructure() -> None:
+    """BUG-2 regression guard: when warmup is NOT ready, MICROSTRUCTURE_READY
+    must be COLD, not PARTIAL."""
+    handler, fsm = _make_handler()
+    identity = build_canonical_bar_identity(
+        symbol="BTCUSDT",
+        timeframe_sec=300,
+        bar_start_ts_ms=1_699_999_700_000,
+        close_boundary_ts_ms=1_700_000_000_000,
+        source_mode=RuntimeBarSourceMode.LIVE,
+    )
+
+    with patch(
+        "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+        return_value=SimpleNamespace(
+            now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
+    ):
+        handler._emit_signal(
+            _signal(),
+            bar_identity=identity,
+            replay_identity=identity.to_replay_identity(),
+            warmup_readiness={"full_ready": False},
+        )
+
+    _, payload = fsm.emitted[0]
+    assert (
+        payload["runtime_readiness"]["scopes"]["microstructure_ready"]["state"] == "COLD"
+    ), "BUG-2: MICROSTRUCTURE_READY must be COLD when warmup not ready"
+
+    # Also verify regime source in this scenario
+    assert (
+        payload["runtime_readiness"]["scopes"]["regime_ready"]["source"]
+        == "regime_detector:payload_bridge"
+    ), "BUG-1: REGIME_READY.source must be 'regime_detector:payload_bridge'"
 
 
 def test_mean_reversion_startup_gate_blocks_new_risk_but_preserves_manage() -> None:
@@ -166,7 +211,8 @@ def test_mean_reversion_startup_gate_blocks_new_risk_but_preserves_manage() -> N
     try:
         with patch(
             "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
-            return_value=SimpleNamespace(now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
+            return_value=SimpleNamespace(
+                now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
         ):
             handler._emit_signal(
                 _signal(),

@@ -13,24 +13,24 @@
 - Current YAML still holds the accepted A.1 baseline values: max_hold_bars=16, target_approach_pct=0.0.
 - Package C.3 and C.4 remain advisory-only at package boundary; they do not own exit or execution truth.
 - Runtime forensic evidence already proves md_amr activity on XRPUSDT and BNBUSDT in the 21h report.
-- XRPUSDT: recorder range 2026-02-08..2026-04-13, exact trade match rate=1.0000, net-return delta=0.0000.
-- BNBUSDT: recorder range 2026-03-05..2026-04-13, exact trade match rate=1.0000, net-return delta=0.0000.
+- XRPUSDT: recorder range 2026-02-08..2026-04-16, exact trade match rate=1.0000, net-return delta=0.0000.
+- BNBUSDT: recorder range 2026-03-05..2026-04-16, exact trade match rate=1.0000, net-return delta=0.0000.
 - Combined exact trade match rate=1.0000; trade-count delta=0; net-return delta=0.0000.
 - Combined timeout delta=0; avg-holding delta=0.0000.
-- XRPUSDT integrated overlay coverage: observed_overlay_trades=200, exit_hold_quality_mean=0.2611, exit_context_validity_mean=0.3166.
-- BNBUSDT integrated overlay coverage: observed_overlay_trades=118, exit_hold_quality_mean=0.2168, exit_context_validity_mean=0.2988.
+- XRPUSDT integrated overlay coverage: observed_overlay_trades=230, exit_hold_quality_mean=0.2522, exit_context_validity_mean=0.3134.
+- BNBUSDT integrated overlay coverage: observed_overlay_trades=123, exit_hold_quality_mean=0.2145, exit_context_validity_mean=0.2995.
 
 ## INFERENCE
 - Explainability without economic harm is supported at the recorder core-replay layer because the integrated arm preserved exact trade parity while exposing additional C.1/C.3/C.4 trace state.
 - Trade-quality improvement is not proven as a realized economic outcome because the integrated overlays are advisory-only and therefore do not change entry/exit behavior.
 - Stale/zombie reduction is not proven as a realized runtime effect because timeout counts and trade lifecycles remain unchanged between arms.
-- XRPUSDT profitable slow reversions remain present under the integrated line: trade_count=11, avg_holding_bars=16.5455, exit_hold_quality_mean=0.2513, exit_context_validity_mean=0.3515.
-- BNBUSDT profitable slow reversions remain present under the integrated line: trade_count=8, avg_holding_bars=14.8750, exit_hold_quality_mean=0.3538, exit_context_validity_mean=0.3457.
+- XRPUSDT profitable slow reversions remain present under the integrated line: trade_count=12, avg_holding_bars=16.1667, exit_hold_quality_mean=0.2303, exit_context_validity_mean=0.3439.
+- BNBUSDT profitable slow reversions remain present under the integrated line: trade_count=9, avg_holding_bars=15.0000, exit_hold_quality_mean=0.3441, exit_context_validity_mean=0.3395.
 - That profitable slow-reversion cohort is the main promotion risk: if C.3/C.4 are promoted into hard gating without broader evidence, valid slow mean reversions could be cut early.
 
 ## Cohort Readout
-- XRPUSDT WEAK_CONTEXT_EXIT: trade_count=200, net_return_ratio=-0.2345, win_rate=0.5000.
-- BNBUSDT WEAK_CONTEXT_EXIT: trade_count=118, net_return_ratio=-0.0836, win_rate=0.4407.
+- XRPUSDT WEAK_CONTEXT_EXIT: trade_count=230, net_return_ratio=-0.2190, win_rate=0.5174.
+- BNBUSDT WEAK_CONTEXT_EXIT: trade_count=123, net_return_ratio=-0.0791, win_rate=0.4390.
 
 ## ASSUMPTION
 - This validation replays md_amr strategy-core decisions plus asset TP/SL projection from recorder OHLCV bars.

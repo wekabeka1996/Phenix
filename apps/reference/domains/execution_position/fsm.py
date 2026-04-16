@@ -98,7 +98,7 @@ from apps.reference.domains.execution_position.lifecycle import LifecycleManager
 from apps.reference.domains.execution_position.intent_router import IntentRouter
 from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
-from apps.reference.domains.execution_position.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.open_executor import OpenExecutor, UncertainSubmitRecoveryError
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
 from apps.reference.domains.execution_position.position_policy_sidecar import (
     ACTION_PACKAGE_VERSION,
@@ -1316,6 +1316,85 @@ class ExecPosFSM(
             return
         self._symbol_brackets.pop(symbol_key, None)
         self._symbol_bracket_truth_source.pop(symbol_key, None)
+
+    def _apply_authoritative_local_close_reset(
+        self,
+        symbol: str,
+        *,
+        reason: str,
+        source: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return False
+
+        anything_reset = False
+        manage_flow = self.manage_flows.get(symbol_key)
+        if manage_flow is not None:
+            try:
+                has_active_lifecycle = bool(manage_flow.has_active_lifecycle())
+            except Exception:
+                has_active_lifecycle = False
+            if has_active_lifecycle:
+                manage_flow.state = ManageState.FLAT
+                manage_flow._clear_lifecycle_tracking(
+                    reason=reason,
+                    clear_symbol=True,
+                )
+                anything_reset = True
+
+        close_flow = self.close_flows.get(symbol_key)
+        close_state = self._close_state_value(close_flow).upper()
+        if close_flow is not None and close_state not in ("", CloseState.FLAT.value):
+            close_flow.reset()
+            anything_reset = True
+
+        if (
+            symbol_key in self._symbol_brackets
+            or symbol_key in self._symbol_bracket_truth_source
+        ):
+            self._clear_symbol_brackets(symbol_key)
+            anything_reset = True
+
+        pending_to_clear: List[Tuple[Any, str]] = []
+        for entry_order_id, pending in dict(self._pending_brackets).items():
+            if not isinstance(pending, dict):
+                continue
+            pending_symbol = str(pending.get("symbol") or "").strip().upper()
+            if pending_symbol == symbol_key:
+                pending_to_clear.append((entry_order_id, pending_symbol))
+
+        for entry_order_id, pending_symbol in pending_to_clear:
+            self._pending_brackets.pop(entry_order_id, None)
+            try:
+                write_pending_brackets_cleared(
+                    entry_order_id=str(entry_order_id),
+                    reason=reason,
+                    symbol=pending_symbol or symbol_key,
+                )
+            except Exception as exc:
+                LOG.warning(
+                    "Failed to clear pending brackets during authoritative reset "
+                    "symbol=%s entry_order_id=%s source=%s reason=%s error=%s",
+                    symbol_key,
+                    entry_order_id,
+                    source,
+                    reason,
+                    exc,
+                )
+            anything_reset = True
+
+        if anything_reset:
+            LOG.info(
+                "[ExecPosFSM] authoritative local close reset applied "
+                "symbol=%s source=%s reason=%s payload_keys=%s",
+                symbol_key,
+                source,
+                reason,
+                sorted((payload or {}).keys()),
+            )
+        return anything_reset
 
     def _symbol_bracket_truth_source_for(self, symbol: str) -> str:
         symbol_key = str(symbol or "").strip().upper()
@@ -3171,6 +3250,12 @@ class ExecPosFSM(
                 },
             )
             self._position_policy_close_requests.pop(symbol, None)
+        self._apply_authoritative_local_close_reset(
+            symbol,
+            reason="execution_close_reconciled",
+            source=str(payload.get("source") or "execution_close_reconciled"),
+            payload=payload,
+        )
         if self._position_policy_sidecar is not None:
             self._position_policy_sidecar.on_execution_close_reconciled(event)
 
@@ -4531,6 +4616,34 @@ class ExecPosFSM(
                         f"Error triggering execution error alert: {alert_e}")
 
             decision_pld = decision.pld or {}
+            reason_code = "ADAPTER_ERROR"
+            reason_text = str(e)[:200]
+            order_reject_metadata = {
+                "error": str(e),
+                "decision_verb": decision.verb,
+            }
+            terminal_payload_extra: dict[str, Any] = {}
+            if isinstance(e, UncertainSubmitRecoveryError):
+                reason_code = "UNCERTAIN_SUBMIT_UNRECOVERED"
+                reason_text = (
+                    "Submit status unknown and recovery by clientOrderId failed: "
+                    f"{e.original_error}"
+                )[:200]
+                order_reject_metadata.update({
+                    "uncertain_submit": True,
+                    "client_order_id": e.entry_id,
+                    "binance_code": e.binance_code,
+                    "recovery_attempts": e.attempts,
+                    "original_exception_class": type(e.original_error).__name__,
+                })
+                terminal_payload_extra = {
+                    "uncertain_submit": True,
+                    "client_order_id": e.entry_id,
+                    "binance_code": e.binance_code,
+                    "recovery_attempts": e.attempts,
+                    "original_exception_class": type(e.original_error).__name__,
+                }
+
             order_logger.write({
                 "rid": decision.rid,
                 "event_type": "ORDER_REJECTED",
@@ -4538,10 +4651,10 @@ class ExecPosFSM(
                 "side": decision_pld.get("side", "NONE"),
                 "quantity": float(decision_pld.get("qty", 0)),
                 "nrr_code": "NRR-015",
-                "why": f"Adapter execution failed: {str(e)}",
+                "why": f"Adapter execution failed: {reason_text}",
                 "source_fsm": "ExecPosFSM",
                 "origin_class": "execution_adapter",
-                "metadata": {"error": str(e), "decision_verb": decision.verb}
+                "metadata": order_reject_metadata,
             })
 
             try:
@@ -4551,11 +4664,12 @@ class ExecPosFSM(
                     payload={
                         "symbol": decision_pld.get("symbol", ""),
                         "side": decision_pld.get("side", "NONE"),
-                        "reason_code": "ADAPTER_ERROR",
-                        "reason_text": str(e)[:200],
+                        "reason_code": reason_code,
+                        "reason_text": reason_text,
                         "exception_class": type(e).__name__,
                         "origin_class": "execution_adapter",
                         "ts_ms": get_clock().now_ms(),
+                        **terminal_payload_extra,
                     },
                     rid=decision.rid,
                     src="execution_position",

@@ -1,0 +1,121 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_search/judge/judge_evidence_envelope_v1.json",
+    "title": "JudgeEvidenceEnvelope v1",
+    "description": "Typed, bounded, timestamped evidence package for judge evaluation. Does NOT duplicate transport-envelope metadata carried by Message.",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "envelope_id",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "verdict_scope",
+        "chamber_aggregate",
+        "strategy_id",
+        "freshness_deadline_ms",
+        "provenance",
+        "schema_version"
+    ],
+    "properties": {
+        "envelope_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "symbol": {
+            "type": "string",
+            "minLength": 1
+        },
+        "tf_sec": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "ts_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "verdict_scope": {
+            "type": "string",
+            "enum": ["ENTRY", "LIFECYCLE"]
+        },
+        "chamber_aggregate": {
+            "$ref": "chamber_aggregate_v1.json"
+        },
+        "strategy_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "regime": {
+            "type": ["string", "null"]
+        },
+        "regime_confidence": {
+            "type": ["number", "null"],
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "features_ref": {
+            "type": ["string", "null"]
+        },
+        "position_context": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["has_position"],
+                    "properties": {
+                        "has_position": {
+                            "type": "boolean"
+                        },
+                        "side": {
+                            "type": ["string", "null"],
+                            "enum": ["LONG", "SHORT", null]
+                        },
+                        "unrealized_pnl_pct": {
+                            "type": ["number", "null"]
+                        },
+                        "hold_duration_sec": {
+                            "type": ["integer", "null"],
+                            "minimum": 0
+                        },
+                        "bracket_state": {
+                            "type": ["string", "null"],
+                            "enum": ["ACTIVE", "PENDING", "NONE", null]
+                        }
+                    }
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "freshness_deadline_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cortex_version", "assembly_source"],
+            "properties": {
+                "cortex_version": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "prompt_template_id": {
+                    "type": ["string", "null"]
+                },
+                "model_version": {
+                    "type": ["string", "null"]
+                },
+                "assembly_source": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        },
+        "schema_version": {
+            "type": "string",
+            "enum": ["1"]
+        }
+    }
+}

@@ -128,6 +128,68 @@ def test_restore_artifact_writes_minimum_envelope_shape_from_runtime_state(
     assert "warm_state" not in json.dumps(payload)
 
 
+def test_authoritative_reset_removes_symbol_from_restore_artifact(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_writer(fsm, tmp_path)
+    symbol = "BTCUSDT"
+    fsm.manage_flows.clear()
+    fsm.close_flows.clear()
+    fsm._pending_brackets.clear()
+    fsm._symbol_brackets.clear()
+    fsm._symbol_bracket_truth_source.clear()
+
+    manage_flow = fsm.manage_flow(symbol)
+    manage_flow.state = ManageState.TRACKING
+    manage_flow.symbol = symbol
+    manage_flow.position_qty = "0.10"
+    manage_flow.position_entry_price = "100.0"
+    manage_flow.entry_order_id = "entry-order"
+    manage_flow.entry_client_order_id = "ENTRY-1"
+    manage_flow.sl_order_id = "sl-order"
+    manage_flow.tp_order_id = "tp-order"
+
+    close_flow = fsm.close_flow(symbol)
+    close_flow.state = CloseState.OPENED
+    close_flow.position_active = True
+
+    fsm._set_symbol_brackets_snapshot(
+        symbol,
+        sl_order_id="sl-order",
+        tp_order_id="tp-order",
+    )
+    fsm._pending_brackets["entry-order"] = {"symbol": symbol}
+
+    wrote = fsm._persist_restore_artifact_snapshot(
+        trigger="before_reset",
+        allow_empty=True,
+    )
+    assert wrote is True
+    payload = _load_json(path)
+    assert len(payload["active_lifecycles"]) == 1
+
+    with patch(
+        "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+    ):
+        changed = fsm._apply_authoritative_local_close_reset(
+            symbol,
+            reason="unit_test_reset",
+            source="unit_test",
+        )
+
+    assert changed is True
+
+    wrote = fsm._persist_restore_artifact_snapshot(
+        trigger="after_reset",
+        allow_empty=True,
+    )
+    assert wrote is True
+    payload = _load_json(path)
+    assert payload["active_lifecycles"] == []
+
+
 def test_close_phase_unknown_and_bracket_state_unknown_when_exact_truth_absent(
     fsm_harness,
     tmp_path: Path,

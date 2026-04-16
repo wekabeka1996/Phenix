@@ -29,6 +29,9 @@ class PendingTradeIntent:
     created_ts_ms: int
     routed_ts_ms: Optional[int] = None
     routed_via: Optional[str] = None
+    last_progress_ts_ms: Optional[int] = None
+    submit_in_flight_ts_ms: Optional[int] = None
+    submit_in_flight_stage: Optional[str] = None
 
 
 class IntentBoundaryAudit:
@@ -52,14 +55,17 @@ class IntentBoundaryAudit:
             default=True,
         )
         self._route_ttl_ms = self._coerce_int(
-            getattr(config, "route_ttl_ms", 2000) if config is not None else 2000,
+            getattr(config, "route_ttl_ms",
+                    2000) if config is not None else 2000,
             default=2000,
         )
         self._downstream_ttl_ms = self._coerce_int(
-            getattr(config, "downstream_ttl_ms", 5000) if config is not None else 5000,
+            getattr(config, "downstream_ttl_ms",
+                    5000) if config is not None else 5000,
             default=5000,
         )
-        base_interval_ms = max(100, min(self._route_ttl_ms, self._downstream_ttl_ms) // 4)
+        base_interval_ms = max(
+            100, min(self._route_ttl_ms, self._downstream_ttl_ms) // 4)
         self._sleep_interval_sec = min(base_interval_ms, 1000) / 1000.0
         self._pending: dict[str, PendingTradeIntent] = {}
         self._stop_requested = False
@@ -78,7 +84,8 @@ class IntentBoundaryAudit:
     def register_bus_listeners(self) -> None:
         if not self._enabled or not hasattr(self._bus, "listen"):
             return
-        self._bus.listen("EVT:TRADE_INTENT_PROPOSED", self._on_trade_intent_proposed)
+        self._bus.listen("EVT:TRADE_INTENT_PROPOSED",
+                         self._on_trade_intent_proposed)
         self._bus.listen("EVT:TRADE_INTENT_REJECTED", self._on_terminal_event)
         self._bus.listen("EVT:ORDER_PLACED", self._on_terminal_event)
         self._bus.listen("EVT:ORDER_REJECTED", self._on_terminal_event)
@@ -119,6 +126,54 @@ class IntentBoundaryAudit:
             entry.side = self._normalize_side(side)
         entry.routed_ts_ms = now_ms
         entry.routed_via = str(route)
+        entry.last_progress_ts_ms = now_ms
+
+    def mark_submit_started(
+        self,
+        *,
+        rid: str,
+        symbol: str,
+        stage: str,
+        strategy_id: str | None = None,
+        side: str | None = None,
+    ) -> None:
+        if not self._enabled:
+            return
+        rid_str = str(rid or "").strip()
+        symbol_str = str(symbol or "").strip()
+        if not rid_str or not symbol_str:
+            return
+        now_ms = get_clock().now_ms()
+        entry = self._pending.get(rid_str)
+        if entry is None:
+            entry = PendingTradeIntent(
+                rid=rid_str,
+                symbol=symbol_str,
+                strategy_id=str(strategy_id) if strategy_id else None,
+                side=self._normalize_side(side),
+                created_ts_ms=now_ms,
+            )
+            self._pending[rid_str] = entry
+        if strategy_id and not entry.strategy_id:
+            entry.strategy_id = str(strategy_id)
+        if side:
+            entry.side = self._normalize_side(side)
+        entry.last_progress_ts_ms = now_ms
+        entry.submit_in_flight_ts_ms = now_ms
+        entry.submit_in_flight_stage = str(stage or "submit")
+
+    def mark_submit_finished(self, *, rid: str) -> None:
+        if not self._enabled:
+            return
+        rid_str = str(rid or "").strip()
+        if not rid_str:
+            return
+        entry = self._pending.get(rid_str)
+        if entry is None:
+            return
+        entry.last_progress_ts_ms = get_clock().now_ms()
+        entry.submit_in_flight_ts_ms = None
+        entry.submit_in_flight_stage = None
 
     async def run_forever(self) -> None:
         if not self._enabled:
@@ -151,7 +206,19 @@ class IntentBoundaryAudit:
                         )
                     )
                 continue
-            if current_ts - entry.routed_ts_ms >= self._downstream_ttl_ms:
+            if entry.submit_in_flight_ts_ms is not None:
+                in_flight_budget_ms = self._route_ttl_ms + self._downstream_ttl_ms
+                if current_ts - entry.submit_in_flight_ts_ms >= in_flight_budget_ms:
+                    expirations.append(
+                        (
+                            entry,
+                            "NRR-EXECUTION-NO-DOWNSTREAM-EVENT",
+                            "trade_intent_boundary_audit:no_downstream_event",
+                        )
+                    )
+                continue
+            anchor_ts_ms = entry.last_progress_ts_ms or entry.routed_ts_ms
+            if current_ts - anchor_ts_ms >= self._downstream_ttl_ms:
                 expirations.append(
                     (
                         entry,
@@ -212,6 +279,9 @@ class IntentBoundaryAudit:
             "created_ts_ms": entry.created_ts_ms,
             "routed_ts_ms": entry.routed_ts_ms,
             "routed_via": entry.routed_via,
+            "last_progress_ts_ms": entry.last_progress_ts_ms,
+            "submit_in_flight_ts_ms": entry.submit_in_flight_ts_ms,
+            "submit_in_flight_stage": entry.submit_in_flight_stage,
         }
         payload: dict[str, Any] = {
             "ts_ms": ts_ms,
@@ -263,7 +333,8 @@ class IntentBoundaryAudit:
 
     @staticmethod
     def _extract_ts_ms(pld: dict[str, Any], event: Any) -> int:
-        raw_ts = pld.get("ts_ms") or pld.get("bar_close_ts") or getattr(event, "ts", None)
+        raw_ts = pld.get("ts_ms") or pld.get(
+            "bar_close_ts") or getattr(event, "ts", None)
         try:
             ts_ms = int(raw_ts)
         except Exception:

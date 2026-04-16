@@ -132,7 +132,7 @@ mean_reversion:
 
     # BB width filters (avoid too tight/wide ranges)
     min_bb_width: 0.001        # 0.1%
-    max_bb_width: 0.15         # 15%
+    max_bb_width: 0.19         # 19% (calibrated, was 15%)
 
     # Stop loss (ATR multiple)
     sl_atr_mult: 1.5
@@ -166,7 +166,13 @@ mean_reversion:
   # Source: trading.yaml optimization (December 2025)
 
   assets:
-    # --- DOGE (CHAMPION ) ---
+    # --- DOGE (CALIBRATED 2026-04-15) ---
+    # Calibration source: reports/calibration/mean_reversion/20260415_090104_DOGEUSDT
+    # Key findings:
+    #   - Only FLAT_LOW profitable (PF=4.38, +0.37%, 4 trades)
+    #   - FLAT_NORMAL catastrophic (PF=0.29, -2.50%)
+    #   - TPSL surface: tight SL (0.5 ATR) + midline TP is least-bad config
+    #   - MFE/MAE: adverse excursion > favorable (0.27% vs 0.21%) — structural loser without regime filter
     DOGEUSDT:
       enabled: true
       position_mode: "STRICT"
@@ -177,16 +183,17 @@ mean_reversion:
         mode: "ISOLATED"
 
       strategy:
-        bb_window: 20
-        bb_num_std: 2.1
-        min_bb_width: 0.005  # (min_vol_atr from report)
-        entry_threshold: 0.05
-        # Exit parameters
-        sl_atr_mult: 2.0     # P0.5: widened from 0.75 — 3/4 BUY orders hit SL instantly at old value
-        tp_to_mid: false     # False for outer band target
-        cooldown_sec: 210
-      # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for ""
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+        bb_window: 25          # calibrated (was 20)
+        bb_num_std: 2.13       # calibrated (was 2.1)
+        min_bb_width: 0.004    # calibrated (was 0.005)
+        entry_threshold: 0.063 # calibrated (was 0.05)
+        sl_atr_mult: 0.5      # TPSL surface best cell (was 2.0) — tight SL critical
+        tp_to_mid: true        # midline TP always beats outer (was false)
+        cooldown_sec: 309      # calibrated (was 210)
+      # Regime Gating — CALIBRATED: FLAT_LOW profitable (PF=4.38), LOW_VOL is its Aurora parent
+      # HIGH_VOLATILITY: 0 trades in calibration window — allowed for coverage
+      # Was: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+      allowed_regimes: ["FLAT_LOW"]
 
     # --- BTC (BRONZE ) ---
     BTCUSDT:

@@ -41,6 +41,7 @@ from apps.reference.contracts.runtime_gap_policy import (
     extract_gap_status,
 )
 from apps.reference.contracts.runtime_regime_layers import (
+    attach_regime_provenance,
     is_structural_regime_payload,
 )
 
@@ -120,13 +121,15 @@ class FeatureEngineering:
             elif isinstance(config, AuroraConfig):
                 resolver = DomainConfigResolver(config)
             else:
-                raise TypeError(f"Unsupported config type for price_motion_sanity: {type(config)}")
+                raise TypeError(
+                    f"Unsupported config type for price_motion_sanity: {type(config)}")
 
             self._resolver = resolver
             self._price_motion_sanity_cfg = resolver.get_decision_making().price_motion_sanity
 
             # VALIDATE: degraded_allowed_strategies must use recognized strategy IDs
-            allowed_degraded = getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
+            allowed_degraded = getattr(
+                self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
             registry = self._resolver.get_strategies_registry()
             if allowed_degraded and registry:
                 known_strats = registry.arbitration.priority.keys()
@@ -303,7 +306,8 @@ class FeatureEngineering:
         """
         Check if the symbol's ENTIRE assigned strategy set is explicitly degraded-eligible.
         """
-        degraded_allowed = getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
+        degraded_allowed = getattr(
+            self.cfg._cfg.warmup, "degraded_allowed_strategies", [])
         if not degraded_allowed:
             return False
 
@@ -761,7 +765,7 @@ class FeatureEngineering:
                 return
             symbol = pld.get("symbol")
             if symbol:
-                self.last_regime[symbol] = pld
+                self.last_regime[symbol] = dict(pld)
         except Exception as e:
             self.logger.error(f"Error handling regime: {e}")
 
@@ -1966,10 +1970,24 @@ class FeatureEngineering:
                 }
                 for anchor, diag in self._anchor_intake_diag.items()
             }
+            features_close_boundary_ts_ms = (
+                int(bar_identity.close_boundary_ts_ms)
+                if bar_identity is not None
+                else int(
+                    bar_data.get("close_boundary_ts_ms")
+                    or bar_data.get("end_ts_ms")
+                    or bar_data.get("close_ts")
+                    or bar_data.get("kline_close_time")
+                    or 0
+                )
+                if isinstance(bar_data, dict)
+                else 0
+            )
             features_payload = {
                 "ts": current_tick["ts"],
                 "symbol": symbol,
                 "tf_sec": tf_sec,
+                "close_boundary_ts_ms": features_close_boundary_ts_ms,
                 "features": features,
                 "warmup": warmup,
                 "diagnostics": {
@@ -2097,12 +2115,14 @@ class FeatureEngineering:
                     )
                     if warmup_mode == "fail_fast":
                         if self._is_degraded_allowed_for_symbol(symbol):
-                            self.logger.warning(f"{msg} -> allowed (exclusive degraded-eligible bypass for assigned strategies)")
+                            self.logger.warning(
+                                f"{msg} -> allowed (exclusive degraded-eligible bypass for assigned strategies)")
                             # EXPLICIT METADATA PROVENANCE
                             if isinstance(warmup, dict):
                                 warmup["degraded_emit"] = True
                                 warmup["degraded_emit_reason"] = "symbol_assigned_set_is_entirely_degraded_eligible"
-                                warmup["degraded_allowed_strategies"] = list(getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", []))
+                                warmup["degraded_allowed_strategies"] = list(
+                                    getattr(self.cfg._cfg.warmup, "degraded_allowed_strategies", []))
                         else:
                             self.logger.warning(f"{msg} -> rejected")
                             _emit_cmd_blocked(
@@ -2217,6 +2237,13 @@ class FeatureEngineering:
                         "obi_close": obi_close_str,
                     }
 
+                    regime_snapshot = self.last_regime.get(symbol)
+                    if isinstance(regime_snapshot, dict):
+                        regime_snapshot = attach_regime_provenance(
+                            regime_snapshot,
+                            bar_close_ts_ms=int(bar_close_ts),
+                        )
+
                     cmd_payload = {
                         "symbol": symbol,
                         "tf_sec": tf_sec,                        # T2B-03: Required for strategy routing
@@ -2226,7 +2253,7 @@ class FeatureEngineering:
                         "features": features,                    # Calculated features + EP-01.1
                         "warmup": warmup,                        # T2B-03: Readiness snapshot
                         # REG-FIX-01: Injected regime
-                        "regime": self.last_regime.get(symbol),
+                        "regime": regime_snapshot,
                         "source_mode": source_mode,
                         # MR-V1-WIRING: price_motion for microstructure veto price-reaction logic
                         "price_motion": pm_block,

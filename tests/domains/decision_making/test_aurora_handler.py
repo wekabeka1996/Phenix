@@ -101,6 +101,19 @@ class TestRegimeCaching:
         assert state.warmup_full_ready is False
         assert state.warmup_ticks_seen == 0
 
+    def test_regime_detected_preserves_missing_confidence(self, handler):
+        event = {
+            "symbol": "BTCUSDT",
+            "regime": "TREND_UP",
+            "ts_ms": 1700000000000,
+        }
+
+        handler.on_regime_detected(event)
+
+        state = handler._symbol_states["BTCUSDT"]
+        assert state.regime == "TREND_UP"
+        assert state.regime_confidence is None
+
     def test_regime_detected_handles_missing_symbol(self, handler):
         """on_regime_detected should handle missing symbol gracefully."""
         event = {"regime": "TREND_UP"}

@@ -64,12 +64,12 @@ def _make_fsm_stub(bus: _FakeBus, lifecycle=None, *, write_wal: bool = False) ->
     return fsm
 
 
-def _make_err_msg(why: str) -> Any:
+def _make_err_msg(why: str, payload: dict | None = None) -> Any:
     msg = MagicMock()
     msg.op = "ERR"
     msg.verb = "OPEN"
     msg.why = why
-    msg.pld = {}
+    msg.pld = dict(payload or {})
     msg.rid = "ERR-RID-1"
     msg.data_ref = None
     return msg
@@ -116,7 +116,13 @@ def test_intent_router_produces_schema_valid_reject_payload() -> None:
             "rid": "RID-SCHEMA-TEST-1",
             "instrument": "BTCUSDT",
             "side": "BUY",
-            "order": {"qty": "0.01", "order_type": "LIMIT", "price": "50000", "tif": "GTC"},
+            "order": {
+                "qty": "0.01",
+                "order_type": "LIMIT",
+                "price": "50000",
+                "tif": "GTC",
+            },
+            "valid_for_ms": 30_000,
             "idempotent_key": "KEY-1",
         },
         why="test_schema_valid",
@@ -131,6 +137,69 @@ def test_intent_router_produces_schema_valid_reject_payload() -> None:
     payload = emitted[0]
     _validate_reject_payload(payload)
     assert "reason" not in payload
+
+
+def test_intent_router_maps_local_lifecycle_conflict_to_specific_reason_code() -> None:
+    from apps.reference.domains.execution_position.intent_router import IntentRouter
+    from vfoundation.core.protocol import Message
+
+    bus = _FakeBus()
+    fsm = _make_fsm_stub(bus)
+    fsm.handle = MagicMock(
+        return_value=_make_err_msg(
+            "OPEN_GUARD_FAIL",
+            {
+                "reason": "local_manage_state_conflict",
+                "local_manage_state": "BRACKETS_PENDING",
+                "portfolio_state": "FLAT",
+                "divergence_detected": True,
+                "tracked_rid": "tracked-rid-1",
+                "lifecycle_id": "lifecycle-1",
+                "entry_order_id": "entry-1",
+                "sl_order_id": "sl-1",
+                "tp_order_id": "tp-1",
+            },
+        )
+    )
+    fsm.open_flow = MagicMock()
+    fsm.manage_flows = {}
+
+    router = IntentRouter(fsm=fsm)
+    intent_msg = Message(
+        op="EVT",
+        verb="TRADE_INTENT_PROPOSED",
+        src="decision_making",
+        dst="execution_position",
+        pld={
+            "rid": "RID-LOCAL-CONFLICT-1",
+            "instrument": "BTCUSDT",
+            "side": "BUY",
+            "order": {
+                "qty": "0.01",
+                "order_type": "LIMIT",
+                "price": "50000",
+                "tif": "GTC",
+            },
+            "valid_for_ms": 30_000,
+            "idempotent_key": "KEY-1",
+        },
+        why="test_schema_valid",
+    )
+
+    with patch.object(router, "_mark_intent_routed"):
+        router.on_trade_intent_proposed(intent_msg)
+
+    emitted = [p for (t, p) in bus.emitted if t == "EVT:TRADE_INTENT_REJECTED"]
+    assert emitted, "No EVT:TRADE_INTENT_REJECTED was emitted"
+
+    payload = emitted[0]
+    _validate_reject_payload(payload)
+    assert payload["reason_code"] == "NRR-EXECUTION-LOCAL-LIFECYCLE-CONFLICT"
+    assert payload["why"] == "OPEN_GUARD_FAIL"
+    assert payload["details"]["reason"] == "local_manage_state_conflict"
+    assert payload["details"]["local_manage_state"] == "BRACKETS_PENDING"
+    assert payload["details"]["portfolio_state"] == "FLAT"
+    assert payload["details"]["divergence_detected"] is True
 
 
 def test_lifecycle_reject_terminates_intent_not_orphan_ttl(tmp_path) -> None:

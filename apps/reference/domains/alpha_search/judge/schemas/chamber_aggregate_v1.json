@@ -1,0 +1,79 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_search/judge/chamber_aggregate_v1.json",
+    "title": "ChamberAggregate v1",
+    "description": "Aggregation of all expert outputs for one evaluation cycle.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "chamber_id",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "verdict_scope",
+        "expert_outputs",
+        "expert_count",
+        "responding_count",
+        "abstaining_count",
+        "consensus_strength",
+        "admissibility",
+        "schema_version"
+    ],
+    "properties": {
+        "chamber_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "symbol": {
+            "type": "string",
+            "minLength": 1
+        },
+        "tf_sec": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "ts_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "verdict_scope": {
+            "type": "string",
+            "enum": ["ENTRY", "LIFECYCLE"]
+        },
+        "expert_outputs": {
+            "type": "array",
+            "items": {
+                "$ref": "expert_output_v1.json"
+            }
+        },
+        "expert_count": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "responding_count": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "abstaining_count": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "consensus_direction": {
+            "type": ["string", "null"],
+            "enum": ["LONG", "SHORT", "NEUTRAL", "SPLIT", null]
+        },
+        "consensus_strength": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "admissibility": {
+            "type": "string",
+            "enum": ["ADMISSIBLE", "INADMISSIBLE", "QUORUM_INSUFFICIENT"]
+        },
+        "schema_version": {
+            "type": "string",
+            "enum": ["1"]
+        }
+    }
+}

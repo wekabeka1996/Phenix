@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from apps.reference.config_models import PositionPolicySidecarConfig
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.fsm_close import CloseState
 from apps.reference.domains.execution_position.fsm_manage import ManageState
 from apps.reference.domains.execution_position.position_policy_sidecar import (
     PositionPolicySidecar,
@@ -861,6 +862,10 @@ def test_execpos_position_policy_close_request_state_links_request_to_reconcile(
     assert reconciled[0]["request_id"] == request["request_id"]
     assert reconciled[0]["business_close_reconciled"] is True
     assert reconciled[0]["reconcile_source"] == "guardian_reconcile"
+    assert manage_flow.state == ManageState.FLAT
+    assert manage_flow.has_active_lifecycle() is False
+    assert close_flow.state == CloseState.FLAT
+    assert close_flow.last_close_reason is None
 
 
 def test_execpos_position_policy_close_request_suppresses_when_manage_flow_closing(fsm_config, tmp_path: Path) -> None:

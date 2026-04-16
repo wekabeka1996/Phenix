@@ -29,6 +29,16 @@ from .config_models import (
     load_alpha_search_config,
     get_default_config,
 )
+from .judge.experts.expert_output_bridge import (
+    alpha_score_to_expert_output,
+    write_jsonl_chamber_log,
+    write_jsonl_envelope_log,
+    write_jsonl_shadow_log,
+    write_jsonl_verdict_log,
+)
+from .judge.chamber import ChamberAggregator
+from .judge.envelope import assemble_evidence_envelope
+from .judge.verdict import synthesize_verdict
 
 LOG = logging.getLogger(__name__)
 
@@ -251,8 +261,46 @@ class AlphaSearchBacktestPlugin:
                 ),
             )
             return EnsembleModel(config=ensemble_cfg, models=models)
+        elif cfg.judge_expert:
+            # Judge expert (Phase 2 shadow expert)
+            return self._create_judge_expert(name, cfg)
         else:
             LOG.warning(f"Provider '{name}' has no adapter or ensemble config")
+            return None
+
+    def _create_judge_expert(self, name: str, cfg: ProviderConfig) -> Optional[AlphaModel]:
+        """Create a judge expert model from judge config.
+
+        Reads expert config from self.config.judge.experts and instantiates
+        the appropriate expert class.
+        """
+        judge_cfg = self.config.judge
+        if judge_cfg is None or judge_cfg.mode == "off":
+            LOG.debug(f"Judge mode is off, skipping judge expert '{name}'")
+            return None
+
+        experts_cfg = judge_cfg.experts
+        if experts_cfg is None:
+            LOG.warning(f"Judge experts config is None, skipping '{name}'")
+            return None
+
+        expert_type = cfg.judge_expert.expert_type
+        if expert_type == "signal_weights":
+            if not experts_cfg.signal_weights.enabled:
+                LOG.debug(f"signal_weights expert disabled, skipping '{name}'")
+                return None
+            from .judge.experts.signal_weights_expert import SignalWeightsExpert
+            return SignalWeightsExpert(experts_cfg.signal_weights)
+        elif expert_type == "feature_neutrals":
+            if not experts_cfg.feature_neutrals.enabled:
+                LOG.debug(
+                    f"feature_neutrals expert disabled, skipping '{name}'")
+                return None
+            from .judge.experts.feature_neutrals_expert import FeatureNeutralsExpert
+            return FeatureNeutralsExpert(experts_cfg.feature_neutrals)
+        else:
+            LOG.warning(
+                f"Unknown judge expert type '{expert_type}' for '{name}'")
             return None
 
     def _register_listeners(self) -> None:
@@ -558,6 +606,17 @@ class AlphaSearchBacktestPlugin:
         self._cache_hits += 1
         features = cache_entry.features
 
+        # Phase 3: Build solicited expert roster and output collection
+        solicited_expert_ids = []
+        judge_expert_outputs = []
+        for pid, pcfg in self.provider_configs.items():
+            if pcfg.judge_expert is not None and self._is_symbol_allowed(symbol, pcfg):
+                # Resolve expert_id from judge expert config block
+                expert_id = self._resolve_judge_expert_id(
+                    pcfg.judge_expert.expert_type)
+                if expert_id:
+                    solicited_expert_ids.append(expert_id)
+
         # Run each enabled provider
         for provider_id, model in self.providers.items():
             cfg = self.provider_configs[provider_id]
@@ -638,7 +697,7 @@ class AlphaSearchBacktestPlugin:
                     context={"mode": "backtest", "shadow": self.shadow_mode}
                 )
 
-                self._process_score(
+                expert_output = self._process_score(
                     provider_id=provider_id,
                     symbol=symbol,
                     score=score,
@@ -648,12 +707,25 @@ class AlphaSearchBacktestPlugin:
                     tf_sec=tf_sec,
                     bar_close_ts=bar_close_ts,
                 )
+                if expert_output is not None:
+                    judge_expert_outputs.append(expert_output)
 
             except Exception as e:
                 LOG.warning(f"[{symbol}] Provider {provider_id} error: {e}")
                 if cfg.fail_closed:
                     self._emit_fail_closed_score(
                         provider_id, symbol, tf_sec, bar_close_ts)
+
+        # Phase 3: Chamber aggregation after provider loop
+        if solicited_expert_ids:
+            self._run_chamber_aggregation(
+                symbol=symbol,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+                solicited_expert_ids=solicited_expert_ids,
+                judge_expert_outputs=judge_expert_outputs,
+                features=cache_entry.features if cache_entry else {},
+            )
 
     def _normalize_features_for_provider(
         self,
@@ -821,8 +893,12 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         tf_sec: int,
         bar_close_ts: int,
-    ) -> None:
-        """Process calculated score: emit event, update virtual trader."""
+    ) -> Optional["ExpertOutput"]:
+        """Process calculated score: emit event, update virtual trader.
+
+        Returns ExpertOutput for judge expert providers (Phase 3 chamber
+        collection), None for all others.
+        """
         stats = self.provider_stats[provider_id]
         stats.signals_generated += 1
 
@@ -837,16 +913,27 @@ class AlphaSearchBacktestPlugin:
         self._signal_provider[signal_id] = provider_id
         model_signal_id = self._extract_model_signal_id(score)
 
-        # Emit event
-        self._emit_score_event(
-            provider_id=provider_id,
-            symbol=symbol,
-            score=score,
-            threshold=threshold,
-            tf_sec=tf_sec,
-            bar_close_ts=bar_close_ts,
-            signal_id=signal_id,
-        )
+        # Emit event — judge experts use dedicated shadow path
+        expert_output = None
+        cfg = self.provider_configs[provider_id]
+        if cfg.judge_expert is not None:
+            expert_output = self._process_judge_expert_score(
+                provider_id=provider_id,
+                symbol=symbol,
+                score=score,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+            )
+        else:
+            self._emit_score_event(
+                provider_id=provider_id,
+                symbol=symbol,
+                score=score,
+                threshold=threshold,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+                signal_id=signal_id,
+            )
 
         # Virtual trader logic
         if self.config.virtual_trader.enabled and current_price > 0:
@@ -868,6 +955,8 @@ class AlphaSearchBacktestPlugin:
                     signal_id=signal_id,
                     model_signal_id=model_signal_id,
                 )
+
+        return expert_output
 
     def _emit_score_event(
         self,
@@ -906,6 +995,292 @@ class AlphaSearchBacktestPlugin:
             f"conf={score.confidence:.4f} thr={threshold}"
         )
 
+    def _process_judge_expert_score(
+        self,
+        provider_id: str,
+        symbol: str,
+        score: AlphaScore,
+        tf_sec: int,
+        bar_close_ts: int,
+    ) -> Optional["ExpertOutput"]:
+        """Phase 2+3 shadow path for judge expert outputs.
+
+        Layer 2 integration:
+        1. Translate AlphaScore → ExpertOutput via bridge
+        2. Emit EVT:JUDGE_EXPERT_PRODUCED_V1
+        3. Write JSONL shadow log when enabled
+        4. Return ExpertOutput for Phase 3 chamber collection
+        Does NOT emit EVT:ALPHA_SCORE_CALCULATED.
+        """
+        cfg = self.provider_configs[provider_id]
+        judge_cfg = self.config.judge
+
+        # Resolve expert_version from judge expert config
+        expert_type = cfg.judge_expert.expert_type
+        expert_version = "1.0.0"
+        if judge_cfg and judge_cfg.experts:
+            if expert_type == "signal_weights":
+                expert_version = judge_cfg.experts.signal_weights.expert_version
+            elif expert_type == "feature_neutrals":
+                expert_version = judge_cfg.experts.feature_neutrals.expert_version
+
+        # 1. Bridge: AlphaScore → ExpertOutput
+        expert_output = alpha_score_to_expert_output(
+            score,
+            expert_version=expert_version,
+            tf_sec=tf_sec,
+            ts_ms=bar_close_ts,
+        )
+
+        # 2. Emit EVT:JUDGE_EXPERT_PRODUCED_V1
+        self.event_bus.emit(
+            event_name="EVT:JUDGE_EXPERT_PRODUCED_V1",
+            payload=expert_output.model_dump(),
+            why=f"judge_expert_{provider_id}",
+        )
+
+        # 3. Write JSONL shadow log when enabled
+        if (
+            judge_cfg
+            and judge_cfg.shadow_log
+            and judge_cfg.shadow_log.enabled
+        ):
+            try:
+                write_jsonl_shadow_log(
+                    expert_output,
+                    log_dir=judge_cfg.shadow_log.log_dir,
+                )
+            except Exception:
+                LOG.exception(
+                    "[%s] Failed to write judge shadow log for %s",
+                    symbol,
+                    provider_id,
+                )
+
+        LOG.debug(
+            "[%s] %s: judge expert → %s conf=%.4f (shadow)",
+            symbol,
+            provider_id,
+            expert_output.entry_verdict,
+            expert_output.confidence,
+        )
+
+        # 4. Return for Phase 3 chamber collection
+        return expert_output
+
+    def _resolve_judge_expert_id(self, expert_type: str) -> Optional[str]:
+        """Resolve expert_id from the judge expert config block by expert_type."""
+        judge_cfg = self.config.judge
+        if not judge_cfg or not judge_cfg.experts:
+            return None
+        if expert_type == "signal_weights":
+            return judge_cfg.experts.signal_weights.expert_id
+        elif expert_type == "feature_neutrals":
+            return judge_cfg.experts.feature_neutrals.expert_id
+        return None
+
+    def _run_chamber_aggregation(
+        self,
+        symbol: str,
+        tf_sec: int,
+        bar_close_ts: int,
+        solicited_expert_ids: list,
+        judge_expert_outputs: list,
+        features: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Phase 3+4: Run chamber aggregation and verdict synthesis.
+
+        Aggregates collected expert outputs, emits chamber event,
+        writes chamber JSONL log. Then assembles evidence envelope and
+        synthesizes verdict (Phase 4). Shadow-only — never consumed by
+        decision_making or execution_position.
+        """
+        judge_cfg = self.config.judge
+        if not judge_cfg or judge_cfg.mode != "shadow":
+            return
+        chamber_cfg = judge_cfg.chamber
+        if not chamber_cfg:
+            return
+
+        # Entry chamber
+        if chamber_cfg.entry_enabled:
+            entry_agg = ChamberAggregator("ENTRY", chamber_cfg)
+            entry_result = entry_agg.aggregate(
+                judge_expert_outputs,
+                expected_expert_ids=solicited_expert_ids,
+                symbol=symbol,
+                tf_sec=tf_sec,
+                ts_ms=bar_close_ts,
+            )
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_CHAMBER_AGGREGATED_V1",
+                payload=entry_result.model_dump(),
+                why=f"judge_chamber_entry_{symbol}",
+            )
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_chamber_log(
+                        entry_result,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write chamber log", symbol
+                    )
+            LOG.debug(
+                "[%s] Entry chamber: %s experts, %s responding, %s → %s (shadow)",
+                symbol,
+                entry_result.expert_count,
+                entry_result.responding_count,
+                entry_result.admissibility,
+                entry_result.consensus_direction,
+            )
+
+            # Phase 4: Entry verdict path
+            if judge_cfg.verdict and judge_cfg.verdict.entry_enabled:
+                self._assemble_and_emit_verdict(
+                    chamber_result=entry_result,
+                    judge_cfg=judge_cfg,
+                    bar_close_ts=bar_close_ts,
+                    features=features,
+                    verdict_event="EVT:JUDGE_ENTRY_VERDICT_V1",
+                )
+
+        # Lifecycle chamber stub (only when explicitly enabled)
+        if chamber_cfg.lifecycle_enabled:
+            lifecycle_agg = ChamberAggregator("LIFECYCLE", chamber_cfg)
+            lifecycle_result = lifecycle_agg.aggregate(
+                [],
+                expected_expert_ids=[],
+                symbol=symbol,
+                tf_sec=tf_sec,
+                ts_ms=bar_close_ts,
+            )
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_CHAMBER_AGGREGATED_V1",
+                payload=lifecycle_result.model_dump(),
+                why=f"judge_chamber_lifecycle_{symbol}",
+            )
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_chamber_log(
+                        lifecycle_result,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write lifecycle chamber log", symbol
+                    )
+
+            # Phase 4: Lifecycle verdict path
+            if judge_cfg.verdict and judge_cfg.verdict.lifecycle_enabled:
+                self._assemble_and_emit_verdict(
+                    chamber_result=lifecycle_result,
+                    judge_cfg=judge_cfg,
+                    bar_close_ts=bar_close_ts,
+                    features=features,
+                    verdict_event="EVT:JUDGE_LIFECYCLE_VERDICT_V1",
+                )
+
+    def _assemble_and_emit_verdict(
+        self,
+        chamber_result,
+        judge_cfg,
+        bar_close_ts: int,
+        features: Optional[Dict[str, Any]],
+        verdict_event: str,
+    ) -> None:
+        """Phase 4: Assemble evidence envelope and synthesize verdict.
+
+        Fail-closed: if envelope assembly or verdict synthesis fails,
+        log WARNING and do NOT emit. The chamber event was already emitted.
+
+        Authority: docs/LLM_JUDGE/LLM_JUDGE_PHASE4_IMPLEMENTATION_BLUEPRINT.md §12, §13.4
+        """
+        symbol = chamber_result.symbol
+        try:
+            # Extract regime metadata (optional enrichment, §13.2.1)
+            regime = None
+            regime_confidence = None
+            if features:
+                regime = features.get("regime")
+                raw_rc = features.get("regime_confidence")
+                if raw_rc is not None:
+                    try:
+                        regime_confidence = float(raw_rc)
+                    except (TypeError, ValueError):
+                        regime_confidence = None
+
+            # Build features_ref
+            features_ref = f"bar:{symbol}:{chamber_result.tf_sec}:{bar_close_ts}"
+
+            # Assemble envelope
+            envelope = assemble_evidence_envelope(
+                chamber_result,
+                verdict_config=judge_cfg.verdict,
+                chamber_config=judge_cfg.chamber,
+                features_ref=features_ref,
+                regime=regime,
+                regime_confidence=regime_confidence,
+            )
+
+            # Emit envelope event
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_EVIDENCE_ASSEMBLED_V1",
+                payload=envelope.model_dump(),
+                why=f"judge_envelope_{chamber_result.verdict_scope.lower()}_{symbol}",
+            )
+
+            # Envelope JSONL
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_envelope_log(
+                        envelope,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception("[%s] Failed to write envelope log", symbol)
+
+            # Synthesize verdict
+            verdict = synthesize_verdict(
+                envelope,
+                verdict_config=judge_cfg.verdict,
+            )
+
+            # Emit verdict event
+            self.event_bus.emit(
+                event_name=verdict_event,
+                payload=verdict.model_dump(),
+                why=f"judge_verdict_{chamber_result.verdict_scope.lower()}_{symbol}",
+            )
+
+            # Verdict JSONL
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_verdict_log(
+                        verdict,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception("[%s] Failed to write verdict log", symbol)
+
+            LOG.debug(
+                "[%s] %s verdict: %s conf=%.4f dissent=%s (shadow)",
+                symbol,
+                chamber_result.verdict_scope,
+                verdict.entry_verdict or verdict.lifecycle_verdict,
+                verdict.confidence,
+                verdict.dissent_noted,
+            )
+
+        except Exception:
+            LOG.warning(
+                "[%s] Phase 4 verdict assembly failed for %s chamber (fail-closed)",
+                symbol,
+                chamber_result.verdict_scope,
+                exc_info=True,
+            )
+
     def _emit_fail_closed_score(
         self,
         provider_id: str,
@@ -914,7 +1289,19 @@ class AlphaSearchBacktestPlugin:
         bar_close_ts: int,
         reason: str = "missing_features_for_bar",
     ) -> None:
-        """Emit fail-closed score (score=0) when features unavailable."""
+        """Emit fail-closed score (score=0) when features unavailable.
+
+        Judge expert providers are silently suppressed — they must not leak
+        into the generic EVT:ALPHA_SCORE_CALCULATED stream.
+        """
+        cfg = self.provider_configs.get(provider_id)
+        if cfg and cfg.judge_expert is not None:
+            LOG.debug(
+                "[%s] Judge expert %s fail-closed suppressed: %s",
+                symbol, provider_id, reason,
+            )
+            return
+
         payload = {
             "provider_id": provider_id,
             "model_name": f"{provider_id}_fail_closed",

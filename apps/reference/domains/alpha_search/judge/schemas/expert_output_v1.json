@@ -1,0 +1,68 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_search/judge/expert_output_v1.json",
+    "title": "ExpertOutput v1",
+    "description": "Typed output from one expert perspective on a trading decision.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "expert_id",
+        "expert_version",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "confidence",
+        "reasoning",
+        "schema_version"
+    ],
+    "properties": {
+        "expert_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "expert_version": {
+            "type": "string",
+            "minLength": 1
+        },
+        "symbol": {
+            "type": "string",
+            "minLength": 1
+        },
+        "tf_sec": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "ts_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "entry_verdict": {
+            "type": ["string", "null"],
+            "enum": ["OPEN_LONG", "OPEN_SHORT", "NO_ENTRY", "SUPPRESS", "UNKNOWN", null]
+        },
+        "lifecycle_verdict": {
+            "type": ["string", "null"],
+            "enum": ["HOLD", "PROTECT", "EXIT", "SUPPRESS", "UNKNOWN", null]
+        },
+        "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "signal_direction": {
+            "type": ["string", "null"],
+            "enum": ["LONG", "SHORT", "NEUTRAL", null]
+        },
+        "reasoning": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 1
+        },
+        "schema_version": {
+            "type": "string",
+            "enum": ["1"]
+        }
+    }
+}

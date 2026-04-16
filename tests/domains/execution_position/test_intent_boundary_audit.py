@@ -128,6 +128,52 @@ def test_boundary_audit_emits_no_downstream_reject_when_routed_but_stalled() -> 
     assert audit.pending_count == 0
 
 
+def test_boundary_audit_grants_submit_in_flight_grace_before_reject() -> None:
+    bus = _DispatchingBus()
+    audit = IntentBoundaryAudit(
+        bus=bus,
+        config=type("Cfg", (), {
+                    "enabled": True, "route_ttl_ms": 2000, "downstream_ttl_ms": 5000})(),
+    )
+    audit.register_bus_listeners()
+
+    proposal = _proposal_payload(rid="RID-IN-FLIGHT")
+    bus.emit("EVT:TRADE_INTENT_PROPOSED", proposal, "test")
+    audit.mark_routed(
+        rid="RID-IN-FLIGHT",
+        symbol="BTCUSDT",
+        route="CMD:OPEN",
+        strategy_id="aurora",
+        side="BUY",
+    )
+    pending = audit.get_pending("RID-IN-FLIGHT")
+    assert pending is not None and pending.routed_ts_ms is not None
+
+    submit_started_ts_ms = pending.routed_ts_ms + 600
+    with patch("apps.reference.domains.execution_position.intent_boundary_audit.get_clock") as mock_clock:
+        mock_clock.return_value.now_ms.return_value = submit_started_ts_ms
+        audit.mark_submit_started(
+            rid="RID-IN-FLIGHT",
+            symbol="BTCUSDT",
+            stage="limit_rest_submit",
+            strategy_id="aurora",
+            side="BUY",
+        )
+
+    audit.sweep(now_ms=pending.routed_ts_ms + 5000)
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
+    assert rejects == []
+
+    audit.sweep(now_ms=submit_started_ts_ms + 7000)
+    rejects = [event for event in bus.events if event[0]
+               == "EVT:TRADE_INTENT_REJECTED"]
+    assert len(rejects) == 1
+    reject_payload = rejects[0][1]
+    assert reject_payload["reason_code"] == "NRR-EXECUTION-NO-DOWNSTREAM-EVENT"
+    assert reject_payload["details"]["submit_in_flight_stage"] == "limit_rest_submit"
+
+
 def test_boundary_audit_clears_pending_after_trade_executed_without_order_placed() -> None:
     bus = _DispatchingBus()
     audit = IntentBoundaryAudit(

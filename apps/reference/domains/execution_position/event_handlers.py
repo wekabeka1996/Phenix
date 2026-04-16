@@ -350,6 +350,17 @@ class EPEventHandlers:
                         except Exception:
                             pass
 
+                    self._fsm._apply_authoritative_local_close_reset(
+                        sym,
+                        reason="position_closed_detected",
+                        source="portfolio_update",
+                        payload={
+                            "close_reason": close_reason,
+                            "prev_amt": prev_amt,
+                            "now_amt": now_amt,
+                        },
+                    )
+
                     # Trigger orphan cleanup
                     if hasattr(self._fsm, "order_guardian") and self._fsm.order_guardian:
                         loop = self._fsm._get_async_loop()

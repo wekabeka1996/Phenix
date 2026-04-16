@@ -24,16 +24,7 @@ from apps.reference.core.time import get_clock
 from apps.reference.contracts.runtime_analytics_restore import (
     RuntimeAnalyticsRestoreScope,
     StrategyAnalyticsRestoreSnapshot,
-    combine_restore_permissions_live_first,
-    lookup_restore_status,
-    merge_restore_readiness_live_first,
-    restore_execution_blocking_tokens,
-    restore_status_to_readiness_status,
     upgrade_cold_execution_restore_if_clean_start,
-)
-from apps.reference.bootstrap.startup_warmup import (
-    apply_startup_warmup_permission_overlay,
-    startup_warmup_gate_tokens,
 )
 from apps.reference.contracts.runtime_bar_identity import (
     CanonicalBarIdentity,
@@ -45,22 +36,15 @@ from apps.reference.contracts.runtime_bar_identity import (
 from apps.reference.contracts.runtime_gap_policy import (
     RuntimeGapStatus,
     attach_gap_status_payload,
-    build_basis_bar_status_from_gap,
-    build_trading_status_from_gap,
     extract_gap_status,
-    gap_blocking_tokens,
-    gap_blocks_open_new_risk,
 )
 from apps.reference.contracts.runtime_regime_layers import (
+    build_regime_provenance_fields,
     is_structural_regime_payload,
     normalize_structural_regime_label,
 )
 from apps.reference.contracts.runtime_readiness import (
     RuntimeReadinessScope,
-    make_permissions,
-    make_snapshot,
-    partial_status,
-    ready_status,
 )
 from vfoundation.core.protocol import Message
 from apps.reference.utils.accessors import aget
@@ -87,6 +71,11 @@ from apps.reference.config_models import (
 )
 from apps.reference.domains.decision_making.mean_reversion_logger import MeanReversionBarLogger
 from apps.reference.domains.decision_making.position_queries import PositionQueries
+from apps.reference.domains.decision_making.runtime_readiness_builder import (
+    RestoreScopeSpec,
+    RuntimeReadinessBuildRequest,
+    build_runtime_readiness,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -210,7 +199,11 @@ class MeanReversionHandler:
         self._enabled_symbols: set[str] = set()
         self._per_symbol_regime: Dict[str, str] = {}
         self._regime_ts_ms: Dict[str, int] = {}
+        self._regime_event_ts_ms: Dict[str, int] = {}
         self._regime_confidence: Dict[str, float] = {}
+        self._regime_source: Dict[str, str] = {}
+        self._regime_same_bar: Dict[str, bool | None] = {}
+        self._regime_provenance_reason: Dict[str, str] = {}
         self._last_tick_ts_ms: Dict[str, int] = {}
         self._last_counted_bar_end_ts_ms: Dict[str, int] = {}
         self._latest_portfolio: Dict[str, Any] | None = None
@@ -960,6 +953,7 @@ class MeanReversionHandler:
         replay_identity: CanonicalReplayIdentity | None = None,
         gap_status: RuntimeGapStatus | None = None,
         warmup_readiness: Dict[str, Any] | None = None,
+        regime_ctx: Dict[str, Any] | None = None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED after runtime overlays are applied.
 
@@ -996,295 +990,208 @@ class MeanReversionHandler:
         # P0-1: Get cached features for this symbol (from last CMD:PROCESS_STRATEGY)
         cached_features = self._last_cmd_features.get(symbol, {})
         restore_snapshot = self.get_runtime_analytics_restore_snapshot(symbol)
-        base_runtime_permissions = make_permissions(
-            can_manage_existing_risk=True,
-            can_open_new_risk=not gap_blocks_open_new_risk(gap_status),
-        )
-        runtime_permissions = combine_restore_permissions_live_first(
-            base_runtime_permissions,
-            restore_snapshot,
-        )
-        blocking_reason_chain = list(gap_blocking_tokens(gap_status)) + list(
-            restore_execution_blocking_tokens(restore_snapshot)
-        )
-        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
-            blocking_reason_chain.append("protect_only")
-            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        runtime_scopes = {
-            RuntimeReadinessScope.BASIS_BAR_READY.value: build_basis_bar_status_from_gap(
-                gap_status,
-                updated_at=int(signal.timestamp_ms),
-                source="market_data:payload_bridge",
-                evidence_ref=(bar_identity.to_ref()
-                              if bar_identity is not None else None),
-            ),
-            RuntimeReadinessScope.MICROSTRUCTURE_READY.value: (
-                ready_status(
-                    why=["fe_warmup_full_ready"],
-                    updated_at=int(signal.timestamp_ms),
-                    source="feature_engineering:payload_bridge",
-                    evidence_ref=f"warmup:{symbol}:{int(signal.timestamp_ms)}",
-                )
-                if isinstance(warmup_readiness, dict) and bool(warmup_readiness.get("full_ready"))
-                else partial_status(
-                    why=["fe_warmup_not_ready"],
-                    updated_at=int(signal.timestamp_ms),
-                    source="feature_engineering:payload_bridge",
-                    evidence_ref=f"warmup:{symbol}:{int(signal.timestamp_ms)}",
-                )
-            ),
-            RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value: ready_status(
-                why=["signal_emitted"],
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=rid,
-            ),
-            RuntimeReadinessScope.TRADING_READY.value: build_trading_status_from_gap(
-                gap_status,
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            ),
-        }
-        runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = (
-            ready_status(
-                why=["flat_regime_present"],
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=f"flat_regime:{symbol}:{int(signal.timestamp_ms)}",
-            )
-            if signal.flat_regime is not None
-            else partial_status(
-                why=["flat_regime_missing"],
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=f"flat_regime:{symbol}:{int(signal.timestamp_ms)}",
-            )
-        )
+        ts_int = int(signal.timestamp_ms)
+
+        # ── Restore specs ────────────────────────────────────────────
+        restore_specs: tuple[RestoreScopeSpec, ...] = ()
         if restore_snapshot is not None:
-            runtime_scopes[RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value] = restore_status_to_readiness_status(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+            restore_specs = (
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.EXECUTION_STATE,
+                    target_scope=RuntimeReadinessScope.EXECUTION_CONTEXT_READY.value,
+                    mode="restore_only",
+                    source="execution_position:startup_restore",
+                    evidence_ref=rid,
                 ),
-                updated_at=int(signal.timestamp_ms),
-                source="execution_position:startup_restore",
-                evidence_ref=rid,
-            )
-            runtime_scopes[RuntimeReadinessScope.MICROSTRUCTURE_READY.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.FEATURE_ENGINEERING_CACHE,
+                    target_scope=RuntimeReadinessScope.MICROSTRUCTURE_READY.value,
+                    mode="merge_live_first",
+                    source="feature_engineering:startup_restore",
+                    evidence_ref=rid,
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes.get(
-                    RuntimeReadinessScope.MICROSTRUCTURE_READY.value),
-                updated_at=int(signal.timestamp_ms),
-                source="feature_engineering:startup_restore",
-                evidence_ref=rid,
-                live_evidence_present=True,
-            )
-            runtime_scopes[RuntimeReadinessScope.REGIME_READY.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.REGIME_DETECTOR_STATE,
+                    target_scope=RuntimeReadinessScope.REGIME_READY.value,
+                    mode="merge_live_first",
+                    source="regime_detector:startup_restore",
+                    evidence_ref=rid,
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes[RuntimeReadinessScope.REGIME_READY.value],
-                updated_at=int(signal.timestamp_ms),
-                source="regime_detector:startup_restore",
-                evidence_ref=rid,
-                live_evidence_present=True,
-            )
-            runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value] = merge_restore_readiness_live_first(
-                lookup_restore_status(
-                    restore_snapshot,
-                    RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE,
+                RestoreScopeSpec(
+                    restore_scope=RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE,
+                    target_scope=RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value,
+                    mode="merge_live_first",
+                    source="decision_making:mean_reversion",
+                    evidence_ref=rid,
+                    restored_why=("signal_emitted",),
+                    live_evidence_present=True,
                 ),
-                live_status=runtime_scopes[RuntimeReadinessScope.STRATEGY_READY_PER_SYMBOL.value],
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=rid,
-                restored_why=["signal_emitted"],
-                live_evidence_present=True,
             )
-            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-                gap_status,
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            )
-        runtime_permissions = apply_startup_warmup_permission_overlay(
-            runtime_permissions,
+
+        builder_result = build_runtime_readiness(
+            RuntimeReadinessBuildRequest(
+                strategy_id="mean_reversion",
+                symbol=symbol,
+                updated_at=ts_int,
+                source_prefix="decision_making:mean_reversion",
+                gap_status=gap_status,
+                restore_snapshot=restore_snapshot,
+                bar_identity=bar_identity,
+                base_can_open_new_risk=True,
+                warmup_ready=isinstance(warmup_readiness, dict) and bool(
+                    warmup_readiness.get("full_ready")),
+                regime_present=signal.flat_regime is not None,
+                regime_ts_ms=ts_int,
+                regime_ready_why="flat_regime_present",
+                regime_missing_why="flat_regime_missing",
+                regime_live_source="regime_detector:payload_bridge",
+                regime_ready_evidence_ref=f"flat_regime:{symbol}:{ts_int}",
+                regime_missing_evidence_ref=f"flat_regime:{symbol}:{ts_int}",
+                signal_evidence_ref=rid,
+                strategy_ready_why=("signal_emitted",),
+                restore_specs=restore_specs,
+            ),
         )
-        blocking_reason_chain.extend(startup_warmup_gate_tokens())
-        blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-        runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-            gap_status,
-            updated_at=int(signal.timestamp_ms),
-            source="decision_making:mean_reversion",
-            evidence_ref=rid,
-            allow_open_new_risk=runtime_permissions.can_open_new_risk,
-            open_ready_why=["open_new_risk_allowed"],
-            blocked_why=blocking_reason_chain,
-        )
-        if runtime_permissions.can_manage_existing_risk and (not runtime_permissions.can_open_new_risk):
-            blocking_reason_chain.append("protect_only")
-            blocking_reason_chain = list(dict.fromkeys(blocking_reason_chain))
-            runtime_scopes[RuntimeReadinessScope.TRADING_READY.value] = build_trading_status_from_gap(
-                gap_status,
-                updated_at=int(signal.timestamp_ms),
-                source="decision_making:mean_reversion",
-                evidence_ref=rid,
-                allow_open_new_risk=runtime_permissions.can_open_new_risk,
-                open_ready_why=["open_new_risk_allowed"],
-                blocked_why=blocking_reason_chain,
-            )
-        runtime_snapshot = make_snapshot(
-            strategy_id="mean_reversion",
-            symbol=symbol,
-            updated_at=int(signal.timestamp_ms),
-            scopes=runtime_scopes,
-            source="decision_making:mean_reversion",
-            permissions=runtime_permissions,
-            blocking_reason_chain=blocking_reason_chain,
-        )
+        runtime_permissions = builder_result.permissions
+        runtime_snapshot = builder_result.snapshot
+        blocking_reason_chain = list(builder_result.blocking_reason_chain)
         objective_trace = None
         emitted_score = float(signal.confidence)
+        resolved_regime_name = ""
+        resolved_regime_ts_ms = 0
+        resolved_regime_confidence = None
+        if isinstance(regime_ctx, dict):
+            resolved_regime_name = str(regime_ctx.get("regime") or "")
+            try:
+                resolved_regime_ts_ms = int(
+                    regime_ctx.get("regime_event_ts_ms")
+                    or regime_ctx.get("regime_ts_ms")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                resolved_regime_ts_ms = 0
+            resolved_regime_confidence = regime_ctx.get("confidence")
         domain_cfg = getattr(
             getattr(self.config, "domains", None), "objective_engine", None)
         mr_cfg = getattr(getattr(self.config, "strategies",
                          None), "mean_reversion", None)
         objective_cfg = getattr(mr_cfg, "objective",
                                 None) if mr_cfg is not None else None
-        if (
+
+        # ── Objective Engine Integration (shared evaluator) ──
+        _obj_enabled = (
             domain_cfg is not None
             and objective_cfg is not None
             and bool(getattr(domain_cfg, "enabled", False))
             and bool(getattr(objective_cfg, "enabled", False))
-        ):
-            try:
-                from apps.reference.domains.objective_engine.adapters import (
-                    build_behavior_input,
-                    build_execution_input,
-                    build_exposure_input,
-                    build_market_input,
-                    build_objective_input,
-                    build_signal_input,
-                    build_structure_input_from_prices,
-                    compute_projected_order_notional,
-                    compute_readiness_completeness,
-                )
-                from apps.reference.domains.objective_engine.engine import evaluate_objective
+        )
+        if _obj_enabled:
+            from apps.reference.domains.decision_making.objective_gate_evaluator import (
+                ObjectiveBehaviorAdapter,
+                ObjectiveGateRequest,
+                ObjectiveGateStatus,
+                ObjectiveSignalAdapter,
+                ObjectiveSizingAdapter,
+                ObjectiveStructureAdapter,
+                evaluate_objective_gate,
+            )
 
-                cost_cfg = domain_cfg.components.get("cost")
-                behavior_cfg = domain_cfg.components.get("behavior")
-                if cost_cfg is None or not cost_cfg.enabled:
-                    raise ValueError("OBJECTIVE_COMPONENT_MISSING:cost")
-                if behavior_cfg is None or not behavior_cfg.enabled:
-                    raise ValueError("OBJECTIVE_COMPONENT_MISSING:behavior")
-                if not isinstance(self._latest_portfolio, dict):
-                    raise ValueError("OBJECTIVE_PORTFOLIO_MISSING")
-                if not isinstance(self._latest_exposure_summary, dict):
-                    raise ValueError("OBJECTIVE_EXPOSURE_SUMMARY_MISSING")
-                if self._position_queries is None:
-                    raise ValueError(
-                        "OBJECTIVE_SIZING_UNAVAILABLE:position_queries")
-                regime_name = str(
-                    signal.flat_regime.name if signal.flat_regime else "")
-                if not regime_name:
-                    raise ValueError("OBJECTIVE_REGIME_MISSING")
-                regime_ts_ms = int(self._regime_ts_ms.get(symbol, 0) or 0)
-                if regime_ts_ms <= 0:
-                    raise ValueError("OBJECTIVE_REGIME_TS_MISSING")
-                regime_confidence = self._regime_confidence.get(symbol)
-                if regime_confidence is None:
-                    raise ValueError("OBJECTIVE_REGIME_CONFIDENCE_MISSING")
-                if signal.entry_price is None or signal.stop_price is None or signal.target_price is None:
-                    raise ValueError("OBJECTIVE_PRICE_CTX_MISSING")
-                if signal.atr is None or Decimal(str(signal.atr)) <= Decimal("0"):
-                    raise ValueError("OBJECTIVE_ATR_MISSING")
+            features_for_objective = dict(cached_features or {})
+            features_for_objective.setdefault("price", float(signal.price))
+            features_for_objective.setdefault("atr", float(signal.atr))
 
-                features_for_objective = dict(cached_features or {})
-                features_for_objective.setdefault("price", float(signal.price))
-                features_for_objective.setdefault("atr", float(signal.atr))
+            readiness_source = (
+                warmup_readiness.get("ready")
+                if isinstance(warmup_readiness, dict) and isinstance(warmup_readiness.get("ready"), dict)
+                else warmup_readiness
+            )
+            regime_name = resolved_regime_name or str(
+                signal.flat_regime.name if signal.flat_regime else "")
+            regime_ts_ms = int(
+                resolved_regime_ts_ms or self._regime_event_ts_ms.get(
+                    symbol, 0) or self._regime_ts_ms.get(symbol, 0) or 0
+            )
+            regime_confidence = (
+                resolved_regime_confidence
+                if resolved_regime_confidence is not None
+                else self._regime_confidence.get(symbol)
+            )
 
-                readiness_source = (
-                    warmup_readiness.get("ready")
-                    if isinstance(warmup_readiness, dict) and isinstance(warmup_readiness.get("ready"), dict)
-                    else warmup_readiness
-                )
-                objective_market = build_market_input(
-                    features=features_for_objective)
-                signal_input = build_signal_input(
+            if regime_confidence is None:
+                if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                    self._objective_blocked_ts_ms.setdefault(
+                        symbol, deque()).append(int(signal.timestamp_ms))
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                        reason="DECISION",
+                        context="mean_reversion_handler:objective_engine",
+                        details={
+                            "error": "OBJECTIVE_REGIME_CONFIDENCE_MISSING"},
+                        why_chain=["OBJECTIVE_ENGINE",
+                                   "FAIL_CLOSED",
+                                   "OBJECTIVE_REGIME_CONFIDENCE_MISSING"],
+                    )
+                    return
+            else:
+                obj_gate_result = evaluate_objective_gate(ObjectiveGateRequest(
                     strategy_id="mean_reversion",
                     symbol=symbol,
-                    signal_score=float(signal.confidence),
-                    signal_direction=1 if str(side).upper() == "BUY" else -1,
-                    regime=regime_name,
-                    regime_age_sec=max(0.0, float(
-                        (int(signal.timestamp_ms) - regime_ts_ms) / 1000.0)),
-                    regime_confidence=float(regime_confidence),
-                    readiness_completeness=compute_readiness_completeness(
-                        readiness_source),
-                )
-                structure_input = build_structure_input_from_prices(
-                    signal_score=float(signal.confidence),
-                    active_threshold=float(
-                        self._strategies[symbol].config.entry_threshold),
-                    entry_price=Decimal(str(signal.entry_price)),
-                    stop_price=Decimal(str(signal.stop_price)),
-                    target_price=Decimal(str(signal.target_price)),
-                    atr=Decimal(str(signal.atr)),
-                )
-                projected_notional_usd = compute_projected_order_notional(
-                    symbol=symbol,
-                    side=str(side).upper(),
-                    entry_price=Decimal(str(signal.entry_price)),
-                    position_queries=self._position_queries,
-                    portfolio=self._latest_portfolio,
-                    features_payload=features_for_objective,
-                )
-                exposure_input = build_exposure_input(
                     config=self.config,
+                    domain_cfg=domain_cfg,
+                    strategy_cfg=objective_cfg,
+                    market_features=features_for_objective,
+                    signal=ObjectiveSignalAdapter(
+                        signal_score=float(signal.confidence),
+                        signal_direction=1 if str(
+                            side).upper() == "BUY" else -1,
+                        regime_name=regime_name,
+                        regime_ts_ms=regime_ts_ms,
+                        regime_confidence=float(regime_confidence),
+                        readiness_source=readiness_source if isinstance(
+                            readiness_source, dict) else {},
+                        active_threshold=float(
+                            self._strategies[symbol].config.entry_threshold),
+                    ),
+                    structure=ObjectiveStructureAdapter(
+                        mode="price_ctx",
+                        entry_price=Decimal(
+                            str(signal.entry_price)) if signal.entry_price is not None else None,
+                        stop_price=Decimal(
+                            str(signal.stop_price)) if signal.stop_price is not None else None,
+                        target_price=Decimal(
+                            str(signal.target_price)) if signal.target_price is not None else None,
+                        atr=Decimal(str(signal.atr)
+                                    ) if signal.atr is not None else None,
+                    ),
+                    sizing=ObjectiveSizingAdapter(
+                        side=str(side).upper(),
+                        entry_price=Decimal(
+                            str(signal.entry_price)) if signal.entry_price is not None else Decimal("0"),
+                        features_payload=features_for_objective,
+                    ),
+                    behavior=ObjectiveBehaviorAdapter(
+                        now_ms=int(signal.timestamp_ms),
+                        cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(
+                            symbol, deque()),
+                        blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(
+                            symbol, deque()),
+                        reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(
+                            symbol, deque()),
+                    ),
                     portfolio=self._latest_portfolio,
                     exposure_summary=self._latest_exposure_summary,
-                    projected_order_notional_usd=projected_notional_usd,
-                )
-                behavior_input = build_behavior_input(
-                    now_ms=int(signal.timestamp_ms),
-                    window_sec=float(behavior_cfg.parameters["window_sec"]),
-                    cancel_replace_ts_ms=self._objective_cancel_replace_ts_ms.setdefault(
-                        symbol, deque()),
-                    blocked_intent_ts_ms=self._objective_blocked_ts_ms.setdefault(
-                        symbol, deque()),
-                    reentry_ts_ms=self._objective_reentry_ts_ms.setdefault(
-                        symbol, deque()),
-                )
-                execution_input = build_execution_input(
-                    expected_fee_bps=float(
-                        cost_cfg.parameters["base_fee_bps"]),
-                    expected_slippage_bps=objective_market.spread_bps *
-                    float(cost_cfg.parameters["slippage_from_spread_ratio"]),
-                )
-                obj_input = build_objective_input(
-                    signal=signal_input,
-                    market=objective_market,
-                    structure=structure_input,
-                    exposure=exposure_input,
-                    behavior=behavior_input,
-                    execution=execution_input,
-                )
-                obj_score = evaluate_objective(
-                    obj_input, domain_cfg, objective_cfg)
-                objective_trace = obj_score.trace.model_dump()
-                emitted_score = float(obj_score.objective_score)
-                if obj_score.is_blocked:
+                    position_queries=self._position_queries,
+                ))
+
+                if obj_gate_result.status == ObjectiveGateStatus.PASSED:
+                    objective_trace = obj_gate_result.trace_payload
+                    emitted_score = float(
+                        obj_gate_result.objective_score.objective_score)
+                elif obj_gate_result.status == ObjectiveGateStatus.GATE_BLOCKED:
+                    obj_score = obj_gate_result.objective_score
                     self._objective_blocked_ts_ms.setdefault(
                         symbol, deque()).append(int(signal.timestamp_ms))
                     self._emit_strategy_blocked(
@@ -1303,20 +1210,36 @@ class MeanReversionHandler:
                             obj_score.block_reason or "GATE_BLOCKED")],
                     )
                     return
-            except Exception as exc:
-                if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
-                    self._objective_blocked_ts_ms.setdefault(
-                        symbol, deque()).append(int(signal.timestamp_ms))
-                    self._emit_strategy_blocked(
-                        symbol=symbol,
-                        reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
-                        reason="DECISION",
-                        context="mean_reversion_handler:objective_engine",
-                        details={"error": str(exc)},
-                        why_chain=["OBJECTIVE_ENGINE",
-                                   "FAIL_CLOSED", str(exc)],
-                    )
-                    return
+                elif obj_gate_result.status == ObjectiveGateStatus.PRECONDITION_FAILED:
+                    if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                        self._objective_blocked_ts_ms.setdefault(
+                            symbol, deque()).append(int(signal.timestamp_ms))
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                            reason="DECISION",
+                            context="mean_reversion_handler:objective_engine",
+                            details={
+                                "error": obj_gate_result.precondition_code},
+                            why_chain=["OBJECTIVE_ENGINE",
+                                       "FAIL_CLOSED", str(obj_gate_result.precondition_code)],
+                        )
+                        return
+                elif obj_gate_result.status == ObjectiveGateStatus.EVALUATION_ERROR:
+                    if getattr(domain_cfg.data_requirements, "strict_fail_closed", True):
+                        self._objective_blocked_ts_ms.setdefault(
+                            symbol, deque()).append(int(signal.timestamp_ms))
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
+                            reason="DECISION",
+                            context="mean_reversion_handler:objective_engine",
+                            details={"error": obj_gate_result.error},
+                            why_chain=["OBJECTIVE_ENGINE",
+                                       "FAIL_CLOSED", str(obj_gate_result.error)],
+                        )
+                        return
+                # DISABLED status from evaluator: no-op (shouldn't happen since we checked enabled above)
 
         pld = {
             "schema_version": 1,
@@ -1362,6 +1285,8 @@ class MeanReversionHandler:
                 "regime": signal.flat_regime.name if signal.flat_regime else "UNKNOWN",
             },
         }
+        if isinstance(regime_ctx, dict) and regime_ctx:
+            pld["regime_ctx"] = dict(regime_ctx)
         if bar_identity is not None:
             pld["bar_identity"] = bar_identity.to_payload()
             pld["close_boundary_ts_ms"] = int(
@@ -1457,6 +1382,30 @@ class MeanReversionHandler:
                     pld, dict) else getattr(pld, "ts", None))
             if ts_ms > 0:
                 self._regime_ts_ms[symbol] = int(ts_ms)
+            provenance_payload = pld if isinstance(pld, dict) else {
+                "regime": regime,
+                "ts_ms": ts_ms,
+                "bar_close_ts_ms": getattr(pld, "bar_close_ts_ms", None),
+            }
+            provenance = build_regime_provenance_fields(
+                provenance_payload,
+                bar_close_ts_ms=(
+                    pld.get("bar_close_ts_ms")
+                    if isinstance(pld, dict)
+                    else getattr(pld, "bar_close_ts_ms", None)
+                ),
+            )
+            if provenance.get("regime_event_ts_ms") is not None:
+                self._regime_event_ts_ms[symbol] = int(
+                    provenance.get("regime_event_ts_ms")
+                )
+            self._regime_source[symbol] = str(
+                provenance.get("regime_source") or ""
+            )
+            self._regime_same_bar[symbol] = provenance.get("regime_same_bar")
+            self._regime_provenance_reason[symbol] = str(
+                provenance.get("regime_provenance_reason") or ""
+            )
             self.on_regime(symbol, regime)
         except Exception as e:
             self._stats["regime_processing_errors"] += 1
@@ -1922,15 +1871,62 @@ class MeanReversionHandler:
             # Set regime from CMD payload or cache
             regime_data = pld.get("regime") if isinstance(
                 pld, dict) else getattr(pld, "regime", None)
-            if regime_data:
-                regime_name = regime_data.get("regime") if isinstance(
-                    regime_data, dict) else getattr(regime_data, "regime", None)
-                if regime_name:
-                    strategy.set_regime(symbol, regime_name)
+            resolved_regime_ctx: Dict[str, Any] = {}
+            resolved_regime_name = None
+            resolved_regime_confidence = None
+            resolved_regime_event_ts_ms = 0
+            if isinstance(regime_data, dict):
+                resolved_regime_name = normalize_structural_regime_label(
+                    regime_data.get("regime") or regime_data.get(
+                        "overall_regime")
+                )
+                provenance = build_regime_provenance_fields(
+                    regime_data,
+                    bar_close_ts_ms=int(
+                        bar_close_ts) if bar_close_ts else None,
+                )
+                confidence_raw = regime_data.get("confidence")
+                if confidence_raw not in (None, ""):
+                    try:
+                        resolved_regime_confidence = float(confidence_raw)
+                    except (TypeError, ValueError):
+                        resolved_regime_confidence = None
+                resolved_regime_event_ts_ms = int(
+                    provenance.get("regime_event_ts_ms") or 0
+                )
+                if resolved_regime_name:
+                    resolved_regime_ctx = {
+                        "regime": resolved_regime_name,
+                        "confidence": resolved_regime_confidence,
+                        "regime_ts_ms": resolved_regime_event_ts_ms or None,
+                        **provenance,
+                    }
             else:
                 regime = self._per_symbol_regime.get(symbol)
                 if regime:
-                    strategy.set_regime(symbol, regime)
+                    resolved_regime_name = regime
+                    resolved_regime_confidence = self._regime_confidence.get(
+                        symbol)
+                    provenance = build_regime_provenance_fields(
+                        {
+                            "regime": regime,
+                            "regime_event_ts_ms": self._regime_event_ts_ms.get(symbol) or self._regime_ts_ms.get(symbol),
+                        },
+                        bar_close_ts_ms=int(
+                            bar_close_ts) if bar_close_ts else None,
+                    )
+                    resolved_regime_event_ts_ms = int(
+                        provenance.get("regime_event_ts_ms") or 0
+                    )
+                    resolved_regime_ctx = {
+                        "regime": resolved_regime_name,
+                        "confidence": resolved_regime_confidence,
+                        "regime_ts_ms": resolved_regime_event_ts_ms or None,
+                        **provenance,
+                    }
+
+            if resolved_regime_name:
+                strategy.set_regime(symbol, resolved_regime_name)
 
             # Vector 2: Directional Bias — compute effective thresholds from funding
             self._apply_directional_bias(symbol, strategy)
@@ -1996,6 +1992,7 @@ class MeanReversionHandler:
                             gap_status=gap_status,
                             warmup_readiness=(
                                 pld.get("warmup") if isinstance(pld, dict) else None),
+                            regime_ctx=resolved_regime_ctx if resolved_regime_ctx else None,
                         )
                     else:
                         self.logger.info(

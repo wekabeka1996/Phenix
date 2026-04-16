@@ -22,6 +22,13 @@ from apps.reference.domains.execution_position.utils import (
 )
 from apps.reference.domains.execution_position.qty_normalizer import normalize_qty
 from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_stored
+from apps.reference.domains.execution_position.open_submission_adapter import (
+    OPEN_SUBMISSION_CONTRACT,
+    OPEN_SUBMISSION_PATH,
+    OpenSubmissionAdapterError,
+    OpenSubmissionPayload,
+    build_open_submission_trace_ref,
+)
 from apps.reference.domains.execution_position.terminal_order_contracts import (
     emit_canonical_terminal_order_event,
     normalize_order_rejected_payload,
@@ -31,6 +38,30 @@ if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
 
 LOG = logging.getLogger(__name__)
+
+
+class UncertainSubmitRecoveryError(Exception):
+    """Raised when an exchange timeout/unknown-submit cannot be reconciled."""
+
+    def __init__(
+        self,
+        *,
+        symbol: str,
+        entry_id: str,
+        original_error: Exception,
+        attempts: int,
+    ) -> None:
+        self.symbol = str(symbol or "")
+        self.entry_id = str(entry_id or "")
+        self.original_error = original_error
+        self.attempts = int(attempts)
+        self.binance_code = getattr(original_error, "code", None)
+        super().__init__(
+            "Uncertain submit recovery failed: "
+            f"{self.symbol} client_order_id={self.entry_id} "
+            f"after {self.attempts} attempts (original: {original_error})"
+        )
+
 
 # FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
 try:
@@ -52,6 +83,109 @@ class OpenExecutor:
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    def _mark_submit_started(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        side: str,
+        stage: str,
+    ) -> None:
+        audit = getattr(self._fsm, "_intent_boundary_audit", None)
+        if audit is None:
+            return
+        strategy_id = None
+        if isinstance(getattr(decision, "pld", None), dict):
+            strategy_id = decision.pld.get(
+                "strategy_id") or decision.pld.get("strategy")
+        audit.mark_submit_started(
+            rid=decision.rid,
+            symbol=symbol,
+            stage=stage,
+            strategy_id=str(strategy_id) if strategy_id else None,
+            side=side,
+        )
+
+    def _mark_submit_finished(self, *, decision: "Message") -> None:
+        audit = getattr(self._fsm, "_intent_boundary_audit", None)
+        if audit is None:
+            return
+        audit.mark_submit_finished(rid=decision.rid)
+
+    @staticmethod
+    def _is_uncertain_submit_error(error: Exception) -> bool:
+        err_code = getattr(error, "code", None)
+        if err_code == -1007:
+            return True
+        msg = str(getattr(error, "msg", error) or "").lower()
+        return "status unknown" in msg and "timeout" in msg
+
+    async def _recover_uncertain_limit_submit(
+        self,
+        *,
+        symbol: str,
+        entry_id: str,
+        error: Exception,
+    ) -> Dict[str, Any]:
+        adapter = getattr(self._fsm, "adapter", None)
+        lookup = getattr(adapter, "get_order_by_client_order_id", None)
+        if adapter is None or not callable(lookup):
+            raise UncertainSubmitRecoveryError(
+                symbol=symbol,
+                entry_id=entry_id,
+                original_error=error,
+                attempts=0,
+            ) from error
+
+        attempts_made = 0
+        for attempt, delay_sec in enumerate((0.0, 0.35, 0.75), start=1):
+            attempts_made = attempt
+            if delay_sec > 0:
+                await get_clock().sleep_sec(delay_sec)
+            try:
+                recovered = await lookup(symbol, entry_id)
+            except Exception as lookup_exc:
+                LOG.warning(
+                    "UNCERTAIN_LIMIT_SUBMIT_LOOKUP_FAILED: %s %s attempt=%d error=%s",
+                    symbol,
+                    entry_id,
+                    attempt,
+                    lookup_exc,
+                )
+                continue
+            if not recovered:
+                continue
+
+            recovered_order_id = recovered.get("orderId")
+            if recovered_order_id not in (None, "") and hasattr(adapter, "register_clientorderid"):
+                try:
+                    await adapter.register_clientorderid(entry_id, str(recovered_order_id), symbol)
+                except Exception as register_exc:
+                    LOG.warning(
+                        "UNCERTAIN_LIMIT_SUBMIT_LEDGER_REGISTER_FAILED: %s %s order_id=%s error=%s",
+                        symbol,
+                        entry_id,
+                        recovered_order_id,
+                        register_exc,
+                    )
+
+            LOG.warning(
+                "UNCERTAIN_LIMIT_SUBMIT_RECOVERED: %s client_order_id=%s attempt=%d order_id=%s original_error=%s",
+                symbol,
+                entry_id,
+                attempt,
+                recovered_order_id,
+                error,
+            )
+            return recovered
+
+        raise UncertainSubmitRecoveryError(
+            symbol=symbol,
+            entry_id=entry_id,
+            original_error=error,
+            attempts=attempts_made,
+        ) from error
 
     @classmethod
     def _extract_limit_rounding_trace(cls, decision: "Message") -> Dict[str, Optional[str]]:
@@ -148,6 +282,132 @@ class OpenExecutor:
                 metadata["distance_to_touch"] = str(submit_price - best_bid)
 
         return trace
+
+    async def _emit_open_submission_reject(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        side: str,
+        quantity: str,
+        details: str,
+        data_ref: list[str],
+    ) -> None:
+        from vfoundation.core.fsm_emit_compat import Message, emit_compat
+
+        LOG.error(
+            "OPEN_SUBMISSION_REJECT: contract=%s path=%s rid=%s symbol=%s reason=%s",
+            OPEN_SUBMISSION_CONTRACT,
+            OPEN_SUBMISSION_PATH,
+            decision.rid,
+            symbol,
+            details,
+        )
+        try:
+            logged_qty = float(quantity)
+        except Exception:
+            logged_qty = 0.0
+        order_logger.write({
+            "rid": decision.rid,
+            "event_type": "ORDER_REJECTED",
+            "symbol": symbol,
+            "side": side,
+            "quantity": logged_qty,
+            "why": details[:80],
+            "source_fsm": "ExecPosFSM",
+            "origin_class": "execution_internal",
+            "metadata": {
+                "submission_contract": OPEN_SUBMISSION_CONTRACT,
+                "submission_path": OPEN_SUBMISSION_PATH,
+            },
+        })
+        reject_payload = normalize_order_rejected_payload(
+            {
+                "symbol": symbol,
+                "side": side,
+                "reason": "OPEN_SUBMISSION_FAIL",
+                "details": details,
+                "origin_class": "execution_internal",
+            },
+            fallback_rid=decision.rid,
+            fallback_ts_ms=get_clock().now_ms(),
+        )
+        await emit_compat(
+            self._fsm.fsm,
+            Message(
+                op="EVT",
+                verb="ORDER_REJECTED",
+                src="execution_position",
+                dst="decision_making",
+                rid=decision.rid,
+                pld=reject_payload,
+                why="OPEN_SUBMISSION_FAIL",
+                data_ref=list(data_ref or []),
+            ),
+            logger=LOG,
+        )
+
+    async def _submit_open_entry(
+        self,
+        *,
+        decision: "Message",
+        submission: OpenSubmissionPayload,
+        wal: Any,
+    ) -> tuple[Optional[Dict[str, Any]], list[str]]:
+        if submission.order_type == "LIMIT":
+            entry_resp, submission_after, price_adjusted = await self._place_limit_entry(
+                decision=decision,
+                submission=submission,
+                wal=wal,
+            )
+            if entry_resp is None:
+                return None, []
+            trace_ref = build_open_submission_trace_ref(
+                status="success",
+                submit_kind=submission_after.submit_kind,
+                price_adjusted=price_adjusted,
+            )
+            LOG.info(
+                "OPEN_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s submit_kind=%s price_adjusted=%s",
+                OPEN_SUBMISSION_CONTRACT,
+                OPEN_SUBMISSION_PATH,
+                decision.rid,
+                submission_after.symbol,
+                submission_after.submit_kind,
+                price_adjusted,
+            )
+            return entry_resp, list(decision.data_ref or []) + [trace_ref]
+
+        self._mark_submit_started(
+            decision=decision,
+            symbol=submission.symbol,
+            side=submission.side,
+            stage="market_rest_submit",
+        )
+        try:
+            entry_resp = await self._fsm.adapter.place_market_entry(
+                submission.symbol,
+                submission.side,
+                submission.quantity,
+                submission.client_order_id,
+            )
+            trace_ref = build_open_submission_trace_ref(
+                status="success",
+                submit_kind=submission.submit_kind,
+                price_adjusted=False,
+            )
+            LOG.info(
+                "OPEN_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s submit_kind=%s price_adjusted=%s",
+                OPEN_SUBMISSION_CONTRACT,
+                OPEN_SUBMISSION_PATH,
+                decision.rid,
+                submission.symbol,
+                submission.submit_kind,
+                False,
+            )
+            return entry_resp, list(decision.data_ref or []) + [trace_ref]
+        finally:
+            self._mark_submit_finished(decision=decision)
 
     async def execute_open(self, decision: "Message") -> None:
         """Execute the OPEN entry flow."""
@@ -260,14 +520,36 @@ class OpenExecutor:
             decision, "idempotent_key", None) or decision.rid
         entry_id = generate_client_order_id(
             "ENTRY", symbol, idempotent_key=str(idem_key) if idem_key else None)
-        entry_resp = None
+        try:
+            submission = OpenSubmissionPayload.from_dec_open(
+                payload=decision.pld or {},
+                normalized_qty=qty,
+                client_order_id=entry_id,
+            )
+        except OpenSubmissionAdapterError as exc:
+            reject_ref = build_open_submission_trace_ref(
+                status="reject",
+                submit_kind="limit" if order_type == "LIMIT" else "market",
+                price_adjusted=False,
+                reason="adapter_validation",
+            )
+            await self._emit_open_submission_reject(
+                decision=decision,
+                symbol=symbol,
+                side=side,
+                quantity=qty,
+                details=f"typed submission adapter rejected: {exc}",
+                data_ref=list(decision.data_ref or []) + [reject_ref],
+            )
+            return
 
-        if order_type == "LIMIT" and price:
-            entry_resp = await self._place_limit_entry(decision, symbol, side, price, qty, tif, entry_id, wal)
-            if entry_resp is None:
-                return  # Rejected (GTX etc)
-        else:
-            entry_resp = await self._fsm.adapter.place_market_entry(symbol, side, qty, entry_id)
+        entry_resp, submission_data_ref = await self._submit_open_entry(
+            decision=decision,
+            submission=submission,
+            wal=wal,
+        )
+        if entry_resp is None:
+            return
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
         # Post-entry: ORDER_INDEX, guardian, watchdog, logging
@@ -283,6 +565,7 @@ class OpenExecutor:
             norm_result,
             order_type,
             mark,
+            data_ref=submission_data_ref,
         )
 
         # LIMIT deferred brackets path
@@ -512,8 +795,19 @@ class OpenExecutor:
 
         return order_type, tif, price
 
-    async def _place_limit_entry(self, decision, symbol, side, price, qty, tif, entry_id, wal):
-        """Place LIMIT entry, handle GTX rejection. Returns resp or None."""
+    async def _place_limit_entry(
+        self,
+        decision,
+        submission: OpenSubmissionPayload,
+        wal,
+    ):
+        """Place LIMIT entry, handle GTX rejection. Returns response, final submission, and price-adjusted flag."""
+        symbol = submission.symbol
+        side = submission.side
+        price = submission.price
+        qty = submission.quantity
+        tif = submission.time_in_force
+        entry_id = submission.client_order_id
         submit_trace = await self._collect_limit_submit_trace(
             decision=decision,
             symbol=symbol,
@@ -524,6 +818,7 @@ class OpenExecutor:
         )
         order_logger.write(submit_trace)
         submit_meta = submit_trace.get("metadata", {})
+        price_adjusted = False
 
         # ── FILL-PIPELINE-FIX: Pre-submit GTX spread guard ──────────────
         # Ensure LIMIT GTX price is on the passive side of the book.
@@ -555,6 +850,7 @@ class OpenExecutor:
                         # BUY crossing ask → adjust to best_bid (passive)
                         submit_price = best_bid
                         price = str(submit_price)
+                        price_adjusted = True
                         LOG.warning(
                             "GTX_SPREAD_GUARD: %s BUY adjusted %s → %s (was >= ask %s)",
                             symbol, original_price, submit_price, best_ask)
@@ -562,6 +858,7 @@ class OpenExecutor:
                         # SELL crossing bid → adjust to best_ask (passive)
                         submit_price = best_ask
                         price = str(submit_price)
+                        price_adjusted = True
                         LOG.warning(
                             "GTX_SPREAD_GUARD: %s SELL adjusted %s → %s (was <= bid %s)",
                             symbol, original_price, submit_price, best_bid)
@@ -581,6 +878,10 @@ class OpenExecutor:
                         })
         # ── end spread guard ────────────────────────────────────────────
 
+        if price is None:
+            raise OpenSubmissionAdapterError("LIMIT submission requires price")
+        submission = submission.with_limit_price(price)
+
         LOG.info(
             "LIMIT_SUBMIT_TRACE: symbol=%s side=%s tif=%s before=%s after=%s tick=%s mode=%s best_bid=%s best_ask=%s spread=%s distance_to_touch=%s rid=%s",
             symbol,
@@ -598,11 +899,23 @@ class OpenExecutor:
         )
         LOG.info(
             f"Placing LIMIT entry: {symbol} {side} {qty} @ {price}, tif={tif}")
+        self._mark_submit_started(
+            decision=decision,
+            symbol=symbol,
+            side=side,
+            stage="limit_rest_submit",
+        )
         try:
             entry_resp = await self._fsm.adapter.place_limit_entry(
-                symbol, side, price, qty, time_in_force=tif, new_client_order_id=entry_id)
+                submission.symbol,
+                submission.side,
+                submission.price,
+                submission.quantity,
+                time_in_force=submission.time_in_force,
+                new_client_order_id=submission.client_order_id,
+            )
             LOG.info(f"✅ LIMIT entry placed: {entry_resp}")
-            return entry_resp
+            return entry_resp, submission, price_adjusted
         except Exception as e:
             from .reasons import MAKER_ONLY_REJECT, is_maker_only_reject_error
             err_code = getattr(e, 'code', None)
@@ -631,13 +944,21 @@ class OpenExecutor:
                     write_wal=True,
                     fallback_ts_ms=get_clock().now_ms(),
                 )
-                return None
-            else:
-                LOG.error(f"LIMIT entry failed: {e}")
-                raise
+                return None, submission, price_adjusted
+            if self._is_uncertain_submit_error(e):
+                recovered = await self._recover_uncertain_limit_submit(
+                    symbol=symbol,
+                    entry_id=entry_id,
+                    error=e,
+                )
+                return recovered, submission, price_adjusted
+            LOG.error(f"LIMIT entry failed: {e}")
+            raise
+        finally:
+            self._mark_submit_finished(decision=decision)
 
     def _post_entry_registration(self, decision, symbol, side, qty, raw_qty, entry_id, entry_resp,
-                                 idem_key, norm_result, order_type, mark):
+                                 idem_key, norm_result, order_type, mark, data_ref=None):
         """Register entry with ORDER_INDEX, guardian, watchdog, and logging."""
         from vfoundation.dr import wal
         from vfoundation.core.fsm_emit_compat import Message
@@ -755,14 +1076,15 @@ class OpenExecutor:
                      "ts_ms": get_clock().now_ms(), "corr_id": decision.corr_id,
                      "regime": _open_regime, "regime_confidence": _open_regime_confidence,
                      "regime_provenance": _open_regime_provenance},
-                why="order_placed")
+                why="order_placed",
+                data_ref=list(data_ref or []))
             wal.append(order_placed_msg.model_dump())
             if hasattr(self._fsm, "bus"):
                 self._fsm.bus.emit(
                     "EVT:ORDER_PLACED",
                     dict(order_placed_msg.pld or {}),
                     order_placed_msg.why,
-                    [],
+                    list(order_placed_msg.data_ref or []),
                 )
         except Exception as wal_e:
             LOG.warning(f"Failed to write EVT:ORDER_PLACED to WAL: {wal_e}")

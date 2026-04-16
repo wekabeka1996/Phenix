@@ -5,13 +5,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from apps.reference.adapters.binance_adapter import BinanceAPIError
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
 from apps.reference.main import build_emit_with_monitoring
 from apps.reference.domains.execution_position.terminal_order_contracts import (
     emit_canonical_terminal_order_event,
 )
 from apps.reference.domains.execution_position.entry_manager import EntryManager
+from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.open_executor import UncertainSubmitRecoveryError
+from apps.reference.domains.execution_position.open_submission_adapter import (
+    OpenSubmissionPayload,
+)
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     attach_shadow_journal,
@@ -110,7 +116,8 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
         client_order_id="ENTRY-4dc9a0dc9de7",
     )
 
-    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
         "apps.reference.domains.execution_position.entry_manager.order_logger.write"
     ), patch(
@@ -133,7 +140,8 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
 
     fsm.watchdog.on_order_cancel.assert_called_once_with("1811569723")
 
-    state_changed = [r for r in wal_records if r.get("verb") == "ORDER_STATE_CHANGED"]
+    state_changed = [r for r in wal_records if r.get(
+        "verb") == "ORDER_STATE_CHANGED"]
     assert len(state_changed) == 1
     payload = state_changed[0]["pld"]
     assert payload["symbol"] == "SOLUSDT"
@@ -146,7 +154,8 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
     )
 
     records = _read_jsonl(journal_path)
-    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_STATE_CHANGED"]
+    shadow_events = [r for r in records if r["event_name"]
+                     == "EVT:ORDER_STATE_CHANGED"]
     assert len(shadow_events) == 1
     fragment = shadow_events[0]["payload_fragment"]
     assert fragment["terminal_non_fill"] is True
@@ -173,7 +182,8 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     executor = OpenExecutor(fsm)
     decision = SimpleNamespace(rid="mdamr-shadow-gap-fix")
 
-    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
         "apps.reference.domains.execution_position.open_executor.order_logger.write"
     ), patch(
@@ -191,18 +201,23 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
             "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
             lifecycle,
         ):
-            result = await executor._place_limit_entry(
+            entry_resp, returned_submission, price_adjusted = await executor._place_limit_entry(
                 decision=decision,
-                symbol="XRPUSDT",
-                side="BUY",
-                price="1.4004",
-                qty="6246.7",
-                tif="GTX",
-                entry_id="ENTRY-XRP-1",
+                submission=OpenSubmissionPayload(
+                    symbol="XRPUSDT",
+                    side="BUY",
+                    quantity="6246.7",
+                    order_type="LIMIT",
+                    price="1.4004",
+                    time_in_force="GTX",
+                    client_order_id="ENTRY-XRP-1",
+                ),
                 wal=MagicMock(),
             )
 
-    assert result is None
+    assert entry_resp is None
+    assert returned_submission.client_order_id == "ENTRY-XRP-1"
+    assert price_adjusted is False
     mock_emit_compat.assert_not_awaited()
 
     rejected = [r for r in wal_records if r.get("verb") == "ORDER_REJECTED"]
@@ -218,7 +233,8 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     )
 
     records = _read_jsonl(journal_path)
-    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_REJECTED"]
+    shadow_events = [r for r in records if r["event_name"]
+                     == "EVT:ORDER_REJECTED"]
     assert len(shadow_events) == 1
     fragment = shadow_events[0]["payload_fragment"]
     assert fragment["terminal_state_kind"] == "REJECTED"
@@ -248,7 +264,8 @@ async def test_monitored_emit_wrapper_preserves_message_path_for_canonical_rejec
     )
 
     wal_records: list[dict] = []
-    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     lifecycle.on_intent(
         rid="rid-wrapper-shadow-fix",
         symbol="DOGEUSDT",
@@ -290,13 +307,103 @@ async def test_monitored_emit_wrapper_preserves_message_path_for_canonical_rejec
     )
 
     records = _read_jsonl(journal_path)
-    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_REJECTED"]
+    shadow_events = [r for r in records if r["event_name"]
+                     == "EVT:ORDER_REJECTED"]
     assert len(shadow_events) == 1
     assert shadow_events[0]["payload_fragment"]["origin_class"] == "execution_adapter"
 
     lifecycle_rows = _read_jsonl(lifecycle_path)
     assert lifecycle_rows[-1]["status"] == "REJECTED"
     assert lifecycle_rows[-1]["close_reason"] == "ADAPTER_ERROR: ORDER WOULD IMMEDIATELY TRIGGER."
+
+
+@pytest.mark.asyncio
+async def test_uncertain_submit_unrecovered_emits_single_canonical_reject_from_fsm_seam(tmp_path):
+    journal_path = tmp_path / "shadow_uncertain_submit_reject.jsonl"
+    lifecycle_path = tmp_path / "trade_lifecycle_uncertain_submit_reject.jsonl"
+    bus = FSMCore()
+    attach_shadow_journal(bus, _shadow_cfg(journal_path))
+
+    wal_records: list[dict] = []
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    fsm = ExecPosFSM.__new__(ExecPosFSM)
+    fsm.config = SimpleNamespace(get_domain_mode=lambda _domain: "testnet")
+    fsm.fsm = bus
+    fsm.alert_manager = None
+    fsm.adapter = SimpleNamespace(base_url="https://testnet.binance.example")
+    fsm._open_exec = SimpleNamespace(
+        execute_open=AsyncMock(
+            side_effect=UncertainSubmitRecoveryError(
+                symbol="BTCUSDT",
+                entry_id="ENTRY-BTC-UNCERTAIN-1",
+                original_error=BinanceAPIError(
+                    code=-1007,
+                    msg="Timeout waiting for response from backend server. Send status unknown; execution status unknown.",
+                ),
+                attempts=3,
+            )
+        )
+    )
+    decision = Message(
+        op="DEC",
+        verb="OPEN",
+        src="decision_making",
+        dst="execution_position",
+        rid="rid-uncertain-submit-fsm-seam",
+        pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "1.0"},
+    )
+
+    with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
+        "apps.reference.domains.execution_position.fsm.order_logger.write"
+    ), patch(
+        "apps.reference.domains.execution_position.fsm.emit_compat",
+        new_callable=AsyncMock,
+    ) as mock_emit_compat, patch(
+        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        lifecycle,
+    ):
+        lifecycle.on_intent(
+            rid=decision.rid,
+            symbol="BTCUSDT",
+            side="BUY",
+            strategy_id="aurora",
+            entry_type="LIMIT",
+        )
+        await fsm._execute_decision(decision)
+
+    rejected = [r for r in wal_records if r.get("verb") == "ORDER_REJECTED"]
+    assert len(rejected) == 1
+    payload = rejected[0]["pld"]
+    assert payload["reason_code"] == "UNCERTAIN_SUBMIT_UNRECOVERED"
+    assert payload["uncertain_submit"] is True
+    assert payload["client_order_id"] == "ENTRY-BTC-UNCERTAIN-1"
+    assert payload["recovery_attempts"] == 3
+    assert payload["binance_code"] == -1007
+    assert payload["origin_class"] == "execution_adapter"
+    assert payload["reject_reason_normalized"].startswith(
+        "UNCERTAIN_SUBMIT_UNRECOVERED:"
+    )
+
+    records = _read_jsonl(journal_path)
+    shadow_events = [r for r in records if r["event_name"]
+                     == "EVT:ORDER_REJECTED"]
+    assert len(shadow_events) == 1
+    fragment = shadow_events[0]["payload_fragment"]
+    assert fragment["canonical_identity_key"] == payload["canonical_identity_key"]
+    assert fragment["reject_reason_normalized"].startswith(
+        "UNCERTAIN_SUBMIT_UNRECOVERED:"
+    )
+
+    mock_emit_compat.assert_awaited_once()
+    exec_failed_msg = mock_emit_compat.await_args.args[1]
+    assert exec_failed_msg.verb == "EXECUTION_FAILED"
+
+    lifecycle_rows = _read_jsonl(lifecycle_path)
+    assert lifecycle_rows[-1]["status"] == "REJECTED"
+    assert lifecycle_rows[-1]["close_reason"].startswith(
+        "UNCERTAIN_SUBMIT_UNRECOVERED:"
+    )
 
 
 def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
@@ -337,7 +444,8 @@ def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
         },
     }
 
-    lifecycle = TradeLifecycleLogger(log_file=str(lifecycle_path), orphan_ttl_sec=3600)
+    lifecycle = TradeLifecycleLogger(
+        log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     lifecycle.on_intent(
         rid="aurora_SOLUSDT_phase4_cancel_fix",
         symbol="SOLUSDT",
@@ -356,7 +464,8 @@ def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
     ):
         ws_client._handle_order_trade_update(ws_msg)
 
-    state_changed = [r for r in wal_records if r.get("verb") == "ORDER_STATE_CHANGED"]
+    state_changed = [r for r in wal_records if r.get(
+        "verb") == "ORDER_STATE_CHANGED"]
     assert len(state_changed) == 1
     payload = state_changed[0]["pld"]
     assert payload["rid"] == "aurora_SOLUSDT_phase4_cancel_fix"
@@ -366,7 +475,8 @@ def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
     assert payload["terminal_state_kind"] == "CANCELED"
 
     records = _read_jsonl(journal_path)
-    shadow_events = [r for r in records if r["event_name"] == "EVT:ORDER_STATE_CHANGED"]
+    shadow_events = [r for r in records if r["event_name"]
+                     == "EVT:ORDER_STATE_CHANGED"]
     assert len(shadow_events) == 1
     fragment = shadow_events[0]["payload_fragment"]
     assert fragment["canonical_identity_key"] == payload["canonical_identity_key"]

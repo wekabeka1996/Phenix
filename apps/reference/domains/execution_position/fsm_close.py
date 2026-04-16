@@ -225,7 +225,7 @@ class CloseFlowFSM:
         return self._metrics.copy()
 
     def reset(self):
-        """Reset FSM state (for testing)."""
+        """Reset the close flow to a flat, reusable runtime state."""
         self.state = CloseState.FLAT
         self.position_open_ts = 0.0
         self.position_active = False

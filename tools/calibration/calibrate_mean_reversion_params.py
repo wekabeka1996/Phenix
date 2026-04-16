@@ -13,7 +13,7 @@ import pandas as pd
 
 import argparse
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -22,6 +22,10 @@ from pathlib import Path
 import random
 import sys
 from typing import Any, Sequence
+from urllib.parse import urlencode
+from urllib.request import urlopen
+
+import numpy as np
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -514,6 +518,9 @@ def _required_history_rows(root_cfg: dict[str, Any], *, horizon_bars: int) -> in
 def _normalize_recorder_dataset(df: pd.DataFrame, *, tf_sec: int) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
+    if "regime" not in df.columns:
+        df = df.copy()
+        df["regime"] = ""
     required_columns = {"symbol", "timestamp",
                         "open", "high", "low", "close", "regime"}
     missing = sorted(required_columns.difference(df.columns))
@@ -554,6 +561,185 @@ def _normalize_recorder_dataset(df: pd.DataFrame, *, tf_sec: int) -> pd.DataFram
     return out
 
 
+def _date_to_ms(day: date, *, end_exclusive: bool) -> int:
+    dt = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    if end_exclusive:
+        dt = dt + timedelta(days=1)
+    return int(dt.timestamp() * 1000)
+
+
+def _fetch_binance_futures_klines(
+    *,
+    symbol: str,
+    interval: str,
+    interval_ms: int,
+    start_close_ms: int,
+    end_close_ms: int,
+    base_url: str,
+    timeout_sec: float,
+    pause_sec: float,
+) -> pd.DataFrame:
+    start_open_ms = max(0, int(start_close_ms) - int(interval_ms))
+    end_open_ms = int(end_close_ms)
+    limit = 1500
+    cursor = start_open_ms
+    rows: list[list[Any]] = []
+
+    while cursor <= end_open_ms:
+        params = {
+            "symbol": str(symbol).upper(),
+            "interval": str(interval),
+            "limit": int(limit),
+            "startTime": int(cursor),
+            "endTime": int(end_open_ms),
+        }
+        url = f"{base_url.rstrip('/')}/fapi/v1/klines?{urlencode(params)}"
+        # nosec B310 - intentional Binance public endpoint
+        with urlopen(url, timeout=float(timeout_sec)) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, list) or not payload:
+            break
+        rows.extend(payload)
+        last_open = int(payload[-1][0])
+        next_cursor = last_open + int(interval_ms)
+        if next_cursor <= cursor:
+            break
+        cursor = next_cursor
+        if len(payload) < limit:
+            break
+        if pause_sec > 0:
+            import time
+            time.sleep(float(pause_sec))
+
+    if not rows:
+        return pd.DataFrame()
+
+    out = pd.DataFrame(
+        {
+            "symbol": str(symbol).upper(),
+            "timestamp": [int(row[6]) for row in rows],
+            "open": [float(row[1]) for row in rows],
+            "high": [float(row[2]) for row in rows],
+            "low": [float(row[3]) for row in rows],
+            "close": [float(row[4]) for row in rows],
+            "volume": [float(row[5]) for row in rows],
+            "tf_sec": 300,
+        }
+    )
+    out = out[(out["timestamp"] >= int(start_close_ms))
+              & (out["timestamp"] <= int(end_close_ms))]
+    out = out.drop_duplicates(subset=["symbol", "timestamp"], keep="last")
+    out = out.sort_values(["symbol", "timestamp"],
+                          kind="mergesort").reset_index(drop=True)
+    return out
+
+
+def _canonicalize_ohlcv_300(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["symbol", "timestamp", "open", "high", "low", "close", "volume", "tf_sec"])
+    required = {"symbol", "timestamp", "open", "high", "low", "close"}
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise CalibrationError(
+            "DATASET_INVALID",
+            f"Dataset missing required OHLC columns: {missing}",
+            details={"missing_columns": missing},
+        )
+    out = pd.DataFrame()
+    out["symbol"] = df["symbol"].astype(str).str.upper()
+    for column in ("timestamp", "open", "high", "low", "close"):
+        out[column] = pd.to_numeric(df[column], errors="coerce")
+    if "volume" in df.columns:
+        out["volume"] = pd.to_numeric(
+            df["volume"], errors="coerce").fillna(0.0)
+    else:
+        out["volume"] = 0.0
+    out["tf_sec"] = 300
+    out = out[np.isfinite(out["timestamp"])].copy()
+    out["timestamp"] = out["timestamp"].astype(np.int64)
+    out = out.dropna(subset=["open", "high", "low", "close"])
+    out = out.drop_duplicates(subset=["symbol", "timestamp"], keep="last")
+    out = out.sort_values(["symbol", "timestamp"],
+                          kind="mergesort").reset_index(drop=True)
+    return out
+
+
+def _maybe_hydrate_missing_from_binance(
+    *,
+    local_df: pd.DataFrame,
+    symbols: list[str],
+    start: date,
+    end: date,
+    enable: bool,
+    lookback_bars: int,
+    base_url: str,
+    timeout_sec: float,
+    pause_sec: float,
+) -> pd.DataFrame:
+    canonical_local = _canonicalize_ohlcv_300(local_df)
+    if not enable:
+        return _recompute_segments(canonical_local, basis_tf_sec=300)
+
+    interval_ms = 300_000
+    sym_frames: list[pd.DataFrame] = []
+    total_added = 0
+    start_from_arg = _date_to_ms(start, end_exclusive=False)
+    end_from_arg = _date_to_ms(end, end_exclusive=True) - 1
+
+    for symbol in [str(item).upper() for item in symbols]:
+        local_sym = canonical_local[canonical_local["symbol"] == symbol].copy()
+        local_min = int(local_sym["timestamp"].min()
+                        ) if not local_sym.empty else None
+        local_max = int(local_sym["timestamp"].max()
+                        ) if not local_sym.empty else None
+        fetch_start = int(start_from_arg)
+        fetch_end = int(end_from_arg)
+        if local_min is not None:
+            fetch_start = min(fetch_start, int(local_min) -
+                              int(lookback_bars) * interval_ms)
+        if local_max is not None:
+            fetch_end = max(fetch_end, int(local_max))
+
+        print(f"  Binance hydration: {symbol} fetching 5m klines ...")
+        remote = _fetch_binance_futures_klines(
+            symbol=symbol,
+            interval="5m",
+            interval_ms=interval_ms,
+            start_close_ms=fetch_start,
+            end_close_ms=fetch_end,
+            base_url=base_url,
+            timeout_sec=timeout_sec,
+            pause_sec=pause_sec,
+        )
+        if remote.empty:
+            print(f"    {symbol}: Binance returned 0 klines")
+            sym_frames.append(local_sym)
+            continue
+
+        remote_canonical = _canonicalize_ohlcv_300(remote)
+        merged = pd.concat([local_sym, remote_canonical], ignore_index=True)
+        merged = merged.drop_duplicates(
+            subset=["symbol", "timestamp"], keep="first")
+        merged = merged.sort_values(
+            ["symbol", "timestamp"], kind="mergesort").reset_index(drop=True)
+        new_rows = len(merged) - len(local_sym)
+        total_added += max(0, new_rows)
+        print(
+            f"    {symbol}: local={len(local_sym)} + binance_new={max(0, new_rows)} = {len(merged)}")
+        sym_frames.append(merged)
+
+    if not sym_frames:
+        return _recompute_segments(canonical_local, basis_tf_sec=300)
+
+    combined = pd.concat(sym_frames, ignore_index=True)
+    combined = combined.drop_duplicates(
+        subset=["symbol", "timestamp"], keep="first")
+    combined = combined.sort_values(
+        ["symbol", "timestamp"], kind="mergesort").reset_index(drop=True)
+    print(f"  Binance hydration total: +{total_added} rows")
+    return _recompute_segments(combined, basis_tf_sec=300)
+
+
 def _validate_requested_recorder_csvs(
     recorder_dir: Path,
     *,
@@ -578,6 +764,16 @@ def _validate_requested_recorder_csvs(
                 continue
             try:
                 pd.read_csv(csv_path)
+            except pd.errors.ParserError:
+                try:
+                    fallback = pd.read_csv(
+                        csv_path, engine="python", on_bad_lines="skip")
+                    if fallback.empty:
+                        bad_files.append(
+                            {"path": str(csv_path), "error": "fallback: 0 rows after skipping bad lines"})
+                except Exception as exc2:
+                    bad_files.append(
+                        {"path": str(csv_path), "error": f"fallback failed: {exc2}"})
             except Exception as exc:
                 bad_files.append({"path": str(csv_path), "error": str(exc)})
     if bad_files:
@@ -658,11 +854,27 @@ def _simulate_signal_trade(
     exit_reason = "FORCED_CLOSE_HORIZON"
     ambiguous = False
     holding_bars = len(scoped)
+    mfe = Decimal("0")
+    mae = Decimal("0")
 
     for offset, row in enumerate(scoped.itertuples(index=False), start=1):
         high = Decimal(str(getattr(row, "high")))
         low = Decimal(str(getattr(row, "low")))
         holding_bars = offset
+
+        # MFE/MAE tracking
+        if entry_price > 0:
+            if str(signal_side).upper() == "BUY":
+                favorable = high - entry_price
+                adverse = entry_price - low
+            else:
+                favorable = entry_price - low
+                adverse = high - entry_price
+            if favorable > mfe:
+                mfe = favorable
+            if adverse > mae:
+                mae = adverse
+
         if str(signal_side).upper() == "BUY":
             hit_stop = stop_price is not None and low <= stop_price
             hit_target = target_price is not None and high >= target_price
@@ -682,10 +894,17 @@ def _simulate_signal_trade(
 
     if entry_price <= 0:
         gross_return_ratio = 0.0
-    elif str(signal_side).upper() == "BUY":
-        gross_return_ratio = float((exit_price - entry_price) / entry_price)
+        mfe_ratio = 0.0
+        mae_ratio = 0.0
     else:
-        gross_return_ratio = float((entry_price - exit_price) / entry_price)
+        if str(signal_side).upper() == "BUY":
+            gross_return_ratio = float(
+                (exit_price - entry_price) / entry_price)
+        else:
+            gross_return_ratio = float(
+                (entry_price - exit_price) / entry_price)
+        mfe_ratio = float(mfe / entry_price)
+        mae_ratio = float(mae / entry_price)
 
     net_return_ratio = gross_return_ratio - \
         (float(search_cfg.cost_bps_roundtrip) / 10000.0)
@@ -695,6 +914,8 @@ def _simulate_signal_trade(
         "holding_bars": int(holding_bars),
         "exit_reason": exit_reason,
         "ambiguous_tpsl": bool(ambiguous),
+        "mfe_ratio": float(mfe_ratio),
+        "mae_ratio": float(mae_ratio),
     }
 
 
@@ -943,6 +1164,427 @@ def _mutate_candidate(base: dict[str, Any], rng: random.Random) -> dict[str, Any
     return candidate
 
 
+def _compute_regime_labels_300s(df: pd.DataFrame) -> pd.Series:
+    """Compute regime labels from 5-min OHLCV using production regime detector logic.
+
+    Uses production 5-min parameters directly (no scaling since MR already on 5-min bars):
+    SMA short=48, long=192, ATR period=14, baseline=288.
+    Priority cascade: VOL → MR → TREND → UNCERTAIN.
+    """
+    close = df["close"].astype(float)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    prev_close = close.shift(1)
+
+    # True Range → Wilder EMA ATR(14) → ATR baseline MA(288)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    atr_baseline = atr.rolling(288, min_periods=144).mean()
+    vol_ratio = atr / atr_baseline
+
+    # SMA short(48) / long(192)
+    sma_short = close.rolling(48, min_periods=48).mean()
+    sma_long = close.rolling(192, min_periods=192).mean()
+
+    regime = pd.Series("UNCERTAIN", index=df.index)
+
+    # Priority 1: Volatility
+    regime = regime.where(~(vol_ratio > 2.0), "HIGH_VOLATILITY")
+    regime = regime.where(~((vol_ratio < 0.7) & (
+        regime == "UNCERTAIN")), "LOW_VOLATILITY")
+
+    # Priority 2: Mean Reversion (only where still UNCERTAIN)
+    mask_unc = regime == "UNCERTAIN"
+    sma_spread = (sma_short - sma_long).abs() / sma_long
+    dev_short = (close - sma_short).abs() / sma_short
+    dev_long = (close - sma_long).abs() / sma_long
+    mr_mask = mask_unc & (sma_spread < 0.005) & (
+        dev_short < 0.005) & (dev_long < 0.005)
+    regime = regime.where(~mr_mask, "MEAN_REVERSION")
+
+    # Priority 3: SMA Trend (only where still UNCERTAIN)
+    mask_unc = regime == "UNCERTAIN"
+    regime = regime.where(
+        ~(mask_unc & (sma_short > sma_long) & (close > sma_short)),
+        "TREND_UP",
+    )
+    mask_unc = regime == "UNCERTAIN"
+    regime = regime.where(
+        ~(mask_unc & (sma_short < sma_long) & (close < sma_short)),
+        "TREND_DOWN",
+    )
+
+    return regime
+
+
+def _compute_flat_regime_labels(df: pd.DataFrame, regime_col: str = "computed_regime") -> pd.Series:
+    """Map Aurora regimes to flat regimes (FLAT_LOW/FLAT_NORMAL/FLAT_HIGH) via regime_mapping.
+
+    Non-MR-suitable regimes (TREND_UP, TREND_DOWN, HIGH_VOL, UNCERTAIN) map to empty string.
+    """
+    try:
+        from apps.reference.domains.feature_engineering.regime_mapping import (
+            map_to_flat_regime,
+            FlatRegimeThresholds,
+        )
+    except ImportError:
+        return pd.Series("", index=df.index)
+
+    close = df["close"].astype(float)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    prev_close = close.shift(1)
+
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    atr_pct = atr / close
+
+    thresholds = FlatRegimeThresholds(
+        high_vol_pct=Decimal("0.003"),
+        low_vol_pct=Decimal("0.001"),
+    )
+
+    result = pd.Series("", index=df.index)
+    for idx in df.index:
+        aurora_regime = str(df.loc[idx, regime_col]
+                            ) if regime_col in df.columns else ""
+        atr_pct_val = float(atr_pct.loc[idx]) if pd.notna(
+            atr_pct.loc[idx]) else 0.0
+        flat = map_to_flat_regime(aurora_regime, atr_pct_val, thresholds)
+        result.loc[idx] = str(flat) if flat else ""
+    return result
+
+
+def _run_per_regime_analysis(
+    df_raw: pd.DataFrame,
+    *,
+    symbols: list[str],
+    root_cfg: dict[str, Any],
+    candidate: dict[str, Any],
+    tf_sec: int,
+    search_cfg: SearchCfg,
+    guardrails: GuardrailCfg,
+    out_dir: Path,
+) -> dict[str, Any]:
+    """Run dual per-regime breakdown (Aurora + Flat) on computed-regime data."""
+    # Compute regime labels
+    for sym in symbols:
+        sym_mask = df_raw["symbol"] == sym
+        sym_df = df_raw[sym_mask].copy()
+        if sym_df.empty:
+            continue
+        computed = _compute_regime_labels_300s(sym_df)
+        df_raw.loc[sym_mask, "computed_regime"] = computed.values
+        flat = _compute_flat_regime_labels(
+            sym_df.assign(computed_regime=computed.values))
+        df_raw.loc[sym_mask, "flat_regime"] = flat.values
+
+    # Aurora-level breakdown
+    all_aurora = sorted(df_raw["computed_regime"].dropna().unique().tolist())
+    passthrough = {"", "DEFAULT", "UNKNOWN", "PENDING", "NONE"}
+    aurora_regimes = [r for r in all_aurora if r not in passthrough]
+
+    aurora_results: dict[str, dict[str, Any]] = {}
+    for regime_label in aurora_regimes:
+        regime_df = df_raw[df_raw["computed_regime"] == regime_label].copy()
+        if regime_df.empty:
+            continue
+        metrics = _evaluate_window(
+            regime_df,
+            symbols=symbols,
+            root_cfg=root_cfg,
+            candidate=candidate,
+            tf_sec=int(tf_sec),
+            search_cfg=search_cfg,
+            guardrails=guardrails,
+        )
+        aurora_results[regime_label] = metrics
+
+    # Flat-regime-level breakdown
+    all_flat = sorted(df_raw["flat_regime"].dropna().unique().tolist())
+    flat_regimes = [r for r in all_flat if r not in passthrough]
+
+    flat_results: dict[str, dict[str, Any]] = {}
+    for regime_label in flat_regimes:
+        regime_df = df_raw[df_raw["flat_regime"] == regime_label].copy()
+        if regime_df.empty:
+            continue
+        metrics = _evaluate_window(
+            regime_df,
+            symbols=symbols,
+            root_cfg=root_cfg,
+            candidate=candidate,
+            tf_sec=int(tf_sec),
+            search_cfg=search_cfg,
+            guardrails=guardrails,
+        )
+        flat_results[regime_label] = metrics
+
+    # Print Aurora table
+    header = f"{'Regime':<20} {'Bars':>6} {'Entries':>8} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7}"
+    print("\n" + "=" * len(header))
+    print("PER-REGIME BREAKDOWN — Aurora Regimes (baseline params)")
+    print("=" * len(header))
+    print(header)
+    print("-" * len(header))
+    for regime_label, m in sorted(aurora_results.items()):
+        bars = int(m.get("row_count", 0))
+        entries = int(m.get("entry_count", 0))
+        trades = int(m.get("total_trades", 0))
+        wr = float(m.get("win_rate", 0)) * 100
+        pf = float(m.get("profit_factor") or 0.0)
+        net = float(m.get("net_return_ratio", 0)) * 100
+        dd = float(m.get("max_drawdown_ratio", 0)) * 100
+        print(f"{regime_label:<20} {bars:>6} {entries:>8} {trades:>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}%")
+    print("=" * len(header))
+
+    # Print Flat table
+    if flat_results:
+        print(f"\n{'Flat Regime':<20} {'Bars':>6} {'Entries':>8} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7}")
+        print("-" * len(header))
+        for regime_label, m in sorted(flat_results.items()):
+            bars = int(m.get("row_count", 0))
+            entries = int(m.get("entry_count", 0))
+            trades = int(m.get("total_trades", 0))
+            wr = float(m.get("win_rate", 0)) * 100
+            pf = float(m.get("profit_factor") or 0.0)
+            net = float(m.get("net_return_ratio", 0)) * 100
+            dd = float(m.get("max_drawdown_ratio", 0)) * 100
+            print(
+                f"{regime_label:<20} {bars:>6} {entries:>8} {trades:>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}%")
+        print("=" * len(header))
+
+    result = {
+        "aurora_regimes": {k: _sanitize_metrics(v) for k, v in aurora_results.items()},
+        "flat_regimes": {k: _sanitize_metrics(v) for k, v in flat_results.items()},
+    }
+    _write_json(out_dir / "per_regime_analysis.json", result)
+    print(
+        f"  Wrote per_regime_analysis.json -> {out_dir / 'per_regime_analysis.json'}")
+    return result
+
+
+def _sanitize_metrics(m: dict[str, Any]) -> dict[str, Any]:
+    """Make metrics JSON-serializable by handling None and non-finite floats."""
+    out: dict[str, Any] = {}
+    for k, v in m.items():
+        if k == "per_symbol":
+            out[k] = {sk: _sanitize_metrics(
+                sv) for sk, sv in v.items()} if isinstance(v, dict) else v
+        elif isinstance(v, float):
+            out[k] = v if math.isfinite(v) else None
+        elif v is None:
+            out[k] = None
+        else:
+            out[k] = v
+    return out
+
+
+def _evaluate_window_with_trades(
+    df_window: pd.DataFrame,
+    *,
+    symbols: list[str],
+    root_cfg: dict[str, Any],
+    candidate: dict[str, Any],
+    tf_sec: int,
+    search_cfg: SearchCfg,
+    guardrails: GuardrailCfg,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Like _evaluate_window but also returns the raw trade records."""
+    trade_records: list[dict[str, Any]] = []
+    signal_count = 0
+    entry_count = 0
+    for symbol in symbols:
+        df_symbol = df_window[df_window["symbol"] == symbol].copy()
+        metrics, trades = _evaluate_symbol_window(
+            df_symbol,
+            symbol=symbol,
+            root_cfg=root_cfg,
+            candidate=candidate,
+            tf_sec=int(tf_sec),
+            search_cfg=search_cfg,
+            guardrails=guardrails,
+        )
+        trade_records.extend(trades)
+        signal_count += int(metrics["signal_count"])
+        entry_count += int(metrics["entry_count"])
+    aggregate = _metrics_from_trade_records(
+        trade_records,
+        row_count=int(len(df_window)),
+        unique_days=_unique_days(df_window),
+        entry_count=int(entry_count),
+        signal_count=int(signal_count),
+        guardrails=guardrails,
+    )
+    return aggregate, trade_records
+
+
+def _run_tpsl_surface_scan(
+    df_raw: pd.DataFrame,
+    *,
+    symbols: list[str],
+    root_cfg: dict[str, Any],
+    baseline_candidate: dict[str, Any],
+    tf_sec: int,
+    search_cfg: SearchCfg,
+    guardrails: GuardrailCfg,
+    out_dir: Path,
+) -> dict[str, Any]:
+    """Grid search over sl_atr_mult × tp_to_mid to find optimal exit configuration."""
+    sl_grid = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    tp_grid = [True, False]
+
+    results: list[dict[str, Any]] = []
+    best_score: float | None = None
+    best_cell: dict[str, Any] | None = None
+
+    # Header
+    header = f"{'sl_atr_mult':>12} {'tp_to_mid':>10} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7} {'Score':>8}"
+    print("\n" + "=" * len(header))
+    print("SL/TP SURFACE SCAN (6×2 grid)")
+    print("=" * len(header))
+    print(header)
+    print("-" * len(header))
+
+    for sl_mult in sl_grid:
+        for tp_mid in tp_grid:
+            cell_candidate = dict(baseline_candidate)
+            cell_candidate["sl_atr_mult"] = float(sl_mult)
+            cell_candidate["tp_to_mid"] = bool(tp_mid)
+
+            metrics = _evaluate_window(
+                df_raw,
+                symbols=symbols,
+                root_cfg=root_cfg,
+                candidate=cell_candidate,
+                tf_sec=int(tf_sec),
+                search_cfg=search_cfg,
+                guardrails=guardrails,
+            )
+            score = _score_or_floor(metrics.get("selection_score"))
+            trades = int(metrics.get("total_trades", 0))
+            wr = float(metrics.get("win_rate", 0)) * 100
+            pf = float(metrics.get("profit_factor") or 0.0)
+            net = float(metrics.get("net_return_ratio", 0)) * 100
+            dd = float(metrics.get("max_drawdown_ratio", 0)) * 100
+
+            print(f"{sl_mult:>12.1f} {'mid' if tp_mid else 'outer':>10} {trades:>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}% {score:>8.3f}")
+
+            cell = {
+                "sl_atr_mult": float(sl_mult),
+                "tp_to_mid": bool(tp_mid),
+                "metrics": _sanitize_metrics(metrics),
+            }
+            results.append(cell)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_cell = cell
+
+    print("=" * len(header))
+    if best_cell:
+        print(
+            f"  Best cell: sl_atr_mult={best_cell['sl_atr_mult']}, tp_to_mid={best_cell['tp_to_mid']}, score={best_score:.3f}")
+
+    output = {
+        "grid": results,
+        "best_cell": best_cell,
+        "sl_grid": sl_grid,
+        "tp_grid": ["mid", "outer"],
+    }
+    _write_json(out_dir / "tpsl_surface.json", output)
+    print(f"  Wrote tpsl_surface.json -> {out_dir / 'tpsl_surface.json'}")
+    return output
+
+
+def _run_mfe_mae_analysis(
+    df_raw: pd.DataFrame,
+    *,
+    symbols: list[str],
+    root_cfg: dict[str, Any],
+    baseline_candidate: dict[str, Any],
+    tf_sec: int,
+    search_cfg: SearchCfg,
+    guardrails: GuardrailCfg,
+    out_dir: Path,
+) -> dict[str, Any]:
+    """Collect MFE/MAE distribution from baseline evaluation."""
+    _metrics, trade_records = _evaluate_window_with_trades(
+        df_raw,
+        symbols=symbols,
+        root_cfg=root_cfg,
+        candidate=baseline_candidate,
+        tf_sec=int(tf_sec),
+        search_cfg=search_cfg,
+        guardrails=guardrails,
+    )
+
+    if not trade_records:
+        output: dict[str, Any] = {"total_trades": 0,
+                                  "mfe": {}, "mae": {}, "suggestion": {}}
+        _write_json(out_dir / "mfe_mae_analysis.json", output)
+        return output
+
+    mfe_values = [float(t.get("mfe_ratio", 0.0)) for t in trade_records]
+    mae_values = [float(t.get("mae_ratio", 0.0)) for t in trade_records]
+
+    def _dist_stats(values: list[float]) -> dict[str, float]:
+        arr = np.array(values)
+        return {
+            "mean": float(np.mean(arr)),
+            "median": float(np.median(arr)),
+            "p25": float(np.percentile(arr, 25)),
+            "p75": float(np.percentile(arr, 75)),
+            "p90": float(np.percentile(arr, 90)),
+            "p95": float(np.percentile(arr, 95)),
+            "max": float(np.max(arr)),
+        }
+
+    mfe_stats = _dist_stats(mfe_values)
+    mae_stats = _dist_stats(mae_values)
+
+    # Suggestions: SL at MAE p75, TP at MFE median
+    suggestion = {
+        "sl_pct_suggested": round(mae_stats["p75"] * 100, 3),
+        "tp_pct_suggested": round(mfe_stats["median"] * 100, 3),
+        "sl_atr_mult_note": f"Set SL to cover MAE p75={mae_stats['p75']:.4f} ({mae_stats['p75']*100:.2f}%)",
+        "tp_note": f"Set TP at MFE median={mfe_stats['median']:.4f} ({mfe_stats['median']*100:.2f}%)",
+    }
+
+    print("\n" + "=" * 60)
+    print("MFE/MAE EXCURSION ANALYSIS (baseline params)")
+    print("=" * 60)
+    print(f"  Total trades: {len(trade_records)}")
+    print(f"  MFE (Max Favorable Excursion):")
+    print(
+        f"    mean={mfe_stats['mean']:.4f}  median={mfe_stats['median']:.4f}  p75={mfe_stats['p75']:.4f}  p95={mfe_stats['p95']:.4f}")
+    print(f"  MAE (Max Adverse Excursion):")
+    print(
+        f"    mean={mae_stats['mean']:.4f}  median={mae_stats['median']:.4f}  p75={mae_stats['p75']:.4f}  p95={mae_stats['p95']:.4f}")
+    print(f"  Suggested SL: {suggestion['sl_pct_suggested']:.3f}% (MAE p75)")
+    print(
+        f"  Suggested TP: {suggestion['tp_pct_suggested']:.3f}% (MFE median)")
+    print("=" * 60)
+
+    output = {
+        "total_trades": len(trade_records),
+        "mfe": mfe_stats,
+        "mae": mae_stats,
+        "suggestion": suggestion,
+    }
+    _write_json(out_dir / "mfe_mae_analysis.json", output)
+    print(
+        f"  Wrote mfe_mae_analysis.json -> {out_dir / 'mfe_mae_analysis.json'}")
+    return output
+
+
 def _build_comparison_artifact(
     *,
     window_name: str,
@@ -1081,6 +1723,7 @@ def _build_dataset_audit(
     symbols: list[str],
     args: argparse.Namespace,
     required_history_rows: int,
+    binance_rows_added: int = 0,
 ) -> dict[str, Any]:
     return {
         "recorder_dir": str(Path(args.recorder_dir)),
@@ -1091,6 +1734,10 @@ def _build_dataset_audit(
         "unique_days": _unique_days(df_raw),
         "fingerprint": _dataset_fingerprint(df_raw),
         "required_history_rows": int(required_history_rows),
+        "binance_hydration": {
+            "enabled": bool(getattr(args, "hydrate_from_binance", False)),
+            "rows_added": int(binance_rows_added),
+        },
         "windows": {
             "train_days": list(windows.train_days),
             "validation_days": list(windows.validation_days),
@@ -1452,6 +2099,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-activity-ratio", type=float, default=2.5)
     parser.add_argument("--out-dir", default=None,
                         help="Artifact output directory. If omitted, a timestamped path is used.")
+    parser.add_argument("--hydrate-from-binance", action="store_true", default=False,
+                        help="Fetch missing 5m klines from Binance Futures to fill recorder gaps.")
+    parser.add_argument("--binance-base-url", default="https://fapi.binance.com",
+                        help="Binance Futures REST base URL.")
+    parser.add_argument("--binance-timeout-sec", type=float, default=15.0)
+    parser.add_argument("--binance-pause-sec", type=float, default=0.25,
+                        help="Pause between paginated Binance requests.")
+    parser.add_argument("--binance-lookback-bars", type=int, default=96,
+                        help="Extra historical bars to fetch before local data start.")
+    parser.add_argument("--per-regime", action="store_true", default=False,
+                        help="Run per-regime breakdown analysis after calibration.")
+    parser.add_argument("--tpsl-surface", action="store_true", default=False,
+                        help="Run SL/TP surface scan and MFE/MAE analysis.")
     return parser
 
 
@@ -1551,6 +2211,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             symbols=list(args.symbols),
             tf_sec=int(args.tf_sec),
         )
+
+        binance_rows_added = 0
+        if bool(getattr(args, "hydrate_from_binance", False)):
+            pre_hydrate_len = len(df_raw)
+            df_raw = _maybe_hydrate_missing_from_binance(
+                local_df=df_raw,
+                symbols=list(args.symbols),
+                start=args.start,
+                end=args.end,
+                enable=True,
+                lookback_bars=int(getattr(args, "binance_lookback_bars", 96)),
+                base_url=str(getattr(args, "binance_base_url",
+                             "https://fapi.binance.com")),
+                timeout_sec=float(getattr(args, "binance_timeout_sec", 15.0)),
+                pause_sec=float(getattr(args, "binance_pause_sec", 0.25)),
+            )
+            binance_rows_added = max(0, len(df_raw) - pre_hydrate_len)
+
         df_raw = _normalize_recorder_dataset(df_raw, tf_sec=int(args.tf_sec))
         if df_raw.empty:
             raise CalibrationError(
@@ -1570,6 +2248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             symbols=list(args.symbols),
             args=args,
             required_history_rows=required_history_rows,
+            binance_rows_added=binance_rows_added,
         )
         _validate_window_coverage(
             "train",
@@ -1839,6 +2518,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(
             f"Mean reversion calibration complete. verdict={verdict} out_dir={out_dir}")
+
+        if bool(getattr(args, "per_regime", False)):
+            _run_per_regime_analysis(
+                df_raw,
+                symbols=list(args.symbols),
+                root_cfg=root_cfg,
+                candidate=baseline_candidate,
+                tf_sec=int(args.tf_sec),
+                search_cfg=search_cfg,
+                guardrails=guardrails,
+                out_dir=out_dir,
+            )
+
+        if bool(getattr(args, "tpsl_surface", False)):
+            _run_tpsl_surface_scan(
+                df_raw,
+                symbols=list(args.symbols),
+                root_cfg=root_cfg,
+                baseline_candidate=baseline_candidate,
+                tf_sec=int(args.tf_sec),
+                search_cfg=search_cfg,
+                guardrails=guardrails,
+                out_dir=out_dir,
+            )
+            _run_mfe_mae_analysis(
+                df_raw,
+                symbols=list(args.symbols),
+                root_cfg=root_cfg,
+                baseline_candidate=baseline_candidate,
+                tf_sec=int(args.tf_sec),
+                search_cfg=search_cfg,
+                guardrails=guardrails,
+                out_dir=out_dir,
+            )
+
         return 0
     except CalibrationError as error:
         _write_failure_bundle(args, out_dir, error)

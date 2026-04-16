@@ -36,6 +36,7 @@ NEGATIVE_FLOOR = -1.0e18
 _LOAD_RECORDER_900: Any | None = None
 _COMPUTE_MD_AMR_FEATURES: Any | None = None
 _MD_AMR_STRATEGY_V11: Any | None = None
+_REGIME_ALLOWLIST_CONTRACT: Any | None = None
 
 
 class CalibrationError(RuntimeError):
@@ -69,12 +70,13 @@ class WindowSpec:
 
 
 def _require_md_amr_runtime() -> None:
-    global _LOAD_RECORDER_900, _COMPUTE_MD_AMR_FEATURES, _MD_AMR_STRATEGY_V11
+    global _LOAD_RECORDER_900, _COMPUTE_MD_AMR_FEATURES, _MD_AMR_STRATEGY_V11, _REGIME_ALLOWLIST_CONTRACT
 
     if (
         _LOAD_RECORDER_900 is not None
         and _COMPUTE_MD_AMR_FEATURES is not None
         and _MD_AMR_STRATEGY_V11 is not None
+        and _REGIME_ALLOWLIST_CONTRACT is not None
     ):
         return
 
@@ -102,6 +104,17 @@ def _require_md_amr_runtime() -> None:
     _LOAD_RECORDER_900 = load_recorder_900
     _COMPUTE_MD_AMR_FEATURES = compute_md_amr_features
     _MD_AMR_STRATEGY_V11 = MDAMRStrategyV11
+
+    try:
+        from apps.reference.domains.regime_allowlist.contract import (  # type: ignore
+            RegimeAllowlistContract,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        raise CalibrationError(
+            "RUNTIME_IMPORT_BLOCKED",
+            "MD-AMR calibration requires RegimeAllowlistContract.",
+        ) from exc
+    _REGIME_ALLOWLIST_CONTRACT = RegimeAllowlistContract
 
 
 def _parse_date(raw: str) -> date:
@@ -700,6 +713,196 @@ def _to_decimal(value: Any) -> Decimal:
             "DATASET_INVALID", f"Unable to coerce numeric value to Decimal: {value}") from exc
 
 
+# ---------------------------------------------------------------------------
+# Regime normalisation / expansion helpers
+# Mirrors md_amr_handler._REGIME_ALIAS_MAP / _REGIME_COMPATIBILITY_MAP
+# without importing the handler (which drags FSM/Message dependencies).
+# ---------------------------------------------------------------------------
+_REGIME_ALIAS_MAP: dict[str, str] = {
+    "LOW_FLAT": "FLAT_LOW",
+    "HIGH_FLAT": "FLAT_HIGH",
+    "HIGHT_FLAT": "FLAT_HIGH",
+    "NORMAL_FLAT": "FLAT_NORMAL",
+    "HIGH_VOLATILYTY": "HIGH_VOLATILITY",
+    "LOW_VOLATILYTY": "LOW_VOLATILITY",
+    "HIGHT_VOLATILITY": "HIGH_VOLATILITY",
+}
+
+_REGIME_COMPATIBILITY_MAP: dict[str, tuple[str, ...]] = {
+    "FLAT_LOW": ("FLAT_LOW", "LOW_VOLATILITY"),
+    "LOW_VOLATILITY": ("LOW_VOLATILITY", "FLAT_LOW"),
+    "FLAT_NORMAL": ("FLAT_NORMAL", "MEAN_REVERSION"),
+    "MEAN_REVERSION": ("MEAN_REVERSION", "FLAT_NORMAL"),
+    "FLAT_HIGH": ("FLAT_HIGH", "HIGH_VOLATILITY"),
+    "HIGH_VOLATILITY": ("HIGH_VOLATILITY", "FLAT_HIGH"),
+}
+
+
+def _normalize_regime_for_calibrator(regime: Any) -> str:
+    """Normalize a regime label using the same alias map as production handler."""
+    raw = str(regime or "").strip().upper()
+    return _REGIME_ALIAS_MAP.get(raw, raw)
+
+
+def _expand_allowed_regimes(allowed_regimes: Sequence[str]) -> list[str]:
+    """Expand an allowed_regimes list via the compatibility map (production parity)."""
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for raw_regime in allowed_regimes:
+        normalized = _normalize_regime_for_calibrator(raw_regime)
+        compatible = _REGIME_COMPATIBILITY_MAP.get(normalized, (normalized,))
+        for regime in compatible:
+            if regime and regime not in seen:
+                seen.add(regime)
+                expanded.append(regime)
+    return expanded
+
+
+def _compute_regime_labels(df: pd.DataFrame) -> pd.Series:
+    """Compute regime labels from OHLCV using simplified regime detector logic.
+
+    Uses 15-min bar equivalents of the 5-min production regime detector
+    (config/aurora/regime.yaml).  SMA periods scaled 3x: 48→16, 192→64.
+    ATR baseline 288→96.  Priority cascade: VOL → MR → TREND → UNCERTAIN.
+    """
+    close = df["close"].astype(float)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    prev_close = close.shift(1)
+
+    # True Range → Wilder EMA ATR(14) → ATR baseline MA(96)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    atr_baseline = atr.rolling(96, min_periods=48).mean()
+    vol_ratio = atr / atr_baseline
+
+    # SMA short(16) / long(64)
+    sma_short = close.rolling(16, min_periods=16).mean()
+    sma_long = close.rolling(64, min_periods=64).mean()
+
+    regime = pd.Series("UNCERTAIN", index=df.index)
+
+    # Priority 1: Volatility
+    regime = regime.where(~(vol_ratio > 2.0), "HIGH_VOLATILITY")
+    regime = regime.where(~((vol_ratio < 0.7) & (regime == "UNCERTAIN")), "LOW_VOLATILITY")
+
+    # Priority 2: Mean Reversion (only where still UNCERTAIN)
+    mask_unc = regime == "UNCERTAIN"
+    sma_spread = (sma_short - sma_long).abs() / sma_long
+    dev_short = (close - sma_short).abs() / sma_short
+    dev_long = (close - sma_long).abs() / sma_long
+    mr_mask = mask_unc & (sma_spread < 0.005) & (dev_short < 0.005) & (dev_long < 0.005)
+    regime = regime.where(~mr_mask, "MEAN_REVERSION")
+
+    # Priority 3: SMA Trend (only where still UNCERTAIN)
+    mask_unc = regime == "UNCERTAIN"
+    regime = regime.where(
+        ~(mask_unc & (sma_short > sma_long) & (close > sma_short)),
+        "TREND_UP",
+    )
+    mask_unc = regime == "UNCERTAIN"
+    regime = regime.where(
+        ~(mask_unc & (sma_short < sma_long) & (close < sma_short)),
+        "TREND_DOWN",
+    )
+
+    return regime
+
+
+def _run_per_regime_analysis(
+    df_raw: pd.DataFrame,
+    *,
+    symbols: list[str],
+    base_params: dict[str, Any],
+    weights: dict[str, float],
+    asset_cfgs: dict[str, dict[str, Any]],
+    tf_sec: int,
+    warmup_bars: int,
+    guardrails: GuardrailCfg,
+    out_dir: Path,
+) -> dict[str, Any]:
+    """Run per-regime breakdown on computed-regime data.
+
+    For each unique regime label found in df_raw["regime"], filter to only those
+    rows, evaluate with baseline weights, and collect per-regime metrics.
+    Prints a summary table and writes per_regime_analysis.json.
+    """
+    all_regimes = sorted(df_raw["regime"].dropna().unique().tolist())
+    # Exclude passthrough labels
+    passthrough = {"", "DEFAULT", "UNKNOWN", "PENDING", "NONE"}
+    regimes = [r for r in all_regimes if r not in passthrough]
+
+    results: dict[str, dict[str, Any]] = {}
+    for regime_label in regimes:
+        regime_df = df_raw[df_raw["regime"] == regime_label].copy()
+        if regime_df.empty:
+            continue
+        metrics = _evaluate_window(
+            regime_df,
+            symbols=symbols,
+            base_params=base_params,
+            weights=weights,
+            asset_cfgs=asset_cfgs,
+            tf_sec=tf_sec,
+            warmup_bars=warmup_bars,
+            guardrails=guardrails,
+        )
+        results[regime_label] = metrics
+
+    # Print table
+    header = f"{'Regime':<20} {'Bars':>6} {'Entries':>8} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7}"
+    print("\n" + "=" * len(header))
+    print("PER-REGIME BREAKDOWN (baseline weights)")
+    print("=" * len(header))
+    print(header)
+    print("-" * len(header))
+    for regime_label in regimes:
+        m = results.get(regime_label)
+        if m is None:
+            continue
+        wr = float(m.get("win_rate") or 0.0) * 100
+        pf = float(m.get("profit_factor") or 0.0)
+        net = float(m.get("net_return_ratio") or 0.0) * 100
+        dd = float(m.get("max_drawdown_ratio") or 0.0) * 100
+        print(
+            f"{regime_label:<20} {m.get('rows', 0):>6} {m.get('entry_count', 0):>8} "
+            f"{m.get('total_trades', 0):>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}%"
+        )
+    print("-" * len(header))
+
+    # Serialize
+    payload = {
+        "regime_labels": regimes,
+        "weights_used": weights,
+        "per_regime": {
+            label: {
+                "rows": int(m.get("rows", 0)),
+                "entry_count": int(m.get("entry_count", 0)),
+                "total_trades": int(m.get("total_trades", 0)),
+                "win_rate": float(m.get("win_rate", 0.0)),
+                "profit_factor": float(m.get("profit_factor") or 0.0),
+                "net_return_ratio": float(m.get("net_return_ratio", 0.0)),
+                "max_drawdown_ratio": float(m.get("max_drawdown_ratio", 0.0)),
+                "selection_score": m.get("selection_score"),
+                "entries_per_day": float(m.get("entries_per_day", 0.0)),
+                "avg_holding_bars": float(m.get("avg_holding_bars", 0.0)),
+                "regime_blocked_count": int(sum(
+                    sm.get("regime_blocked_count", 0)
+                    for sm in (m.get("per_symbol") or {}).values()
+                )),
+            }
+            for label, m in results.items()
+        },
+    }
+    _write_json(out_dir / "per_regime_analysis.json", payload)
+    print(f"\nPer-regime analysis written to {out_dir / 'per_regime_analysis.json'}")
+    return payload
+
+
 def _compute_tpsl_from_asset_cfg(
     *,
     entry_price: Decimal,
@@ -1025,6 +1228,7 @@ def _evaluate_symbol_window(
     strategy = None
     legs: list[dict[str, Any]] = []
     entry_count = 0
+    regime_blocked_count = 0
     signal_count = 0
     forced_close_count = 0
     tpsl_exit_count = 0
@@ -1034,7 +1238,15 @@ def _evaluate_symbol_window(
     per_side_cost_ratio = (float(
         base_params["fee_bps"]) + float(base_params["slippage_buffer_bps"])) / 10000.0
 
-    position = {
+    # GAP 3: Pre-compute expanded allowed regimes (production parity with handler)
+    raw_allowed = list(asset_cfg.get("allowed_regimes") or [])
+    effective_allowed_regimes = _expand_allowed_regimes(raw_allowed) if raw_allowed else []
+    # Regimes that indicate recorder hasn't captured a valid regime label yet.
+    # When the recorder regime is unknown/pending, we SKIP the entry gate
+    # (otherwise calibration produces 0 entries on recorder data without regime).
+    _REGIME_PASSTHROUGH = frozenset({"", "DEFAULT", "UNKNOWN", "PENDING", "NONE"})
+
+    _empty_position: dict[str, Any] = {
         "is_open": False,
         "side": None,
         "entry_price": None,
@@ -1044,7 +1256,11 @@ def _evaluate_symbol_window(
         "stop_price": None,
         "target_price": None,
         "trade_id": None,
+        "anchor_entry_price": None,
+        "anchor_entry_target_price": None,
     }
+
+    position = dict(_empty_position)
 
     grouped = (
         df_symbol.groupby("segment_id", sort=False)
@@ -1054,17 +1270,7 @@ def _evaluate_symbol_window(
     for _segment_id, segment in grouped:
         strategy = _make_strategy(base_params, weights)
         bars_seen = 0
-        position = {
-            "is_open": False,
-            "side": None,
-            "entry_price": None,
-            "entry_ts_ms": None,
-            "remaining_fraction": 0.0,
-            "bars_held": 0,
-            "stop_price": None,
-            "target_price": None,
-            "trade_id": None,
-        }
+        position = dict(_empty_position)
 
         for row in segment.itertuples(index=False):
             if position["is_open"]:
@@ -1095,23 +1301,30 @@ def _evaluate_symbol_window(
                     tpsl_exit_count += 1
                     if bool(exit_hit.get("ambiguous", False)):
                         ambiguous_tpsl_count += 1
-                    position = {
-                        "is_open": False,
-                        "side": None,
-                        "entry_price": None,
-                        "entry_ts_ms": None,
-                        "remaining_fraction": 0.0,
-                        "bars_held": 0,
-                        "stop_price": None,
-                        "target_price": None,
-                        "trade_id": None,
-                    }
+                    position = dict(_empty_position)
                     continue
 
             bars_seen += 1
             if position["is_open"]:
                 position["bars_held"] = int(position["bars_held"]) + 1
 
+            # GAP 2: Extract per-bar regime context from recorder data
+            bar_regime_raw = str(getattr(row, "regime", "DEFAULT") or "DEFAULT")
+            bar_regime = _normalize_regime_for_calibrator(bar_regime_raw)
+            bar_regime_conf = float(getattr(row, "regime_conf", 0.0) or 0.0)
+            # If the regime is not a real captured label, treat it as passthrough
+            # so the entry gate doesn't block on missing/stale recorder data.
+            _regime_is_real = bar_regime not in _REGIME_PASSTHROUGH
+            bar_regime_allowed = (
+                _REGIME_ALLOWLIST_CONTRACT.is_regime_allowed(
+                    current_regime=bar_regime,
+                    allowed_regimes=effective_allowed_regimes,
+                )
+                if _REGIME_ALLOWLIST_CONTRACT is not None and _regime_is_real
+                else True
+            )
+
+            # GAP 1 + GAP 2: Expanded position_ctx with entry anchors + regime context
             result = strategy.on_bar(
                 bar={
                     "open": getattr(row, "open"),
@@ -1122,6 +1335,11 @@ def _evaluate_symbol_window(
                 position_ctx={
                     "qty_signed": float(position["remaining_fraction"]) if position["is_open"] and str(position["side"]) == "BUY" else (-float(position["remaining_fraction"]) if position["is_open"] else 0.0),
                     "bars_held": int(position["bars_held"]),
+                    "entry_price": position["anchor_entry_price"],
+                    "entry_target_price": position["anchor_entry_target_price"],
+                    "context_regime": bar_regime,
+                    "context_regime_confidence": bar_regime_conf,
+                    "context_regime_allowed": bar_regime_allowed,
                 },
                 llm_blocked=False,
             )
@@ -1139,10 +1357,14 @@ def _evaluate_symbol_window(
             intent_kind = str(getattr(signal, "intent_kind", ""))
             signal_side = str(getattr(signal, "side", "")).upper()
             close_price = _to_decimal(getattr(signal, "price_ref"))
-            row_regime = str(getattr(row, "regime", "DEFAULT")
-                             or "DEFAULT").upper()
+            row_regime = bar_regime
 
             if intent_kind == "ENTRY" and not position["is_open"]:
+                # GAP 3: Regime entry gate — block entries when regime is not allowed
+                if not bar_regime_allowed:
+                    regime_blocked_count += 1
+                    continue
+
                 trade_seq += 1
                 entry_count += 1
                 bracket = _compute_tpsl_from_asset_cfg(
@@ -1151,6 +1373,10 @@ def _evaluate_symbol_window(
                     regime=row_regime,
                     asset_cfg=asset_cfg,
                 )
+                # GAP 1: Set entry anchors (mirrors handler lines 2105-2112)
+                _ch = dict(getattr(signal, "channel_state", None) or {})
+                _avg_close = float(
+                    _ch.get("avg_close_12", float(close_price)))
                 position = {
                     "is_open": True,
                     "side": signal_side,
@@ -1161,6 +1387,8 @@ def _evaluate_symbol_window(
                     "stop_price": bracket["stop_price"] if bracket else None,
                     "target_price": bracket["target_price"] if bracket else None,
                     "trade_id": f"{symbol}:{trade_seq}",
+                    "anchor_entry_price": float(close_price),
+                    "anchor_entry_target_price": _avg_close,
                 }
                 continue
 
@@ -1195,17 +1423,7 @@ def _evaluate_symbol_window(
             remaining_fraction = float(
                 position["remaining_fraction"]) - float(fraction_closed)
             if remaining_fraction <= 1.0e-9 or intent_kind == "FULL_CLOSE":
-                position = {
-                    "is_open": False,
-                    "side": None,
-                    "entry_price": None,
-                    "entry_ts_ms": None,
-                    "remaining_fraction": 0.0,
-                    "bars_held": 0,
-                    "stop_price": None,
-                    "target_price": None,
-                    "trade_id": None,
-                }
+                position = dict(_empty_position)
             else:
                 position["remaining_fraction"] = remaining_fraction
 
@@ -1242,6 +1460,7 @@ def _evaluate_symbol_window(
         ambiguous_tpsl_count=ambiguous_tpsl_count,
         guardrails=guardrails,
     )
+    metrics["regime_blocked_count"] = int(regime_blocked_count)
     return metrics, trade_records
 
 
@@ -1778,6 +1997,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--binance-timeout-sec", type=float, default=12.0)
     parser.add_argument("--binance-pause-sec", type=float, default=0.03)
     parser.add_argument("--binance-lookback-bars", type=int, default=96)
+    parser.add_argument(
+        "--per-regime",
+        action="store_true",
+        help="Compute regime labels from OHLCV and run per-regime breakdown analysis.",
+    )
     return parser
 
 
@@ -1855,6 +2079,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if df_features.empty:
             raise CalibrationError("INSUFFICIENT_DATA",
                                    "No rows after MD-AMR feature computation.")
+
+        # Per-regime: compute regime from OHLCV and inject into data
+        if bool(getattr(args, "per_regime", False)):
+            for sym in args.symbols:
+                sym_mask = df_raw["symbol"] == sym
+                if sym_mask.any():
+                    computed = _compute_regime_labels(df_raw.loc[sym_mask])
+                    df_raw.loc[sym_mask, "regime"] = computed.values
+            # Recompute features with regime-enriched raw data
+            df_features = _annotate_day_utc(_COMPUTE_MD_AMR_FEATURES(df_raw))
 
         windows = _resolve_windows(
             df_raw,
@@ -2123,6 +2357,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"validation_score_delta={_fmt_score(validation_artifact['delta'].get('selection_score'))}")
         print(
             f"forward_score_delta={_fmt_score(forward_artifact['delta'].get('selection_score'))}")
+
+        # Per-regime breakdown (additive, after main calibration output)
+        if bool(getattr(args, "per_regime", False)):
+            _run_per_regime_analysis(
+                df_raw,
+                symbols=args.symbols,
+                base_params=base_params,
+                weights=baseline_weights,
+                asset_cfgs=asset_cfgs,
+                tf_sec=int(args.tf_sec),
+                warmup_bars=search_cfg.warmup_bars,
+                guardrails=guardrails,
+                out_dir=out_dir,
+            )
+
         return 0
     except CalibrationError as error:
         _write_failure_bundle(args, out_dir, error)

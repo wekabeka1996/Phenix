@@ -818,7 +818,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         leverage=lev,
                         margin_type=margin_type,
                         isolated_margin=float(
-                            p.get("isolated_margin", "0") or 0),  # Corrected key likely isolatedMargin in raw but isolated_margin in obj?
+                            # Corrected key likely isolatedMargin in raw but isolated_margin in obj?
+                            p.get("isolated_margin", "0") or 0),
                         # Raw dict key is "isolatedMargin" (camelCase).
                         # Wait, in the original code (Step 26, line 689) it was:
                         # p.get("isolatedMargin", "0")
@@ -930,6 +931,41 @@ class BinanceAdapter(AbstractExchangeAdapter):
         path = "/fapi/v1/order"
         params = {"symbol": symbol, "orderId": order_id}
         return await self._request("GET", path, params)
+
+    async def get_order_by_client_order_id(self, symbol: str, client_order_id: str) -> Optional[Dict[str, Any]]:
+        """Get order information by origClientOrderId.
+
+        Returns None when Binance has no matching order yet.
+        """
+        client_order_id_str = str(client_order_id or "").strip()
+        if not client_order_id_str:
+            return None
+
+        path = "/fapi/v1/order"
+        params = {"symbol": symbol, "origClientOrderId": client_order_id_str}
+        try:
+            return await self._request("GET", path, params)
+        except BinanceAPIError as exc:
+            if exc.code not in (-2013,):
+                raise
+
+        try:
+            for order in await self._get_open_orders_cached():
+                if not isinstance(order, dict):
+                    continue
+                if str(order.get("symbol") or "").strip() != str(symbol or "").strip():
+                    continue
+                if str(order.get("clientOrderId") or "").strip() == client_order_id_str:
+                    return order
+        except Exception as scan_exc:
+            LOG.warning(
+                "[get_order_by_client_order_id] openOrders scan failed for %s/%s: %s",
+                symbol,
+                client_order_id_str,
+                scan_exc,
+            )
+
+        return None
 
     async def get_exchange_info(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         """

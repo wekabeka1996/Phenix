@@ -263,18 +263,57 @@ class IntentRouter:
                 if result.op == "ERR":
                     LOG.warning(f"[{symbol}] Execution Rejected: {result.why}")
                     if hasattr(self._fsm, "bus"):
+                        result_payload = dict(result.pld or {})
+                        reject_why = (
+                            result.why[:240] if result.why else "execution_rejected"
+                        )
+                        reason_value = str(
+                            result_payload.get("reason")
+                            or result_payload.get("block_reason")
+                            or ""
+                        ).strip()
+                        reject_reason_code = "NRR-EXECUTION-REJECTED"
+                        reject_details = {
+                            "original_verification_key": pld.get("idempotent_key"),
+                            "rid": intent_rid,
+                        }
+                        if (
+                            result.why == "OPEN_GUARD_FAIL"
+                            and reason_value == "local_manage_state_conflict"
+                        ):
+                            reject_reason_code = (
+                                "NRR-EXECUTION-LOCAL-LIFECYCLE-CONFLICT"
+                            )
+                            reject_details.update(
+                                {
+                                    "reason": reason_value,
+                                    "local_manage_state": result_payload.get(
+                                        "local_manage_state"
+                                    ),
+                                    "portfolio_state": result_payload.get(
+                                        "portfolio_state"
+                                    ),
+                                    "divergence_detected": result_payload.get(
+                                        "divergence_detected"
+                                    ),
+                                    "tracked_rid": result_payload.get("tracked_rid"),
+                                    "lifecycle_id": result_payload.get("lifecycle_id"),
+                                    "entry_order_id": result_payload.get(
+                                        "entry_order_id"
+                                    ),
+                                    "sl_order_id": result_payload.get("sl_order_id"),
+                                    "tp_order_id": result_payload.get("tp_order_id"),
+                                }
+                            )
                         emit_canonical_trade_intent_rejected_event(
                             fsm=self._fsm.bus,
                             payload={
                                 "ts_ms": int(time.time() * 1000),
                                 "symbol": symbol,
-                                "reason_code": "NRR-EXECUTION-REJECTED",
+                                "reason_code": reject_reason_code,
                                 "stage": "EXECUTION",
-                                "why": result.why[:240] if result.why else "execution_rejected",
-                                "details": {
-                                    "original_verification_key": pld.get("idempotent_key"),
-                                    "rid": intent_rid,
-                                },
+                                "why": reject_why,
+                                "details": reject_details,
                             },
                             rid=intent_rid,
                             src="execution_position",
@@ -285,9 +324,9 @@ class IntentRouter:
                             write_wal=bool(
                                 getattr(self._fsm, "_emit_trade_intent_reject_wal", False)),
                             fallback_symbol=symbol,
-                            fallback_reason_code="NRR-EXECUTION-REJECTED",
+                            fallback_reason_code=reject_reason_code,
                             fallback_stage="EXECUTION",
-                            fallback_why=result.why[:240] if result.why else "execution_rejected",
+                            fallback_why=reject_why,
                             data_ref=list(msg.data_ref or []),
                         )
             else:

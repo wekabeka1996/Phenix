@@ -1,0 +1,156 @@
+{
+  "domain_name": "alpha_search",
+  "version": "2.0.0",
+  "description": "Shadow alpha-signal substrate. Multi-provider scoring (aurora adapter, TA ensemble, judge experts), virtual trader, objective feedback. Phase 1 LLM Judge contract surface (typed verdicts, schemas, config) under judge/ sub-package. Phase 2 revived legacy experts (signal_weights, feature_neutrals) with shadow emission. Phase 3 chamber substrate (admissibility, aggregation, roster-truth accounting, shadow telemetry). Phase 4 evidence envelope + deterministic shadow verdict path.",
+  "owner": "aurora",
+  "status": "active",
+  "imports": [
+    {
+      "event_name": "EVT:FEATURES_CALCULATED",
+      "source_domain": "feature_engineering",
+      "description": "Primary FE features for aurora adapter scoring."
+    },
+    {
+      "event_name": "EVT:TA_FEATURES_CALCULATED",
+      "source_domain": "ta_features",
+      "description": "Supplemental TA features for ta_ensemble provider."
+    },
+    {
+      "event_name": "CMD:PROCESS_STRATEGY",
+      "source_domain": "feature_engineering",
+      "description": "Triggers scoring pass — reads cached features."
+    },
+    {
+      "event_name": "EVT:TRADE_EXECUTED",
+      "source_domain": "position_tracking",
+      "description": "Feeds virtual trader and objective feedback."
+    },
+    {
+      "event_name": "EVT:OBJECTIVE_REALIZED_V1",
+      "source_domain": "objective_engine",
+      "description": "Realized quality feedback for provider reweighting."
+    }
+  ],
+  "exports": [
+    {
+      "event_name": "EVT:ALPHA_SCORE_CALCULATED",
+      "target_domains": ["decision_making"],
+      "schema": "schemas/alpha_score_calculated_v1.json",
+      "description": "Multi-provider alpha scores for decision-making consumption."
+    },
+    {
+      "event_name": "EVT:JUDGE_ENTRY_VERDICT_V1",
+      "target_domains": [],
+      "schema": "judge/schemas/judge_verdict_v1.json",
+      "description": "Phase 4 shadow emission. Entry verdict from LLM Judge deterministic mapper.",
+      "status": "experimental"
+    },
+    {
+      "event_name": "EVT:JUDGE_LIFECYCLE_VERDICT_V1",
+      "target_domains": [],
+      "schema": "judge/schemas/judge_verdict_v1.json",
+      "description": "Phase 4 shadow emission (conditional). Lifecycle verdict from LLM Judge — always UNKNOWN in Phase 4.",
+      "status": "experimental"
+    },
+    {
+      "event_name": "EVT:JUDGE_EVIDENCE_ASSEMBLED_V1",
+      "target_domains": [],
+      "schema": "judge/schemas/judge_evidence_envelope_v1.json",
+      "description": "Phase 4 shadow emission. Evidence envelope linking chamber aggregate to verdict context.",
+      "status": "experimental"
+    },
+    {
+      "event_name": "EVT:JUDGE_CHAMBER_AGGREGATED_V1",
+      "target_domains": [],
+      "schema": "judge/schemas/chamber_aggregate_v1.json",
+      "description": "Phase 3 shadow emission. Chamber expert aggregation (entry + lifecycle stub).",
+      "status": "experimental"
+    },
+    {
+      "event_name": "EVT:JUDGE_EXPERT_PRODUCED_V1",
+      "target_domains": [],
+      "schema": "judge/schemas/expert_output_v1.json",
+      "description": "Phase 2 shadow emission. Expert output from revived legacy scoring experts.",
+      "status": "experimental"
+    }
+  ],
+  "components": [
+    {
+      "name": "backtest_plugin.py",
+      "role": "AlphaSearchBacktestPlugin — FSM listener, two-phase bridge, multi-provider scoring."
+    },
+    {
+      "name": "alpha_model.py",
+      "role": "AlphaModel base class, AlphaScore dataclass, AlphaModelRegistry."
+    },
+    {
+      "name": "ensemble.py",
+      "role": "Alpha ensemble aggregation."
+    },
+    {
+      "name": "config_models.py",
+      "role": "AlphaSearchConfig, provider configs, loader functions."
+    },
+    {
+      "name": "judge/contracts.py",
+      "role": "Phase 1 Pydantic contract models: ExpertOutput, ChamberAggregate, JudgeEvidenceEnvelope, JudgeVerdict."
+    },
+    {
+      "name": "judge/config_models.py",
+      "role": "JudgeCortexConfig with phase-gated mode admission. Phase 2: expert configs, shadow log config. Phase 3: ChamberConfig. Phase 4: VerdictConfig + cross-config invariant."
+    },
+    {
+      "name": "judge/experts/signal_weights_expert.py",
+      "role": "Phase 2 revived legacy flat weighted-centering expert (AlphaModel subclass)."
+    },
+    {
+      "name": "judge/experts/feature_neutrals_expert.py",
+      "role": "Phase 2 revived legacy direction-strength composite expert (AlphaModel subclass)."
+    },
+    {
+      "name": "judge/experts/expert_output_bridge.py",
+      "role": "Phase 2 AlphaScore→ExpertOutput bridge, JSONL shadow log writer. Phase 3: chamber JSONL log writer. Phase 4: envelope + verdict JSONL log writers."
+    },
+    {
+      "name": "judge/chamber/__init__.py",
+      "role": "Phase 3 chamber sub-package. Exports ChamberAggregator, evaluate_admissibility."
+    },
+    {
+      "name": "judge/chamber/admissibility.py",
+      "role": "Phase 3 admissibility filter (R1-R5). Stateless, deterministic."
+    },
+    {
+      "name": "judge/chamber/chamber_aggregator.py",
+      "role": "Phase 3 ChamberAggregator: consensus direction, strength, roster-truth accounting."
+    },
+    {
+      "name": "judge/envelope/__init__.py",
+      "role": "Phase 4 envelope sub-package. Exports assemble_evidence_envelope."
+    },
+    {
+      "name": "judge/envelope/envelope_assembler.py",
+      "role": "Phase 4 stateless evidence envelope assembler. Packages ChamberAggregate + context into JudgeEvidenceEnvelope."
+    },
+    {
+      "name": "judge/verdict/__init__.py",
+      "role": "Phase 4 verdict sub-package. Exports synthesize_verdict."
+    },
+    {
+      "name": "judge/verdict/verdict_synthesizer.py",
+      "role": "Phase 4 deterministic verdict synthesizer. Maps chamber consensus + admissibility to typed JudgeVerdict."
+    }
+  ],
+  "ssot_notes": {
+    "config": "config/alpha_search.yaml (standalone, loaded by load_alpha_search_config)",
+    "event_contract": "apps/reference/dictionaries/verb_registry_v1.yaml",
+    "judge_authority": "docs/LLM_JUDGE/LLM_Judge_Bicameral_Policy_Cortex_Concept_v1.md",
+    "judge_blueprint": "docs/LLM_JUDGE/LLM_JUDGE_PHASE1_IMPLEMENTATION_BLUEPRINT.md",
+    "judge_phase2_blueprint": "docs/LLM_JUDGE/LLM_JUDGE_PHASE2_IMPLEMENTATION_BLUEPRINT.md",
+    "judge_phase1_status": "Contracts and schemas only. No runtime. No event emission. Mode='off' enforced.",
+    "judge_phase2_status": "Legacy expert revival. Shadow emission via EVT:JUDGE_EXPERT_PRODUCED_V1. Mode='shadow' admitted.",
+    "judge_phase3_blueprint": "docs/LLM_JUDGE/LLM_JUDGE_PHASE3_IMPLEMENTATION_BLUEPRINT.md",
+    "judge_phase3_status": "Chamber substrate. Shadow emission via EVT:JUDGE_CHAMBER_AGGREGATED_V1. Admissibility, aggregation, roster-truth. Mode='shadow'.",
+    "judge_phase4_blueprint": "docs/LLM_JUDGE/LLM_JUDGE_PHASE4_IMPLEMENTATION_BLUEPRINT.md",
+    "judge_phase4_status": "Evidence envelope + deterministic shadow verdict. Shadow emission via EVT:JUDGE_EVIDENCE_ASSEMBLED_V1, EVT:JUDGE_ENTRY_VERDICT_V1, EVT:JUDGE_LIFECYCLE_VERDICT_V1. Mode='shadow'."
+  }
+}

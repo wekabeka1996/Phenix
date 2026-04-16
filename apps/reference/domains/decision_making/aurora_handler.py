@@ -19,6 +19,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     upgrade_cold_execution_restore_if_clean_start,
 )
 from apps.reference.contracts.runtime_regime_layers import (
+    build_regime_provenance_fields,
     is_structural_regime_payload,
     normalize_structural_regime_label,
 )
@@ -107,8 +108,12 @@ class SymbolState:
         # Regime cache populated from EVT:REGIME_DETECTED.
         self.regime = None
         self.regime_raw_event = None
-        self.regime_confidence = 0.0
+        self.regime_confidence = None
         self.regime_ts_ms = 0
+        self.regime_event_ts_ms = 0
+        self.regime_source = None
+        self.regime_same_bar = None
+        self.regime_provenance_reason = None
         self.regime_structural_regime_ref = None
         self.regime_changed = None
         self.regime_raw_confidence = None
@@ -458,10 +463,18 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         """
         # Missing heartbeat is treated as missing detector evidence, not as safe.
         if state.last_regime_heartbeat_ms is None:
+            details = build_regime_provenance_fields(
+                {
+                    "regime": state.regime,
+                    "regime_event_ts_ms": state.regime_event_ts_ms or state.regime_ts_ms,
+                },
+                missing_heartbeat=True,
+            )
+            details["last_regime_heartbeat_ms"] = None
             return {
                 "reason_code": "NRR-REGIME-NO-HEARTBEAT",
                 "why": "Regime detector heartbeat never received (fail-closed)",
-                "details": {"last_regime_heartbeat_ms": None},
+                "details": details,
             }
 
         # Prefer config-provided limits; partial mocks fall back to conservative defaults.
@@ -547,7 +560,10 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state.regime = normalize_structural_regime_label(event.get("regime"))
         state.regime_raw_event = normalize_structural_regime_label(
             event.get("raw_regime"))
-        state.regime_confidence = float(event.get("confidence", 0.0))
+        confidence_raw = event.get("confidence")
+        state.regime_confidence = (
+            float(confidence_raw) if confidence_raw is not None else None
+        )
         state.regime_ts_ms = int(event.get("ts_ms") or event.get(
             "ts") or int(self.wall_time_fn() * 1000))
         state.regime_structural_regime_ref = event.get("structural_regime_ref")
@@ -556,6 +572,17 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state.regime_last_update_ts_ms = int(
             event.get("last_update_ts_ms") or 0)
         state.regime_cache_write_ts_ms = int(self.wall_time_fn() * 1000)
+        provenance = build_regime_provenance_fields(
+            event,
+            bar_close_ts_ms=event.get("bar_close_ts_ms"),
+        )
+        state.regime_event_ts_ms = int(
+            provenance.get("regime_event_ts_ms") or state.regime_ts_ms or 0
+        )
+        state.regime_source = provenance.get("regime_source")
+        state.regime_same_bar = provenance.get("regime_same_bar")
+        state.regime_provenance_reason = provenance.get(
+            "regime_provenance_reason")
 
         # Prefer detector-provided timestamp evidence; otherwise stamp arrival on
         # the same monotonic clock used by the liveness guard.
@@ -572,8 +599,13 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         # Some producers omit changed on heartbeat-only updates.
         changed = event.get("changed", True)
+        confidence_text = (
+            f"{state.regime_confidence:.2f}"
+            if state.regime_confidence is not None
+            else "missing"
+        )
         self.logger.debug(
-            f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f}, changed={changed})"
+            f"[{symbol}] Regime cached: {state.regime} (confidence={confidence_text}, changed={changed})"
         )
 
     def on_portfolio_state(self, event: Dict[str, Any]) -> None:
