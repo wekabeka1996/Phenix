@@ -258,6 +258,9 @@ md_amr:
   # Package C.4: Lightweight Context Validity
   # context_validity is advisory only in this package. It stays trace-visible,
   # deterministic, and strategy-local; it does not own exits or execution truth.
+  entry_anchor_persistence:
+    storage_path: ops/restore/md_amr_entry_anchor_state_v1.json
+
   context_validity:
     regime_confidence_floor: 0.35
     regime_confidence_valid: 0.60

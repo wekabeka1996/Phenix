@@ -130,6 +130,12 @@ def _mk_cfg(*, symbol: str, stale_ttl_sec: int = 15):
     )
 
 
+def _bind_registry_owner(dm: DecisionMaking, symbol: str, strategy_id: str = "aurora") -> None:
+    dm._emitter._registry_lookup_fn = (  # type: ignore[attr-defined]
+        lambda lookup_symbol: [strategy_id] if lookup_symbol == symbol else []
+    )
+
+
 def test_regime_flip_short_in_trend_up_emits_reduce_only_close():
     """
     REGIME FLIP: Short position in TREND_UP regime should trigger reduce-only close.
@@ -141,6 +147,7 @@ def test_regime_flip_short_in_trend_up_emits_reduce_only_close():
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
+    _bind_registry_owner(dm, symbol)
 
     # Set portfolio: SHORT position (negative qty)
     now_ms = int(time.time() * 1000)
@@ -174,8 +181,8 @@ def test_regime_flip_short_in_trend_up_emits_reduce_only_close():
     assert intent["side"] == "BUY", "Should close SHORT with BUY"
     assert intent["reduce_only"] is True
     assert intent["qty"] == "0.5"
-    assert "regime_flip_enforcement" in intent["why_chain"]
-    assert "TREND_UP" in intent["why_chain"]
+    assert "flip_orchestration_close" in intent["why_chain"]
+    assert "regime_flip_TREND_UP" in intent["why_chain"]
 
 
 def test_regime_flip_long_in_trend_down_emits_reduce_only_close():
@@ -189,6 +196,7 @@ def test_regime_flip_long_in_trend_down_emits_reduce_only_close():
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
+    _bind_registry_owner(dm, symbol)
 
     # Set portfolio: LONG position (positive qty)
     now_ms = int(time.time() * 1000)
@@ -220,8 +228,8 @@ def test_regime_flip_long_in_trend_down_emits_reduce_only_close():
     assert intent["side"] == "SELL", "Should close LONG with SELL"
     assert intent["reduce_only"] is True
     assert intent["qty"] == "2.5"
-    assert "regime_flip_enforcement" in intent["why_chain"]
-    assert "TREND_DOWN" in intent["why_chain"]
+    assert "flip_orchestration_close" in intent["why_chain"]
+    assert "regime_flip_TREND_DOWN" in intent["why_chain"]
 
 
 def test_regime_flip_uncertain_closes_any_position():
@@ -235,6 +243,7 @@ def test_regime_flip_uncertain_closes_any_position():
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
+    _bind_registry_owner(dm, symbol)
 
     # Set portfolio: LONG position
     now_ms = int(time.time() * 1000)
@@ -264,8 +273,8 @@ def test_regime_flip_uncertain_closes_any_position():
     intent = captured[0]
     assert intent["side"] == "SELL"
     assert intent["reduce_only"] is True
-    assert "regime_flip_enforcement" in intent["why_chain"]
-    assert "UNCERTAIN" in intent["why_chain"]
+    assert "flip_orchestration_close" in intent["why_chain"]
+    assert "regime_flip_UNCERTAIN" in intent["why_chain"]
 
 
 def test_regime_flip_no_position_does_nothing():

@@ -33,7 +33,8 @@ import numpy as np
 import pandas as pd
 
 # ── Project root ───────────────────────────────────────────────────────────────
-ROOT = Path(__file__).resolve().parent.parent
+# tools/alpha_search/build_alpha_input.py → 3 levels up to project root
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 

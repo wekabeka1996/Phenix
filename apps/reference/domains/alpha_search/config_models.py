@@ -331,6 +331,36 @@ class AlphaSearchSystemConfig(BaseModel):
 from apps.reference.domains.alpha_search.judge.config_models import JudgeCortexConfig  # noqa: E402
 
 
+class SimulatorShutdownExportConfig(BaseModel):
+    """Phase 5 Package 5G — config for automatic simulator export on shutdown.
+
+    When enabled, backtest_plugin.shutdown() invokes the offline simulator
+    pipeline using the referenced config file and writes calibration + summary
+    artifacts.  Disabled by default (fail-closed).
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="If True, simulator runs automatically on shutdown."
+    )
+    config_path: str = Field(
+        default="",
+        description="Path to judge_simulator.yaml (must be non-empty when enabled)."
+    )
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_config_path_when_enabled(self):
+        """Fail-closed: enabled=True requires a non-empty config_path."""
+        if self.enabled and (not self.config_path or not self.config_path.strip()):
+            raise ValueError(
+                "simulator_shutdown_export.config_path must be a non-empty "
+                "string when enabled=True"
+            )
+        return self
+
+
 class AlphaSearchConfig(BaseModel):
     """
     Root configuration for alpha_search domain.
@@ -370,6 +400,14 @@ class AlphaSearchConfig(BaseModel):
     judge: Optional[JudgeCortexConfig] = Field(
         default=None,
         description="LLM Judge cortex configuration. None = judge not configured."
+    )
+
+    # Phase 5 Package 5G: Simulator shutdown export config.
+    # When enabled, backtest_plugin.shutdown() will invoke the offline simulator
+    # and write calibration + summary artifacts.
+    simulator_shutdown_export: Optional["SimulatorShutdownExportConfig"] = Field(
+        default=None,
+        description="Phase 5 simulator auto-export on shutdown. None or disabled = no-op."
     )
 
     # Explicit legacy bucket — allows old fields without breaking strict validation.

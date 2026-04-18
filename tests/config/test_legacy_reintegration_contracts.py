@@ -22,6 +22,16 @@ def _write_yaml(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def _enable_md_amr_asset(cfg_dir: Path, symbol: str) -> None:
+    md_amr_path = cfg_dir / "strategies" / "md_amr.yaml"
+    md_amr_data = yaml.safe_load(md_amr_path.read_text(encoding="utf-8"))
+    assets = md_amr_data["md_amr"]["assets"]
+    assert isinstance(assets, dict)
+    assert symbol in assets and isinstance(assets[symbol], dict)
+    assets[symbol]["enabled"] = True
+    _write_yaml(md_amr_path, md_amr_data)
+
+
 class _DummyFSM:
     def listen(self, *_args, **_kwargs) -> None:
         return None
@@ -54,6 +64,7 @@ def test_md_amr_profile_loads_when_assigned_in_registry(tmp_path: Path) -> None:
         strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BTCUSDT"] = ["aurora", "md_amr"]
     _write_yaml(strategies_path, strategies_data)
+    _enable_md_amr_asset(cfg_dir, "BTCUSDT")
 
     config = ConfigLoader(config_dir=cfg_dir).load_config()
 
@@ -71,6 +82,7 @@ def test_bracket_health_uses_md_amr_exit_profile(tmp_path: Path) -> None:
         strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BTCUSDT"] = ["aurora", "md_amr"]
     _write_yaml(strategies_path, strategies_data)
+    _enable_md_amr_asset(cfg_dir, "BTCUSDT")
     config = ConfigLoader(config_dir=cfg_dir).load_config()
 
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
@@ -120,6 +132,7 @@ def test_bracket_health_uses_registry_assignment_when_runtime_owner_missing(tmp_
         strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BTCUSDT"] = ["md_amr"]
     _write_yaml(strategies_path, strategies_data)
+    _enable_md_amr_asset(cfg_dir, "BTCUSDT")
     config = ConfigLoader(config_dir=cfg_dir).load_config()
 
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)

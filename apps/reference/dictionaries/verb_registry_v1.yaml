@@ -183,14 +183,14 @@ registry:
   status: experimental
   schema: apps/reference/domains/execution_position/schemas/cmd_position_policy_sidecar_close_request_v1.json
   since: '2026-04-10'
-  note: "Phase-2 internal EP soft-close request intake for bounded symbol-current-net-only sidecar actions"
+  note: "Internal EP soft-close request intake for bounded symbol-current-net-only sidecar actions"
 - op: EVT
   verb: POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE
   owner: execution_position
   status: experimental
   schema: apps/reference/domains/execution_position/schemas/position_policy_sidecar_close_request_state_v1.json
   since: '2026-04-10'
-  note: "Phase-2 request-to-outcome linkage for sidecar-originated close requests"
+  note: "Bounded soft-close request-to-outcome linkage for sidecar-originated close requests"
 - op: EVT
   verb: EXECUTION_DIVERGENCE_DETECTED
   owner: execution_position

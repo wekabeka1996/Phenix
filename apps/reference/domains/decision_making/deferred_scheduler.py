@@ -15,7 +15,15 @@ log = logging.getLogger(__name__)
 class DeferredIntentScheduler:
     """Keep one pending deferred retry per symbol on the current event loop."""
 
+    _tombstone_logged: bool = False
+
     def __init__(self) -> None:
+        if not DeferredIntentScheduler._tombstone_logged:
+            log.info(
+                "TOMBSTONE_HIT module=deferred_scheduler class=DeferredIntentScheduler "
+                "reason=instantiated_in_runtime — report to Package-0 audit"
+            )
+            DeferredIntentScheduler._tombstone_logged = True
         self._tasks: Dict[str, asyncio.TimerHandle] = {}
 
     def schedule_once(self, symbol: str, when_ts_ms: int, cb: Callable[[str], None]) -> None:

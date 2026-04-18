@@ -394,9 +394,9 @@ class TestMeanReversionConfigsReachRuntime:
         doge = mr.assets.get("DOGEUSDT")
         assert doge is not None
         assert doge.enabled is True
-        assert doge.strategy.bb_num_std == 2.5
-        assert doge.strategy.tp_to_mid is False  # DOGE targets outer band
-        assert doge.strategy.cooldown_sec == 660
+        assert doge.strategy.bb_num_std == pytest.approx(2.13)
+        assert doge.strategy.tp_to_mid is True
+        assert doge.strategy.cooldown_sec == 309
         # NOTE: risk.position_size_usd removed from MRAssetConfig (TASK-ZOMBIE-FIX), sizing now via instruments
         
         # XRP specific overrides
@@ -440,17 +440,16 @@ class TestMeanReversionConfigsReachRuntime:
         # Check DOGE strategy runtime config
         doge_strat = handler._strategies.get("DOGEUSDT")
         if doge_strat:  # Only if DOGE is assigned in strategies_registry
-            assert doge_strat.config.tp_to_mid is False
-            assert doge_strat.config.bb_num_std == 2.5
-            assert doge_strat.config.cooldown_sec == 660
-            # sl_atr_mult should be 1.5 (from DOGE config or global fallback)
-            assert doge_strat.config.sl_atr_mult == Decimal("1.5")
+            assert doge_strat.config.tp_to_mid is True
+            assert doge_strat.config.bb_num_std == pytest.approx(2.13)
+            assert doge_strat.config.cooldown_sec == 309
+            assert doge_strat.config.sl_atr_mult == Decimal("0.5")
         
         # Check XRP strategy runtime config
         xrp_strat = handler._strategies.get("XRPUSDT")
         if xrp_strat:  # Only if XRP is assigned in strategies_registry
             assert xrp_strat.config.tp_to_mid is True
-            assert xrp_strat.config.bb_num_std == 2.5
+            assert xrp_strat.config.bb_num_std == pytest.approx(2.5)
             assert xrp_strat.config.cooldown_sec == 165
             # sl_atr_mult = 2.0 (FIX: was null, now uses industry standard 2.0x ATR)
             assert xrp_strat.config.sl_atr_mult == Decimal("2.0")

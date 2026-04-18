@@ -1987,7 +1987,6 @@ class FeatureEngineering:
                 "ts": current_tick["ts"],
                 "symbol": symbol,
                 "tf_sec": tf_sec,
-                "close_boundary_ts_ms": features_close_boundary_ts_ms,
                 "features": features,
                 "warmup": warmup,
                 "diagnostics": {
@@ -2012,6 +2011,9 @@ class FeatureEngineering:
                 features_payload["bar_identity"] = bar_identity.to_payload()
                 features_payload["close_boundary_ts_ms"] = int(
                     bar_identity.close_boundary_ts_ms)
+            elif int(tf_sec or 0) > 0 and features_close_boundary_ts_ms:
+                # Fallback for bar-level events without bar_identity
+                features_payload["close_boundary_ts_ms"] = features_close_boundary_ts_ms
             if replay_identity is not None:
                 features_payload["replay_identity"] = replay_identity.to_payload()
                 features_payload["replay_generation"] = int(

@@ -107,6 +107,7 @@ class TestComputeRegimeTpsl:
         mock_decision.side_bias_penalty_factor = 0.25
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+        mock_decision.operational_mode = "paranoid"
         mock_decision.direction_strength_scoring = None
         mock_decision.signals = None
         mock_decision.neutral_threshold = None
@@ -338,6 +339,7 @@ class TestTpslGuardrails:
         mock_decision.side_bias_penalty_factor = 0.25
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+        mock_decision.operational_mode = "paranoid"
         mock_decision.direction_strength_scoring = None
         mock_decision.signals = None
         mock_decision.neutral_threshold = None
@@ -499,6 +501,7 @@ class TestAtrMode:
         mock_decision.side_bias_penalty_factor = 0.25
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+        mock_decision.operational_mode = "paranoid"
         mock_decision.direction_strength_scoring = None
         mock_decision.signals = None
         mock_decision.neutral_threshold = None
@@ -624,6 +627,7 @@ class TestFailClosedLogic:
         mock_decision.side_bias_penalty_factor = 0.25
         mock_decision.side_bias_min_intents = 18
         mock_decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+        mock_decision.operational_mode = "paranoid"
         mock_decision.direction_strength_scoring = None
         mock_decision.signals = None
         mock_decision.neutral_threshold = None

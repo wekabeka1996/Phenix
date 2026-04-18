@@ -2955,7 +2955,7 @@
 - **Logic Owner:** `execution_position`
 - **Code Reference:** apps/reference/config_models.py:3959 (PositionPolicySidecarMode) ; apps/reference/domains/execution_position/fsm.py:1096 (sidecar bootstrap)
 - **Mathematical/Architectural Role:**
-    > Selects the Phase-1 sidecar posture: no instance, shadow evaluation+trace, or enable-mode evaluation with action still skipped.
+    > Selects the sidecar posture: no instance, shadow evaluation+trace, or enable-mode bounded soft-close request emission.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Moving toward `enable` increases operational readiness pressure and observability volume.
     - 🔽 **Too Low:** Moving toward `disable` removes sidecar evaluation and forensic coverage.
@@ -3087,9 +3087,9 @@
 - **Mathematical/Architectural Role:**
     > Master switch for suppressing action-bearing recommendations on clearly profitable positions.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` keeps Phase-1 focused on soft early-loss governance only.
+    - 🔼 **Too High:** `true` keeps the bounded soft-close contract focused on adverse or weakening positions.
     - 🔽 **Too Low:** `false` allows recommendations on profitable runners, expanding scope.
-- **Invariant/Constraints:** Boolean gate only; Phase-1 roadmap expects this protection to remain explicit.
+- **Invariant/Constraints:** Boolean gate only; the bounded-action contract expects this protection to remain explicit.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
@@ -3384,50 +3384,50 @@
 - **Logic Owner:** `execution_position`
 - **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/domains/execution_position/position_policy_sidecar.py:342 (ACTION_SKIPPED payload)
 - **Mathematical/Architectural Role:**
-    > Declarative statement of the only future Phase-2 action scope admitted by this config surface.
+    > Declarative statement of the bounded symbol-net soft-close scope admitted by this config surface.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` keeps future action scope aligned to current symbol-net close semantics.
+    - 🔼 **Too High:** `true` keeps the bounded action scope aligned to current symbol-net close semantics.
     - 🔽 **Too Low:** `false` would remove the declared soft-close scope from the config contract.
-- **Invariant/Constraints:** Declarative only in Phase 1; does not grant action execution by itself.
+- **Invariant/Constraints:** Declarative contract surface only; request emission remains mode- and runtime-gated.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
 ### `domains.execution_position.position_policy_sidecar.allowed_actions.partial_reduce`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position`
-- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (bounded-action validation)
 - **Mathematical/Architectural Role:**
     > Declares whether partial-reduce action semantics are admitted by the contract surface.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` would broaden action semantics beyond Phase-1 scope.
+    - 🔼 **Too High:** `true` would broaden action semantics beyond the bounded soft-close scope.
     - 🔽 **Too Low:** `false` keeps action scope narrow and contract-honest.
-- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **Invariant/Constraints:** Bounded-action validator rejects `true` fail-closed.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
 ### `domains.execution_position.position_policy_sidecar.allowed_actions.bracket_mutation`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position`
-- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (bounded-action validation)
 - **Mathematical/Architectural Role:**
     > Declares whether bracket mutation ownership is admitted by the sidecar contract.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** `true` would encroach on incumbent bracket owners.
     - 🔽 **Too Low:** `false` preserves incumbent ownership boundaries.
-- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **Invariant/Constraints:** Bounded-action validator rejects `true` fail-closed.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---
 ### `domains.execution_position.position_policy_sidecar.allowed_actions.exact_targeting`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position`
-- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (Phase-1 validation)
+- **Code Reference:** apps/reference/config_models.py:4079 (PositionPolicySidecarAllowedActionsConfig) ; apps/reference/config_models.py:4105 (bounded-action validation)
 - **Mathematical/Architectural Role:**
     > Declares whether exact lifecycle / close-by-id targeting is admitted by the contract.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** `true` would imply unsupported identity semantics.
     - 🔽 **Too Low:** `false` keeps action posture aligned with current symbol-scoped close truth.
-- **Invariant/Constraints:** Phase-1 validator rejects `true` fail-closed.
+- **Invariant/Constraints:** Bounded-action validator rejects `true` fail-closed.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---

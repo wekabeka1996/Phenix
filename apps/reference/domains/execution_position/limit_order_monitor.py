@@ -102,14 +102,23 @@ class LimitOrderMonitor:
                     hasattr(config.trading.execution, 'limit_orders') else None
 
                 if limit_cfg:
-                    self._enabled = getattr(limit_cfg, 'enable_monitoring', True)
-                    self._default_timeout_sec = getattr(limit_cfg, 'default_timeout_sec', 30)
-                    self._auto_cancel = getattr(limit_cfg, 'auto_cancel_expired', True)
-                    self._max_per_symbol = getattr(limit_cfg, 'max_limit_orders_per_symbol', 3)
+                    self._enabled = getattr(
+                        limit_cfg, 'enable_monitoring', True)
+                    self._default_timeout_sec = getattr(
+                        limit_cfg, 'default_timeout_sec', 30)
+                    self._auto_cancel = getattr(
+                        limit_cfg, 'auto_cancel_expired', True)
+                    self._max_per_symbol = getattr(
+                        limit_cfg, 'max_limit_orders_per_symbol', 3)
             except AttributeError:
                 pass
 
         self._running = False
+
+        LOG.info(
+            "TOMBSTONE_HIT module=limit_order_monitor class=LimitOrderMonitor "
+            "reason=instantiated_in_runtime — report to Package-0 audit"
+        )
 
         # Metrics
         self._metrics = {
@@ -199,7 +208,8 @@ class LimitOrderMonitor:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    task = asyncio.create_task(self._expire_after(order_id, timeout))
+                    task = asyncio.create_task(
+                        self._expire_after(order_id, timeout))
                     self._timer_tasks[order_id] = task
             except RuntimeError:
                 # No event loop running (e.g. sync context / testing) — timer not created
@@ -224,9 +234,11 @@ class LimitOrderMonitor:
             task.cancel()
 
         state = self._active_orders.pop(order_id)
-        self._symbol_counts[state.symbol] = max(0, self._symbol_counts.get(state.symbol, 0) - 1)
+        self._symbol_counts[state.symbol] = max(
+            0, self._symbol_counts.get(state.symbol, 0) - 1)
 
-        LOG.info(f"Untracked LIMIT order: {state.symbol} {order_id} ({reason})")
+        LOG.info(
+            f"Untracked LIMIT order: {state.symbol} {order_id} ({reason})")
 
     async def _expire_after(self, order_id: str, timeout_sec: int):
         """Per-order timer: sleep exactly timeout_sec, then cancel if still active."""

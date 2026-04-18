@@ -22,7 +22,7 @@ def test_production_config_exposes_position_policy_sidecar_contract() -> None:
     cfg = ConfigLoader().load_config()
 
     sidecar = cfg.domains.execution_position.position_policy_sidecar
-    assert sidecar.mode.value == "shadow"
+    assert sidecar.mode.value == "enable"
     assert sidecar.thresholds.recommend_soft_close_at == 0.30
     assert sidecar.allowed_actions.soft_close_symbol_current_net_only is True
     assert sidecar.allowed_actions.partial_reduce is False
@@ -55,7 +55,7 @@ def test_unknown_position_policy_sidecar_field_is_rejected(tmp_path: Path) -> No
     assert "phantom_field" in str(exc_info.value)
 
 
-def test_forbidden_phase1_action_scope_is_rejected(tmp_path: Path) -> None:
+def test_forbidden_bounded_action_scope_is_rejected(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     domains_path = cfg_dir / "domains.yaml"
     domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
@@ -66,7 +66,7 @@ def test_forbidden_phase1_action_scope_is_rejected(tmp_path: Path) -> None:
         ConfigLoader(config_dir=cfg_dir).load_config()
 
     assert "partial_reduce" in str(exc_info.value)
-    assert "Phase-1" in str(exc_info.value)
+    assert "Bounded" in str(exc_info.value)
 
 
 def test_position_policy_sidecar_structural_aliases_are_normalized(tmp_path: Path) -> None:

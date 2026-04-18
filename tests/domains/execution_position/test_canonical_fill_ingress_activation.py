@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from apps.reference.config_models import BracketsConfig, SLConfig, TPConfig
 from vfoundation.core.protocol import Message
 
 
@@ -164,3 +165,60 @@ def test_order_fill_missing_activation_fields_skips_lifecycle_activation_fail_cl
     assert records[0]["fill_source"] == "order_fill"
     assert records[0]["rid"] == "rid-fill-legacy"
     assert records[0]["activation_skipped_reason"] == "missing_fields:price,side"
+
+
+def test_trade_executed_typed_brackets_config_still_schedules_deferred_brackets(
+    fsm_harness,
+) -> None:
+    fsm, _, cfg = fsm_harness
+    cfg.trading.execution.manage.brackets = BracketsConfig(
+        sl=SLConfig(fixed_bps=40),
+        tp=TPConfig(fixed_bps=80),
+        oco_emulation=True,
+        offset_bps=5,
+    )
+
+    scheduled: list[str] = []
+
+    async def fake_place_deferred(entry_order_id: str, bracket_data: dict) -> None:
+        return None
+
+    def fake_submit_async(coro, _loop) -> None:
+        scheduled.append(coro.cr_code.co_name)
+        coro.close()
+
+    fsm._get_async_loop = lambda: object()
+    fsm._submit_async = fake_submit_async
+    fsm._bracket_mgr.place_deferred_brackets = fake_place_deferred
+    fsm.order_guardian.cleanup_orphans = fake_place_deferred
+    fsm._pending_brackets["order-1"] = {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "sl": "99.5",
+        "tp": "101.0",
+        "qty": "0.10",
+        "rid": "rid-fill-1",
+        "idem_key": "rid-fill-1",
+        "tick_size": "0.01",
+    }
+
+    with patch(
+        "apps.reference.domains.execution_position.pending_brackets_wal.write_pending_brackets_cleared"
+    ) as pending_cleared:
+        result = fsm._handle_canonical_fill_ingress(
+            _trade_executed_message(),
+            fill_source="trade_executed",
+            process_result=False,
+        )
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "BATCH"
+    assert "fake_place_deferred" in scheduled
+    assert "delayed_cleanup" in scheduled
+    assert "order-1" not in fsm._pending_brackets
+    pending_cleared.assert_called_once_with(
+        entry_order_id="order-1",
+        reason="filled",
+        symbol="BTCUSDT",
+    )

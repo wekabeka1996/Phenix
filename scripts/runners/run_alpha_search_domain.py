@@ -18,7 +18,8 @@ import sys
 from pathlib import Path
 
 # Ensure project root is in path BEFORE any local imports
-project_root = Path(__file__).resolve().parent.parent
+# scripts/runners/run_alpha_search_domain.py -> 3 levels up to project root
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 

@@ -63,7 +63,14 @@ def mock_config():
     decision.side_bias_window_sec = 600
     decision.side_bias_target_ratio = 0.5
     decision.side_bias_min_intents = 10
-    decision.regime_threshold_multipliers = {}
+    decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+    decision.operational_mode = "paranoid"
+    decision.scoring_version = "quadratic"
+    decision.scoring_engine = None
+    decision.quadratic_rollout = None
+    decision.execution = None
+    decision.exit = None
+    decision.dashboard = None
     
     decision.gates = MagicMock()
     decision.gates.enabled = False

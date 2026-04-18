@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Judge Simulator Summary Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at_ms",
+    "input_counts",
+    "match_stats",
+    "economics",
+    "disagreement_stats",
+    "expert_accuracy_summary",
+    "cohort_stats",
+    "policy_readiness_notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "generated_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "input_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict_count",
+        "outcome_count",
+        "matched_count",
+        "unmatched_count"
+      ],
+      "properties": {
+        "verdict_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unmatched_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "match_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match_rate",
+        "actionable_matched_count",
+        "non_actionable_matched_count"
+      ],
+      "properties": {
+        "match_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "actionable_matched_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "non_actionable_matched_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "economics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avg_raw_return",
+        "avg_net_return",
+        "positive_net_count",
+        "negative_net_count"
+      ],
+      "properties": {
+        "avg_raw_return": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "avg_net_return": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "positive_net_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "negative_net_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "disagreement_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disagreement_count",
+        "disagreement_rate",
+        "total_cost_of_disagreement"
+      ],
+      "properties": {
+        "disagreement_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disagreement_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "total_cost_of_disagreement": {
+          "type": "number"
+        }
+      }
+    },
+    "expert_accuracy_summary": {
+      "type": "object",
+      "required": [
+        "total_count",
+        "correct_count",
+        "accuracy_rate"
+      ],
+      "properties": {
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "correct_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accuracy_rate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "cohort_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "CORRECT_ENTRY",
+        "INCORRECT_ENTRY",
+        "CORRECT_ABSTAIN",
+        "MISSED_OPPORTUNITY",
+        "INCONCLUSIVE"
+      ],
+      "properties": {
+        "CORRECT_ENTRY": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "INCORRECT_ENTRY": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "CORRECT_ABSTAIN": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "MISSED_OPPORTUNITY": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "INCONCLUSIVE": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "policy_readiness_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 SIDECAR_VERSION = "1.0.0"
-EVALUATION_MODE = "phase1_recommendation_only"
+EVALUATION_MODE = "bounded_soft_close_policy"
 POLICY_RECORD_KIND = "position_policy_sidecar"
 ACTION_PACKAGE_VERSION = "phase2_action_package_v1"
 CLOSE_REQUEST_EVENT_TYPE = "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"
@@ -29,7 +29,7 @@ CLOSE_REQUEST_COMMAND_TOPIC = "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST"
 
 @dataclass(frozen=True)
 class PositionPolicyCloseRequest:
-    """Deferred Phase-2 request object for EP-owned soft-close translation."""
+    """Bounded soft-close request object for EP-owned close translation."""
 
     ts_ms: int
     request_id: str

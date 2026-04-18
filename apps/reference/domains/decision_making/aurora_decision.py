@@ -78,6 +78,7 @@ from apps.reference.domains.decision_making.trade_intent_reject_wal import (
 
 if TYPE_CHECKING:
     from apps.reference.domains.decision_making.aurora_handler import SymbolState
+    from apps.reference.domains.decision_making.core_models import ProcessStrategyCmd
 
 logger = logging.getLogger("aurora_handler")
 
@@ -103,7 +104,7 @@ class AuroraDecisionMixin:
         self,
         *,
         symbol: str,
-        cmd: Dict[str, Any],
+        cmd: "ProcessStrategyCmd",
         state: "SymbolState",
         features: Dict[str, Any],
         result: ScoringResult,
@@ -128,8 +129,8 @@ class AuroraDecisionMixin:
             shield_reasons = list(psi.get("shield_reasons") or [])
         return {
             "symbol": symbol,
-            "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
-            "bar_close_ts": features.get("bar_close_ts") or cmd.get("bar_close_ts"),
+            "tf_sec": int(cmd.tf_sec or self.timeframe_sec or 0),
+            "bar_close_ts": features.get("bar_close_ts") or cmd.bar_close_ts,
             "regime": state.regime,
             "regime_adjustment_source": "regime_thresholds",
             "pillar_sum": psi.get("s_linear", features.get("pillar_sum")),
@@ -200,7 +201,7 @@ class AuroraDecisionMixin:
             if key in trace
         }
 
-    def _process_decision(self, symbol: str, cmd: Dict[str, Any]) -> None:
+    def _process_decision(self, symbol: str, cmd: "ProcessStrategyCmd") -> None:
         """
         Process one CMD:PROCESS_STRATEGY payload for a single symbol.
 
@@ -209,6 +210,31 @@ class AuroraDecisionMixin:
         identity fields, and emits one of the strategy blocked, deferred, trace,
         or signal events depending on where the decision path stops.
         """
+        # Backward-compat: tests that call _process_decision directly with a raw
+        # dict are promoted to ProcessStrategyCmd here so the rest of the method
+        # receives a typed object regardless of call site.
+        from apps.reference.domains.decision_making.core_models import ProcessStrategyCmd  # noqa: PLC0415
+        if not isinstance(cmd, ProcessStrategyCmd):
+            if isinstance(cmd, dict):
+                from apps.reference.domains.decision_making.boundary_models import (  # noqa: PLC0415
+                    ProcessStrategyBoundary,
+                )
+                from apps.reference.domains.decision_making.boundary_mappers import (  # noqa: PLC0415
+                    map_process_strategy_boundary_to_cmd,
+                )
+                try:
+                    # Inject symbol from the method argument when missing from payload
+                    # (common in direct-call tests that pass symbol separately).
+                    _cmd_raw = dict(cmd)
+                    if "symbol" not in _cmd_raw:
+                        _cmd_raw["symbol"] = symbol
+                    boundary = ProcessStrategyBoundary.model_validate(_cmd_raw)
+                    cmd = map_process_strategy_boundary_to_cmd(
+                        boundary, raw=_cmd_raw)
+                except Exception:
+                    return
+            else:
+                return
         # Check if symbol is enabled for Aurora
         if not self._is_symbol_enabled(symbol):
             return
@@ -219,14 +245,13 @@ class AuroraDecisionMixin:
             return
 
         # Extract features and readiness from CMD payload
-        features = cmd.get("features", {})
-        warmup = cmd.get("warmup", {})
-        warmup_readiness = warmup.get("ready", {})
+        features = dict(cmd.features)
+        warmup_readiness = dict(cmd.warmup.ready)
 
         # Warmup ownership lives upstream. The handler only mirrors the flag so
         # emitted diagnostics can explain which readiness evidence was present.
         state = self._symbol_states[symbol]
-        state.warmup_full_ready = bool(warmup.get("full_ready", False))
+        state.warmup_full_ready = cmd.warmup.full_ready
 
         # Reject stale regime state before touching the kernel; downstream
         # scoring assumes the cached regime heartbeat is still current.
@@ -237,12 +262,12 @@ class AuroraDecisionMixin:
                 reason_code=liveness_block["reason_code"],
                 reason="LIVENESS",
                 context="aurora_handler:regime_liveness_guard",
-                rid=cmd.get("rid"),
+                rid=cmd.rid,
                 why=liveness_block["why"],
                 details=liveness_block.get("details", {}),
                 why_chain=["LIVENESS", liveness_block["reason_code"]],
-                tf_sec=int(cmd.get("tf_sec") or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
+                tf_sec=int(cmd.tf_sec or 0),
+                bar_close_ts=cmd.bar_close_ts,
             )
             return
 
@@ -273,14 +298,14 @@ class AuroraDecisionMixin:
             write_trade_intent_rejected(
                 symbol=symbol,
                 strategy_id=self.strategy_id,
-                tf_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
+                tf_sec=int(cmd.tf_sec or self.timeframe_sec or 0),
+                bar_close_ts=cmd.bar_close_ts,
                 reason_code="READINESS_CONTRACT_UNRESOLVED",
                 stage="STRATEGY",
                 why="aurora_handler:readiness_contract_unresolved",
                 src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
+                ts_ms=cmd.bar_close_ts,
+                rid=cmd.rid,
                 context="aurora_handler:basis_required_resolution",
                 why_chain=["READINESS", "READINESS_CONTRACT_UNRESOLVED"],
                 details={"error": _readiness_contract_error},
@@ -313,14 +338,14 @@ class AuroraDecisionMixin:
             write_trade_intent_rejected(
                 symbol=symbol,
                 strategy_id=self.strategy_id,
-                tf_sec=int(cmd.get("tf_sec") or self.timeframe_sec or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
+                tf_sec=int(cmd.tf_sec or self.timeframe_sec or 0),
+                bar_close_ts=cmd.bar_close_ts,
                 reason_code="BARS_REQUIRED_COLD_START",
                 stage="STRATEGY",
                 why=cold_start_why,
                 src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
+                ts_ms=cmd.bar_close_ts,
+                rid=cmd.rid,
                 context="aurora_handler:bars_required_gate",
                 why_chain=cold_start_why_chain,
                 details=cold_start_details,
@@ -334,12 +359,12 @@ class AuroraDecisionMixin:
                 reason_code="BARS_REQUIRED_COLD_START",
                 reason="READINESS",
                 context="aurora_handler:bars_required_gate",
-                rid=cmd.get("rid"),
+                rid=cmd.rid,
                 why=cold_start_why,
                 details=cold_start_details,
                 why_chain=cold_start_why_chain,
-                tf_sec=int(cmd.get("tf_sec") or 0),
-                bar_close_ts=cmd.get("bar_close_ts"),
+                tf_sec=int(cmd.tf_sec or 0),
+                bar_close_ts=cmd.bar_close_ts,
             )
             return
 
@@ -460,16 +485,16 @@ class AuroraDecisionMixin:
                 self, "score_multiplier", 1.0)
 
         bar_identity = extract_canonical_bar_identity(
-            cmd,
+            cmd.raw,
             default_symbol=symbol,
             default_timeframe_sec=int(
-                cmd.get("tf_sec") or self.timeframe_sec or 0),
+                cmd.tf_sec or self.timeframe_sec or 0),
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
         bar_close_ts_raw = (
             int(bar_identity.bar_end_ts_ms)
             if bar_identity is not None
-            else cmd.get("bar_close_ts")
+            else cmd.bar_close_ts
         )
         # Some downstream contracts expect these fields inside ``features`` even
         # when upstream omitted them. Only fill missing keys so upstream values
@@ -609,7 +634,7 @@ class AuroraDecisionMixin:
                 "schema_version": 1,
                 "strategy_id": self.strategy_id,
                 "symbol": symbol,
-                "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
+                "tf_sec": int(cmd.tf_sec or self.timeframe_sec or 0),
                 "score": float(result.score),
                 "raw_score": float(getattr(result, "raw_score", 0.0)),
                 "decision_score": float(getattr(result, "decision_score", result.score)),
@@ -666,26 +691,31 @@ class AuroraDecisionMixin:
             created_ts = int(self.wall_time_fn() * 1000)
             original_event_payload = {
                 "symbol": symbol,
-                "tf_sec": int(cmd.get("tf_sec") or self.timeframe_sec or 0),
-                "bar_close_ts": cmd.get("bar_close_ts"),
-                "bar": dict(cmd.get("bar") or {}),
-                "features": dict(cmd.get("features") or {}),
-                "warmup": dict(cmd.get("warmup") or {}),
-                "rid": cmd.get("rid"),
+                "tf_sec": int(cmd.tf_sec or self.timeframe_sec or 0),
+                "bar_close_ts": cmd.bar_close_ts,
+                "bar": dict(cmd.raw.get("bar") or {}),
+                "features": dict(cmd.features),
+                "warmup": {
+                    "full_ready": cmd.warmup.full_ready,
+                    "ticks_seen": cmd.warmup.ticks_seen,
+                    "ready": dict(cmd.warmup.ready),
+                    "reasons": list(cmd.warmup.reasons),
+                },
+                "rid": cmd.rid,
                 "strategy_id": self.strategy_id,
             }
-            if isinstance(cmd.get("regime"), dict):
+            if isinstance(cmd.raw.get("regime"), dict):
                 original_event_payload["regime"] = dict(
-                    cmd.get("regime") or {})
-            elif cmd.get("regime") is not None:
-                original_event_payload["regime"] = cmd.get("regime")
+                    cmd.raw.get("regime") or {})
+            elif cmd.raw.get("regime") is not None:
+                original_event_payload["regime"] = cmd.raw.get("regime")
             if raw_reason:
                 original_event_payload["raw_defer_reason"] = raw_reason
             retry_payload = write_intent_deferred(
                 symbol=symbol,
                 reason=canonical_reason,
                 reason_code=reason_code,
-                retry_key=f"aurora-kernel:{symbol}:{cmd.get('bar_close_ts') or created_ts}",
+                retry_key=f"aurora-kernel:{symbol}:{cmd.bar_close_ts or created_ts}",
                 next_allowed_ts=created_ts + 1000,
                 attempt=1,
                 max_attempts=3,
@@ -695,7 +725,7 @@ class AuroraDecisionMixin:
                 },
                 src="aurora_handler",
                 ts_ms=created_ts,
-                rid=cmd.get("rid"),
+                rid=cmd.rid,
                 why_chain=["KERNEL_DEFERRED", canonical_reason],
                 context="aurora_handler:kernel_deferred",
                 retry_policy={
@@ -1091,8 +1121,7 @@ class AuroraDecisionMixin:
                         side=canonical_side.upper(),
                         entry_price=decimal.Decimal(
                             str(entry_plan_res.entry_price)),
-                        features_payload=cmd.get("features") if isinstance(
-                            cmd.get("features"), dict) else {},
+                        features_payload=dict(cmd.features),
                         margin_pct_mult=decimal.Decimal(str(micro_fraction)),
                     ),
                     behavior=ObjectiveBehaviorAdapter(
@@ -1198,7 +1227,7 @@ class AuroraDecisionMixin:
                 symbol,
                 result,
                 features,
-                cmd,
+                cmd.raw,
                 effective_side=canonical_side,
                 entry_plan=entry_plan_res,
                 stop_loss_override=stop_loss_override,
@@ -1210,7 +1239,7 @@ class AuroraDecisionMixin:
                 symbol,
                 result,
                 features,
-                cmd,
+                cmd.raw,
                 effective_side=canonical_side,
                 micro_fraction=micro_fraction,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
@@ -1569,10 +1598,10 @@ class AuroraDecisionMixin:
                 "regime_ts_ms": state.regime_ts_ms,
                 "regime_age_sec": round((now_ms - state.regime_ts_ms) / 1000, 1) if state.regime_ts_ms else 0,
                 "regime": state.regime,
-                "regime_event_ts_ms": regime_provenance.get("regime_event_ts_ms"),
-                "regime_source": regime_provenance.get("regime_source"),
-                "regime_same_bar": regime_provenance.get("regime_same_bar"),
-                "regime_provenance_reason": regime_provenance.get("regime_provenance_reason"),
+                "regime_event_ts_ms": features.get("regime_event_ts_ms"),
+                "regime_source": features.get("regime_source"),
+                "regime_same_bar": features.get("regime_same_bar"),
+                "regime_provenance_reason": features.get("regime_provenance_reason"),
             },
         }
         if bar_identity is not None:

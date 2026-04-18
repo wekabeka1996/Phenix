@@ -263,6 +263,16 @@ alpha_search:
       split_confidence_discount: 0.5
 
   # ============================================================================
+  # Phase 5 Package 5G: Simulator Shutdown Auto-Export
+  # When enabled, backtest_plugin.shutdown() invokes the offline simulator and
+  # writes calibration + summary artifacts to the paths configured in
+  # config/judge_simulator.yaml.  Disabled by default (fail-closed).
+  # ============================================================================
+  simulator_shutdown_export:
+    enabled: false
+    config_path: "config/judge_simulator.yaml"
+
+  # ============================================================================
   # LEGACY: All deprecated fields moved under 'legacy' key for strict validation
   # These fields are ignored by new code but kept for migration/reference
   # ============================================================================

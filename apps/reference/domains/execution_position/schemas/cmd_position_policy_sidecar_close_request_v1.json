@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://aurora.internal/schemas/cmd_position_policy_sidecar_close_request_v1.json",
   "title": "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST payload schema",
-  "description": "Internal EP-owned soft-close request emitted by Position Policy Sidecar under the admitted Phase-2 narrow action contract.",
+  "description": "Internal EP-owned soft-close request emitted by Position Policy Sidecar under the admitted bounded action contract.",
   "type": "object",
   "additionalProperties": true,
   "required": [

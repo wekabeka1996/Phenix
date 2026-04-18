@@ -896,7 +896,7 @@ def _render_report(
         "## FACT",
         f"- Current YAML still holds the accepted A.1 baseline values: max_hold_bars={yaml_params['max_hold_bars']}, target_approach_pct={yaml_params['target_approach_pct']}.",
         "- Package C.3 and C.4 remain advisory-only at package boundary; they do not own exit or execution truth.",
-        "- Runtime forensic evidence already proves md_amr activity on XRPUSDT and BNBUSDT in the 21h report.",
+        "- Validation scope should stay aligned with md_amr assets currently enabled in the YAML; dormant assets should not be treated as promotion scope by default.",
     ]
     for symbol in symbols:
         start_date, end_date = data_ranges[symbol]
@@ -996,7 +996,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--md-amr-yaml", default="config/aurora/strategies/md_amr.yaml")
     parser.add_argument("--recorder-dir", default="data/recorder")
-    parser.add_argument("--symbols", nargs="+", default=["XRPUSDT", "BNBUSDT"])
+    parser.add_argument("--symbols", nargs="+", default=["XRPUSDT", "SOLUSDT"])
     parser.add_argument("--start", type=_parse_date, default=None)
     parser.add_argument("--end", type=_parse_date, default=None)
     parser.add_argument("--tf-sec", type=int, default=TF_SEC)

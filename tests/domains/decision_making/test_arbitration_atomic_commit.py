@@ -114,6 +114,7 @@ class TestArbitrationAtomicCommit:
             self.regime = "TREND_UP"
             self.regime_confidence = 0.9
             self.trend_dir = 1
+            self.trend_run_length = 1
             self.delta_price = 0
             self.pm_norm_10s = 0
             self.pm_norm_60s = 0

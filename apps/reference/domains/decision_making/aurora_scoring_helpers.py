@@ -11,7 +11,7 @@ import decimal
 import logging
 from typing import Any, Dict, List, Optional
 
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import SideBiasState
+from apps.reference.domains.decision_making.aurora_policy import SideBiasState
 from apps.reference.domains.decision_making.shields.null_shield import NullShield
 from apps.reference.domains.decision_making.shields.base import ShieldCascade
 from apps.reference.domains.decision_making.shields.context_shield import ContextShield

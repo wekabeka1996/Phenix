@@ -729,7 +729,8 @@ def main() -> None:
         LOG.warning(f" InFlightReconciler disabled (init failed): {e}")
 
     try:
-        boundary_audit = getattr(execution_position, "_intent_boundary_audit", None)
+        boundary_audit = getattr(
+            execution_position, "_intent_boundary_audit", None)
         if (
             boundary_audit is not None
             and getattr(boundary_audit, "enabled", False)
@@ -740,7 +741,8 @@ def main() -> None:
             guardian_runtime.submit(boundary_audit.run_forever())
             LOG.info(" IntentBoundaryAudit started")
         elif boundary_audit is not None and getattr(boundary_audit, "enabled", False):
-            LOG.warning(" IntentBoundaryAudit not started: async loop is not running")
+            LOG.warning(
+                " IntentBoundaryAudit not started: async loop is not running")
     except Exception as e:
         LOG.warning(f" IntentBoundaryAudit disabled (init failed): {e}")
 
@@ -1379,76 +1381,10 @@ def main() -> None:
             "source": "startup:portfolio_fallback",
         }, why="startup_portfolio_timeout_fallback")
 
-    # ── PILLAR BACKFILL (КР-1 fix) ────────────────────────────────────────────
-    # PillarBackfillService та EVT:HTF_BARS_IMPORTED listener в FeatureEngineering
-    # існують давно, але виклик при старті був відсутній — пілли запускались холодними.
-    # Без backfill SMA(200) на D1 потребував би 200 днів live-даних.
-    _bf_cfg = None
-    _bf_enabled = False
-
-    if _bf_enabled and guardian_runtime is not None and execution_position is not None:
-        LOG.info("PILLAR_BACKFILL: Starting HTF pillar warmup from Binance...")
-        try:
-            _backfill_svc = PillarBackfillService(execution_position.adapter)
-            _symbols = list(config.instruments.keys())
-            _d1_count = getattr(_bf_cfg, "d1_candles", 200)
-            _h4_count = getattr(_bf_cfg, "h4_candles", 100)
-            _m15_count = getattr(_bf_cfg, "m15_candles", 50)
-            _tf_map = {"d1": 86400, "h4": 14400, "m15": 900}
-
-            for _sym in _symbols:
-                try:
-                    _results = guardian_runtime.run(
-                        _backfill_svc.warmup_pillars(
-                            _sym,
-                            d1_candles=_d1_count,
-                            h4_candles=_h4_count,
-                            m15_candles=_m15_count,
-                        ),
-                        timeout=90.0,
-                    )
-                    for _label, _tf_sec in _tf_map.items():
-                        _res = _results.get(_label)
-                        if _res and _res.success:
-                            _bars_payload = [
-                                {
-                                    "o": bar.open,
-                                    "c": bar.close,
-                                    "h": bar.high,
-                                    "l": bar.low,
-                                    "v": bar.volume,
-                                    "open_ts": bar.open_time_ms,
-                                    "replay_generation": 0,
-                                }
-                                for bar in _res.candles
-                            ]
-                            fsm.emit(
-                                "EVT:HTF_BARS_IMPORTED",
-                                payload={
-                                    "symbol": _sym,
-                                    "tf_sec": _tf_sec,
-                                    "bars": _bars_payload,
-                                    "as_of_ms": int(time.time() * 1000),
-                                },
-                                why="pillar_backfill_startup",
-                            )
-                            LOG.info(
-                                "PILLAR_BACKFILL: %s %s — %d bars emitted",
-                                _sym, _label.upper(), len(_bars_payload),
-                            )
-                        else:
-                            LOG.warning(
-                                "PILLAR_BACKFILL: %s %s fetch failed: %s",
-                                _sym, _label.upper(),
-                                getattr(_res, "error", "no result"),
-                            )
-                except Exception as _e:
-                    LOG.error(
-                        "PILLAR_BACKFILL: Failed for symbol %s: %s", _sym, _e)
-        except Exception as _e:
-            LOG.error("PILLAR_BACKFILL: Startup warmup failed: %s", _e)
-    else:
-        LOG.debug("PILLAR_BACKFILL_LEGACY_PATH disabled")
+    # PACKAGE-0 CLEANUP: Legacy pillar backfill + regime backfill paths removed.
+    # They were permanently gated by _bf_enabled=False and fully replaced by
+    # STARTUP_BASIS_EXECUTOR (lines ~1276-1294) + the earlier warmup block.
+    # Deleted 2026-04-16 in PACKAGE_0_INVENTORY_TOMBSTONES_AND_PROVEN_DEAD_DELETION.
     # ─────────────────────────────────────────────────────────────────────────
 
     LOG.debug("Risk management already started before startup warmup")
@@ -1458,51 +1394,8 @@ def main() -> None:
     LOG.debug("Decision making already started before startup warmup")
 
     LOG.info("Starting regime detector...")
-    # ── REGIME BACKFILL (КР-2 fix) ────────────────────────────────────────────
-    # RegimeDetector має TTL=10s на кожен бар → без backfill потрібно 24 год
-    # live-даних для atr_sma_length=288 × 5m. Завантажуємо 300+ × 5m барів з
-    # Binance і сідаємо буфери через feed_warmup_bar() (без TTL-перевірки).
-    if _bf_enabled and guardian_runtime is not None and execution_position is not None:
-        LOG.info("REGIME_BACKFILL: Seeding RegimeDetector from Binance 5m bars...")
-        try:
-            _rd_svc = PillarBackfillService(execution_position.adapter)
-            # WARMUP-SSOT: derived from regime.yaml via canonical formula
-            _rd_bars_count = regime_detector_required_bars(
-                config) + int(getattr(config, "basis_import_buffer", 20))
-            for _rd_sym in list(config.instruments.keys()):
-                try:
-                    _rd_result = guardian_runtime.run(
-                        _rd_svc.fetch_candles(_rd_sym, 300, _rd_bars_count),
-                        timeout=60.0,
-                    )
-                    if _rd_result and _rd_result.success:
-                        for _rd_bar in _rd_result.candles:
-                            regime_detector.feed_warmup_bar(
-                                _rd_sym,
-                                {
-                                    "close": _rd_bar.close,
-                                    "high": _rd_bar.high,
-                                    "low": _rd_bar.low,
-                                    "open_ts": _rd_bar.open_time_ms,
-                                },
-                            )
-                        LOG.info(
-                            "REGIME_BACKFILL: %s — %d × 5m bars seeded",
-                            _rd_sym, _rd_result.fetched_count,
-                        )
-                    else:
-                        LOG.warning(
-                            "REGIME_BACKFILL: %s fetch failed: %s",
-                            _rd_sym, getattr(_rd_result, "error", "no result"),
-                        )
-                except Exception as _rd_e:
-                    LOG.error("REGIME_BACKFILL: Failed for %s: %s",
-                              _rd_sym, _rd_e)
-        except Exception as _rd_e:
-            LOG.error("REGIME_BACKFILL: Startup failed: %s", _rd_e)
-    else:
-        LOG.debug("REGIME_BACKFILL_LEGACY_PATH disabled")
-    # ─────────────────────────────────────────────────────────────────────────
+    # PACKAGE-0 CLEANUP: Legacy regime backfill path removed (same _bf_enabled=False gate).
+    # Regime warmup is done by the earlier warmup block (~lines 1196-1274).
     LOG.debug("Regime detector already started before market data startup")
 
     LOG.info("Starting snapshot scheduler (DR)...")

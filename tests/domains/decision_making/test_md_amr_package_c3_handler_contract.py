@@ -5,6 +5,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
 
 
@@ -86,6 +88,9 @@ def _make_config(symbol: str = "BNBUSDT"):
             valid_score_min=0.70,
             invalid_score_max=0.35,
         ),
+        entry_anchor_persistence=SimpleNamespace(
+            storage_path="ops/restore/md_amr_entry_anchor_state_v1.json",
+        ),
         weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
         objective=SimpleNamespace(enabled=False),
         execution=SimpleNamespace(
@@ -142,6 +147,14 @@ def test_md_amr_init_strategies_passes_baseline_and_c3_contract() -> None:
     assert strategy.hold_quality_progress_deficit_weight == 0.45
     assert strategy.context_validity_regime_confidence_floor == 0.35
     assert strategy.context_validity_valid_score_min == 0.70
+
+
+def test_md_amr_assigned_symbol_fails_closed_when_strategy_disabled() -> None:
+    config = _make_config()
+    config.strategies.md_amr.enabled = False
+
+    with pytest.raises(ValueError, match="strategies\.md_amr\.enabled=false"):
+        MDAMRHandler(fsm=_FSMStub(), config=config)
 
 
 def test_md_amr_on_process_strategy_preserves_anchor_surface_with_c3() -> None:

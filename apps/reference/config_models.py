@@ -4036,7 +4036,7 @@ class IntentBoundaryAuditConfig(BaseModel):
 
 
 class PositionPolicySidecarMode(str, Enum):
-    """Phase-1 operating mode for the position policy sidecar."""
+    """Operating mode for the bounded position policy sidecar."""
 
     DISABLE = "disable"
     SHADOW = "shadow"
@@ -4180,7 +4180,7 @@ class PositionPolicySidecarLoggingConfig(BaseModel):
 
 
 class PositionPolicySidecarAllowedActionsConfig(BaseModel):
-    """Declared action scope for future guarded enablement."""
+    """Declared bounded action scope for the sidecar contract."""
 
     model_config = ConfigDict(extra='forbid')
 
@@ -4206,16 +4206,16 @@ class PositionPolicySidecarConfig(BaseModel):
     allowed_actions: PositionPolicySidecarAllowedActionsConfig = Field(...)
 
     @model_validator(mode="after")
-    def _validate_phase1_scope(self) -> "PositionPolicySidecarConfig":
+    def _validate_bounded_action_scope(self) -> "PositionPolicySidecarConfig":
         if self.allowed_actions.partial_reduce:
             raise ValueError(
-                "Phase-1 position_policy_sidecar forbids partial_reduce")
+                "Bounded position_policy_sidecar contract forbids partial_reduce")
         if self.allowed_actions.bracket_mutation:
             raise ValueError(
-                "Phase-1 position_policy_sidecar forbids bracket_mutation")
+                "Bounded position_policy_sidecar contract forbids bracket_mutation")
         if self.allowed_actions.exact_targeting:
             raise ValueError(
-                "Phase-1 position_policy_sidecar forbids exact_targeting")
+                "Bounded position_policy_sidecar contract forbids exact_targeting")
         return self
 
 
@@ -5314,6 +5314,20 @@ class MDAMRContextValidityConfig(BaseModel):
         return self
 
 
+class MDAMREntryAnchorPersistenceConfig(BaseModel):
+    """Package D.2-PRE restart artifact for md_amr strategy-local anchors."""
+    model_config = ConfigDict(extra='forbid')
+
+    storage_path: str = Field(
+        min_length=1,
+        description=(
+            "Path to the md_amr strategy-local entry-anchor restart artifact. "
+            "Stores only strategy-local anchor state; execution entry price is "
+            "recovered from runtime execution truth."
+        ),
+    )
+
+
 class MDAMRExitConfig(BaseModel):
     """Per-symbol exit/TP/SL config for md_amr strategy."""
     model_config = ConfigDict(extra='forbid')
@@ -5400,6 +5414,8 @@ class MDAMRStrategyConfig(BaseModel):
         description="Package C.3 hold-quality / soft-decay overlay")
     context_validity: MDAMRContextValidityConfig = Field(
         description="Package C.4 lightweight context-validity overlay")
+    entry_anchor_persistence: MDAMREntryAnchorPersistenceConfig = Field(
+        description="Package D.2-PRE strategy-local entry-anchor restart artifact")
     optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
     assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
     objective: Optional[StrategyObjectiveConfig] = Field(

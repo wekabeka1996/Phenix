@@ -52,6 +52,10 @@ from apps.reference.domains.decision_making.runtime_readiness_builder import (
     RuntimeReadinessBuildRequest,
     build_runtime_readiness,
 )
+from apps.reference.domains.decision_making.md_amr_entry_anchor_artifact import (
+    MDAMREntryAnchorArtifactStore,
+    MDAMREntryAnchorRecord,
+)
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.telemetry.metrics import inc_decision_blocked, inc_warmup_block
 from apps.reference.utils import get_domain_mode_from_mapping
@@ -170,6 +174,9 @@ class MDAMRHandler:
         # cleared at full position close. Passed into position_ctx on every on_bar call
         # so the strategy math can compute frozen-anchor progress without mutating state.
         self._entry_anchor: Dict[str, Dict[str, float]] = {}
+        self._entry_anchor_records: Dict[str, MDAMREntryAnchorRecord] = {}
+        self._entry_anchor_store: MDAMREntryAnchorArtifactStore | None = None
+        self._entry_anchor_diag_tokens: Dict[str, str] = {}
 
         self._position_queries = _maybe_build_position_queries(
             config=self.config,
@@ -178,6 +185,7 @@ class MDAMRHandler:
         )
 
         self._parse_config()
+        self._entry_anchor_store = self._entry_anchor_store_or_none()
         if self._enabled:
             self._init_strategies()
 
@@ -267,9 +275,359 @@ class MDAMRHandler:
             RuntimeAnalyticsRestoreScope.STRATEGY_LOCAL_STATE.value: status.to_payload(),
         }
 
+    def _entry_anchor_store_or_none(self) -> MDAMREntryAnchorArtifactStore | None:
+        store = getattr(self, "_entry_anchor_store", None)
+        if store is not None:
+            return store
+        cfg = getattr(self, "_cfg", None)
+        persistence_cfg = getattr(cfg, "entry_anchor_persistence", None)
+        storage_path = getattr(persistence_cfg, "storage_path", None)
+        if not storage_path:
+            return None
+        store = MDAMREntryAnchorArtifactStore(
+            str(storage_path),
+            logger=self.logger,
+        )
+        self._entry_anchor_store = store
+        return store
+
+    def _reset_entry_anchor_diag(self, symbol: str) -> None:
+        getattr(self, "_entry_anchor_diag_tokens",
+                {}).pop(str(symbol).upper(), None)
+
+    def _resolve_execution_position_state(
+        self,
+        symbol: str,
+        *,
+        positions: list[dict[str, Any]] | None = None,
+    ) -> tuple[bool, float | None]:
+        symbol_key = str(symbol).upper()
+        if not isinstance(positions, list):
+            latest_portfolio = getattr(self, "_latest_portfolio", None)
+            if isinstance(latest_portfolio, dict):
+                positions = latest_portfolio.get("positions")
+        if not isinstance(positions, list):
+            exec_domain = self.fsm.get_domain("execution_position") if hasattr(
+                self.fsm, "get_domain") else None
+            portfolio = getattr(exec_domain, "_latest_portfolio_state", None)
+            if isinstance(portfolio, dict):
+                positions = portfolio.get("positions")
+        if not isinstance(positions, list):
+            return False, None
+
+        for pos in positions:
+            if not isinstance(pos, dict):
+                continue
+            if str(pos.get("symbol") or "").upper() != symbol_key:
+                continue
+            try:
+                qty = Decimal(
+                    str(
+                        pos.get("net_position")
+                        or pos.get("positionAmt")
+                        or pos.get("position_amount")
+                        or 0
+                    )
+                )
+            except Exception:
+                qty = Decimal("0")
+            if abs(qty) <= Decimal("1e-9"):
+                continue
+
+            entry_price_raw = (
+                pos.get("entryPrice")
+                or pos.get("entry_price")
+                or pos.get("avg_entry_price")
+                or pos.get("avg_price")
+            )
+            try:
+                entry_price = float(entry_price_raw or 0.0)
+            except Exception:
+                entry_price = 0.0
+            if entry_price > 0.0:
+                return True, entry_price
+            return True, None
+        return False, None
+
+    def _log_entry_anchor_unavailable(
+        self,
+        symbol: str,
+        *,
+        trigger: str,
+        reason_code: str,
+        execution_position_active: bool,
+        persisted_target_present: bool,
+    ) -> None:
+        symbol_key = str(symbol).upper()
+        token = f"anchor_unavailable:{trigger}:{reason_code}"
+        diag_tokens = getattr(self, "_entry_anchor_diag_tokens", {})
+        if diag_tokens.get(symbol_key) == token:
+            return
+        diag_tokens[symbol_key] = token
+        self._log_runtime_marker(
+            "MD_AMR_C1_ANCHOR_UNAVAILABLE",
+            symbol=symbol_key,
+            trigger=trigger,
+            reason_code=reason_code,
+            execution_position_active=execution_position_active,
+            persisted_target_present=persisted_target_present,
+            in_memory_anchor_present=bool(self._entry_anchor.get(symbol_key)),
+        )
+
+    def _log_c4_context_fallback_unknown(
+        self,
+        symbol: str,
+        *,
+        trigger: str,
+        reason_code: str,
+    ) -> None:
+        symbol_key = str(symbol).upper()
+        token = f"c4_unknown:{trigger}:{reason_code}"
+        diag_tokens = getattr(self, "_entry_anchor_diag_tokens", {})
+        if diag_tokens.get(symbol_key) == token:
+            return
+        diag_tokens[symbol_key] = token
+        self._log_runtime_marker(
+            "MD_AMR_C4_CONTEXT_FALLBACK_UNKNOWN",
+            symbol=symbol_key,
+            trigger=trigger,
+            reason_code=reason_code,
+            fallback_state="UNKNOWN",
+            fallback_reason="MISSING_CONTEXT",
+            missing_root="entry_anchor",
+            missing_fields=["hold_quality", "progress_deficit"],
+        )
+
+    def _load_persisted_entry_anchor_records(self) -> None:
+        store = self._entry_anchor_store_or_none()
+        if store is None:
+            return
+        try:
+            records = store.load_records()
+        except Exception as exc:
+            self._entry_anchor_records = {}
+            self.logger.warning(
+                "MD_AMR entry-anchor artifact load failed: %s",
+                exc,
+            )
+            self._log_runtime_marker(
+                "MD_AMR_C1_ANCHOR_LOAD_FAILED",
+                storage_path=store.storage_path,
+                failure_reason=type(exc).__name__,
+                failure_detail=str(exc),
+            )
+            return
+
+        self._entry_anchor_records = records
+        if records:
+            self._log_runtime_marker(
+                "MD_AMR_C1_ANCHOR_ARTIFACT_LOADED",
+                storage_path=store.storage_path,
+                record_count=len(records),
+                symbols=sorted(records),
+            )
+
+    def _persist_entry_anchor_records(self, *, trigger: str, reason: str) -> None:
+        store = self._entry_anchor_store_or_none()
+        if store is None:
+            return
+        if getattr(self, "_entry_anchor_records", None) is None:
+            self._entry_anchor_records = {}
+        try:
+            changed = store.persist_records(self._entry_anchor_records)
+        except Exception as exc:
+            self.logger.warning(
+                "MD_AMR entry-anchor artifact persist failed: %s",
+                exc,
+            )
+            self._log_runtime_marker(
+                "MD_AMR_C1_ANCHOR_PERSIST_FAILED",
+                trigger=trigger,
+                reason=reason,
+                storage_path=store.storage_path,
+                failure_reason=type(exc).__name__,
+                failure_detail=str(exc),
+            )
+            return
+        if changed:
+            self._log_runtime_marker(
+                "MD_AMR_C1_ANCHOR_PERSISTED",
+                trigger=trigger,
+                reason=reason,
+                storage_path=store.storage_path,
+                record_count=len(self._entry_anchor_records),
+                symbols=sorted(self._entry_anchor_records),
+            )
+
+    def _capture_entry_anchor(
+        self,
+        *,
+        symbol: str,
+        entry_price: float,
+        entry_target_price: float,
+        entry_signal_rid: str,
+        updated_at_ms: int,
+    ) -> None:
+        symbol_key = str(symbol).upper()
+        if getattr(self, "_entry_anchor", None) is None:
+            self._entry_anchor = {}
+        if getattr(self, "_entry_anchor_records", None) is None:
+            self._entry_anchor_records = {}
+        self._entry_anchor[symbol_key] = {
+            "entry_price": float(entry_price),
+            "entry_target_price": float(entry_target_price),
+        }
+        self._entry_anchor_records[symbol_key] = MDAMREntryAnchorRecord(
+            symbol=symbol_key,
+            entry_target_price=float(entry_target_price),
+            entry_price_hint=float(entry_price),
+            updated_at_ms=int(updated_at_ms),
+            entry_signal_rid=str(entry_signal_rid),
+        )
+        self._reset_entry_anchor_diag(symbol_key)
+        self._persist_entry_anchor_records(
+            trigger="entry_signal",
+            reason="entry_signal_anchor_set",
+        )
+
+    def _restore_entry_anchor_from_persisted_state(
+        self,
+        symbol: str,
+        *,
+        trigger: str,
+        positions: list[dict[str, Any]] | None = None,
+    ) -> bool:
+        symbol_key = str(symbol).upper()
+        if getattr(self, "_entry_anchor", None) is None:
+            self._entry_anchor = {}
+        if getattr(self, "_entry_anchor_records", None) is None:
+            self._entry_anchor_records = {}
+        cfg = getattr(self, "_cfg", None)
+        if cfg is None or self._entry_anchor.get(symbol_key):
+            return True
+
+        record = self._entry_anchor_records.get(symbol_key)
+        has_position, execution_entry_price = self._resolve_execution_position_state(
+            symbol_key,
+            positions=positions,
+        )
+        if record is None:
+            if has_position:
+                self._log_entry_anchor_unavailable(
+                    symbol_key,
+                    trigger=trigger,
+                    reason_code="persisted_target_missing",
+                    execution_position_active=True,
+                    persisted_target_present=False,
+                )
+            return False
+        if not has_position:
+            return False
+        if execution_entry_price is None:
+            self._log_entry_anchor_unavailable(
+                symbol_key,
+                trigger=trigger,
+                reason_code="execution_entry_price_missing",
+                execution_position_active=True,
+                persisted_target_present=True,
+            )
+            return False
+
+        self._entry_anchor[symbol_key] = {
+            "entry_price": float(execution_entry_price),
+            "entry_target_price": float(record.entry_target_price),
+        }
+        self._reset_entry_anchor_diag(symbol_key)
+        self._log_runtime_marker(
+            "MD_AMR_C1_ANCHOR_RESTORED",
+            symbol=symbol_key,
+            trigger=trigger,
+            entry_price=float(execution_entry_price),
+            entry_target_price=float(record.entry_target_price),
+            entry_price_source="execution_portfolio_truth",
+            entry_target_source="persisted_strategy_local_state",
+            reconstructed_fields=["entry_price"],
+            restored_fields=["entry_target_price"],
+            persisted_entry_price_hint=record.entry_price_hint,
+            entry_signal_rid=record.entry_signal_rid,
+        )
+        return True
+
+    def _clear_entry_anchor(
+        self,
+        symbol: str,
+        *,
+        reason: str,
+        ts_ms: int | None = None,
+    ) -> None:
+        symbol_key = str(symbol).upper()
+        if getattr(self, "_entry_anchor", None) is None:
+            self._entry_anchor = {}
+        if getattr(self, "_entry_anchor_records", None) is None:
+            self._entry_anchor_records = {}
+        removed_in_memory = self._entry_anchor.pop(
+            symbol_key, None) is not None
+        removed_persisted = self._entry_anchor_records.pop(
+            symbol_key, None) is not None
+        self._reset_entry_anchor_diag(symbol_key)
+        if not removed_in_memory and not removed_persisted:
+            return
+
+        self._log_runtime_marker(
+            "MD_AMR_C1_ANCHOR_CLEARED",
+            symbol=symbol_key,
+            reason=reason,
+            ts_ms=ts_ms,
+            cleared_in_memory=removed_in_memory,
+            cleared_persisted=removed_persisted,
+        )
+        if removed_persisted:
+            self._persist_entry_anchor_records(
+                trigger="anchor_clear", reason=reason)
+
+    def _ensure_entry_anchor_for_position(
+        self,
+        symbol: str,
+        *,
+        trigger: str,
+        positions: list[dict[str, Any]] | None = None,
+    ) -> None:
+        symbol_key = str(symbol).upper()
+        if getattr(self, "_cfg", None) is None:
+            return
+        if getattr(self, "_entry_anchor", None) is None:
+            self._entry_anchor = {}
+        if getattr(self, "_entry_anchor_records", None) is None:
+            self._entry_anchor_records = {}
+        if self._entry_anchor.get(symbol_key):
+            return
+
+        has_position, execution_entry_price = self._resolve_execution_position_state(
+            symbol_key,
+            positions=positions,
+        )
+        if not has_position:
+            return
+        if self._restore_entry_anchor_from_persisted_state(
+            symbol_key,
+            trigger=trigger,
+            positions=positions,
+        ):
+            return
+
+        reason_code = "persisted_target_missing"
+        if symbol_key in self._entry_anchor_records and execution_entry_price is None:
+            reason_code = "execution_entry_price_missing"
+        self._log_c4_context_fallback_unknown(
+            symbol_key,
+            trigger=trigger,
+            reason_code=reason_code,
+        )
+
     @property
     def timeframe_sec(self) -> int:
-        return int(self._cfg.timeframe_sec) if self._cfg is not None else 900
+        cfg = getattr(self, "_cfg", None)
+        return int(cfg.timeframe_sec) if cfg is not None else 900
 
     def seed_startup_bars(self, symbol: str, count: int) -> None:
         """Seed _bars_seen_since_restart counter after startup basis import.
@@ -359,6 +717,12 @@ class MDAMRHandler:
             )
             return
         self._hydrate_state_from_rest()
+        self._load_persisted_entry_anchor_records()
+        for symbol in sorted(self._enabled_symbols):
+            self._restore_entry_anchor_from_persisted_state(
+                symbol,
+                trigger="register",
+            )
         events = [
             "CMD:PROCESS_STRATEGY",
             "EVT:FEATURES_CALCULATED",
@@ -983,6 +1347,11 @@ class MDAMRHandler:
         if strategy is None:
             return
         pos_qty = self._position_qty.get(symbol, Decimal("0"))
+        if abs(pos_qty) > Decimal("1e-9"):
+            self._ensure_entry_anchor_for_position(
+                symbol,
+                trigger="features_calculated",
+            )
         strategy.on_bar(
             bar=bar,
             position_ctx={
@@ -1045,8 +1414,17 @@ class MDAMRHandler:
             self._pending_close[symbol] = False
             self._last_close_ts[symbol] = get_clock().now_ms()
             # Package C.1: clear entry anchor on full position close.
-            self._entry_anchor.pop(symbol, None)
+            self._clear_entry_anchor(
+                symbol,
+                reason="trade_executed_position_flat",
+                ts_ms=get_clock().now_ms(),
+            )
         self._position_qty[symbol] = now
+        if abs(now) > Decimal("1e-9"):
+            self._ensure_entry_anchor_for_position(
+                symbol,
+                trigger="trade_executed",
+            )
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         pld = event.pld or {}
@@ -1077,7 +1455,18 @@ class MDAMRHandler:
         for symbol in self._enabled_symbols:
             sym_key = str(symbol).upper()
             if sym_key in active_symbols:
+                self._ensure_entry_anchor_for_position(
+                    sym_key,
+                    trigger="portfolio_state_updated",
+                    positions=positions_raw,
+                )
                 continue
+
+            self._clear_entry_anchor(
+                sym_key,
+                reason="portfolio_zero_position",
+                ts_ms=ts_ms,
+            )
 
             snapshot = self._analytics_restore_snapshots.get(sym_key)
             if snapshot is None:
@@ -1166,7 +1555,16 @@ class MDAMRHandler:
             if abs(exchange_qty) < tolerance:
                 self._bars_held[symbol] = 0
                 # Package C.1: clear entry anchor when position drifted to flat.
-                self._entry_anchor.pop(symbol, None)
+                self._clear_entry_anchor(
+                    symbol,
+                    reason="position_drift_flat",
+                    ts_ms=get_clock().now_ms(),
+                )
+            else:
+                self._ensure_entry_anchor_for_position(
+                    symbol,
+                    trigger="reconcile_position",
+                )
 
     @staticmethod
     def _normalize_order_reject_reason(pld: dict) -> str:
@@ -1178,10 +1576,6 @@ class MDAMRHandler:
         no POST_ONLY/MAKER_ONLY substring match → no unsafe retry/fallback.
         """
         raw = pld.get("reject_reason_normalized")
-        if raw is not None:
-            val = str(raw).strip().upper()
-            if val:
-                return val
 
         # 1. reject_reason (legacy / test contract)
         raw = pld.get("reject_reason")
@@ -1412,6 +1806,10 @@ class MDAMRHandler:
         pos_qty = self._position_qty.get(symbol, Decimal("0"))
         if abs(pos_qty) > Decimal("1e-9"):
             self._bars_held[symbol] = int(self._bars_held.get(symbol, 0)) + 1
+            self._ensure_entry_anchor_for_position(
+                symbol,
+                trigger="process_strategy",
+            )
         else:
             self._bars_held[symbol] = 0
 
@@ -2032,10 +2430,13 @@ class MDAMRHandler:
             _ch = dict(signal.channel_state)
             _avg_close = float(
                 _ch.get("avg_close_12", float(signal.price_ref)))
-            self._entry_anchor[symbol] = {
-                "entry_price": float(signal.price_ref),
-                "entry_target_price": _avg_close,
-            }
+            self._capture_entry_anchor(
+                symbol=symbol,
+                entry_price=float(signal.price_ref),
+                entry_target_price=_avg_close,
+                entry_signal_rid=rid,
+                updated_at_ms=int(bar_close_ts),
+            )
             self.mlog.info(
                 "MD_AMR_C1_ANCHOR_SET sym=%s entry_price=%s entry_target_price=%s",
                 symbol, float(signal.price_ref), _avg_close,

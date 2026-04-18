@@ -62,7 +62,7 @@ def test_md_amr_integrated_validation_writes_required_artifacts(tmp_path: Path) 
     recorder_root = tmp_path / "recorder"
     _write_md_amr_recorder(recorder_root, symbol="XRPUSDT",
                            start_day=date(2026, 4, 1), day_count=8)
-    _write_md_amr_recorder(recorder_root, symbol="BNBUSDT",
+    _write_md_amr_recorder(recorder_root, symbol="SOLUSDT",
                            start_day=date(2026, 4, 1), day_count=8)
 
     by_symbol_out = tmp_path / "reports" / "by_symbol.csv"
@@ -76,7 +76,7 @@ def test_md_amr_integrated_validation_writes_required_artifacts(tmp_path: Path) 
             str(recorder_root),
             "--symbols",
             "XRPUSDT",
-            "BNBUSDT",
+            "SOLUSDT",
             "--start",
             "2026-04-01",
             "--end",
@@ -103,7 +103,7 @@ def test_md_amr_integrated_validation_writes_required_artifacts(tmp_path: Path) 
     report = report_out.read_text(encoding="utf-8")
 
     assert set(by_symbol["arm"]) == {"baseline_a1", "integrated_c1234"}
-    assert set(by_symbol["symbol"]) == {"XRPUSDT", "BNBUSDT"}
+    assert set(by_symbol["symbol"]) == {"XRPUSDT", "SOLUSDT"}
     assert "COMBINED" in set(summary["scope"])
     combined = summary.loc[summary["scope"] == "COMBINED"].iloc[0]
     assert float(combined["exact_trade_match_rate"]) == 1.0

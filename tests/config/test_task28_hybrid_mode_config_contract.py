@@ -17,10 +17,11 @@ def test_hybrid_mode_config_contract_mapping_and_credentials_present(tmp_path: P
     system["trading_mode"] = "hybrid_live_data_testnet_exec"
     system_path.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
 
-    # Hybrid = live data + testnet execution => keep trading.mode on testnet.
+    # Hybrid = live data + testnet execution, but trading.mode remains the global
+    # hybrid SSOT. Domain configuration controls the per-domain live/testnet split.
     trading_path = cfg_dir / "trading.yaml"
     trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-    trading["trading"]["mode"] = "testnet"
+    trading["trading"]["mode"] = "hybrid_live_data_testnet_exec"
     trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
 
     # Ensure env placeholders resolve (tests must not rely on the user's environment).

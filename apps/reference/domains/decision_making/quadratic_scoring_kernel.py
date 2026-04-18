@@ -7,19 +7,39 @@ quadratic on both admission and sizing paths, but compute() also supports
 decoupled admission/sizing transforms used by the newer decision-geometry
 contract.
 
-Boundary notes proven in current runtime wiring:
-- the kernel owns math transformation plus side selection inside the scoring
-    boundary;
-- it does not emit policy-blocked semantics for ordinary live denials;
-- several kwargs are accepted only for shared call-site compatibility and are
-    intentionally ignored here.
+Package 2 decomposition:
+- Math transforms are delegated to ``aurora_math.compute_aurora_math()``.
+- Policy interpretation is delegated to ``aurora_policy.apply_aurora_policy()``.
+- This module is now a thin orchestration layer that composes math + policy
+  and assembles the ScoringResult with full backward-compatible fields.
+
+The private helper functions (_resolve_regime_factor, _compute_side_bias_mult,
+_determine_side, _transform_signed_score) are retained as thin delegating
+wrappers so any external callers or tests that import them continue to work.
 """
 from __future__ import annotations
 
 import decimal
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional
+
+from apps.reference.domains.decision_making.aurora_math import (
+    AuroraMathInput,
+    AuroraMathOutput,
+    ShieldFn,
+    compute_aurora_math,
+    transform_signed_score as _math_transform_signed_score,
+)
+from apps.reference.domains.decision_making.aurora_policy import (
+    AuroraPolicyInput,
+    AuroraPolicyDecision,
+    SideBiasState,
+    apply_aurora_policy,
+    resolve_regime_factor as _policy_resolve_regime_factor,
+    compute_side_bias_multipliers as _policy_compute_side_bias_mult,
+    determine_side as _policy_determine_side,
+)
 
 
 @dataclass
@@ -63,73 +83,22 @@ class ScoringResult:
     shield_breakdown: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
-class SideBiasState:
-    """Windowed side-intent counts used to widen one side's entry threshold.
-
-    The kernel does not build this structure itself. AuroraScoringHelpersMixin
-    supplies a pre-pruned snapshot, and the kernel only converts it into buy/sell
-    threshold multipliers.
-    """
-
-    buy_count: int = 0
-    sell_count: int = 0
-    window_sec: float = 420.0
-    target_ratio: float = 0.72
-    penalty_factor: float = 0.25
-    min_intents: int = 18
-
-
-@dataclass
-class QuadraticContext:
-    """Local explainability snapshot shape for quadratic scoring internals.
-
-    The live ScoringResult contract currently exposes the same information via
-    ``psi_vector`` and ``shield_breakdown`` rather than returning this DTO.
-    """
-    pillar_sum: float = 0.0
-    raw_exposure: float = 0.0           # sign(Σ)×Σ²
-    shield_multiplier: float = 1.0      # from shield cascade
-    final_exposure: float = 0.0         # raw_exposure × shield_multiplier
-    pillar_contribs: Dict[str, float] = field(default_factory=dict)
-    shield_reasons: List[str] = field(default_factory=list)
-
-
-# Type for shield function: (symbol, features, pillar_sum, raw_exposure) -> (multiplier, reasons)
-ShieldFn = Callable[
-    [str, Dict[str, Any], float, float],
-    tuple[float, List[str]],
-]
-
-
-def _null_shield(
-    symbol: str,
-    features: Dict[str, Any],
-    pillar_sum: float,
-    raw_exposure: float,
-) -> tuple[float, List[str]]:
-    """Compatibility pass-through used when the caller omitted shield_fn.
-
-    Production fail-closed enforcement against an effectively disabled shield
-    stack happens outside this module during config validation and wiring.
-    """
-    return 1.0, []
-
-
 class QuadraticScoringKernel:
     """
-    Non-linear scoring kernel for Aurora's active math path.
+    Non-linear scoring kernel for Aurora's active path.
+
+    Package 2: This kernel is now a thin orchestration layer that composes:
+    1. aurora_math.compute_aurora_math() — pure numeric transforms
+    2. aurora_policy.apply_aurora_policy() — threshold/hysteresis/side decisions
 
     Default geometry:
         sign(S) * |S|^2
 
     Actual compute() flow:
     1. resolve a linear input from ``linear_score`` or ``features['pillar_sum']``;
-    2. scale and clamp it to [-1, 1];
-    3. transform admission and sizing scores, optionally with different modes;
-    4. apply shield attenuation and the optional admission shield floor;
-    5. widen thresholds via regime factors and side-bias penalties;
-    6. choose a side with 3-zone hysteresis.
+    2. delegate math: scale, clamp, transform, shield via aurora_math;
+    3. delegate policy: regime factor, side-bias, hysteresis via aurora_policy;
+    4. assemble ScoringResult with full backward-compatible fields.
     """
 
     @staticmethod
@@ -190,8 +159,7 @@ class QuadraticScoringKernel:
                 requested without an explicit exponent. Live Aurora callers
                 handle that fail-closed outside the kernel.
         """
-        _shield = shield_fn or _null_shield
-
+        # ── Input resolution (orchestration) ─────────────────────────
         result = ScoringResult(
             score=decimal.Decimal("0"),
             side="",
@@ -229,131 +197,105 @@ class QuadraticScoringKernel:
             return result
         result.raw_score = decimal.Decimal(str(round(s_linear, 8)))
 
-        # score_multiplier adjusts sensitivity before the transform, but the
-        # kernel still enforces the invariant that transformed input stays in [-1, 1].
-        s_scaled_raw = s_linear * score_multiplier
-
-        s_clamped = max(-1.0, min(1.0, s_scaled_raw))
-
-        # Admission and sizing may intentionally diverge. Decision-score logic
-        # can stay more permissive or more conservative than sizing-score logic.
-        admission_pre_shield = _transform_signed_score(
-            s_clamped, mode=admission_mode, power=admission_power
+        # ── MATH LAYER (delegated to aurora_math) ────────────────────
+        math_input = AuroraMathInput(
+            s_linear=s_linear,
+            source=source,
+            score_multiplier=score_multiplier,
+            admission_mode=admission_mode,
+            admission_power=admission_power,
+            sizing_mode=sizing_mode,
+            sizing_power=sizing_power,
+            admission_shield_floor=admission_shield_floor,
+            symbol=symbol,
+            features=features,
+            pillar_contribs=dict(pillar_contribs or {}),
         )
-        sizing_pre_shield = _transform_signed_score(
-            s_clamped, mode=sizing_mode, power=sizing_power
-        )
+        math_out = compute_aurora_math(math_input, shield_fn=shield_fn)
 
-        # The shield sees the raw linear conviction together with the sizing
-        # transform. Hard vetoes force both branches to zero.
-        shield_mult, shield_reasons = _shield(
-            symbol, features, s_linear, sizing_pre_shield)
-        shield_mult = max(0.0, min(1.0, shield_mult))
-
-        if shield_mult == 0.0:
-            admission_shield_mult = 0.0
-        else:
-            # admission_shield_floor can only lift a non-zero attenuation;
-            # it never overrides a proven hard veto.
-            admission_shield_mult = max(
-                shield_mult,
-                max(0.0, min(1.0, admission_shield_floor)),
-            )
-
-        decision_score_val = admission_pre_shield * admission_shield_mult
-        sizing_score_val = sizing_pre_shield * shield_mult
-
-        # ``score`` remains aliased to decision_score for compatibility with
-        # older consumers that still read a single primary score field.
+        # Populate result with math outputs
         result.decision_score = decimal.Decimal(
-            str(round(decision_score_val, 8)))
-        result.sizing_score = decimal.Decimal(str(round(sizing_score_val, 8)))
+            str(round(math_out.decision_score, 8)))
+        result.sizing_score = decimal.Decimal(
+            str(round(math_out.sizing_score, 8)))
         result.score = result.decision_score
         result.admission_shield_multiplier = decimal.Decimal(
-            str(round(admission_shield_mult, 8))
+            str(round(math_out.admission_shield_multiplier, 8))
         )
 
-        quad_ctx = QuadraticContext(
-            pillar_sum=s_linear,
-            raw_exposure=sizing_pre_shield,
-            shield_multiplier=shield_mult,
-            final_exposure=sizing_score_val,
-            pillar_contribs=dict(pillar_contribs or {}),
-            shield_reasons=list(shield_reasons),
-        )
-
+        # Build psi_vector from math output (trace)
         result.psi_vector = {
             "scoring_engine": "quadratic_v1",
-            "source": source,
-            "s_linear": s_linear,
-            "multiplier": score_multiplier,
-            "s_scaled_raw": s_scaled_raw,
-            "s_clamped": s_clamped,
-            "clamped": s_scaled_raw != s_clamped,
-            "admission_mode": admission_mode,
-            "admission_power": admission_power,
-            "sizing_mode": sizing_mode,
-            "sizing_power": sizing_power,
-            "admission_shield_floor": admission_shield_floor,
-            "admission_pre_shield": admission_pre_shield,
-            "sizing_pre_shield": sizing_pre_shield,
-            "decision_score": decision_score_val,
-            "sizing_score": sizing_score_val,
-            "admission_shield_multiplier": admission_shield_mult,
-            "final_exposure": sizing_score_val,
-            "shield_multiplier": shield_mult,
-            "shield_reasons": list(shield_reasons),
+            "source": math_out.source,
+            "s_linear": math_out.s_linear,
+            "multiplier": math_out.score_multiplier,
+            "s_scaled_raw": math_out.s_scaled_raw,
+            "s_clamped": math_out.s_clamped,
+            "clamped": math_out.clamped,
+            "admission_mode": math_out.admission_mode,
+            "admission_power": math_out.admission_power,
+            "sizing_mode": math_out.sizing_mode,
+            "sizing_power": math_out.sizing_power,
+            "admission_shield_floor": math_out.admission_shield_floor,
+            "admission_pre_shield": math_out.admission_pre_shield,
+            "sizing_pre_shield": math_out.sizing_pre_shield,
+            "decision_score": math_out.decision_score,
+            "sizing_score": math_out.sizing_score,
+            "admission_shield_multiplier": math_out.admission_shield_multiplier,
+            "final_exposure": math_out.sizing_score,
+            "shield_multiplier": math_out.shield_multiplier,
+            "shield_reasons": list(math_out.shield_reasons),
         }
 
-        # Populate Phase 9 Shield Context
-        result.shield_multiplier = decimal.Decimal(str(shield_mult))
+        # Populate Phase 9 Shield Context from math output
+        result.shield_multiplier = decimal.Decimal(
+            str(math_out.shield_multiplier))
         result.shield_breakdown = {
-            "reasons": list(shield_reasons),
-            "raw_exposure": sizing_pre_shield,
-            "s_linear": s_linear,
-            "decision_score": decision_score_val,
-            "sizing_score": sizing_score_val,
-            "admission_shield_multiplier": admission_shield_mult,
+            "reasons": list(math_out.shield_reasons),
+            "raw_exposure": math_out.sizing_pre_shield,
+            "s_linear": math_out.s_linear,
+            "decision_score": math_out.decision_score,
+            "sizing_score": math_out.sizing_score,
+            "admission_shield_multiplier": math_out.admission_shield_multiplier,
         }
 
-        # Threshold widening is still part of the active kernel contract even
-        # though the upstream v2 linear kernel has been removed.
-        factor = _resolve_regime_factor(regime_name, regime_thresholds)
-        if factor is None:
+        # ── POLICY LAYER (delegated to aurora_policy) ────────────────
+        policy_input = AuroraPolicyInput(
+            decision_score=math_out.decision_score,
+            sizing_score=math_out.sizing_score,
+            base_threshold=base_threshold,
+            regime_name=regime_name,
+            regime_thresholds=regime_thresholds,
+            side_bias_state=side_bias_state,
+            neutral_threshold=neutral_threshold,
+            current_side=current_side,
+        )
+        policy_out = apply_aurora_policy(policy_input)
+
+        if policy_out.deferred:
             result.deferred = True
-            result.defer_reason = f"MISSING_REGIME_THRESHOLD:{regime_name}"
+            result.defer_reason = policy_out.defer_reason
             return result
 
-        result.threshold_factor = factor
-        signal_threshold = base_threshold * factor
+        result.threshold_factor = policy_out.threshold_factor
+        result.buy_bias_mult = policy_out.buy_bias_mult
+        result.sell_bias_mult = policy_out.sell_bias_mult
+        result.thr_buy = policy_out.thr_buy
+        result.thr_sell = policy_out.thr_sell
+        result.side = policy_out.side
+        result.why_chain.append(policy_out.side_why)
 
-        # Side-bias widens only the overloaded side once enough history exists.
-        buy_bias_mult, sell_bias_mult = _compute_side_bias_mult(
-            side_bias_state)
-        result.buy_bias_mult = buy_bias_mult
-        result.sell_bias_mult = sell_bias_mult
-
-        thr_buy = signal_threshold * buy_bias_mult
-        thr_sell = signal_threshold * sell_bias_mult
-        result.thr_buy = thr_buy
-        result.thr_sell = thr_sell
-
-        # Hysteresis is evaluated on the decision score, not on sizing score.
-        thr_neutral = neutral_threshold if neutral_threshold is not None else thr_buy
-        result.side, side_why = _determine_side(
-            result.decision_score, thr_buy, thr_sell, thr_neutral, current_side,
-        )
-        result.why_chain.append(side_why)
+        # Update psi_vector with policy output (trace enrichment)
         result.psi_vector.update(
             {
-                "raw_exposure": sizing_pre_shield,
-                "final_score": decision_score_val,
-                "threshold_factor": float(factor),
-                "thr_buy": float(thr_buy),
-                "thr_sell": float(thr_sell),
-                "buy_bias_mult": float(buy_bias_mult),
-                "sell_bias_mult": float(sell_bias_mult),
-                "side_why": side_why,
+                "raw_exposure": math_out.sizing_pre_shield,
+                "final_score": math_out.decision_score,
+                "threshold_factor": float(policy_out.threshold_factor),
+                "thr_buy": float(policy_out.thr_buy),
+                "thr_sell": float(policy_out.thr_sell),
+                "buy_bias_mult": float(policy_out.buy_bias_mult),
+                "sell_bias_mult": float(policy_out.sell_bias_mult),
+                "side_why": policy_out.side_why,
             }
         )
 
@@ -361,73 +303,24 @@ class QuadraticScoringKernel:
 
 
 # =============================================================================
-# Helper functions (extracted for testability)
+# Backward-compatible wrapper functions
 # =============================================================================
+# These thin wrappers delegate to aurora_math / aurora_policy so that any
+# external code importing the private helpers from this module still works.
 
 def _resolve_regime_factor(
     regime_name: Optional[str],
     regime_thresholds: Dict[str, float],
 ) -> Optional[decimal.Decimal]:
-    """Resolve the positive finite regime multiplier used to widen thresholds.
-
-    Returns None when neither the named regime nor DEFAULT yields a valid
-    positive Decimal. The caller converts that into a kernel defer path.
-    """
-    if regime_name and regime_name in regime_thresholds:
-        raw = regime_thresholds[regime_name]
-    elif "DEFAULT" in regime_thresholds:
-        raw = regime_thresholds["DEFAULT"]
-    else:
-        return None
-
-    try:
-        factor = decimal.Decimal(str(raw))
-        if not factor.is_finite() or factor <= 0:
-            return None
-        return factor
-    except Exception:
-        return None
+    """Wrapper → aurora_policy.resolve_regime_factor."""
+    return _policy_resolve_regime_factor(regime_name, regime_thresholds)
 
 
 def _compute_side_bias_mult(
     side_bias_state: Optional[SideBiasState],
 ) -> tuple[decimal.Decimal, decimal.Decimal]:
-    """Compute threshold multipliers from the windowed side-bias snapshot.
-
-    No penalty is applied until ``min_intents`` has been reached. After that,
-    only the overloaded side is widened, scaled by how far the observed share is
-    past the configured target_ratio.
-    """
-    buy_mult = decimal.Decimal("1.0")
-    sell_mult = decimal.Decimal("1.0")
-
-    if not side_bias_state:
-        return buy_mult, sell_mult
-
-    total = side_bias_state.buy_count + side_bias_state.sell_count
-    if total < side_bias_state.min_intents:
-        return buy_mult, sell_mult
-
-    sell_share = decimal.Decimal(
-        str(side_bias_state.sell_count)) / decimal.Decimal(str(total))
-    target = decimal.Decimal(str(side_bias_state.target_ratio))
-    penalty_factor = decimal.Decimal(str(side_bias_state.penalty_factor))
-
-    if sell_share > target:
-        excess = sell_share - target
-        max_excess = decimal.Decimal("1.0") - target
-        scaling = excess / \
-            max_excess if max_excess > 0 else decimal.Decimal("1.0")
-        sell_mult += penalty_factor * scaling
-    elif sell_share < (decimal.Decimal("1.0") - target):
-        buy_share = decimal.Decimal("1.0") - sell_share
-        excess = buy_share - target
-        max_excess = decimal.Decimal("1.0") - target
-        scaling = excess / \
-            max_excess if max_excess > 0 else decimal.Decimal("1.0")
-        buy_mult += penalty_factor * scaling
-
-    return buy_mult, sell_mult
+    """Wrapper → aurora_policy.compute_side_bias_multipliers."""
+    return _policy_compute_side_bias_mult(side_bias_state)
 
 
 def _determine_side(
@@ -437,35 +330,8 @@ def _determine_side(
     thr_neutral: decimal.Decimal,
     current_side: str,
 ) -> tuple[str, str]:
-    """
-    Apply 3-zone hysteresis and return a lower-case side plus explanation.
-
-    The zones are:
-    - flip into the opposite side when the opposite threshold is crossed;
-    - hold the current side while the score remains inside the neutral band;
-    - otherwise collapse to neutral.
-    """
-    if current_side == "buy":
-        if score <= -thr_sell:
-            return "sell", f"flip:buy->sell:score={float(score):.4f}<=-thr_sell={float(thr_sell):.4f}"
-        elif score >= thr_neutral:
-            return "buy", f"hold:buy:score={float(score):.4f}>=thr_neutral={float(thr_neutral):.4f}"
-        else:
-            return "", f"exit:buy->neutral:score={float(score):.4f}<thr_neutral={float(thr_neutral):.4f}"
-    elif current_side == "sell":
-        if score >= thr_buy:
-            return "buy", f"flip:sell->buy:score={float(score):.4f}>=thr_buy={float(thr_buy):.4f}"
-        elif score <= -thr_neutral:
-            return "sell", f"hold:sell:score={float(score):.4f}<=-thr_neutral={float(-thr_neutral):.4f}"
-        else:
-            return "", f"exit:sell->neutral:score={float(score):.4f}>-thr_neutral={float(-thr_neutral):.4f}"
-    else:
-        if score >= thr_buy:
-            return "buy", f"enter:buy:score={float(score):.4f}>=thr_buy={float(thr_buy):.4f}"
-        elif score <= -thr_sell:
-            return "sell", f"enter:sell:score={float(score):.4f}<=-thr_sell={float(thr_sell):.4f}"
-        else:
-            return "", f"neutral:score={float(score):.4f}"
+    """Wrapper → aurora_policy.determine_side."""
+    return _policy_determine_side(score, thr_buy, thr_sell, thr_neutral, current_side)
 
 
 def _transform_signed_score(
@@ -474,25 +340,5 @@ def _transform_signed_score(
     mode: str,
     power: Optional[float],
 ) -> float:
-    """Transform a signed score magnitude under the configured geometry mode.
-
-    Supported modes:
-    - ``quadratic``: sign(x) * |x|^2
-    - ``linear``: x unchanged
-    - ``soft_power``: sign(x) * |x|^power
-
-    Invalid mode/exponent combinations raise ValueError intentionally so the
-    caller can fail closed instead of inventing fallback math.
-    """
-    sign = 1.0 if value >= 0 else -1.0
-    magnitude = abs(value)
-
-    if mode == "quadratic":
-        return sign * (magnitude ** 2)
-    if mode == "linear":
-        return value
-    if mode == "soft_power":
-        if power is None:
-            raise ValueError("soft_power transform requires explicit power")
-        return sign * (magnitude ** float(power))
-    raise ValueError(f"unsupported transform mode: {mode}")
+    """Wrapper → aurora_math.transform_signed_score."""
+    return _math_transform_signed_score(value, mode=mode, power=power)

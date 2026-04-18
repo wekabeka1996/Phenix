@@ -150,6 +150,7 @@ def _make_recorder_bar(day_offset: int) -> RecorderBar:
         pillar_sum=0.25,
         pillar_operator=0.10,
         pillar_strategist=0.15,
+        pillar_tactician=0.05,
         spread_bps=2.0,
         volatility_state=0.5,
         price_motion_norm=0.1,

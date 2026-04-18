@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://aurora.internal/schemas/position_policy_sidecar_close_request_state_v1.json",
   "title": "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE payload schema",
-  "description": "Request-to-outcome linkage event for Position Policy Sidecar Phase-2 close requests.",
+  "description": "Request-to-outcome linkage event for bounded Position Policy Sidecar close requests.",
   "type": "object",
   "additionalProperties": true,
   "required": [

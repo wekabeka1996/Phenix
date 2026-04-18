@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from apps.reference.config_models import BracketsConfig, SLConfig, TPConfig
 from apps.reference.domains.execution_position.fsm_manage import (
     ManageFlowFSM,
     ManageState,
@@ -106,3 +107,25 @@ def test_entry_fill_still_clears_legacy_phantom_bracket_ids(fsm_config):
     assert manage.tp_order_id is not None
     assert manage.sl_algo_client_id is None
     assert manage.tp_algo_client_id is None
+
+
+def test_entry_fill_uses_typed_brackets_config_without_stale_enable_field(
+    fsm_config,
+):
+    fsm_config.trading.execution.manage.brackets = BracketsConfig(
+        sl=SLConfig(fixed_bps=40),
+        tp=TPConfig(fixed_bps=80),
+        oco_emulation=True,
+        offset_bps=5,
+    )
+    manage = ManageFlowFSM(config=fsm_config)
+
+    result = manage.handle(_entry_fill_message())
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "BATCH"
+    assert manage.state == ManageState.BRACKETS_PENDING
+    assert manage.entry_order_id == "entry-order-1"
+    assert manage.entry_client_order_id == "ENTRY-1"
+    assert manage.position_qty == Decimal("0.10")

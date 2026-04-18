@@ -12,6 +12,20 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.domains.execution_position.cancel_submission_adapter import (
+    CANCEL_SUBMISSION_CONTRACT,
+    CANCEL_SUBMISSION_PATH,
+    CancelSubmissionAdapterError,
+    CancelSubmissionPayload,
+    build_cancel_submission_trace_ref,
+)
+from apps.reference.domains.execution_position.close_submission_adapter import (
+    CLOSE_SUBMISSION_CONTRACT,
+    CLOSE_SUBMISSION_PATH,
+    CloseSubmissionAdapterError,
+    CloseSubmissionPayload,
+    build_close_submission_trace_ref,
+)
 from apps.reference.domains.execution_position.utils import (
     classify_client_order_id,
     coerce_exchange_bool,
@@ -271,15 +285,149 @@ class CloseExecutor:
         return True
 
     async def execute_cancel_order(self, decision: "Message") -> None:
-        """Cancel a specific order_id for the symbol in the decision payload."""
+        """Cancel a specific order for the symbol in the decision payload.
+
+        Phase 6 Package 4 seam: the typed ``CancelSubmissionPayload`` is the
+        single runtime normalization owner for ``DEC:CANCEL_ORDER -> adapter
+        cancellation``. Upstream producers may still emit the legacy dual-key
+        payload (``order_id`` / ``orderId``); this intake canonicalizes and
+        fails closed on drift, then delegates to the unchanged downstream
+        bridge ``ExecPosFSM._cancel_order``.
+        """
         pld = decision.pld or {}
-        symbol = pld.get("symbol")
-        oid = pld.get("order_id") or pld.get("orderId")
-        if not symbol or not oid:
-            LOG.error("DEC:CANCEL_ORDER missing symbol/order_id")
+        rid = getattr(decision, "rid", None)
+        try:
+            submission = CancelSubmissionPayload.from_dec_cancel(payload=pld)
+        except CancelSubmissionAdapterError as exc:
+            reject_ref = build_cancel_submission_trace_ref(
+                status="reject",
+                reason="adapter_validation",
+            )
+            # Fail-closed: do NOT invoke the downstream cancel bridge on
+            # malformed intake. Make the reject explicitly observable instead
+            # of the previous silent-return.
+            existing_refs = list(getattr(decision, "data_ref", None) or [])
+            if reject_ref not in existing_refs:
+                existing_refs.append(reject_ref)
+                try:
+                    decision.data_ref = existing_refs
+                except Exception:
+                    pass
+            LOG.error(
+                "CANCEL_SUBMISSION_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+                CANCEL_SUBMISSION_CONTRACT,
+                CANCEL_SUBMISSION_PATH,
+                rid,
+                "adapter_validation",
+                exc,
+            )
+            try:
+                order_logger.write({
+                    "rid": str(rid or ""),
+                    "event_type": "ORDER_CANCELLATION_FAILED",
+                    "symbol": str(pld.get("symbol") or "_UNKNOWN_"),
+                    "source_fsm": "CloseExecutor",
+                    "why": f"cancel_submission_reject:{reject_ref}",
+                })
+            except Exception:
+                # Observability path must never shadow the seam reject.
+                pass
             return
-        await self._fsm._cancel_order(symbol, oid)
-        LOG.info(f"Cancelled order {oid} for {symbol}")
+
+        success_ref = build_cancel_submission_trace_ref(status="success")
+        existing_refs = list(getattr(decision, "data_ref", None) or [])
+        if success_ref not in existing_refs:
+            existing_refs.append(success_ref)
+            try:
+                decision.data_ref = existing_refs
+            except Exception:
+                pass
+        LOG.info(
+            "CANCEL_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s order_id=%s",
+            CANCEL_SUBMISSION_CONTRACT,
+            CANCEL_SUBMISSION_PATH,
+            rid,
+            submission.symbol,
+            submission.order_id,
+        )
+        await self._fsm._cancel_order(submission.symbol, submission.order_id)
+        LOG.info(
+            f"Cancelled order {submission.order_id} for {submission.symbol}")
+
+    def _build_close_submission(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        position_amt: Decimal,
+        requested_qty: Optional[Decimal],
+    ) -> Optional[CloseSubmissionPayload]:
+        """Phase 6 Package 5 seam intake for DEC:CLOSE -> adapter submission.
+
+        Single runtime normalization owner for close-submission derivation.
+        On success attaches the success trace ref to ``decision.data_ref`` and
+        returns the typed payload. On validation failure returns ``None``
+        after attaching the reject trace ref and emitting a structured
+        reject log line; callers must abort without invoking the adapter.
+        """
+        pld = decision.pld or {}
+        rid = getattr(decision, "rid", None)
+        idem_key = str(
+            pld.get("idempotent_key") or rid or "manual-close"
+        )
+        reject_hint_partial = requested_qty is not None
+        try:
+            submission = CloseSubmissionPayload.from_dec_close(
+                symbol=symbol,
+                position_amt=position_amt,
+                requested_qty=requested_qty,
+                idempotent_key=idem_key,
+            )
+        except CloseSubmissionAdapterError as exc:
+            reject_ref = build_close_submission_trace_ref(
+                status="reject",
+                partial_close=reject_hint_partial,
+                reason="adapter_validation",
+            )
+            existing_refs = list(getattr(decision, "data_ref", None) or [])
+            if reject_ref not in existing_refs:
+                existing_refs.append(reject_ref)
+                try:
+                    decision.data_ref = existing_refs
+                except Exception:
+                    pass
+            LOG.error(
+                "CLOSE_SUBMISSION_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+                CLOSE_SUBMISSION_CONTRACT,
+                CLOSE_SUBMISSION_PATH,
+                rid,
+                "adapter_validation",
+                exc,
+            )
+            return None
+
+        success_ref = build_close_submission_trace_ref(
+            status="success",
+            partial_close=submission.partial_close,
+        )
+        existing_refs = list(getattr(decision, "data_ref", None) or [])
+        if success_ref not in existing_refs:
+            existing_refs.append(success_ref)
+            try:
+                decision.data_ref = existing_refs
+            except Exception:
+                pass
+        LOG.info(
+            "CLOSE_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s side=%s qty=%s partial=%s",
+            CLOSE_SUBMISSION_CONTRACT,
+            CLOSE_SUBMISSION_PATH,
+            rid,
+            submission.symbol,
+            submission.side,
+            submission.quantity,
+            submission.partial_close,
+        )
+        return submission
 
     async def execute_close(self, decision: "Message") -> None:
         """Execute CLOSE/CLOSE_POSITION with bracket cleanup and reconcile passes.
@@ -347,18 +495,19 @@ class CloseExecutor:
 
             position_qty = abs(Decimal(str(amt)))
             if Decimal("0") < requested_close_qty < position_qty:
-                close_side = "SELL" if amt > 0 else "BUY"
-                close_id = generate_client_order_id(
-                    "CLOSE",
-                    symbol,
-                    idempotent_key=str(
-                        pld.get("idempotent_key") or decision.rid or "manual-close"),
+                submission = self._build_close_submission(
+                    decision=decision,
+                    symbol=symbol,
+                    position_amt=Decimal(str(amt)),
+                    requested_qty=requested_close_qty,
                 )
+                if submission is None:
+                    return
                 await self._fsm.adapter.place_market_reduce_only(
-                    symbol,
-                    close_side,
-                    str(requested_close_qty),
-                    new_client_order_id=close_id,
+                    submission.symbol,
+                    submission.side,
+                    submission.quantity,
+                    new_client_order_id=submission.client_order_id,
                 )
                 self._emit_position_policy_close_state(
                     pld,
@@ -366,17 +515,17 @@ class CloseExecutor:
                     why="position_policy_sidecar:execution_submitted",
                     extra={
                         "close_cmd_rid": getattr(decision, "rid", None),
-                        "execution_client_order_id": close_id,
-                        "execution_close_side": close_side,
-                        "execution_close_qty": str(requested_close_qty),
+                        "execution_client_order_id": submission.client_order_id,
+                        "execution_close_side": submission.side,
+                        "execution_close_qty": submission.quantity,
                         "partial_close": True,
                     },
                 )
                 LOG.info(
                     "Partial close executed for %s: side=%s qty=%s",
-                    symbol,
-                    close_side,
-                    requested_close_qty,
+                    submission.symbol,
+                    submission.side,
+                    submission.quantity,
                 )
                 lifecycle_cfg = self._fsm.config.domains.execution_position.order_lifecycle
                 await get_clock().sleep_ms(lifecycle_cfg.fill_settlement_delay_ms)
@@ -392,7 +541,7 @@ class CloseExecutor:
                     "elapsed_ms": close_elapsed_ms,
                     "orphans_cancelled": 0,
                     "partial_close": True,
-                    "requested_qty": str(requested_close_qty),
+                    "requested_qty": submission.quantity,
                 })
                 return
 
@@ -494,12 +643,23 @@ class CloseExecutor:
             return
         close_side = "SELL" if amt > 0 else "BUY"
         close_qty = str(abs(Decimal(str(amt))))
-        close_id = generate_client_order_id(
-            "CLOSE", symbol,
-            idempotent_key=str((decision.pld or {}).get(
-                "idempotent_key") or decision.rid or "manual-close"),
+        submission = self._build_close_submission(
+            decision=decision,
+            symbol=symbol,
+            position_amt=Decimal(str(amt)),
+            requested_qty=None,
         )
-        await self._fsm.adapter.place_market_reduce_only(symbol, close_side, close_qty, new_client_order_id=close_id)
+        if submission is None:
+            return
+        close_side = submission.side
+        close_qty = submission.quantity
+        close_id = submission.client_order_id
+        await self._fsm.adapter.place_market_reduce_only(
+            submission.symbol,
+            submission.side,
+            submission.quantity,
+            new_client_order_id=submission.client_order_id,
+        )
         self._emit_position_policy_close_state(
             pld,
             request_state="execution_submitted",

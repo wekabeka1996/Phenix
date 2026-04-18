@@ -12,14 +12,6 @@ def test_active_assigned_symbols_allow_all_non_uncertain_structural_regimes() ->
         "MEAN_REVERSION",
         "HIGH_VOLATILITY",
     }
-    md_amr_expected = {
-        "TREND_UP",
-        "TREND_DOWN",
-        "MEAN_REVERSION",
-        "HIGH_VOLATILITY",
-        "LOW_VOLATILITY",
-    }
-
     for symbol in ("ETHUSDT", "SOLUSDT", "BTCUSDT"):
         actual = set(
             cfg.strategies.aurora.assets[symbol].allowed_regimes or [])
@@ -28,8 +20,11 @@ def test_active_assigned_symbols_allow_all_non_uncertain_structural_regimes() ->
         assert "LOW_VOLATILITY" not in actual  # P1.5: explicitly blocked
 
     if cfg.strategies.md_amr is not None:
-        for symbol in ("XRPUSDT", "BNBUSDT"):
-            actual = set(
-                cfg.strategies.md_amr.assets[symbol].allowed_regimes or [])
-            assert actual == md_amr_expected
+        md_amr_expected = {
+            "XRPUSDT": {"MEAN_REVERSION", "TREND_DOWN"},
+            "BNBUSDT": {"MEAN_REVERSION"},
+        }
+        for symbol, expected in md_amr_expected.items():
+            actual = set(cfg.strategies.md_amr.assets[symbol].allowed_regimes or [])
+            assert actual == expected
             assert "UNCERTAIN" not in actual

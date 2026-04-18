@@ -1,6 +1,8 @@
 import pytest
 import asyncio
 import inspect
+import time
+from collections import OrderedDict
 from pathlib import Path
 from unittest.mock import MagicMock
 from apps.reference.config_models import AuroraConfig, DomainsConfig
@@ -103,18 +105,59 @@ def root_mock_config(domains_config):
 
 
 @pytest.fixture(autouse=True)
-def _restore_vfoundation_wal_globals():
-    """Prevent WAL directory mutations from leaking across tests."""
+def _isolate_runtime_observability_sinks(tmp_path, monkeypatch):
+    """Keep synthetic test traffic out of repo-scoped WAL/JSONL sinks."""
+    from apps.reference.domains.execution_position.fsm import ExecPosFSM
+    from apps.reference.telemetry.order_logger import order_logger
+    from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle
     from vfoundation import config as vf_config
     from vfoundation.dr import wal as wal_mod
 
     original_cfg_wal_dir = vf_config.config.wal_dir
     original_wal_dir = wal_mod.WAL_DIR
+    original_order_log_file = order_logger.log_file
+    original_trade_log_file = trade_lifecycle._log_file
+    original_trade_trades = OrderedDict(trade_lifecycle._trades)
+    original_trade_recent_terminal = OrderedDict(trade_lifecycle._recent_terminal)
+    original_trade_snapshots = dict(trade_lifecycle._snapshot_fingerprints)
+    original_trade_next_sweep_at = trade_lifecycle._next_sweep_at
+
+    wal_dir = tmp_path / "wal"
+    log_dir = tmp_path / "logs"
+    trade_lifecycle_path = log_dir / "trade_lifecycle.jsonl"
+    order_log_path = log_dir / "order_log_v1.jsonl"
+
+    wal_mod.set_wal_dir(wal_dir)
+    vf_config.config.wal_dir = wal_dir
+    wal_mod.reset()
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    order_logger.log_file = order_log_path
+    trade_lifecycle._log_file = trade_lifecycle_path
+    trade_lifecycle._trades = OrderedDict()
+    trade_lifecycle._recent_terminal = OrderedDict()
+    trade_lifecycle._snapshot_fingerprints = {}
+    trade_lifecycle._next_sweep_at = time.time() + trade_lifecycle._auto_sweep_interval_sec
+
+    monkeypatch.setattr(
+        ExecPosFSM,
+        "_trade_lifecycle_log_path",
+        lambda self, _path=str(trade_lifecycle_path): _path,
+    )
+    monkeypatch.setenv("ENV", "")
+
     try:
         yield
     finally:
+        order_logger.log_file = original_order_log_file
+        trade_lifecycle._log_file = original_trade_log_file
+        trade_lifecycle._trades = original_trade_trades
+        trade_lifecycle._recent_terminal = original_trade_recent_terminal
+        trade_lifecycle._snapshot_fingerprints = original_trade_snapshots
+        trade_lifecycle._next_sweep_at = original_trade_next_sweep_at
         vf_config.config.wal_dir = original_cfg_wal_dir
         wal_mod.set_wal_dir(Path(original_wal_dir))
+        wal_mod.reset()
 
 
 @pytest.fixture(autouse=True)

@@ -54,31 +54,24 @@ def clean_env():
 
 def _patch_trading_mode(config_dir: Path, mode: str) -> None:
     """Patch system.yaml AND trading.yaml to set specific trading_mode."""
-    # Patch system.yaml
     system_yaml = config_dir / "system.yaml"
-    content = system_yaml.read_text()
-
-    # Replace any trading_mode with the specified mode
-    content = re.sub(
-        r'trading_mode:\s*["\']?\w+["\']?',
-        f'trading_mode: "{mode}"',
-        content
+    system_payload = yaml.safe_load(system_yaml.read_text()) or {}
+    system_payload["trading_mode"] = mode
+    system_yaml.write_text(
+        yaml.safe_dump(system_payload, sort_keys=False),
+        encoding="utf-8",
     )
-    if 'trading_mode:' not in content:
-        content += f'\ntrading_mode: "{mode}"\n'
-    system_yaml.write_text(content)
 
-    # CRITICAL: Also patch trading.yaml to prevent mode override
     trading_yaml = config_dir / "trading.yaml"
     if trading_yaml.exists():
-        content = trading_yaml.read_text()
-        # Replace trading.mode: backtest with the test mode
-        content = re.sub(
-            r'(\n\s*mode:\s*)["\']?backtest["\']?',
-            f'\\1"{mode}"',
-            content
+        trading_payload = yaml.safe_load(trading_yaml.read_text()) or {}
+        trading_block = trading_payload.setdefault("trading", {})
+        if isinstance(trading_block, dict):
+            trading_block["mode"] = mode
+        trading_yaml.write_text(
+            yaml.safe_dump(trading_payload, sort_keys=False),
+            encoding="utf-8",
         )
-        trading_yaml.write_text(content)
 
 
 # ============================================================================

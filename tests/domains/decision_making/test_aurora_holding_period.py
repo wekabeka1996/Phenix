@@ -66,10 +66,20 @@ def create_mock_config(
     decision.side_bias_penalty_factor = 0.25
     decision.side_bias_min_intents = 18
     decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
+    decision.operational_mode = "paranoid"
     decision.neutral_threshold = 0.05
     decision.holding_period = hp_cfg
     decision.direction_strength_scoring = None
     decision.signals = None
+    decision.gates = None
+    decision.anti_churn = None
+    decision.reentry_cooldown_sec = None
+    decision.scoring_version = "quadratic"
+    decision.scoring_engine = None
+    decision.quadratic_rollout = None
+    decision.exit = None
+    decision.execution = None
+    decision.dashboard = None
     
     # Create assets config with per-symbol overrides
     assets = {}
@@ -93,6 +103,7 @@ def create_mock_config(
     
     # Build full config
     aurora = MagicMock()
+    aurora.timeframe_sec = 300
     aurora.decision = decision
     aurora.assets = assets
     

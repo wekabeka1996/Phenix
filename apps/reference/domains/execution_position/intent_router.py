@@ -19,6 +19,7 @@ from apps.reference.domains.execution_position.trade_intent_open_intake import (
     TradeIntentOpenIntakeError,
     parse_trade_intent_open_intake,
 )
+from apps.reference.contracts.trade_intent_envelope import TradeIntentRoutingEnvelope
 
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
@@ -103,15 +104,22 @@ class IntentRouter:
 
         try:
             pld = msg.pld or {}
-            # Router still reads early context for logging and reject fallback,
-            # but non-reduce_only open normalization is owned by the typed intake.
-            symbol = pld.get("instrument") or pld.get("symbol")
+            try:
+                envelope = TradeIntentRoutingEnvelope.model_validate(pld)
+            except Exception as _env_exc:
+                LOG.error(
+                    "TRADE_INTENT_PROPOSED envelope validation failed: %s keys=%s",
+                    _env_exc,
+                    list(pld.keys()),
+                )
+                return
+            symbol = envelope.resolved_symbol
             if not symbol:
                 LOG.error(
                     f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
                 return
-            strategy_id = pld.get("strategy") or pld.get("strategy_id")
-            intent_rid = str(pld.get("rid") or msg.rid or "unknown")
+            strategy_id = envelope.resolved_strategy_id
+            intent_rid = envelope.resolved_rid if envelope.rid else str(msg.rid or "unknown")
 
             self._fsm.log_adapter.log_trade_intent(
                 rid=intent_rid,
@@ -125,13 +133,9 @@ class IntentRouter:
             )
 
             order_info = pld.get("order", {})
-            # Route split remains router-owned. The typed intake governs only
-            # the bounded non-reduce_only open seam.
-            reduce_only = (
-                pld.get("reduce_only")
-                or order_info.get("reduce_only")
-                or order_info.get("reduceOnly")
-            )
+            # Route split: envelope.is_reduce_only checks top-level flag and
+            # nested order block keys (reduce_only, reduceOnly) in one place.
+            reduce_only = envelope.is_reduce_only
 
             result: Optional[Message] = None
 
@@ -160,7 +164,7 @@ class IntentRouter:
                     symbol=str(symbol),
                     route="CMD:CLOSE",
                     strategy_id=str(strategy_id) if strategy_id else None,
-                    side=pld.get("side"),
+                    side=envelope.side,
                 )
                 result = self._fsm.handle(cmd_close)
 
@@ -224,7 +228,7 @@ class IntentRouter:
                     symbol=str(symbol),
                     route="CMD:OPEN",
                     strategy_id=str(strategy_id) if strategy_id else None,
-                    side=pld.get("side"),
+                    side=envelope.side,
                 )
                 result = self._fsm.handle(cmd_open)
 

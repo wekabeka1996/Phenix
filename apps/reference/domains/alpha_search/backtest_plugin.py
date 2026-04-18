@@ -1742,6 +1742,67 @@ class AlphaSearchBacktestPlugin:
             except Exception as e:
                 LOG.warning(f"Failed to generate diagnostics: {e}")
 
+        # PHASE5-5G: Simulator shutdown auto-export
+        self._run_simulator_shutdown_export()
+
+    def _run_simulator_shutdown_export(self) -> None:
+        """Phase 5 Package 5G — bounded simulator invocation on shutdown.
+
+        Config-gated: does nothing when simulator_shutdown_export is None or
+        disabled.  When enabled, loads SimulatorConfig from the referenced
+        YAML file, runs the simulator once via the existing 5F run_from_config
+        path, and writes calibration + summary artifacts via existing 5D/5E
+        writers.  Fails closed: any error is logged and does not crash the
+        broader shutdown sequence.
+        """
+        export_cfg = getattr(self.config, "simulator_shutdown_export", None)
+        if export_cfg is None or not export_cfg.enabled:
+            return
+
+        LOG.info("PHASE5_5G: simulator shutdown export enabled, starting...")
+
+        try:
+            from .judge.simulator.cli import load_simulator_config, run_from_config
+        except ImportError as exc:
+            LOG.error(f"PHASE5_5G: failed to import simulator modules: {exc}")
+            return
+
+        # 1. Load simulator config
+        try:
+            sim_config = load_simulator_config(export_cfg.config_path)
+        except (FileNotFoundError, ValueError) as exc:
+            LOG.error(
+                f"PHASE5_5G: invalid simulator config "
+                f"(path={export_cfg.config_path!r}): {exc}"
+            )
+            return
+        except Exception as exc:
+            LOG.error(f"PHASE5_5G: unexpected config load error: {exc}")
+            return
+
+        if not sim_config.enabled:
+            LOG.info(
+                "PHASE5_5G: simulator config loaded but simulator "
+                "enabled=False in judge_simulator.yaml, skipping."
+            )
+            return
+
+        # 2. Run simulation + write outputs (reuses 5F run_from_config)
+        try:
+            result = run_from_config(sim_config)
+        except Exception as exc:
+            LOG.error(f"PHASE5_5G: simulation/export failed: {exc}")
+            return
+
+        LOG.info(
+            f"PHASE5_5G: done — "
+            f"verdicts={result.total_verdict_records_loaded} "
+            f"outcomes={result.total_outcome_records_loaded} "
+            f"matched={result.matched_count} "
+            f"calibration={sim_config.calibration_dataset_path} "
+            f"summary={sim_config.summary_report_path}"
+        )
+
 
 # Backwards compatibility: factory function
 def create_plugin_from_config(

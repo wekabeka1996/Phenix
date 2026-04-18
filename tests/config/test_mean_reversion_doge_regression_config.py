@@ -5,8 +5,12 @@ from pathlib import Path
 from apps.reference.config_loader import ConfigLoader
 
 
-def test_mean_reversion_not_live_loaded_when_unassigned() -> None:
+def test_mean_reversion_live_loaded_when_assigned() -> None:
     config = ConfigLoader(Path("config/aurora")).load_config()
 
-    assert "DOGEUSDT" not in config.strategies_registry.assignments
-    assert getattr(config.strategies, "mean_reversion", None) is None
+    assert config.strategies.mean_reversion is not None
+    assert config.strategies_registry.assignments["DOGEUSDT"] == [
+        "aurora",
+        "mean_reversion",
+    ]
+    assert config.strategies.mean_reversion.assets["DOGEUSDT"].enabled is True

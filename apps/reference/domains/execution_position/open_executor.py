@@ -17,7 +17,6 @@ from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.domains.execution_position.bracket_math import compute_bracket_targets
 from apps.reference.domains.execution_position.utils import (
-    generate_client_order_id,
     quantize_stop_price,
 )
 from apps.reference.domains.execution_position.qty_normalizer import normalize_qty
@@ -518,13 +517,11 @@ class OpenExecutor:
         # Generate entry ID and place order
         idem_key = (decision.pld or {}).get("idempotent_key") or getattr(
             decision, "idempotent_key", None) or decision.rid
-        entry_id = generate_client_order_id(
-            "ENTRY", symbol, idempotent_key=str(idem_key) if idem_key else None)
         try:
-            submission = OpenSubmissionPayload.from_dec_open(
+            submission = OpenSubmissionPayload.from_dec_open_with_key(
                 payload=decision.pld or {},
                 normalized_qty=qty,
-                client_order_id=entry_id,
+                idempotent_key=str(idem_key) if idem_key else None,
             )
         except OpenSubmissionAdapterError as exc:
             reject_ref = build_open_submission_trace_ref(
@@ -542,6 +539,7 @@ class OpenExecutor:
                 data_ref=list(decision.data_ref or []) + [reject_ref],
             )
             return
+        entry_id = submission.client_order_id
 
         entry_resp, submission_data_ref = await self._submit_open_entry(
             decision=decision,
@@ -822,7 +820,10 @@ class OpenExecutor:
 
         # ── FILL-PIPELINE-FIX: Pre-submit GTX spread guard ──────────────
         # Ensure LIMIT GTX price is on the passive side of the book.
-        # If crossing, adjust to passive side.
+        # Seam-owned rule: OpenSubmissionPayload.apply_gtx_passive_guard
+        # now owns the BUY/SELL passive-side normalization. The executor
+        # retains the runtime book-ticker input and observability-only
+        # side-effects (LIMIT_PRICE_ADJUSTED, crossed-book warning).
         if tif == "GTX" and submit_meta.get("book_context") == "AVAILABLE":
             best_bid_s = submit_meta.get("best_bid")
             best_ask_s = submit_meta.get("best_ask")
@@ -831,55 +832,49 @@ class OpenExecutor:
                 try:
                     best_bid = Decimal(best_bid_s)
                     best_ask = Decimal(best_ask_s)
-                    submit_price = Decimal(str(price))
                 except (Exception) as exc:
                     LOG.warning(
                         "GTX_SPREAD_GUARD_SKIP: %s Decimal parse error: %s (bid=%r ask=%r price=%r)",
                         symbol, exc, best_bid_s, best_ask_s, price)
-                    best_bid = None
                 else:
-                    original_price = submit_price
-
                     # FILL-PIPELINE-FIX-AUDIT: crossed book guard (F-3)
                     if best_bid >= best_ask:
                         LOG.warning(
                             "GTX_SPREAD_GUARD_SKIP: %s crossed/zero-spread book bid=%s >= ask=%s, "
                             "proceeding with unadjusted price",
                             symbol, best_bid, best_ask)
-                    elif side == "BUY" and submit_price >= best_ask:
-                        # BUY crossing ask → adjust to best_bid (passive)
-                        submit_price = best_bid
-                        price = str(submit_price)
-                        price_adjusted = True
-                        LOG.warning(
-                            "GTX_SPREAD_GUARD: %s BUY adjusted %s → %s (was >= ask %s)",
-                            symbol, original_price, submit_price, best_ask)
-                    elif side == "SELL" and submit_price <= best_bid:
-                        # SELL crossing bid → adjust to best_ask (passive)
-                        submit_price = best_ask
-                        price = str(submit_price)
-                        price_adjusted = True
-                        LOG.warning(
-                            "GTX_SPREAD_GUARD: %s SELL adjusted %s → %s (was <= bid %s)",
-                            symbol, original_price, submit_price, best_bid)
-
-                    if submit_price != original_price:
-                        order_logger.write({
-                            "rid": decision.rid,
-                            "event_type": "LIMIT_PRICE_ADJUSTED",
-                            "symbol": symbol,
-                            "side": side,
-                            "original_price": str(original_price),
-                            "adjusted_price": str(submit_price),
-                            "best_bid": str(best_bid),
-                            "best_ask": str(best_ask),
-                            "reason": "GTX_SPREAD_GUARD",
-                            "timestamp": get_clock().now_ms(),
-                        })
+                    else:
+                        new_submission, adjusted, original_price = (
+                            submission.apply_gtx_passive_guard(
+                                best_bid=best_bid,
+                                best_ask=best_ask,
+                            )
+                        )
+                        if adjusted:
+                            submission = new_submission
+                            price = submission.price
+                            price_adjusted = True
+                            LOG.warning(
+                                "GTX_SPREAD_GUARD: %s %s adjusted %s → %s (book bid=%s ask=%s)",
+                                symbol, side, original_price, price,
+                                best_bid, best_ask)
+                            order_logger.write({
+                                "rid": decision.rid,
+                                "event_type": "LIMIT_PRICE_ADJUSTED",
+                                "symbol": symbol,
+                                "side": side,
+                                "original_price": str(original_price),
+                                "adjusted_price": str(price),
+                                "best_bid": str(best_bid),
+                                "best_ask": str(best_ask),
+                                "reason": "GTX_SPREAD_GUARD",
+                                "timestamp": get_clock().now_ms(),
+                            })
         # ── end spread guard ────────────────────────────────────────────
 
         if price is None:
             raise OpenSubmissionAdapterError("LIMIT submission requires price")
+        # Idempotent: when no GTX adjustment happened, submission.price == price.
         submission = submission.with_limit_price(price)
 
         LOG.info(

@@ -160,15 +160,12 @@ def test_empty_fetch_retries_and_recovers(mock_sleep) -> None:
 
     # md_amr handler must be seeded after outer retry recovery
     md_amr_handler = started_handlers["md_amr"]
-    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 96, (
-        f"BNBUSDT should be seeded to >=96, got "
-        f"{md_amr_handler._bars_seen_since_restart.get('BNBUSDT', 0)}"
-    )
     assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
 
     # Aurora should also be seeded
     aurora_handler = started_handlers["aurora"].handler
     assert aurora_handler._bars_seen_since_restart["BTCUSDT"] >= 301
+    assert aurora_handler._bars_seen_since_restart["BNBUSDT"] >= 301
 
     # Outer retry loop fired → sleep was called at least once
     assert mock_sleep.call_count > 0, "Expected outer retry delays after inner retry exhaustion"
@@ -177,7 +174,7 @@ def test_empty_fetch_retries_and_recovers(mock_sleep) -> None:
     assert not any("exhausted" in s for s in summary.get("skipped", []))
 
     # Seeded records must exist
-    assert len(summary["seeded"]) >= 5
+    assert len(summary["seeded"]) >= 6
 
 
 @patch("apps.reference.bootstrap.startup_basis_hydrator.time.sleep")
@@ -203,7 +200,6 @@ def test_permanent_empty_fetch_produces_exhausted_status(mock_sleep) -> None:
 
     # Handler should NOT be seeded (0 bars imported)
     md_amr_handler = started_handlers["md_amr"]
-    assert md_amr_handler._bars_seen_since_restart.get("BNBUSDT", 0) == 0
     assert md_amr_handler._bars_seen_since_restart.get("XRPUSDT", 0) == 0
 
     # "exhausted" entries must exist in skipped
@@ -241,5 +237,5 @@ def test_retry_recovery_on_first_attempt_does_not_sleep(mock_sleep) -> None:
 
     # All handlers should be seeded
     md_amr_handler = started_handlers["md_amr"]
-    assert md_amr_handler._bars_seen_since_restart["BNBUSDT"] >= 96
-    assert len(summary["seeded"]) >= 5
+    assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
+    assert len(summary["seeded"]) >= 6

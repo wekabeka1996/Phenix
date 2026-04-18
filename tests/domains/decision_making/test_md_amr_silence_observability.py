@@ -115,6 +115,9 @@ def _make_config(symbol: str = "BNBUSDT"):
             valid_score_min=0.70,
             invalid_score_max=0.35,
         ),
+        entry_anchor_persistence=SimpleNamespace(
+            storage_path="ops/restore/md_amr_entry_anchor_state_v1.json",
+        ),
         weights=SimpleNamespace(d1=0.35, h1=0.30, m30=0.20, m15=0.15),
         objective=SimpleNamespace(enabled=False),
         execution=SimpleNamespace(

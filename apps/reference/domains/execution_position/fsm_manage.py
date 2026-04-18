@@ -1258,7 +1258,10 @@ class ManageFlowFSM:
     def _should_place_brackets(self) -> bool:
         """Check if brackets should be placed based on config."""
         if self._manage_cfg and self._manage_cfg.brackets:
-            return self._manage_cfg.brackets.enable
+            # BracketsConfig has no feature-flag field; auto-manage already gates
+            # rule execution, and bracket placement is enabled by the presence of
+            # the typed brackets section itself.
+            return True
         return False
 
     def _calculate_bracket_prices(

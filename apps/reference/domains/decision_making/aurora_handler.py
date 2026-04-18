@@ -549,32 +549,75 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state.objective_blocked_ts_ms.append(ts_ms)
         self.emit_fn("EVT:STRATEGY_DECISION_BLOCKED", payload)
 
-    def on_regime_detected(self, event: Dict[str, Any]) -> None:
-        """Cache normalized regime state and refresh the detector heartbeat."""
-        if not is_structural_regime_payload(event):
+    def on_regime_detected(self, event: Any) -> None:
+        """Cache normalized regime state and refresh the detector heartbeat.
+
+        Accepts either a raw dict payload (test/legacy path) or a typed
+        RegimeEvent (production path from aurora_builtin boundary parsing).
+        When a dict is received, it is parsed through RegimeDetectedBoundary
+        and mapped to RegimeEvent before processing. This ensures identical
+        semantics on both paths.
+
+        Malformed dict payloads (ValidationError) are logged and dropped —
+        the handler makes no state mutation on invalid regime evidence.
+        """
+        from apps.reference.domains.decision_making.core_models import RegimeEvent  # noqa: PLC0415
+
+        if not isinstance(event, RegimeEvent):
+            # Dict-sourced call (tests or legacy wiring): parse at handler boundary.
+            if not isinstance(event, dict):
+                return
+            try:
+                from apps.reference.domains.decision_making.boundary_models import (  # noqa: PLC0415
+                    RegimeDetectedBoundary,
+                )
+                from apps.reference.domains.decision_making.boundary_mappers import (  # noqa: PLC0415
+                    map_regime_boundary_to_event,
+                )
+                boundary = RegimeDetectedBoundary.model_validate(event)
+                event = map_regime_boundary_to_event(boundary, raw=dict(event))
+            except Exception as exc:  # ValidationError or mapping error
+                symbol_raw = event.get("symbol", "unknown") if isinstance(
+                    event, dict) else "unknown"
+                self.logger.warning(
+                    "[%s] EVT:REGIME_DETECTED boundary rejected in handler: %s",
+                    symbol_raw,
+                    exc,
+                )
+                return
+
+        # event is now RegimeEvent regardless of which path entered.
+        evt = event  # type: RegimeEvent
+
+        if not is_structural_regime_payload(evt.raw):
             return
-        symbol = event.get("symbol")
+        symbol = evt.symbol
         if not symbol:
             return
         state = self._symbol_states[symbol]
-        state.regime = normalize_structural_regime_label(event.get("regime"))
+
+        # Use pre-normalized regime label from the mapper.
+        state.regime = evt.regime
+        # raw_regime is a diagnostic field not promoted to RegimeEvent core;
+        # read it from the raw transport payload.
         state.regime_raw_event = normalize_structural_regime_label(
-            event.get("raw_regime"))
-        confidence_raw = event.get("confidence")
-        state.regime_confidence = (
-            float(confidence_raw) if confidence_raw is not None else None
+            str(evt.raw.get("raw_regime") or "")
         )
-        state.regime_ts_ms = int(event.get("ts_ms") or event.get(
-            "ts") or int(self.wall_time_fn() * 1000))
-        state.regime_structural_regime_ref = event.get("structural_regime_ref")
-        state.regime_changed = event.get("changed")
-        state.regime_raw_confidence = event.get("raw_confidence")
-        state.regime_last_update_ts_ms = int(
-            event.get("last_update_ts_ms") or 0)
+        # confidence is float-resolved by the mapper.
+        state.regime_confidence = evt.confidence
+        state.regime_ts_ms = evt.ts_ms or int(self.wall_time_fn() * 1000)
+        state.regime_structural_regime_ref = evt.structural_regime_ref
+        state.regime_changed = evt.changed
+        # raw_confidence: preserve original transport string/value so that
+        # operator-facing fields and existing tests receive the raw form.
+        state.regime_raw_confidence = evt.raw.get("raw_confidence")
+        state.regime_last_update_ts_ms = evt.last_update_ts_ms
         state.regime_cache_write_ts_ms = int(self.wall_time_fn() * 1000)
+
+        # Provenance helpers need the full raw payload (dict-like access).
         provenance = build_regime_provenance_fields(
-            event,
-            bar_close_ts_ms=event.get("bar_close_ts_ms"),
+            evt.raw,
+            bar_close_ts_ms=evt.raw.get("bar_close_ts_ms"),
         )
         state.regime_event_ts_ms = int(
             provenance.get("regime_event_ts_ms") or state.regime_ts_ms or 0
@@ -584,21 +627,18 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         state.regime_provenance_reason = provenance.get(
             "regime_provenance_reason")
 
-        # Prefer detector-provided timestamp evidence; otherwise stamp arrival on
-        # the same monotonic clock used by the liveness guard.
-        heartbeat_ts = event.get("last_update_ts_ms")
-        if heartbeat_ts is not None:
-            state.last_regime_heartbeat_ms = int(heartbeat_ts)
+        # Prefer detector-provided heartbeat; stamp arrival on monotonic clock
+        # when not present.
+        if evt.last_update_ts_ms:
+            state.last_regime_heartbeat_ms = evt.last_update_ts_ms
         else:
             state.last_regime_heartbeat_ms = int(self.monotonic_fn() * 1000)
 
         if getattr(self, "anti_churn_enabled", False):
             self._update_effective_regime(symbol, state.regime)
 
-        # Warmup ownership stays on CMD:PROCESS_STRATEGY; regime events only update regime state.
-
         # Some producers omit changed on heartbeat-only updates.
-        changed = event.get("changed", True)
+        changed = evt.changed if evt.changed is not None else True
         confidence_text = (
             f"{state.regime_confidence:.2f}"
             if state.regime_confidence is not None
@@ -734,19 +774,55 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
     # T2B-03: CMD:PROCESS_STRATEGY - Primary Entry Point
     # =========================================================================
 
-    def on_process_strategy(self, cmd: Dict[str, Any]) -> None:
+    def on_process_strategy(self, cmd: Any) -> None:
         """Validate CMD:PROCESS_STRATEGY and route accepted bars to decision logic.
 
-        This method owns envelope validation, reject-WAL emission for malformed
-        or disabled commands, and the cold-start bar counter. The scoring kernel
-        is reached only after these checks pass.
+        Accepts either a ProcessStrategyCmd (production path from aurora_builtin
+        boundary parsing) or a raw dict (test/legacy path). Dict inputs are
+        parsed through ProcessStrategyBoundary and mapped to ProcessStrategyCmd
+        at the top of this method, ensuring identical semantics on both paths.
+
+        Malformed dict payloads (ValidationError) are logged and dropped. Payloads
+        that pass boundary parsing but fail business-gate checks still emit
+        structured WAL records (Gates 0–4 below).
+
+        Note: this method does NOT emit TRADE_INTENT_REJECTED for boundary
+        failures. A boundary failure means no real strategy intent was formed yet.
+        Gate-level rejections (disabled, missing tf_sec, etc.) do emit WAL records
+        because they represent strategy-scope decisions.
         """
-        symbol = cmd.get("symbol")
+        from apps.reference.domains.decision_making.core_models import ProcessStrategyCmd  # noqa: PLC0415
+
+        if not isinstance(cmd, ProcessStrategyCmd):
+            # Dict-sourced call (tests or legacy wiring): parse at handler boundary.
+            if not isinstance(cmd, dict):
+                return
+            try:
+                from apps.reference.domains.decision_making.boundary_models import (  # noqa: PLC0415
+                    ProcessStrategyBoundary,
+                )
+                from apps.reference.domains.decision_making.boundary_mappers import (  # noqa: PLC0415
+                    map_process_strategy_boundary_to_cmd,
+                )
+                boundary = ProcessStrategyBoundary.model_validate(cmd)
+                cmd = map_process_strategy_boundary_to_cmd(
+                    boundary, raw=dict(cmd))
+            except Exception as exc:  # ValidationError or mapping error
+                symbol_raw = cmd.get("symbol", "unknown") if isinstance(
+                    cmd, dict) else "unknown"
+                self.logger.warning(
+                    "[%s] CMD:PROCESS_STRATEGY boundary rejected in handler: %s",
+                    symbol_raw,
+                    exc,
+                )
+                return
+
+        # cmd is now ProcessStrategyCmd regardless of which path entered.
+        symbol = cmd.symbol
         if not symbol:
             return
 
-        # Envelope validation stays fail-closed for malformed commands.
-        tf_sec = cmd.get("tf_sec")
+        tf_sec = cmd.tf_sec
 
         # Gate 0: disabled strategy instances emit an explicit reject record.
         if not self._is_enabled:
@@ -757,13 +833,13 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             write_trade_intent_rejected(
                 symbol=symbol,
                 tf_sec=int(tf_sec) if tf_sec is not None else 0,
-                bar_close_ts=cmd.get("bar_close_ts"),
+                bar_close_ts=cmd.bar_close_ts,
                 reason_code="STRATEGY_DISABLED",
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY rejected: Aurora is globally disabled",
                 src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
+                ts_ms=cmd.bar_close_ts,
+                rid=cmd.rid,
             )
             return
 
@@ -776,13 +852,13 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             write_trade_intent_rejected(
                 symbol=symbol,
                 tf_sec=None,
-                bar_close_ts=cmd.get("bar_close_ts"),
+                bar_close_ts=cmd.bar_close_ts,
                 reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY missing tf_sec (fail-closed)",
                 src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
+                ts_ms=cmd.bar_close_ts,
+                rid=cmd.rid,
             )
             return
 
@@ -792,13 +868,13 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             write_trade_intent_rejected(
                 symbol=symbol,
                 tf_sec=0,
-                bar_close_ts=cmd.get("bar_close_ts"),
+                bar_close_ts=cmd.bar_close_ts,
                 reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY tf_sec=0 forbidden (fail-closed)",
                 src="aurora_handler",
-                ts_ms=cmd.get("bar_close_ts"),
-                rid=cmd.get("rid"),
+                ts_ms=cmd.bar_close_ts,
+                rid=cmd.rid,
             )
             return
 
@@ -807,8 +883,9 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             return
 
         # Canonical bar identity is the stronger source of bar_close_ts when present.
+        # Pass cmd.raw (full transport payload) to the utility which needs dict-like access.
         bar_identity = extract_canonical_bar_identity(
-            cmd,
+            cmd.raw,
             default_symbol=symbol,
             default_timeframe_sec=int(tf_sec) if tf_sec is not None else None,
             default_source_mode=RuntimeBarSourceMode.LIVE,
@@ -816,7 +893,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         bar_close_ts = (
             int(bar_identity.bar_end_ts_ms)
             if bar_identity is not None
-            else cmd.get("bar_close_ts")
+            else cmd.bar_close_ts
         )
         if not bar_close_ts:
             self._tick_path_rejections += 1
@@ -831,7 +908,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
                 stage="STRATEGY",
                 why="CMD:PROCESS_STRATEGY missing bar_close_ts (fail-closed)",
                 src="aurora_handler",
-                rid=cmd.get("rid"),
+                rid=cmd.rid,
             )
             return
 
