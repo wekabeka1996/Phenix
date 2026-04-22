@@ -111,6 +111,28 @@ class TestTryReserveEntry:
         order_index.cancel_reservation("rid-001")
         assert order_index.has_in_flight_entry("BTCUSDT") is False
 
+    def test_get_in_flight_entry_ignores_same_rid(self, order_index):
+        """Same-rid lookups should not block their own reservation."""
+        order_index.try_reserve_entry("BTCUSDT", "rid-001")
+
+        assert order_index.get_in_flight_entry("BTCUSDT") is not None
+        assert order_index.get_in_flight_entry(
+            "BTCUSDT",
+            exclude_rid="rid-001",
+        ) is None
+
+    def test_get_in_flight_entry_ignores_aged_out_reservations(self):
+        """Aged-out entry refs should not block the one-open-order guard forever."""
+        order_index = OrderIndex(ttl_sec=3600, entry_guard_ttl_sec=1)
+        order_index.try_reserve_entry("BTCUSDT", "rid-001")
+
+        ref = order_index.get(rid="rid-001")
+        assert ref is not None
+        ref.created_ts = time.time() - 5
+
+        assert order_index.get_in_flight_entry("BTCUSDT") is None
+        assert order_index.has_in_flight_entry("BTCUSDT") is False
+
 
 class TestTryReserveEntryConcurrency:
     """Concurrency tests for try_reserve_entry() to verify race condition fix."""

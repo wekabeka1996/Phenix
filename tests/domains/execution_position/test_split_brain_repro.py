@@ -8,6 +8,7 @@ from vfoundation.core.protocol import Message
 from apps.reference.core.time import get_clock
 from apps.reference.domains.decision_making.position_queries import PositionQueries
 from apps.reference.domains.execution_position.fsm_manage import ManageState
+from apps.reference.domains.execution_position.order_index import OrderIndex
 from apps.reference.domains.execution_position.order_guardian import (
     InMemoryStore,
     OrderGuardian,
@@ -245,6 +246,106 @@ def test_invariant_rest_flat_local_tracking_divergence_blocks_reopen(fsm_harness
     assert out.pld["divergence_detected"] is True
     guard_evt = _find_guard_event(bus, "EVT:EXECUTION_GUARD_BLOCKED")
     assert guard_evt is not None
+
+
+def test_invariant_foreign_in_flight_entry_blocks_execpos_open(fsm_harness):
+    """Hypothesis: execution_position must fail closed on a foreign pending entry even when local manage state is FLAT.
+    Why this matters: split-brain recovery cannot rely on portfolio truth alone when OrderIndex still owns a live entry lifecycle.
+    Current expected buggy behavior: `CMD:OPEN` slips through because no local lifecycle is active and portfolio state is flat.
+    What future repair should change: return `OPEN_GUARD_FAIL` with `entry_order_in_flight` and emit a structured guard event.
+    """
+    fsm, bus, _ = fsm_harness
+    symbol = "BTCUSDT"
+    fsm.order_index = OrderIndex(ttl_sec=3600)
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0"))
+    assert fsm.order_index.try_reserve_entry(symbol, "rid-foreign") is True
+
+    out = fsm.handle(_cmd_open(symbol=symbol, rid="rid-current"))
+
+    assert out is not None
+    assert out.op == "ERR"
+    assert out.verb == "OPEN"
+    assert out.why == "OPEN_GUARD_FAIL"
+    assert out.pld["reason"] == "entry_order_in_flight"
+    assert out.pld["tracked_rid"] == "rid-foreign"
+    guard_evt = _find_guard_event(bus, "EVT:EXECUTION_GUARD_BLOCKED")
+    assert guard_evt is not None
+    _, args, kwargs = guard_evt
+    payload = args[0]
+    assert payload["block_reason"] == "entry_order_in_flight"
+    assert payload["why"] == "execution:entry_order_in_flight"
+    assert kwargs["why"] == "execution:entry_order_in_flight"
+
+
+def test_invariant_same_rid_reservation_does_not_block_execpos_open(fsm_harness):
+    """Hypothesis: the current lifecycle must not block its own `CMD:OPEN` when the reservation belongs to the same rid.
+    Why this matters: the pending-entry guard must distinguish duplicate foreign opens from the active command it is protecting.
+    Current expected buggy behavior: same-rid reservations are treated as duplicates and rejected fail-closed.
+    What future repair should change: exclude the current rid and allow the command to continue to `DEC:OPEN`.
+    """
+    fsm, bus, _ = fsm_harness
+    symbol = "BTCUSDT"
+    fsm.order_index = OrderIndex(ttl_sec=3600)
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0"))
+    assert fsm.order_index.try_reserve_entry(symbol, "rid-current") is True
+
+    out = fsm.handle(_cmd_open(symbol=symbol, rid="rid-current"))
+
+    assert out is not None
+    assert out.op == "DEC"
+    assert out.verb == "OPEN"
+    assert all(
+        not (
+            topic == "EVT:EXECUTION_GUARD_BLOCKED"
+            and args
+            and args[0].get("block_reason") == "entry_order_in_flight"
+        )
+        for topic, args, kwargs in bus.events
+    )
+
+
+def test_direct_open_flow_blocks_foreign_in_flight_entry(fsm_harness):
+    """Hypothesis: direct `OpenFlowFSM` use must inherit the same pending-entry guard as the wrapper FSM.
+    Why this matters: defense in depth fails if callers can bypass `ExecPosFSM.handle(...)` and reopen directly.
+    Current expected buggy behavior: direct flow calls skip the wrapper guard and still return `DEC:OPEN`.
+    What future repair should change: the injected pre-open guard should reject with `OPEN_GUARD_FAIL`.
+    """
+    fsm, _, _ = fsm_harness
+    symbol = "BTCUSDT"
+    fsm.order_index = OrderIndex(ttl_sec=3600)
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0"))
+    assert fsm.order_index.try_reserve_entry(symbol, "rid-foreign") is True
+
+    out = fsm.open_flow(symbol).handle(_cmd_open(symbol=symbol, rid="rid-current"))
+
+    assert out is not None
+    assert out.op == "ERR"
+    assert out.verb == "OPEN"
+    assert out.why == "OPEN_GUARD_FAIL"
+    assert out.pld["reason"] == "entry_order_in_flight"
+
+
+def test_direct_open_flow_allows_same_rid_reservation(fsm_harness):
+    """Hypothesis: the injected guard must still allow the current rid through when it owns the reservation.
+    Why this matters: defense in depth should not create a self-deadlocking direct-flow seam.
+    Current expected buggy behavior: direct `OpenFlowFSM` rejects even when the in-flight ref belongs to the same rid.
+    What future repair should change: the same-rid reservation should continue to `DEC:OPEN`.
+    """
+    fsm, _, _ = fsm_harness
+    symbol = "BTCUSDT"
+    fsm.order_index = OrderIndex(ttl_sec=3600)
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0"))
+    assert fsm.order_index.try_reserve_entry(symbol, "rid-current") is True
+
+    out = fsm.open_flow(symbol).handle(_cmd_open(symbol=symbol, rid="rid-current"))
+
+    assert out is not None
+    assert out.op == "DEC"
+    assert out.verb == "OPEN"
 
 
 @pytest.mark.asyncio

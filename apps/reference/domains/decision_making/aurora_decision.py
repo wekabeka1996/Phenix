@@ -72,9 +72,6 @@ from apps.reference.domains.decision_making.instrument_quantizer import (
     quantize_exposure,
     InstrumentSpec as QuantizerSpec,
 )
-from apps.reference.domains.decision_making.trade_intent_reject_wal import (
-    write_trade_intent_rejected,
-)
 
 if TYPE_CHECKING:
     from apps.reference.domains.decision_making.aurora_handler import SymbolState
@@ -293,23 +290,8 @@ class AuroraDecisionMixin:
                 _readiness_contract_error = f"READINESS_CONTRACT_UNRESOLVED:{type(_exc).__name__}"
                 _basis_required = 0
         if _readiness_contract_error:
-            # These gates stop the bar before any actionable signal exists, so
-            # they also write a reject WAL record for forensic continuity.
-            write_trade_intent_rejected(
-                symbol=symbol,
-                strategy_id=self.strategy_id,
-                tf_sec=int(cmd.tf_sec or self.timeframe_sec or 0),
-                bar_close_ts=cmd.bar_close_ts,
-                reason_code="READINESS_CONTRACT_UNRESOLVED",
-                stage="STRATEGY",
-                why="aurora_handler:readiness_contract_unresolved",
-                src="aurora_handler",
-                ts_ms=cmd.bar_close_ts,
-                rid=cmd.rid,
-                context="aurora_handler:basis_required_resolution",
-                why_chain=["READINESS", "READINESS_CONTRACT_UNRESOLVED"],
-                details={"error": _readiness_contract_error},
-            )
+            # No actionable intent exists on this branch, so blocked-truth is
+            # canonical and reject WAL must remain untouched.
             self.logger.error(
                 "[%s] READINESS_CONTRACT_UNRESOLVED — cannot resolve basis_required_bars: %s — blocking signal",
                 symbol, _readiness_contract_error,
@@ -335,21 +317,6 @@ class AuroraDecisionMixin:
                 f"bars_seen:{_bars_seen}",
                 f"basis_required:{_basis_required}",
             ]
-            write_trade_intent_rejected(
-                symbol=symbol,
-                strategy_id=self.strategy_id,
-                tf_sec=int(cmd.tf_sec or self.timeframe_sec or 0),
-                bar_close_ts=cmd.bar_close_ts,
-                reason_code="BARS_REQUIRED_COLD_START",
-                stage="STRATEGY",
-                why=cold_start_why,
-                src="aurora_handler",
-                ts_ms=cmd.bar_close_ts,
-                rid=cmd.rid,
-                context="aurora_handler:bars_required_gate",
-                why_chain=cold_start_why_chain,
-                details=cold_start_details,
-            )
             self.logger.info(
                 "[%s] BARS_REQUIRED gate: %d/%d bars — blocking signal (quadratic path NOT reached)",
                 symbol, _bars_seen, _basis_required,
@@ -1343,8 +1310,6 @@ class AuroraDecisionMixin:
                 multipliers = getattr(vel_cfg, "regime_multipliers", {})
                 mult_raw = multipliers.get(regime, multipliers.get("DEFAULT"))
                 if mult_raw is None:
-                    self.logger.error(
-                        f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
                     self._emit_strategy_blocked(
                         symbol=symbol,
                         reason_code="VOLATILITY_ENTRY_MULTIPLIER_MISSING",

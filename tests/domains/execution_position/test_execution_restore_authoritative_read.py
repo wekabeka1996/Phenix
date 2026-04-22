@@ -39,8 +39,8 @@ def _configure_authoritative(
         flush_interval_ms=30000,
         dark_read_max_artifact_age_ms=age_ms,
     )
-    fsm._restore_artifact_writer = fsm._create_restore_artifact_writer()
-    fsm._restore_artifact_dark_reader = fsm._create_restore_artifact_dark_reader()
+    fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
+    fsm._startup_truth_orchestrator._restore_artifact_dark_reader = fsm._startup_truth_orchestrator._create_restore_artifact_dark_reader()
     return path
 
 
@@ -50,7 +50,7 @@ def _configure_startup_truth_writer(fsm, tmp_path: Path) -> Path:
         mode=ExecutionPositionStartupTruthArtifactMode.WRITER_ONLY,
         storage_path=str(path),
     )
-    fsm._startup_truth_artifact_writer = fsm._create_startup_truth_artifact_writer()
+    fsm._startup_truth_orchestrator._startup_truth_artifact_writer = fsm._startup_truth_orchestrator._create_startup_truth_artifact_writer()
     return path
 
 
@@ -165,7 +165,7 @@ def test_authoritative_read_restores_exact_manage_and_close_fields_from_envelope
         ),
     )
 
-    result = fsm._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.parse_success is True
@@ -206,14 +206,14 @@ def test_authoritative_read_keeps_linked_bracket_state_unknown_without_lineage(
         ),
     )
 
-    result = fsm._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
 
     assert result.artifact_state == "valid"
     symbol_status = result.symbol_statuses[0]
     assert symbol_status.bracket_state_value == BRACKET_STATE_UNKNOWN
     assert symbol_status.bracket_state_restore_status == "unknown"
     assert "bracket_lineage_not_restorable_from_envelope" in symbol_status.unresolved_reasons
-    current = fsm._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
     assert current.bracket_state == BRACKET_STATE_UNKNOWN
 
 
@@ -243,12 +243,12 @@ def test_authoritative_read_restores_deferred_pending_only_when_pending_wal_matc
         ),
     )
 
-    result = fsm._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
 
     symbol_status = result.symbol_statuses[0]
     assert symbol_status.bracket_state_value == BRACKET_STATE_DEFERRED_PENDING_WAL
     assert symbol_status.bracket_state_restore_status == "exact"
-    current = fsm._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
     assert current.bracket_state == BRACKET_STATE_DEFERRED_PENDING_WAL
     assert current.deferred_bracket_ref.entry_order_id == "8631999001"
 
@@ -262,7 +262,7 @@ def test_authoritative_read_handles_not_readable_without_applying_truth(
     path.write_text("{}", encoding="utf-8")
 
     with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
-        result = fsm._run_restore_artifact_authoritative_read(
+        result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
             now_ms=1_775_000_001_000
         )
 
@@ -321,7 +321,7 @@ def test_authoritative_read_handles_stale_artifact_without_applying_truth(
         ),
     )
 
-    result = fsm._run_restore_artifact_authoritative_read(now_ms=1_775_000_010_500)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_010_500)
 
     assert result.parse_success is True
     assert result.artifact_state == "stale"
@@ -354,7 +354,7 @@ def test_authoritative_read_handles_mixed_certainty_without_promoting_unknown_fi
         ),
     )
 
-    result = fsm._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
 
     assert result.parse_success is True
     assert result.artifact_state == "valid"
@@ -362,7 +362,7 @@ def test_authoritative_read_handles_mixed_certainty_without_promoting_unknown_fi
     assert result.mixed_certainty_symbols == ["BTCUSDT"]
     assert fsm.manage_flows["BTCUSDT"].state == ManageState.TRACKING
     assert "BTCUSDT" not in fsm.close_flows
-    current = fsm._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
     assert current.manage_phase == "TRACKING"
     assert current.close_phase == "UNKNOWN"
     assert current.bracket_state == "UNKNOWN"

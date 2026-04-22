@@ -707,7 +707,7 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
 
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
-        patch("apps.reference.domains.decision_making.aurora_decision.write_trade_intent_rejected") as rejected_wal,
+        patch("apps.reference.domains.decision_making.trade_intent_reject_wal.write_trade_intent_rejected") as rejected_wal,
     ):
         handler = AuroraHandler(
             config=SimpleNamespace(
@@ -752,7 +752,65 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
     assert len(blocked) == 1
     assert blocked[0]["reason_code"] == "BARS_REQUIRED_COLD_START"
     assert blocked[0]["details"] == {"bars_seen": 1, "basis_required_bars": 5}
-    rejected_wal.assert_called_once()
+    rejected_wal.assert_not_called()
+
+
+def test_aurora_process_decision_readiness_contract_resolution_uses_blocked_truth_only() -> None:
+    blocked: list[dict] = []
+
+    with (
+        patch.object(AuroraHandler, "_load_config", lambda self: None),
+        patch("apps.reference.domains.decision_making.trade_intent_reject_wal.write_trade_intent_rejected") as rejected_wal,
+        patch(
+            "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+            side_effect=ValueError("broken: profile missing"),
+        ),
+    ):
+        handler = AuroraHandler(
+            config=SimpleNamespace(
+                strategies=SimpleNamespace(
+                    aurora=SimpleNamespace(
+                        decision=SimpleNamespace(scoring_version="v2"),
+                    )
+                ),
+                instruments=None,
+            ),
+            emit_fn=lambda *_args, **_kwargs: None,
+            monotonic_fn=lambda: 1_700_000_000.0,
+            wall_time_fn=lambda: 1_700_000_000.0,
+        )
+
+        handler._is_symbol_enabled = lambda symbol: True
+        handler._get_instrument_config = lambda symbol: SimpleNamespace(
+            allowed_regimes=["LOW_VOLATILITY"]
+        )
+        handler._check_regime_liveness = lambda symbol, state: None
+        handler._emit_strategy_blocked = lambda **kwargs: blocked.append(
+            kwargs)
+        handler._bars_seen_since_restart["BTCUSDT"] = 10
+
+        state = handler._symbol_states["BTCUSDT"]
+        state.regime = "LOW_VOLATILITY"
+        state.regime_ts_ms = 1_700_000_000_000
+
+        handler._process_decision(
+            "BTCUSDT",
+            {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1_700_000_000_000,
+                "rid": "readiness-contract-test",
+                "warmup": {"full_ready": True, "ready": {}},
+                "features": {"price": "100.0"},
+            },
+        )
+
+    assert len(blocked) == 1
+    assert blocked[0]["reason_code"] == "READINESS_CONTRACT_UNRESOLVED"
+    assert blocked[0]["details"] == {
+        "error": "READINESS_CONTRACT_UNRESOLVED:ValueError"
+    }
+    rejected_wal.assert_not_called()
 
 
 def test_aurora_seeded_basis_bars_bypass_cold_start_gate_into_anomaly_deferred() -> None:

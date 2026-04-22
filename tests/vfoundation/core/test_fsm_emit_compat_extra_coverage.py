@@ -1,22 +1,28 @@
-"""Extra coverage for fsm_emit_compat.py including import fallback."""
-import sys
-import importlib
-import pytest
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
 
-# Test the module import fallback
+import importlib
+import sys
+
+import pytest
+from unittest.mock import MagicMock
+
+
 def test_message_class_fallback(monkeypatch):
-    """Test the except Exception branch when protocol.Message fails to import."""
     import vfoundation.core.fsm_emit_compat as compat_mod
-    
-    # Hide the real module
+
     monkeypatch.setitem(sys.modules, "vfoundation.core.protocol", None)
-    
-    # Force reload
     importlib.reload(compat_mod)
-    
-    # Now compat_mod.Message should be the dummy class
-    msg = compat_mod.Message(op="EVT", verb="OPEN", src="A", dst="B", rid="r", pld={"x": 1}, why="t")
+
+    msg = compat_mod.Message(
+        op="EVT",
+        verb="OPEN",
+        src="A",
+        dst="B",
+        rid="r",
+        pld={"x": 1},
+        why="t",
+        data_ref=["obs://x"],
+    )
     assert msg.op == "EVT"
     assert msg.verb == "OPEN"
     assert msg.src == "A"
@@ -24,90 +30,73 @@ def test_message_class_fallback(monkeypatch):
     assert msg.rid == "r"
     assert msg.pld == {"x": 1}
     assert msg.why == "t"
-    
-    msg2 = compat_mod.Message(op="ASK")
-    assert msg2.pld == {}
-    
-    # Restore
+    assert msg.data_ref == ["obs://x"]
+
     monkeypatch.delitem(sys.modules, "vfoundation.core.protocol")
     importlib.reload(compat_mod)
 
+
 def test_get_exceptions():
     from vfoundation.core.fsm_emit_compat import _get
-    
+
     class PydV1Fail:
-        def dict(self): raise RuntimeError("dict fail")
-        
+        def dict(self):
+            raise RuntimeError("dict fail")
+
     class PydV2Fail:
-        def model_dump(self): raise ValueError("dump fail")
-        
+        def model_dump(self):
+            raise ValueError("dump fail")
+
     assert _get(PydV1Fail(), "k", "fb") == "fb"
     assert _get(PydV2Fail(), "k", "fb") == "fb"
 
 
 @pytest.mark.asyncio
-async def test_emit_compat_injection_and_exceptions():
-    from vfoundation.core.fsm_emit_compat import emit_compat, Message
-    
+async def test_emit_compat_async_override_to_4arg():
+    from vfoundation.core.fsm_emit_compat import Message, emit_compat
+
+    calls: list[tuple] = []
+
+    class FakeFsm:
+        _emit_compat_mode = "op_verb_payload_why"
+
+        async def emit(self, *args):
+            calls.append(args)
+            return "ok"
+
+    msg = Message(op="EVT", verb="V", src="S", dst="D", rid="R")
+    await emit_compat(FakeFsm(), msg)
+
+    assert calls == [("EVT", "V", {"verb": "V", "rid": "R", "src": "S", "dst": "D"}, None)]
+
+
+@pytest.mark.asyncio
+async def test_emit_compat_async_override_to_3arg():
+    from vfoundation.core.fsm_emit_compat import Message, emit_compat
+
+    calls: list[tuple] = []
+
+    class FakeFsm:
+        _emit_compat_mode = "op_payload_why"
+
+        async def emit(self, *args):
+            calls.append(args)
+            return "ok"
+
+    msg = Message(op="EVT", verb="V", src="S", dst="D", rid="R", why="w")
+    await emit_compat(FakeFsm(), msg)
+
+    assert calls == [("EVT", {"verb": "V", "rid": "R", "src": "S", "dst": "D"}, "w")]
+
+
+@pytest.mark.asyncio
+async def test_unresolved_emit_contract_logs_once():
+    from vfoundation.core.fsm_emit_compat import Message, emit_compat
+
     class FakeFsm:
         def emit(self, *args):
-            raise Exception("general error")
-            
+            raise AssertionError("should not be called")
+
     logger = MagicMock()
-    msg = Message(op="EVT", verb="TEST", src="a", dst="b", rid="r1")
-    
-    # We want to hit the injection logic lines 84-98 and exception handlers
-    msg.pld = ["not", "a", "dict"]  # Will trigger the except block in injecting verb
-    
-    await emit_compat(FakeFsm(), msg, logger=logger)
-    assert logger.debug.call_count >= 1
-    assert logger.exception.call_count >= 1
-
-    
-@pytest.mark.asyncio
-async def test_emit_compat_injection_success():
-    from vfoundation.core.fsm_emit_compat import emit_compat, Message
-    
-    call_args = []
-    class FakeFsm:
-        def emit(self, *args):
-            if len(args) == 4:
-                call_args.append(args)
-                return
-            raise TypeError("only 4 arg supported")
-            
-    # msg with missing metadata in pld
-    msg = Message(op="EVT", verb="V", src="S", dst="D", rid="R")
-    await emit_compat(FakeFsm(), msg)
-    
-    pld = call_args[0][2]
-    assert pld["verb"] == "V"
-    assert pld["src"] == "S"
-    assert pld["dst"] == "D"
-    assert pld["rid"] == "R"
-
-@pytest.mark.asyncio
-async def test_emit_compat_4arg_async():
-    from vfoundation.core.fsm_emit_compat import emit_compat, Message
-    
-    class FakeFsm:
-        async def emit(self, *args):
-            if len(args) == 4:
-                return "ok"
-            raise TypeError("only 4 arg")
-            
-    msg = Message(op="EVT", verb="V", src="S", dst="D", rid="R")
-    await emit_compat(FakeFsm(), msg)
-
-@pytest.mark.asyncio
-async def test_emit_compat_3arg_async():
-    from vfoundation.core.fsm_emit_compat import emit_compat, Message
-    
-    class FakeFsm:
-        async def emit(self, *args):
-            if len(args) == 3:
-                return "ok"
-            raise TypeError("only 3 arg")
-            
-    msg = Message(op="EVT", verb="V", src="S", dst="D", rid="R")
-    await emit_compat(FakeFsm(), msg)
+    await emit_compat(FakeFsm(), Message(op="EVT", verb="V", src="S", dst="D"), logger=logger)
+    logger.error.assert_called_once()

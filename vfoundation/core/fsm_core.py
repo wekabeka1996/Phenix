@@ -31,6 +31,8 @@ class FSMCore:
     Acts as an event bus that allows components to emit and listen for events.
     """
 
+    _emit_compat_mode = "message"
+
     def __init__(self) -> None:
         """Initialize the FSM core with empty listeners registry."""
         self.listeners: Dict[str, List[Callable]] = {}

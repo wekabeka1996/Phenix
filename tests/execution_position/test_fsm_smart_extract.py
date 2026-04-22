@@ -12,6 +12,7 @@ by payload structure variations.
 """
 
 import pytest
+from apps.reference.domains.execution_position.utils import resolve_price
 from unittest.mock import MagicMock, patch
 from typing import Optional
 
@@ -40,8 +41,8 @@ class TestFsmSmartExtract:
             "target_price": "28500.00",
         }
         
-        assert mock_fsm._resolve_price(pld, "stop_price") == "27000.50"
-        assert mock_fsm._resolve_price(pld, "target_price") == "28500.00"
+        assert resolve_price(pld, "stop_price") == "27000.50"
+        assert resolve_price(pld, "target_price") == "28500.00"
 
     def test_resolve_price_from_price_ctx(self, mock_fsm):
         """
@@ -66,8 +67,8 @@ class TestFsmSmartExtract:
         }
         
         # stop_price is ONLY in price_ctx, not at root
-        assert mock_fsm._resolve_price(pld, "stop_price") == "26500.00"
-        assert mock_fsm._resolve_price(pld, "target_price") == "29000.00"
+        assert resolve_price(pld, "stop_price") == "26500.00"
+        assert resolve_price(pld, "target_price") == "29000.00"
 
     def test_resolve_price_from_order(self, mock_fsm):
         """Test extraction from nested order object (legacy structure)."""
@@ -83,8 +84,8 @@ class TestFsmSmartExtract:
         }
         
         # stop_price is ONLY in order, not at root or price_ctx
-        assert mock_fsm._resolve_price(pld, "stop_price") == "1800.00"
-        assert mock_fsm._resolve_price(pld, "target_price") == "1700.00"
+        assert resolve_price(pld, "stop_price") == "1800.00"
+        assert resolve_price(pld, "target_price") == "1700.00"
 
     def test_resolve_price_priority_root_over_price_ctx(self, mock_fsm):
         """Test that root level has priority over price_ctx."""
@@ -96,7 +97,7 @@ class TestFsmSmartExtract:
         }
         
         # Root should win
-        assert mock_fsm._resolve_price(pld, "stop_price") == "27000.00"
+        assert resolve_price(pld, "stop_price") == "27000.00"
 
     def test_resolve_price_priority_price_ctx_over_order(self, mock_fsm):
         """Test that price_ctx has priority over order."""
@@ -110,7 +111,7 @@ class TestFsmSmartExtract:
         }
         
         # price_ctx should win
-        assert mock_fsm._resolve_price(pld, "stop_price") == "26500.00"
+        assert resolve_price(pld, "stop_price") == "26500.00"
 
     def test_resolve_price_returns_none_for_missing(self, mock_fsm):
         """Test that None is returned when field is not found anywhere."""
@@ -122,8 +123,8 @@ class TestFsmSmartExtract:
             }
         }
         
-        assert mock_fsm._resolve_price(pld, "stop_price") is None
-        assert mock_fsm._resolve_price(pld, "target_price") is None
+        assert resolve_price(pld, "stop_price") is None
+        assert resolve_price(pld, "target_price") is None
 
     def test_resolve_price_ignores_null_values(self, mock_fsm):
         """Test that null/None/'None' values are skipped."""
@@ -137,7 +138,7 @@ class TestFsmSmartExtract:
             }
         }
         
-        assert mock_fsm._resolve_price(pld, "stop_price") == "27000.00"
+        assert resolve_price(pld, "stop_price") == "27000.00"
 
     def test_resolve_price_ignores_empty_string(self, mock_fsm):
         """Test that empty strings are skipped."""
@@ -148,7 +149,7 @@ class TestFsmSmartExtract:
             }
         }
         
-        assert mock_fsm._resolve_price(pld, "stop_price") == "26500.00"
+        assert resolve_price(pld, "stop_price") == "26500.00"
 
 
 class TestMetadataExtraction:

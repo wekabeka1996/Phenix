@@ -295,6 +295,9 @@ def test_canonical_trade_intent_reject_helper_writes_observability_and_closes_li
     from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
         emit_canonical_trade_intent_rejected_event,
     )
+    from apps.reference.domains.decision_making.normalized_reject_reasons import (
+        build_trade_intent_rejected_message,
+    )
     from apps.reference.telemetry.trade_lifecycle_logger import TradeLifecycleLogger
     from vfoundation.core.schema_registry import init_global_registry
 
@@ -348,9 +351,20 @@ def test_canonical_trade_intent_reject_helper_writes_observability_and_closes_li
 
     assert len(wal_records) == 1
     wal_payload = wal_records[0]["pld"]
+    expected_record = build_trade_intent_rejected_message(
+        normalized,
+        src="execution_position",
+        rid=rid,
+    ).model_dump()
     _validate_reject_payload(wal_payload)
     assert wal_payload["rid"] == rid
     assert "reason" not in wal_payload
+    assert wal_records[0]["op"] == expected_record["op"]
+    assert wal_records[0]["verb"] == expected_record["verb"]
+    assert wal_records[0]["src"] == expected_record["src"]
+    assert wal_records[0]["dst"] == expected_record["dst"]
+    assert wal_records[0]["ts"] == expected_record["ts"]
+    assert wal_records[0]["why"] == expected_record["why"]
 
     shadow_records = _read_jsonl(journal_path)
     shadow_events = [r for r in shadow_records if r["event_name"] == "EVT:TRADE_INTENT_REJECTED"]

@@ -261,6 +261,12 @@ registry:
   schema: null
   since: '2026-01-08'
 - op: EVT
+  verb: GATE_CHAIN_TRACE
+  owner: decision_making
+  status: active
+  schema: apps/reference/domains/decision_making/schemas/gate_chain_trace_v1.json
+  since: '2026-04-22'
+- op: EVT
   verb: INTENT_DEFERRED
   owner: decision_making
   status: active
@@ -388,9 +394,9 @@ registry:
   since: '2026-02-26'
 - op: EVT
   verb: POSITION_CLOSED
-  owner: unknown
-  status: experimental
-  schema: null
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/position_closed_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: REGIME_DETECTED

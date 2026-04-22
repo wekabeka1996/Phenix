@@ -19,6 +19,20 @@ class TestStrategyGatewayTimeContract:
         dm_mock.symbol_states = {"BTCUSDT": {"risk": {"risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}}}}
         dm_mock.config.domains.risk_management.trading_allowed_thresholds.max_risk_score = 100
         dm_mock.latest_portfolio = {"equity": 1000}
+        # Configure safety_gates for test_strat to avoid DENY from MagicMock auto-attrs
+        from types import SimpleNamespace
+        dm_mock.config.strategies = SimpleNamespace(
+            aurora=SimpleNamespace(
+                decision=SimpleNamespace(retry_max_count=5, retry_backoff_factor=2.0),
+                safety_gates=SimpleNamespace(system_stress_policy="off"),
+            ),
+            test_strat=SimpleNamespace(
+                decision=SimpleNamespace(retry_max_count=5, retry_backoff_factor=2.0),
+                safety_gates=SimpleNamespace(system_stress_policy="off"),
+            ),
+        )
+        dm_mock._per_symbol_regimes = {}
+        dm_mock._system_stress_states = {}
         
         # Mock Gate responses
         dm_mock._check_strategy_arbitration.return_value = {"allowed": True}

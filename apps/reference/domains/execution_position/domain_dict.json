@@ -39,6 +39,7 @@
     {"event_name": "EVT:ORDER_STATE_CHANGED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:ORDER_TIMEOUT", "target_domains": ["monitoring"]},
     {"event_name": "EVT:LIMIT_ORDER_TIMEOUT", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:POSITION_CLOSED", "target_domains": ["decision_making", "monitoring"]},
     {"event_name": "EVT:EXPOSURE_SUMMARY_UPDATED", "target_domains": ["risk_management", "decision_making"]},
     {"event_name": "EVT:EXPOSURE_MISMATCH", "target_domains": ["monitoring"]},
     {"event_name": "EVT:PENDING_EXPOSURE_EXPIRED", "target_domains": ["monitoring"]},

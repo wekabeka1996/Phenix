@@ -346,15 +346,33 @@ class OrderIndex:
 
         Used by DecisionMaking to enforce "one open order per symbol" (TASK40).
         """
+        return self.get_in_flight_entry(symbol) is not None
+
+    def get_in_flight_entry(
+        self,
+        symbol: str,
+        *,
+        exclude_rid: Optional[str] = None,
+    ) -> Optional[OrderRef]:
+        """Return the current non-terminal ENTRY ref for ``symbol``.
+
+        The lookup ignores terminal refs and aged-out refs so callers can fail
+        closed on real in-flight entry lifecycles without getting stuck behind
+        stale placeholders forever.
+        """
         if not symbol:
-            return False
-        symbol = str(symbol)
+            return None
+        symbol_key = str(symbol).strip().upper()
+        exclude_rid_key = str(exclude_rid).strip() if exclude_rid is not None else None
+
         with self._lock:
             now = time()
             for ref in self._by_rid.values():
                 if ref.terminal:
                     continue
-                if ref.symbol != symbol:
+                if str(ref.symbol or "").strip().upper() != symbol_key:
+                    continue
+                if exclude_rid_key and str(ref.rid or "").strip() == exclude_rid_key:
                     continue
                 if not self._is_entry_ref(ref):
                     continue
@@ -364,8 +382,8 @@ class OrderIndex:
                     # Guard is best-effort; never block indefinitely due to missing terminal updates.
                     continue
 
-                return True
-            return False
+                return ref
+            return None
 
     def try_reserve_entry(self, symbol: str, rid: str) -> bool:
         """

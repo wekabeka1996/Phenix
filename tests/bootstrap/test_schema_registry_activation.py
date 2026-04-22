@@ -55,6 +55,7 @@ def _trade_intent_payload() -> dict:
             "reduce_only": False,
             "order_type": "MARKET",
         },
+        "regime_epoch_ref": "stable_epoch:BTCUSDT:1700000000000",
         "why": ["boundary_hardening"],
         "dto_version": "1.0.0",
         "schema_ref": "trade_intent_v1.json",
@@ -321,9 +322,51 @@ def test_old_style_trade_intent_contract_rejects_trace_before_listener_dispatch(
                lambda msg: observed.append(msg.pld))
 
     payload = deepcopy(_trade_intent_payload())
+    payload.pop("regime_epoch_ref", None)
 
     with pytest.raises(InvalidMessagePayloadError, match="trace"):
         fsm.emit("EVT:TRADE_INTENT_PROPOSED",
                  payload=payload, why="historical_regression")
 
     assert observed == []
+
+
+def test_fsm_emit_validates_position_closed_contract() -> None:
+    """Current runtime contract must accept EVT:POSITION_CLOSED with required fields."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:POSITION_CLOSED", lambda msg: observed.append(msg.pld))
+
+    payload = {
+        "symbol": "BTCUSDT",
+        "trade_id": "10001",
+        "close_reason": "POSITION_CLOSED_DETECTED",
+        "close_ts_ms": 1700000000000,
+        "realized_pnl_net": -1.25,
+        "fees": 0.05,
+        "entry_regime_epoch_ref": None,
+    }
+
+    fsm.emit("EVT:POSITION_CLOSED", payload=payload, why="close_contract")
+
+    assert observed
+    assert observed[0]["trade_id"] == "10001"
+
+
+def test_fsm_emit_rejects_position_closed_without_entry_regime_epoch_ref_field() -> None:
+    """entry_regime_epoch_ref is field-required even when explicit null is allowed."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+
+    payload = {
+        "symbol": "BTCUSDT",
+        "trade_id": "10001",
+        "close_reason": "POSITION_CLOSED_DETECTED",
+        "close_ts_ms": 1700000000000,
+        "realized_pnl_net": -1.25,
+        "fees": 0.05,
+    }
+
+    with pytest.raises(InvalidMessagePayloadError, match="entry_regime_epoch_ref"):
+        fsm.emit("EVT:POSITION_CLOSED", payload=payload, why="close_contract_missing_epoch")

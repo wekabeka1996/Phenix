@@ -40,6 +40,7 @@ class OpenDispatchPayload(BaseModel):
         default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     sl_pct: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     idempotent_key: Optional[str] = Field(default=None)
+    regime_epoch_ref: Optional[str] = Field(default=None)
     regime: Optional[str] = Field(default=None)
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     regime_provenance: Optional[Dict[str, Any]] = Field(default=None)
@@ -73,6 +74,7 @@ class OpenDispatchPayload(BaseModel):
         target_price: Optional[str],
         sl_pct: Optional[str],
         idempotent_key: Optional[str],
+        regime_epoch_ref: Optional[str],
         regime: Optional[str],
         regime_confidence: Optional[float],
         regime_provenance: Optional[Dict[str, Any]],
@@ -91,6 +93,7 @@ class OpenDispatchPayload(BaseModel):
                 target_price=target_price,
                 sl_pct=sl_pct,
                 idempotent_key=idempotent_key,
+                regime_epoch_ref=regime_epoch_ref,
                 regime=regime,
                 regime_confidence=regime_confidence,
                 regime_provenance=regime_provenance,
@@ -104,6 +107,7 @@ class OpenDispatchPayload(BaseModel):
             "side": self.side,
             "qty": self.qty,
             "order_type": self.order_type,
+            "regime_epoch_ref": self.regime_epoch_ref,
             "regime": self.regime,
             "regime_confidence": self.regime_confidence,
             "regime_provenance": self.regime_provenance,

@@ -46,6 +46,7 @@ def _make_intent_payload(**overrides) -> dict:
         "idempotent_key": "KEY-TYPED-OPEN-1",
         "stop_price": "49000",
         "target_price": "51000",
+        "regime_epoch_ref": "stable_epoch:BTCUSDT:1700000000000",
         "regime": "TREND_UP",
         "regime_confidence": 0.81,
         "regime_provenance": {
@@ -125,6 +126,7 @@ def test_valid_trade_intent_passes_through_typed_open_intake_and_builds_cmd_open
     assert cmd_open.pld["price"] == "50000"
     assert cmd_open.pld["tif"] == "GTC"
     assert cmd_open.pld["valid_for_ms"] == 15000
+    assert cmd_open.pld["regime_epoch_ref"] == "stable_epoch:BTCUSDT:1700000000000"
     assert cmd_open.pld["metadata"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
     assert cmd_open.pld["metadata"]["execution_intake_path"] == "EVT:TRADE_INTENT_PROPOSED->CMD:OPEN"
     assert "tf_sec" not in cmd_open.pld["metadata"]
@@ -247,6 +249,7 @@ def test_downstream_cmd_open_payload_validation_still_runs_after_typed_intake(fs
 
     assert calls, "Expected downstream CmdOpenPayload.model_validate to run"
     assert calls[0]["metadata"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
+    assert calls[0]["regime_epoch_ref"] == "stable_epoch:BTCUSDT:1700000000000"
 
 
 def test_schema_validation_for_trade_intent_proposed_remains_compatible() -> None:
@@ -265,6 +268,7 @@ def test_schema_validation_for_trade_intent_proposed_remains_compatible() -> Non
 
     assert observed
     assert observed[0]["instrument"] == "BTCUSDT"
+    assert observed[0]["regime_epoch_ref"] == "stable_epoch:BTCUSDT:1700000000000"
 
 
 def test_typed_intake_rejection_diagnostics_are_operator_visible() -> None:

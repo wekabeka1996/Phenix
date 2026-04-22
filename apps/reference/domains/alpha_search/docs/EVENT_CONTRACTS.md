@@ -64,7 +64,7 @@ The JUDGE_* event line belongs to alpha_search ownership in the current tree, bu
 - it is emitted only by the embedded plugin path
 - it requires judge.mode=shadow
 - it is evidence production, not trade-admission logic
-- the current registry notes these events as shadow-only and not consumed by decision_making
+- the current documented and runtime boundary treats these events as shadow-only and outside the decision_making trade-admission flow
 
 This is the main place where earlier alpha_search docs were incomplete. The domain now owns more than the generic alpha-score stream.
 

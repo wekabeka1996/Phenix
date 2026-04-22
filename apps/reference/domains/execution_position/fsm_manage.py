@@ -22,6 +22,13 @@ from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.bracket_math import compute_bracket_targets
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
 from apps.reference.config_models import AuroraConfig, AuroraInstrumentConfig
+from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+    MANAGE_MAX_HOLD_CLOSE_CONTRACT,
+    MANAGE_MAX_HOLD_CLOSE_PATH,
+    ManageMaxHoldCloseBridgeError,
+    adapt_manage_max_hold_to_dec_close,
+    build_manage_max_hold_close_trace_ref,
+)
 from apps.reference.utils.accessors import aget, dget
 from apps.reference.domains.execution_position.utils import (
     classify_client_order_id,
@@ -179,6 +186,7 @@ class ManageFlowFSM:
             "fsm_bracket_orders_placed": 0,
             "fsm_trailing_adjustments": 0,
             "fsm_max_hold_timeouts": 0,
+            "fsm_max_hold_bridge_rejects_total": 0,
             "fsm_partial_exits_total": 0,
             "fsm_errors_total": 0,
         }
@@ -364,26 +372,50 @@ class ManageFlowFSM:
             self._metrics["fsm_max_hold_timeouts"] = int(
                 self._metrics["fsm_max_hold_timeouts"]) + 1
             msg_pld = msg.pld or {}
+            try:
+                _intake, emission, decision = adapt_manage_max_hold_to_dec_close(
+                    msg,
+                    symbol=self.symbol or msg_pld.get("symbol"),
+                    side=self._get_opposite_side(),
+                    qty=self.position_qty,
+                    elapsed_sec=elapsed_sec,
+                    max_hold_sec=max_hold_sec,
+                    position_open_ts=self.position_open_ts,
+                )
+            except ManageMaxHoldCloseBridgeError as exc:
+                reject_ref = build_manage_max_hold_close_trace_ref(
+                    status="reject",
+                    reason="intake_validation",
+                )
+                existing_refs = list(getattr(msg, "data_ref", None) or [])
+                if reject_ref not in existing_refs:
+                    existing_refs.append(reject_ref)
+                    try:
+                        msg.data_ref = existing_refs
+                    except Exception:
+                        pass
+                self._metrics["fsm_errors_total"] += 1
+                self._metrics["fsm_max_hold_bridge_rejects_total"] += 1
+                LOG.error(
+                    "MANAGE_MAX_HOLD_CLOSE_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+                    MANAGE_MAX_HOLD_CLOSE_CONTRACT,
+                    MANAGE_MAX_HOLD_CLOSE_PATH,
+                    getattr(msg, "rid", None),
+                    "intake_validation",
+                    exc,
+                )
+                return None
 
-            # Emit close message (canonical verb used by ExecPosFSM + drift monitor)
-            return Message(
-                op="DEC",
-                verb="CLOSE",
-                src="execution_position",
-                dst="execution_position",
-                rid=msg.rid,
-                why=f"max_hold_timeout_{int(elapsed_sec)}s_reduce_only",
-                pld={
-                    "symbol": self.symbol or (msg_pld["symbol"] if "symbol" in msg_pld else ""),
-                    "side": self._get_opposite_side(),
-                    "qty": str(self.position_qty),
-                    "reduce_only": True,
-                    "reason": "MAX_HOLD_TIME_EXCEEDED",
-                    "elapsed_sec": elapsed_sec,
-                    "max_hold_sec": max_hold_sec,
-                },
-                data_ref=msg.data_ref.copy() if msg.data_ref else [],
+            LOG.info(
+                "MANAGE_MAX_HOLD_CLOSE_SUCCESS: contract=%s path=%s rid=%s symbol=%s idempotent_key=%s trigger=%s",
+                MANAGE_MAX_HOLD_CLOSE_CONTRACT,
+                MANAGE_MAX_HOLD_CLOSE_PATH,
+                getattr(msg, "rid", None),
+                emission.symbol,
+                emission.idempotent_key,
+                emission.trigger,
             )
+            return decision
 
         return None
 

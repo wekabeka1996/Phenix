@@ -27,6 +27,39 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
+from apps.reference.domains.execution_position.cancel_submission_adapter import (
+    CancelSubmissionAdapterError,
+    CancelSubmissionPayload,
+    build_cancel_submission_trace_ref,
+)
+from apps.reference.domains.execution_position.guardian_pre_close_cleanup_bridge import (
+    GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
+    GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
+    GuardianPreCloseCleanupBridgeError,
+    adapt_guardian_pre_close_cleanup_to_dec_cancel,
+    build_guardian_pre_close_cleanup_trace_ref,
+)
+from apps.reference.domains.execution_position.guardian_old_bracket_cleanup_bridge import (
+    GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
+    GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
+    GuardianOldBracketCleanupBridgeError,
+    adapt_guardian_old_bracket_cleanup_to_dec_cancel,
+    build_guardian_old_bracket_cleanup_trace_ref,
+)
+from apps.reference.domains.execution_position.guardian_reconcile_cancel_bridge import (
+    GUARDIAN_RECONCILE_CANCEL_PATH,
+    GUARDIAN_RECONCILE_CANCEL_TRIGGER,
+    GuardianReconcileCancelBridgeError,
+    adapt_guardian_reconcile_to_dec_cancel,
+    build_guardian_reconcile_cancel_trace_ref,
+)
+from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+    GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
+    GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
+    GuardianBackgroundOrphanCancelBridgeError,
+    adapt_guardian_background_orphan_to_dec_cancel,
+    build_guardian_background_orphan_cancel_trace_ref,
+)
 from apps.reference.domains.execution_position.utils import coerce_exchange_bool
 from decimal import Decimal
 import threading
@@ -873,20 +906,14 @@ class OrderGuardian:
                 brackets = self.get_brackets_for_entry(parent_order_id)
                 for bracket_type, bracket_info in brackets.items():
                     order_id = bracket_info["order_id"]
-                    try:
-                        result = await self.adapter.cancel_order(symbol, order_id)
-                        if self._is_successful_cancel(result):
-                            cancelled_count += 1
-                            LOG.info("Bracket cancelled for entry", extra={
-                                "event_type": "cleanup_before_close",
-                                "symbol": symbol,
-                                "parent_order_id": parent_order_id,
-                                "bracket_order_id": order_id,
-                                "bracket_type": bracket_type
-                            })
-                    except Exception as e:
-                        LOG.warning(
-                            f"Failed to cancel bracket {order_id}: {e}")
+                    typed_cancelled = await self._execute_guardian_pre_close_cleanup_cancel(
+                        symbol=symbol,
+                        order_id=order_id,
+                        bracket_type=str(bracket_type or "UNKNOWN"),
+                        parent_order_id=str(parent_order_id),
+                    )
+                    if typed_cancelled:
+                        cancelled_count += 1
             else:
                 pass
 
@@ -973,11 +1000,428 @@ class OrderGuardian:
             LOG.error(
                 "[%s] CRITICAL: Failed to emit close reconcile event: %s", symbol, exc)
 
+    def _guardian_pre_close_cleanup_log_reject(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        bracket_type: str,
+        parent_order_id: str,
+        reason: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_pre_close_cleanup_bridge_reject",
+            "symbol": symbol,
+            "order_id": order_id,
+            "bracket_type": bracket_type,
+            "parent_order_id": parent_order_id,
+            "trigger": GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
+            "bridge_path": GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+            "reason": reason,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        LOG.warning(
+            "[GUARD] Rejecting pre-close cleanup for %s (%s): %s",
+            order_id,
+            symbol,
+            reason,
+            extra=extra,
+        )
+
+    def _guardian_pre_close_cleanup_log_success(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        parent_order_id: str,
+        bracket_type: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: str,
+    ) -> None:
+        LOG.info(
+            "Bracket cancelled for entry",
+            extra={
+                "event_type": "cleanup_before_close",
+                "symbol": symbol,
+                "parent_order_id": parent_order_id,
+                "bracket_order_id": order_id,
+                "bracket_type": bracket_type,
+                "trigger": GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
+                "bridge_path": GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
+                "bridge_trace_ref": bridge_trace_ref,
+                "cancel_submission_trace_ref": package4_trace_ref,
+            },
+        )
+
+    def _guardian_pre_close_cleanup_log_failure(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        bracket_type: str,
+        parent_order_id: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+        exc: Optional[Exception] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_pre_close_cleanup_bridge_failure",
+            "symbol": symbol,
+            "order_id": order_id,
+            "bracket_type": bracket_type,
+            "parent_order_id": parent_order_id,
+            "trigger": GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
+            "bridge_path": GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        if result is not None:
+            extra["result"] = result
+        if exc is not None:
+            extra["error"] = str(exc)
+            LOG.warning(
+                "Failed to cancel bracket %s for %s: %s",
+                order_id,
+                symbol,
+                exc,
+                extra=extra,
+            )
+            return
+        LOG.warning(
+            "Failed to cancel bracket %s for %s, result: %s",
+            order_id,
+            symbol,
+            result,
+            extra=extra,
+        )
+
+    async def _execute_guardian_pre_close_cleanup_cancel(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        bracket_type: str,
+        parent_order_id: str,
+    ) -> bool:
+        try:
+            request, cancel_decision = adapt_guardian_pre_close_cleanup_to_dec_cancel(
+                symbol=symbol,
+                order_id=order_id,
+                bracket_type=bracket_type,
+                parent_order_id=parent_order_id,
+            )
+        except GuardianPreCloseCleanupBridgeError as exc:
+            bridge_trace_ref = build_guardian_pre_close_cleanup_trace_ref(
+                status="reject",
+                bracket_type=str(bracket_type or "UNKNOWN"),
+                reason="bridge_validation",
+            )
+            self._guardian_pre_close_cleanup_log_reject(
+                symbol=symbol,
+                order_id=order_id,
+                bracket_type=str(bracket_type or "UNKNOWN"),
+                parent_order_id=parent_order_id,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+            )
+            return False
+
+        bridge_trace_ref = build_guardian_pre_close_cleanup_trace_ref(
+            status="success",
+            bracket_type=request.bracket_type,
+        )
+        try:
+            submission = CancelSubmissionPayload.from_dec_cancel(
+                payload=cancel_decision.pld or {}
+            )
+        except CancelSubmissionAdapterError as exc:
+            package4_trace_ref = build_cancel_submission_trace_ref(
+                status="reject",
+                reason="adapter_validation",
+            )
+            self._guardian_pre_close_cleanup_log_reject(
+                symbol=request.symbol,
+                order_id=request.order_id,
+                bracket_type=request.bracket_type,
+                parent_order_id=request.parent_order_id,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+            )
+            return False
+
+        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        try:
+            result = await self.adapter.cancel_order(
+                submission.symbol,
+                submission.order_id,
+            )
+            if self._is_successful_cancel(result):
+                self._guardian_pre_close_cleanup_log_success(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    parent_order_id=parent_order_id,
+                    bracket_type=request.bracket_type,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                )
+                return True
+            self._guardian_pre_close_cleanup_log_failure(
+                symbol=submission.symbol,
+                order_id=submission.order_id,
+                bracket_type=request.bracket_type,
+                parent_order_id=parent_order_id,
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+                result=result if isinstance(result, dict) else None,
+            )
+            return False
+        except Exception as exc:
+            self._guardian_pre_close_cleanup_log_failure(
+                symbol=submission.symbol,
+                order_id=submission.order_id,
+                bracket_type=request.bracket_type,
+                parent_order_id=parent_order_id,
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+                exc=exc,
+            )
+            return False
+
+    def _guardian_reconcile_cancel_log_reject(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        rid: Optional[str],
+        reason: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_reconcile_cancel_bridge_reject",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "rid": rid,
+            "trigger": GUARDIAN_RECONCILE_CANCEL_TRIGGER,
+            "bridge_path": GUARDIAN_RECONCILE_CANCEL_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+            "reason": reason,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        LOG.warning(
+            "[GUARD] Rejecting reconcile orphan cancel for %s (%s): %s",
+            order_id,
+            symbol,
+            reason,
+            extra=extra,
+        )
+
+    def _guardian_reconcile_cancel_log_success(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_meta: Dict[str, Any],
+        rid: Optional[str],
+        position_amt: float,
+        bridge_trace_ref: str,
+        package4_trace_ref: str,
+    ) -> None:
+        LOG.info(
+            f"[GUARD] Orphan bracket cancelled: {order_id} ({order_meta.get('kind', 'unknown')} for {order_meta.get('parent_entry_id', 'unknown')})",
+            extra={
+                "event_type": "cleanup_orphans",
+                "symbol": symbol,
+                "order_id": order_id,
+                "client_order_id": order_meta.get("client_order_id"),
+                "parent_entry_id": order_meta.get("parent_entry_id"),
+                "kind": order_meta.get("kind"),
+                "hard": True,
+                "position_amt": position_amt,
+                "rid": rid,
+                "trigger": GUARDIAN_RECONCILE_CANCEL_TRIGGER,
+                "bridge_path": GUARDIAN_RECONCILE_CANCEL_PATH,
+                "bridge_trace_ref": bridge_trace_ref,
+                "cancel_submission_trace_ref": package4_trace_ref,
+            },
+        )
+
+    def _guardian_reconcile_cancel_log_failure(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_type: str,
+        rid: Optional[str],
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+        exc: Optional[Exception] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_reconcile_cancel_bridge_failure",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "rid": rid,
+            "trigger": GUARDIAN_RECONCILE_CANCEL_TRIGGER,
+            "bridge_path": GUARDIAN_RECONCILE_CANCEL_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        if result is not None:
+            extra["result"] = result
+        if exc is not None:
+            extra["error"] = str(exc)
+            LOG.warning(
+                "[GUARD] Failed to cancel orphan %s for %s: %s",
+                order_id,
+                symbol,
+                exc,
+                extra=extra,
+            )
+            return
+        LOG.warning(
+            "[GUARD] Failed to cancel order %s for %s, result: %s",
+            order_id,
+            symbol,
+            result,
+            extra=extra,
+        )
+
+    async def _execute_guardian_reconcile_cancel(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        order_meta: Dict[str, Any],
+        position_amt: float,
+        rid: Optional[str],
+    ) -> bool:
+        try:
+            request, cancel_decision = adapt_guardian_reconcile_to_dec_cancel(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=order_type,
+                rid=rid,
+            )
+        except GuardianReconcileCancelBridgeError as exc:
+            bridge_trace_ref = build_guardian_reconcile_cancel_trace_ref(
+                status="reject",
+                order_type=str(order_type or "UNKNOWN"),
+                reason="bridge_validation",
+            )
+            self._guardian_reconcile_cancel_log_reject(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=str(order_type or "UNKNOWN"),
+                rid=rid,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+            )
+            return False
+
+        bridge_trace_ref = build_guardian_reconcile_cancel_trace_ref(
+            status="success",
+            order_type=request.order_type,
+        )
+        try:
+            submission = CancelSubmissionPayload.from_dec_cancel(
+                payload=cancel_decision.pld or {}
+            )
+        except CancelSubmissionAdapterError as exc:
+            package4_trace_ref = build_cancel_submission_trace_ref(
+                status="reject",
+                reason="adapter_validation",
+            )
+            self._guardian_reconcile_cancel_log_reject(
+                symbol=request.symbol,
+                order_id=request.order_id,
+                order_type=request.order_type,
+                rid=rid,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+            )
+            return False
+
+        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        try:
+            result = await self.adapter.cancel_order(
+                submission.symbol,
+                submission.order_id,
+            )
+            if self._is_successful_cancel(result):
+                self._guardian_reconcile_cancel_log_success(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_meta=order_meta,
+                    rid=rid,
+                    position_amt=position_amt,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                )
+                return True
+            self._guardian_reconcile_cancel_log_failure(
+                symbol=submission.symbol,
+                order_id=submission.order_id,
+                order_type=request.order_type,
+                rid=rid,
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+                result=result if isinstance(result, dict) else None,
+            )
+            return False
+        except Exception as exc:
+            is_unknown_error = isinstance(
+                exc, BinanceAPIError
+            ) and getattr(exc, "code", None) == -2011
+            if not is_unknown_error and "unknown order" not in str(exc).lower():
+                self._guardian_reconcile_cancel_log_failure(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_type=request.order_type,
+                    rid=rid,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                    exc=exc,
+                )
+                return False
+            LOG.info(
+                f"[GUARD] Orphan {submission.order_id} already absent (-2011) for {submission.symbol}",
+                extra={
+                    "event_type": "cleanup_orphans",
+                    "symbol": submission.symbol,
+                    "order_id": submission.order_id,
+                    "hard": True,
+                    "position_amt": position_amt,
+                    "rid": rid,
+                    "trigger": GUARDIAN_RECONCILE_CANCEL_TRIGGER,
+                    "bridge_path": GUARDIAN_RECONCILE_CANCEL_PATH,
+                    "bridge_trace_ref": bridge_trace_ref,
+                    "cancel_submission_trace_ref": package4_trace_ref,
+                },
+            )
+            return True
+
     async def cleanup_orphans(
         self,
         symbol: Optional[str] = None,
         hard: bool = False,
-        batch_limit: int = 50
+        batch_limit: int = 50,
+        rid: Optional[str] = None,
     ) -> int:
         """
         Cancel our bracket orders when positionAmt==0 or parent missing.
@@ -1121,6 +1565,7 @@ class OrderGuardian:
             })
 
             cancelled_this_batch = 0
+            typed_guardian_reconcile_path = bool(symbol and hard)
             for raw_order in open_orders:
                 order = self._normalize_order_payload(raw_order)
                 if not order:
@@ -1181,45 +1626,39 @@ class OrderGuardian:
                         "hard": hard
                     })
 
-                    try:
-                        result = await self.adapter.cancel_order(symbol or order_meta["symbol"], order_id)
-                        if self._is_successful_cancel(result):
+                    if typed_guardian_reconcile_path:
+                        typed_cancelled = await self._execute_guardian_reconcile_cancel(
+                            symbol=str(symbol or order_meta["symbol"]),
+                            order_id=order_id,
+                            order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                            order_meta=order_meta,
+                            position_amt=position_amt,
+                            rid=rid,
+                        )
+                        if typed_cancelled:
                             cancelled_count += 1
                             cancelled_this_batch += 1
-
                             self._metrics["guardian_orphans_cancelled_total"] += 1
                             tracked_symbol = symbol or order_meta["symbol"]
                             if tracked_symbol:
                                 tidied_symbols.add(str(tracked_symbol).upper())
+                        continue
 
-                            LOG.info(f"[GUARD] Orphan bracket cancelled: {order_id} ({order_meta.get('kind', 'unknown')} for {order_meta.get('parent_entry_id', 'unknown')})", extra={
-                                "event_type": "cleanup_orphans",
-                                "symbol": symbol or order_meta["symbol"],
-                                "order_id": order_id,
-                                "client_order_id": order_meta.get("client_order_id"),
-                                "parent_entry_id": order_meta.get("parent_entry_id"),
-                                "kind": order_meta.get("kind"),
-                                "hard": hard,
-                                "position_amt": position_amt
-                            })
-                        else:
-                            LOG.warning(
-                                f"[GUARD] Failed to cancel order {order_id}, result: {result}")
-                    except Exception as e:
-                        is_unknown_error = isinstance(
-                            e, BinanceAPIError) and getattr(e, "code", None) == -2011
-                        if not is_unknown_error and "unknown order" not in str(e).lower():
-                            LOG.warning(
-                                f"[GUARD] Failed to cancel orphan {order_id}: {e}")
-                        else:
-                            cancelled_count += 1
-                            cancelled_this_batch += 1
-                            self._metrics["guardian_orphans_cancelled_total"] += 1
-                            tracked_symbol = symbol or order_meta.get("symbol")
-                            if tracked_symbol:
-                                tidied_symbols.add(str(tracked_symbol).upper())
-                            LOG.info(
-                                f"[GUARD] Orphan {order_id} already absent (-2011) for {tracked_symbol}")
+                    # Package 12 typed seam — background orphan cancel (hard=False)
+                    typed_cancelled = await self._execute_guardian_background_orphan_cancel(
+                        symbol=str(symbol or order_meta["symbol"]),
+                        order_id=order_id,
+                        order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                        position_amt=position_amt,
+                        order_meta=order_meta,
+                    )
+                    if typed_cancelled:
+                        cancelled_count += 1
+                        cancelled_this_batch += 1
+                        self._metrics["guardian_orphans_cancelled_total"] += 1
+                        tracked_symbol = symbol or order_meta["symbol"]
+                        if tracked_symbol:
+                            tidied_symbols.add(str(tracked_symbol).upper())
                 else:
                     LOG.debug(
                         f"Order {order_id} is not a bracket (reduce_only={order_meta.get('reduce_only')}, close_position={order_meta.get('close_position')})")
@@ -1251,6 +1690,435 @@ class OrderGuardian:
             LOG.error(f"Orphan cleanup failed: {e}")
 
         return cancelled_count
+
+    def _guardian_old_bracket_cleanup_log_reject(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        keep_parent_order_id: str,
+        reason: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_old_bracket_cleanup_bridge_reject",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "keep_parent_order_id": keep_parent_order_id,
+            "trigger": GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
+            "bridge_path": GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+            "reason": reason,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        LOG.warning(
+            "[GUARD] Rejecting old bracket cleanup for %s (%s): %s",
+            order_id,
+            symbol,
+            reason,
+            extra=extra,
+        )
+
+    def _guardian_old_bracket_cleanup_log_success(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_meta: Dict[str, Any],
+        keep_parent_order_id: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: str,
+    ) -> None:
+        LOG.info(
+            "[GUARD] Cancelled old bracket for previous entry",
+            extra={
+                "event_type": "cleanup_other_brackets",
+                "symbol": symbol,
+                "order_id": order_id,
+                "client_order_id": order_meta.get("client_order_id"),
+                "parent_entry_id": order_meta.get("parent_entry_id"),
+                "keep_parent_order_id": keep_parent_order_id,
+                "trigger": GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
+                "bridge_path": GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
+                "bridge_trace_ref": bridge_trace_ref,
+                "cancel_submission_trace_ref": package4_trace_ref,
+            },
+        )
+
+    def _guardian_old_bracket_cleanup_log_failure(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_type: str,
+        keep_parent_order_id: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+        exc: Optional[Exception] = None,
+    ) -> None:
+        extra = {
+            "event_type": "guardian_old_bracket_cleanup_bridge_failure",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "keep_parent_order_id": keep_parent_order_id,
+            "trigger": GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
+            "bridge_path": GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        if result is not None:
+            extra["result"] = result
+        if exc is not None:
+            extra["error"] = str(exc)
+            LOG.warning(
+                "[GUARD] Exception cancelling old bracket %s for %s: %s",
+                order_id,
+                symbol,
+                exc,
+                extra=extra,
+            )
+            return
+        LOG.warning(
+            "[GUARD] Failed to cancel old bracket %s for %s, result: %s",
+            order_id,
+            symbol,
+            result,
+            extra=extra,
+        )
+
+    # ------------------------------------------------------------------
+    # Package 12 — background orphan cancel (hard=False) typed seam
+    # ------------------------------------------------------------------
+
+    def _guardian_background_orphan_cancel_log_reject(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        reason: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+    ) -> None:
+        extra: Dict[str, Any] = {
+            "event_type": "guardian_background_orphan_cancel_bridge_reject",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "trigger": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
+            "bridge_path": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+            "reason": reason,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        LOG.warning(
+            "[GUARD] Rejecting background orphan cancel for %s (%s): %s",
+            order_id,
+            symbol,
+            reason,
+            extra=extra,
+        )
+
+    def _guardian_background_orphan_cancel_log_success(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_type: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: str,
+    ) -> None:
+        LOG.info(
+            "[GUARD] Background orphan bracket cancelled",
+            extra={
+                "event_type": "guardian_background_orphan_cancel",
+                "symbol": symbol,
+                "order_id": order_id,
+                "order_type": order_type,
+                "trigger": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
+                "bridge_path": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
+                "bridge_trace_ref": bridge_trace_ref,
+                "cancel_submission_trace_ref": package4_trace_ref,
+            },
+        )
+
+    def _guardian_background_orphan_cancel_log_failure(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_type: str,
+        bridge_trace_ref: str,
+        package4_trace_ref: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+        exc: Optional[Exception] = None,
+    ) -> None:
+        extra: Dict[str, Any] = {
+            "event_type": "guardian_background_orphan_cancel_bridge_failure",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "trigger": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
+            "bridge_path": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
+            "bridge_trace_ref": bridge_trace_ref,
+        }
+        if package4_trace_ref is not None:
+            extra["cancel_submission_trace_ref"] = package4_trace_ref
+        if result is not None:
+            extra["result"] = result
+        if exc is not None:
+            extra["error"] = str(exc)
+            LOG.warning(
+                "[GUARD] Exception cancelling background orphan %s for %s: %s",
+                order_id,
+                symbol,
+                exc,
+                extra=extra,
+            )
+            return
+        LOG.warning(
+            "[GUARD] Failed to cancel background orphan %s for %s, result: %s",
+            order_id,
+            symbol,
+            result,
+            extra=extra,
+        )
+
+    async def _execute_guardian_background_orphan_cancel(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        position_amt: float,
+        order_meta: Dict[str, Any],
+    ) -> bool:
+        """Typed Package 12 executor for background orphan cancel (hard=False).
+
+        Routes the discovered orphan order through the seam-local typed bridge
+        and the existing Package 4 ``CancelSubmissionPayload.from_dec_cancel()``
+        typed cancel intake.  Raw direct adapter cancel is NOT the governing
+        owner for this path.
+
+        Package 9 ``hard=True`` path is explicitly NOT this method.
+        """
+        try:
+            request, cancel_decision = adapt_guardian_background_orphan_to_dec_cancel(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=order_type,
+            )
+        except GuardianBackgroundOrphanCancelBridgeError as exc:
+            bridge_trace_ref = build_guardian_background_orphan_cancel_trace_ref(
+                status="reject",
+                order_type=str(order_type or "UNKNOWN"),
+                reason="bridge_validation",
+            )
+            self._guardian_background_orphan_cancel_log_reject(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=str(order_type or "UNKNOWN"),
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+            )
+            return False
+
+        bridge_trace_ref = build_guardian_background_orphan_cancel_trace_ref(
+            status="success",
+            order_type=request.order_type,
+        )
+        try:
+            submission = CancelSubmissionPayload.from_dec_cancel(
+                payload=cancel_decision.pld or {}
+            )
+        except CancelSubmissionAdapterError as exc:
+            package4_trace_ref = build_cancel_submission_trace_ref(
+                status="reject",
+                reason="adapter_validation",
+            )
+            self._guardian_background_orphan_cancel_log_reject(
+                symbol=request.symbol,
+                order_id=request.order_id,
+                order_type=request.order_type,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+            )
+            return False
+
+        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        try:
+            result = await self.adapter.cancel_order(
+                submission.symbol,
+                submission.order_id,
+            )
+            if self._is_successful_cancel(result):
+                self._guardian_background_orphan_cancel_log_success(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_type=request.order_type,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                )
+                return True
+            self._guardian_background_orphan_cancel_log_failure(
+                symbol=submission.symbol,
+                order_id=submission.order_id,
+                order_type=request.order_type,
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+                result=result if isinstance(result, dict) else None,
+            )
+            return False
+        except Exception as exc:
+            is_unknown_error = isinstance(
+                exc, BinanceAPIError
+            ) and getattr(exc, "code", None) == -2011
+            if not is_unknown_error and "unknown order" not in str(exc).lower():
+                self._guardian_background_orphan_cancel_log_failure(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_type=request.order_type,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                    exc=exc,
+                )
+                return False
+            LOG.info(
+                f"[GUARD] Background orphan {submission.order_id} already absent (-2011) for {submission.symbol}",
+                extra={
+                    "event_type": "guardian_background_orphan_cancel",
+                    "symbol": submission.symbol,
+                    "order_id": submission.order_id,
+                    "order_type": request.order_type,
+                    "position_amt": position_amt,
+                    "trigger": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
+                    "bridge_path": GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
+                    "bridge_trace_ref": bridge_trace_ref,
+                    "cancel_submission_trace_ref": package4_trace_ref,
+                },
+            )
+            return True
+
+    async def _execute_guardian_old_bracket_cleanup_cancel(
+        self,
+        *,
+        symbol: str,
+        order_id: Any,
+        order_type: str,
+        keep_parent_order_id: str,
+        order_meta: Dict[str, Any],
+    ) -> bool:
+        try:
+            request, cancel_decision = adapt_guardian_old_bracket_cleanup_to_dec_cancel(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=order_type,
+                keep_parent_order_id=keep_parent_order_id,
+            )
+        except GuardianOldBracketCleanupBridgeError as exc:
+            bridge_trace_ref = build_guardian_old_bracket_cleanup_trace_ref(
+                status="reject",
+                order_type=str(order_type or "UNKNOWN"),
+                reason="bridge_validation",
+            )
+            self._guardian_old_bracket_cleanup_log_reject(
+                symbol=symbol,
+                order_id=order_id,
+                order_type=str(order_type or "UNKNOWN"),
+                keep_parent_order_id=keep_parent_order_id,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+            )
+            return False
+
+        bridge_trace_ref = build_guardian_old_bracket_cleanup_trace_ref(
+            status="success",
+            order_type=request.order_type,
+        )
+        try:
+            submission = CancelSubmissionPayload.from_dec_cancel(
+                payload=cancel_decision.pld or {}
+            )
+        except CancelSubmissionAdapterError as exc:
+            package4_trace_ref = build_cancel_submission_trace_ref(
+                status="reject",
+                reason="adapter_validation",
+            )
+            self._guardian_old_bracket_cleanup_log_reject(
+                symbol=request.symbol,
+                order_id=request.order_id,
+                order_type=request.order_type,
+                keep_parent_order_id=request.keep_parent_order_id,
+                reason=str(exc),
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+            )
+            return False
+
+        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        try:
+            result = await self.adapter.cancel_order(
+                submission.symbol,
+                submission.order_id,
+            )
+            if self._is_successful_cancel(result):
+                self._guardian_old_bracket_cleanup_log_success(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_meta=order_meta,
+                    keep_parent_order_id=keep_parent_order_id,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                )
+                return True
+            self._guardian_old_bracket_cleanup_log_failure(
+                symbol=submission.symbol,
+                order_id=submission.order_id,
+                order_type=request.order_type,
+                keep_parent_order_id=keep_parent_order_id,
+                bridge_trace_ref=bridge_trace_ref,
+                package4_trace_ref=package4_trace_ref,
+                result=result if isinstance(result, dict) else None,
+            )
+            return False
+        except Exception as exc:
+            is_unknown_error = isinstance(
+                exc, BinanceAPIError
+            ) and getattr(exc, "code", None) == -2011
+            if not is_unknown_error and "unknown order" not in str(exc).lower():
+                self._guardian_old_bracket_cleanup_log_failure(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    order_type=request.order_type,
+                    keep_parent_order_id=keep_parent_order_id,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                    exc=exc,
+                )
+                return False
+            LOG.info(
+                f"[GUARD] Old bracket {submission.order_id} already absent (-2011) for {submission.symbol}",
+                extra={
+                    "event_type": "cleanup_other_brackets",
+                    "symbol": submission.symbol,
+                    "order_id": submission.order_id,
+                    "keep_parent_order_id": keep_parent_order_id,
+                    "trigger": GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
+                    "bridge_path": GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
+                    "bridge_trace_ref": bridge_trace_ref,
+                    "cancel_submission_trace_ref": package4_trace_ref,
+                },
+            )
+            return True
 
     async def cleanup_other_brackets_for_symbol(
         self,
@@ -1327,41 +2195,17 @@ class OrderGuardian:
                 if parent_id and str(parent_id) == str(keep_parent_order_id):
                     continue
 
-                try:
-                    result = await self.adapter.cancel_order(symbol, order_id)
-                    if self._is_successful_cancel(result):
-                        cancelled_count += 1
-                        cancelled_this_batch += 1
-                        self._metrics["guardian_orphans_cancelled_total"] += 1
-                        LOG.info(
-                            "[GUARD] Cancelled old bracket for previous entry",
-                            extra={
-                                "event_type": "cleanup_other_brackets",
-                                "symbol": symbol,
-                                "order_id": order_id,
-                                "client_order_id": order_meta.get("client_order_id"),
-                                "parent_entry_id": parent_id,
-                                "keep_parent_order_id": keep_parent_order_id,
-                            },
-                        )
-                    else:
-                        LOG.warning(
-                            f"[GUARD] Failed to cancel old bracket {order_id}, result: {result}"
-                        )
-                except Exception as e:
-                    is_unknown_error = isinstance(
-                        e, BinanceAPIError) and getattr(e, "code", None) == -2011
-                    if not is_unknown_error and "unknown order" not in str(e).lower():
-                        LOG.warning(
-                            f"[GUARD] Exception cancelling old bracket {order_id}: {e}"
-                        )
-                    else:
-                        cancelled_count += 1
-                        cancelled_this_batch += 1
-                        self._metrics["guardian_orphans_cancelled_total"] += 1
-                        LOG.info(
-                            f"[GUARD] Old bracket {order_id} already absent (-2011) for {symbol}"
-                        )
+                typed_cancelled = await self._execute_guardian_old_bracket_cleanup_cancel(
+                    symbol=symbol,
+                    order_id=order_id,
+                    order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                    keep_parent_order_id=str(keep_parent_order_id),
+                    order_meta=order_meta,
+                )
+                if typed_cancelled:
+                    cancelled_count += 1
+                    cancelled_this_batch += 1
+                    self._metrics["guardian_orphans_cancelled_total"] += 1
 
         except Exception as e:
             LOG.error(
@@ -1425,7 +2269,11 @@ class OrderGuardian:
                     f"Position exists for {symbol} ({position_amt}), skipping reconcile")
                 return
 
-            cancelled_count = await self.cleanup_orphans(symbol=symbol, hard=True)
+            cancelled_count = await self.cleanup_orphans(
+                symbol=symbol,
+                hard=True,
+                rid=rid,
+            )
 
             LOG.info("Symbol reconciled", extra={
                 "event_type": "reconcile_symbol",

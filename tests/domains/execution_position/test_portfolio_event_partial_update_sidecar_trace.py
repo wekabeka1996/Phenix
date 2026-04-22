@@ -72,7 +72,7 @@ def _trace_entry(fsm, event: Message) -> dict:
     trace_id = fsm._portfolio_event_trace_id(event)
     traces = {
         entry["trace_id"]: entry
-        for entry in fsm._portfolio_event_trace_snapshot()
+        for entry in fsm._startup_truth_orchestrator._portfolio_event_trace_snapshot()
     }
     return traces[trace_id]
 

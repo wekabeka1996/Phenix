@@ -57,3 +57,74 @@ def test_execution_position_domain_dict_exports_sidecar_events_and_self_imports(
         assert f"CMD:{verb}" in exports
 
     assert "PositionPolicySidecar" in components
+
+
+# ---------------------------------------------------------------------------
+# R7A: Payload-vs-schema conformance tests for CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST
+# ---------------------------------------------------------------------------
+
+CLOSE_REQUEST_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "cmd_position_policy_sidecar_close_request_v1.json"
+)
+
+
+def _close_request_payload(*, policy_source: str = "position_policy_sidecar") -> dict:
+    """Minimal valid CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST payload."""
+    return {
+        "ts_ms": 1_700_000_000_000,
+        "request_id": "ppsreq:pps:BTCUSDT:1:1",
+        "trace_id": "pps:BTCUSDT:1:1",
+        "symbol": "BTCUSDT",
+        "sidecar_version": "1.0.0",
+        "mode": "enable",
+        "evaluation_mode": "bounded_soft_close_policy",
+        "event_type": "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        "source_event_type": "POSITION_POLICY_SIDECAR_RECOMMENDED",
+        "requested_action": "SOFT_CLOSE",
+        "target_mode": "symbol_current_net_only",
+        "policy_source": policy_source,
+        "action_package_version": "phase2_action_package_v1",
+        "allowed_action_scope": {"soft_close_symbol_current_net_only": True},
+        "reason_codes": ["trigger:portfolio_state_updated", "peak_giveback_threshold_met"],
+        "score_snapshot": {"soft_close_pressure": 1.0},
+        "position_snapshot": {"symbol": "BTCUSDT"},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {},
+        "fill_correlation": {},
+        "portfolio_correlation": {},
+    }
+
+
+def test_close_request_payload_conforms_to_schema_base_source() -> None:
+    """Original scoring path: policy_source = 'position_policy_sidecar'."""
+    import jsonschema
+
+    schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+    payload = _close_request_payload(policy_source="position_policy_sidecar")
+    jsonschema.validate(payload, schema)  # must not raise
+
+
+def test_close_request_payload_conforms_to_schema_peak_giveback_source() -> None:
+    """R7A peak-giveback path: policy_source = 'position_policy_sidecar:peak_giveback'."""
+    import jsonschema
+
+    schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+    payload = _close_request_payload(policy_source="position_policy_sidecar:peak_giveback")
+    jsonschema.validate(payload, schema)  # must not raise
+
+
+def test_close_request_schema_rejects_invalid_policy_source() -> None:
+    """Schema must reject policy_source values outside the sidecar namespace."""
+    import jsonschema
+
+    schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    for bad_source in ("random_policy", "", "position_policy_sidecar:", "roi_policy"):
+        payload = _close_request_payload(policy_source=bad_source)
+        try:
+            jsonschema.validate(payload, schema)
+            raise AssertionError(f"Schema should reject policy_source={bad_source!r}")
+        except jsonschema.ValidationError:
+            pass  # expected

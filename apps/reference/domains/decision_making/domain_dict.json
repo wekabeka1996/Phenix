@@ -10,6 +10,7 @@
     {"event_name": "EVT:FEATURES_CALCULATED", "source_domain": "feature_engineering"},
     {"event_name": "EVT:ORDER_REJECTED", "source_domain": "execution_position"},
     {"event_name": "EVT:ORDER_STATE_CHANGED", "source_domain": "execution_position"},
+    {"event_name": "EVT:POSITION_CLOSED", "source_domain": "execution_position"},
     {"event_name": "EVT:PORTFOLIO_STATE_UPDATED", "source_domain": "position_tracking"},
     {"event_name": "EVT:REGIME_DETECTED", "source_domain": "regime_detector"},
     {"event_name": "EVT:RISK_ASSESSMENT_COMPLETED", "source_domain": "risk_management"},
@@ -25,6 +26,7 @@
     {"event_name": "EVT:DECISION_BLOCKED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:DECISION_TRACE_EMITTED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:FEATURE_DEFER_EXPIRED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:GATE_CHAIN_TRACE", "target_domains": ["monitoring"]},
     {"event_name": "EVT:INTENT_DEFERRED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:QUADRATIC_DECISION_TRACE", "target_domains": ["monitoring"]},
     {"event_name": "EVT:QUADRATIC_KERNEL_CRASH", "target_domains": ["monitoring"]},
@@ -44,6 +46,7 @@
     "DeferredIntentScheduler",
     "QuadraticScoringKernel",
     "StrategyGateway",
+    "RegimeLossEmbargo",
     "IntentBuilder",
     "IntentEmitter"
   ],

@@ -48,6 +48,10 @@
       ]
     },
     "idempotent_key": { "type": ["string", "null"] },
+    "regime_epoch_ref": {
+      "type": ["string", "null"],
+      "description": "Decision-making-owned stable regime epoch propagated additively to execution."
+    },
     "regime": {
       "type": ["string", "null"],
       "description": "Decision-time structural regime propagated additively to execution."

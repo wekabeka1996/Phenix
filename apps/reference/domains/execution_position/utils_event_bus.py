@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 class LocalBus:
     """Simple local event bus for intra-domain communication."""
 
+    _emit_compat_mode = "op_payload_why"
+
     def __init__(self):
         """Initialize the event bus with an empty listeners dict."""
         self._listeners: Dict[str, List[Callable]] = {}

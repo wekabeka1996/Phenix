@@ -331,6 +331,13 @@
       ],
       "description": "Detected regime at decision time"
     },
+    "regime_epoch_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Decision-making-owned stable regime epoch propagated additively to execution."
+    },
     "regime_confidence": {
       "type": [
         "number",

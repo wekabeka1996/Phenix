@@ -283,9 +283,14 @@ class TestVolatilityEntryLogic:
             c for c in emit_fn.call_args_list
             if c[0][0] == "EVT:STRATEGY_DECISION_BLOCKED"
         ]
+        reject_calls = [
+            c for c in emit_fn.call_args_list
+            if c[0][0] == "EVT:TRADE_INTENT_REJECTED"
+        ]
 
         assert len(signal_calls) == 0
         assert len(blocked_calls) >= 1
+        assert len(reject_calls) == 0
         payload = blocked_calls[0][0][1]
         assert payload["reason_code"] == "VOLATILITY_ENTRY_MULTIPLIER_MISSING"
 

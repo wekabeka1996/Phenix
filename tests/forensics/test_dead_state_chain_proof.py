@@ -97,15 +97,12 @@ def test_cmd_process_strategy_missing_bar_close_ts_rejected_and_counter_not_incr
 
 def test_cold_start_gate_blocks_until_basis_required_reached(monkeypatch: pytest.MonkeyPatch) -> None:
     handler = _make_handler()
-    rejected: list[dict[str, object]] = []
+    blocked: list[dict[str, object]] = []
 
-    def _capture_reject(**kwargs: object) -> None:
-        rejected.append(kwargs)
+    def _capture_blocked(**kwargs: object) -> None:
+        blocked.append(kwargs)
 
-    monkeypatch.setattr(
-        "apps.reference.domains.decision_making.aurora_decision.write_trade_intent_rejected",
-        _capture_reject,
-    )
+    monkeypatch.setattr(handler, "_emit_strategy_blocked", _capture_blocked)
 
     handler.on_regime_detected(
         {
@@ -128,8 +125,10 @@ def test_cold_start_gate_blocks_until_basis_required_reached(monkeypatch: pytest
     handler.on_process_strategy({**base_cmd, "bar_close_ts": 1740000005000})
 
     assert handler._bars_seen_since_restart["BTCUSDT"] == 2
-    assert len(rejected) == 2
-    assert all("Cold-start" in str(item.get("why", "")) for item in rejected)
+    assert len(blocked) == 2
+    assert all(item.get("reason_code") ==
+               "BARS_REQUIRED_COLD_START" for item in blocked)
+    assert all("Cold-start" in str(item.get("why", "")) for item in blocked)
 
 
 def test_startup_hydration_reports_insufficient_seed_without_import_or_restore() -> None:

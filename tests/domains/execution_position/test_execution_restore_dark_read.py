@@ -34,8 +34,8 @@ def _configure_dark_read(
         flush_interval_ms=30000,
         dark_read_max_artifact_age_ms=age_ms,
     )
-    fsm._restore_artifact_writer = fsm._create_restore_artifact_writer()
-    fsm._restore_artifact_dark_reader = fsm._create_restore_artifact_dark_reader()
+    fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
+    fsm._startup_truth_orchestrator._restore_artifact_dark_reader = fsm._startup_truth_orchestrator._create_restore_artifact_dark_reader()
     return path
 
 
@@ -45,7 +45,7 @@ def _configure_startup_truth_writer(fsm, tmp_path: Path) -> Path:
         mode=ExecutionPositionStartupTruthArtifactMode.WRITER_ONLY,
         storage_path=str(path),
     )
-    fsm._startup_truth_artifact_writer = fsm._create_startup_truth_artifact_writer()
+    fsm._startup_truth_orchestrator._startup_truth_artifact_writer = fsm._startup_truth_orchestrator._create_startup_truth_artifact_writer()
     return path
 
 
@@ -83,7 +83,7 @@ def _write_envelope(path: Path, envelope: ExecutionPositionRestoreEnvelope) -> N
 
 
 def _matching_envelope(fsm, *, generated_at_ms: int = 1_775_000_000_000) -> ExecutionPositionRestoreEnvelope:
-    record = fsm._build_execution_restore_artifact_records()[0]
+    record = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
     return ExecutionPositionRestoreEnvelope(
         schema_version="1.0.0",
         artifact_type="execution_position_restore_envelope_v1",
@@ -110,7 +110,7 @@ def test_dark_read_reports_exact_match_for_valid_matching_artifact(
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.parse_success is True
@@ -152,7 +152,7 @@ def test_dark_read_reports_explicit_mismatch_classes(
     )
     _write_envelope(path, envelope)
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
 
     assert result.comparison_outcome == "mismatch"
     assert result.mixed_certainty is True
@@ -167,7 +167,7 @@ def test_dark_read_reports_missing_artifact(fsm_harness, tmp_path: Path) -> None
     _configure_dark_read(fsm, tmp_path)
     _set_runtime_state(fsm)
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.artifact_state == "missing"
@@ -181,7 +181,7 @@ def test_dark_read_reports_corrupt_artifact(fsm_harness, tmp_path: Path) -> None
     _set_runtime_state(fsm)
     path.write_text("{not-json", encoding="utf-8")
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
 
     assert result.artifact_state == "corrupt"
     assert result.parse_success is False
@@ -195,7 +195,7 @@ def test_dark_read_reports_not_readable_artifact(fsm_harness, tmp_path: Path) ->
     path.write_text("{}", encoding="utf-8")
 
     with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
-        result = fsm._run_restore_artifact_dark_read_comparison(
+        result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
             now_ms=1_775_000_001_000
         )
 
@@ -212,7 +212,7 @@ def test_dark_read_reports_stale_artifact(fsm_harness, tmp_path: Path) -> None:
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_010_500)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_010_500)
 
     assert result.parse_success is True
     assert result.artifact_state == "stale"
@@ -244,7 +244,7 @@ def test_dark_read_flags_mixed_certainty_artifact(fsm_harness, tmp_path: Path) -
     )
     _write_envelope(path, envelope)
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
 
     assert result.parse_success is True
     assert result.mixed_certainty is True
@@ -260,10 +260,10 @@ def test_dark_read_compare_does_not_mutate_runtime_state(
     _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.CLOSE_COND)
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
-    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._build_execution_restore_artifact_records()]
+    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
-    result = fsm._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
-    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._build_execution_restore_artifact_records()]
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
     assert result.comparison_outcome == "exact_match"
     assert before == after
@@ -282,7 +282,7 @@ async def test_startup_reconcile_records_dark_read_status_without_changing_autho
 
     fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
     fsm.adapter = None
-    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._build_execution_restore_artifact_records()]
+    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
     await fsm._startup_order_guardian_reconcile()
 
@@ -307,7 +307,7 @@ async def test_startup_reconcile_records_dark_read_status_without_changing_autho
         "dark_read_compare",
         "persist_restore_artifact_snapshot",
     ]
-    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._build_execution_restore_artifact_records()]
+    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
     assert before == after
 
 
@@ -347,7 +347,7 @@ async def test_startup_reconcile_mismatch_artifact_does_not_change_runtime_autho
     fsm.adapter = None
     before = [
         record.model_dump(mode="json", exclude_none=True)
-        for record in fsm._build_execution_restore_artifact_records()
+        for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()
     ]
 
     await fsm._startup_order_guardian_reconcile()
@@ -368,6 +368,6 @@ async def test_startup_reconcile_mismatch_artifact_does_not_change_runtime_autho
     assert dark_read["mismatch_counts"]["heuristic_only_field"] >= 1
     after = [
         record.model_dump(mode="json", exclude_none=True)
-        for record in fsm._build_execution_restore_artifact_records()
+        for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()
     ]
     assert before == after

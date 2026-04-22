@@ -70,7 +70,7 @@ class IntentRouter:
                 "symbol": symbol,
                 "reason_code": error.reason_code,
                 "stage": "EXECUTION",
-                "why": error.why[:240],
+                "why": error.why,
                 "details": {
                     "rid": intent_rid,
                     "execution_intake_contract": INTENT_OPEN_INTAKE_CONTRACT,
@@ -87,7 +87,7 @@ class IntentRouter:
             fallback_symbol=symbol,
             fallback_reason_code=error.reason_code,
             fallback_stage="EXECUTION",
-            fallback_why=error.why[:240],
+            fallback_why=error.why,
             data_ref=list(data_ref or []),
         )
 
@@ -268,9 +268,7 @@ class IntentRouter:
                     LOG.warning(f"[{symbol}] Execution Rejected: {result.why}")
                     if hasattr(self._fsm, "bus"):
                         result_payload = dict(result.pld or {})
-                        reject_why = (
-                            result.why[:240] if result.why else "execution_rejected"
-                        )
+                        reject_why = result.why or "execution_rejected"
                         reason_value = str(
                             result_payload.get("reason")
                             or result_payload.get("block_reason")
@@ -372,6 +370,7 @@ class IntentRouter:
                     symbol = pld.get("instrument") or pld.get(
                         "symbol") or "unknown"
                     intent_rid = str(pld.get("rid") or msg.rid or "unknown")
+                    exception_why = f"EXCEPTION: {str(e)}"
                     emit_canonical_trade_intent_rejected_event(
                         fsm=self._fsm.bus,
                         payload={
@@ -379,7 +378,7 @@ class IntentRouter:
                             "symbol": symbol,
                             "reason_code": "NRR-EXECUTION-EXCEPTION",
                             "stage": "EXECUTION",
-                            "why": f"EXCEPTION: {str(e)}"[:240],
+                            "why": exception_why,
                             "details": {
                                 "error_type": type(e).__name__,
                                 "rid": intent_rid,
@@ -395,7 +394,7 @@ class IntentRouter:
                         fallback_symbol=symbol,
                         fallback_reason_code="NRR-EXECUTION-EXCEPTION",
                         fallback_stage="EXECUTION",
-                        fallback_why=f"EXCEPTION: {str(e)}"[:240],
+                        fallback_why=exception_why,
                         data_ref=list(msg.data_ref or []),
                     )
                 except Exception as emit_e:

@@ -101,6 +101,9 @@ def _build_close_executor_fsm(
         _cancel_status_str=MagicMock(return_value="CANCELED"),
         _clear_symbol_brackets=MagicMock(),
         _persist_restore_artifact_snapshot=MagicMock(),
+        _startup_truth_orchestrator=SimpleNamespace(
+            _persist_restore_artifact_snapshot=MagicMock(),
+        ),
         _emit_observability_event=MagicMock(),
         _emit_position_policy_close_request_state=MagicMock(),
         _orphan_metrics={"errors": 0, "reconcile_cancelled": 0},
@@ -333,7 +336,7 @@ class TestCloseExecutorPartialCloseBranch:
         # Reconcile collaborator still called on partial branch.
         fsm.order_guardian.reconcile_symbol.assert_awaited_once()
         # Partial branch does NOT trigger the full-branch restore persistence.
-        fsm._persist_restore_artifact_snapshot.assert_not_called()
+        fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_partial_close_short_derives_buy_side(self) -> None:
@@ -400,6 +403,65 @@ class TestCloseExecutorFailClosed:
             status="reject", partial_close=False, reason="adapter_validation"
         )
         assert reject_ref in list(decision.data_ref)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty", ["not-a-number", "-0.01"])
+    async def test_invalid_explicit_qty_rejects_before_adapter_call(self, qty: object) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            qty=qty,  # type: ignore[arg-type]
+            idempotent_key="BAD-QTY",
+        )
+
+        await executor.execute_close(decision)
+
+        place_close.assert_not_awaited()
+        reject_ref = build_close_submission_trace_ref(
+            status="reject",
+            partial_close=True,
+            reason="invalid_requested_qty",
+        )
+        assert reject_ref in list(decision.data_ref)
+
+    @pytest.mark.asyncio
+    async def test_object_requested_qty_rejects_before_adapter_call(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            qty=object(),  # type: ignore[arg-type]
+            idempotent_key="OBJ-QTY",
+        )
+
+        await executor.execute_close(decision)
+
+        place_close.assert_not_awaited()
+        reject_ref = build_close_submission_trace_ref(
+            status="reject",
+            partial_close=True,
+            reason="invalid_requested_qty",
+        )
+        assert reject_ref in list(decision.data_ref)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty", ["", "0", "0.0", "0.00", 0])
+    async def test_zero_like_requested_qty_preserves_full_close_semantics(self, qty: object) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            qty=qty,  # type: ignore[arg-type]
+            idempotent_key="ZERO-LIKE",
+        )
+
+        await executor.execute_close(decision)
+
+        place_close.assert_awaited_once()
+        args, kwargs = place_close.await_args
+        assert args == ("BTCUSDT", "SELL", "0.05")
+        assert kwargs["new_client_order_id"].startswith("CLOSE-")
 
 
 class TestCloseExecutorNonBypass:

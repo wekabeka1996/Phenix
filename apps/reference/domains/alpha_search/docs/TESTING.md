@@ -4,12 +4,13 @@
 
 The current test surface mirrors the current domain shape. alpha_search is no longer covered by only model-level tests.
 
-The suite now spans four layers:
+The suite now spans five layers:
 
 1. core alpha scoring and plugin behavior
 2. judge contracts, experts, chamber, envelope, and verdict flow
 3. Phase 5 simulator and shutdown export
-4. standalone runtime tooling under runtime/
+4. Phase 6 review tooling under judge/review/
+5. standalone runtime tooling under runtime/
 
 That split matters. A change can easily look local while actually touching one of the other three layers.
 
@@ -54,7 +55,16 @@ Representative files under tests/domains/alpha_search/judge/simulator/:
 
 These tests prove the offline simulator line, including the bounded shutdown export seam.
 
-### 2.4 Standalone Runtime Tests
+### 2.4 Review Tooling Tests
+
+Representative files under tests/domains/alpha_search/judge/review/:
+
+- test_review_config.py
+- test_review_engine_and_cli.py
+
+These tests prove the offline review bundle contract, segmented CSV generation, partial-evidence behavior, and the explicit no-automatic-promotion boundary.
+
+### 2.5 Standalone Runtime Tests
 
 Representative files under tests/apps/reference/domains/alpha_search/tests/:
 
@@ -99,6 +109,14 @@ Prioritize:
 - tests/apps/reference/domains/alpha_search/tests/
 - launcher, contracts, mirror writer, reporting, and scenario tests tied to the runtime module being changed
 
+### 3.5 Review Tooling Changes
+
+Prioritize:
+
+- tests/domains/alpha_search/judge/review/
+- tests/domains/alpha_search/judge/simulator/ when changing shared simulator inputs or contracts
+- explicit checks that the review bundle still does not emit a promotion verdict automatically
+
 ## 4. Practical Test Slices
 
 Typical focused runs are:
@@ -106,6 +124,7 @@ Typical focused runs are:
 - pytest tests/domains/alpha_search
 - pytest tests/domains/alpha_search/judge
 - pytest tests/domains/alpha_search/judge/simulator
+- pytest tests/domains/alpha_search/judge/review
 - pytest tests/apps/reference/domains/alpha_search/tests
 
 The important rule is not to assume one slice covers the full domain. The current test layout is intentionally split because the runtime surfaces are split.

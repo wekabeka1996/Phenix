@@ -96,6 +96,7 @@ class TradeIntentOpenIntake(BaseModel):
         default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     target_price: Optional[str] = Field(
         default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    regime_epoch_ref: Optional[str] = None
     regime: Optional[str] = None
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     regime_provenance: Optional[Dict[str, Any]] = None
@@ -133,6 +134,7 @@ class TradeIntentOpenIntake(BaseModel):
             "idempotent_key": self.idempotent_key,
             "price_ref": self.order.price_ref,
             "strategy": self.strategy_id,
+            "regime_epoch_ref": self.regime_epoch_ref,
             "regime": self.regime,
             "regime_confidence": self.regime_confidence,
             "regime_provenance": dict(self.regime_provenance) if isinstance(self.regime_provenance, dict) else None,
@@ -214,6 +216,7 @@ def parse_trade_intent_open_intake(
                 "idempotent_key": _stringify_optional(raw.get("idempotent_key")),
                 "stop_price": _resolve_optional_price(raw, "stop_price"),
                 "target_price": _resolve_optional_price(raw, "target_price"),
+                "regime_epoch_ref": _stringify_optional(raw.get("regime_epoch_ref")),
                 "regime": raw.get("regime"),
                 "regime_confidence": raw.get("regime_confidence"),
                 "regime_provenance": raw.get("regime_provenance"),

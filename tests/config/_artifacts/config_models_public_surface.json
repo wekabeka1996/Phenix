@@ -1,0 +1,2810 @@
+{
+  "module": "apps.reference.config_models",
+  "names": {
+    "AbsorptionConfig": {
+      "fields": [
+        "clip",
+        "dedup",
+        "dp_cap_pct",
+        "mode",
+        "neutral",
+        "proxy"
+      ],
+      "kind": "pydantic_model",
+      "name": "AbsorptionConfig"
+    },
+    "AbsorptionDedupConfig": {
+      "fields": [
+        "enabled",
+        "threshold",
+        "window"
+      ],
+      "kind": "pydantic_model",
+      "name": "AbsorptionDedupConfig"
+    },
+    "AbsorptionProxyConfig": {
+      "fields": [
+        "dp_cap_pct",
+        "eps",
+        "source",
+        "window"
+      ],
+      "kind": "pydantic_model",
+      "name": "AbsorptionProxyConfig"
+    },
+    "AdvancedStaleCancelConfig": {
+      "fields": [
+        "drift_away",
+        "enabled",
+        "may_cancel_regimes",
+        "min_age_before_cancel_sec",
+        "never_cancel_regimes"
+      ],
+      "kind": "pydantic_model",
+      "name": "AdvancedStaleCancelConfig"
+    },
+    "AlertsConfig": {
+      "fields": [
+        "cb_active_threshold_sec",
+        "deduplication_window_sec",
+        "entropy_error_rate_threshold",
+        "entropy_volume_threshold",
+        "max_alerts_per_hour",
+        "recent_alerts_max_keys",
+        "risk_gate_threshold_pct",
+        "slack_webhook_url",
+        "wal_size_threshold_mb"
+      ],
+      "kind": "pydantic_model",
+      "name": "AlertsConfig"
+    },
+    "AnchorShockVetoConfig": {
+      "fields": [
+        "anchor_symbol",
+        "enabled",
+        "threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "AnchorShockVetoConfig"
+    },
+    "ArmingConfig": {
+      "fields": [
+        "max_attempts",
+        "require_regime_warmup",
+        "retry_backoff_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "ArmingConfig"
+    },
+    "AuroraConfig": {
+      "fields": [
+        "basis_import_buffer",
+        "basis_tf_sec",
+        "binance_api",
+        "brackets",
+        "domains",
+        "execution",
+        "hysteresis_bars",
+        "instruments",
+        "liveness_factor",
+        "models",
+        "observability",
+        "ops",
+        "regime_shift_inception",
+        "strategies",
+        "strategies_registry",
+        "system",
+        "system_meta",
+        "system_stress",
+        "trading",
+        "trading_mode",
+        "trailing",
+        "uncertain_cutoff",
+        "vol_slope_gate_confirm_bars",
+        "vol_slope_gate_enabled",
+        "vol_slope_gate_eps"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraConfig"
+    },
+    "AuroraExecutionConfig": {
+      "fields": [
+        "max_slippage_bps",
+        "order_type",
+        "post_only"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraExecutionConfig"
+    },
+    "AuroraExitConfig": {
+      "fields": [
+        "max_hold_sec",
+        "regime_tpsl",
+        "sl_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraExitConfig"
+    },
+    "AuroraExposureConfig": {
+      "fields": [
+        "count_pending_orders",
+        "exclude_reduce_only",
+        "leverage_defaults",
+        "max_directional_ratio",
+        "max_equity_utilization_pct",
+        "max_portfolio_fraction",
+        "pending_ttl_sec",
+        "post_fill_hold_ttl_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraExposureConfig"
+    },
+    "AuroraInstrumentConfig": {
+      "fields": [
+        "allowed_regimes",
+        "cooldown_sec",
+        "enabled",
+        "essential_features",
+        "exit",
+        "feature_neutrals",
+        "holding_period",
+        "leverage",
+        "liquidity_gate",
+        "max_risk_score",
+        "position_mode",
+        "reentry_cooldown_sec",
+        "regime_sizing",
+        "regime_thresholds",
+        "scoring_version",
+        "side_bias",
+        "signal_threshold",
+        "take_profit",
+        "timeframe_sec",
+        "trailing_stop",
+        "volatility_entry_logic",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraInstrumentConfig"
+    },
+    "AuroraSideBiasConfig": {
+      "fields": [
+        "penalty_factor",
+        "target_ratio",
+        "window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraSideBiasConfig"
+    },
+    "AuroraStrategyConfig": {
+      "fields": [
+        "assets",
+        "decision",
+        "description",
+        "enabled",
+        "execution",
+        "objective",
+        "safety_gates",
+        "shadow_mode_enabled",
+        "timeframe_sec",
+        "type"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraStrategyConfig"
+    },
+    "AuroraTakeProfitConfig": {
+      "fields": [
+        "partial_exit_pct",
+        "tp_high_ratio",
+        "tp_low_ratio"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraTakeProfitConfig"
+    },
+    "AuroraTradingConfig": {
+      "fields": [
+        "domain_configuration",
+        "execution",
+        "llm_orchestration",
+        "market_data",
+        "mode",
+        "ops",
+        "regime_tpsl",
+        "risk",
+        "risk_budgets",
+        "risk_management",
+        "symbols_to_track",
+        "tca_prefs"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraTradingConfig"
+    },
+    "AuroraTrailingStopConfig": {
+      "fields": [
+        "activation_pct",
+        "enabled",
+        "min_update_interval_sec",
+        "trail_atr_mult",
+        "trail_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "AuroraTrailingStopConfig"
+    },
+    "BarAggregatorConfig": {
+      "fields": [
+        "enabled",
+        "timeframes_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "BarAggregatorConfig"
+    },
+    "BarGatingConfig": {
+      "fields": [
+        "bar_ms",
+        "enable"
+      ],
+      "kind": "pydantic_model",
+      "name": "BarGatingConfig"
+    },
+    "BehaviorFsmConfig": {
+      "fields": [
+        "enable",
+        "high_vol_multiplier",
+        "low_vol_multiplier"
+      ],
+      "kind": "pydantic_model",
+      "name": "BehaviorFsmConfig"
+    },
+    "BinanceApiConfig": {
+      "fields": [
+        "live",
+        "testnet"
+      ],
+      "kind": "pydantic_model",
+      "name": "BinanceApiConfig"
+    },
+    "BinanceApiEnv": {
+      "fields": [
+        "api_key",
+        "api_secret",
+        "rest_url"
+      ],
+      "kind": "pydantic_model",
+      "name": "BinanceApiEnv"
+    },
+    "BracketHealthCheckConfig": {
+      "fields": [
+        "enabled",
+        "grace_period_ms",
+        "interval_sec",
+        "max_placements_per_cycle"
+      ],
+      "kind": "pydantic_model",
+      "name": "BracketHealthCheckConfig"
+    },
+    "BracketPlacementConfig": {
+      "fields": [
+        "retry_backoff_ms",
+        "tp_widen_first_bps",
+        "tp_widen_second_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "BracketPlacementConfig"
+    },
+    "BracketsConfig": {
+      "fields": [
+        "oco_emulation",
+        "offset_bps",
+        "sl",
+        "tp"
+      ],
+      "kind": "pydantic_model",
+      "name": "BracketsConfig"
+    },
+    "CANONICAL_WEIGHT_KEYS": {
+      "kind": "set_constant",
+      "members": [
+        "absorption",
+        "delta_price",
+        "depth_imbalance",
+        "ema_bias",
+        "macro_resid",
+        "macro_sync",
+        "obi",
+        "tfi",
+        "volatility_state",
+        "volume_spike"
+      ],
+      "name": "CANONICAL_WEIGHT_KEYS"
+    },
+    "ConsoleLogConfig": {
+      "fields": [
+        "colorize",
+        "enabled",
+        "format",
+        "level"
+      ],
+      "kind": "pydantic_model",
+      "name": "ConsoleLogConfig"
+    },
+    "ContextShieldConfig": {
+      "fields": [
+        "danger_regimes",
+        "default_multiplier",
+        "enabled",
+        "no_regime_multiplier",
+        "regime_multipliers",
+        "stale_mult_danger",
+        "stale_mult_normal",
+        "ttl_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "ContextShieldConfig"
+    },
+    "CoreLogSinkConfig": {
+      "fields": [
+        "backup_count",
+        "enabled",
+        "format",
+        "level",
+        "max_bytes",
+        "path"
+      ],
+      "kind": "pydantic_model",
+      "name": "CoreLogSinkConfig"
+    },
+    "DEFAULT_CRITICAL_EVENTS": {
+      "kind": "sequence_constant",
+      "members": [
+        "EVT:TRADE_INTENT_PROPOSED",
+        "EVT:TRADE_INTENT_REJECTED",
+        "EVT:INTENT_DEFERRED",
+        "EVT:DECISION_BLOCKED",
+        "EVT:REGIME_DETECTED",
+        "EVT:STRATEGY_DECISION_BLOCKED",
+        "CMD:OPEN",
+        "DEC:OPEN",
+        "DEC:ADJUST",
+        "DEC:PLACE_ORDER",
+        "DEC:CANCEL_ORDER",
+        "EVT:ORDER_ACK",
+        "EVT:ORDER_REJECTED",
+        "EVT:ORDER_STATE_CHANGED",
+        "EVT:ORDER_PLACED",
+        "EVT:TRADE_EXECUTED",
+        "EVT:MANAGE_SKIPPED",
+        "EVT:EXIT_MATCH_ATTEMPTED",
+        "EVT:EXIT_MATCH_FAILED",
+        "EVT:EXECUTION_GUARD_BLOCKED",
+        "EVT:EXECUTION_DIVERGENCE_DETECTED",
+        "EVT:EXECUTION_TIDY_PERFORMED",
+        "EVT:EXECUTION_CLOSE_RECONCILED",
+        "DEC:BATCH",
+        "CMD:CLOSE",
+        "DEC:CLOSE",
+        "EVT:PORTFOLIO_STATE_UPDATED",
+        "EVT:EXPOSURE_SUMMARY_UPDATED",
+        "RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD",
+        "RESTORE:EXECUTION_POSITION_HYDRATE",
+        "ORDER_INDEX:RESERVE_ENTRY",
+        "ORDER_INDEX:UPSERT_OPEN",
+        "ORDER_INDEX:ATTACH_EXCHANGE_ID",
+        "ORDER_INDEX:MARK_TERMINAL",
+        "ORDER_INDEX:CANCEL_RESERVATION",
+        "HARDENING:TRADE_EXECUTED_SUPPRESSED",
+        "HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED",
+        "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT",
+        "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+        "HARDENING:CMD_CLOSE_SUPPRESSED",
+        "HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED",
+        "RESTORE:EXECUTION_TRUTH_HARDENING_RESET",
+        "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED",
+        "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY",
+        "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED"
+      ],
+      "name": "DEFAULT_CRITICAL_EVENTS"
+    },
+    "DangerZoneExitType": {
+      "kind": "enum",
+      "members": [
+        "CLOSE_POSITION",
+        "TIGHTEN_STOPS"
+      ],
+      "name": "DangerZoneExitType"
+    },
+    "DangerZoneShieldConfig": {
+      "fields": [
+        "enabled",
+        "motion_threshold",
+        "spread_threshold",
+        "vol_threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "DangerZoneShieldConfig"
+    },
+    "DashboardConfig": {
+      "fields": [
+        "enabled",
+        "metrics",
+        "sharpe_window_days"
+      ],
+      "kind": "pydantic_model",
+      "name": "DashboardConfig"
+    },
+    "DecisionConfig": {
+      "fields": [
+        "anchor_shock_veto",
+        "bar_gating",
+        "behavior_fsm",
+        "blocked_regimes",
+        "cooldown_sec",
+        "dashboard",
+        "decision_geometry",
+        "direction_strength_scoring",
+        "entry_plan",
+        "essential_features",
+        "execution",
+        "exit",
+        "feature_neutrals",
+        "gates",
+        "holding_period",
+        "kelly",
+        "liquidity_gate",
+        "mean_reversion",
+        "money_management",
+        "neutral_threshold",
+        "operational_mode",
+        "production",
+        "qos",
+        "quadratic_rollout",
+        "reentry_cooldown_sec",
+        "regime_smoothing",
+        "regime_threshold_multipliers",
+        "regime_thresholds",
+        "retry_backoff_factor",
+        "retry_max_count",
+        "retry_ttl_ms",
+        "roi_exit",
+        "score_multiplier",
+        "scoring_engine",
+        "scoring_version",
+        "side_bias_min_intents",
+        "side_bias_min_score",
+        "side_bias_penalty_factor",
+        "side_bias_target_ratio",
+        "side_bias_window_sec",
+        "signal_threshold",
+        "signal_weights",
+        "signals",
+        "symbols_to_track",
+        "testnet"
+      ],
+      "kind": "pydantic_model",
+      "name": "DecisionConfig"
+    },
+    "DecisionGeometryConfig": {
+      "fields": [
+        "admission_mode",
+        "admission_power",
+        "admission_shield_floor",
+        "sizing_mode",
+        "sizing_power"
+      ],
+      "kind": "pydantic_model",
+      "name": "DecisionGeometryConfig"
+    },
+    "DecisionMakingDomainConfig": {
+      "fields": [
+        "arming",
+        "bar_gating",
+        "behavior_fsm",
+        "degraded_context_contracts_by_strategy",
+        "degraded_context_critical_keys",
+        "degraded_context_critical_keys_by_strategy",
+        "directional_sanity",
+        "entry_plan",
+        "fail_closed_on_degraded_context",
+        "features",
+        "flip",
+        "portfolio_warmup_timeout_sec",
+        "position_sizing",
+        "price_motion_sanity",
+        "qos",
+        "regime_loss_embargo",
+        "risk_gate",
+        "risk_skew"
+      ],
+      "kind": "pydantic_model",
+      "name": "DecisionMakingDomainConfig"
+    },
+    "DecisionModeOverrideConfig": {
+      "fields": [
+        "signal_threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "DecisionModeOverrideConfig"
+    },
+    "DegradedContextStrategyContractConfig": {
+      "fields": [
+        "critical_keys",
+        "enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "DegradedContextStrategyContractConfig"
+    },
+    "DeltaPriceConfig": {
+      "fields": [
+        "spike_filter_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "DeltaPriceConfig"
+    },
+    "DepthImbalanceConfig": {
+      "fields": [
+        "use_laplace_smoothing"
+      ],
+      "kind": "pydantic_model",
+      "name": "DepthImbalanceConfig"
+    },
+    "DirectionStrengthScoringConfig": {
+      "fields": [
+        "directional_features",
+        "strength_alpha",
+        "strength_cap",
+        "strength_features"
+      ],
+      "kind": "pydantic_model",
+      "name": "DirectionStrengthScoringConfig"
+    },
+    "DirectionalSanityConfig": {
+      "fields": [
+        "consecutive_bars",
+        "enabled",
+        "hard_veto_consecutive_bars",
+        "min_abs_delta_price",
+        "min_confidence",
+        "min_regime_confidence"
+      ],
+      "kind": "pydantic_model",
+      "name": "DirectionalSanityConfig"
+    },
+    "DomainConfigurationConfig": {
+      "fields": [
+        "audit_trail",
+        "decision_making",
+        "execution_position",
+        "feature_engineering",
+        "market_data",
+        "risk_management"
+      ],
+      "kind": "pydantic_model",
+      "name": "DomainConfigurationConfig"
+    },
+    "DomainLogConfig": {
+      "fields": [
+        "backup_count",
+        "enabled",
+        "level",
+        "max_bytes"
+      ],
+      "kind": "pydantic_model",
+      "name": "DomainLogConfig"
+    },
+    "DomainModeConfig": {
+      "fields": [
+        "trading_mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "DomainModeConfig"
+    },
+    "DomainsConfig": {
+      "fields": [
+        "debug",
+        "decision_making",
+        "execution_position",
+        "feature_engineering",
+        "objective_engine",
+        "position_tracking",
+        "risk_management",
+        "shadow_telemetry",
+        "ta_features"
+      ],
+      "kind": "pydantic_model",
+      "name": "DomainsConfig"
+    },
+    "DomainsDebugConfig": {
+      "fields": [
+        "disable_daily_loss_limit",
+        "disable_positions_stale_gate"
+      ],
+      "kind": "pydantic_model",
+      "name": "DomainsDebugConfig"
+    },
+    "DriftAwayConfig": {
+      "fields": [
+        "atr_mult",
+        "mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "DriftAwayConfig"
+    },
+    "EmaBiasConfig": {
+      "fields": [
+        "clamp_max",
+        "clamp_min"
+      ],
+      "kind": "pydantic_model",
+      "name": "EmaBiasConfig"
+    },
+    "EmaClampConfig": {
+      "fields": [
+        "clamp_max",
+        "clamp_min",
+        "enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "EmaClampConfig"
+    },
+    "EmaConfigDetailed": {
+      "fields": [
+        "period_long",
+        "period_short"
+      ],
+      "kind": "pydantic_model",
+      "name": "EmaConfigDetailed"
+    },
+    "EmergencyConfig": {
+      "fields": [
+        "emergency_sl_bps",
+        "enabled",
+        "wait_mode_bars"
+      ],
+      "kind": "pydantic_model",
+      "name": "EmergencyConfig"
+    },
+    "EntryPlanConfig": {
+      "fields": [
+        "atr_period",
+        "base_atr_mult",
+        "confidence_scale",
+        "enabled",
+        "entry_k_atr",
+        "min_stop_bps",
+        "obi_missing_policy",
+        "obi_mod_clamp_max",
+        "obi_mod_clamp_min",
+        "obi_weight",
+        "require_atr",
+        "sl_k_atr",
+        "structural_stop_enabled",
+        "tp_k_atr"
+      ],
+      "kind": "pydantic_model",
+      "name": "EntryPlanConfig"
+    },
+    "EventChainLogConfig": {
+      "fields": [
+        "backup_count",
+        "enabled",
+        "format",
+        "level",
+        "max_bytes",
+        "path"
+      ],
+      "kind": "pydantic_model",
+      "name": "EventChainLogConfig"
+    },
+    "EventDedupConfig": {
+      "fields": [
+        "max_size",
+        "ttl_ms",
+        "warm_state"
+      ],
+      "kind": "pydantic_model",
+      "name": "EventDedupConfig"
+    },
+    "EventDedupWarmStateConfig": {
+      "fields": [
+        "enabled",
+        "max_entries",
+        "storage_path"
+      ],
+      "kind": "pydantic_model",
+      "name": "EventDedupWarmStateConfig"
+    },
+    "ExecutionConfig": {
+      "fields": [
+        "allow_trade_with_guardian_tidy_only",
+        "anti_race_close_ms",
+        "cooldown_after_close_ms",
+        "exposure",
+        "fallback",
+        "fsm_periodic_cleanup_enabled",
+        "limit_orders",
+        "manage",
+        "order_guardian",
+        "order_params",
+        "orders",
+        "preflight_backoff_ms",
+        "watchdog"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionConfig"
+    },
+    "ExecutionGateConfig": {
+      "fields": [
+        "gates_enabled",
+        "structural_gate"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionGateConfig"
+    },
+    "ExecutionGateName": {
+      "kind": "enum",
+      "members": [
+        "DIRECTION",
+        "HARD_VETO",
+        "LIQUIDITY",
+        "SHIELD",
+        "STRUCTURAL",
+        "THRESHOLD"
+      ],
+      "name": "ExecutionGateName"
+    },
+    "ExecutionPositionDomainConfig": {
+      "fields": [
+        "bracket_health_check",
+        "bracket_placement",
+        "event_dedup",
+        "exposure_guard",
+        "fallback",
+        "fsm_open",
+        "guardian",
+        "idempotent_cancel",
+        "inflight_reconcile",
+        "intent_boundary_audit",
+        "maker_only_entry",
+        "metrics_collector",
+        "order_capabilities",
+        "order_index",
+        "order_lifecycle",
+        "pending_entry_ttl",
+        "position_policy_sidecar",
+        "restore_artifact",
+        "shadow_check",
+        "startup_truth_artifact",
+        "utils"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionPositionDomainConfig"
+    },
+    "ExecutionPositionRestoreArtifactConfig": {
+      "fields": [
+        "dark_read_max_artifact_age_ms",
+        "flush_interval_ms",
+        "mode",
+        "storage_path"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionPositionRestoreArtifactConfig"
+    },
+    "ExecutionPositionRestoreArtifactMode": {
+      "kind": "enum",
+      "members": [
+        "AUTHORITATIVE",
+        "DARK_READ",
+        "OFF",
+        "WRITER_ONLY"
+      ],
+      "name": "ExecutionPositionRestoreArtifactMode"
+    },
+    "ExecutionPositionStartupTruthArtifactConfig": {
+      "fields": [
+        "mode",
+        "storage_path"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionPositionStartupTruthArtifactConfig"
+    },
+    "ExecutionPositionStartupTruthArtifactMode": {
+      "kind": "enum",
+      "members": [
+        "OFF",
+        "WRITER_ONLY"
+      ],
+      "name": "ExecutionPositionStartupTruthArtifactMode"
+    },
+    "ExecutionUtilsConfig": {
+      "fields": [
+        "basis_points_base",
+        "client_order_id_max_length"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExecutionUtilsConfig"
+    },
+    "ExitManagerConfig": {
+      "fields": [
+        "danger_zone_action",
+        "danger_zone_tighten_factor",
+        "max_hold_time_sec",
+        "signal_exit_enabled",
+        "signal_reversal_threshold",
+        "time_exit_enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExitManagerConfig"
+    },
+    "ExposureConfig": {
+      "fields": [
+        "count_pending_orders",
+        "exclude_reduce_only",
+        "leverage_defaults",
+        "max_directional_ratio",
+        "max_equity_utilization_pct",
+        "max_portfolio_fraction",
+        "pending_ttl_sec",
+        "post_fill_hold_ttl_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExposureConfig"
+    },
+    "ExposureGuardConfig": {
+      "fields": [
+        "max_concentration_pct",
+        "max_directional_ratio",
+        "max_equity_utilization_pct",
+        "max_long_utilization_pct",
+        "max_portfolio_fraction",
+        "max_short_utilization_pct",
+        "pending_ttl_sec",
+        "post_fill_ttl_sec",
+        "stale_ttl_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "ExposureGuardConfig"
+    },
+    "FallbackConfig": {
+      "fields": [
+        "backoff_ms",
+        "policy",
+        "risk_reduction_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "FallbackConfig"
+    },
+    "FeatureBoundsConfig": {
+      "fields": [
+        "max",
+        "min"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeatureBoundsConfig"
+    },
+    "FeatureDefaultsConfig": {
+      "fields": [
+        "correlation_default",
+        "ms_per_sec",
+        "neutral_value",
+        "zero_value"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeatureDefaultsConfig"
+    },
+    "FeatureEngineeringConfig": {
+      "fields": [
+        "ema",
+        "liquidity",
+        "macro_sync",
+        "volatility",
+        "volume"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeatureEngineeringConfig"
+    },
+    "FeatureEngineeringDomainConfig": {
+      "fields": [
+        "absorption",
+        "defaults",
+        "delta_price",
+        "depth_imbalance",
+        "ema",
+        "ema_bias",
+        "enable_new_metrics",
+        "enabled_timeframes_sec",
+        "feature_sanity",
+        "large_trade_imbalance",
+        "legacy_features_log",
+        "liquidity",
+        "macro_resid",
+        "macro_sync",
+        "pillars",
+        "readiness_registry",
+        "spread_bps",
+        "trace_features",
+        "volatility",
+        "volatility_state",
+        "volume",
+        "volume_input_mode",
+        "volume_spike",
+        "volume_zscore",
+        "warmup"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeatureEngineeringDomainConfig"
+    },
+    "FeatureSanityConfig": {
+      "fields": [
+        "enabled",
+        "feature_bounds",
+        "nan_inf_behavior"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeatureSanityConfig"
+    },
+    "FeaturesTtlConfig": {
+      "fields": [
+        "ttl_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "FeaturesTtlConfig"
+    },
+    "FlipOrchestrationConfig": {
+      "fields": [
+        "enabled",
+        "hysteresis_mult"
+      ],
+      "kind": "pydantic_model",
+      "name": "FlipOrchestrationConfig"
+    },
+    "FsmOpenConfig": {
+      "fields": [
+        "idempotency_window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "FsmOpenConfig"
+    },
+    "GlobalFlipKillswitchConfig": {
+      "fields": [
+        "enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "GlobalFlipKillswitchConfig"
+    },
+    "GuardianConfig": {
+      "fields": [
+        "cleanup_ttl_ms",
+        "emit_tidy_event",
+        "poll_interval_ms",
+        "symbol_cooldown_ms",
+        "unified"
+      ],
+      "kind": "pydantic_model",
+      "name": "GuardianConfig"
+    },
+    "HoldingPeriodConfig": {
+      "fields": [
+        "apply_to_flips",
+        "emergency_exit_threshold",
+        "enabled",
+        "min_duration_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "HoldingPeriodConfig"
+    },
+    "IdempotentCancelConfig": {
+      "fields": [
+        "max_retries"
+      ],
+      "kind": "pydantic_model",
+      "name": "IdempotentCancelConfig"
+    },
+    "InflightReconcileConfig": {
+      "fields": [
+        "inflight_ttl_sec",
+        "max_ttl_sec",
+        "reconcile_interval_sec",
+        "verbose_logging"
+      ],
+      "kind": "pydantic_model",
+      "name": "InflightReconcileConfig"
+    },
+    "InstrumentExecutionConfig": {
+      "fields": [
+        "leverage_policy",
+        "margin_mode",
+        "max_notional_utilization",
+        "target_leverage"
+      ],
+      "kind": "pydantic_model",
+      "name": "InstrumentExecutionConfig"
+    },
+    "InstrumentPrecisionSpec": {
+      "fields": [
+        "execution",
+        "flip",
+        "min_notional",
+        "min_qty",
+        "sizing",
+        "step_size",
+        "symbol",
+        "tick_size"
+      ],
+      "kind": "pydantic_model",
+      "name": "InstrumentPrecisionSpec"
+    },
+    "InstrumentSizingConfig": {
+      "fields": [
+        "margin_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "InstrumentSizingConfig"
+    },
+    "InstrumentSpec": {
+      "fields": [
+        "min_notional",
+        "min_qty",
+        "quote",
+        "step_size",
+        "symbol",
+        "tick_size"
+      ],
+      "kind": "pydantic_model",
+      "name": "InstrumentSpec"
+    },
+    "IntentBoundaryAuditConfig": {
+      "fields": [
+        "downstream_ttl_ms",
+        "enabled",
+        "route_ttl_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "IntentBoundaryAuditConfig"
+    },
+    "KellyConfig": {
+      "fields": [
+        "base_probability",
+        "kelly_alpha",
+        "kelly_cap",
+        "p_max",
+        "p_min",
+        "payoff_ratio_r",
+        "uplift_factor"
+      ],
+      "kind": "pydantic_model",
+      "name": "KellyConfig"
+    },
+    "LLMIntentPolicyConfig": {
+      "fields": [
+        "allow_limit_only",
+        "allowed_tif",
+        "cooldown_sec",
+        "max_notional_usd",
+        "max_open_intents",
+        "max_price_deviation_bps",
+        "max_qty",
+        "require_tp_sl"
+      ],
+      "kind": "pydantic_model",
+      "name": "LLMIntentPolicyConfig"
+    },
+    "LLMMicrostructureStrategyConfig": {
+      "fields": [
+        "description",
+        "enabled",
+        "execution",
+        "pending_entry_ttl_ms",
+        "safety_gates",
+        "timeframe_sec",
+        "type"
+      ],
+      "kind": "pydantic_model",
+      "name": "LLMMicrostructureStrategyConfig"
+    },
+    "LLMOrchestrationConfig": {
+      "fields": [
+        "allowlist_symbols",
+        "intent_policy",
+        "llm_role",
+        "mode",
+        "require_telemetry",
+        "symbols_llm"
+      ],
+      "kind": "pydantic_model",
+      "name": "LLMOrchestrationConfig"
+    },
+    "LargeTradeImbalanceConfig": {
+      "fields": [
+        "enabled",
+        "eps",
+        "min_trades",
+        "use_notional",
+        "window_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "LargeTradeImbalanceConfig"
+    },
+    "LegacyFeaturesLogConfig": {
+      "fields": [
+        "mode",
+        "sample_every_n"
+      ],
+      "kind": "pydantic_model",
+      "name": "LegacyFeaturesLogConfig"
+    },
+    "LeverageConfig": {
+      "fields": [
+        "max_notional_value",
+        "mode",
+        "target"
+      ],
+      "kind": "pydantic_model",
+      "name": "LeverageConfig"
+    },
+    "LimitOrdersConfig": {
+      "fields": [],
+      "kind": "pydantic_model",
+      "name": "LimitOrdersConfig"
+    },
+    "LiquidityConfigDetailed": {
+      "fields": [
+        "depth_half",
+        "kappa_max",
+        "kappa_min"
+      ],
+      "kind": "pydantic_model",
+      "name": "LiquidityConfigDetailed"
+    },
+    "LiquidityGateConfig": {
+      "fields": [
+        "enabled",
+        "failsafe_qty_check",
+        "kappa_max",
+        "kappa_min"
+      ],
+      "kind": "pydantic_model",
+      "name": "LiquidityGateConfig"
+    },
+    "LogRotationConfig": {
+      "fields": [
+        "backup_count",
+        "max_bytes"
+      ],
+      "kind": "pydantic_model",
+      "name": "LogRotationConfig"
+    },
+    "MDAMRAssetConfig": {
+      "fields": [
+        "allowed_regimes",
+        "cooldown_sec",
+        "enabled",
+        "exit",
+        "position_mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRAssetConfig"
+    },
+    "MDAMRConcentrationGuardConfig": {
+      "fields": [
+        "enabled",
+        "max_simultaneous_entries_per_bar"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRConcentrationGuardConfig"
+    },
+    "MDAMRContextValidityConfig": {
+      "fields": [
+        "channel_width_pct_floor",
+        "channel_width_pct_valid",
+        "invalid_score_max",
+        "progress_alignment_weight",
+        "regime_confidence_floor",
+        "regime_confidence_valid",
+        "regime_weight",
+        "structure_weight",
+        "valid_score_min",
+        "volatility_weight",
+        "volatility_z_invalid",
+        "volatility_z_weakening"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRContextValidityConfig"
+    },
+    "MDAMREntryAnchorPersistenceConfig": {
+      "fields": [
+        "storage_path"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMREntryAnchorPersistenceConfig"
+    },
+    "MDAMRExitConfig": {
+      "fields": [
+        "regime_tpsl",
+        "sl_pct",
+        "tp_rr"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRExitConfig"
+    },
+    "MDAMRHoldQualityConfig": {
+      "fields": [
+        "expected_progress_grace_frac",
+        "progress_deficit_weight",
+        "time_decay_weight"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRHoldQualityConfig"
+    },
+    "MDAMRLLMGateConfig": {
+      "fields": [
+        "block_ttl_sec",
+        "enabled",
+        "sentiment_block_threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRLLMGateConfig"
+    },
+    "MDAMROptunaConfig": {
+      "fields": [
+        "min_oos_calmar_ratio",
+        "oos_split_ratio"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMROptunaConfig"
+    },
+    "MDAMRProgressTrackingConfig": {
+      "fields": [
+        "early_progress_max_pct",
+        "near_completion_max_pct",
+        "partial_progress_max_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRProgressTrackingConfig"
+    },
+    "MDAMRReconciliationConfig": {
+      "fields": [
+        "drift_tolerance",
+        "enabled",
+        "interval_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRReconciliationConfig"
+    },
+    "MDAMRSetupQualityConfig": {
+      "fields": [
+        "channel_width_pct_full_scale",
+        "penetration_depth_full_scale",
+        "volatility_z_full_penalty"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRSetupQualityConfig"
+    },
+    "MDAMRStrategyConfig": {
+      "fields": [
+        "alpha",
+        "assets",
+        "atr_stats_window",
+        "atr_std_floor_pct",
+        "atr_window",
+        "atr_zscore_clamp",
+        "channel_robust_pct",
+        "channel_window_bars",
+        "concentration_guard",
+        "conf_min",
+        "context_validity",
+        "defer_ttl_sec",
+        "description",
+        "enabled",
+        "entry_anchor_persistence",
+        "execution",
+        "fee_bps",
+        "hold_edge_min",
+        "hold_quality",
+        "hysteresis_mult",
+        "llm_gate",
+        "max_hold_bars",
+        "objective",
+        "optuna",
+        "progress_tracking",
+        "reconciliation",
+        "safety_gates",
+        "scaleout_cost_model",
+        "scaleout_fraction",
+        "setup_quality",
+        "slippage_buffer_bps",
+        "target_approach_pct",
+        "thr_base",
+        "thr_floor",
+        "threshold_z",
+        "timeframe_sec",
+        "type",
+        "volatility_dampening_factor",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRStrategyConfig"
+    },
+    "MDAMRWeightsConfig": {
+      "fields": [
+        "d1",
+        "h1",
+        "m15",
+        "m30"
+      ],
+      "kind": "pydantic_model",
+      "name": "MDAMRWeightsConfig"
+    },
+    "MRAssetConfig": {
+      "fields": [
+        "allowed_regimes",
+        "enabled",
+        "leverage",
+        "liquidity_gate",
+        "position_mode",
+        "strategy"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRAssetConfig"
+    },
+    "MRDirectionalBiasConfig": {
+      "fields": [
+        "base_long_threshold",
+        "base_short_threshold",
+        "enabled",
+        "funding_deadband",
+        "funding_normalization_scale",
+        "funding_shift_magnitude",
+        "threshold_clamp_max",
+        "threshold_clamp_min"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRDirectionalBiasConfig"
+    },
+    "MRMicrostructureVetoConfig": {
+      "fields": [
+        "absorption_rebound_threshold",
+        "absorption_wick_ratio_min",
+        "enabled",
+        "missing_policy",
+        "obi_adverse_threshold",
+        "obi_confirm_enabled",
+        "price_continuation_threshold",
+        "price_reaction_lookback_sec",
+        "readiness_min_bars",
+        "tfi_adverse_threshold",
+        "tfi_ema_span"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRMicrostructureVetoConfig"
+    },
+    "MRMomentumSeparationVetoConfig": {
+      "fields": [
+        "enabled",
+        "lookback_bars",
+        "min_current_bb_width",
+        "min_drift_pct",
+        "regimes",
+        "sides"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRMomentumSeparationVetoConfig"
+    },
+    "MRRegimeSizingConfig": {
+      "fields": [
+        "sizing_mult",
+        "stop_mult",
+        "target_mult"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRRegimeSizingConfig"
+    },
+    "MRRegimeThresholdsConfig": {
+      "fields": [
+        "high_vol_pct",
+        "low_vol_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRRegimeThresholdsConfig"
+    },
+    "MRSqueezeExpansionVetoConfig": {
+      "fields": [
+        "enabled",
+        "expansion_ratio_min",
+        "post_squeeze_width_max",
+        "regimes",
+        "sides",
+        "squeeze_width_max"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRSqueezeExpansionVetoConfig"
+    },
+    "MRStrategyOverrideConfig": {
+      "fields": [
+        "allowed_regimes",
+        "bb_num_std",
+        "bb_window",
+        "confidence_base",
+        "confidence_bb_slope",
+        "confidence_rsi_bonus",
+        "cooldown_sec",
+        "directional_bias",
+        "entry_threshold",
+        "flat_low_short_min_bb_width",
+        "microstructure_veto",
+        "min_bb_width",
+        "momentum_separation_veto",
+        "sl_atr_mult",
+        "sl_buffer_pct",
+        "squeeze_expansion_veto",
+        "tp_buffer_pct",
+        "tp_to_mid"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRStrategyOverrideConfig"
+    },
+    "MRStrategyParamsConfig": {
+      "fields": [
+        "atr_window",
+        "bb_num_std",
+        "bb_window",
+        "confidence_base",
+        "confidence_bb_slope",
+        "confidence_rsi_bonus",
+        "cooldown_sec",
+        "entry_threshold",
+        "max_bb_width",
+        "min_bars",
+        "min_bb_width",
+        "rsi_overbought",
+        "rsi_oversold",
+        "rsi_window",
+        "score_multiplier",
+        "sl_atr_mult",
+        "tp_to_mid"
+      ],
+      "kind": "pydantic_model",
+      "name": "MRStrategyParamsConfig"
+    },
+    "MacroResidConfig": {
+      "fields": [
+        "beta_window",
+        "clip",
+        "enabled",
+        "mad_window",
+        "neutral",
+        "scale_floor",
+        "var_floor",
+        "winsor_percentile"
+      ],
+      "kind": "pydantic_model",
+      "name": "MacroResidConfig"
+    },
+    "MacroSyncConfig": {
+      "fields": [
+        "align_mode",
+        "anchor_update_from_ticks",
+        "anchors",
+        "emit_abs",
+        "enabled",
+        "min_buffer_size",
+        "time_diff_threshold_ms",
+        "window"
+      ],
+      "kind": "pydantic_model",
+      "name": "MacroSyncConfig"
+    },
+    "MacroSyncMetricsConfig": {
+      "fields": [
+        "align_mode",
+        "anchor_update_from_ticks",
+        "anchors",
+        "bin_ms",
+        "enabled",
+        "eps",
+        "max_gap_bins",
+        "max_late_ms",
+        "min_buffer_size",
+        "time_diff_threshold_ms",
+        "ttl_ms",
+        "window"
+      ],
+      "kind": "pydantic_model",
+      "name": "MacroSyncMetricsConfig"
+    },
+    "MakerOnlyEntryConfig": {
+      "fields": [
+        "enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "MakerOnlyEntryConfig"
+    },
+    "ManageConfig": {
+      "fields": [
+        "auto",
+        "brackets",
+        "emergency",
+        "orphan_monitor"
+      ],
+      "kind": "pydantic_model",
+      "name": "ManageConfig"
+    },
+    "MarketDataConfig": {
+      "fields": [
+        "bar_aggregator",
+        "macro_sync",
+        "poll_interval_sec",
+        "use_multiprocessing",
+        "websocket_streams"
+      ],
+      "kind": "pydantic_model",
+      "name": "MarketDataConfig"
+    },
+    "MaxRiskScoreConfig": {
+      "fields": [
+        "enabled",
+        "value"
+      ],
+      "kind": "pydantic_model",
+      "name": "MaxRiskScoreConfig"
+    },
+    "MeanReversion1mStrategyConfig": {
+      "fields": [
+        "allowed_regimes",
+        "assets",
+        "directional_bias",
+        "enabled",
+        "execution",
+        "liquidity_gate",
+        "microstructure_veto",
+        "objective",
+        "regime_sizing",
+        "regime_thresholds",
+        "safety_gates",
+        "strategy",
+        "timeframe_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "MeanReversion1mStrategyConfig"
+    },
+    "MeanReversionConfig": {
+      "fields": [
+        "allowed_regimes",
+        "bb_std_dev",
+        "bb_window",
+        "enabled",
+        "min_vol_atr"
+      ],
+      "kind": "pydantic_model",
+      "name": "MeanReversionConfig"
+    },
+    "MeanReversionRegimeModelConfig": {
+      "fields": [
+        "confidence_multiplier",
+        "threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "MeanReversionRegimeModelConfig"
+    },
+    "MemoryShieldConfig": {
+      "fields": [
+        "decay_rate",
+        "enabled",
+        "exploring_multiplier",
+        "exploring_threshold",
+        "flush_interval_sec",
+        "known_multiplier",
+        "max_states",
+        "storage_path",
+        "unknown_multiplier",
+        "unknown_threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "MemoryShieldConfig"
+    },
+    "MetricsCollectorConfig": {
+      "fields": [
+        "recent_rejections_minutes",
+        "window_size_minutes"
+      ],
+      "kind": "pydantic_model",
+      "name": "MetricsCollectorConfig"
+    },
+    "MoneyManagementConfig": {
+      "fields": [
+        "enabled",
+        "max_notional_cap",
+        "risk_per_trade_pct",
+        "stop_distance_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "MoneyManagementConfig"
+    },
+    "ObjectiveComponentConfig": {
+      "fields": [
+        "enabled",
+        "normalization",
+        "parameters"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObjectiveComponentConfig"
+    },
+    "ObjectiveDataRequirementsConfig": {
+      "fields": [
+        "require_arce",
+        "require_execution",
+        "require_portfolio",
+        "strict_fail_closed"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObjectiveDataRequirementsConfig"
+    },
+    "ObjectiveEngineDomainConfig": {
+      "fields": [
+        "components",
+        "data_requirements",
+        "enabled",
+        "explainability"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObjectiveEngineDomainConfig"
+    },
+    "ObjectiveExplainabilityConfig": {
+      "fields": [
+        "emit_normalization_stats",
+        "emit_subcomponents",
+        "enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObjectiveExplainabilityConfig"
+    },
+    "ObjectiveNormalizationConfig": {
+      "fields": [
+        "enabled",
+        "epsilon",
+        "method",
+        "min_samples",
+        "outlier_threshold",
+        "smoothing_factor",
+        "target_range",
+        "window_size"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObjectiveNormalizationConfig"
+    },
+    "ObservabilityConfig": {
+      "fields": [
+        "alerts",
+        "config_version",
+        "logging",
+        "shadow_journal"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObservabilityConfig"
+    },
+    "ObservabilityLoggingConfig": {
+      "fields": [
+        "console",
+        "core",
+        "default_format",
+        "default_level",
+        "domains",
+        "event_chain",
+        "rotation"
+      ],
+      "kind": "pydantic_model",
+      "name": "ObservabilityLoggingConfig"
+    },
+    "OperationalMode": {
+      "kind": "enum",
+      "members": [
+        "CURIOUS",
+        "PARANOID"
+      ],
+      "name": "OperationalMode"
+    },
+    "OperatorConfig": {
+      "fields": [
+        "adx_period",
+        "enabled",
+        "linreg_period",
+        "min_bars",
+        "sensitivity",
+        "timeframe_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "OperatorConfig"
+    },
+    "OpsConfig": {
+      "fields": [
+        "metrics_url",
+        "panic_killswitch",
+        "reports_dir"
+      ],
+      "kind": "pydantic_model",
+      "name": "OpsConfig"
+    },
+    "OrderCapabilitiesConfig": {
+      "fields": [
+        "supported_order_types",
+        "supported_tif"
+      ],
+      "kind": "pydantic_model",
+      "name": "OrderCapabilitiesConfig"
+    },
+    "OrderIndexConfig": {
+      "fields": [
+        "ttl_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "OrderIndexConfig"
+    },
+    "OrderLifecycleConfig": {
+      "fields": [
+        "fill_settlement_delay_ms",
+        "position_close_cleanup_delay_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "OrderLifecycleConfig"
+    },
+    "OrdersConfig": {
+      "fields": [
+        "default_ttl_seconds"
+      ],
+      "kind": "pydantic_model",
+      "name": "OrdersConfig"
+    },
+    "OrphanMonitorConfig": {
+      "fields": [
+        "batch_cancel_limit",
+        "enabled",
+        "min_order_age_sec",
+        "periodic_interval_sec",
+        "rate_limit_per_min",
+        "run_on_startup"
+      ],
+      "kind": "pydantic_model",
+      "name": "OrphanMonitorConfig"
+    },
+    "PendingEntryTTLConfig": {
+      "fields": [
+        "advanced_stale_cancel",
+        "cancel_on_panic",
+        "cancel_on_regime_change",
+        "cancel_on_supersede",
+        "enabled",
+        "regime_change_cancel_mode",
+        "reject_unknown_tf",
+        "supersede_cancel_timeout_sec",
+        "supersede_reprice_guard",
+        "ttl_by_tf_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "PendingEntryTTLConfig"
+    },
+    "PillarBackfillConfig": {
+      "fields": [
+        "d1_candles",
+        "enabled",
+        "h4_candles",
+        "m15_candles"
+      ],
+      "kind": "pydantic_model",
+      "name": "PillarBackfillConfig"
+    },
+    "PillarWeightsConfig": {
+      "fields": [
+        "operator",
+        "strategist",
+        "tactician"
+      ],
+      "kind": "pydantic_model",
+      "name": "PillarWeightsConfig"
+    },
+    "PillarsConfig": {
+      "fields": [
+        "backfill",
+        "enabled",
+        "operator",
+        "strategist",
+        "tactician",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "PillarsConfig"
+    },
+    "PositionPolicySidecarAllowedActionsConfig": {
+      "fields": [
+        "bracket_mutation",
+        "exact_targeting",
+        "partial_reduce",
+        "soft_close_symbol_current_net_only"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarAllowedActionsConfig"
+    },
+    "PositionPolicySidecarConfig": {
+      "fields": [
+        "allowed_actions",
+        "freshness",
+        "logging",
+        "mode",
+        "profitability_guard",
+        "scoring",
+        "startup_grace",
+        "thresholds"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarConfig"
+    },
+    "PositionPolicySidecarFreshnessConfig": {
+      "fields": [
+        "features_max_age_ms",
+        "order_state_max_age_ms",
+        "portfolio_max_age_ms",
+        "regime_max_age_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarFreshnessConfig"
+    },
+    "PositionPolicySidecarLoggingConfig": {
+      "fields": [
+        "emit_internal_bus_events",
+        "include_score_payloads",
+        "trade_lifecycle_log_path",
+        "write_trade_lifecycle_jsonl"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarLoggingConfig"
+    },
+    "PositionPolicySidecarMode": {
+      "kind": "enum",
+      "members": [
+        "DISABLE",
+        "ENABLE",
+        "SHADOW"
+      ],
+      "name": "PositionPolicySidecarMode"
+    },
+    "PositionPolicySidecarProfitabilityGuardConfig": {
+      "fields": [
+        "enabled",
+        "min_unrealized_pnl_pct",
+        "min_unrealized_pnl_usdt"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarProfitabilityGuardConfig"
+    },
+    "PositionPolicySidecarScoringCapsConfig": {
+      "fields": [
+        "conviction_decay",
+        "microstructure_adverse_pressure",
+        "regime_exhaustion_hint",
+        "unrealized_loss_pressure"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarScoringCapsConfig"
+    },
+    "PositionPolicySidecarScoringConfig": {
+      "fields": [
+        "caps",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarScoringConfig"
+    },
+    "PositionPolicySidecarScoringWeightsConfig": {
+      "fields": [
+        "conviction_decay",
+        "microstructure_adverse_pressure",
+        "regime_exhaustion_hint",
+        "unrealized_loss_pressure"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarScoringWeightsConfig"
+    },
+    "PositionPolicySidecarStartupGraceConfig": {
+      "fields": [
+        "min_feature_updates",
+        "min_portfolio_updates",
+        "min_regime_updates",
+        "post_fill_grace_ms",
+        "startup_grace_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarStartupGraceConfig"
+    },
+    "PositionPolicySidecarThresholdsConfig": {
+      "fields": [
+        "adverse_price_distance_bps_full_pressure",
+        "adverse_regimes_long",
+        "adverse_regimes_short",
+        "book_imbalance_full_pressure",
+        "loss_bps_full_pressure",
+        "recommend_soft_close_at",
+        "regime_confidence_floor",
+        "signal_score_floor"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionPolicySidecarThresholdsConfig"
+    },
+    "PositionSizingConfig": {
+      "fields": [
+        "liquidity_based_cap_usd",
+        "min_position_size_usd"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionSizingConfig"
+    },
+    "PositionTrackingDomainConfig": {
+      "fields": [
+        "enable_market_tick_subscription",
+        "positions_stale_ttl_sec",
+        "precision"
+      ],
+      "kind": "pydantic_model",
+      "name": "PositionTrackingDomainConfig"
+    },
+    "PrecisionConfig": {
+      "fields": [
+        "decimal_places",
+        "flat_position_threshold",
+        "quantity_min_threshold"
+      ],
+      "kind": "pydantic_model",
+      "name": "PrecisionConfig"
+    },
+    "PriceMotionSanityConfig": {
+      "fields": [
+        "bleed_threshold_norm",
+        "bleed_window_sec",
+        "enabled",
+        "flash_threshold_norm",
+        "flash_window_sec",
+        "k_vol",
+        "pm_norm_clip_abs",
+        "require_bleed_ready"
+      ],
+      "kind": "pydantic_model",
+      "name": "PriceMotionSanityConfig"
+    },
+    "QosConfig": {
+      "fields": [
+        "apply_to_strategies",
+        "enforce",
+        "exposure_block_cooldown_sec",
+        "max_intents_per_minute_per_symbol",
+        "mode",
+        "symbol_cooldown_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "QosConfig"
+    },
+    "QuadraticRolloutConfig": {
+      "fields": [
+        "rollback_armed",
+        "rollback_reason_chain",
+        "shadow_enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "QuadraticRolloutConfig"
+    },
+    "ROIExitConfig": {
+      "fields": [
+        "enabled",
+        "target_roi_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "ROIExitConfig"
+    },
+    "ReadinessRegistryConfig": {
+      "fields": [
+        "declared_keys"
+      ],
+      "kind": "pydantic_model",
+      "name": "ReadinessRegistryConfig"
+    },
+    "RegimeDetectorConfig": {
+      "fields": [
+        "models"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeDetectorConfig"
+    },
+    "RegimeLossEmbargoConfig": {
+      "fields": [
+        "enabled",
+        "min_loss_threshold_net"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeLossEmbargoConfig"
+    },
+    "RegimeModelConfig": {
+      "fields": [
+        "confidence_max",
+        "confidence_min",
+        "confidence_multiplier"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeModelConfig"
+    },
+    "RegimeModelsConfig": {
+      "fields": [
+        "mean_reversion",
+        "sma_trend",
+        "volatility"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeModelsConfig"
+    },
+    "RegimeShiftInceptionConfig": {
+      "fields": [
+        "action",
+        "enabled",
+        "micro_size_fraction"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeShiftInceptionConfig"
+    },
+    "RegimeSmoothingConfig": {
+      "fields": [
+        "ema_alpha",
+        "enabled",
+        "method",
+        "ramp_bars"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeSmoothingConfig"
+    },
+    "RegimeTpSlConfig": {
+      "fields": [
+        "enabled",
+        "max_sl_pct",
+        "max_tp_rr",
+        "min_dist_bps",
+        "min_sl_pct",
+        "min_tp_rr",
+        "mode",
+        "rr_by_regime",
+        "sl_k_atr",
+        "sl_mult",
+        "tp_mult"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeTpSlConfig"
+    },
+    "RiskBudgetsConfig": {
+      "fields": [
+        "max_daily_loss_pct",
+        "max_portfolio_risk_pct",
+        "max_single_position_risk_pct",
+        "session_cvar95_max_bps",
+        "trade_cvar95_max_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskBudgetsConfig"
+    },
+    "RiskGateConfig": {
+      "fields": [
+        "min_intents_for_check",
+        "threshold_pct_production",
+        "threshold_pct_testnet"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskGateConfig"
+    },
+    "RiskManagementDataSourcesConfig": {
+      "fields": [
+        "market_data",
+        "portfolio_state"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskManagementDataSourcesConfig"
+    },
+    "RiskManagementDomainConfig": {
+      "fields": [
+        "absorption_dp_cap_pct",
+        "absorption_feature_clip_max",
+        "absorption_feature_clip_min",
+        "absorption_penalty_source",
+        "risk_score_weights",
+        "trading_allowed_thresholds",
+        "use_absorption_penalty",
+        "validation"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskManagementDomainConfig"
+    },
+    "RiskScoreWeightsConfig": {
+      "fields": [
+        "absorption_feature",
+        "absorption_inverse",
+        "delta_price_pct",
+        "obi",
+        "tfi"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskScoreWeightsConfig"
+    },
+    "RiskSkewConfig": {
+      "fields": [
+        "defer_cooldown_sec",
+        "defer_window_sec",
+        "max_defer_count",
+        "max_skew_sec",
+        "until_refresh_max_hold_sec",
+        "until_refresh_retry_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskSkewConfig"
+    },
+    "RiskValidationConfig": {
+      "fields": [
+        "total_weight_max",
+        "total_weight_min"
+      ],
+      "kind": "pydantic_model",
+      "name": "RiskValidationConfig"
+    },
+    "SLConfig": {
+      "fields": [
+        "fixed_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "SLConfig"
+    },
+    "SMARegimeModelConfig": {
+      "fields": [
+        "confidence_max",
+        "confidence_min",
+        "confidence_multiplier",
+        "sma_long_period",
+        "sma_short_period"
+      ],
+      "kind": "pydantic_model",
+      "name": "SMARegimeModelConfig"
+    },
+    "STRESS_ORDERBOOK_TRIGGERS": {
+      "kind": "set_constant",
+      "members": [
+        "depth",
+        "spread"
+      ],
+      "name": "STRESS_ORDERBOOK_TRIGGERS"
+    },
+    "STRESS_PRICE_TRIGGERS": {
+      "kind": "set_constant",
+      "members": [
+        "atr",
+        "gap",
+        "range",
+        "vol",
+        "volume"
+      ],
+      "name": "STRESS_PRICE_TRIGGERS"
+    },
+    "STRESS_TRIGGER_KEYS": {
+      "kind": "set_constant",
+      "members": [
+        "atr",
+        "depth",
+        "gap",
+        "range",
+        "spread",
+        "vol",
+        "volume"
+      ],
+      "name": "STRESS_TRIGGER_KEYS"
+    },
+    "SafetyGatesConfig": {
+      "fields": [
+        "enabled",
+        "stress_attenuation_factor",
+        "system_stress_policy"
+      ],
+      "kind": "pydantic_model",
+      "name": "SafetyGatesConfig"
+    },
+    "ScoringEngineConfig": {
+      "fields": [
+        "context_shield",
+        "danger_zone_shield",
+        "exposure_cap",
+        "memory_shield",
+        "min_pillar_confidence",
+        "shield_enabled"
+      ],
+      "kind": "pydantic_model",
+      "name": "ScoringEngineConfig"
+    },
+    "ShadowCheckConfig": {
+      "fields": [
+        "absolute_threshold_usd",
+        "check_every_n_requests",
+        "enabled",
+        "large_portfolio_threshold_usd",
+        "tolerance_pct",
+        "use_absolute_for_large_portfolios"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowCheckConfig"
+    },
+    "ShadowCriticalEventJournalConfig": {
+      "fields": [
+        "critical_events",
+        "enabled",
+        "instrumentation_version",
+        "path",
+        "schema_version"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowCriticalEventJournalConfig"
+    },
+    "ShadowTelemetryApiConfig": {
+      "fields": [
+        "auth_mode",
+        "enabled",
+        "host",
+        "port",
+        "tls",
+        "write"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryApiConfig"
+    },
+    "ShadowTelemetryApiWriteConfig": {
+      "fields": [
+        "consequential",
+        "enabled",
+        "idempotency_ttl_sec",
+        "intents_endpoint",
+        "max_body_kb",
+        "rate_limit_per_min",
+        "require_snapshot_ref",
+        "symbol_allowlist"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryApiWriteConfig"
+    },
+    "ShadowTelemetryDomainConfig": {
+      "fields": [
+        "api",
+        "egress_to_main",
+        "enabled",
+        "ingest",
+        "required_for_mode",
+        "snapshot"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryDomainConfig"
+    },
+    "ShadowTelemetryEgressToMainConfig": {
+      "fields": [
+        "ipc_commands_endpoint",
+        "mode",
+        "overflow_policy",
+        "queue_maxsize"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryEgressToMainConfig"
+    },
+    "ShadowTelemetryIngestConfig": {
+      "fields": [
+        "allowlist_events",
+        "ipc_endpoint",
+        "overflow_policy",
+        "queue_maxsize",
+        "source"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryIngestConfig"
+    },
+    "ShadowTelemetrySnapshotConfig": {
+      "fields": [
+        "output_dir",
+        "tf_policy",
+        "trigger_event"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetrySnapshotConfig"
+    },
+    "ShadowTelemetryTfPolicyConfig": {
+      "fields": [
+        "bar_snapshots_enabled",
+        "min_tf_sec_for_full",
+        "tick_sample_every_n",
+        "tick_snapshots_mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "ShadowTelemetryTfPolicyConfig"
+    },
+    "SignalThresholdConfig": {
+      "fields": [
+        "enabled",
+        "value"
+      ],
+      "kind": "pydantic_model",
+      "name": "SignalThresholdConfig"
+    },
+    "SignalWeights": {
+      "fields": [
+        "absorption",
+        "delta_price",
+        "depth_imbalance",
+        "ema_bias",
+        "macro_resid",
+        "macro_sync",
+        "obi",
+        "tfi",
+        "volatility_state",
+        "volume_spike"
+      ],
+      "kind": "pydantic_model",
+      "name": "SignalWeights"
+    },
+    "SignalsConfig": {
+      "fields": [
+        "delta_price_cap_pct",
+        "enable_new_metrics",
+        "normalize_signals_mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "SignalsConfig"
+    },
+    "SpreadBpsConfig": {
+      "fields": [
+        "health_gate"
+      ],
+      "kind": "pydantic_model",
+      "name": "SpreadBpsConfig"
+    },
+    "SpreadHealthGateConfig": {
+      "fields": [
+        "enabled",
+        "max_age_sec",
+        "min_trades_count",
+        "min_update_events",
+        "window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "SpreadHealthGateConfig"
+    },
+    "StrategiesArbitrationConfig": {
+      "fields": [
+        "logging",
+        "mode",
+        "priority",
+        "window_ms"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategiesArbitrationConfig"
+    },
+    "StrategiesArbitrationLoggingConfig": {
+      "fields": [
+        "log_level",
+        "rejected_why_prefix"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategiesArbitrationLoggingConfig"
+    },
+    "StrategiesConfig": {
+      "fields": [
+        "aurora",
+        "llm_microstructure",
+        "md_amr",
+        "mean_reversion"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategiesConfig"
+    },
+    "StrategiesRegistryConfig": {
+      "fields": [
+        "arbitration",
+        "assignments",
+        "version"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategiesRegistryConfig"
+    },
+    "StrategistConfig": {
+      "fields": [
+        "enabled",
+        "min_bars",
+        "sensitivity",
+        "sma_period",
+        "timeframe_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategistConfig"
+    },
+    "StrategyExecutionConfig": {
+      "fields": [
+        "emit_market_fallback_marker_on_retry_exhaustion",
+        "entry_order_type",
+        "entry_tif",
+        "exit_limit_ttl_ms",
+        "exit_order_type",
+        "exit_tif",
+        "gtx_retry_max",
+        "gtx_retry_offset_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategyExecutionConfig"
+    },
+    "StrategyObjectiveConfig": {
+      "fields": [
+        "enabled",
+        "regimes"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategyObjectiveConfig"
+    },
+    "StrategyObjectiveGateConfig": {
+      "fields": [
+        "enforcement_mode",
+        "min_objective_score"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategyObjectiveGateConfig"
+    },
+    "StrategyObjectiveMultiplierConfig": {
+      "fields": [
+        "lambda_scale",
+        "m_max",
+        "m_min",
+        "penalty_center",
+        "penalty_scale"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategyObjectiveMultiplierConfig"
+    },
+    "StrategyObjectiveRegimeProfile": {
+      "fields": [
+        "gate",
+        "multiplier",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "StrategyObjectiveRegimeProfile"
+    },
+    "StructuralGateConfig": {
+      "fields": [
+        "enabled",
+        "max_risk_reward",
+        "min_risk_reward"
+      ],
+      "kind": "pydantic_model",
+      "name": "StructuralGateConfig"
+    },
+    "SupersedeRepriceGuardConfig": {
+      "fields": [
+        "enabled",
+        "enforce",
+        "min_price_improvement_atr_mult",
+        "min_price_improvement_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "SupersedeRepriceGuardConfig"
+    },
+    "SystemConfig": {
+      "fields": [
+        "debug_event_listener_enabled",
+        "market_data",
+        "validate_instruments_on_startup",
+        "warn_only_filters"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemConfig"
+    },
+    "SystemMarketDataConfig": {
+      "fields": [
+        "bar_event_age_mode",
+        "bar_ttl_ms",
+        "emit_workers",
+        "local_queue_maxsize",
+        "proxy_batch_size",
+        "proxy_idle_sleep_sec",
+        "proxy_queue_get_timeout_sec",
+        "queue_maxsize",
+        "tick_ttl_ms",
+        "ws_heartbeat_sec",
+        "ws_receive_timeout_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemMarketDataConfig"
+    },
+    "SystemMetaConfig": {
+      "fields": [
+        "calibrator",
+        "hardening",
+        "hawkes",
+        "kelly",
+        "position_tracking",
+        "regime_config_version",
+        "risk_core",
+        "runtime",
+        "sequential_tests",
+        "system_config_version"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemMetaConfig"
+    },
+    "SystemRuntimeMeta": {
+      "fields": [
+        "config_dir",
+        "config_name"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemRuntimeMeta"
+    },
+    "SystemStressAggregationConfig": {
+      "fields": [
+        "k",
+        "method",
+        "weights"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemStressAggregationConfig"
+    },
+    "SystemStressConfig": {
+      "fields": [
+        "aggregation",
+        "baseline_method",
+        "baseline_window",
+        "burn_in_bars",
+        "enabled",
+        "require_l2_if_enabled",
+        "robust_method",
+        "sources_enabled",
+        "state_mapping",
+        "thresholds"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemStressConfig"
+    },
+    "SystemStressStateMappingConfig": {
+      "fields": [
+        "circuit_breaker_mode",
+        "consecutive_bars_enter",
+        "consecutive_bars_exit",
+        "enter_extreme",
+        "enter_stress",
+        "exit_extreme",
+        "exit_stress",
+        "max_switches_per_window",
+        "min_duration_bars",
+        "switch_window_bars"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemStressStateMappingConfig"
+    },
+    "SystemStressThresholdsConfig": {
+      "fields": [
+        "atr_sigma",
+        "depth_drop_pct",
+        "gap_sigma",
+        "range_sigma",
+        "spread_sigma",
+        "vol_sigma",
+        "volume_sigma"
+      ],
+      "kind": "pydantic_model",
+      "name": "SystemStressThresholdsConfig"
+    },
+    "TAFeaturesDomainConfig": {
+      "fields": [
+        "buffer_max_bars",
+        "enabled",
+        "log_backup_count",
+        "log_calculations",
+        "log_max_bytes",
+        "timeframes_sec",
+        "warm_up_bars"
+      ],
+      "kind": "pydantic_model",
+      "name": "TAFeaturesDomainConfig"
+    },
+    "TCAPrefsConfig": {
+      "fields": [
+        "execution_priority",
+        "maker_preference",
+        "max_latency_ms",
+        "max_slippage_bps",
+        "max_slippage_pct",
+        "preferred_venue"
+      ],
+      "kind": "pydantic_model",
+      "name": "TCAPrefsConfig"
+    },
+    "TPConfig": {
+      "fields": [
+        "fixed_bps"
+      ],
+      "kind": "pydantic_model",
+      "name": "TPConfig"
+    },
+    "TacticianConfig": {
+      "fields": [
+        "enabled",
+        "min_bars",
+        "roc_period",
+        "sensitivity",
+        "timeframe_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "TacticianConfig"
+    },
+    "TradingAllowedThresholdsConfig": {
+      "fields": [
+        "max_risk_score"
+      ],
+      "kind": "pydantic_model",
+      "name": "TradingAllowedThresholdsConfig"
+    },
+    "TradingConfig": {
+      "fields": [
+        "domain_configuration",
+        "execution",
+        "llm_orchestration",
+        "market_data",
+        "mode",
+        "ops",
+        "regime_tpsl",
+        "risk",
+        "risk_budgets",
+        "risk_management",
+        "symbols_to_track",
+        "tca_prefs"
+      ],
+      "kind": "pydantic_model",
+      "name": "TradingConfig"
+    },
+    "TradingRiskManagementConfig": {
+      "fields": [
+        "data_sources"
+      ],
+      "kind": "pydantic_model",
+      "name": "TradingRiskManagementConfig"
+    },
+    "TrailingDefaultsConfig": {
+      "fields": [
+        "activation_pct",
+        "min_update_interval_sec",
+        "trail_pct"
+      ],
+      "kind": "pydantic_model",
+      "name": "TrailingDefaultsConfig"
+    },
+    "VolAdjGatesConfig": {
+      "fields": [
+        "anti_flat_sigma",
+        "anti_fomo_sigma",
+        "enabled",
+        "motion_window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolAdjGatesConfig"
+    },
+    "VolatilityConfigDetailed": {
+      "fields": [
+        "sma_length",
+        "window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolatilityConfigDetailed"
+    },
+    "VolatilityEntryConfig": {
+      "fields": [
+        "enabled",
+        "regime_multipliers"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolatilityEntryConfig"
+    },
+    "VolatilityRegimeModelConfig": {
+      "fields": [
+        "allow_close_to_close_atr",
+        "atr_period",
+        "atr_sma_length",
+        "enabled",
+        "high_vol_confidence_multiplier",
+        "low_vol_confidence_multiplier",
+        "low_vol_multiplier",
+        "threshold_multiplier"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolatilityRegimeModelConfig"
+    },
+    "VolatilityStateConfig": {
+      "fields": [
+        "cap_max",
+        "division_eps",
+        "tick_floor"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolatilityStateConfig"
+    },
+    "VolumeConfigDetailed": {
+      "fields": [
+        "min_window_volume_usd",
+        "sma_length",
+        "window_sec"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolumeConfigDetailed"
+    },
+    "VolumeSpikeConfig": {
+      "fields": [
+        "cap_max",
+        "eps",
+        "sma_len"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolumeSpikeConfig"
+    },
+    "VolumeZScoreConfig": {
+      "fields": [
+        "clip_sigma"
+      ],
+      "kind": "pydantic_model",
+      "name": "VolumeZScoreConfig"
+    },
+    "WarmupEnforcementConfig": {
+      "fields": [
+        "check_full_ready_invariant",
+        "degraded_allowed_strategies",
+        "enforcement_mode"
+      ],
+      "kind": "pydantic_model",
+      "name": "WarmupEnforcementConfig"
+    },
+    "WatchdogConfig": {
+      "fields": [
+        "ack_ttl_ms",
+        "check_interval_ms",
+        "fill_ttl_ms",
+        "rps_limit"
+      ],
+      "kind": "pydantic_model",
+      "name": "WatchdogConfig"
+    },
+    "_MD_AMR_ALLOWED_REGIMES": {
+      "kind": "set_constant",
+      "members": [
+        "FLAT_HIGH",
+        "FLAT_LOW",
+        "FLAT_NORMAL",
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "MEAN_REVERSION",
+        "TREND_DOWN",
+        "TREND_UP",
+        "UNCERTAIN"
+      ],
+      "name": "_MD_AMR_ALLOWED_REGIMES"
+    },
+    "_MD_AMR_ALLOWED_REGIME_ALIASES": {
+      "kind": "other",
+      "name": "_MD_AMR_ALLOWED_REGIME_ALIASES"
+    },
+    "_POSITION_POLICY_SIDECAR_CANONICAL_STRUCTURAL_REGIME_LABELS": {
+      "kind": "set_constant",
+      "members": [
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "MEAN_REVERSION",
+        "TREND_DOWN",
+        "TREND_UP",
+        "UNCERTAIN"
+      ],
+      "name": "_POSITION_POLICY_SIDECAR_CANONICAL_STRUCTURAL_REGIME_LABELS"
+    },
+    "_coerce_positive_decimal": {
+      "kind": "callable",
+      "name": "_coerce_positive_decimal"
+    },
+    "create_aurora_config": {
+      "kind": "callable",
+      "name": "create_aurora_config"
+    }
+  },
+  "public_surface_version": 1
+}

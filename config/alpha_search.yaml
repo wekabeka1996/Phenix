@@ -169,8 +169,8 @@ alpha_search:
   # Phase 2 admits: "off", "shadow". Default "off" — shadow requires operator opt-in.
   # ============================================================================
   judge:
-    enabled: false
-    mode: "off"
+    enabled: true
+    mode: "shadow"
 
     experts:
       signal_weights:

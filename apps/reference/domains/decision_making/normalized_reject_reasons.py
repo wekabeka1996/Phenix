@@ -1,12 +1,15 @@
 """Canonical normalized reject-reason surface for decision-making paths.
 
 This module is the SSOT for class-level NRR codes used directly by
-decision_making and adjacent domains. It also provides two helper surfaces:
+decision_making and adjacent domains. It also provides three helper surfaces:
 
 - ``normalize()`` collapses raw reject strings, short helper codes, and
     already-normalized NRR strings onto a canonical NRR code;
 - ``get_description()`` returns optional operator-facing text for codes that
-    currently have a local description entry.
+    currently have a local description entry;
+- ``normalize_trade_intent_rejected_payload()`` canonicalizes the shared
+    TRADE_INTENT_REJECTED payload shape without taking ownership of emission,
+    WAL writes, or lifecycle closure.
 
 The module does not emit events or persist diagnostics on its own. Its job is
 to keep the reject taxonomy stable and deterministic for callers that already
@@ -14,7 +17,230 @@ chose to reject, defer, or classify an outcome.
 """
 
 import re
-from typing import Optional
+import time
+from typing import Any, Dict, Mapping, Optional
+
+from vfoundation.core.protocol import Message, truncate_why
+
+
+TRADE_INTENT_REJECTED_CANONICAL_KEYS = frozenset(
+    {
+        "ts_ms",
+        "symbol",
+        "tf_sec",
+        "bar_close_ts",
+        "reason_code",
+        "strategy_id",
+        "side",
+        "rid",
+        "stage",
+        "why",
+        "context",
+        "why_chain",
+        "details",
+        "entry_plan",
+    }
+)
+
+TRADE_INTENT_REJECTED_ALLOWED_STAGES = frozenset(
+    {"RISK", "STRATEGY", "DECISION", "EXECUTION"}
+)
+
+
+def _stringify_payload_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _first_payload_text(payload: Mapping[str, Any], *keys: str) -> Optional[str]:
+    for key in keys:
+        value = _stringify_payload_value(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _resolve_payload_ts_ms(
+    payload: Mapping[str, Any], fallback_ts_ms: Optional[int]
+) -> int:
+    for key in ("ts_ms", "timestamp", "ts", "bar_close_ts"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+
+    if fallback_ts_ms is not None:
+        return int(fallback_ts_ms)
+
+    return int(time.time() * 1000)
+
+
+def _normalize_trade_intent_rejected_side(value: Any) -> Optional[str]:
+    text = _stringify_payload_value(value)
+    if text is None:
+        return None
+    side = text.lower()
+    return side if side in {"buy", "sell"} else None
+
+
+def stringify_trade_intent_rejected_value(value: Any) -> Optional[str]:
+    """Return a trimmed string for shared reject payload helpers."""
+
+    return _stringify_payload_value(value)
+
+
+def resolve_trade_intent_rejected_rid(
+    payload: Mapping[str, Any], fallback_rid: Optional[str] = None
+) -> Optional[str]:
+    """Resolve the canonical RID used by reject event/WAL artifacts."""
+
+    return _first_payload_text(payload, "rid") or _stringify_payload_value(
+        fallback_rid
+    )
+
+
+def build_trade_intent_rejected_message(
+    payload: Mapping[str, Any],
+    *,
+    src: str,
+    rid: Optional[str] = None,
+    dst: str = "any",
+) -> Message:
+    """Build the canonical event-shaped TRADE_INTENT_REJECTED record.
+
+    The helper is pure: callers decide whether to emit, append to WAL, or both.
+    """
+
+    raw = dict(payload or {})
+    symbol = _first_payload_text(raw, "symbol", "instrument") or "unknown"
+    reason_code = _first_payload_text(raw, "reason_code") or "UNKNOWN"
+    ts_ms = _resolve_payload_ts_ms(raw, None)
+    msg_rid = resolve_trade_intent_rejected_rid(raw, fallback_rid=rid)
+
+    return Message(
+        op="EVT",
+        verb="TRADE_INTENT_REJECTED",
+        src=str(src),
+        dst=str(dst),
+        rid=msg_rid or f"rej:{symbol}:{ts_ms}",
+        ts=ts_ms,
+        why=truncate_why(f"trade_intent_rejected:{reason_code}"),
+        pld=raw,
+    )
+
+
+def normalize_trade_intent_rejected_payload(
+    payload: Mapping[str, Any],
+    *,
+    fallback_rid: Optional[str] = None,
+    fallback_ts_ms: Optional[int] = None,
+    fallback_symbol: Optional[str] = None,
+    fallback_reason_code: Optional[str] = None,
+    fallback_stage: Optional[str] = None,
+    fallback_why: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Canonicalize the shared TRADE_INTENT_REJECTED payload surface.
+
+    This helper is intentionally pure: it normalizes payload fields and legacy
+    compatibility aliases, but does not emit events, write WAL, or close
+    lifecycle state. Domain owners keep those decisions locally.
+    """
+
+    normalized: Dict[str, Any] = {}
+    raw = dict(payload or {})
+
+    normalized["ts_ms"] = _resolve_payload_ts_ms(raw, fallback_ts_ms)
+
+    symbol = _first_payload_text(raw, "symbol", "instrument") or _stringify_payload_value(
+        fallback_symbol
+    )
+    if symbol is not None:
+        normalized["symbol"] = symbol
+
+    tf_sec = raw.get("tf_sec")
+    if tf_sec is not None:
+        try:
+            normalized["tf_sec"] = int(tf_sec)
+        except (TypeError, ValueError):
+            pass
+
+    bar_close_ts = raw.get("bar_close_ts")
+    if bar_close_ts is not None:
+        try:
+            normalized["bar_close_ts"] = int(bar_close_ts)
+        except (TypeError, ValueError):
+            pass
+
+    reason_code = _first_payload_text(raw, "reason_code") or _stringify_payload_value(
+        fallback_reason_code
+    )
+    if reason_code is not None:
+        normalized["reason_code"] = reason_code
+
+    strategy_id = _first_payload_text(raw, "strategy_id")
+    if strategy_id is not None:
+        normalized["strategy_id"] = strategy_id
+
+    side = _normalize_trade_intent_rejected_side(raw.get("side"))
+    if side is not None:
+        normalized["side"] = side
+
+    rid = _first_payload_text(raw, "rid") or _stringify_payload_value(fallback_rid)
+    if rid is not None:
+        normalized["rid"] = rid
+
+    stage = _first_payload_text(raw, "stage")
+    stage_upper = stage.upper() if stage is not None else None
+    if stage_upper not in TRADE_INTENT_REJECTED_ALLOWED_STAGES:
+        fallback_stage_text = _stringify_payload_value(fallback_stage)
+        stage_upper = (
+            fallback_stage_text.upper() if fallback_stage_text is not None else None
+        )
+    if stage_upper in TRADE_INTENT_REJECTED_ALLOWED_STAGES:
+        normalized["stage"] = stage_upper
+
+    why = _first_payload_text(raw, "why", "reason") or _stringify_payload_value(
+        fallback_why
+    )
+    if why is not None:
+        normalized["why"] = why[:240]
+
+    context = _first_payload_text(raw, "context")
+    if context is not None:
+        normalized["context"] = context
+
+    why_chain = raw.get("why_chain")
+    if isinstance(why_chain, (list, tuple)):
+        normalized["why_chain"] = [
+            str(item) for item in why_chain if _stringify_payload_value(item)
+        ]
+
+    details = raw.get("details")
+    if isinstance(details, dict):
+        normalized["details"] = dict(details)
+
+    entry_plan = raw.get("entry_plan")
+    if isinstance(entry_plan, dict):
+        normalized["entry_plan"] = dict(entry_plan)
+
+    legacy_top_level_keys = sorted(
+        key
+        for key in raw.keys()
+        if key not in TRADE_INTENT_REJECTED_CANONICAL_KEYS and key != "instrument"
+    )
+    if legacy_top_level_keys:
+        compat_details = dict(normalized.get("details") or {})
+        compat_details.setdefault(
+            "compat_dropped_top_level_keys", legacy_top_level_keys
+        )
+        normalized["details"] = compat_details
+
+    return normalized
 
 
 class NormalizedRejectReasons:
@@ -106,6 +332,8 @@ class NormalizedRejectReasons:
     SYSTEM_STRESS_ENTRY_BLOCKED = "NRR-059"
     # Vector 1: Microstructure Veto (MR handler overlay)
     MICROSTRUCTURE_VETO = "NRR-060"
+    # Regime loss embargo: shared entry gate block
+    REGIME_LOSS_EMBARGO_BLOCKED = "NRR-061"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex normalization is intentionally partial: not every NRR constant is
@@ -403,6 +631,7 @@ class NormalizedRejectReasons:
             cls.REGIME_UNSUPPORTED: "Current regime is not allowed for trading",
             cls.EXPOSURE_CACHE_UNAVAILABLE: "Exposure cache missing/stale/error (fail-closed)",
             cls.CONFIG_SAFETY_GATES_MISSING: "Strategy safety_gates.enabled config missing (fail-closed)",
+            cls.REGIME_LOSS_EMBARGO_BLOCKED: "Symbol is blocked by the regime loss embargo policy",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

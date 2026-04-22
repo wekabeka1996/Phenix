@@ -37,6 +37,7 @@ def test_price_ctx_stop_price_extraction():
             "order_type": "LIMIT",
             "tif": "GTC",
         },
+        "valid_for_ms": 60000,
         "price_ctx": {"stop_price": "90.0"},
         "idempotent_key": "test-idem",
     }

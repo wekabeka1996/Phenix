@@ -7,8 +7,9 @@ and order timeout handling.
 """
 from __future__ import annotations
 
+from decimal import Decimal
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
@@ -79,7 +80,7 @@ class EntryManager:
                         LOG.info(f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
                         # Remove from watchdog tracking
                         watchdog.on_order_cancel(oid)
-                        self._fsm._pending_entry_meta.pop(str(oid), None)
+                        self._fsm.remove_pending_entry_metadata(oid)
                         # Log cancellation
                         order_logger.write({
                             "rid": dl.rid,
@@ -100,7 +101,7 @@ class EntryManager:
                         if self._fsm._is_unknown_order_error(e):
                             LOG.info(f"✅ EP-01.3: Pending entry {oid} already absent (-2011)")
                             watchdog.on_order_cancel(oid)
-                            self._fsm._pending_entry_meta.pop(str(oid), None)
+                            self._fsm.remove_pending_entry_metadata(oid)
                         else:
                             LOG.warning(f"EP-01.3: Failed to cancel pending entry {oid}: {e}")
 
@@ -108,7 +109,7 @@ class EntryManager:
             else:
                 # Just remove from tracking (shadow mode or no adapter)
                 watchdog.on_order_cancel(order_id)
-                self._fsm._pending_entry_meta.pop(str(order_id), None)
+                self._fsm.remove_pending_entry_metadata(order_id)
 
     def cancel_all_pending_entries(self, reason: str = "CANCEL_PANIC_KILL") -> None:
         """
@@ -162,10 +163,10 @@ class EntryManager:
         EP-01.3-SUPERSEDE-ACK: Process queued DEC:OPEN after cancel is confirmed.
         """
         # Remove from canceling set
-        self._fsm._supersede_canceling.discard(symbol)
+        self._fsm.clear_supersede_canceling(symbol)
 
         # Get queued decision
-        queued_data = self._fsm._supersede_queue.pop(symbol, None)
+        queued_data = self._fsm.dequeue_supersede(symbol)
         if not queued_data:
             LOG.debug(f"EP-01.3: No queued supersede for {symbol}")
             return
@@ -370,3 +371,177 @@ class EntryManager:
             await emit_compat(self._fsm.fsm, timeout_msg, logger=aget(self._fsm, "logger", None))
         except Exception as e:
             LOG.error(f"Failed to emit timeout event: {e}")
+
+    def evaluate_supersede_reprice_guard(
+        self,
+        symbol: str,
+        decision: Message,
+        pending_order_ids: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Evaluate whether a same-side LIMIT supersede materially improves price."""
+        try:
+            pe_ttl_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
+            guard_cfg = pe_ttl_cfg.supersede_reprice_guard
+        except AttributeError:
+            return None
+
+        if guard_cfg is None:
+            return None
+        try:
+            if not bool(guard_cfg.enabled):
+                return None
+        except AttributeError:
+            return None
+
+        pld = decision.pld or {}
+        if str(pld.get("order_type", "")).upper() != "LIMIT":
+            return None
+
+        new_side = str(pld.get("side", "")).upper()
+        new_price_raw = pld.get("price")
+        if not new_side or new_price_raw in (None, ""):
+            return None
+
+        try:
+            new_price = Decimal(str(new_price_raw))
+        except Exception:
+            return None
+        if new_price <= 0:
+            return None
+
+        features_snap = self._fsm._last_features_cache.get(symbol) or {}
+        feats = features_snap.get("features", {}) if isinstance(
+            features_snap, dict) else {}
+        atr_14 = None
+        atr_raw = feats.get("atr_14")
+        if atr_raw not in (None, ""):
+            try:
+                atr_14 = Decimal(str(atr_raw))
+            except Exception:
+                atr_14 = None
+        if atr_14 is not None and atr_14 <= 0:
+            atr_14 = None
+
+        analyses: List[Dict[str, Any]] = []
+        for order_id in pending_order_ids:
+            meta = self._fsm.get_pending_entry_metadata(order_id)
+            if meta is None or str(meta.side).upper() != new_side:
+                return None
+            old_price = Decimal(str(meta.limit_price))
+            bps_threshold_px = (
+                old_price
+                * Decimal(str(getattr(guard_cfg, "min_price_improvement_bps", 0.0)))
+                / Decimal("10000")
+            )
+            atr_threshold_px = Decimal("0")
+            atr_mult = Decimal(
+                str(getattr(guard_cfg, "min_price_improvement_atr_mult", 0.0)))
+            if atr_14 is not None and atr_mult > 0:
+                atr_threshold_px = atr_14 * atr_mult
+            threshold_px = max(bps_threshold_px, atr_threshold_px)
+            improvement_px = new_price - old_price if new_side == "BUY" else old_price - new_price
+            analyses.append(
+                {
+                    "order_id": order_id,
+                    "old_price": str(old_price),
+                    "new_price": str(new_price),
+                    "improvement_px": float(improvement_px),
+                    "threshold_px": float(threshold_px),
+                    "allow_cancel": improvement_px >= threshold_px,
+                }
+            )
+
+        if not analyses:
+            return None
+        decision_summary = {
+            "symbol": symbol,
+            "side": new_side,
+            "analyses": analyses,
+            "enforce": bool(getattr(guard_cfg, "enforce", False)),
+            "allow_cancel": all(bool(item.get("allow_cancel")) for item in analyses),
+        }
+        if hasattr(self, "_emit_observability_event"):
+            try:
+                self._fsm._emit_observability_event(
+                    "SUPERSEDE_REPRICE_GUARD", decision_summary)
+            except Exception:
+                pass
+        return decision_summary
+
+
+    def evaluate_advanced_stale_cancel(self, symbol: str, new_regime: str) -> None:
+        """Cancel pending entries only when regime, age, and drift gates all pass."""
+        try:
+            pe_cfg = self._fsm.config.domains.execution_position.pending_entry_ttl
+            adv = pe_cfg.advanced_stale_cancel
+        except AttributeError:
+            return
+        if adv is None or not adv.enabled:
+            return
+
+        candidates: List[Tuple[str, Any]] = []
+        if self._fsm.watchdog:
+            for oid, dl in list(self._fsm.watchdog.pending_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+            for oid, dl in list(self._fsm.watchdog.acked_orders.items()):
+                if dl.symbol == symbol:
+                    candidates.append((oid, dl))
+        if not candidates:
+            return
+
+        now_ms = get_clock().now_ms()
+        features_snap = self._fsm._last_features_cache.get(symbol)
+        approved_order_ids: Set[str] = set()
+
+        for order_id, _deadline in candidates:
+            meta = self._fsm.get_pending_entry_metadata(order_id)
+            if meta is None:
+                continue
+
+            if meta.cancelable_regimes is not None:
+                if new_regime not in meta.cancelable_regimes:
+                    continue
+            else:
+                side_may = set(
+                    getattr(adv, "may_cancel_regimes", {}).get(meta.side, []))
+                never = set(
+                    getattr(adv, "never_cancel_regimes", ["UNCERTAIN"]))
+                if new_regime not in (side_may - never):
+                    continue
+
+            age_ms = now_ms - meta.placed_at_ms
+            min_age_ms = adv.min_age_before_cancel_sec * 1000
+            if age_ms < min_age_ms:
+                continue
+
+            if features_snap is None:
+                continue
+            feats = features_snap.get("features", {})
+            price_raw = feats.get("price")
+            atr_raw = feats.get("atr_14")
+            if price_raw is None or atr_raw is None:
+                continue
+            try:
+                current_price = Decimal(str(price_raw))
+                atr_14 = Decimal(str(atr_raw))
+                limit_price = Decimal(str(meta.limit_price))
+            except Exception:
+                continue
+            if atr_14 <= 0:
+                continue
+
+            threshold = atr_14 * Decimal(str(adv.drift_away.atr_mult))
+            drift = current_price - limit_price if meta.side == "BUY" else limit_price - current_price
+            if drift < threshold:
+                continue
+            approved_order_ids.add(order_id)
+
+        if approved_order_ids:
+            self.cancel_pending_entries_for_symbol(
+                symbol=symbol,
+                reason="CANCEL_STALE_REGIME_ADVANCED",
+                context=f"regime={new_regime} approved={sorted(approved_order_ids)}",
+                filter_order_ids=approved_order_ids,
+            )
+

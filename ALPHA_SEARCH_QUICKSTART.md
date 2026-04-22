@@ -1,13 +1,19 @@
-# 📘 Alpha Search Domain — Runbook & Quick Start
+# 📘 Alpha Search Standalone Runbook & Quick Start
 
-## 1. Огляд домену
+This runbook is intentionally scoped to the standalone runner path under `scripts/runners/run_alpha_search_domain.py` and `apps/reference/domains/alpha_search/runtime/`.
 
-**Alpha Search** — це домен для генерації торгових сигналів (alpha scores) з 12 різних сценаріїв:
+It is not the full domain authority document for alpha_search. For the current dual-shape domain model, embedded `main.py` integration, judge shadow ownership, and offline simulator boundaries, use `apps/reference/domains/alpha_search/docs/README.md`.
+
+## 1. Огляд standalone path
+
+**Alpha Search standalone runner** — це окремий shadow або replay analysis path для 12 різних сценаріїв:
 - **Aurora** сценарії (S03, S05, S06, S20) — детектують мікроструктуру та макро-аномалії
 - **Mean Reversion** сценарії (S01, S11, S12, S13) — сигналізують про повернення до середнього
 - **Ensemble** сценарії (S15, S18, S19, S21) — комбінують декілька моделей з динамічним зважуванням
 
-**Вихід**: `EVT:ALPHA_SCORE_CALCULATED` → decision_making → execution_position (для торгівлі)
+**Основний вихід standalone path**: `scores.jsonl`, `aggregate_metrics.csv`, session logs, shadow metrics, та інші analysis artifacts під `logs/alpha_search_runtime/`.
+
+Embedded plugin path у `apps/reference/main.py` окремо використовує `config/alpha_search.yaml` і може емiтити runtime `EVT:ALPHA_SCORE_CALCULATED` events when configured. Цей quickstart не є authority для embedded path.
 
 ---
 
@@ -71,9 +77,9 @@ logs/alpha_search_runtime/
 
 ---
 
-### 2.2 LIVE_TAIL MODE (Online — Concurrent з main.py)
+### 2.2 LIVE_TAIL MODE (Online input tailing alongside main.py)
 
-Використовується для **реального часу** або **live shadow торгівлі**.
+Використовується для near-real-time standalone shadow analysis, коли standalone runner tail-ить mirrored input file, який підтримує `main.py` path.
 
 **Конфігурація** (config/alpha_search/scenario_matrix.yaml):
 ```yaml
@@ -83,12 +89,12 @@ input:
 ```
 
 **Підготовка**:
-1. **Запустити main.py** (який включає FeatureMirrorWriter):
+1. **Запустити `main.py` path**, який writes mirrored feature snapshots via `FeatureMirrorWriter`:
 ```bash
 python apps/reference/main.py --mode live
 ```
 
-FeatureMirrorWriter у `decision_making` домені **автоматично** аппендить до `logs/alpha_input/alpha_input_v1.jsonl`.
+`FeatureMirrorWriter` writes snapshots into `logs/alpha_input/alpha_input_v1.jsonl`, який standalone runner потім tail-ить.
 
 2. **Паралельно запустити alpha_search** (в іншому терміналі):
 ```bash
@@ -99,14 +105,13 @@ python scripts/runners/run_alpha_search_domain.py --log-level INFO
 ```
 main.py (live)
   ├─ feature_engineering → EVT:FEATURES_CALCULATED
-  ├─ decision_making
-  │   └─ FeatureMirrorWriter appends to alpha_input_v1.jsonl
+  ├─ FeatureMirrorWriter appends to alpha_input_v1.jsonl
   └─ execution_position
 
 alpha_search (live_tail)
   ├─ Async monitors alpha_input_v1.jsonl
   ├─ Processes new snapshots in real-time
-  └─ Emits EVT:ALPHA_SCORE_CALCULATED ← decision_making consumes
+  └─ Writes standalone score and aggregate artifacts for analysis
 ```
 
 **Вихід**: Той же path як replay, але файлі не мають фіксованого розміру.
@@ -379,11 +384,12 @@ timeout 300 python scripts/runners/run_alpha_search_domain.py --log-level INFO
 
 ## 8. ДОКУМЕНТАЦІЯ
 
-- **[ATLAS.md](./ATLAS.md)** — Архітектура, залежності, карта файлів
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Modular фреймворк, ensemble, fail-closed
-- **[ALGORITHMS_AND_MATH.md](./ALGORITHMS_AND_MATH.md)** — Формули для каждой моделі
-- **[EVENT_CONTRACTS.md](./EVENT_CONTRACTS.md)** — Формат `EVT:ALPHA_SCORE_CALCULATED`
-- **[TESTING.md](./TESTING.md)** — Unit-тести и інтеграційні тесты
+- **[README.md](./apps/reference/domains/alpha_search/docs/README.md)** — Canonical current-domain entrypoint
+- **[ATLAS.md](./apps/reference/domains/alpha_search/docs/ATLAS.md)** — Архітектура, межі, runtime shapes, ownership
+- **[ARCHITECTURE.md](./apps/reference/domains/alpha_search/docs/ARCHITECTURE.md)** — Embedded plugin path, standalone path, simulator, failure semantics
+- **[ALGORITHMS_AND_MATH.md](./apps/reference/domains/alpha_search/docs/ALGORITHMS_AND_MATH.md)** — Формули для scoring families
+- **[EVENT_CONTRACTS.md](./apps/reference/domains/alpha_search/docs/EVENT_CONTRACTS.md)** — Runtime event surface versus offline artifacts
+- **[TESTING.md](./apps/reference/domains/alpha_search/docs/TESTING.md)** — Test slices for plugin, judge, simulator, and standalone runtime
 
 ---
 
@@ -406,4 +412,4 @@ A: **Replay** — синхронне читання з фіксованого ф
 
 ---
 
-✅ **Готово!** Тепер ви можете запустити alpha_search домен в будь-якому режимі і аналізувати результаты.
+✅ **Готово!** Тепер ви можете запускати standalone alpha_search runner у replay або live_tail режимі і аналізувати результати без змішування цього runbook з embedded plugin authority.

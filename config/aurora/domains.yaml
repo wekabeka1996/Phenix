@@ -48,6 +48,10 @@ decision_making:
   flip:
     enabled: false  # GLOBAL KILLSWITCH: must be true for ANY flip to work. Per-symbol config controls specifics.
 
+  regime_loss_embargo:
+    enabled: true
+    min_loss_threshold_net: 0.0
+
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
 
@@ -631,6 +635,10 @@ execution_position:
       partial_reduce: false
       bracket_mutation: false
       exact_targeting: false
+    peak_giveback_close:
+      enabled: true
+      edge_arm_usd: 25.0
+      giveback_trigger_pct: 50.0
 
   #
   # MAGIC-NUM-EXTRACTION: Order Lifecycle Timing Configuration

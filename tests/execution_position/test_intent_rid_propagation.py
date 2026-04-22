@@ -57,6 +57,7 @@ def test_trade_intent_uses_payload_rid_for_downstream_trace() -> None:
                 "order_type": "LIMIT",
                 "tif": "GTC",
             },
+            "valid_for_ms": 60000,
             "idempotent_key": "idem-1",
         },
         why="trade_intent",

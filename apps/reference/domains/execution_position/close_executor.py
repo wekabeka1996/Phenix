@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Optional
 
 from apps.reference.core.time import get_clock
@@ -25,6 +25,22 @@ from apps.reference.domains.execution_position.close_submission_adapter import (
     CloseSubmissionAdapterError,
     CloseSubmissionPayload,
     build_close_submission_trace_ref,
+)
+from apps.reference.domains.execution_position.tracked_close_teardown_cancel_bridge import (
+    TRACKED_CLOSE_TEARDOWN_CANCEL_CONTRACT,
+    TRACKED_CLOSE_TEARDOWN_CANCEL_PATH,
+    TrackedCloseTeardownCancelBridgeError,
+    TrackedCloseTeardownCancelRequest,
+    adapt_tracked_close_teardown_to_dec_cancel,
+    build_tracked_close_teardown_cancel_trace_ref,
+)
+from apps.reference.domains.execution_position.reconcile_close_cancel_bridge import (
+    RECONCILE_CLOSE_CANCEL_CONTRACT,
+    RECONCILE_CLOSE_CANCEL_PATH,
+    ReconcileCloseCancelBridgeError,
+    ReconcileCloseCancelRequest,
+    adapt_reconcile_close_to_dec_cancel,
+    build_reconcile_close_cancel_trace_ref,
 )
 from apps.reference.domains.execution_position.utils import (
     classify_client_order_id,
@@ -284,7 +300,7 @@ class CloseExecutor:
 
         return True
 
-    async def execute_cancel_order(self, decision: "Message") -> None:
+    async def execute_cancel_order(self, decision: "Message") -> Any:
         """Cancel a specific order for the symbol in the decision payload.
 
         Phase 6 Package 4 seam: the typed ``CancelSubmissionPayload`` is the
@@ -332,7 +348,7 @@ class CloseExecutor:
             except Exception:
                 # Observability path must never shadow the seam reject.
                 pass
-            return
+            return None
 
         success_ref = build_cancel_submission_trace_ref(status="success")
         existing_refs = list(getattr(decision, "data_ref", None) or [])
@@ -350,9 +366,500 @@ class CloseExecutor:
             submission.symbol,
             submission.order_id,
         )
-        await self._fsm._cancel_order(submission.symbol, submission.order_id)
+        result = await self._fsm._cancel_order(submission.symbol, submission.order_id)
         LOG.info(
             f"Cancelled order {submission.order_id} for {submission.symbol}")
+        return result
+
+    @staticmethod
+    def _tracked_close_teardown_requests(
+        brackets: dict[str, Any],
+    ) -> list[tuple[Literal["SL", "TP"], str]]:
+        tracked: list[tuple[Literal["SL", "TP"], str]] = []
+        sl_order_id = str(brackets.get("sl_order_id") or "").strip()
+        if sl_order_id:
+            tracked.append(("SL", sl_order_id))
+        tp_order_id = str(brackets.get("tp_order_id") or "").strip()
+        if tp_order_id:
+            tracked.append(("TP", tp_order_id))
+        return tracked
+
+    @staticmethod
+    def _append_trace_ref(target: "Message", ref: str) -> None:
+        refs = list(getattr(target, "data_ref", None) or [])
+        if ref not in refs:
+            refs.append(ref)
+            try:
+                target.data_ref = refs
+            except Exception:
+                pass
+
+    def _log_close_submission_reject(
+        self,
+        *,
+        decision: "Message",
+        partial_close: bool,
+        reason: str,
+        details: Any,
+    ) -> None:
+        reject_ref = build_close_submission_trace_ref(
+            status="reject",
+            partial_close=partial_close,
+            reason=reason,
+        )
+        self._append_trace_ref(decision, reject_ref)
+        LOG.error(
+            "CLOSE_SUBMISSION_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+            CLOSE_SUBMISSION_CONTRACT,
+            CLOSE_SUBMISSION_PATH,
+            getattr(decision, "rid", None),
+            reason,
+            details,
+        )
+
+    def _parse_requested_close_qty(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+    ) -> tuple[Optional[Decimal], bool]:
+        pld = decision.pld or {}
+        requested_close_qty_raw = pld.get("qty")
+        if requested_close_qty_raw is None:
+            return None, False
+
+        if isinstance(requested_close_qty_raw, str):
+            raw_text = requested_close_qty_raw.strip()
+            if raw_text == "":
+                return None, False
+            if raw_text in {"0", "0.0", "0.00"}:
+                return None, False
+        elif requested_close_qty_raw == 0:
+            return None, False
+
+        try:
+            requested_close_qty = Decimal(str(requested_close_qty_raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            self._log_close_submission_reject(
+                decision=decision,
+                partial_close=True,
+                reason="invalid_requested_qty",
+                details=f"symbol={symbol} qty={requested_close_qty_raw!r} error={exc}",
+            )
+            return None, True
+
+        if not requested_close_qty.is_finite() or requested_close_qty <= 0:
+            self._log_close_submission_reject(
+                decision=decision,
+                partial_close=True,
+                reason="invalid_requested_qty",
+                details=f"symbol={symbol} qty={requested_close_qty_raw!r}",
+            )
+            return None, True
+
+        return requested_close_qty, False
+
+    @staticmethod
+    def _tracked_teardown_log_failure(
+        *,
+        decision: "Message",
+        symbol: str,
+        bracket_type: str,
+        order_id: str,
+        reason: str,
+        error_text: str | None = None,
+    ) -> None:
+        payload = {
+            "rid": getattr(decision, "rid", None) or "manual-close",
+            "event_type": "ORDER_CANCELLATION_FAILED",
+            "symbol": symbol,
+            "order_id": order_id,
+            "bracket_type": bracket_type,
+            "reason": reason,
+            "timestamp": get_clock().now_ms(),
+        }
+        if error_text is not None:
+            payload["error"] = error_text
+        order_logger.write(payload)
+
+    @staticmethod
+    def _tracked_teardown_log_success(
+        *,
+        decision: "Message",
+        symbol: str,
+        bracket_type: str,
+        order_id: str,
+        reason: str,
+        adapter_response: Any,
+    ) -> None:
+        order_logger.write({
+            "rid": getattr(decision, "rid", None) or "manual-close",
+            "event_type": "ORDER_CANCELLED",
+            "symbol": symbol,
+            "order_id": order_id,
+            "bracket_type": bracket_type,
+            "reason": reason,
+            "adapter_response": adapter_response,
+            "timestamp": get_clock().now_ms(),
+        })
+
+    @staticmethod
+    def _reconcile_cancel_log_failure(
+        *,
+        decision: "Message",
+        symbol: str,
+        order_type: str,
+        order_id: str,
+        reason: str,
+        error_text: str | None = None,
+    ) -> None:
+        payload = {
+            "rid": getattr(decision, "rid", None) or "manual-close",
+            "event_type": "ORDER_CANCELLATION_FAILED",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "reason": reason,
+            "timestamp": get_clock().now_ms(),
+        }
+        if error_text is not None:
+            payload["error"] = error_text
+        order_logger.write(payload)
+
+    @staticmethod
+    def _reconcile_cancel_log_success(
+        *,
+        decision: "Message",
+        symbol: str,
+        order_type: str,
+        order_id: str,
+        reason: str,
+        adapter_response: Any,
+    ) -> None:
+        order_logger.write({
+            "rid": getattr(decision, "rid", None) or "manual-close",
+            "event_type": "ORDER_CANCELLED",
+            "symbol": symbol,
+            "order_id": order_id,
+            "order_type": order_type,
+            "reason": reason,
+            "adapter_response": adapter_response,
+            "timestamp": get_clock().now_ms(),
+        })
+
+    async def _execute_tracked_close_teardown(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        tracked_requests: list[tuple[Literal["SL", "TP"], str]],
+    ) -> None:
+        if not tracked_requests:
+            return
+
+        cancel_tasks: list[tuple[TrackedCloseTeardownCancelRequest, Any]] = []
+        for bracket_type, order_id in tracked_requests:
+            try:
+                request, cancel_decision = adapt_tracked_close_teardown_to_dec_cancel(
+                    decision,
+                    symbol=symbol,
+                    order_id=order_id,
+                    bracket_type=bracket_type,
+                )
+            except TrackedCloseTeardownCancelBridgeError as exc:
+                reject_ref = build_tracked_close_teardown_cancel_trace_ref(
+                    status="reject",
+                    bracket_type=bracket_type,
+                    reason="bridge_validation",
+                )
+                self._append_trace_ref(decision, reject_ref)
+                LOG.error(
+                    "TRACKED_CLOSE_TEARDOWN_REJECT: contract=%s path=%s rid=%s symbol=%s bracket_type=%s order_id=%s reason=%s details=%s",
+                    TRACKED_CLOSE_TEARDOWN_CANCEL_CONTRACT,
+                    TRACKED_CLOSE_TEARDOWN_CANCEL_PATH,
+                    getattr(decision, "rid", None),
+                    symbol,
+                    bracket_type,
+                    order_id,
+                    "bridge_validation",
+                    exc,
+                )
+                self._tracked_teardown_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    bracket_type=bracket_type,
+                    order_id=str(order_id),
+                    reason="tracked_close_teardown_bridge_reject",
+                    error_text=str(exc),
+                )
+                continue
+
+            self._append_trace_ref(decision, build_tracked_close_teardown_cancel_trace_ref(
+                status="success",
+                bracket_type=request.bracket_type,
+            ))
+            LOG.info(
+                "TRACKED_CLOSE_TEARDOWN_SUCCESS: contract=%s path=%s rid=%s symbol=%s bracket_type=%s order_id=%s",
+                TRACKED_CLOSE_TEARDOWN_CANCEL_CONTRACT,
+                TRACKED_CLOSE_TEARDOWN_CANCEL_PATH,
+                getattr(decision, "rid", None),
+                request.symbol,
+                request.bracket_type,
+                request.order_id,
+            )
+            cancel_tasks.append((request, self.execute_cancel_order(cancel_decision)))
+
+        if not cancel_tasks:
+            return
+
+        results = await asyncio.gather(
+            *[task for _, task in cancel_tasks],
+            return_exceptions=True,
+        )
+        for (request, result) in zip([req for req, _ in cancel_tasks], results):
+            bracket_type = request.bracket_type
+            order_id = request.order_id
+            if isinstance(result, Exception):
+                if self._fsm._is_unknown_order_error(result):
+                    LOG.info(
+                        "%s tracked bracket %s already absent (-2011) for %s",
+                        bracket_type,
+                        order_id,
+                        symbol,
+                    )
+                    self._tracked_teardown_log_success(
+                        decision=decision,
+                        symbol=symbol,
+                        bracket_type=bracket_type,
+                        order_id=order_id,
+                        reason="close_cancel_idempotent",
+                        adapter_response={"status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
+                    )
+                else:
+                    LOG.warning(
+                        "Failed tracked teardown cancel for %s bracket %s on %s: %s",
+                        bracket_type,
+                        order_id,
+                        symbol,
+                        result,
+                    )
+                    self._tracked_teardown_log_failure(
+                        decision=decision,
+                        symbol=symbol,
+                        bracket_type=bracket_type,
+                        order_id=order_id,
+                        reason="close_cancel_exception",
+                        error_text=str(result),
+                    )
+            elif result is None:
+                LOG.warning(
+                    "Tracked teardown cancel rejected before downstream execution for %s bracket %s on %s",
+                    bracket_type,
+                    order_id,
+                    symbol,
+                )
+                self._tracked_teardown_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    bracket_type=bracket_type,
+                    order_id=order_id,
+                    reason="tracked_close_teardown_cancel_reject",
+                )
+            elif self._fsm._is_cancel_success_response(result):
+                LOG.info(
+                    "Cancelled %s tracked bracket %s for %s",
+                    bracket_type,
+                    order_id,
+                    symbol,
+                )
+                self._tracked_teardown_log_success(
+                    decision=decision,
+                    symbol=symbol,
+                    bracket_type=bracket_type,
+                    order_id=order_id,
+                    reason="manual_close",
+                    adapter_response=result,
+                )
+            else:
+                cancel_status = self._fsm._cancel_status_str(result)
+                LOG.warning(
+                    "Tracked teardown cancel rejected for %s bracket %s on %s: status=%s",
+                    bracket_type,
+                    order_id,
+                    symbol,
+                    cancel_status,
+                )
+                self._tracked_teardown_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    bracket_type=bracket_type,
+                    order_id=order_id,
+                    reason="tracked_close_teardown_cancel_status_reject",
+                    error_text=cancel_status,
+                )
+
+    async def _execute_reconcile_close_cancels(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        cancelable_orders: list[tuple[str, str]],
+    ) -> int:
+        if not cancelable_orders:
+            return 0
+
+        cancel_tasks: list[tuple[ReconcileCloseCancelRequest, Any]] = []
+        for order_type, order_id in cancelable_orders:
+            try:
+                request, cancel_decision = adapt_reconcile_close_to_dec_cancel(
+                    decision,
+                    symbol=symbol,
+                    order_id=order_id,
+                    order_type=order_type,
+                )
+            except ReconcileCloseCancelBridgeError as exc:
+                reject_ref = build_reconcile_close_cancel_trace_ref(
+                    status="reject",
+                    order_type=str(order_type or "UNKNOWN").upper(),
+                    reason="bridge_validation",
+                )
+                self._append_trace_ref(decision, reject_ref)
+                LOG.error(
+                    "RECONCILE_CLOSE_CANCEL_REJECT: contract=%s path=%s rid=%s symbol=%s order_type=%s order_id=%s reason=%s details=%s",
+                    RECONCILE_CLOSE_CANCEL_CONTRACT,
+                    RECONCILE_CLOSE_CANCEL_PATH,
+                    getattr(decision, "rid", None),
+                    symbol,
+                    order_type,
+                    order_id,
+                    "bridge_validation",
+                    exc,
+                )
+                self._reconcile_cancel_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    order_type=str(order_type or ""),
+                    order_id=str(order_id or ""),
+                    reason="reconcile_close_cancel_bridge_reject",
+                    error_text=str(exc),
+                )
+                continue
+
+            self._append_trace_ref(
+                decision,
+                build_reconcile_close_cancel_trace_ref(
+                    status="success",
+                    order_type=request.order_type,
+                ),
+            )
+            LOG.info(
+                "RECONCILE_CLOSE_CANCEL_SUCCESS: contract=%s path=%s rid=%s symbol=%s order_type=%s order_id=%s",
+                RECONCILE_CLOSE_CANCEL_CONTRACT,
+                RECONCILE_CLOSE_CANCEL_PATH,
+                getattr(decision, "rid", None),
+                request.symbol,
+                request.order_type,
+                request.order_id,
+            )
+            cancel_tasks.append((request, self.execute_cancel_order(cancel_decision)))
+
+        if not cancel_tasks:
+            return 0
+
+        reconciled_cancelled = 0
+        results = await asyncio.gather(
+            *[task for _, task in cancel_tasks],
+            return_exceptions=True,
+        )
+        for request, result in zip([req for req, _ in cancel_tasks], results):
+            order_type = request.order_type
+            order_id = request.order_id
+            if isinstance(result, Exception):
+                if self._fsm._is_unknown_order_error(result):
+                    LOG.info(
+                        "[DEC:CLOSE RECONCILE] %s %s already gone for %s (-2011)",
+                        order_type,
+                        order_id,
+                        symbol,
+                    )
+                    reconciled_cancelled += 1
+                    self._reconcile_cancel_log_success(
+                        decision=decision,
+                        symbol=symbol,
+                        order_type=order_type,
+                        order_id=order_id,
+                        reason="reconcile_cancel_idempotent",
+                        adapter_response={"status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
+                    )
+                else:
+                    LOG.warning(
+                        "[DEC:CLOSE RECONCILE] Failed to cancel %s %s for %s: %s",
+                        order_type,
+                        order_id,
+                        symbol,
+                        result,
+                    )
+                    self._fsm._orphan_metrics["errors"] += 1
+                    self._reconcile_cancel_log_failure(
+                        decision=decision,
+                        symbol=symbol,
+                        order_type=order_type,
+                        order_id=order_id,
+                        reason="reconcile_cancel_exception",
+                        error_text=str(result),
+                    )
+            elif result is None:
+                LOG.warning(
+                    "[DEC:CLOSE RECONCILE] Cancel rejected before downstream execution for %s %s on %s",
+                    order_type,
+                    order_id,
+                    symbol,
+                )
+                self._fsm._orphan_metrics["errors"] += 1
+                self._reconcile_cancel_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    order_type=order_type,
+                    order_id=order_id,
+                    reason="reconcile_cancel_reject",
+                )
+            elif self._fsm._is_cancel_success_response(result):
+                LOG.info(
+                    "[DEC:CLOSE RECONCILE] Cancelled %s %s for %s",
+                    order_type,
+                    order_id,
+                    symbol,
+                )
+                self._fsm._orphan_metrics["reconcile_cancelled"] += 1
+                reconciled_cancelled += 1
+                self._reconcile_cancel_log_success(
+                    decision=decision,
+                    symbol=symbol,
+                    order_type=order_type,
+                    order_id=order_id,
+                    reason="reconcile_cancel",
+                    adapter_response=result,
+                )
+            else:
+                status = self._fsm._cancel_status_str(result)
+                LOG.warning(
+                    "[DEC:CLOSE RECONCILE] Cancel response unexpected for %s %s on %s (status=%s)",
+                    order_type,
+                    order_id,
+                    symbol,
+                    status,
+                )
+                self._fsm._orphan_metrics["errors"] += 1
+                self._reconcile_cancel_log_failure(
+                    decision=decision,
+                    symbol=symbol,
+                    order_type=order_type,
+                    order_id=order_id,
+                    reason="reconcile_cancel_status_reject",
+                    error_text=status,
+                )
+
+        return reconciled_cancelled
 
     def _build_close_submission(
         self,
@@ -384,25 +891,11 @@ class CloseExecutor:
                 idempotent_key=idem_key,
             )
         except CloseSubmissionAdapterError as exc:
-            reject_ref = build_close_submission_trace_ref(
-                status="reject",
+            self._log_close_submission_reject(
+                decision=decision,
                 partial_close=reject_hint_partial,
                 reason="adapter_validation",
-            )
-            existing_refs = list(getattr(decision, "data_ref", None) or [])
-            if reject_ref not in existing_refs:
-                existing_refs.append(reject_ref)
-                try:
-                    decision.data_ref = existing_refs
-                except Exception:
-                    pass
-            LOG.error(
-                "CLOSE_SUBMISSION_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
-                CLOSE_SUBMISSION_CONTRACT,
-                CLOSE_SUBMISSION_PATH,
-                rid,
-                "adapter_validation",
-                exc,
+                details=exc,
             )
             return None
 
@@ -410,13 +903,7 @@ class CloseExecutor:
             status="success",
             partial_close=submission.partial_close,
         )
-        existing_refs = list(getattr(decision, "data_ref", None) or [])
-        if success_ref not in existing_refs:
-            existing_refs.append(success_ref)
-            try:
-                decision.data_ref = existing_refs
-            except Exception:
-                pass
+        self._append_trace_ref(decision, success_ref)
         LOG.info(
             "CLOSE_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s side=%s qty=%s partial=%s",
             CLOSE_SUBMISSION_CONTRACT,
@@ -441,18 +928,14 @@ class CloseExecutor:
             LOG.error("DEC:CLOSE missing symbol; cannot execute")
             return
 
-        requested_close_qty: Optional[Decimal] = None
-        requested_close_qty_raw = pld.get("qty")
-        if requested_close_qty_raw not in (None, "", "0", 0):
-            try:
-                requested_close_qty = abs(
-                    Decimal(str(requested_close_qty_raw)))
-            except Exception:
-                LOG.warning(
-                    "DEC:CLOSE invalid qty=%r for %s; falling back to full close",
-                    requested_close_qty_raw,
-                    symbol,
-                )
+        requested_close_qty, requested_close_qty_rejected = (
+            self._parse_requested_close_qty(
+                decision=decision,
+                symbol=symbol,
+            )
+        )
+        if requested_close_qty_rejected:
+            return
 
         if requested_close_qty is not None:
             try:
@@ -554,56 +1037,20 @@ class CloseExecutor:
             LOG.info(
                 f"🔒 [PHASE A2] Set closing flag for {symbol} to prevent bracket race")
 
-        # First cancel the bracket IDs we already track locally.
-        br = self._fsm._symbol_brackets[symbol] if symbol in self._fsm._symbol_brackets else {
-        }
-        tasks = []
-        bracket_order_ids = []
-        if br.get("sl_order_id"):
-            tasks.append(self._fsm._cancel_order(symbol, br["sl_order_id"]))
-            bracket_order_ids.append(("SL", br["sl_order_id"]))
-        if br.get("tp_order_id"):
-            tasks.append(self._fsm._cancel_order(symbol, br["tp_order_id"]))
-            bracket_order_ids.append(("TP", br["tp_order_id"]))
-
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for (bracket_type, oid), result in zip(bracket_order_ids, results):
-                if isinstance(result, Exception):
-                    if self._fsm._is_unknown_order_error(result):
-                        LOG.info(
-                            f"ℹ️ {bracket_type} bracket {oid} already absent (-2011) for {symbol}")
-                        order_logger.write({
-                            "rid": decision.rid or "manual-close",
-                            "event_type": "ORDER_CANCELLED", "symbol": symbol,
-                            "order_id": oid, "bracket_type": bracket_type,
-                            "reason": "close_cancel_idempotent", "timestamp": get_clock().now_ms()
-                        })
-                    else:
-                        LOG.warning(
-                            f"❌ Failed to cancel {bracket_type} bracket {oid} for {symbol}: {result}")
-                        order_logger.write({
-                            "rid": decision.rid or "manual-close",
-                            "event_type": "ORDER_CANCELLATION_FAILED", "symbol": symbol,
-                            "order_id": oid, "bracket_type": bracket_type,
-                            "reason": "close_cancel_exception", "error": str(result),
-                            "timestamp": get_clock().now_ms()
-                        })
-                else:
-                    if self._fsm._is_cancel_success_response(result):
-                        LOG.info(
-                            f"✅ Cancelled {bracket_type} bracket {oid} for {symbol}")
-                        order_logger.write({
-                            "rid": decision.rid or "manual-close",
-                            "event_type": "ORDER_CANCELLED", "symbol": symbol,
-                            "order_id": oid, "bracket_type": bracket_type,
-                            "reason": "manual_close", "adapter_response": result,
-                            "timestamp": get_clock().now_ms()
-                        })
-                    else:
-                        cancel_status = self._fsm._cancel_status_str(result)
-                        LOG.warning(
-                            f"❌ Cancel rejected for {bracket_type} bracket {oid}: status={cancel_status}")
+        # First cancel only the locally tracked bracket IDs through the
+        # bounded internal teardown bridge, which then reuses the Package 4
+        # typed DEC:CANCEL_ORDER intake.
+        br = (
+            self._fsm._symbol_brackets[symbol]
+            if symbol in self._fsm._symbol_brackets
+            else {}
+        )
+        tracked_requests = self._tracked_close_teardown_requests(br)
+        await self._execute_tracked_close_teardown(
+            decision=decision,
+            symbol=symbol,
+            tracked_requests=tracked_requests,
+        )
 
         # Re-read the exchange position after bracket cancellation so the close
         # order uses current on-exchange size rather than cached intent state.
@@ -694,42 +1141,26 @@ class CloseExecutor:
                     o.__dict__ if not isinstance(o, dict) else o)
                 for o in open_orders
             ]
-            cancel_tasks = []
+            cancelable_orders: list[tuple[str, str]] = []
             for o in open_orders_list:
                 otype = (o.get("type") or "").upper()
                 reduce_only = coerce_exchange_bool(o.get("reduceOnly"))
                 close_pos = coerce_exchange_bool(o.get("closePosition"))
                 if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
                     oid = o.get("orderId")
-                    cancel_tasks.append(
-                        (otype, oid, self._fsm._cancel_order(symbol, oid)))
+                    cancelable_orders.append((otype, oid))
 
-            if cancel_tasks:
-                results = await asyncio.gather(*[task[2] for task in cancel_tasks], return_exceptions=True)
-                for (otype, oid, _), result in zip(cancel_tasks, results):
-                    if isinstance(result, Exception):
-                        if self._fsm._is_unknown_order_error(result):
-                            LOG.info(
-                                f"ℹ️ [DEC:CLOSE RECONCILE] {otype} {oid} already gone for {symbol} (-2011)")
-                        else:
-                            LOG.warning(
-                                f"❌ [DEC:CLOSE RECONCILE] Failed to cancel {otype} {oid} for {symbol}: {result}")
-                            self._fsm._orphan_metrics["errors"] += 1
-                    else:
-                        if self._fsm._is_cancel_success_response(result):
-                            LOG.info(
-                                f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
-                            self._fsm._orphan_metrics["reconcile_cancelled"] += 1
-                        else:
-                            status = self._fsm._cancel_status_str(result)
-                            LOG.warning(
-                                f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
-                            self._fsm._orphan_metrics["errors"] += 1
-
+            if cancelable_orders:
+                reconciled_cancelled = await self._execute_reconcile_close_cancels(
+                    decision=decision,
+                    symbol=symbol,
+                    cancelable_orders=cancelable_orders,
+                )
                 self._fsm._emit_observability_event("RECONCILE_CANCELLED", {
                     "symbol": symbol,
-                    "order_count": len(cancel_tasks),
-                    "metric": self._fsm._orphan_metrics["reconcile_cancelled"]
+                    "order_count": len(cancelable_orders),
+                    "metric": self._fsm._orphan_metrics["reconcile_cancelled"],
+                    "reconcile_cancelled_now": reconciled_cancelled,
                 })
             else:
                 LOG.info(

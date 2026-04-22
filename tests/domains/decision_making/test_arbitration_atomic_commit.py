@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
+from types import SimpleNamespace
 from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
 from apps.reference.domains.decision_making.intent_builder import IntentBuilder
 from vfoundation.core.protocol import Message
@@ -37,9 +38,45 @@ class TestArbitrationAtomicCommit:
         
         dm_mock = MagicMock()
         dm_mock._clock.now_ms.return_value = 1700000000000
-        dm_mock.symbol_states = {"BTCUSDT": {"risk": {"risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}}}}
-        dm_mock.config.domains.risk_management.trading_allowed_thresholds.max_risk_score = 100
+        dm_mock.symbol_states = {"BTCUSDT": {
+            "risk": {
+                "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0},
+                "ts": 1699999999000,
+            },
+            "features": {"ts": 1699999999000, "features": {}},
+        }}
+        dm_mock.config = SimpleNamespace(
+            domains=SimpleNamespace(
+                risk_management=SimpleNamespace(
+                    trading_allowed_thresholds=SimpleNamespace(max_risk_score=100)),
+                decision_making=SimpleNamespace(
+                    risk_skew=SimpleNamespace(
+                        max_skew_sec=10, max_defer_count=5,
+                        defer_window_sec=60, defer_cooldown_sec=2,
+                        until_refresh_max_hold_sec=300,
+                        until_refresh_retry_sec=5,
+                    )),
+                position_tracking=SimpleNamespace(positions_stale_ttl_sec=30),
+            ),
+            system=SimpleNamespace(market_data=None),
+            strategies=SimpleNamespace(
+                aurora=SimpleNamespace(
+                    decision=SimpleNamespace(
+                        retry_max_count=5, retry_backoff_factor=2.0),
+                    safety_gates=SimpleNamespace(system_stress_policy="off"),
+                ),
+                strat_A=SimpleNamespace(
+                    safety_gates=SimpleNamespace(system_stress_policy="off"),
+                ),
+                strat_B=SimpleNamespace(
+                    safety_gates=SimpleNamespace(system_stress_policy="off"),
+                ),
+            ),
+        )
         dm_mock.latest_portfolio = {"equity": 1000}
+        dm_mock.features_ttl_sec = 30
+        dm_mock._per_symbol_regimes = {}
+        dm_mock._system_stress_states = {}
         
         dm_mock._check_strategy_arbitration = resolver.check_strategy_arbitration
         dm_mock._handle_flip_orchestration.return_value = None

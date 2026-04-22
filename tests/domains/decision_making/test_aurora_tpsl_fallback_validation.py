@@ -166,19 +166,29 @@ def _make_gateway(symbol: str, instr_cfg: SimpleNamespace, entry_plan_raw: dict)
         domains=SimpleNamespace(
             decision_making=SimpleNamespace(
                 entry_plan=_build_entry_plan_cfg(entry_plan_raw),
+                risk_skew=SimpleNamespace(
+                    max_skew_sec=10, max_defer_count=5,
+                    defer_window_sec=60, defer_cooldown_sec=2,
+                    until_refresh_max_hold_sec=300,
+                    until_refresh_retry_sec=5,
+                ),
             ),
             risk_management=SimpleNamespace(
                 trading_allowed_thresholds=SimpleNamespace(max_risk_score=100),
             ),
+            position_tracking=SimpleNamespace(positions_stale_ttl_sec=30),
         ),
         system=SimpleNamespace(market_data=None),
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
+                safety_gates=SimpleNamespace(system_stress_policy="off"),
             )
         ),
     )
+    dm._per_symbol_regimes = {}
+    dm._system_stress_states = {}
     dm.latest_portfolio = {"equity": 1000}
     dm.features_ttl_sec = 30
     dm._check_strategy_arbitration.return_value = {"allowed": True}

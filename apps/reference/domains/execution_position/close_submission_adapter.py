@@ -1,14 +1,16 @@
 """Typed execution-side bridge for DEC:CLOSE -> adapter close submission.
 
 Phase 6 Package 5 seam-local closure of the close-submission boundary.
-This module is the *single* runtime normalization owner for
-``DEC:CLOSE -> adapter.place_market_reduce_only``.
+This module is the *single* runtime normalization owner for the derived
+canonical submit contract:
+``DEC:CLOSE executor state -> adapter.place_market_reduce_only``.
 
 Ownership boundary (bounded, do not widen):
 - upstream ``DEC:CLOSE`` producers remain unchanged;
 - bracket teardown, reconcile plane, sidecar signaling, exchange-position
   re-read, and restore-artifact persistence all remain unchanged;
-- this typed payload owns close-submission derivation:
+- executor close-path parsing remains the raw ``DEC:CLOSE`` intake owner;
+- this typed payload owns canonical close-submission derivation:
   * ``side`` from ``position_amt`` sign,
   * ``quantity`` from partial-vs-full logic,
   * ``client_order_id`` via ``generate_client_order_id("CLOSE", ...)``;
@@ -35,7 +37,7 @@ class CloseSubmissionAdapterError(ValueError):
 
 
 class CloseSubmissionPayload(BaseModel):
-    """Typed bridge payload for adapter-bound close submission.
+    """Canonical adapter-bound close submission.
 
     Contract:
     - ``symbol``, ``side``, ``quantity`` and ``client_order_id`` are required;
@@ -43,8 +45,11 @@ class CloseSubmissionPayload(BaseModel):
     - ``quantity`` is a positive-decimal string;
     - ``partial_close`` distinguishes the partial-close branch from the
       full-close branch;
-    - extras are rejected (``extra=forbid``) — prevents silent payload drift
-      at the seam.
+    - extras are rejected (``extra=forbid``) on this canonical adapter request.
+
+    This model does not validate arbitrary raw ``DEC:CLOSE`` payloads. Raw
+    close intake ownership remains with existing producer seams plus the
+    executor's qty parser / position re-read.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -64,12 +69,12 @@ class CloseSubmissionPayload(BaseModel):
         requested_qty: Optional[Decimal],
         idempotent_key: Optional[str],
     ) -> "CloseSubmissionPayload":
-        """Seam-local construction for the close-submission boundary.
+        """Seam-local construction for the canonical close submission.
 
         Owns the three derivations that were previously inlined in the
         executor glue:
-        - ``side`` from the sign of ``position_amt`` (positive → ``SELL``,
-          negative → ``BUY``);
+        - ``side`` from the sign of ``position_amt`` (positive -> ``SELL``,
+          negative -> ``BUY``);
         - ``quantity`` as ``requested_qty`` when a strictly-smaller partial
           close is requested (``0 < requested_qty < |position_amt|``), else
           ``|position_amt|`` for a full close;
@@ -79,8 +84,6 @@ class CloseSubmissionPayload(BaseModel):
         Fails closed on any inconsistency (empty symbol, zero position,
         non-positive requested_qty, empty idempotent_key).
         """
-        # Local import to avoid import cycles with the execution_position
-        # package's utils module at import time (Package 3 precedent).
         from apps.reference.domains.execution_position.utils import (
             generate_client_order_id,
         )
@@ -153,13 +156,7 @@ def build_close_submission_trace_ref(
     partial_close: bool,
     reason: Optional[str] = None,
 ) -> str:
-    """Construct the stable close-submission seam trace reference.
-
-    Format mirrors the open/cancel submission trace refs:
-    ``obs://execution_position/close_submission?contract=close_submission_v1
-    &path=DEC:CLOSE->adapter&status={success|reject}&partial={true|false}
-    [&reason=...]``.
-    """
+    """Construct the stable close-submission seam trace reference."""
     params = {
         "contract": CLOSE_SUBMISSION_CONTRACT,
         "path": CLOSE_SUBMISSION_PATH,

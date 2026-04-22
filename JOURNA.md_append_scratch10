@@ -1,0 +1,25 @@
+
+## 2026-04-18
+**Task / package id:** Package 6a Audit
+**Goal:** Define bounded contour for Package 6a (startup_truth_orchestrator / read / compare / IO), excluding mutating authoritative apply (6b) and reconstruction (6c).
+**AUDIT ONLY - NO CODE CHANGES**
+
+**Files inspected:**
+- `fsm.py`
+- `restore_artifact.py`
+
+**Findings summary:**
+- `fsm.py` completely governs read-only record building, IO persistence, JSON dumping schedules, and semantic snapshot verification for artifacts.
+- `restore_artifact.py` currently serves purely as a Pydantic schema model repository and low-level File I/O handler, with zero knowledge of FSM internal state tracking properties.
+- Package 6a boundary is clear and valid: all read-only formatting, gating, and polling routines map cleanly to a new `startup_truth_orchestrator` module that can interrogate `fsm.py` gracefully without mutating FSM.
+- `_apply_authoritative_restore_record` actively mutates FSM states (`ManageFlow`, `CloseFlow`), so it must absolutely be grouped with Package 6b instead of 6a.
+- `restore_startup_from_snapshot_positions` and guardian reconciling dictate explicit post-startup mapping changes, meaning they belong strictly to Package 6c.
+
+**Boundary verdict:**
+Creating a `startup_truth_orchestrator.py` module strictly limits FSM to memory mapping gracefully safely. Package 6a should exclusively absorb the reading loops securely formatting traces cleanly.
+
+**Known risks / unproven areas:**
+The highest operational risk is accidentally moving `_apply_authoritative_restore_record` blindly into 6a, leading to a silent mutation logic escaping the FSM's direct intent logic boundaries and defeating the "read-only" objective of 6a. 
+
+**Next-step recommendation:**
+Proceed to Package 6a coding accurately extracting exactly the orchestrating read-only loops securely safely dependably. Leave mutating steps predictably in FSM until 6b.

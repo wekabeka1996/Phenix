@@ -52,7 +52,7 @@ class _DMStub:
             system=SimpleNamespace(
                 market_data=SimpleNamespace(bar_ttl_ms=600_000)
             ),
-            strategies=SimpleNamespace(mean_reversion=SimpleNamespace(decision=SimpleNamespace())),
+            strategies=SimpleNamespace(mean_reversion=SimpleNamespace(decision=SimpleNamespace(), safety_gates=SimpleNamespace(enabled=True))),
         )
 
     def _emit_trade_intent_rejected(self, **kwargs):

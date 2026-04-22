@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Callable, Dict, Optional, Any
 
 from vfoundation.core.protocol import Message
 from .contracts import (
@@ -142,6 +142,10 @@ class CmdOpenPayload(BaseModel):
         default=None, description="Request ID for correlation")
     strategy: Optional[str] = Field(
         default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
+    regime_epoch_ref: Optional[str] = Field(
+        default=None,
+        description="Decision-making-owned stable regime epoch propagated additively to execution.",
+    )
     regime: Optional[str] = Field(
         default=None,
         description="Decision-time structural regime propagated additively to execution.",
@@ -214,6 +218,7 @@ class OpenFlowFSM:
         metrics_collector: Optional[MetricsCollector] = None,
         leverage_service: Optional[Any] = None,
         is_live_execution: bool = False,
+        pre_open_guard: Optional[Callable[[Message], Optional[Message]]] = None,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
@@ -238,6 +243,7 @@ class OpenFlowFSM:
             "fsm_errors_total": 0,
         }
         self.idempotency_store: Dict[str, float] = {}
+        self.pre_open_guard = pre_open_guard
 
         # TASK47c-E: LeverageService integration
         self.leverage_service = leverage_service
@@ -378,6 +384,11 @@ class OpenFlowFSM:
             DEC:OPEN if guards pass, ERR if guards fail, None if not applicable.
         """
         if msg.op == "CMD" and msg.verb == "OPEN":
+            if self.pre_open_guard is not None:
+                guard_result = self.pre_open_guard(msg)
+                if guard_result is not None:
+                    return guard_result
+
             # Record CMD:OPEN
             if self.metrics_collector:
                 self.metrics_collector.record_cmd_open()
@@ -563,6 +574,7 @@ class OpenFlowFSM:
                         target_price=validated_pld.target_price,
                         sl_pct=validated_pld.sl_pct,
                         idempotent_key=validated_pld.idempotent_key,
+                        regime_epoch_ref=validated_pld.regime_epoch_ref,
                         regime=validated_pld.regime,
                         regime_confidence=validated_pld.regime_confidence,
                         regime_provenance=validated_pld.regime_provenance.model_dump()

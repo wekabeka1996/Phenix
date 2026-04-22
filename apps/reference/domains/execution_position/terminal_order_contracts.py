@@ -13,7 +13,11 @@ import logging
 import time
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from vfoundation.core.fsm_emit_compat import Message, emit_compat
+from vfoundation.core.fsm_emit_compat import (
+    Message,
+    emit_compat,
+    resolve_emit_compat_mode,
+)
 
 try:
     from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
@@ -410,28 +414,21 @@ async def emit_canonical_terminal_order_event(
                 logger.warning("Failed to write %s to WAL: %s", event_name, exc)
 
     emit = getattr(fsm, "emit", None)
-    if emit is not None:
-        try:
-            result = emit(msg)
-            if inspect.isawaitable(result):
-                await result
-            sync_trade_lifecycle_terminal_order_event(
+    mode = resolve_emit_compat_mode(fsm, emit=emit, logger=logger)
+    if mode == "message" and emit is not None:
+        result = emit(msg)
+        if inspect.isawaitable(result):
+            await result
+    elif mode in {"op_verb_payload_why", "op_payload_why"}:
+        await emit_compat(fsm, msg, logger=logger)
+    else:
+        if logger is not None:
+            logger.error(
+                "emit contract unresolved for %s; canonical terminal event was not emitted",
                 event_name,
-                normalized,
-                logger=logger,
             )
-            return normalized
-        except TypeError:
-            pass
-        except Exception as exc:
-            if logger is not None:
-                logger.debug(
-                    "Direct emit(Message) failed for %s, falling back to emit_compat: %r",
-                    event_name,
-                    exc,
-                )
+        return normalized
 
-    await emit_compat(fsm, msg, logger=logger)
     sync_trade_lifecycle_terminal_order_event(
         event_name,
         normalized,

@@ -43,14 +43,14 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
         storage_path=str(restore_path),
         flush_interval_ms=250,
     )
-    fsm._restore_artifact_writer = fsm._create_restore_artifact_writer()
+    fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
     fsm.config.domains.execution_position.startup_truth_artifact = (
         ExecutionPositionStartupTruthArtifactConfig(
             mode="writer_only",
             storage_path=str(startup_truth_path),
         )
     )
-    fsm._startup_truth_artifact_writer = fsm._create_startup_truth_artifact_writer()
+    fsm._startup_truth_orchestrator._startup_truth_artifact_writer = fsm._startup_truth_orchestrator._create_startup_truth_artifact_writer()
 
     manage_flow = MagicMock()
     manage_flow.state = ManageState.FLAT

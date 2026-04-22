@@ -116,6 +116,11 @@ def _sidecar_config(
                 "bracket_mutation": False,
                 "exact_targeting": False,
             },
+            "peak_giveback_close": {
+                "enabled": False,
+                "edge_arm_usd": 25.0,
+                "giveback_trigger_pct": 50.0,
+            },
         }
     )
 
@@ -935,7 +940,7 @@ def test_execpos_position_policy_close_request_suppresses_when_manage_flow_closi
         "portfolio_correlation": {},
     }
 
-    fsm._on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
     suppressed = [row for row in states if row["request_state"] == "suppressed"]
@@ -1002,7 +1007,7 @@ def test_execpos_position_policy_close_request_forbidden_capabilities_fail_close
         "portfolio_correlation": {},
     }
 
-    fsm._on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
     suppressed = [row for row in states if row["request_state"] == "suppressed"]
@@ -1068,7 +1073,7 @@ def test_execpos_position_policy_close_request_rejects_bracket_mutation_scope(fs
         "portfolio_correlation": {},
     }
 
-    fsm._on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
     suppressed = [row for row in states if row["request_state"] == "suppressed"]

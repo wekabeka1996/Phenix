@@ -1,0 +1,26 @@
+
+## 2026-04-18
+**Task / package id:** Package 3 Audit - `bracket_ownership`
+**Goal:** Determine whether Package 3 should proceed as a separate contour and define its exact boundary relative to `fsm.py`, `bracket_manager.py`, `order_guardian.py`, and `pending_brackets_wal.py`.
+**Status:** `AUDIT ONLY` | `NO CODE CHANGES`
+
+**Files inspected:**
+- `apps/reference/domains/execution_position/fsm.py`
+- `apps/reference/domains/execution_position/bracket_manager.py`
+- `apps/reference/domains/execution_position/order_guardian.py`
+- `apps/reference/domains/execution_position/pending_brackets_wal.py`
+
+**Findings summary:**
+- `bracket_manager.py` completely isolates bracket **execution placement** (`place_brackets_parallel`, `place_deferred_brackets`).
+- `order_guardian.py` isolates **exchange mapping, lifecycle tracking, and reconciliation truth** (`register_entry`, `register_bracket`, `cleanup_orphans`).
+- `pending_brackets_wal.py` successfully owns **file-level WAL persistence**.
+- `fsm.py` currently holds the entire dictionary (`self._bracket_owner_by_symbol`) mapping which specific **strategy** inherently "owns" the dynamically tracked brackets, and executes specific resolution rules (`_resolve_bracket_strategy_owner`) assigning those ownership tags dynamically when decisions cascade.
+
+**Boundary verdict:**
+- **Separate bracket_ownership contour:** Package 3 represents a genuinely separate, highly cohesive bounded contour. Separating `bracket_ownership.py` perfectly resolves a known "strategy identity" layer tracking independently from "exchange order identity" (`order_guardian`) without tangling with physical limit pushes (`bracket_manager`).
+
+**Known risks / unproven areas:**
+Extracting the trace lookup logic directly without capturing explicit failure traces might cause silent strategy overrides where Guardian tracks exchange orders correctly but the local system drops the strategy mapping. Ensuring the explicit synchronous emission of `EXECUTION_BRACKET_OWNERSHIP_RECORD_KIND` alongside the dictionary updates stays atomically bound remains critically unproven until implemented dynamically.
+
+**Next-step recommendation:**
+Proceed explicitly directly with `apps/reference/domains/execution_position/bracket_ownership.py` as a structural peer, extracting exactly the `_resolve_bracket_strategy_owner`, `_resolve_strategy_owner_from_decision`, `_resolve_strategy_owner_for_recovery`, `_remember_bracket_owner`, and `_append_bracket_ownership_record` execution limit wrappers exactly securely outside of the core routing elements dynamically.

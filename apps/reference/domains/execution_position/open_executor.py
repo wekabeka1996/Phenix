@@ -1025,6 +1025,7 @@ class OpenExecutor:
         _open_regime = (decision.pld or {}).get("regime")
         _open_regime_confidence = (decision.pld or {}).get("regime_confidence")
         _open_regime_provenance = (decision.pld or {}).get("regime_provenance")
+        _open_regime_epoch_ref = (decision.pld or {}).get("regime_epoch_ref")
         order_logger.write({
             "rid": decision.rid, "event_type": "ORDER_PLACED", "symbol": symbol,
             "side": side, "quantity": float(qty), "qty_raw": float(raw_qty) if raw_qty else None,
@@ -1036,6 +1037,7 @@ class OpenExecutor:
             "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}})
 
         self._fsm._open_regime_by_symbol[symbol] = {
+            "regime_epoch_ref": _open_regime_epoch_ref,
             "regime": _open_regime,
             "regime_confidence": _open_regime_confidence,
             "regime_provenance": _open_regime_provenance,

@@ -4,16 +4,17 @@
 
 alpha_search is a bounded strategy-analysis domain, not a single-purpose alpha-score emitter.
 
-It started as a standalone shadow or scenario runtime that consumed mirrored feature snapshots and produced scoring artifacts outside the main execution loop. In the current tree it also runs inside apps/reference/main.py as AlphaSearchBacktestPlugin loaded from config/alpha_search.yaml.
+It started as a standalone shadow or scenario runtime that consumed mirrored feature snapshots and produced scoring artifacts outside the main execution loop. In the current tree it also has a configured embedded startup path in apps/reference/main.py through AlphaSearchBacktestPlugin loaded from config/alpha_search.yaml.
 
-The same domain now owns four related but distinct surfaces:
+There are two primary runtime shapes and five total entry or operation surfaces. The same domain now owns five related but distinct surfaces:
 
 1. alpha-provider scoring
 2. judge shadow expert, chamber, evidence, and verdict emission
 3. the offline judge simulator subtree under judge/simulator/
-4. the optional shutdown-time export seam that invokes that offline simulator after session end
+4. the offline judge review subtree under judge/review/
+5. the optional shutdown-time export seam that invokes that offline simulator after session end
 
-The key normalization point is that surface 4 is automation of surface 3. It does not convert the simulator into a live policy engine.
+The key normalization point is that surface 5 is automation of surface 3. Surface 4 consumes bounded offline artifacts from surfaces 2 and 3. None of these surfaces convert alpha_search into a live policy engine.
 
 ## 2. What alpha_search Owns
 
@@ -23,6 +24,7 @@ The key normalization point is that surface 4 is automation of surface 3. It doe
 - runtime emission of judge shadow events when judge.mode=shadow
 - the historical standalone feature-mirror and replay path
 - the offline simulator CLI, writers, schemas, and validation helpers
+- the offline review CLI, evidence loaders, report writers, and strict review config
 - the optional simulator_shutdown_export hook on plugin shutdown
 
 ## 3. What alpha_search Does Not Own
@@ -48,7 +50,7 @@ This path matters because alpha_search was originally built as a standalone anal
 
 ### 4.2 Embedded main.py Plugin Path
 
-apps/reference/main.py now imports load_alpha_search_config, loads config/alpha_search.yaml, and instantiates AlphaSearchBacktestPlugin directly during startup.
+apps/reference/main.py contains a configured startup path that imports load_alpha_search_config, loads config/alpha_search.yaml, and instantiates AlphaSearchBacktestPlugin during startup.
 
 That plugin:
 
@@ -59,7 +61,7 @@ That plugin:
 - emits alpha scores for standard providers
 - runs the judge shadow chain for judge expert providers when judge.mode=shadow
 
-alpha_search is therefore integrated in the main runtime without being moved into Aurora domain registration.
+alpha_search is therefore integrated into one configured main-runtime path without being moved into Aurora domain registration or turned into a universal authority path for every system mode.
 
 ### 4.3 Offline Simulator Path
 
@@ -71,11 +73,21 @@ The Phase 5 simulator lives under apps/reference/domains/alpha_search/judge/simu
 - it writes calibration and summary artifacts
 - it does not emit live FSM events and does not widen JudgeCortexConfig
 
-### 4.4 Shutdown Export Path
+### 4.4 Offline Review Tooling Path
+
+The Phase 6 review tooling lives under apps/reference/domains/alpha_search/judge/review/.
+
+- the supported entrypoint is judge/review/cli.py
+- it loads config/judge_review.yaml
+- it reuses config/judge_simulator.yaml as the input-authority surface for verdict, chamber, envelope, and outcome paths
+- it writes review_bundle.json, review_summary.md, and segmented CSV tables
+- it is offline-only and must not emit a promotion verdict automatically
+
+### 4.5 Shutdown Export Path
 
 AlphaSearchBacktestPlugin.shutdown() can optionally invoke the same offline simulator path when simulator_shutdown_export.enabled=true.
 
-This is a bounded, fail-closed handoff after session end. It is part of current alpha_search authority, but it is still offline evidence production, not live decision logic.
+This is a bounded, fail-closed handoff after session end. It is part of the current alpha_search domain surface and owned offline functionality, but it is still offline evidence production, not live decision logic.
 
 ## 5. High-Level Dependency Map
 
@@ -116,14 +128,16 @@ graph TD
 | config_models.py | Defines AlphaSearchConfig and simulator_shutdown_export |
 | judge/config_models.py | Keeps judge runtime mode bounded to off and shadow |
 | judge/simulator/cli.py | Canonical offline simulator entrypoint |
+| judge/review/cli.py | Canonical offline Phase 6 review entrypoint |
 | runtime/launcher.py | Preserves historical standalone runtime shape |
 | runtime/feature_mirror_writer.py | Connects mirrored runtime features to the standalone path |
 | scripts/runners/run_alpha_search_domain.py | Operator-facing standalone runner |
 | config/alpha_search.yaml | Direct config surface for the embedded plugin |
 | config/judge_simulator.yaml | Standalone config surface for the offline simulator |
+| config/judge_review.yaml | Standalone config surface for offline review artifact generation |
 
 ## 7. How to Describe alpha_search Correctly
 
 When documenting or reviewing this domain, use this description:
 
-alpha_search is a dual-shape strategy-analysis domain. It still supports standalone shadow or replay scoring, and it is also directly embedded in the main runtime as a plugin. It owns alpha scoring, judge shadow evidence emission, and the offline simulator subtree plus its bounded shutdown export seam. It does not own decision policy, execution authority, or Phase 6 admission semantics.
+alpha_search is a dual-shape strategy-analysis domain. It still supports standalone shadow or replay scoring, and it also has a configured embedded runtime path as a plugin. It owns alpha scoring, judge shadow evidence emission, the offline simulator subtree, the offline review-tooling subtree, and the bounded shutdown export seam. It does not own decision policy, execution authority, or Phase 6 admission semantics.

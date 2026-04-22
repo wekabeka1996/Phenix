@@ -180,6 +180,7 @@ def build_emit_with_monitoring(
                 )
         return result
 
+    emit_with_monitoring._emit_compat_mode = "message"
     return emit_with_monitoring
 
 

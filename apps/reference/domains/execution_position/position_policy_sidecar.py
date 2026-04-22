@@ -97,6 +97,9 @@ class _SymbolState:
     last_recommendation_signature: Optional[tuple] = None
     last_recommendation_ts_ms: int = 0
     recommendation_dedup_suppressed_count: int = 0
+    # R7A: Peak giveback state
+    peak_edge_usd: float = 0.0
+    is_armed: bool = False
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
@@ -346,6 +349,9 @@ class PositionPolicySidecar:
             state.order_state = _Envelope()
             state.last_recommendation_signature = None
             state.recommendation_dedup_suppressed_count = 0
+            # R7A: Reset peak giveback state on new entry
+            state.peak_edge_usd = 0.0
+            state.is_armed = False
         self._evaluate_symbol(symbol, trigger_event=trigger_event)
 
     def on_order_state_changed(self, event: "Message") -> None:
@@ -453,6 +459,26 @@ class PositionPolicySidecar:
             trigger_event=trigger_event,
             base_payload=base_payload,
         )
+
+        # R7A: Peak giveback evaluation
+        # We allow peak giveback to trigger even if profitable_guard is active,
+        # but NOT if other critical suppressions are active (e.g. stale data, close-in-progress).
+        if suppression is None or suppression.get("reason_code") == "profitable_guard":
+            giveback_trigger = self._evaluate_peak_giveback(
+                symbol=symbol,
+                state=state,
+                position_snapshot=base_payload["position_snapshot"],
+            )
+            if giveback_trigger:
+                self._handle_peak_giveback_trigger(
+                    symbol=symbol,
+                    state=state,
+                    base_payload=base_payload,
+                    giveback_result=giveback_trigger,
+                    trigger_event=trigger_event,
+                )
+                return
+
         if suppression is not None:
             payload = dict(base_payload)
             payload["event_type"] = "POSITION_POLICY_SIDECAR_SUPPRESSED"
@@ -548,6 +574,111 @@ class PositionPolicySidecar:
             request_payload = dict(recommended_payload)
             request_payload.update(close_request.to_payload())
             self._publish(CLOSE_REQUEST_COMMAND_TOPIC, request_payload)
+
+    def _evaluate_peak_giveback(
+        self,
+        symbol: str,
+        state: _SymbolState,
+        position_snapshot: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """R7A: Evaluate whether the position gave back too much from peak edge."""
+        cfg = self.config.peak_giveback_close
+        if not cfg.enabled:
+            return None
+
+        pnl_usdt = _coerce_float(position_snapshot.get("unrealized_pnl_usdt"))
+        if pnl_usdt is None:
+            return None
+
+        # Update peak edge (only if profitable)
+        if pnl_usdt > state.peak_edge_usd:
+            state.peak_edge_usd = pnl_usdt
+
+        # Arm if threshold reached
+        if not state.is_armed and state.peak_edge_usd >= cfg.edge_arm_usd:
+            state.is_armed = True
+            LOG.info(
+                "[%s] Sidecar peak-giveback ARMED: peak=%.2f arm=%.2f",
+                symbol, state.peak_edge_usd, cfg.edge_arm_usd
+            )
+
+        if not state.is_armed:
+            return None
+
+        # Trigger check: compute giveback from peak
+        # Only trigger if peak edge is meaningful
+        if state.peak_edge_usd <= 0:
+            return None
+
+        giveback_usd = state.peak_edge_usd - pnl_usdt
+        giveback_pct = (giveback_usd / state.peak_edge_usd) * 100.0
+
+        if giveback_pct >= cfg.giveback_trigger_pct:
+            return {
+                "peak_edge_usd": float(state.peak_edge_usd),
+                "current_edge_usd": float(pnl_usdt),
+                "giveback_pct": float(giveback_pct),
+                "threshold_pct": float(cfg.giveback_trigger_pct),
+            }
+
+        return None
+
+    def _handle_peak_giveback_trigger(
+        self,
+        *,
+        symbol: str,
+        state: _SymbolState,
+        base_payload: Dict[str, Any],
+        giveback_result: Dict[str, Any],
+        trigger_event: str,
+    ) -> None:
+        """Initiate bounded soft-close request after peak giveback trigger."""
+        now_ms = get_clock().now_ms()
+        trace_id = base_payload["trace_id"]
+
+        # 1. Log recommendation
+        recommended_payload = dict(base_payload)
+        recommended_payload["event_type"] = "POSITION_POLICY_SIDECAR_RECOMMENDED"
+        recommended_payload["reason_codes"] = [
+            f"trigger:{trigger_event.lower()}",
+            "peak_giveback_threshold_met",
+        ]
+        recommended_payload["peak_giveback_detail"] = giveback_result
+        # Synthetic score for traceability
+        recommended_payload["score_snapshot"] = {
+            "soft_close_pressure": 1.0,
+            "peak_edge_usd": giveback_result["peak_edge_usd"],
+            "giveback_pct": giveback_result["giveback_pct"],
+        }
+        self._publish("EVT:POSITION_POLICY_SIDECAR_RECOMMENDED",
+                      recommended_payload)
+
+        # 2. Emit action command if enabled
+        if self.mode == PositionPolicySidecarMode.ENABLE:
+            close_request = self.position_policy_close_request_type(
+                ts_ms=now_ms,
+                request_id=f"ppsreq:{trace_id}",
+                trace_id=trace_id,
+                symbol=symbol,
+                allowed_action_scope=self._allowed_action_scope(),
+                reason_codes=tuple(recommended_payload["reason_codes"]),
+                requested_action="SOFT_CLOSE",
+                policy_source="position_policy_sidecar:peak_giveback",
+                score_snapshot=dict(recommended_payload["score_snapshot"]),
+                position_snapshot=dict(base_payload["position_snapshot"]),
+                feature_ref=dict(base_payload["feature_ref"]),
+                regime_ref=dict(base_payload["regime_ref"]),
+                freshness_snapshot=dict(base_payload["freshness_snapshot"]),
+                fill_correlation=dict(base_payload["fill_correlation"]),
+                portfolio_correlation=dict(base_payload["portfolio_correlation"]),
+            )
+            request_payload = dict(recommended_payload)
+            request_payload.update(close_request.to_payload())
+            self._publish(CLOSE_REQUEST_COMMAND_TOPIC, request_payload)
+
+            # 3. Reset state to avoid repeated emission for the same lifecycle
+            state.is_armed = False
+            state.peak_edge_usd = 0.0
 
     def _determine_suppression(
         self,

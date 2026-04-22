@@ -8,6 +8,9 @@ from vfoundation.core.protocol import Message
 import pytest
 
 from apps.reference.core.time import MockClock, reset_clock, set_clock
+from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+    MANAGE_MAX_HOLD_CLOSE_TRIGGER,
+)
 from tests.harness.execpos_scenarios import feed_opened_position
 
 
@@ -45,4 +48,6 @@ def test_execpos_max_hold_close_is_executed_in_shadow_mode(fsm_harness, mock_clo
     assert res is not None
     assert res.op == "DEC"
     assert res.verb == "CLOSE"
+    assert res.pld["trigger"] == MANAGE_MAX_HOLD_CLOSE_TRIGGER
+    assert res.pld["idempotent_key"] == "manage_max_hold:BTCUSDT:1000000:1.0:1"
     submit.assert_called_once()

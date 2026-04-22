@@ -144,7 +144,11 @@ class EPEventHandlers:
         """
         Handle EVT:PORTFOLIO_STATE_UPDATED events to update exposure guard state.
         """
-        from vfoundation.core.fsm_emit_compat import Message, emit_compat
+        from vfoundation.core.fsm_emit_compat import (
+            Message,
+            emit_compat,
+            resolve_emit_compat_mode,
+        )
 
         trace_stage = getattr(
             self._fsm, "_record_portfolio_event_trace_stage", None)
@@ -183,17 +187,23 @@ class EPEventHandlers:
 
             async def _do_emit_exposure():
                 try:
-                    self._fsm.fsm.emit(
-                        "EVT:EXPOSURE_SUMMARY_UPDATED",
-                        {
-                            "exposure_summary": exposure_summary,
-                            "portfolio_state": self._fsm._latest_portfolio_state,
-                            "timestamp_ms": get_clock().now_ms()
-                        },
-                        "exposure_summary_updated_after_portfolio_change"
+                    emit = getattr(self._fsm.fsm, "emit", None)
+                    mode = resolve_emit_compat_mode(
+                        self._fsm.fsm,
+                        emit=emit,
+                        logger=LOG,
                     )
-                except TypeError:
-                    await emit_compat(self._fsm.fsm, exposure_msg, logger=LOG)
+                    if mode == "message" and emit is not None:
+                        result = emit(exposure_msg)
+                        if hasattr(result, "__await__"):
+                            await result
+                    elif mode in {"op_verb_payload_why", "op_payload_why"}:
+                        await emit_compat(self._fsm.fsm, exposure_msg, logger=LOG)
+                    else:
+                        LOG.error(
+                            "Failed to emit exposure summary: unresolved emit contract"
+                        )
+                        return
                 except Exception as ex:
                     LOG.error(f"Failed to emit exposure summary: {ex}")
 
@@ -262,7 +272,7 @@ class EPEventHandlers:
                     except Exception:
                         pass
                     try:
-                        self._fsm._bracket_owner_by_symbol.pop(sym, None)
+                        self._fsm._clear_bracket_owner(sym)
                     except Exception:
                         pass
 
@@ -310,6 +320,10 @@ class EPEventHandlers:
                             # PHASE 3: Get accumulated fees before write (used in two keys)
                             _pos_fees = self._fsm._accumulated_fees_by_symbol.get(
                                 sym, 0.0)
+                            _trade_id = self._fsm._last_trade_id_by_symbol.get(sym, "")
+                            _entry_side = self._fsm._last_entry_side_by_symbol.get(sym, "N/A")
+                            _close_ts_ms = int(closed_at * 1000)
+                            _entry_regime_epoch_ref = _pos_close_regime.get("regime_epoch_ref")
                             _get_order_logger().write({
                                 "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
                                 "event_type": "POSITION_CLOSED",
@@ -317,9 +331,9 @@ class EPEventHandlers:
                                 "lifecycle_id": self._fsm._last_lifecycle_ikey_by_symbol.get(sym, ""),
                                 "symbol": sym,
                                 # PHASE 2: real entry side from cache; falls back to "N/A" if cache empty
-                                "side": self._fsm._last_entry_side_by_symbol.get(sym, "N/A"),
+                                "side": _entry_side,
                                 # PHASE 2: exchange tradeId from last fill cached per symbol
-                                "trade_id": self._fsm._last_trade_id_by_symbol.get(sym, ""),
+                                "trade_id": _trade_id,
                                 # PHASE 3: accumulated fees and net PnL for neocortex reward_complete
                                 "fees": _pos_fees,
                                 "realized_pnl_net": pos_pnl - _pos_fees,
@@ -331,9 +345,28 @@ class EPEventHandlers:
                                     "realized_pnl": pos_pnl
                                 }
                             })
+                            if hasattr(self._fsm, "bus") and self._fsm.bus is not None:
+                                self._fsm.bus.emit(
+                                    "EVT:POSITION_CLOSED",
+                                    payload={
+                                        "event_type": "POSITION_CLOSED",
+                                        "symbol": sym,
+                                        "trade_id": _trade_id,
+                                        "close_reason": close_reason,
+                                        "close_ts_ms": _close_ts_ms,
+                                        "realized_pnl_net": pos_pnl - _pos_fees,
+                                        "fees": _pos_fees,
+                                        "entry_regime_epoch_ref": _entry_regime_epoch_ref,
+                                        "side": _entry_side,
+                                        "lifecycle_id": self._fsm._last_lifecycle_ikey_by_symbol.get(sym, ""),
+                                        "realized_pnl": pos_pnl,
+                                    },
+                                    why="position_closed_detected",
+                                    rid=str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{_close_ts_ms}",
+                                )
                         except Exception as e:
                             LOG.error(
-                                f"Failed to write POSITION_CLOSED to order_logger: {e}")
+                                f"Failed to write/emit POSITION_CLOSED close truth: {e}")
 
                         # PHASE 1: Clean up lifecycle ikey cache after POSITION_CLOSED write.
                         # CRITICAL: this block must stay AFTER the write above, NOT inside the

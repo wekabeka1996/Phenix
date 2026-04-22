@@ -31,9 +31,12 @@ from .intent_emitter import IntentEmitter
 from .flip_orchestration import FlipOrchestrator
 from .safety_gates import apply_safety_gates
 from .intent_builder import IntentBuilder
+from .dm_config_spec import DMConfigSpec
+from .dm_state import DMState
 from .event_handlers import DMEventHandlers
 from .dm_log_adapter import DecisionLog
 from .strategy_gateway import StrategyGateway
+from .regime_loss_embargo import RegimeLossEmbargo
 
 try:
     from apps.reference.telemetry.alerts import AlertManager as _AlertManager
@@ -82,29 +85,22 @@ class DecisionMaking:
 
         # These containers remain owned by the facade because multiple
         # delegates and tests still share them by reference.
-        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
-            lambda: {"features": None, "risk": None})
-        self._shared: Dict[str, Any] = {
-            "latest_portfolio": None, "latest_regime": None, "latest_warmup": None,
-            "latest_structural_regime_by_symbol": {}, "latest_structural_warmup_by_symbol": {},
-            "cached_equity_free_usdt": None, "cached_equity_cross_usdt": None,
-            "exposure_cache": None, "exposure_cache_timestamp": 0.0,
-        }
-        self._per_symbol_regimes: Dict[str, Dict[str, Any]] = {}
-        # Phase 0.5: per-symbol system stress state ("NORMAL"|"STRESS"|"EXTREME")
-        self._system_stress_states: Dict[str, str] = {}
-        self._side_intent_window: Dict[str, Dict[str, list]] = {}
-        self._pending_flips: Dict[str, Dict[str, Any]] = {}
-        self._arb_window_winner: Dict[str, tuple] = {}
-        self._arb_signal_buffer: Dict[str, Tuple] = {}
-        self._qos_state: dict = defaultdict(lambda: {
-            "last_exposure_block": 0.0, "symbol_cooldowns": {},
-            "symbol_intent_counts": defaultdict(lambda: {"count": 0, "window_start": 0.0}),
-        })
-        self._qos_next_allowed_ts: dict = defaultdict(dict)
-        self.intents_seen_total: int = 0
-        self.intents_blocked_total: int = 0
-        self.last_alert_check_time: float = self._clock.now_sec()
+        state = DMState.new(self._clock)
+        self.symbol_states = state.symbol_states
+        self._shared = state.shared_state
+        self._per_symbol_regimes = state.per_symbol_regimes
+        self._system_stress_states = state.system_stress_states
+        self._side_intent_window = state.side_intent_window
+        self._pending_flips = state.pending_flips
+        self._arb_window_winner = state.arb_window_winner
+        self._arb_signal_buffer = state.arb_signal_buffer
+        self._qos_state = state.qos_state
+        self._qos_next_allowed_ts = state.qos_next_allowed_ts
+        self.intents_seen_total = state.intents_seen_total
+        self.intents_blocked_total = state.intents_blocked_total
+        self.last_alert_check_time = state.last_alert_check_time
+        self._last_bar_index = state.last_bar_index
+        self._behavior_state = state.behavior_state
 
         self.alert_manager: Optional["AlertManager"] = None
         if ALERT_MANAGER_AVAILABLE and _AlertManager is not None:
@@ -120,95 +116,34 @@ class DecisionMaking:
             self.alpha_registry.register(MomentumAlphaModel())
             self.alpha_registry.register(VolatilityAlphaModel())
 
-        self.strategies_registry = None
-        if hasattr(self.config, "strategies_registry") and self.config.strategies_registry:
-            self.strategies_registry = self.config.strategies_registry
-
-        trading_config = getattr(self.config, "trading", self.config)
-        self._tca_prefs = getattr(trading_config, "tca_prefs", {})
-        self._risk_budgets = getattr(trading_config, "risk_budgets", {})
-
-        _res = DomainConfigResolver(self.config)
-        dm_cfg = _res.get_decision_making()
-        qos_cfg = dm_cfg.qos
-
-        self._fail_closed_on_degraded_context = bool(
-            getattr(dm_cfg, "fail_closed_on_degraded_context", False))
-        try:
-            _raw = list(
-                getattr(dm_cfg, "degraded_context_critical_keys", []) or [])
-        except Exception:
-            _raw = []
-        self._degraded_context_critical_keys: set = set(
-            str(k) for k in _raw if str(k))
-        try:
-            _by_s = getattr(
-                dm_cfg, "degraded_context_critical_keys_by_strategy", {}) or {}
-        except Exception:
-            _by_s = {}
-        self._degraded_context_critical_keys_by_strategy: dict = {
-            str(sid): set(str(k) for k in (keys or []) if str(k))
-            for sid, keys in (_by_s.items() if isinstance(_by_s, dict) else [])
-        }
-        try:
-            _contracts = getattr(
-                dm_cfg, "degraded_context_contracts_by_strategy", {}) or {}
-        except Exception:
-            _contracts = {}
-        self._degraded_context_contracts_by_strategy: dict = {}
-        if isinstance(_contracts, dict):
-            for sid, contract in _contracts.items():
-                enabled = bool(getattr(contract, "enabled", False))
-                keys_raw = list(getattr(contract, "critical_keys", []) or [])
-                self._degraded_context_contracts_by_strategy[str(sid)] = {
-                    "enabled": enabled,
-                    "critical_keys": set(str(k) for k in keys_raw if str(k)),
-                }
-
-        sizing_cfg = dm_cfg.position_sizing
-        self.min_pos_size_usd = decimal.Decimal(
-            str(sizing_cfg.min_position_size_usd))
-        self.liq_cap_usd = decimal.Decimal(
-            str(sizing_cfg.liquidity_based_cap_usd))
-        self.qos_exposure_block_cooldown_sec = int(
-            qos_cfg.exposure_block_cooldown_sec)
-        self.qos_max_intents_per_minute_per_symbol = int(
-            qos_cfg.max_intents_per_minute_per_symbol)
-        self.qos_mode = str(qos_cfg.mode)
-        self._default_symbol_cooldown_sec = int(qos_cfg.symbol_cooldown_sec)
-        self.qos_enforce = bool(qos_cfg.enforce)
-        try:
-            _apply_to = list(getattr(qos_cfg, "apply_to_strategies", []) or [])
-        except Exception:
-            _apply_to = []
-        self._qos_apply_to_strategies: set = set(
-            str(s) for s in _apply_to if str(s))
-
-        self.arming_require_regime_warmup = dm_cfg.arming.require_regime_warmup
-        self.arming_retry_backoff_ms = dm_cfg.arming.retry_backoff_ms
-        self.arming_max_attempts = dm_cfg.arming.max_attempts
-        self.features_ttl_sec = dm_cfg.features.ttl_sec
-        self.flip_global_enabled = dm_cfg.flip.enabled
+        constructor_dm_cfg = DomainConfigResolver(
+            self.config).get_decision_making()
+        config_spec = DMConfigSpec.load(self.config, dm_cfg=constructor_dm_cfg)
+        self.strategies_registry = config_spec.strategies_registry
+        self._tca_prefs = config_spec.tca_prefs
+        self._risk_budgets = config_spec.risk_budgets
+        self._fail_closed_on_degraded_context = config_spec.fail_closed_on_degraded_context
+        self._degraded_context_critical_keys = config_spec.degraded_context_critical_keys
+        self._degraded_context_critical_keys_by_strategy = config_spec.degraded_context_critical_keys_by_strategy
+        self._degraded_context_contracts_by_strategy = config_spec.degraded_context_contracts_by_strategy
+        self.min_pos_size_usd = config_spec.min_pos_size_usd
+        self.liq_cap_usd = config_spec.liq_cap_usd
+        self.qos_exposure_block_cooldown_sec = config_spec.qos_exposure_block_cooldown_sec
+        self.qos_max_intents_per_minute_per_symbol = config_spec.qos_max_intents_per_minute_per_symbol
+        self.qos_mode = config_spec.qos_mode
+        self._default_symbol_cooldown_sec = config_spec.default_symbol_cooldown_sec
+        self.qos_enforce = config_spec.qos_enforce
+        self._qos_apply_to_strategies = config_spec.qos_apply_to_strategies
+        self.arming_require_regime_warmup = config_spec.arming_require_regime_warmup
+        self.arming_retry_backoff_ms = config_spec.arming_retry_backoff_ms
+        self.arming_max_attempts = config_spec.arming_max_attempts
+        self.features_ttl_sec = config_spec.features_ttl_sec
+        self.flip_global_enabled = config_spec.flip_global_enabled
         self.dlog = DecisionLog()
-        self._bar_gating_enabled = dm_cfg.bar_gating.enable
-        self._bar_ms = int(dm_cfg.bar_gating.bar_ms)
-        self._last_bar_index: dict = {}
-        self._behavior_enabled = dm_cfg.behavior_fsm.enable
-        self._behavior_state: Dict[str, str] = {}
-
-        # normalize_signals_mode is mirrored here for intent/WAL observability.
-        # The signed_v2 fallback only protects partial mocks and degraded test
-        # fixtures; it is not meant to broaden the production config contract.
-        try:
-            _aurora = getattr(
-                getattr(self.config, "strategies", None), "aurora", None)
-            _decision = getattr(_aurora, "decision", None) if _aurora else None
-            _signals = getattr(_decision, "signals",
-                               None) if _decision else None
-            self.normalize_signals_mode = str(
-                _signals.normalize_signals_mode) if _signals is not None else "signed_v2"
-        except Exception:
-            self.normalize_signals_mode = "signed_v2"
+        self._bar_gating_enabled = config_spec.bar_gating_enabled
+        self._bar_ms = config_spec.bar_ms
+        self._behavior_enabled = config_spec.behavior_enabled
+        self.normalize_signals_mode = config_spec.normalize_signals_mode
 
         # Delegate composition happens once here; the wrapper methods below keep
         # the historical DecisionMaking method surface stable.
@@ -247,6 +182,12 @@ class DecisionMaking:
             lambda sym: self._get_flip_config(
                 sym), lambda **kw: self._propose_trade_intent(**kw),
             self._emit_intent_deferred_v1, self.logger)
+        self._regime_loss_embargo = RegimeLossEmbargo(
+            config=self.config,
+            symbol_states=self.symbol_states,
+            clock=self._clock,
+            logger=self.logger,
+        )
         self._builder = IntentBuilder(
             fsm=self.fsm, clock=self._clock, config=self.config,
             tca_prefs=self._tca_prefs, risk_budgets=self._risk_budgets,
@@ -258,12 +199,14 @@ class DecisionMaking:
             record_accepted_fn=self._record_accepted_intent,
             emit_deferred_fn=self._emit_intent_deferred_v1,
             get_side_bias_params_fn=self._get_side_bias_params,
+            get_regime_epoch_ref_fn=self._regime_loss_embargo.get_current_epoch_ref,
             side_intent_window=self._side_intent_window, logger=self.logger)
         self._evt = DMEventHandlers(
             fsm=self.fsm, clock=self._clock, config=self.config,
             symbol_states=self.symbol_states, per_symbol_regimes=self._per_symbol_regimes,
             shared_state=self._shared, dlog=self.dlog, alpha_registry=self.alpha_registry,
             handle_regime_flip_fn=self._handle_regime_flip,
+            regime_loss_embargo=self._regime_loss_embargo,
             record_blocked_fn=self._record_blocked_intent,
             arming_require_regime_warmup=self.arming_require_regime_warmup,
             behavior_enabled=self._behavior_enabled, behavior_state=self._behavior_state,
@@ -276,6 +219,7 @@ class DecisionMaking:
         self.fsm.listen("EVT:RISK_ASSESSMENT_COMPLETED", self.on_risk)
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio)
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
+        self.fsm.listen("EVT:POSITION_CLOSED", self.on_position_closed)
         self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
                         self.update_exposure_cache)
         self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -368,23 +312,29 @@ class DecisionMaking:
         tf_sec=None, max_slippage_bps=None, max_latency_ms=None, risk_score=None,
         tpsl_owner_ctx=None,
         strategy_trace=None,
+        safety_gate_result=None,
     ):
         """Run safety-gate glue and forward allowed intents to IntentBuilder.
 
-        This is one of the few non-trivial facade methods left in this module:
-        it normalizes the safety-gate contract, emits rejection side effects for
-        deny/config-error outcomes, and only then hands control to the builder.
+        When ``safety_gate_result`` is provided (from the gate chain), the
+        internal safety-gate call is skipped — the chain already ran it.
+        The reduce-only path still calls without it, so safety gates run
+        internally as before.
         """
-        system_stress_states = self._system_stress_states if hasattr(
-            self, "_system_stress_states") else {}
-        # Safety gates run before the builder so denied or misconfigured intents
-        # never reach the downstream emission/arbitration pipeline.
-        sg = apply_safety_gates(
-            symbol=symbol, side=side, reduce_only=reduce_only, strategy_id=strategy_id,
-            decision_ts_ms=decision_ts_ms, why_chain=why_chain, config=self.config,
-            clock=self._clock, symbol_states=self.symbol_states,
-            per_symbol_regimes=self._per_symbol_regimes,
-            system_stress_states=system_stress_states)
+        if safety_gate_result is not None:
+            # Safety gates already ran in the gate chain — use pre-computed result.
+            sg = safety_gate_result
+        else:
+            system_stress_states = self._system_stress_states if hasattr(
+                self, "_system_stress_states") else {}
+            # Safety gates run before the builder so denied or misconfigured intents
+            # never reach the downstream emission/arbitration pipeline.
+            sg = apply_safety_gates(
+                symbol=symbol, side=side, reduce_only=reduce_only, strategy_id=strategy_id,
+                decision_ts_ms=decision_ts_ms, why_chain=why_chain, config=self.config,
+                clock=self._clock, symbol_states=self.symbol_states,
+                per_symbol_regimes=self._per_symbol_regimes,
+                system_stress_states=system_stress_states)
         if sg.outcome == "CONFIG_ERROR":
             self._emit_trade_intent_rejected(
                 symbol=symbol, strategy_id=str(strategy_id), side=str(side), rid=str(rid),
@@ -584,6 +534,7 @@ class DecisionMaking:
     def on_risk(self, event): self._evt.on_risk(event)
     def on_portfolio(self, event): self._evt.on_portfolio(event)
     def on_regime(self, event): self._evt.on_regime(event)
+    def on_position_closed(self, event): self._evt.on_position_closed(event)
 
     def update_exposure_cache(
         self, event): self._evt.update_exposure_cache(event)

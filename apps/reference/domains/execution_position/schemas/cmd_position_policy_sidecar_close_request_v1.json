@@ -42,7 +42,7 @@
     "requested_action": { "type": "string", "const": "SOFT_CLOSE" },
     "requested_qty": { "type": ["string", "null"] },
     "target_mode": { "type": "string", "const": "symbol_current_net_only" },
-    "policy_source": { "type": "string", "const": "position_policy_sidecar" },
+    "policy_source": { "type": "string", "pattern": "^position_policy_sidecar(:[a-z_]+)?$" },
     "action_package_version": { "type": "string", "minLength": 1 },
     "allowed_action_scope": { "type": "object" },
     "reason_codes": { "type": "array", "items": { "type": "string" } },

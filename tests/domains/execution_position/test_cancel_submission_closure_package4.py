@@ -90,6 +90,31 @@ class TestCancelSubmissionPayload:
         )
         assert payload.order_id == "CANON"
 
+    def test_accepts_bounded_raw_context_fields_and_returns_canonical_request(self) -> None:
+        payload = CancelSubmissionPayload.from_dec_cancel(
+            payload={
+                "symbol": "BTCUSDT",
+                "order_id": "42",
+                "trigger": "DEC:CLOSE:reconcile",
+                "order_type": "STOP_MARKET",
+                "bracket_type": "SL",
+                "keep_parent_order_id": "parent-1",
+            }
+        )
+        assert payload.symbol == "BTCUSDT"
+        assert payload.order_id == "42"
+
+    def test_rejects_unknown_raw_extra_field(self) -> None:
+        with pytest.raises(CancelSubmissionAdapterError) as exc:
+            CancelSubmissionPayload.from_dec_cancel(
+                payload={
+                    "symbol": "BTCUSDT",
+                    "order_id": "42",
+                    "unexpected_new_field": "boom",
+                }
+            )
+        assert "unexpected_new_field" in str(exc.value)
+
     def test_rejects_missing_symbol(self) -> None:
         with pytest.raises(CancelSubmissionAdapterError) as exc:
             CancelSubmissionPayload.from_dec_cancel(payload={"order_id": "42"})

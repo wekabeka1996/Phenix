@@ -82,6 +82,7 @@ class DMEventHandlers:
         behavior_enabled: bool,
         behavior_state: Dict[str, str],
         logger: logging.Logger,
+        regime_loss_embargo: Any = None,
     ) -> None:
         self._fsm = fsm
         self._clock = clock
@@ -92,6 +93,7 @@ class DMEventHandlers:
         self.dlog = dlog
         self.alpha_registry = alpha_registry
         self._handle_regime_flip = handle_regime_flip_fn
+        self._regime_loss_embargo = regime_loss_embargo
         self._record_blocked = record_blocked_fn
         self.arming_require_regime_warmup = arming_require_regime_warmup
         self._behavior_enabled = behavior_enabled
@@ -581,6 +583,13 @@ class DMEventHandlers:
                 self.logger.debug(
                     f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"
                 )
+                if self._regime_loss_embargo is not None:
+                    self._regime_loss_embargo.on_regime(
+                        symbol=symbol,
+                        changed=event.pld.get("changed"),
+                        bar_close_ts_ms=event.pld.get("bar_close_ts_ms"),
+                        ts_ms=ts_ms,
+                    )
                 # The coordinator owns any close/flip side effects; this module
                 # only persists the normalized regime snapshot and forwards it.
                 self._handle_regime_flip(
@@ -611,6 +620,20 @@ class DMEventHandlers:
                     self._behavior_state[symbol] = "Tension"
             except Exception:
                 pass
+
+    def on_position_closed(self, event: Message) -> None:
+        """Forward terminal close facts into the dedicated embargo policy core."""
+        payload = event.pld if isinstance(event.pld, dict) else {}
+        symbol = payload.get("symbol")
+        if not symbol or self._regime_loss_embargo is None:
+            return
+        self._regime_loss_embargo.on_position_closed(
+            symbol=str(symbol),
+            entry_regime_epoch_ref=payload.get("entry_regime_epoch_ref"),
+            close_ts_ms=_optional_int(payload.get("close_ts_ms")),
+            realized_pnl_net=payload.get("realized_pnl_net"),
+            close_reason=payload.get("close_reason"),
+        )
 
     # -- update_exposure_cache ----------------------------------------------
 

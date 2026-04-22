@@ -10,16 +10,27 @@ Shadow-mode: decisions only, no live closures.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, Optional
 
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.close_producer_bridge import (
+    CLOSE_PRODUCER_BRIDGE_CONTRACT,
+    CLOSE_PRODUCER_BRIDGE_PATH,
+    CloseProducerBridgeError,
+    adapt_cmd_close_to_dec_close,
+    build_close_producer_bridge_trace_ref,
+)
 from apps.reference.telemetry.shadow_journal import (
     get_shadow_journal,
     snapshot_close_flow_state,
 )
 from vfoundation.core.protocol import Message
+
+
+LOG = logging.getLogger(__name__)
 
 
 class CloseState(str, Enum):
@@ -56,6 +67,7 @@ class CloseFlowFSM:
         self._metrics: Dict[str, int] = {
             "fsm_close_decisions_total": 0,
             "fsm_errors_total": 0,
+            "fsm_close_bridge_rejects_total": 0,
         }
 
     def set_shadow_journal(self, journal: Any) -> None:
@@ -100,21 +112,52 @@ class CloseFlowFSM:
         result: Optional[Message] = None
         try:
             if msg.op == "CMD" and msg.verb == "CLOSE":
-                cmd_pld = msg.pld or {}
-                self.last_close_reason = cmd_pld.get("reason")
-                self.last_close_qty = cmd_pld.get("qty")
-                self.last_close_symbol = cmd_pld.get("symbol")
-                result = self._emit_close(
-                    msg,
-                    "MANUAL_CLOSE",
-                    {
-                        "trigger": "CMD:CLOSE",
-                        "reason": cmd_pld.get("reason"),
-                        "qty": cmd_pld.get("qty"),
-                        "trace": cmd_pld.get("trace"),
-                        "policy_context": cmd_pld.get("policy_context"),
-                    },
+                try:
+                    intake, emission, result = adapt_cmd_close_to_dec_close(msg)
+                except CloseProducerBridgeError as exc:
+                    reject_ref = build_close_producer_bridge_trace_ref(
+                        status="reject",
+                        qty_present=False,
+                        preserved_idempotent_key=False,
+                        preserved_command_trigger=False,
+                        reason="intake_validation",
+                    )
+                    existing_refs = list(getattr(msg, "data_ref", None) or [])
+                    if reject_ref not in existing_refs:
+                        existing_refs.append(reject_ref)
+                        try:
+                            msg.data_ref = existing_refs
+                        except Exception:
+                            pass
+                    self._metrics["fsm_errors_total"] += 1
+                    self._metrics["fsm_close_bridge_rejects_total"] += 1
+                    LOG.error(
+                        "CLOSE_PRODUCER_BRIDGE_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+                        CLOSE_PRODUCER_BRIDGE_CONTRACT,
+                        CLOSE_PRODUCER_BRIDGE_PATH,
+                        getattr(msg, "rid", None),
+                        "intake_validation",
+                        exc,
+                    )
+                    return None
+
+                self.state = CloseState.CLOSE_COND
+                self.state = CloseState.EMIT_DEC_CLOSE
+                self._metrics["fsm_close_decisions_total"] += 1
+                self.last_close_reason = emission.reason
+                self.last_close_qty = emission.qty
+                self.last_close_symbol = emission.symbol
+                LOG.info(
+                    "CLOSE_PRODUCER_BRIDGE_SUCCESS: contract=%s path=%s rid=%s symbol=%s trigger=%s idempotent_key=%s",
+                    CLOSE_PRODUCER_BRIDGE_CONTRACT,
+                    CLOSE_PRODUCER_BRIDGE_PATH,
+                    getattr(msg, "rid", None),
+                    emission.symbol,
+                    intake.trigger,
+                    emission.idempotent_key,
                 )
+                self.state = CloseState.DONE
+                self.position_active = False
                 return result
 
             if msg.op not in ("EVT", "UPD"):
@@ -188,37 +231,6 @@ class CloseFlowFSM:
             None (autonomous closing disabled).
         """
         return None
-
-    def _emit_close(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
-        """Generate DEC:CLOSE with reduce_only=true and include symbol when available."""
-        self.state = CloseState.CLOSE_COND
-        self.state = CloseState.EMIT_DEC_CLOSE
-        self._metrics["fsm_close_decisions_total"] += 1
-
-        symbol = (msg.pld or {}).get("symbol")
-        self.last_close_reason = details.get("reason") or why
-        self.last_close_qty = details.get("qty")
-        self.last_close_symbol = symbol
-
-        dec = Message(
-            op="DEC",
-            verb="CLOSE",
-            src=msg.dst,
-            dst="execution_position",
-            rid=msg.rid,
-            why=why[:80],
-            idempotent_key=f"{msg.rid}_{why}_{int(get_clock().now_sec())}",
-            pld={
-                "reduce_only": True,
-                **({"symbol": symbol} if symbol else {}),
-                **details,
-            },
-            data_ref=msg.data_ref.copy() if msg.data_ref else [],
-        )
-
-        self.state = CloseState.DONE
-        self.position_active = False
-        return dec
 
     def get_metrics(self) -> Dict[str, int]:
         """Return metrics for observability."""

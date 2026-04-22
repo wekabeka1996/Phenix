@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
-from vfoundation.core.protocol import Message, truncate_why
+from apps.reference.domains.decision_making.normalized_reject_reasons import (
+    build_trade_intent_rejected_message,
+    normalize_trade_intent_rejected_payload,
+)
 from vfoundation.dr import wal
 
 if TYPE_CHECKING:
@@ -54,12 +56,12 @@ def write_trade_intent_rejected(
         Persist one TRADE_INTENT_REJECTED payload for decision-making rejects.
 
         Contract:
-        - builds a sparse payload and includes only optional fields that were
-            actually supplied;
+        - builds a sparse payload, then reuses the shared canonical reject
+            payload normalizer before persisting;
         - appends an event-shaped Message to WAL, but does not publish to the FSM
             bus;
-        - keeps caller-provided reason_code/stage/why mostly unchanged, so callers
-            remain responsible for schema-safe values;
+        - keeps reject ownership local to decision_making; callers still decide
+            when a reject happens and which reason_code to use;
         - if TRADE_INTENT_REJECT_WAL_MODE is memory/off/disabled, skips the WAL
             append and stores only the private in-process copy.
     """
@@ -73,7 +75,7 @@ def write_trade_intent_rejected(
             from apps.reference.core.time.clock import LiveClock
             ts_ms_final = int(LiveClock().now_ms())
 
-    payload: dict[str, Any] = {
+    raw_payload: dict[str, Any] = {
         "ts_ms": ts_ms_final,
         "symbol": str(symbol),
         "reason_code": str(reason_code),
@@ -81,27 +83,33 @@ def write_trade_intent_rejected(
         "why": str(why),
     }
     if strategy_id is not None:
-        payload["strategy_id"] = str(strategy_id)
+        raw_payload["strategy_id"] = str(strategy_id)
     if side is not None:
-        # The schema allows only buy/sell. Unknown values are omitted instead of
-        # being normalized heuristically into a side.
-        side_norm = str(side).lower()
-        if side_norm in ("buy", "sell"):
-            payload["side"] = side_norm
+        raw_payload["side"] = str(side)
     if rid is not None:
-        payload["rid"] = str(rid)
+        raw_payload["rid"] = str(rid)
     if context is not None:
-        payload["context"] = str(context)
+        raw_payload["context"] = str(context)
     if why_chain is not None:
-        payload["why_chain"] = [str(x) for x in why_chain if str(x)]
+        raw_payload["why_chain"] = why_chain
     if details is not None:
-        payload["details"] = details
+        raw_payload["details"] = details
     if tf_sec is not None:
-        payload["tf_sec"] = int(tf_sec)
+        raw_payload["tf_sec"] = int(tf_sec)
     if bar_close_ts is not None:
-        payload["bar_close_ts"] = int(bar_close_ts)
+        raw_payload["bar_close_ts"] = int(bar_close_ts)
     if entry_plan is not None:
-        payload["entry_plan"] = entry_plan
+        raw_payload["entry_plan"] = entry_plan
+
+    payload = normalize_trade_intent_rejected_payload(
+        raw_payload,
+        fallback_rid=str(rid) if rid is not None else None,
+        fallback_ts_ms=ts_ms_final,
+        fallback_symbol=str(symbol),
+        fallback_reason_code=str(reason_code),
+        fallback_stage=str(stage),
+        fallback_why=str(why),
+    )
 
     wal_mode = str(
         os.getenv("TRADE_INTENT_REJECT_WAL_MODE", "wal")).strip().lower()
@@ -116,15 +124,10 @@ def write_trade_intent_rejected(
 
     # Append an event-shaped record to WAL for forensics without touching the
     # live event bus. Higher-level emitters handle FSM publication separately.
-    msg = Message(
-        op="EVT",
-        verb="TRADE_INTENT_REJECTED",
+    msg = build_trade_intent_rejected_message(
+        payload,
         src=str(src),
-        dst="any",
-        rid=str(rid) if rid is not None else f"rej:{symbol}:{ts_ms_final}",
-        ts=ts_ms_final,
-        why=truncate_why(f"trade_intent_rejected:{reason_code}"),
-        pld=payload,
+        rid=str(rid) if rid is not None else None,
     )
     res = wal.append(msg.model_dump())
     # wal.append() reports lock-timeout style write failure via None. True

@@ -1,9 +1,22 @@
 # VFOUNDATION / METAFSM2 ROADMAP SSOT
 ## Canonical Replayable Decision/Execution Truth System
 **Status:** ACTIVE SSOT  
-**Date:** 2026-04-08  
+**Date:** 2026-04-08 (last reconciliation: 2026-04-20)  
 **Scope:** vfoundation core roadmap only  
 **Purpose:** single roadmap SSOT for implementation sequencing, closure criteria, and next exact packages
+
+---
+
+> **CONTRADICTION RESOLUTION NOTE (2026-04-20)**  
+> Earlier wording of this SSOT (as of 2026-04-08) stated that Phase 5 was the main active
+> implementation track and that Phase 6+ had not yet started as runtime implementation phases.
+> In parallel, accepted execution-side package work conducted independent audits and closed the
+> full guardian/cancel seam package line (Packages 4–12) under the label "Execution Phase 6"
+> (guardian-seam-closure campaign).  An independent code-evidence re-audit (2026-04-20) verified
+> this closure as VERIFIED_COMPLETE and explicitly stated that Execution Phase 6 can now be closed.
+> This SSOT is updated below to match that accepted evidence without rewriting the historical
+> wording of the pre-existing phases.  The two tracks (Phase 5 restart-truth hardening and
+> Execution Phase 6 guardian/cancel seam closure) ran in parallel; neither invalidates the other.
 
 ---
 
@@ -51,16 +64,20 @@ These are **not** predetermined:
 We are **not** at “start migration now”.
 We are at:
 
-> **Phase 4 is closed at truth/contract level, and the main active track is now Phase 5 — Restart Truth Hardening.**
+> **Phase 4 is closed at truth/contract level.**  
+> **Execution Phase 6 (guardian/cancel seam-closure campaign, Packages 4–12) is now CLOSED.**  
+> **Phase 5 — Restart Truth Hardening — remains the main active framework track and is partially complete through 5A, 5B.1, 5B.1A, and 5B.2.**
 
 Important current reality:
 
 - Shadow truth layer exists and is operational.
 - Lifecycle-critical seams are materially more visible than before.
+- Guardian/cancel seam contours (all major raw adapter-cancel paths) are now runtime-governed by typed bridges and Package 4 typed cancel intake.
 - `execution_position` is still the main runtime monolith and the main source of restart-truth risk.
 - Restart truth is still not canonical because lifecycle restore is not yet authoritative.
 - Writer-side restore artifact work already exists.
 - Dark-read / authoritative reader / warm-state reclassification are still ahead.
+- Residual out-of-scope debt from Execution Phase 6 is documented separately (see residual items below).
 
 ---
 
@@ -329,8 +346,47 @@ Reclassify `execution_truth_warm_state_v1.json` as cache-only and remove any lif
 
 ---
 
-## Phase 6 — Foundation-to-Runtime Closure
-**Status:** NOT STARTED EXPLICITLY, BUT MANDATORY
+## Phase 6 — Guardian / Cancel Seam Closure (Execution-Side)
+**Status: CLOSED** *(closed 2026-04-20 via accepted execution-side package ledger and independent audit)*
+
+> **Note on naming:** The earlier SSOT phrasing for Phase 6 described it as
+> "Foundation-to-Runtime Closure" (NOT STARTED, MANDATORY) — a broader future goal.
+> In practice, accepted execution-side work used "Execution Phase 6" to label the
+> guardian/cancel seam-closure campaign (Packages 4–12).  These are distinct efforts.
+> This section now records the accepted execution-side closure.  The broader
+> Foundation-to-Runtime goal remains open and will be addressed after Phase 5 completes.
+
+### What this phase closed (guardian/cancel seam campaign)
+- **Package 4** — Typed cancel intake seam (`CancelSubmissionPayload.from_dec_cancel`)
+- **Package 5–8** — Intermediate guardian seam hardening packages (per accepted ledger)
+- **Package 9** — `reconcile_symbol → cleanup_orphans(hard=True)` typed bridge
+- **Package 10** — `cleanup_other_brackets_for_symbol()` typed bridge
+- **Package 11** — `cleanup_before_close()` typed bridge + canonicalization fix
+- **Package 12** — `cleanup_orphans(hard=False)` background orphan cancel typed bridge
+
+### Closure evidence
+- Independent code-evidence audit (2026-04-20): verdict VERIFIED_COMPLETE on Package 12
+- 57 tests pass across Packages 4, 9, 10, 11, 12 (exit code 0)
+- No raw direct adapter cancel remains governing owner for any named guardian path
+- No hidden bypass found on any audited seam
+
+### What was explicitly left out of scope (residual debt)
+The following items were documented as out of scope for all packages and remain open:
+- `positionAmt` / exchange-position parsing duplication inside `cleanup_orphans`
+- `EVT:EXECUTION_CLOSE_RECONCILED` payload ownership / validation boundary
+- DEF-005 restart tail remediation
+
+These are not Phase 6 failures — they are separate work items requiring independent scoping.
+
+### Fail conditions that are now resolved
+- runtime bypasses typed payload on guardian cancel paths → **RESOLVED**: all major paths now typed
+- critical hot-path depends on logic that exists only in tests → **RESOLVED**: bridges are runtime-wired
+- completion was checklist-driven rather than runtime-proven → **RESOLVED**: audit evidence provided
+
+---
+
+## Phase 6B — Foundation-to-Runtime Closure (Broader Goal)
+**Status: NOT STARTED** *(deferred; becomes relevant after Phase 5 completes)*
 
 ### Why this phase exists
 vfoundation already exists as a strengthened library/tooling layer, but part of it still lives beside runtime instead of governing runtime.
@@ -541,12 +597,19 @@ This section exists to prevent drift and false reopenings.
 - Phase 5B.1 — Canonical Restore Model Spec
 - Phase 5B.1A — Minimum artifact correction / contour_id deferral
 - Phase 5B.2 — Writer-side introduction
+- **Execution Phase 6 — Guardian/Cancel Seam Closure (Packages 4–12)** *(closed 2026-04-20)*
 
 ### Proven not 100% closed
 - Phase 1 — DONE ENOUGH, not mathematically “final”
 - Phase 3 — MOSTLY DONE, tails remain
-- Phase 5 overall — IN PROGRESS
-- Phase 6+ — not started as runtime implementation phases
+- Phase 5 overall — IN PROGRESS (next: 5B.3 Dark Reader)
+- Phase 6B — Foundation-to-Runtime Closure (broader goal) — NOT STARTED
+- Phase 7+ — not started
+
+### Residual open items from Execution Phase 6 (not blockers)
+- `positionAmt` / exchange-position parsing duplication
+- `EVT:EXECUTION_CLOSE_RECONCILED` payload ownership / validation
+- DEF-005 restart tail — requires independent scoping
 
 ---
 
@@ -554,16 +617,20 @@ This section exists to prevent drift and false reopenings.
 
 This is the authoritative immediate sequence from the current point:
 
-1. **Phase 5B.3 — Dark Reader / Diff-Only Validation**
+> **Already closed (no longer in the work queue):**  
+> Execution Phase 6 — Guardian/Cancel Seam Closure — CLOSED 2026-04-20
+
+1. **Phase 5B.3 — Dark Reader / Diff-Only Validation** ← **NEXT EXACT PACKAGE**
 2. **Phase 5B.4 — Authoritative Reader with Explicit Unknown Restore**
 3. **Phase 5B.5 — Warm-State Deprecation Boundary**
 4. **Phase 5 closure audit**
-5. **Phase 6 — Foundation-to-Runtime Closure**
-6. **Phase 7 — First Cutover Target Selection**
-7. **Phase 8 — Shadow Migration for first target**
-8. **Phase 9 — Formal Transition Model**
-9. **Phase 10 — First Cutover After Proof**
-10. **Phase 11–12 — replay / DR consolidation and contour-by-contour expansion**
+5. **Scope the three residual Execution Phase 6 debt items** (positionAmt parsing, EVT:EXECUTION_CLOSE_RECONCILED, DEF-005) as separate bounded packages or defer
+6. **Phase 6B — Foundation-to-Runtime Closure** (broader goal, post-Phase-5)
+7. **Phase 7 — First Cutover Target Selection**
+8. **Phase 8 — Shadow Migration for first target**
+9. **Phase 9 — Formal Transition Model**
+10. **Phase 10 — First Cutover After Proof**
+11. **Phase 11–12 — replay / DR consolidation and contour-by-contour expansion**
 
 ---
 
@@ -583,12 +650,14 @@ To protect the roadmap from drift:
 
 ## 7. Official Current Position
 
-> **Official current position:**  
+> **Official current position (updated 2026-04-20):**  
 > Phase 0–2 are complete at their intended scope.  
 > Phase 3 is mostly complete but not replay-final.  
 > Phase 4 is closed at truth/contract level.  
-> Phase 5 is now the main active implementation track and is already partially complete through 5A, 5B.1, 5B.1A, and 5B.2.  
-> The next exact package is **5B.3 Dark Reader / Diff-Only Validation**.
+> **Execution Phase 6 (guardian/cancel seam-closure campaign, Packages 4–12) is CLOSED** — verified by independent code-evidence audit 2026-04-20.  
+> Phase 5 remains the main active framework implementation track and is partially complete through 5A, 5B.1, 5B.1A, and 5B.2.  
+> The next exact package is **5B.3 Dark Reader / Diff-Only Validation**.  
+> Three residual out-of-scope debt items from Execution Phase 6 remain open and are not Phase 5 blockers: positionAmt parsing duplication, EVT:EXECUTION_CLOSE_RECONCILED validation, DEF-005 restart tail.
 
 ---
 

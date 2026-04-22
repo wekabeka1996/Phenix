@@ -6,6 +6,7 @@ from vfoundation.core.protocol import Message
 
 from apps.reference.core.time import get_clock
 from apps.reference.domains.execution_position.fsm_manage import ManageState
+from apps.reference.domains.execution_position.order_index import OrderIndex
 from apps.reference.domains.execution_position.order_guardian import (
     InMemoryStore,
     OrderGuardian,
@@ -192,6 +193,37 @@ def test_guard_block_emits_structured_event(fsm_harness):
     assert isinstance(payload["ts_ms"], int)
     assert payload["why"] == "execution:local_manage_state_conflict"
     assert kwargs["why"] == "execution:local_manage_state_conflict"
+
+
+def test_entry_order_in_flight_block_emits_structured_guard_event(fsm_harness):
+    """Hypothesis: pending-entry blocks must emit the same structured guard contract as stale local-state blocks.
+    Why this matters: incident replay must show that a foreign in-flight reservation, not local tracking, owned the fail-closed decision.
+    Current expected buggy behavior: a foreign in-flight entry is blocked, but no explicit `entry_order_in_flight` guard event is emitted.
+    What future repair should change: emit `EVT:EXECUTION_GUARD_BLOCKED` with stable pending-entry fields and reason codes.
+    """
+    fsm, bus, _ = fsm_harness
+    symbol = "BTCUSDT"
+    fsm.order_index = OrderIndex(ttl_sec=3600)
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0"))
+    assert fsm.order_index.try_reserve_entry(symbol, "rid-foreign") is True
+
+    out = fsm.handle(_cmd_open(symbol=symbol, rid="rid-current"))
+
+    assert out is not None
+    assert out.op == "ERR"
+    payload, kwargs = _find_first_event(bus, "EVT:EXECUTION_GUARD_BLOCKED")
+    assert payload is not None
+    assert payload["symbol"] == symbol
+    assert payload["rid"] == "rid-current"
+    assert payload["tracked_rid"] == "rid-foreign"
+    assert payload["in_flight_entry_rid"] == "rid-foreign"
+    assert payload["block_reason"] == "entry_order_in_flight"
+    assert payload["reason"] == "entry_order_in_flight"
+    assert payload["portfolio_truth_state"] == "FLAT"
+    assert payload["portfolio_state"] == "FLAT"
+    assert payload["why"] == "execution:entry_order_in_flight"
+    assert kwargs["why"] == "execution:entry_order_in_flight"
 
 
 def test_divergence_block_emits_structured_divergence_event(fsm_harness):

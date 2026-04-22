@@ -1,7 +1,7 @@
 # apps/reference/domains/execution_position/utils.py
 from __future__ import annotations
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Dict
 import hashlib
 import re
 import math
@@ -529,3 +529,37 @@ class BoundedEventDeduper(set):
             evict_key, _ = self._ts.popitem(last=False)
             if evict_key in self:
                 super().remove(evict_key)
+
+def resolve_price(pld: Dict[str, Any], key: str) -> Optional[str]:
+    """
+    Smart extraction to handle flat (DecisionMaking) vs nested (Strategy) payloads.
+
+    Priority:
+    1. Root level (normalized by DM)
+    2. price_ctx (raw strategy output, e.g., MeanReversion)
+    3. order nested object (legacy/alternative structure)
+
+    CFG-SMART-EXTRACT-01: Ensures stop_price/target_price are found regardless
+    of where Strategy places them in the payload hierarchy.
+    """
+    # 1. Root level
+    val = pld.get(key)
+    if val not in (None, "", "None", "null"):
+        return str(val)
+
+    # 2. Nested price_ctx (e.g., from MeanReversion strategy)
+    price_ctx = pld.get("price_ctx")
+    if isinstance(price_ctx, dict):
+        ctx_val = price_ctx.get(key)
+        if ctx_val not in (None, "", "None", "null"):
+            return str(ctx_val)
+
+    # 3. Nested order object (alternative/legacy structure)
+    order = pld.get("order")
+    if isinstance(order, dict):
+        order_val = order.get(key)
+        if order_val not in (None, "", "None", "null"):
+            return str(order_val)
+
+    return None
+

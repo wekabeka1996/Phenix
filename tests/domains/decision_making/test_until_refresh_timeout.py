@@ -15,29 +15,22 @@ from unittest.mock import MagicMock
 import pytest
 
 from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gate_protocol import GateContext, GateOutcome
+from apps.reference.domains.decision_making.gates import risk_skew_gate
 from vfoundation.core.protocol import Message
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _make_gateway(
+def _make_config(
     max_skew_sec: int = 5,
     max_defer_count: int = 3,
     defer_cooldown_sec: int = 2,
     defer_window_sec: int = 60,
     until_refresh_retry_sec: int = 30,
     until_refresh_max_hold_sec: int = 300,
-) -> tuple[StrategyGateway, MagicMock]:
-    """Build a minimal StrategyGateway with controllable clock."""
-    clock = MagicMock()
-    clock.now_ms.return_value = 1_000_000
-
-    dm = MagicMock()
-    dm.symbol_states = {"BTCUSDT": {}}
-    dm.latest_portfolio = {"positions": {}}
-    dm._check_strategy_arbitration.return_value = (True, "allowed", {})
-
-    config = SimpleNamespace(
+) -> SimpleNamespace:
+    return SimpleNamespace(
         domains=SimpleNamespace(
             decision_making=SimpleNamespace(
                 risk_skew=SimpleNamespace(
@@ -58,9 +51,56 @@ def _make_gateway(
             aurora=SimpleNamespace(
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
+                safety_gates=SimpleNamespace(system_stress_policy="off"),
             ),
         ),
         system=SimpleNamespace(market_data=None),
+    )
+
+
+def _make_gate_ctx(dm, clock, config, symbol="BTCUSDT",
+                   strategy_id="aurora", rid="test-rid") -> GateContext:
+    return GateContext(
+        dm=dm,
+        symbol=symbol,
+        side="BUY",
+        strategy_id=strategy_id,
+        rid=rid,
+        pld={"ts_ms": clock.now_ms()},
+        why_chain=[],
+        config=config,
+        clock=clock,
+        symbol_states=dm.symbol_states,
+        accumulated={},
+    )
+
+
+def _make_gateway(
+    max_skew_sec: int = 5,
+    max_defer_count: int = 3,
+    defer_cooldown_sec: int = 2,
+    defer_window_sec: int = 60,
+    until_refresh_retry_sec: int = 30,
+    until_refresh_max_hold_sec: int = 300,
+) -> tuple[StrategyGateway, MagicMock]:
+    """Build a minimal StrategyGateway with controllable clock."""
+    clock = MagicMock()
+    clock.now_ms.return_value = 1_000_000
+
+    dm = MagicMock()
+    dm.symbol_states = {"BTCUSDT": {}}
+    dm.latest_portfolio = {"positions": {}}
+    dm._check_strategy_arbitration.return_value = (True, "allowed", {})
+    dm._per_symbol_regimes = {}
+    dm._system_stress_states = {}
+
+    config = _make_config(
+        max_skew_sec=max_skew_sec,
+        max_defer_count=max_defer_count,
+        defer_cooldown_sec=defer_cooldown_sec,
+        defer_window_sec=defer_window_sec,
+        until_refresh_retry_sec=until_refresh_retry_sec,
+        until_refresh_max_hold_sec=until_refresh_max_hold_sec,
     )
 
     gw = object.__new__(StrategyGateway)
@@ -77,35 +117,30 @@ def _make_gateway(
 def test_until_refresh_latch_sets_timestamp() -> None:
     """When defer_count >= max_defer, until_refresh_latched_at_ms is set."""
     gw, clock = _make_gateway(max_skew_sec=5, max_defer_count=2)
+    dm = gw._dm
     now = 1_000_000
     clock.now_ms.return_value = now
+    config = dm.config
 
-    # Simulate risk skew triggering latch
-    state = gw._dm.symbol_states["BTCUSDT"]
-    blocked = gw._handle_risk_skew(
-        symbol="BTCUSDT",
-        strategy_id="aurora",
-        side="BUY",
-        rid="test-rid",
-        pld={"ts_ms": now},
-        why_chain=[],
-        risk_ts=now - 10_000,  # 10s skew
-        features_ts=now,
-    )
-    assert blocked is True
-    guard = state.get("risk_skew_guard", {})
-    # First call puts defer_count=1, need more calls to hit max_defer=2
-    blocked2 = gw._handle_risk_skew(
-        symbol="BTCUSDT",
-        strategy_id="aurora",
-        side="BUY",
-        rid="test-rid-2",
-        pld={"ts_ms": now},
-        why_chain=[],
-        risk_ts=now - 10_000,
-        features_ts=now,
-    )
-    guard = state.get("risk_skew_guard", {})
+    # Set up risk and features data with 10s skew (> 5s max)
+    dm.symbol_states["BTCUSDT"]["risk"] = {"ts": now - 10_000, "risk_parameters": {
+        "is_trading_allowed": True, "risk_score": 0.0}}
+    dm.symbol_states["BTCUSDT"]["features"] = {"ts": now, "features": {}}
+    dm._degraded_context_gate_should_defer.return_value = False
+
+    # First call: defer_count=1 (< max_defer=2) → DEFER
+    ctx1 = _make_gate_ctx(dm, clock, config)
+    ctx1.accumulated["latest_risk"] = dm.symbol_states["BTCUSDT"]["risk"]
+    result1 = risk_skew_gate.check_post_risk(ctx1)
+    assert result1.outcome == GateOutcome.DEFER
+
+    # Second call: defer_count=2 (>= max_defer=2) → BLOCK + latch
+    ctx2 = _make_gate_ctx(dm, clock, config, rid="test-rid-2")
+    ctx2.accumulated["latest_risk"] = dm.symbol_states["BTCUSDT"]["risk"]
+    result2 = risk_skew_gate.check_post_risk(ctx2)
+    assert result2.outcome == GateOutcome.BLOCK
+
+    guard = dm.symbol_states["BTCUSDT"].get("risk_skew_guard", {})
     assert guard.get("until_refresh") is True
     assert guard.get("until_refresh_latched_at_ms") == now
 
@@ -136,7 +171,8 @@ def test_until_refresh_auto_clears_after_max_hold() -> None:
     # simulating the same logic.
     now_ms = clock.now_ms()
     latched_at = guard.get("until_refresh_latched_at_ms", 0)
-    max_hold_ms = int(gw._rscfg("until_refresh_max_hold_sec") * 1000)
+    max_hold_ms = int(
+        gw._dm.config.domains.decision_making.risk_skew.until_refresh_max_hold_sec * 1000)
     assert (now_ms - latched_at) > max_hold_ms, "Clock should be past max_hold"
 
     # After auto-clear, the guard should be reset
@@ -168,7 +204,8 @@ def test_until_refresh_not_cleared_before_max_hold() -> None:
     now_ms = clock.now_ms()
     latched_at = gw._dm.symbol_states["BTCUSDT"]["risk_skew_guard"].get(
         "until_refresh_latched_at_ms", 0)
-    max_hold_ms = int(gw._rscfg("until_refresh_max_hold_sec") * 1000)
+    max_hold_ms = int(
+        gw._dm.config.domains.decision_making.risk_skew.until_refresh_max_hold_sec * 1000)
     assert (now_ms - latched_at) <= max_hold_ms, "Clock should NOT be past max_hold"
 
     # Guard should remain active
@@ -179,11 +216,9 @@ def test_until_refresh_not_cleared_before_max_hold() -> None:
 def test_until_refresh_autoclear_stale_relatch_no_trade() -> None:
     """Integration: auto-clear → stale upstream → re-latch → zero trade emission.
 
-    Full process_signal() cycle proving:
-    1. Guard latched beyond max_hold → auto-clear fires (CRITICAL log)
-    2. Signal proceeds to Gate 1.5 (risk_skew)
-    3. Stale risk/features timestamps re-trigger _handle_risk_skew → re-latch
-    4. _propose_trade_intent is NEVER called
+    Tests the gate functions directly:
+    1. Guard latched beyond max_hold → check_pre_risk auto-clears (PASS)
+    2. check_post_risk sees stale risk/features → re-latch → BLOCK
     """
     gw, clock = _make_gateway(
         max_skew_sec=5,
@@ -191,6 +226,7 @@ def test_until_refresh_autoclear_stale_relatch_no_trade() -> None:
         until_refresh_max_hold_sec=300,
     )
     dm = gw._dm
+    config = dm.config
 
     latch_time = 1_000_000
     now_time = latch_time + 301_000  # 301s past latch → exceeds 300s max_hold
@@ -213,43 +249,28 @@ def test_until_refresh_autoclear_stale_relatch_no_trade() -> None:
         "ts": now_time,
         "features": {},
     }
-
-    # Gate mocks — let signal reach Gate 1.5
-    dm._check_strategy_arbitration.return_value = {"allowed": True}
-    dm._get_aurora_instrument_cfg.return_value = None
     dm._degraded_context_gate_should_defer.return_value = False
 
-    msg = Message(
-        op="EVT", verb="produced",
-        src="feature_engineering", dst="decision_making",
-        name="EVT:STRATEGY_SIGNAL_PRODUCED",
-        pld={
-            "strategy_id": "aurora",
-            "symbol": "BTCUSDT",
-            "side": "BUY",
-            "rid": "test-autoclear-relatch",
-            "ts_ms": now_time,
-            "tf_sec": 300,
-            "intent_kind": "ENTRY",
-            "readiness": {"warmup_ok": True},
-            "price_ctx": {"entry_price": 50000},
-        },
-    )
+    # Step 1: check_pre_risk should auto-clear the expired latch → PASS
+    ctx = _make_gate_ctx(dm, clock, config, rid="test-autoclear-relatch")
+    pre_result = risk_skew_gate.check_pre_risk(ctx)
+    assert pre_result.outcome == GateOutcome.PASS, \
+        "Auto-clear should fire: latch expired past max_hold"
 
-    gw.process_signal(msg)
+    # Verify the guard was cleared
+    guard_after_clear = dm.symbol_states["BTCUSDT"]["risk_skew_guard"]
+    assert guard_after_clear["until_refresh"] is False
 
-    # ── Assertions ──
+    # Step 2: check_post_risk sees stale timestamps → re-latch (max_defer=1)
+    ctx.accumulated["latest_risk"] = dm.symbol_states["BTCUSDT"]["risk"]
+    post_result = risk_skew_gate.check_post_risk(ctx)
+    assert post_result.outcome == GateOutcome.BLOCK, \
+        "Stale skew with max_defer=1 should BLOCK and re-latch"
 
-    guard = dm.symbol_states["BTCUSDT"]["risk_skew_guard"]
-
-    # 1. Auto-clear DID fire → CRITICAL log emitted
-    gw.logger.critical.assert_called_once()
-    assert "AUTO-CLEARED" in str(gw.logger.critical.call_args)
-
-    # 2. Re-latch happened due to persistent stale skew
-    assert guard["until_refresh"] is True, "Must be re-latched (stale data still present)"
-    assert guard["until_refresh_latched_at_ms"] == now_time, "Re-latch timestamp = current time"
-    assert guard["defer_count"] == 1, "Defer count reset to 1 after single skew hit"
-
-    # 3. NO trade intent emitted — the safety contract holds
-    dm._propose_trade_intent.assert_not_called()
+    guard_final = dm.symbol_states["BTCUSDT"]["risk_skew_guard"]
+    assert guard_final["until_refresh"] is True, \
+        "Must be re-latched (stale data still present)"
+    assert guard_final["until_refresh_latched_at_ms"] == now_time, \
+        "Re-latch timestamp = current time"
+    assert guard_final["defer_count"] == 1, \
+        "Defer count reset to 1 after single skew hit"

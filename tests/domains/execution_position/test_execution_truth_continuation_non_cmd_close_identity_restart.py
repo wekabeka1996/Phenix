@@ -17,6 +17,9 @@ from apps.reference.telemetry.shadow_journal import (
 from apps.reference.domains.execution_position.truth_hardening import (
     attach_execution_truth_hardening,
 )
+from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+    MANAGE_MAX_HOLD_CLOSE_TRIGGER,
+)
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.fsm_emit_compat import Message as EmitMessage, emit_compat
 from vfoundation.core.protocol import Message
@@ -423,6 +426,8 @@ def test_non_cmd_dec_close_guard_suppresses_repeated_execution_and_allows_after_
                     "reason": "MAX_HOLD_TIME_EXCEEDED",
                     "elapsed_sec": 61,
                     "max_hold_sec": 60,
+                    "trigger": MANAGE_MAX_HOLD_CLOSE_TRIGGER,
+                    "idempotent_key": "manage_max_hold:BTCUSDT:1000000:0.01:60",
                 },
                 why="max_hold_timeout_61s_reduce_only",
             )

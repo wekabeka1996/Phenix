@@ -41,6 +41,8 @@ $$
 C_{ensemble} = \frac{\sum_i w_i c_i}{\sum_i w_i}
 $$
 
+Under the current implementation this is documented under non-negative weighting assumptions. The ensemble starts from equal positive weights, applies non-negative min and max bounds, and renormalizes after rebalancing.
+
 where:
 
 - $w_i$ is the current model weight

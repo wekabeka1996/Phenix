@@ -39,7 +39,7 @@ def _configure_writer(fsm, tmp_path: Path, *, mode: str = "writer_only", flush_i
         storage_path=str(path),
         flush_interval_ms=flush_interval_ms,
     )
-    fsm._restore_artifact_writer = fsm._create_restore_artifact_writer()
+    fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
     return path
 
 
@@ -78,7 +78,7 @@ def test_mode_off_produces_no_writer_activity(fsm_harness, tmp_path: Path) -> No
     path = _configure_writer(fsm, tmp_path, mode="off")
     _set_runtime_state(fsm)
 
-    wrote = fsm._persist_restore_artifact_snapshot(
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="transition:test",
         allow_empty=True,
     )
@@ -96,7 +96,7 @@ def test_restore_artifact_writes_minimum_envelope_shape_from_runtime_state(
     _set_runtime_state(fsm, manage_state=ManageState.WAIT_MODE,
                        close_state=CloseState.CLOSE_COND)
 
-    wrote = fsm._persist_restore_artifact_snapshot(
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="transition:manage",
         allow_empty=True,
     )
@@ -162,7 +162,7 @@ def test_authoritative_reset_removes_symbol_from_restore_artifact(
     )
     fsm._pending_brackets["entry-order"] = {"symbol": symbol}
 
-    wrote = fsm._persist_restore_artifact_snapshot(
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="before_reset",
         allow_empty=True,
     )
@@ -181,7 +181,7 @@ def test_authoritative_reset_removes_symbol_from_restore_artifact(
 
     assert changed is True
 
-    wrote = fsm._persist_restore_artifact_snapshot(
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="after_reset",
         allow_empty=True,
     )
@@ -198,7 +198,7 @@ def test_close_phase_unknown_and_bracket_state_unknown_when_exact_truth_absent(
     path = _configure_writer(fsm, tmp_path)
     _set_runtime_state(fsm, with_close=False)
 
-    fsm._persist_restore_artifact_snapshot(
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="transition:manage",
         allow_empty=True,
     )
@@ -220,7 +220,7 @@ def test_deferred_bracket_ref_is_emitted_when_pending_wal_state_exists(
                        close_state=CloseState.OPENED)
     fsm._pending_brackets["8631999001"] = {"symbol": "BTCUSDT"}
 
-    fsm._persist_restore_artifact_snapshot(
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="bracket_record:test",
         allow_empty=True,
     )
@@ -241,7 +241,7 @@ def test_bracket_state_becomes_unknown_when_pending_bracket_lineage_is_ambiguous
     fsm._pending_brackets["8631000001"] = {"symbol": "BTCUSDT"}
     fsm._pending_brackets["8631000002"] = {"symbol": "BTCUSDT"}
 
-    fsm._persist_restore_artifact_snapshot(
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="bracket_record:ambiguous",
         allow_empty=True,
     )
@@ -266,7 +266,7 @@ def test_guardian_reconstructed_bracket_truth_source_is_emitted(
         truth_source=TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
     )
 
-    fsm._persist_restore_artifact_snapshot(
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="startup_order_guardian_reconcile",
         allow_empty=True,
     )
@@ -285,16 +285,16 @@ def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
     fsm, _, _ = fsm_harness
     events = []
     path = _configure_writer(fsm, tmp_path)
-    fsm._restore_artifact_writer._observability_hook = lambda event, payload: events.append(
+    fsm._startup_truth_orchestrator._restore_artifact_writer._observability_hook = lambda event, payload: events.append(
         (event, payload))
     _set_runtime_state(fsm, manage_state=ManageState.OPENED)
-    assert fsm._persist_restore_artifact_snapshot(
+    assert fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="transition:open", allow_empty=True) is True
     previous = path.read_text(encoding="utf-8")
 
     _set_runtime_state(fsm, manage_state=ManageState.TRACKING)
     with patch("apps.reference.domains.execution_position.restore_artifact.os.replace", side_effect=OSError("disk full")):
-        wrote = fsm._persist_restore_artifact_snapshot(
+        wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
             trigger="transition:track",
             allow_empty=True,
         )
@@ -313,7 +313,7 @@ def test_successful_write_does_not_leave_partial_authoritative_target(
     path = _configure_writer(fsm, tmp_path)
     _set_runtime_state(fsm)
 
-    fsm._persist_restore_artifact_snapshot(
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="transition:test",
         allow_empty=True,
     )
@@ -337,10 +337,10 @@ async def test_periodic_flush_is_config_driven(fsm_harness, tmp_path: Path) -> N
             raise asyncio.CancelledError
         return None
 
-    with patch("apps.reference.domains.execution_position.fsm.get_clock", return_value=SimpleNamespace(sleep_ms=_fake_sleep_ms)):
-        with patch.object(fsm, "_persist_restore_artifact_snapshot", side_effect=[True, asyncio.CancelledError]) as persist:
+    with patch("apps.reference.domains.execution_position.startup_truth_orchestrator.get_clock", return_value=SimpleNamespace(sleep_ms=_fake_sleep_ms)):
+        with patch.object(fsm._startup_truth_orchestrator, "_persist_restore_artifact_snapshot", side_effect=[True, asyncio.CancelledError]) as persist:
             with pytest.raises(asyncio.CancelledError):
-                await fsm._restore_artifact_loop()
+                await fsm._startup_truth_orchestrator._restore_artifact_loop()
 
     assert calls == [1234, 1234]
     assert persist.call_args_list[0].kwargs == {

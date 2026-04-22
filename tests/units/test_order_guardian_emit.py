@@ -50,7 +50,8 @@ async def test_emit_failure_logged_not_swallowed(caplog: pytest.LogCaptureFixtur
     with caplog.at_level(logging.ERROR, logger="order_guardian"):
         await guardian.reconcile_symbol("BTCUSDT", rid="rid-1")
 
-    assert "CRITICAL: Failed to emit EVT:SYMBOL_TIDY" in caplog.text
+    assert "CRITICAL: Failed to emit tidy events" in caplog.text
+    assert "CRITICAL: Failed to emit close reconcile event" in caplog.text
 
 
 def test_order_guardian_logs_to_root_logs_dir() -> None:

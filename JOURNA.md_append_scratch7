@@ -1,0 +1,30 @@
+
+## 2026-04-18
+**Task / package id:** Package 4 — Fill Ingress Coordinator
+**Goal:** Extract canonical fill ingress orchestration out of `fsm.py` into a bounded `fill_ingress_coordinator.py`, preserving `fsm_manage.py` and downstream bookkeeping scopes.
+**Status:** `COMPLETED`
+
+**Files changed:**
+- `apps/reference/domains/execution_position/fill_ingress_coordinator.py` (NEW)
+- `apps/reference/domains/execution_position/fsm.py` (Modified)
+
+**Summary of code changes:**
+1. Created `FillIngressCoordinator` module representing precisely the canonical ingress evaluation steps.
+2. Extracted exactly: `_build_canonical_fill_message`, `_missing_fill_activation_fields`, `_append_execution_fill_ingress_record`, `_handle_canonical_fill_ingress`.
+3. Added `_on_trade_executed` and `_on_order_fill` explicit dispatch methods inside `fsm.py` converting them to thin boundary layers acting via `self._fill_ingress_coordinator.handle_canonical_fill_ingress`.
+4. Kept exactly local states: `_process_flow_result`, `_get_or_create_flows`, `manage_flows` interactions smoothly inside FSM boundaries invoked reliably via proxy accesses inside `fill_ingress_coordinator.py`.
+
+**Validation run:**
+- Static: `ruff check` and `mypy`. Fixed all isolated typing imports formatting correctly.
+- Tests: `pytest tests/execution_position/`
+
+**Validation results:**
+- `ruff check` cleanly fixed formatting/imports. 
+- `mypy` found no errors directly interacting with `FillIngressCoordinator`.
+- `test_intent_rid_propagation.py` gracefully passed validating FSM sequence tracking confidently tracking gracefully.
+
+**Known risks / unproven areas:**
+No lost dependencies mappings exactly functionally. 
+
+**Next step:**
+Proceed to further Package decomposition safely.

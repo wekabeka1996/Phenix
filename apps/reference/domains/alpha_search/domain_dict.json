@@ -1,7 +1,7 @@
 {
   "domain_name": "alpha_search",
   "version": "2.0.0",
-  "description": "Shadow alpha-signal substrate. Multi-provider scoring (aurora adapter, TA ensemble, judge experts), virtual trader, objective feedback. Phase 1 LLM Judge contract surface (typed verdicts, schemas, config) under judge/ sub-package. Phase 2 revived legacy experts (signal_weights, feature_neutrals) with shadow emission. Phase 3 chamber substrate (admissibility, aggregation, roster-truth accounting, shadow telemetry). Phase 4 evidence envelope + deterministic shadow verdict path.",
+  "description": "Dual-shape alpha_search substrate. Current tree includes embedded plugin scoring via AlphaSearchBacktestPlugin, preserved standalone runtime tooling, multi-provider scoring (aurora adapter, TA ensemble, judge experts), virtual trader, objective feedback, shadow judge emission, offline simulator ownership, and bounded shutdown export. Phase 1 LLM Judge contract surface (typed verdicts, schemas, config) under judge/ sub-package. Phase 2 revived legacy experts (signal_weights, feature_neutrals) with shadow emission. Phase 3 chamber substrate (admissibility, aggregation, roster-truth accounting, shadow telemetry). Phase 4 evidence envelope + deterministic shadow verdict path.",
   "owner": "aurora",
   "status": "active",
   "imports": [
@@ -141,7 +141,7 @@
     }
   ],
   "ssot_notes": {
-    "config": "config/alpha_search.yaml (standalone, loaded by load_alpha_search_config)",
+    "config": "config/alpha_search.yaml (direct alpha_search config surface, loaded by load_alpha_search_config; used by the embedded plugin path and reused by standalone scenario tooling where applicable)",
     "event_contract": "apps/reference/dictionaries/verb_registry_v1.yaml",
     "judge_authority": "docs/LLM_JUDGE/LLM_Judge_Bicameral_Policy_Cortex_Concept_v1.md",
     "judge_blueprint": "docs/LLM_JUDGE/LLM_JUDGE_PHASE1_IMPLEMENTATION_BLUEPRINT.md",
