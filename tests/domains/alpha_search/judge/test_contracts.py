@@ -56,6 +56,11 @@ def _make_chamber_aggregate(**overrides):
         schema_version="1",
     )
     defaults.update(overrides)
+    if (
+        defaults["admissibility"] != "ADMISSIBLE"
+        and defaults.get("admissibility_reason") is None
+    ):
+        defaults["admissibility_reason"] = "test_reason"
     return ChamberAggregate(**defaults)
 
 
@@ -123,6 +128,7 @@ class TestExpertOutputValid:
         eo = _make_expert_output()
         assert eo.entry_verdict == "OPEN_LONG"
         assert eo.lifecycle_verdict is None
+        assert eo.cycle_key == "ENTRY:BTCUSDT:300:1712000000000"
 
     def test_valid_lifecycle_expert(self):
         eo = _make_expert_output(
@@ -159,6 +165,7 @@ class TestChamberAggregateValid:
         ca = _make_chamber_aggregate()
         assert ca.verdict_scope == "ENTRY"
         assert ca.admissibility == "ADMISSIBLE"
+        assert ca.cycle_key == "ENTRY:BTCUSDT:300:1712000000100"
 
     def test_empty_expert_outputs(self):
         ca = _make_chamber_aggregate(
@@ -173,12 +180,32 @@ class TestChamberAggregateValid:
             ca = _make_chamber_aggregate(admissibility=adm)
             assert ca.admissibility == adm
 
+    def test_non_admissible_requires_reason(self):
+        with pytest.raises(ValueError, match="admissibility_reason"):
+            ChamberAggregate(
+                chamber_id="ch-001",
+                symbol="BTCUSDT",
+                tf_sec=300,
+                ts_ms=1712000000100,
+                verdict_scope="ENTRY",
+                expert_outputs=[_make_expert_output()],
+                expert_count=1,
+                responding_count=1,
+                abstaining_count=0,
+                consensus_direction="LONG",
+                consensus_strength=0.7,
+                admissibility="INADMISSIBLE",
+                admissibility_reason=None,
+                schema_version="1",
+            )
+
 
 class TestEvidenceEnvelopeValid:
     def test_valid_entry_envelope(self):
         env = _make_evidence_envelope()
         assert env.verdict_scope == "ENTRY"
         assert env.position_context is None
+        assert env.cycle_key == "ENTRY:BTCUSDT:300:1712000000200"
 
     def test_valid_lifecycle_envelope(self):
         lifecycle_expert = _make_expert_output(
@@ -207,6 +234,7 @@ class TestJudgeVerdictValid:
         assert v.entry_verdict == "OPEN_LONG"
         assert v.lifecycle_verdict is None
         assert v.applied is False
+        assert v.cycle_key == "ENTRY:BTCUSDT:300:1712000000300"
 
     def test_valid_lifecycle_verdict(self):
         v = _make_judge_verdict(
@@ -487,6 +515,24 @@ class TestRequiredFields:
                 authority_mode="off", applied=False,
                 strategy_id="aurora", schema_version="1",
             )
+
+
+class TestCycleKeyValidation:
+    def test_expert_cycle_key_mismatch_fails(self):
+        with pytest.raises(ValueError, match="cycle_key"):
+            _make_expert_output(cycle_key="ENTRY:BTCUSDT:300:999")
+
+    def test_chamber_cycle_key_mismatch_fails(self):
+        with pytest.raises(ValueError, match="cycle_key"):
+            _make_chamber_aggregate(cycle_key="ENTRY:BTCUSDT:300:999")
+
+    def test_envelope_cycle_key_mismatch_fails(self):
+        with pytest.raises(ValueError, match="cycle_key"):
+            _make_evidence_envelope(cycle_key="ENTRY:BTCUSDT:300:999")
+
+    def test_verdict_cycle_key_mismatch_fails(self):
+        with pytest.raises(ValueError, match="cycle_key"):
+            _make_judge_verdict(cycle_key="ENTRY:BTCUSDT:300:999")
 
 
 # ---------------------------------------------------------------------------

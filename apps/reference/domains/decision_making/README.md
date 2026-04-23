@@ -105,7 +105,7 @@ QoS rate control, and reject normalization (NRR).
 | Event | Emitter |
 |-------|---------|
 | CMD:CLOSE | flip_orchestration.py |
-| EVT:ALPHA_SCORE_CALCULATED | event_handlers.py |
+| EVT:ALPHA_SCORES_AGGREGATED | event_handlers.py |
 | EVT:DECISION_BLOCKED | event_handlers.py |
 | EVT:DECISION_TRACE_EMITTED | decision_making.py, intent_builder.py |
 | EVT:FEATURE_DEFER_EXPIRED | md_amr_handler.py |

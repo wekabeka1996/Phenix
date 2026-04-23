@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import logging
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from apps.reference.domains.alpha_search.judge.contracts import (
     EntryVerdict,
     LifecycleVerdict,
 )
+from apps.reference.domains.alpha_search.judge.identity import build_cycle_key
 from apps.reference.domains.alpha_search.judge.review.config_models import (
     ReviewConfig,
     SegmentDimension,
@@ -118,6 +120,8 @@ _CALIBRATION_FIELDS = [
 ]
 _SURFACE_FIELDS = ["surface", "status", "observed_count", "note"]
 
+LOG = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ChamberProjection:
@@ -178,34 +182,140 @@ def _round_or_none(value: float | None, digits: int = 6) -> float | None:
     return round(value, digits)
 
 
+def _entry_cycle_key(symbol: str, tf_sec: int, ts_ms: int) -> str:
+    return build_cycle_key("ENTRY", symbol, tf_sec, ts_ms)
+
+
+def _cycle_key_from_record(record: dict[str, object]) -> str | None:
+    symbol = record.get("symbol")
+    tf_sec = record.get("tf_sec")
+    bar_close_ts = record.get("bar_close_ts")
+    if not isinstance(symbol, str):
+        return None
+    try:
+        return _entry_cycle_key(symbol, int(tf_sec), int(bar_close_ts))
+    except (TypeError, ValueError):
+        return None
+
+
+def _register_unique_stage_id(
+    unique_map: dict[str, tuple[str, object]],
+    collisions: dict[str, set[str]],
+    *,
+    stage_id: str,
+    cycle_key: str,
+    loaded: object,
+) -> None:
+    existing = unique_map.get(stage_id)
+    if existing is None:
+        unique_map[stage_id] = (cycle_key, loaded)
+        return
+    existing_cycle_key, _ = existing
+    if existing_cycle_key == cycle_key:
+        return
+    collisions.setdefault(stage_id, {existing_cycle_key}).add(cycle_key)
+    unique_map.pop(stage_id, None)
+
+
+def _finalize_unique_stage_index(
+    surface: str,
+    unique_map: dict[str, tuple[str, object]],
+    collisions: dict[str, set[str]],
+) -> dict[str, object]:
+    for stage_id, cycle_keys in sorted(collisions.items()):
+        LOG.warning(
+            "Judge review detected %s collision for stage-local id '%s' across "
+            "cycle_keys=%s; cycle_key joins remain authoritative",
+            surface,
+            stage_id,
+            sorted(cycle_keys),
+        )
+    return {
+        stage_id: loaded
+        for stage_id, (_, loaded) in unique_map.items()
+    }
+
+
 def _build_chamber_index(
     chambers: Sequence[LoadedChamber],
     envelopes: Sequence[LoadedEnvelope],
-) -> dict[str, LoadedChamber]:
+) -> tuple[dict[str, LoadedChamber], dict[str, LoadedChamber]]:
     index: dict[str, LoadedChamber] = {}
+    unique_by_id: dict[str, tuple[str, object]] = {}
+    collisions: dict[str, set[str]] = {}
     for loaded in chambers:
-        index.setdefault(loaded.chamber.chamber_id, loaded)
-    for loaded in envelopes:
-        index.setdefault(
-            loaded.envelope.chamber_aggregate.chamber_id,
-            LoadedChamber(
-                chamber=loaded.envelope.chamber_aggregate,
-                source_file=loaded.source_file,
-            ),
+        index.setdefault(loaded.chamber.cycle_key, loaded)
+        _register_unique_stage_id(
+            unique_by_id,
+            collisions,
+            stage_id=loaded.chamber.chamber_id,
+            cycle_key=loaded.chamber.cycle_key,
+            loaded=loaded,
         )
-    return index
+    for loaded in envelopes:
+        chamber = LoadedChamber(
+            chamber=loaded.envelope.chamber_aggregate,
+            source_file=loaded.source_file,
+        )
+        index.setdefault(
+            loaded.envelope.chamber_aggregate.cycle_key,
+            chamber,
+        )
+        _register_unique_stage_id(
+            unique_by_id,
+            collisions,
+            stage_id=loaded.envelope.chamber_aggregate.chamber_id,
+            cycle_key=loaded.envelope.chamber_aggregate.cycle_key,
+            loaded=chamber,
+        )
+    return index, _finalize_unique_stage_index(
+        "chamber_id",
+        unique_by_id,
+        collisions,
+    )
 
 
 def _build_envelope_indices(
     envelopes: Sequence[LoadedEnvelope],
-) -> tuple[dict[str, LoadedEnvelope], dict[str, LoadedEnvelope]]:
-    by_id: dict[str, LoadedEnvelope] = {}
-    by_chamber_id: dict[str, LoadedEnvelope] = {}
+) -> tuple[
+    dict[str, LoadedEnvelope],
+    dict[str, LoadedEnvelope],
+    dict[str, LoadedEnvelope],
+]:
+    by_cycle_key: dict[str, LoadedEnvelope] = {}
+    unique_by_id: dict[str, tuple[str, object]] = {}
+    unique_by_chamber_id: dict[str, tuple[str, object]] = {}
+    envelope_id_collisions: dict[str, set[str]] = {}
+    chamber_id_collisions: dict[str, set[str]] = {}
     for loaded in envelopes:
-        by_id.setdefault(loaded.envelope.envelope_id, loaded)
-        by_chamber_id.setdefault(
-            loaded.envelope.chamber_aggregate.chamber_id, loaded)
-    return by_id, by_chamber_id
+        by_cycle_key.setdefault(loaded.envelope.cycle_key, loaded)
+        _register_unique_stage_id(
+            unique_by_id,
+            envelope_id_collisions,
+            stage_id=loaded.envelope.envelope_id,
+            cycle_key=loaded.envelope.cycle_key,
+            loaded=loaded,
+        )
+        _register_unique_stage_id(
+            unique_by_chamber_id,
+            chamber_id_collisions,
+            stage_id=loaded.envelope.chamber_aggregate.chamber_id,
+            cycle_key=loaded.envelope.cycle_key,
+            loaded=loaded,
+        )
+    return (
+        by_cycle_key,
+        _finalize_unique_stage_index(
+            "envelope_id",
+            unique_by_id,
+            envelope_id_collisions,
+        ),
+        _finalize_unique_stage_index(
+            "envelope.chamber_id",
+            unique_by_chamber_id,
+            chamber_id_collisions,
+        ),
+    )
 
 
 def _derive_chamber_projection(loaded: LoadedChamber | None) -> ChamberProjection | None:
@@ -298,24 +408,34 @@ def _compute_optimal_action(
 def _build_entry_records(
     *,
     verdicts: Sequence[LoadedVerdict],
-    chamber_index: dict[str, LoadedChamber],
+    chamber_by_cycle_key: dict[str, LoadedChamber],
+    chamber_by_id: dict[str, LoadedChamber],
+    envelope_by_cycle_key: dict[str, LoadedEnvelope],
     envelope_by_id: dict[str, LoadedEnvelope],
     envelope_by_chamber_id: dict[str, LoadedEnvelope],
     simulation_result: SimulationResult,
     fee_per_cycle_bps: float,
     slippage_pct: float,
 ) -> list[EntryReviewRecord]:
-    correlation_by_verdict_id = {
-        correlation.verdict.verdict_id: correlation
+    correlation_by_cycle_key = {
+        _entry_cycle_key(
+            correlation.verdict.correlation_key.symbol,
+            correlation.verdict.correlation_key.tf_sec,
+            correlation.verdict.correlation_key.bar_close_ts,
+        ): correlation
         for correlation in simulation_result.correlations
     }
-    disagreement_by_verdict_id = {
-        str(record["verdict_id"]): record
+    disagreement_by_cycle_key = {
+        cycle_key: record
         for record in simulation_result.disagreements
+        for cycle_key in [_cycle_key_from_record(record)]
+        if cycle_key is not None
     }
-    calibration_by_verdict_id = {
-        str(record["verdict_id"]): record
+    calibration_by_cycle_key = {
+        cycle_key: record
         for record in simulation_result.calibration_records
+        for cycle_key in [_cycle_key_from_record(record)]
+        if cycle_key is not None
     }
 
     records: list[EntryReviewRecord] = []
@@ -324,14 +444,18 @@ def _build_entry_records(
         if verdict.verdict_scope != "ENTRY" or verdict.entry_verdict is None:
             continue
 
-        envelope = envelope_by_id.get(verdict.envelope_id)
+        envelope = envelope_by_cycle_key.get(verdict.cycle_key)
+        if envelope is None:
+            envelope = envelope_by_id.get(verdict.envelope_id)
         if envelope is None:
             envelope = envelope_by_chamber_id.get(verdict.chamber_id)
-        chamber = chamber_index.get(verdict.chamber_id)
+        chamber = chamber_by_cycle_key.get(verdict.cycle_key)
+        if chamber is None:
+            chamber = chamber_by_id.get(verdict.chamber_id)
         projection = _derive_chamber_projection(chamber)
-        correlation = correlation_by_verdict_id.get(verdict.verdict_id)
-        disagreement = disagreement_by_verdict_id.get(verdict.verdict_id)
-        calibration = calibration_by_verdict_id.get(verdict.verdict_id)
+        correlation = correlation_by_cycle_key.get(verdict.cycle_key)
+        disagreement = disagreement_by_cycle_key.get(verdict.cycle_key)
+        calibration = calibration_by_cycle_key.get(verdict.cycle_key)
         optimal_action = _compute_optimal_action(
             correlation,
             fee_per_cycle_bps=fee_per_cycle_bps,
@@ -1044,10 +1168,14 @@ def _build_existing_phase5_artifact_summary(
     if calibration_path.is_file():
         existing_calibration = load_existing_calibration_dataset(
             calibration_path)
-        existing_ids = {str(record["verdict_id"])
-                        for record in existing_calibration}
-        derived_ids = {str(record["verdict_id"])
-                       for record in derived_calibration_records}
+        existing_ids = {
+            _cycle_key_from_record(record) or str(record["verdict_id"])
+            for record in existing_calibration
+        }
+        derived_ids = {
+            _cycle_key_from_record(record) or str(record["verdict_id"])
+            for record in derived_calibration_records
+        }
         overlap_rate = None
         if derived_ids:
             overlap_rate = len(existing_ids & derived_ids) / len(derived_ids)
@@ -1273,13 +1401,18 @@ def run_review(config: ReviewConfig) -> dict[str, object]:
     loaded_chambers = load_chambers(simulator_config.judge_logs_path)
     loaded_envelopes = load_envelopes(simulator_config.judge_logs_path)
 
-    chamber_index = _build_chamber_index(loaded_chambers, loaded_envelopes)
-    envelope_by_id, envelope_by_chamber_id = _build_envelope_indices(
-        loaded_envelopes
+    chamber_by_cycle_key, chamber_by_id = _build_chamber_index(
+        loaded_chambers,
+        loaded_envelopes,
+    )
+    envelope_by_cycle_key, envelope_by_id, envelope_by_chamber_id = (
+        _build_envelope_indices(loaded_envelopes)
     )
     entry_records = _build_entry_records(
         verdicts=loaded_verdicts,
-        chamber_index=chamber_index,
+        chamber_by_cycle_key=chamber_by_cycle_key,
+        chamber_by_id=chamber_by_id,
+        envelope_by_cycle_key=envelope_by_cycle_key,
         envelope_by_id=envelope_by_id,
         envelope_by_chamber_id=envelope_by_chamber_id,
         simulation_result=simulation_result,
@@ -1304,7 +1437,7 @@ def run_review(config: ReviewConfig) -> dict[str, object]:
     support, surface_rows = _build_surface_support(
         entry_records=entry_records,
         lifecycle_verdicts=loaded_verdicts,
-        chambers=list(chamber_index.values()),
+        chambers=list(chamber_by_cycle_key.values()),
         envelopes=loaded_envelopes,
         simulation_result=simulation_result,
     )
@@ -1391,7 +1524,7 @@ def run_review(config: ReviewConfig) -> dict[str, object]:
             outcome_data_path=simulator_config.outcome_data_path,
             simulation_result=simulation_result,
             verdicts=loaded_verdicts,
-            chambers=list(chamber_index.values()),
+            chambers=list(chamber_by_cycle_key.values()),
             envelopes=loaded_envelopes,
             entry_records=entry_records,
             existing_calibration_present=bool(
@@ -1412,7 +1545,9 @@ def run_review(config: ReviewConfig) -> dict[str, object]:
             "ENTRY": _count_entry_verdicts(entry_records),
             "LIFECYCLE": _count_lifecycle_verdicts(loaded_verdicts),
         },
-        "chamber_class_counts": _count_chamber_classes(list(chamber_index.values())),
+        "chamber_class_counts": _count_chamber_classes(
+            list(chamber_by_cycle_key.values())
+        ),
         "suppression_unknown_accounting": {
             "unknown_count": sum(
                 1 for record in entry_records if record.final_action == "UNKNOWN"

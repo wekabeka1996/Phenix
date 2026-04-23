@@ -55,7 +55,8 @@ def assemble_evidence_envelope(
     symbol = chamber_aggregate.symbol
     ts_ms = chamber_aggregate.ts_ms
 
-    # Envelope ID: deterministic from scope + symbol + timestamp
+    # Envelope ID is a stage-local compatibility id.
+    # Canonical replay/review identity lives in JudgeEvidenceEnvelope.cycle_key.
     envelope_id = f"env_{scope.lower()}_{symbol}_{ts_ms}"
 
     # For LIFECYCLE scope, provide a synthetic no-position stub if

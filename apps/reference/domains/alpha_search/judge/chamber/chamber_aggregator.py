@@ -22,6 +22,7 @@ from apps.reference.domains.alpha_search.judge.contracts import (
 from .admissibility import evaluate_admissibility
 
 LOG = logging.getLogger(__name__)
+_ABSTAINING_VERDICTS = {"UNKNOWN", "SUPPRESS"}
 
 
 class ChamberAggregator:
@@ -71,8 +72,10 @@ class ChamberAggregator:
 
         # Step 3: Classify responding vs abstaining
         responding = [
-            eo for eo in scope_filtered
-            if eo.confidence > 0.0 and self._get_verdict(eo) != "UNKNOWN"
+            eo
+            for eo in scope_filtered
+            if eo.confidence > 0.0
+            and self._get_verdict(eo) not in _ABSTAINING_VERDICTS
         ]
         responding_count = len(responding)
 
@@ -80,7 +83,7 @@ class ChamberAggregator:
         abstaining_count = expert_count - responding_count
 
         # Step 5: Admissibility
-        admissibility = evaluate_admissibility(
+        admissibility, admissibility_reason = evaluate_admissibility(
             expert_outputs=scope_filtered,
             responding_count=responding_count,
             expected_expert_count=expert_count,
@@ -94,7 +97,8 @@ class ChamberAggregator:
         consensus_direction = self._compute_consensus_direction(responding)
         consensus_strength = self._compute_consensus_strength(responding)
 
-        # Step 7: chamber_id
+        # Step 7: stage-local compatibility id.
+        # Canonical replay/review identity lives in ChamberAggregate.cycle_key.
         chamber_id = f"{self.verdict_scope.lower()}_{symbol}_{ts_ms}"
 
         return ChamberAggregate(
@@ -110,6 +114,7 @@ class ChamberAggregator:
             consensus_direction=consensus_direction,
             consensus_strength=consensus_strength,
             admissibility=admissibility,
+            admissibility_reason=admissibility_reason,
             schema_version="1",
         )
 

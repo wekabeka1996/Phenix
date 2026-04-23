@@ -1018,6 +1018,7 @@ class AlphaSearchBacktestPlugin:
         # Resolve expert_version from judge expert config
         expert_type = cfg.judge_expert.expert_type
         expert_version = "1.0.0"
+        signal_threshold = self._resolve_judge_expert_signal_threshold(expert_type)
         if judge_cfg and judge_cfg.experts:
             if expert_type == "signal_weights":
                 expert_version = judge_cfg.experts.signal_weights.expert_version
@@ -1028,6 +1029,7 @@ class AlphaSearchBacktestPlugin:
         expert_output = alpha_score_to_expert_output(
             score,
             expert_version=expert_version,
+            signal_threshold=signal_threshold,
             tf_sec=tf_sec,
             ts_ms=bar_close_ts,
         )
@@ -1078,6 +1080,19 @@ class AlphaSearchBacktestPlugin:
         elif expert_type == "feature_neutrals":
             return judge_cfg.experts.feature_neutrals.expert_id
         return None
+
+    def _resolve_judge_expert_signal_threshold(self, expert_type: str) -> float:
+        """Resolve the authoritative signal_threshold from the judge expert config."""
+        judge_cfg = self.config.judge
+        if not judge_cfg or not judge_cfg.experts:
+            raise ValueError(
+                "Judge expert provider requires judge.experts config to be present"
+            )
+        if expert_type == "signal_weights":
+            return judge_cfg.experts.signal_weights.signal_threshold
+        if expert_type == "feature_neutrals":
+            return judge_cfg.experts.feature_neutrals.signal_threshold
+        raise ValueError(f"Unsupported judge expert_type '{expert_type}'")
 
     def _run_chamber_aggregation(
         self,

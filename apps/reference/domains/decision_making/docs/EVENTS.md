@@ -1,6 +1,6 @@
 # Decision Making Events
 
-> **Last Updated**: 2025-11-29  
+> **Last Updated**: 2025-11-29
 > **Version**: 1.2.0
 
 ## Event Overview
@@ -14,7 +14,7 @@
 | `EVT:EXPOSURE_SUMMARY_UPDATED` | **IN** | Exposure limits from risk_management |
 | `EVT:TRADE_INTENT_PROPOSED` | **OUT** | Trade intent to execution_position |
 | `EVT:STRATEGY_DECISION_BLOCKED` | **OUT** | Telemetry for blocked decisions (NRR codes) |
-| `EVT:ALPHA_SCORE_CALCULATED` | **OUT** | Alpha scores to monitoring |
+| `EVT:ALPHA_SCORES_AGGREGATED` | **OUT** | Aggregate alpha telemetry to monitoring |
 | `CMD:CLOSE` | **OUT** | ROI exit command to execution_position |
 
 ---
@@ -135,10 +135,13 @@ Emitted when a trade intent has been successfully evaluated, approved through al
 
 ---
 
-## EVT:ALPHA_SCORE_CALCULATED
+## EVT:ALPHA_SCORES_AGGREGATED
 
 ### Description
-Emitted when alpha model scores have been calculated for a symbol.
+Emitted when decision_making aggregates local alpha_registry scores for a symbol and exports the result as monitoring telemetry.
+
+### Schema Reference
+`schemas/alpha_scores_aggregated_v1.json` (JSON Schema 2020-12)
 
 ### Payload Structure
 

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,6 +43,41 @@ def _legacy_order_fill_message() -> Message:
             "quantity": "0.10",
         },
     )
+
+
+def _pending_bracket_payload() -> dict[str, str]:
+    return {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "sl": "99.5",
+        "tp": "101.0",
+        "qty": "0.10",
+        "rid": "rid-fill-1",
+        "idem_key": "rid-fill-1",
+        "tick_size": "0.01",
+    }
+
+
+def _fill_result_message(rid: str = "rid-fill-1") -> Message:
+    return Message(
+        op="DEC",
+        verb="BATCH",
+        src="execution_position",
+        dst="adapter",
+        rid=rid,
+        why="test_batch",
+        pld={"messages": []},
+    )
+
+
+def _stub_fill_manage_flow(fsm) -> None:
+    manage_flow = MagicMock()
+    manage_flow.state = SimpleNamespace(value="FLAT")
+    manage_flow.handle.return_value = _fill_result_message()
+    fsm._get_or_create_flows = lambda symbol: (
+        MagicMock(), manage_flow, MagicMock())
+    fsm._position_policy_sidecar = None
+    fsm._process_flow_result = lambda result: None
 
 
 def test_trade_executed_canonical_fill_ingress_orders_activation_and_observability(
@@ -171,6 +207,7 @@ def test_trade_executed_typed_brackets_config_still_schedules_deferred_brackets(
     fsm_harness,
 ) -> None:
     fsm, _, cfg = fsm_harness
+    _stub_fill_manage_flow(fsm)
     cfg.trading.execution.manage.brackets = BracketsConfig(
         sl=SLConfig(fixed_bps=40),
         tp=TPConfig(fixed_bps=80),
@@ -191,21 +228,10 @@ def test_trade_executed_typed_brackets_config_still_schedules_deferred_brackets(
     fsm._submit_async = fake_submit_async
     fsm._bracket_mgr.place_deferred_brackets = fake_place_deferred
     fsm.order_guardian.cleanup_orphans = fake_place_deferred
-    fsm._pending_brackets["order-1"] = {
-        "symbol": "BTCUSDT",
-        "side": "BUY",
-        "sl": "99.5",
-        "tp": "101.0",
-        "qty": "0.10",
-        "rid": "rid-fill-1",
-        "idem_key": "rid-fill-1",
-        "tick_size": "0.01",
-    }
+    fsm._pending_brackets["order-1"] = _pending_bracket_payload()
 
-    with patch(
-        "apps.reference.domains.execution_position.pending_brackets_wal.write_pending_brackets_cleared"
-    ) as pending_cleared:
-        result = fsm._handle_canonical_fill_ingress(
+    with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending:
+        result = fsm._fill_ingress_coordinator.handle_canonical_fill_ingress(
             _trade_executed_message(),
             fill_source="trade_executed",
             process_result=False,
@@ -216,9 +242,95 @@ def test_trade_executed_typed_brackets_config_still_schedules_deferred_brackets(
     assert result.verb == "BATCH"
     assert "fake_place_deferred" in scheduled
     assert "delayed_cleanup" in scheduled
-    assert "order-1" not in fsm._pending_brackets
-    pending_cleared.assert_called_once_with(
-        entry_order_id="order-1",
-        reason="filled",
-        symbol="BTCUSDT",
-    )
+    assert "order-1" in fsm._pending_brackets
+    clear_pending.assert_not_called()
+
+
+def test_trade_executed_partially_filled_keeps_pending_brackets_and_skips_deferred_placement(
+    fsm_harness,
+) -> None:
+    fsm, _, _cfg = fsm_harness
+    _stub_fill_manage_flow(fsm)
+    scheduled: list[str] = []
+
+    async def fake_place_deferred(entry_order_id: str, bracket_data: dict) -> bool:
+        raise AssertionError(
+            "deferred placement must not run on PARTIALLY_FILLED")
+
+    async def fake_cleanup(*args, **kwargs):
+        return None
+
+    def fake_submit_async(coro, _loop) -> None:
+        scheduled.append(coro.cr_code.co_name)
+        coro.close()
+
+    fsm._get_async_loop = lambda: object()
+    fsm._submit_async = fake_submit_async
+    fsm._bracket_mgr.place_deferred_brackets = fake_place_deferred
+    fsm.order_guardian.cleanup_orphans = fake_cleanup
+    fsm._pending_brackets["order-1"] = _pending_bracket_payload()
+
+    partial_msg = _trade_executed_message()
+    partial_msg.pld["status"] = "PARTIALLY_FILLED"
+    partial_msg.pld["tradeId"] = "t-partial-1"
+
+    with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending:
+        result = fsm._fill_ingress_coordinator.handle_canonical_fill_ingress(
+            partial_msg,
+            fill_source="trade_executed",
+            process_result=False,
+        )
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "BATCH"
+    assert "order-1" in fsm._pending_brackets
+    assert "fake_place_deferred" not in scheduled
+    clear_pending.assert_not_called()
+
+
+def test_trade_executed_without_placement_success_keeps_pending_brackets(
+    fsm_harness,
+) -> None:
+    fsm, _, _cfg = fsm_harness
+    _stub_fill_manage_flow(fsm)
+    scheduled: list[str] = []
+    placement_results: list[bool] = []
+
+    async def fake_place_deferred(entry_order_id: str, bracket_data: dict) -> bool:
+        return False
+
+    async def fake_cleanup(*args, **kwargs):
+        return None
+
+    def fake_submit_async(coro, _loop) -> None:
+        scheduled.append(coro.cr_code.co_name)
+        if coro.cr_code.co_name == "fake_place_deferred":
+            placement_results.append(asyncio.run(coro))
+            return
+        coro.close()
+
+    fsm._get_async_loop = lambda: object()
+    fsm._submit_async = fake_submit_async
+    fsm._bracket_mgr.place_deferred_brackets = fake_place_deferred
+    fsm.order_guardian.cleanup_orphans = fake_cleanup
+    fsm._pending_brackets["order-1"] = _pending_bracket_payload()
+
+    fill_msg = _trade_executed_message()
+    fill_msg.pld["status"] = "FILLED"
+    fill_msg.pld["tradeId"] = "t-final-1"
+
+    with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending:
+        result = fsm._fill_ingress_coordinator.handle_canonical_fill_ingress(
+            fill_msg,
+            fill_source="trade_executed",
+            process_result=False,
+        )
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "BATCH"
+    assert placement_results == [False]
+    assert "fake_place_deferred" in scheduled
+    assert "order-1" in fsm._pending_brackets
+    clear_pending.assert_not_called()

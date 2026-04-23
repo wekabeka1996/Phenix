@@ -1036,6 +1036,47 @@ class ExecPosFSM(
         self._symbol_brackets.pop(symbol_key, None)
         self._symbol_bracket_truth_source.pop(symbol_key, None)
 
+    def _clear_pending_brackets(
+        self,
+        entry_order_id: str,
+        *,
+        reason: str,
+        symbol: Optional[str] = None,
+        persist_snapshot: bool = False,
+    ) -> bool:
+        """Sanctioned mutator for pending deferred bracket state."""
+        entry_order_id_str = str(entry_order_id or "").strip()
+        if not entry_order_id_str:
+            return False
+
+        bracket_data = self._pending_brackets.pop(entry_order_id_str, None)
+        if not isinstance(bracket_data, dict):
+            return False
+
+        symbol_value = str(symbol or bracket_data.get(
+            "symbol") or "").strip().upper()
+        try:
+            write_pending_brackets_cleared(
+                entry_order_id=entry_order_id_str,
+                reason=reason,
+                symbol=symbol_value,
+            )
+        except Exception as exc:
+            LOG.warning(
+                "Failed to clear pending brackets entry_order_id=%s reason=%s error=%s",
+                entry_order_id_str,
+                reason,
+                exc,
+            )
+
+        if persist_snapshot:
+            self._persist_restore_artifact_snapshot(
+                trigger=f"bracket_deferred_cleared:{reason}",
+                allow_empty=True,
+            )
+
+        return True
+
     def _apply_authoritative_local_close_reset(
         self,
         symbol: str,
@@ -1771,6 +1812,65 @@ class ExecPosFSM(
                 self.close_flows[symbol_key],
             )
 
+    def _handle_cmd_close_producer_ingress(
+        self,
+        msg: Message,
+        *,
+        journal: Any,
+        before: Any,
+        close_flow: CloseFlowFSM,
+    ) -> Optional[Message]:
+        """Bounded producer ingress for CMD:CLOSE before CloseFlow delegation."""
+        symbol = msg.pld.get("symbol") if msg.pld else None
+        hardening = get_execution_truth_hardening(self)
+        skip_close_guard = bool(
+            (msg.pld or {}).get("close_guard_prevalidated"))
+
+        if symbol and hardening is not None and not skip_close_guard:
+            close_decision = hardening.evaluate_close_command(
+                symbol=symbol,
+                requested_qty=(msg.pld or {}).get("qty"),
+                position_signature=self._get_portfolio_position_signature(
+                    symbol),
+                rid=getattr(msg, "rid", None),
+            )
+            if close_decision.suppress:
+                LOG.warning(
+                    "[CMD:CLOSE] Suppressed duplicate close propagation for %s: %s (%s)",
+                    symbol,
+                    close_decision.reason,
+                    close_decision.key,
+                )
+                if journal is not None:
+                    journal.record_transition(
+                        event_name="HARDENING:CMD_CLOSE_SUPPRESSED",
+                        source_component="execution_position.fsm",
+                        source_path="execution:close_source_guard",
+                        event_origin_type="execution",
+                        truth_owner="ExecPosFSM",
+                        payload=msg.pld or {},
+                        rid=getattr(msg, "rid", None),
+                        before=before,
+                        after=snapshot_execpos_state(self, symbol),
+                        notes=[
+                            close_decision.reason,
+                            f"guard_key={close_decision.key}",
+                            f"requested_qty={normalize_close_qty((msg.pld or {}).get('qty'))}",
+                        ],
+                    )
+                return None
+
+        if symbol:
+            manage = self.manage_flows.get(symbol)
+            if manage:
+                manage._closing_position = True
+                manage._closing_position_ts = get_clock().now_sec()
+                print(
+                    f" [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race"
+                )
+
+        return close_flow.handle(msg)
+
     def hydrate(self, position_data: Dict[str, Any]):
         """Hydrate the FSMs for a given position from a snapshot."""
         symbol = position_data.get("symbol")
@@ -1935,51 +2035,12 @@ class ExecPosFSM(
             elif msg.verb == "ORDER_CANCELLED":
                 self._handle_cancel_event(msg)
             elif msg.verb == "CLOSE":
-                symbol = msg.pld.get("symbol") if msg.pld else None
-                hardening = get_execution_truth_hardening(self)
-                skip_close_guard = bool(
-                    (msg.pld or {}).get("close_guard_prevalidated"))
-                if symbol and hardening is not None and not skip_close_guard:
-                    close_decision = hardening.evaluate_close_command(
-                        symbol=symbol,
-                        requested_qty=(msg.pld or {}).get("qty"),
-                        position_signature=self._get_portfolio_position_signature(
-                            symbol),
-                        rid=getattr(msg, "rid", None),
-                    )
-                    if close_decision.suppress:
-                        LOG.warning(
-                            "[CMD:CLOSE] Suppressed duplicate close propagation for %s: %s (%s)",
-                            symbol,
-                            close_decision.reason,
-                            close_decision.key,
-                        )
-                        if journal is not None:
-                            journal.record_transition(
-                                event_name="HARDENING:CMD_CLOSE_SUPPRESSED",
-                                source_component="execution_position.fsm",
-                                source_path="execution:close_source_guard",
-                                event_origin_type="execution",
-                                truth_owner="ExecPosFSM",
-                                payload=msg.pld or {},
-                                rid=getattr(msg, "rid", None),
-                                before=before,
-                                after=snapshot_execpos_state(self, symbol),
-                                notes=[
-                                    close_decision.reason,
-                                    f"guard_key={close_decision.key}",
-                                    f"requested_qty={normalize_close_qty((msg.pld or {}).get('qty'))}",
-                                ],
-                            )
-                        return None
-                if symbol:
-                    manage = self.manage_flows.get(symbol)
-                    if manage:
-                        manage._closing_position = True
-                        manage._closing_position_ts = get_clock().now_sec()
-                        print(
-                            f" [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
-                result = close_flow.handle(msg)
+                result = self._handle_cmd_close_producer_ingress(
+                    msg,
+                    journal=journal,
+                    before=before,
+                    close_flow=close_flow,
+                )
             else:
                 result = manage_flow.handle(msg)
 
@@ -2538,9 +2599,9 @@ class ExecPosFSM(
 
     async def _place_deferred_brackets(
         self, entry_order_id: str, bracket_data: Dict[str, Any]
-    ) -> None:
+    ) -> bool:
         """Phase 14A: Delegated to BracketManager."""
-        await self._bracket_mgr.place_deferred_brackets(entry_order_id, bracket_data)
+        return await self._bracket_mgr.place_deferred_brackets(entry_order_id, bracket_data)
 
     async def _cleanup_loop(self) -> None:
         """Periodic orphaned-order cleanup loop (interval from config)."""

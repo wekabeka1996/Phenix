@@ -96,6 +96,56 @@ class CloseFlowFSM:
                 f"[CloseFlowFSM] HYDRATION_ERROR: Failed to hydrate state: {e}"
             )
 
+    def _handle_cmd_close_producer_branch(self, msg: Message) -> Optional[Message]:
+        """Pure producer branch for explicit CMD:CLOSE -> DEC:CLOSE adaptation."""
+        try:
+            intake, emission, result = adapt_cmd_close_to_dec_close(msg)
+        except CloseProducerBridgeError as exc:
+            reject_ref = build_close_producer_bridge_trace_ref(
+                status="reject",
+                qty_present=False,
+                preserved_idempotent_key=False,
+                preserved_command_trigger=False,
+                reason="intake_validation",
+            )
+            existing_refs = list(getattr(msg, "data_ref", None) or [])
+            if reject_ref not in existing_refs:
+                existing_refs.append(reject_ref)
+                try:
+                    msg.data_ref = existing_refs
+                except Exception:
+                    pass
+            self._metrics["fsm_errors_total"] += 1
+            self._metrics["fsm_close_bridge_rejects_total"] += 1
+            LOG.error(
+                "CLOSE_PRODUCER_BRIDGE_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
+                CLOSE_PRODUCER_BRIDGE_CONTRACT,
+                CLOSE_PRODUCER_BRIDGE_PATH,
+                getattr(msg, "rid", None),
+                "intake_validation",
+                exc,
+            )
+            return None
+
+        self.state = CloseState.CLOSE_COND
+        self.state = CloseState.EMIT_DEC_CLOSE
+        self._metrics["fsm_close_decisions_total"] += 1
+        self.last_close_reason = emission.reason
+        self.last_close_qty = emission.qty
+        self.last_close_symbol = emission.symbol
+        LOG.info(
+            "CLOSE_PRODUCER_BRIDGE_SUCCESS: contract=%s path=%s rid=%s symbol=%s trigger=%s idempotent_key=%s",
+            CLOSE_PRODUCER_BRIDGE_CONTRACT,
+            CLOSE_PRODUCER_BRIDGE_PATH,
+            getattr(msg, "rid", None),
+            emission.symbol,
+            intake.trigger,
+            emission.idempotent_key,
+        )
+        self.state = CloseState.DONE
+        self.position_active = False
+        return result
+
     def handle(self, msg: Message) -> Optional[Message]:
         """
         Process incoming events and emit DEC:CLOSE if rules trigger.
@@ -112,52 +162,7 @@ class CloseFlowFSM:
         result: Optional[Message] = None
         try:
             if msg.op == "CMD" and msg.verb == "CLOSE":
-                try:
-                    intake, emission, result = adapt_cmd_close_to_dec_close(msg)
-                except CloseProducerBridgeError as exc:
-                    reject_ref = build_close_producer_bridge_trace_ref(
-                        status="reject",
-                        qty_present=False,
-                        preserved_idempotent_key=False,
-                        preserved_command_trigger=False,
-                        reason="intake_validation",
-                    )
-                    existing_refs = list(getattr(msg, "data_ref", None) or [])
-                    if reject_ref not in existing_refs:
-                        existing_refs.append(reject_ref)
-                        try:
-                            msg.data_ref = existing_refs
-                        except Exception:
-                            pass
-                    self._metrics["fsm_errors_total"] += 1
-                    self._metrics["fsm_close_bridge_rejects_total"] += 1
-                    LOG.error(
-                        "CLOSE_PRODUCER_BRIDGE_REJECT: contract=%s path=%s rid=%s reason=%s details=%s",
-                        CLOSE_PRODUCER_BRIDGE_CONTRACT,
-                        CLOSE_PRODUCER_BRIDGE_PATH,
-                        getattr(msg, "rid", None),
-                        "intake_validation",
-                        exc,
-                    )
-                    return None
-
-                self.state = CloseState.CLOSE_COND
-                self.state = CloseState.EMIT_DEC_CLOSE
-                self._metrics["fsm_close_decisions_total"] += 1
-                self.last_close_reason = emission.reason
-                self.last_close_qty = emission.qty
-                self.last_close_symbol = emission.symbol
-                LOG.info(
-                    "CLOSE_PRODUCER_BRIDGE_SUCCESS: contract=%s path=%s rid=%s symbol=%s trigger=%s idempotent_key=%s",
-                    CLOSE_PRODUCER_BRIDGE_CONTRACT,
-                    CLOSE_PRODUCER_BRIDGE_PATH,
-                    getattr(msg, "rid", None),
-                    emission.symbol,
-                    intake.trigger,
-                    emission.idempotent_key,
-                )
-                self.state = CloseState.DONE
-                self.position_active = False
+                result = self._handle_cmd_close_producer_branch(msg)
                 return result
 
             if msg.op not in ("EVT", "UPD"):

@@ -98,13 +98,16 @@ def load_json_file(path: str) -> Optional[Dict[str, Any]]:
 # Event extraction
 # ---------------------------------------------------------------------------
 
+ALPHA_SCORE_WAL_VERBS = {"ALPHA_SCORE_CALCULATED", "ALPHA_SCORES_AGGREGATED"}
+
+
 def extract_alpha_scores(wal_records: List[Dict[str, Any]]) -> List[SignalRecord]:
-    """Extract ALPHA_SCORE_CALCULATED events from WAL records."""
+    """Extract provider-scoped alpha_search scores and DM aggregate alpha telemetry from WAL records."""
     signals: List[SignalRecord] = []
     for rec in wal_records:
         verb = rec.get("verb", "")
         op = rec.get("op", "")
-        if verb != "ALPHA_SCORE_CALCULATED" and "ALPHA_SCORE_CALCULATED" not in op:
+        if verb not in ALPHA_SCORE_WAL_VERBS and not any(v in op for v in ALPHA_SCORE_WAL_VERBS):
             continue
 
         pld = rec.get("pld", rec)
@@ -131,7 +134,7 @@ def extract_alpha_scores(wal_records: List[Dict[str, Any]]) -> List[SignalRecord
             except (ValueError, TypeError):
                 continue
 
-        # Legacy format: {scores: [...]}
+        # DecisionMaking aggregate telemetry format: {scores: [...]}
         elif "scores" in pld and isinstance(pld["scores"], list):
             symbol = pld.get("symbol", "")
             ts_ms = int(
@@ -143,7 +146,7 @@ def extract_alpha_scores(wal_records: List[Dict[str, Any]]) -> List[SignalRecord
                     sig = SignalRecord(
                         ts_ms=ts_ms,
                         symbol=symbol,
-                        provider_id="dm_inline",
+                        provider_id="dm_aggregate",
                         model_name=s.get("model_name", "unknown"),
                         score=float(s.get("score", 0)),
                         confidence=float(s.get("confidence", 0)),

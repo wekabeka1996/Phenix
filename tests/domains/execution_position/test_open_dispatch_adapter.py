@@ -172,6 +172,7 @@ def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
         idempotent_key="KEY-UNIT-1",
         regime="TREND_UP",
         regime_confidence=0.87,
+        regime_epoch_ref=None,
         regime_provenance={"source_kind": "detector_cache",
                            "detector_event": None, "cache_snapshot": None},
     )
@@ -198,6 +199,7 @@ def test_typed_open_dispatch_rejects_inconsistent_limit_bridge_fail_closed() -> 
             idempotent_key="KEY-UNIT-2",
             regime=None,
             regime_confidence=None,
+            regime_epoch_ref=None,
             regime_provenance=None,
         )
 
@@ -418,7 +420,11 @@ def test_fill_ingress_path_does_not_use_open_dispatch_adapter(fsm_harness) -> No
         why="fill_path_pkg2",
     )
 
-    with patch.object(fsm, "_handle_canonical_fill_ingress", return_value=None) as wrapped_fill, patch(
+    with patch.object(
+        fsm._fill_ingress_coordinator,
+        "handle_canonical_fill_ingress",
+        return_value=None,
+    ) as wrapped_fill, patch(
         "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch:

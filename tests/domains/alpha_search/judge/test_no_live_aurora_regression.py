@@ -138,10 +138,10 @@ class TestConfigLoadStability:
         assert cfg.enabled is True
 
     def test_judge_defaults_safe(self):
-        """Judge defaults are 'off' — no accidental activation."""
+        """Repo config keeps judge in shadow mode, not live authority."""
         cfg = load_alpha_search_config("config/alpha_search.yaml")
-        assert cfg.judge.enabled is False
-        assert cfg.judge.mode == "off"
+        assert cfg.judge.enabled is True
+        assert cfg.judge.mode == "shadow"
 
     def test_judge_does_not_change_shadow_mode(self):
         """alpha_search shadow_mode unrelated to judge mode."""

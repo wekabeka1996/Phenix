@@ -36,6 +36,10 @@
             "type": "integer",
             "exclusiveMinimum": 0
         },
+        "cycle_key": {
+            "type": ["string", "null"],
+            "minLength": 1
+        },
         "verdict_scope": {
             "type": "string",
             "enum": ["ENTRY", "LIFECYCLE"]
@@ -70,6 +74,9 @@
         "admissibility": {
             "type": "string",
             "enum": ["ADMISSIBLE", "INADMISSIBLE", "QUORUM_INSUFFICIENT"]
+        },
+        "admissibility_reason": {
+            "type": ["string", "null"]
         },
         "schema_version": {
             "type": "string",

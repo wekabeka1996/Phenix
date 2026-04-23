@@ -1,4 +1,8 @@
 import decimal
+import json
+from pathlib import Path
+
+import jsonschema
 
 
 def test_ws_aggregator_preserves_qty_and_imbalance_is_volume_weighted():
@@ -90,4 +94,93 @@ def test_ws_aggregator_drops_out_of_order_trade_and_increments_counter():
     tick = agg.get_market_tick(symbol)
     assert tick is not None
     assert tick["trades_dropped_out_of_order"] == 1
+
+
+def test_ws_aggregator_clamps_expired_float_residuals_to_zero():
+    from apps.reference.domains.market_data.websocket_aggregator import WebSocketAggregator
+
+    symbol = "BTCUSDT"
+    agg = WebSocketAggregator(symbols=[symbol], window_seconds=60)
+
+    agg.on_book_ticker(
+        symbol=symbol,
+        bid_price="99.0",
+        bid_size="10",
+        ask_price="101.0",
+        ask_size="10",
+        ts=1_000_000,
+    )
+
+    for i in range(1000):
+        agg.on_trade(
+            symbol=symbol,
+            price="100.0",
+            quantity="0.1",
+            is_buyer_maker=False,
+            ts=1_000_000 + i,
+            trade_id=i,
+        )
+
+    agg.on_book_ticker(
+        symbol=symbol,
+        bid_price="99.0",
+        bid_size="10",
+        ask_price="101.0",
+        ask_size="10",
+        ts=1_061_500,
+    )
+    agg.state[symbol]["last_trade_ts_ms"] = 1_061_500
+
+    tick = agg.get_market_tick(symbol)
+    assert tick is not None
+    assert tick["buy_volume"] == "0"
+    assert tick["sell_volume"] == "0"
+    assert tick["buy_notional"] == "0"
+    assert tick["sell_notional"] == "0"
+    assert "e" not in tick["buy_volume"].lower()
+    assert "e" not in tick["sell_volume"].lower()
+
+
+def test_ws_aggregator_tick_payload_passes_market_tick_schema_after_cleanup():
+    from apps.reference.domains.market_data.websocket_aggregator import WebSocketAggregator
+
+    symbol = "BTCUSDT"
+    agg = WebSocketAggregator(symbols=[symbol], window_seconds=60)
+
+    agg.on_book_ticker(
+        symbol=symbol,
+        bid_price="99.0",
+        bid_size="10",
+        ask_price="101.0",
+        ask_size="10",
+        ts=1_000_000,
+    )
+    agg.on_trade(
+        symbol=symbol,
+        price="100.0",
+        quantity="0.1",
+        is_buyer_maker=True,
+        ts=1_000_010,
+        trade_id=1,
+    )
+    agg.on_book_ticker(
+        symbol=symbol,
+        bid_price="99.0",
+        bid_size="10",
+        ask_price="101.0",
+        ask_size="10",
+        ts=1_061_500,
+    )
+    agg.state[symbol]["last_trade_ts_ms"] = 1_061_500
+
+    tick = agg.get_market_tick(symbol)
+    assert tick is not None
+
+    payload = dict(tick)
+    payload["data_type"] = "market_tick_aggregated"
+
+    schema = json.loads(
+        Path("schemas/market_tick_received_v1.json").read_text(encoding="utf-8")
+    )
+    jsonschema.validate(payload, schema)
 

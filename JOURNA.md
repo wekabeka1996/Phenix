@@ -875,3 +875,56 @@ Package 6C shell typing closure is COMPLETE. The remaining exact mypy red state 
 - `c:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest -v tests/domains/execution_position/test_execution_restore_authoritative_read.py` -> `23 passed in 2.05s`
 - `c:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest -v tests/domains/execution_position/test_execution_restore_dark_read.py` -> `10 passed in 0.98s`
 - `c:/Users/user/Music/Phenix/.venv/Scripts/python.exe -m pytest -v tests/domains/execution_position/test_execution_restore_artifact_writer.py` -> `12 passed in 1.06s`
+
+## 2026-04-23
+**Task / package id:** ExecPosFSM Decomposition Final Summary
+**Status:** AUDIT ONLY | NO CODE CHANGES
+
+**Date / time:** 2026-04-23 12:39:33 +03:00
+
+**Goal:**
+Produce the final repository-truth closure summary for the `ExecPosFSM` decomposition line after Packages 0/1, 2, 3, 4, 5, 6A, 6B, 6C, corrective 0R, and the final 6C validation / shell-typing closure.
+
+**Files / reports inspected:**
+- `docs/plans/EXECPOS_FSM_DECOMPOSITION_ROADMAP_v1.md`
+- `JOURNA.md`
+- `apps/reference/domains/execution_position/BOUNDARY_POLICY.md`
+- `apps/reference/domains/execution_position/fsm.py`
+- `apps/reference/domains/execution_position/position_policy_mediator.py`
+- `apps/reference/domains/execution_position/bracket_ownership.py`
+- `apps/reference/domains/execution_position/fill_ingress_coordinator.py`
+- `apps/reference/domains/execution_position/bracket_health.py`
+- `apps/reference/domains/execution_position/startup_truth_orchestrator.py`
+- `apps/reference/domains/execution_position/authoritative_restore_apply.py`
+- `apps/reference/domains/execution_position/startup_reconstruction.py`
+- `package_6b_audit.md`
+- `package_6c_audit.md`
+- `package_6c_report.md`
+- `package_6c_validation_gate.md`
+
+**Final package ledger summary:**
+- Package 0 / 1: FUNCTIONAL = YES. ARCHITECTURAL = PARTIAL. Real contour landed as the initial truth-boundary freeze plus pending-entry guard extraction line, but the original legitimacy gap around boundary policy was only normalized later by 0R.
+- Package 2: FUNCTIONAL = YES. ARCHITECTURAL = YES. `position_policy_mediator.py` became the real owner of the sidecar close-request mediation contour.
+- Package 3: FUNCTIONAL = YES. ARCHITECTURAL = YES. `bracket_ownership.py` became the real owner of bracket strategy ownership, with the later corrective proxy closing the direct event-handler bleed.
+- Package 4: FUNCTIONAL = YES. ARCHITECTURAL = PARTIAL. `fill_ingress_coordinator.py` landed as a real ingress contour, but the surrounding lifecycle shell and shared-state access remained only partly normalized.
+- Package 5: FUNCTIONAL = YES. ARCHITECTURAL = PARTIAL. `bracket_health.py` landed as the safety-net / recovery contour, but legacy shell coupling and residual private-state reads remained outside the clean ideal.
+- Package 6A: FUNCTIONAL = YES. ARCHITECTURAL = PARTIAL. `startup_truth_orchestrator.py` landed as the read / compare / persist contour, but the 6A -> 6B seam required explicit legitimacy normalization and later completion by 6B / 6C.
+- Package 6B: FUNCTIONAL = YES. ARCHITECTURAL = YES. `authoritative_restore_apply.py` became the real mutating authoritative-apply owner with direct tests plus preserved restore-suite behavior.
+- Package 6C: FUNCTIONAL = YES. ARCHITECTURAL = YES. `startup_reconstruction.py` became the real startup reconstruction owner; the exact pytest gate passed, the local startup-shell typing slice in `fsm.py` was closed, and the remaining exact mypy red state is external repository debt.
+
+**Closure verdict:**
+- Functional closure: YES.
+- Architectural closure: YES, acceptable enough to close. Not perfect, but the roadmap-required extracted contours now exist with the critical startup trilogy completed as 6A / 6B / 6C rather than left collapsed in `fsm.py`.
+- Legitimacy closure: YES, after 0R. The decomposition line is no longer blocked by the earlier legitimacy failures (`scratch_refactor.py`, missing boundary artifact, undocumented 6A -> 6B seam).
+- Remaining external debt does NOT reopen the decomposition roadmap.
+
+**Remaining debt outside closure scope:**
+- Broad repository mypy drift remains open and is not a 6C-local blocker.
+- Remaining `fsm.py` mypy hits outside the closed 6C-adjacent startup shell remain open.
+- Historical private-state access debt outside the corrected decomposition line remains open as follow-up architecture debt.
+- `event_handlers.py` truth-dict seam normalization remains a separate post-closure cleanup candidate.
+- Monolith size and surrounding shell debt remain real, but they no longer negate the fact that the named decomposition contours actually landed.
+
+**Recommended next priority:**
+Bounded `event_handlers.py` truth-dict seam normalization, treated as a new post-closure architecture cleanup item rather than a reopening of the closed ExecPosFSM decomposition roadmap.
+

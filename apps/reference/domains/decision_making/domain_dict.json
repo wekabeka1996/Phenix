@@ -22,7 +22,7 @@
   ],
   "exports": [
     {"event_name": "CMD:CLOSE", "target_domains": ["execution_position"]},
-    {"event_name": "EVT:ALPHA_SCORE_CALCULATED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:ALPHA_SCORES_AGGREGATED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:DECISION_BLOCKED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:DECISION_TRACE_EMITTED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:FEATURE_DEFER_EXPIRED", "target_domains": ["monitoring"]},
@@ -34,8 +34,7 @@
     {"event_name": "EVT:STRATEGY_DECISION_BLOCKED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:STRATEGY_SIGNAL_PRODUCED", "target_domains": ["self"]},
     {"event_name": "EVT:TRADE_INTENT_PROPOSED", "target_domains": ["execution_position"]},
-    {"event_name": "EVT:TRADE_INTENT_REJECTED", "target_domains": ["monitoring"]},
-    {"event_name": "EVT:HANDLER_READINESS_DIAGNOSTICS", "target_domains": ["monitoring"]}
+    {"event_name": "EVT:TRADE_INTENT_REJECTED", "target_domains": ["monitoring"]}
   ],
   "components": [
     "DecisionMaking",

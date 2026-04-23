@@ -32,18 +32,21 @@ _SUMMARY_SCHEMA_PATH = _SIMULATOR_SCHEMAS_DIR / "summary_report_v1.json"
 @dataclass(frozen=True)
 class LoadedVerdict:
     verdict: JudgeVerdict
+    # File partition metadata only. ts_ms / cycle_key are authoritative.
     source_file: str
 
 
 @dataclass(frozen=True)
 class LoadedChamber:
     chamber: ChamberAggregate
+    # File partition metadata only. ts_ms / cycle_key are authoritative.
     source_file: str
 
 
 @dataclass(frozen=True)
 class LoadedEnvelope:
     envelope: JudgeEvidenceEnvelope
+    # File partition metadata only. ts_ms / cycle_key are authoritative.
     source_file: str
 
 

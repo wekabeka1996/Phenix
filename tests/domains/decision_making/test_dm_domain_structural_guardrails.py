@@ -161,6 +161,61 @@ class TestDomainDictConsistency:
             f"Critical DM exports missing from domain_dict: {missing_critical}"
         )
 
+    def test_domain_dict_does_not_export_retired_handler_readiness_diagnostics(self):
+        dd = json.loads(
+            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd_exports = {e["event_name"] for e in dd.get("exports", [])}
+
+        assert "EVT:HANDLER_READINESS_DIAGNOSTICS" not in dd_exports, (
+            "Retired HANDLER_READINESS_DIAGNOSTICS must not remain in decision_making domain_dict exports"
+        )
+
+    def test_domain_dict_exports_split_alpha_telemetry_verb_only(self):
+        dd = json.loads(
+            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd_exports = {e["event_name"] for e in dd.get("exports", [])}
+
+        assert "EVT:ALPHA_SCORES_AGGREGATED" in dd_exports, (
+            "decision_making aggregate alpha telemetry must be exported under EVT:ALPHA_SCORES_AGGREGATED"
+        )
+        assert "EVT:ALPHA_SCORE_CALCULATED" not in dd_exports, (
+            "decision_making must not keep exporting alpha_search's provider-scoped EVT:ALPHA_SCORE_CALCULATED"
+        )
+
+    def test_app_surfaces_have_no_handler_readiness_diagnostics_references(self):
+        app_files = [
+            *PROJECT_ROOT.joinpath("apps", "reference").rglob("*.py"),
+            *PROJECT_ROOT.joinpath("apps", "reference").rglob("*.json"),
+            *PROJECT_ROOT.joinpath("apps", "reference").rglob("*.yaml"),
+        ]
+        hits = []
+        for path in sorted(app_files):
+            text = path.read_text(encoding="utf-8")
+            if "HANDLER_READINESS_DIAGNOSTICS" in text:
+                hits.append(str(path.relative_to(PROJECT_ROOT)))
+
+        assert not hits, (
+            "Retired HANDLER_READINESS_DIAGNOSTICS must not remain in apps/reference surfaces: "
+            f"{hits}"
+        )
+
+    def test_dm_surfaces_have_no_alpha_score_calculated_references(self):
+        dm_files = [
+            *DM_DIR.rglob("*.py"),
+            *DM_DIR.rglob("*.json"),
+            *DM_DIR.rglob("*.md"),
+        ]
+        hits = []
+        for path in sorted(dm_files):
+            text = path.read_text(encoding="utf-8")
+            if "EVT:ALPHA_SCORE_CALCULATED" in text:
+                hits.append(str(path.relative_to(PROJECT_ROOT)))
+
+        assert not hits, (
+            "decision_making surfaces must not keep the old aggregate EVT:ALPHA_SCORE_CALCULATED contract: "
+            f"{hits}"
+        )
+
 
 class TestNoEmptyTestFiles:
     """Guard: no 0-byte test files in DM test directories."""

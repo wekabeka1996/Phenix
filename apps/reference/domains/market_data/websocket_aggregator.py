@@ -17,6 +17,38 @@ LOG = logging.getLogger(__name__)
 
 _SIDE_BUY = "buy"
 _SIDE_SELL = "sell"
+_FLOAT_RESIDUAL_EPS = 1e-7
+
+
+def _clamp_accumulator(value: float, *, field_name: str, symbol: str) -> float:
+    """Clamp float accumulator noise to zero before payload serialization."""
+    if not math.isfinite(value):
+        LOG.warning(
+            "Resetting non-finite %s accumulator for %s: %r",
+            field_name,
+            symbol,
+            value,
+        )
+        return 0.0
+    if abs(value) <= _FLOAT_RESIDUAL_EPS:
+        return 0.0
+    if value < 0:
+        LOG.warning(
+            "Resetting negative %s accumulator for %s: %r",
+            field_name,
+            symbol,
+            value,
+        )
+        return 0.0
+    return value
+
+
+def _format_fixed_point(value: float) -> str:
+    """Serialize numeric values without scientific notation."""
+    fixed = format(decimal.Decimal(str(value)), "f")
+    if "." in fixed:
+        fixed = fixed.rstrip("0").rstrip(".")
+    return fixed
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +289,19 @@ class WebSocketAggregator:
             if popped.trade_id is not None and popped.trade_id in state["seen_trade_ids"]:
                 state["seen_trade_ids"].remove(popped.trade_id)
 
+        state["buy_qty"] = _clamp_accumulator(
+            float(state["buy_qty"]), field_name="buy_qty", symbol=symbol
+        )
+        state["sell_qty"] = _clamp_accumulator(
+            float(state["sell_qty"]), field_name="sell_qty", symbol=symbol
+        )
+        state["buy_notional"] = _clamp_accumulator(
+            float(state["buy_notional"]), field_name="buy_notional", symbol=symbol
+        )
+        state["sell_notional"] = _clamp_accumulator(
+            float(state["sell_notional"]), field_name="sell_notional", symbol=symbol
+        )
+
     def get_market_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Get current market tick with calculated features.
@@ -321,12 +366,12 @@ class WebSocketAggregator:
             "mid": str((state["bid_price"] + state["ask_price"]) / 2),
             "bid_size": str(bid_size),  # NOW REAL!
             "ask_size": str(ask_size),  # NOW REAL!
-            "buy_volume": str(buy_qty),  # quantity (windowed)
-            "sell_volume": str(sell_qty),  # quantity (windowed)
+            "buy_volume": _format_fixed_point(buy_qty),  # quantity (windowed)
+            "sell_volume": _format_fixed_point(sell_qty),  # quantity (windowed)
             "buy_count": int(buy_trades),
             "sell_count": int(sell_trades),
-            "buy_notional": str(float(state["buy_notional"])),
-            "sell_notional": str(float(state["sell_notional"])),
+            "buy_notional": _format_fixed_point(float(state["buy_notional"])),
+            "sell_notional": _format_fixed_point(float(state["sell_notional"])),
             "trades_dropped_out_of_order": int(state["trades_dropped_out_of_order"]),
             "features": {
                 "obi": str(obi),

@@ -42,6 +42,7 @@ class SignalWeightsExpertConfig(BaseModel):
     signal_threshold: float = 0.162
     normalize_mode: NormalizeMode = "off"
     essential_features: List[str] = []
+    min_active_features: int = 1
     signal_weights: Dict[str, float] = {}
     feature_neutrals: Dict[str, float] = {}
 
@@ -50,6 +51,13 @@ class SignalWeightsExpertConfig(BaseModel):
     def signal_threshold_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("signal_threshold must be > 0")
+        return v
+
+    @field_validator("min_active_features")
+    @classmethod
+    def min_active_features_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("min_active_features must be > 0")
         return v
 
     @model_validator(mode="after")
@@ -75,6 +83,14 @@ class SignalWeightsExpertConfig(BaseModel):
                         f"Essential feature '{feat}' not present in "
                         f"signal_weights"
                     )
+            active_features = sum(
+                1 for weight in self.signal_weights.values() if weight != 0
+            )
+            if active_features > 0 and self.min_active_features > active_features:
+                raise ValueError(
+                    "min_active_features must be <= count of non-zero "
+                    "weighted features when expert is enabled"
+                )
         return self
 
 
@@ -97,6 +113,7 @@ class FeatureNeutralsExpertConfig(BaseModel):
     normalize_mode: NormalizeMode = "off"
     essential_features: List[str] = []
     directional_features: List[str] = []
+    min_active_directional_features: int = 1
     strength_features: List[str] = []
     strength_alpha: float = 0.5
     strength_cap: float = 1.0
@@ -108,6 +125,13 @@ class FeatureNeutralsExpertConfig(BaseModel):
     def signal_threshold_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("signal_threshold must be > 0")
+        return v
+
+    @field_validator("min_active_directional_features")
+    @classmethod
+    def min_active_directional_features_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("min_active_directional_features must be > 0")
         return v
 
     @field_validator("strength_alpha")
@@ -159,6 +183,19 @@ class FeatureNeutralsExpertConfig(BaseModel):
                 raise ValueError(
                     f"directional_features and strength_features must not "
                     f"overlap, found: {overlap}"
+                )
+            active_directional = sum(
+                1
+                for feature in self.directional_features
+                if self.signal_weights.get(feature, 0.0) != 0
+            )
+            if (
+                active_directional > 0
+                and self.min_active_directional_features > active_directional
+            ):
+                raise ValueError(
+                    "min_active_directional_features must be <= count of "
+                    "non-zero directional features when expert is enabled"
                 )
         return self
 

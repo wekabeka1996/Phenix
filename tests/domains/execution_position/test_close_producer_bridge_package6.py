@@ -19,6 +19,9 @@ from apps.reference.domains.execution_position.position_policy_mediator import (
 from apps.reference.domains.execution_position.position_policy_sidecar import (
     CLOSE_REQUEST_COMMAND_TOPIC,
 )
+from apps.reference.domains.execution_position.truth_hardening import (
+    CloseGuardDecision,
+)
 from vfoundation.core.protocol import Message
 
 
@@ -211,6 +214,134 @@ def test_intent_router_reduce_only_path_reaches_typed_close_bridge() -> None:
     assert decision is not None
     assert decision.pld["idempotent_key"] == "idem-intent-rt-1"
     assert decision.pld["retry_key"] == "rk-intent-rt-1"
+
+
+def test_execpos_cmd_close_ingress_consults_hardening_and_sets_closing_flag_before_delegation(
+    fsm_harness,
+) -> None:
+    fsm, _bus, _cfg = fsm_harness
+    fsm._latest_portfolio_state = {
+        "positions": [{"symbol": "BTCUSDT", "positionAmt": "0.010"}]
+    }
+    fsm._get_or_create_flows("BTCUSDT")
+    close_flow = fsm.close_flows["BTCUSDT"]
+    manage = fsm.manage_flows["BTCUSDT"]
+    hardening = fsm._execution_truth_hardening
+    msg = _cmd_close_message(
+        rid="rid-explicit-close-1",
+        payload={
+            "symbol": "BTCUSDT",
+            "reason": "MANUAL_CLOSE",
+            "idempotent_key": "explicit-close-1",
+            "qty": "0.010",
+        },
+    )
+
+    original_handle = close_flow.handle
+
+    def _delegating_handle(incoming: Message):
+        assert manage._closing_position is True
+        return original_handle(incoming)
+
+    with patch.object(
+        hardening,
+        "evaluate_close_command",
+        return_value=CloseGuardDecision(
+            suppress=False,
+            key="close:BTCUSDT",
+            reason="allow_cmd_close",
+        ),
+    ) as evaluate_mock, patch.object(
+        close_flow,
+        "handle",
+        side_effect=_delegating_handle,
+    ) as handle_mock:
+        result = fsm.handle(msg)
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "CLOSE"
+    assert result.pld["idempotent_key"] == "explicit-close-1"
+    assert manage._closing_position is True
+    expected_signature = fsm._get_portfolio_position_signature("BTCUSDT")
+    evaluate_mock.assert_called_once_with(
+        symbol="BTCUSDT",
+        requested_qty="0.010",
+        position_signature=expected_signature,
+        rid="rid-explicit-close-1",
+    )
+    handle_mock.assert_called_once()
+
+
+def test_execpos_cmd_close_ingress_suppression_returns_none_without_close_flow_delegation(
+    fsm_harness,
+) -> None:
+    fsm, _bus, _cfg = fsm_harness
+    fsm._latest_portfolio_state = {
+        "positions": [{"symbol": "BTCUSDT", "positionAmt": "0.010"}]
+    }
+    fsm._get_or_create_flows("BTCUSDT")
+    close_flow = fsm.close_flows["BTCUSDT"]
+    hardening = fsm._execution_truth_hardening
+    msg = _cmd_close_message(
+        rid="rid-explicit-close-2",
+        payload={"symbol": "BTCUSDT", "reason": "MANUAL_CLOSE"},
+    )
+
+    with patch.object(
+        hardening,
+        "evaluate_close_command",
+        return_value=CloseGuardDecision(
+            suppress=True,
+            key="close:BTCUSDT",
+            reason="duplicate_cmd_close_same_effective_state",
+        ),
+    ) as evaluate_mock, patch.object(close_flow, "handle") as handle_mock:
+        result = fsm.handle(msg)
+
+    assert result is None
+    evaluate_mock.assert_called_once()
+    handle_mock.assert_not_called()
+    assert fsm.manage_flows["BTCUSDT"]._closing_position is False
+
+
+def test_execpos_cmd_close_prevalidated_skips_hardening_and_still_delegates(
+    fsm_harness,
+) -> None:
+    fsm, _bus, _cfg = fsm_harness
+    fsm._latest_portfolio_state = {
+        "positions": [{"symbol": "BTCUSDT", "positionAmt": "0.010"}]
+    }
+    fsm._get_or_create_flows("BTCUSDT")
+    close_flow = fsm.close_flows["BTCUSDT"]
+    hardening = fsm._execution_truth_hardening
+    msg = _cmd_close_message(
+        rid="ppsreq:BTCUSDT:1",
+        payload={
+            "symbol": "BTCUSDT",
+            "reason": "position_policy_sidecar_soft_close",
+            "idempotent_key": "ppsreq:BTCUSDT:1",
+            "close_guard_prevalidated": True,
+            "trigger": CLOSE_REQUEST_COMMAND_TOPIC,
+        },
+    )
+
+    with patch.object(
+        hardening,
+        "evaluate_close_command",
+    ) as evaluate_mock, patch.object(
+        close_flow,
+        "handle",
+        wraps=close_flow.handle,
+    ) as handle_mock:
+        result = fsm.handle(msg)
+
+    assert result is not None
+    assert result.pld["close_guard_prevalidated"] is True
+    assert result.pld["command_trigger"] == CLOSE_REQUEST_COMMAND_TOPIC
+    evaluate_mock.assert_not_called()
+    handle_mock.assert_called_once()
+    assert fsm.manage_flows["BTCUSDT"]._closing_position is True
 
 
 class _ManageFlow:

@@ -43,6 +43,14 @@ def _make_entry_expert(
 CYCLE_TS = 1700000000000
 
 
+def _status(result):
+    return result[0]
+
+
+def _reason(result):
+    return result[1]
+
+
 # ---------------------------------------------------------------------------
 # R1: Quorum
 # ---------------------------------------------------------------------------
@@ -59,7 +67,8 @@ class TestAdmissibilityQuorum:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
+        assert _reason(result) is None
 
     def test_quorum_insufficient_zero_responding(self):
         result = evaluate_admissibility(
@@ -71,7 +80,8 @@ class TestAdmissibilityQuorum:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "QUORUM_INSUFFICIENT"
+        assert _status(result) == "QUORUM_INSUFFICIENT"
+        assert _reason(result) == "responding_below_min_quorum"
 
     def test_quorum_zero_allows_everything(self):
         """min_quorum=0 means quorum is never insufficient from this rule."""
@@ -84,7 +94,8 @@ class TestAdmissibilityQuorum:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
+        assert _reason(result) is None
 
     def test_quorum_two_required_one_responding(self):
         eo = _make_entry_expert()
@@ -97,7 +108,8 @@ class TestAdmissibilityQuorum:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "QUORUM_INSUFFICIENT"
+        assert _status(result) == "QUORUM_INSUFFICIENT"
+        assert _reason(result) == "responding_below_min_quorum"
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +128,8 @@ class TestAdmissibilitySilentFailure:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "INADMISSIBLE"
+        assert _status(result) == "INADMISSIBLE"
+        assert _reason(result) == "solicited_expert_missing_output"
 
     def test_two_solicited_one_returned(self):
         """One expert returned, one silently failed."""
@@ -130,7 +143,8 @@ class TestAdmissibilitySilentFailure:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "INADMISSIBLE"
+        assert _status(result) == "INADMISSIBLE"
+        assert _reason(result) == "solicited_expert_missing_output"
 
     def test_all_solicited_returned(self):
         eo1 = _make_entry_expert(expert_id="judge.signal_weights_v1")
@@ -144,7 +158,7 @@ class TestAdmissibilitySilentFailure:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +178,8 @@ class TestAdmissibilityDuplicate:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "INADMISSIBLE"
+        assert _status(result) == "INADMISSIBLE"
+        assert _reason(result) == "duplicate_expert_id"
 
     def test_distinct_expert_ids_admissible(self):
         eo1 = _make_entry_expert(expert_id="judge.signal_weights_v1")
@@ -178,7 +193,7 @@ class TestAdmissibilityDuplicate:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +212,8 @@ class TestAdmissibilityFreshness:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "INADMISSIBLE"
+        assert _status(result) == "INADMISSIBLE"
+        assert _reason(result) == "stale_expert_output"
 
     def test_fresh_output_admissible(self):
         fresh_eo = _make_entry_expert(ts_ms=CYCLE_TS - 10000)
@@ -210,7 +226,7 @@ class TestAdmissibilityFreshness:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
 
     def test_exact_staleness_boundary_admissible(self):
         """Output at exact boundary (cycle_ts - max_staleness) is NOT stale."""
@@ -224,7 +240,7 @@ class TestAdmissibilityFreshness:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +260,8 @@ class TestAdmissibilityScopeMismatch:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="LIFECYCLE",
         )
-        assert result == "INADMISSIBLE"
+        assert _status(result) == "INADMISSIBLE"
+        assert _reason(result) == "scope_mismatch"
 
 
 # ---------------------------------------------------------------------------
@@ -264,4 +281,4 @@ class TestAdmissibilityDefault:
             cycle_ts_ms=CYCLE_TS,
             verdict_scope="ENTRY",
         )
-        assert result == "ADMISSIBLE"
+        assert _status(result) == "ADMISSIBLE"

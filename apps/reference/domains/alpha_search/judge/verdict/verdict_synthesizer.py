@@ -52,16 +52,26 @@ def synthesize_verdict(
     ts_ms = envelope.ts_ms
     symbol = envelope.symbol
 
+    # Verdict ID is stage-local for backward compatibility.
+    # Canonical replay/review identity lives in JudgeVerdict.cycle_key.
     verdict_id = f"vrd_{scope.lower()}_{symbol}_{ts_ms}"
 
     if scope == "ENTRY":
         entry_verdict, confidence, reasoning, dissent = _map_entry_verdict(
             chamber.admissibility,
+            chamber.admissibility_reason,
             chamber.consensus_direction,
             chamber.consensus_strength,
             chamber.expert_outputs,
             verdict_config.split_confidence_discount,
         )
+        suppression_reason = None
+        suppression_code = None
+        if entry_verdict == "SUPPRESS":
+            suppression_reason = reasoning[0]
+            suppression_code = _suppression_code_from_admissibility_reason(
+                chamber.admissibility_reason
+            )
         return JudgeVerdict(
             verdict_id=verdict_id,
             envelope_id=envelope.envelope_id,
@@ -72,8 +82,8 @@ def synthesize_verdict(
             verdict_scope="ENTRY",
             entry_verdict=entry_verdict,
             lifecycle_verdict=None,
-            suppression_reason=None,
-            suppression_code=None,
+            suppression_reason=suppression_reason,
+            suppression_code=suppression_code,
             confidence=confidence,
             reasoning=reasoning,
             dissent_noted=dissent,
@@ -113,6 +123,7 @@ def synthesize_verdict(
 
 def _map_entry_verdict(
     admissibility: str,
+    admissibility_reason: Optional[str],
     consensus_direction: Optional[str],
     consensus_strength: float,
     expert_outputs: list,
@@ -123,10 +134,19 @@ def _map_entry_verdict(
     Returns (entry_verdict, confidence, reasoning, dissent_noted).
     """
     if admissibility == "QUORUM_INSUFFICIENT":
-        return "UNKNOWN", 0.0, ["quorum_insufficient"], False
+        reasoning = ["quorum_insufficient"]
+        if admissibility_reason:
+            reasoning.append(f"admissibility_reason:{admissibility_reason}")
+        return "UNKNOWN", 0.0, reasoning, False
 
     if admissibility == "INADMISSIBLE":
-        return "UNKNOWN", 0.0, ["inadmissible"], False
+        suppression_reason = _suppression_reason_from_admissibility_reason(
+            admissibility_reason
+        )
+        reasoning = [suppression_reason]
+        if admissibility_reason:
+            reasoning.append(f"admissibility_reason:{admissibility_reason}")
+        return "SUPPRESS", 0.0, reasoning, False
 
     # ADMISSIBLE
     if consensus_direction is None:
@@ -152,6 +172,32 @@ def _map_entry_verdict(
     dissent = _detect_entry_dissent(entry_verdict, expert_outputs)
 
     return entry_verdict, consensus_strength, [reasoning_str], dissent
+
+
+def _suppression_reason_from_admissibility_reason(
+    admissibility_reason: Optional[str],
+) -> str:
+    reason_map = {
+        "solicited_expert_missing_output": (
+            "entry_chamber_inadmissible:solicited_expert_missing_output"
+        ),
+        "duplicate_expert_id": "entry_chamber_inadmissible:duplicate_expert_id",
+        "stale_expert_output": "entry_chamber_inadmissible:stale_expert_output",
+        "scope_mismatch": "entry_chamber_inadmissible:scope_mismatch",
+    }
+    return reason_map.get(admissibility_reason, "entry_chamber_inadmissible")
+
+
+def _suppression_code_from_admissibility_reason(
+    admissibility_reason: Optional[str],
+) -> str:
+    code_map = {
+        "solicited_expert_missing_output": "ENTRY_CHAMBER_MISSING_OUTPUT",
+        "duplicate_expert_id": "ENTRY_CHAMBER_DUPLICATE_EXPERT_ID",
+        "stale_expert_output": "ENTRY_CHAMBER_STALE_OUTPUT",
+        "scope_mismatch": "ENTRY_CHAMBER_SCOPE_MISMATCH",
+    }
+    return code_map.get(admissibility_reason, "ENTRY_CHAMBER_INADMISSIBLE")
 
 
 def _map_lifecycle_verdict(

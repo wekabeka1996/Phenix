@@ -84,6 +84,7 @@ def _make_entry_chamber(experts=None):
         consensus_direction="LONG",
         consensus_strength=0.7,
         admissibility="ADMISSIBLE",
+        admissibility_reason=None,
         schema_version="1",
     )
 
@@ -247,6 +248,7 @@ class TestFullChainReconstruction:
             consensus_direction="LONG",
             consensus_strength=0.6,
             admissibility="ADMISSIBLE",
+            admissibility_reason=None,
             schema_version="1",
         )
         position = PositionContextSnapshot(

@@ -61,6 +61,7 @@ def _make_valid_chamber_aggregate():
         "consensus_direction": "LONG",
         "consensus_strength": 0.7,
         "admissibility": "ADMISSIBLE",
+        "admissibility_reason": None,
         "schema_version": "1",
     }
 

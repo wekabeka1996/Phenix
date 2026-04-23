@@ -1,12 +1,45 @@
+import json
 import decimal
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
+import yaml
 
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
     ScoringResult,
 )
+
+
+def _load_registered_quadratic_trace_contract() -> tuple[dict, dict]:
+    repo_root = Path(__file__).resolve().parents[3]
+    registry_path = repo_root / "apps" / "reference" / \
+        "dictionaries" / "verb_registry_v1.yaml"
+    registry_doc = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    registry = registry_doc.get("registry")
+    if not isinstance(registry, list):
+        raise AssertionError(
+            "verb registry: expected top-level 'registry' list")
+
+    entry = next(
+        (
+            item
+            for item in registry
+            if isinstance(item, dict)
+            and item.get("op") == "EVT"
+            and item.get("verb") == "QUADRATIC_DECISION_TRACE"
+        ),
+        None,
+    )
+    if entry is None:
+        raise AssertionError(
+            "Missing EVT:QUADRATIC_DECISION_TRACE registry entry")
+
+    schema_path = repo_root / entry["schema"]
+    return entry, json.loads(schema_path.read_text(encoding="utf-8"))
 
 
 def _build_handler(*, emit_fn, scoring_result: ScoringResult) -> AuroraHandler:
@@ -133,13 +166,85 @@ def test_quadratic_decision_trace_logs_on_deferred_path(caplog) -> None:
         )
 
     assert "QUADRATIC_DECISION_TRACE" in caplog.text
-    blocked = [payload for name, payload in emitted if name == "EVT:STRATEGY_DECISION_BLOCKED"]
-    deferred = [payload for name, payload in emitted if name == "EVT:INTENT_DEFERRED"]
+    blocked = [payload for name, payload in emitted if name ==
+               "EVT:STRATEGY_DECISION_BLOCKED"]
+    deferred = [payload for name,
+                payload in emitted if name == "EVT:INTENT_DEFERRED"]
     assert not blocked
     assert deferred[0]["reason_code"] == "NRR-DATA-NOT-READY"
     assert deferred[0]["raw_reason"] == "PILLAR_WARMUP"
     assert deferred[0]["details"]["decision_trace"]["defer_reason"] == "PILLAR_WARMUP"
     assert deferred[0]["details"]["decision_trace"]["raw_sum"] == 0.2
+
+
+def test_quadratic_decision_trace_payload_matches_registered_schema() -> None:
+    jsonschema = pytest.importorskip("jsonschema")
+
+    emitted: list[tuple[str, dict]] = []
+    scoring_result = ScoringResult(
+        score=decimal.Decimal("0"),
+        side="",
+        thr_buy=decimal.Decimal("0.1"),
+        thr_sell=decimal.Decimal("0.1"),
+        psi_vector={
+            "s_linear": 0.2,
+            "multiplier": 1.25,
+            "s_scaled_raw": 0.25,
+            "s_clamped": 0.25,
+            "raw_exposure": 0.0625,
+            "final_score": 0.0,
+            "final_exposure": 0.0,
+            "shield_multiplier": 0.0,
+            "shield_reasons": ["PILLAR_WARMUP"],
+            "threshold_factor": 1.0,
+            "thr_buy": 0.1,
+            "thr_sell": 0.1,
+            "buy_bias_mult": 1.0,
+            "sell_bias_mult": 1.0,
+            "side_why": "neutral:score=0.0000",
+        },
+        deferred=True,
+        defer_reason="PILLAR_WARMUP",
+        shield_multiplier=decimal.Decimal("0"),
+    )
+    handler = _build_handler(
+        emit_fn=lambda name, payload: emitted.append((name, payload)),
+        scoring_result=scoring_result,
+    )
+
+    handler._process_decision(
+        "BTCUSDT",
+        {
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "bar_close_ts": 1_700_000_000_000,
+            "warmup": {"full_ready": True, "ready": {}},
+            "features": {
+                "price": "100.0",
+                "pillar_sum": 0.2,
+                "pillar_tactician": 0.1,
+                "pillar_operator": 0.05,
+                "pillar_strategist": 0.05,
+                "pillar_contribs": {"tactician": 0.1, "operator": 0.05, "strategist": 0.05},
+            },
+        },
+    )
+
+    trace_payloads = [
+        payload for name, payload in emitted if name == "EVT:QUADRATIC_DECISION_TRACE"]
+    assert len(trace_payloads) == 1
+
+    entry, schema = _load_registered_quadratic_trace_contract()
+    assert entry["owner"] == "decision_making"
+    assert entry["status"] == "active"
+
+    payload = trace_payloads[0]
+    assert payload["quadratic_path_reached"] is True
+    assert payload["defer_reason"] == "PILLAR_WARMUP"
+    assert payload["compact_trace"]["defer_reason"] == "PILLAR_WARMUP"
+    assert payload["compact_trace"]["admission_result"] == "neutral"
+
+    jsonschema.validate(instance=payload, schema=schema)
 
 
 def test_execution_gate_block_includes_compact_decision_trace() -> None:
@@ -170,7 +275,8 @@ def test_execution_gate_block_includes_compact_decision_trace() -> None:
         defer_reason=None,
         shield_multiplier=decimal.Decimal("0.64"),
     )
-    handler = _build_handler(emit_fn=lambda *_args, **_kwargs: None, scoring_result=scoring_result)
+    handler = _build_handler(emit_fn=lambda *_args, **
+                             _kwargs: None, scoring_result=scoring_result)
     handler._emit_strategy_blocked = lambda **kwargs: blocked.append(kwargs)
     handler.execution_gate = SimpleNamespace(
         check_entry=lambda **_kwargs: (False, "ORDERBOOK_THIN")

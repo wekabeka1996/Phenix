@@ -1,7 +1,7 @@
 # Decision Making Domain Analysis Summary
 
-> **Last Updated**: 2025-11-29  
-> **Version**: 1.2.0  
+> **Last Updated**: 2025-11-29
+> **Version**: 1.2.0
 > **Assessment**: ✅ **PRODUCTION READY**
 
 ## Executive Summary
@@ -93,9 +93,9 @@ The Decision Making domain is the **core trading decision engine** in the Quantu
 |--------|----------|-------|---------------------|--------------|----------|
 | Execution Position | Trade intents | `EVT:TRADE_INTENT_PROPOSED` | ✅ Robust | `schemas/trade_intent_v1.json` | execution_position |
 | Telemetry | Blocked decisions | `EVT:STRATEGY_DECISION_BLOCKED` | ✅ Robust | `schemas_decision_blocked.py` | telemetry |
-| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` | ✅ Robust | N/A | monitoring |
+| Monitoring | Aggregate alpha telemetry | `EVT:ALPHA_SCORES_AGGREGATED` | ✅ Robust | `schemas/alpha_scores_aggregated_v1.json` | monitoring |
 | Execution Position | Close commands | `CMD:CLOSE` | ✅ Robust | N/A | execution_position |
-| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` | ✅ Robust | N/A | monitoring |
+| Monitoring | Aggregate alpha telemetry | `EVT:ALPHA_SCORES_AGGREGATED` | ✅ Robust | `schemas/alpha_scores_aggregated_v1.json` | monitoring |
 
 ---
 

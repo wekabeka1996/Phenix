@@ -107,6 +107,7 @@ class TestEnvelopeAssemblerEntry:
             chamber_config=_DEFAULT_CHAMBER_CONFIG,
         )
         assert env.envelope_id == "env_entry_ETHUSDT_9999999"
+        assert env.cycle_key == "ENTRY:ETHUSDT:300:9999999"
 
     def test_provenance_fields(self):
         chamber = _make_chamber_aggregate()
@@ -307,6 +308,7 @@ class TestEnvelopeAssemblerLifecycle:
             chamber_config=_DEFAULT_CHAMBER_CONFIG,
         )
         assert env.envelope_id == "env_lifecycle_SOLUSDT_5555555"
+        assert env.cycle_key == "LIFECYCLE:SOLUSDT:300:5555555"
 
     def test_scope_consistency_validated(self):
         """Envelope rejects mismatched scope between chamber and envelope."""

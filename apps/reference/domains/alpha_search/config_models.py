@@ -434,6 +434,43 @@ class AlphaSearchConfig(BaseModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def validate_judge_provider_threshold_alignment(self):
+        """Judge provider thresholds must match their bound expert config."""
+        judge_providers = {
+            provider_id: provider_cfg
+            for provider_id, provider_cfg in self.providers.items()
+            if provider_cfg.judge_expert is not None
+        }
+        if not judge_providers:
+            return self
+
+        if self.judge is None or self.judge.experts is None:
+            raise ValueError(
+                "Judge expert providers require judge.experts config to be present"
+            )
+
+        for provider_id, provider_cfg in judge_providers.items():
+            expert_type = provider_cfg.judge_expert.expert_type
+            if expert_type == "signal_weights":
+                expert_threshold = self.judge.experts.signal_weights.signal_threshold
+            elif expert_type == "feature_neutrals":
+                expert_threshold = self.judge.experts.feature_neutrals.signal_threshold
+            else:
+                raise ValueError(
+                    f"Unsupported judge_expert.expert_type '{expert_type}' "
+                    f"for provider '{provider_id}'"
+                )
+
+            if abs(float(provider_cfg.threshold) - float(expert_threshold)) > 1e-12:
+                raise ValueError(
+                    "Judge provider threshold drift detected for "
+                    f"provider '{provider_id}': provider threshold "
+                    f"{provider_cfg.threshold} != expert signal_threshold "
+                    f"{expert_threshold}"
+                )
+        return self
+
 
 def load_alpha_search_config(config_path: str) -> AlphaSearchConfig:
     """

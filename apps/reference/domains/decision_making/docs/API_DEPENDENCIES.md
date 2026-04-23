@@ -1,6 +1,6 @@
 # Decision Making API Dependencies
 
-> **Last Updated**: 2025-11-29  
+> **Last Updated**: 2025-11-29
 > **Version**: 1.2.0
 
 ## vFoundation Integration
@@ -42,7 +42,7 @@ class DecisionMaking:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        
+
         # Event listeners registration
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features)
         self.fsm.listen("EVT:RISK_ASSESSMENT_COMPLETED", self.on_risk)
@@ -124,13 +124,13 @@ chain_logger = logging.getLogger("event_chain")
 
 ## WAL Integration
 
-Alpha scores are written to WAL for traceability:
+Aggregate alpha telemetry is written to WAL for traceability:
 
 ```python
 try:
     wal_record = {
         "op": "EVT",
-        "verb": "ALPHA_SCORE_CALCULATED",
+        "verb": "ALPHA_SCORES_AGGREGATED",
         "symbol": symbol,
         "scores": [score.dict() for score in alpha_scores],
         "timestamp": int(time.time() * 1000),
@@ -162,7 +162,7 @@ if ALPHA_MODELS_AVAILABLE:
 ```python
 if ALERT_MANAGER_AVAILABLE:
     self.alert_manager = AlertManager(
-        config=config, 
+        config=config,
         logger=self.logger.getChild("alerts")
     )
 ```
@@ -205,7 +205,6 @@ self._deferred_scheduler.schedule_once(
 
 | Source | Data | Event |
 |--------|------|-------|
-| Alpha Search | Signal scores | `EVT:ALPHA_SCORE_CALCULATED` |
 | Feature Engineering | Feature vectors | `EVT:FEATURES_CALCULATED` |
 | Risk Management | Risk parameters | `EVT:RISK_ASSESSMENT_COMPLETED` |
 | Position Tracking | Portfolio state | `EVT:PORTFOLIO_STATE_UPDATED` |
@@ -217,7 +216,7 @@ self._deferred_scheduler.schedule_once(
 |-------------|------|-------|
 | Execution Position | Trade intent | `EVT:TRADE_INTENT_PROPOSED` |
 | Execution Position | Close command | `CMD:CLOSE` |
-| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` |
+| Monitoring | Aggregate alpha telemetry | `EVT:ALPHA_SCORES_AGGREGATED` |
 | WAL | Alpha records | N/A |
 | Logs | Decision trace | N/A |
 

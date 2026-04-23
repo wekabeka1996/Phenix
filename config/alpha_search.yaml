@@ -181,6 +181,7 @@ alpha_search:
         signal_threshold: 0.162
         normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
         essential_features: [obi, delta_price, macro_resid]
+        min_active_features: 4
         # Externalized from aurora.yaml legacy (Phase 9 deprecated values)
         # These are REVIVAL DEFAULTS, not active production tuning.
         signal_weights:
@@ -215,6 +216,7 @@ alpha_search:
         normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
         essential_features: [obi, delta_price, macro_resid]
         directional_features: [obi, tfi, delta_price, ema_bias, depth_imbalance, macro_resid, macro_sync, absorption]
+        min_active_directional_features: 4
         strength_features: [volume_spike, volatility_state]
         strength_alpha: 0.5
         strength_cap: 1.0

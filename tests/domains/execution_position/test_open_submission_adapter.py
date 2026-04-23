@@ -310,7 +310,11 @@ def test_fill_ingress_path_does_not_use_open_submission_adapter(fsm_harness) -> 
         why="fill_path_submission_guard",
     )
 
-    with patch.object(fsm, "_handle_canonical_fill_ingress", return_value=None) as wrapped_fill, patch(
+    with patch.object(
+        fsm._fill_ingress_coordinator,
+        "handle_canonical_fill_ingress",
+        return_value=None,
+    ) as wrapped_fill, patch(
         "apps.reference.domains.execution_position.open_executor.OpenSubmissionPayload.from_dec_open",
         wraps=OpenSubmissionPayload.from_dec_open,
     ) as wrapped_submission:

@@ -56,6 +56,7 @@ def _make_bracket_manager_fsm():
         order_guardian=MagicMock(),
         correlation_store=MagicMock(),
         manage_flows={},
+        _pending_brackets={},
         _symbol_brackets={},
         _orphan_metrics={"tp_sl_placed_success": 0},
         config=SimpleNamespace(
@@ -79,6 +80,22 @@ def _make_bracket_manager_fsm():
     fsm._remember_bracket_owner = MagicMock(return_value={})
     fsm._append_bracket_ownership_record = MagicMock()
     fsm._has_active_lifecycle_for_symbol = MagicMock(return_value=True)
+    fsm._persist_restore_artifact_snapshot = MagicMock()
+
+    def _clear_pending_brackets(entry_order_id, *, reason, symbol=None, persist_snapshot=False):
+        entry_order_id = str(entry_order_id)
+        if entry_order_id not in fsm._pending_brackets:
+            return False
+        fsm._pending_brackets.pop(entry_order_id, None)
+        if persist_snapshot:
+            fsm._persist_restore_artifact_snapshot(
+                trigger=f"bracket_deferred_cleared:{reason}",
+                allow_empty=True,
+            )
+        return True
+
+    fsm._clear_pending_brackets = MagicMock(
+        side_effect=_clear_pending_brackets)
     return fsm
 
 
@@ -421,6 +438,190 @@ class TestBracketManagerGuardianClientIdentity:
         tp_call = fsm.order_guardian.register_bracket.call_args_list[1].kwargs
         assert sl_call["client_order_id"] == "algo-sl-1"
         assert tp_call["client_order_id"] == "algo-tp-1"
+
+
+class TestDeferredBracketClearTiming:
+    def _entry_payload(self) -> Dict[str, Any]:
+        return {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "sl": Decimal("99"),
+            "tp": Decimal("101"),
+            "rid": "rid-1",
+            "idem_key": "idem-1",
+            "tick_size": Decimal("0.1"),
+            "corr_id": "corr-1",
+            "oco_group_id": "oco-1",
+            "entry_client_order_id": "ENTRY-1",
+        }
+
+    @pytest.mark.asyncio
+    async def test_success_clears_pending_brackets_exactly_once(self, fsm_harness):
+        fsm, _, _cfg = fsm_harness
+        fsm.config.domains.execution_position.bracket_placement.tp_widen_first_bps = 10
+        fsm.adapter = SimpleNamespace(
+            place_stop_market_close_position=AsyncMock(
+                return_value={"orderId": "500001", "clientAlgoId": "algo-sl-1"}
+            ),
+            place_take_profit_market_close_position=AsyncMock(
+                return_value={"orderId": "600001", "clientAlgoId": "algo-tp-1"}
+            ),
+        )
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+        fsm.order_guardian.register_bracket = MagicMock()
+        fsm._pending_brackets["entry-1"] = dict(self._entry_payload())
+
+        manager = fsm._bracket_mgr
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending, patch(
+            "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+        ) as pending_cleared, patch.object(
+            fsm, "_persist_restore_artifact_snapshot"
+        ) as persist_snapshot:
+            result = await manager.place_deferred_brackets("entry-1", self._entry_payload())
+
+        assert result is True
+        assert "entry-1" not in fsm._pending_brackets
+        clear_pending.assert_called_once_with(
+            "entry-1",
+            reason="filled",
+            symbol="BTCUSDT",
+            persist_snapshot=True,
+        )
+        pending_cleared.assert_called_once_with(
+            entry_order_id="entry-1",
+            reason="filled",
+            symbol="BTCUSDT",
+        )
+        persist_snapshot.assert_any_call(
+            trigger="bracket_deferred_cleared:filled",
+            allow_empty=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_existing_live_synced_brackets_suppress_duplicate_deferred_placement(self, fsm_harness):
+        fsm, _, _cfg = fsm_harness
+        fsm.config.domains.execution_position.bracket_placement.tp_widen_first_bps = 10
+        fsm.adapter = SimpleNamespace(
+            place_stop_market_close_position=AsyncMock(
+                return_value={"orderId": "700001",
+                              "clientAlgoId": "algo-sl-new"}
+            ),
+            place_take_profit_market_close_position=AsyncMock(
+                return_value={"orderId": "800001",
+                              "clientAlgoId": "algo-tp-new"}
+            ),
+        )
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+        fsm.order_guardian.get_our_open_brackets = AsyncMock(
+            return_value=[
+                {"orderId": "500001"},
+                {"orderId": "600001"},
+            ]
+        )
+        fsm._has_active_lifecycle_for_symbol = MagicMock(return_value=True)
+        fsm._set_symbol_brackets_snapshot(
+            "BTCUSDT",
+            sl_order_id="500001",
+            tp_order_id="600001",
+        )
+        fsm._pending_brackets["entry-1"] = dict(self._entry_payload())
+
+        manager = fsm._bracket_mgr
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending, patch(
+            "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+        ) as pending_cleared:
+            result = await manager.place_deferred_brackets("entry-1", self._entry_payload())
+
+        assert result is True
+        assert "entry-1" not in fsm._pending_brackets
+        fsm.order_guardian.get_our_open_brackets.assert_awaited_once_with(
+            "BTCUSDT")
+        fsm.adapter.place_stop_market_close_position.assert_not_awaited()
+        fsm.adapter.place_take_profit_market_close_position.assert_not_awaited()
+        clear_pending.assert_called_once_with(
+            "entry-1",
+            reason="filled",
+            symbol="BTCUSDT",
+            persist_snapshot=True,
+        )
+        pending_cleared.assert_called_once_with(
+            entry_order_id="entry-1",
+            reason="filled",
+            symbol="BTCUSDT",
+        )
+
+    @pytest.mark.asyncio
+    async def test_preflight_false_preserves_pending_brackets(self, fsm_harness):
+        fsm, _, _cfg = fsm_harness
+        fsm.config.domains.execution_position.bracket_placement.tp_widen_first_bps = 10
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+        fsm._pending_brackets["entry-1"] = dict(self._entry_payload())
+
+        manager = fsm._bracket_mgr
+        manager.preflight_position_check = AsyncMock(return_value=False)
+
+        with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending, patch(
+            "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+        ) as pending_cleared:
+            result = await manager.place_deferred_brackets("entry-1", self._entry_payload())
+
+        assert result is False
+        assert "entry-1" in fsm._pending_brackets
+        clear_pending.assert_not_called()
+        pending_cleared.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_guardian_veto_preserves_pending_brackets(self, fsm_harness):
+        fsm, _, _cfg = fsm_harness
+        fsm.config.domains.execution_position.bracket_placement.tp_widen_first_bps = 10
+        fsm.order_guardian.should_place_brackets = AsyncMock(
+            return_value=False)
+        fsm._pending_brackets["entry-1"] = dict(self._entry_payload())
+
+        manager = fsm._bracket_mgr
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending, patch(
+            "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+        ) as pending_cleared:
+            result = await manager.place_deferred_brackets("entry-1", self._entry_payload())
+
+        assert result is False
+        assert "entry-1" in fsm._pending_brackets
+        clear_pending.assert_not_called()
+        pending_cleared.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_placement_exception_preserves_pending_brackets(self, fsm_harness):
+        fsm, _, _cfg = fsm_harness
+        fsm.config.domains.execution_position.bracket_placement.tp_widen_first_bps = 10
+        fsm.adapter = SimpleNamespace(
+            place_stop_market_close_position=AsyncMock(
+                side_effect=RuntimeError("sl boom")),
+            place_take_profit_market_close_position=AsyncMock(
+                return_value={"orderId": "600001", "clientAlgoId": "algo-tp-1"}
+            ),
+        )
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+        fsm.order_guardian.register_bracket = MagicMock()
+        fsm._pending_brackets["entry-1"] = dict(self._entry_payload())
+
+        manager = fsm._bracket_mgr
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        with patch.object(fsm, "_clear_pending_brackets", wraps=fsm._clear_pending_brackets) as clear_pending, patch(
+            "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+        ) as pending_cleared:
+            result = await manager.place_deferred_brackets("entry-1", self._entry_payload())
+
+        assert result is False
+        assert "entry-1" in fsm._pending_brackets
+        clear_pending.assert_not_called()
+        pending_cleared.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

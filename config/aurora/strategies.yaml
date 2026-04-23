@@ -22,6 +22,7 @@ version: "1.0.0"
 # - "mean_reversion": Bar-based Bollinger Bands strategy (1m bars)
 # ==============================================================================
 assignments:
+  # 2026-04-23: ETHUSDT restored for aurora with TREND_UP-only runtime allowlist.
   ETHUSDT:
     - aurora
 
@@ -42,11 +43,12 @@ assignments:
   BNBUSDT:
     - aurora
 
+  # 2026-04-22: DOGEUSDT full cut; assignment commented out per operator request.
   # Calibrated 2026-04-14: DOGEUSDT added to aurora (priority 1) + mean_reversion (priority 2)
   # Aurora gets arbitration priority; MR runs as fallback within window_ms.
-  DOGEUSDT:
-    - aurora
-    - mean_reversion
+  # DOGEUSDT:
+  #   - aurora
+  #   - mean_reversion
   1000PEPEUSDT:
     - llm_microstructure
 

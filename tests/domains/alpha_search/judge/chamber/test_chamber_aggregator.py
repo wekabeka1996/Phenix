@@ -168,7 +168,22 @@ class TestEntryChamberUnknown:
         )
         assert result.responding_count == 0
         assert result.admissibility == "QUORUM_INSUFFICIENT"
+        assert result.admissibility_reason == "responding_below_min_quorum"
         assert result.consensus_direction is None
+
+    def test_suppress_counted_as_abstaining(self):
+        agg = ChamberAggregator("ENTRY", DEFAULT_CONFIG)
+        eo1 = _make_entry_expert(expert_id="e1", entry_verdict="OPEN_LONG",
+                                 signal_direction="LONG", confidence=0.8)
+        eo2 = _make_entry_expert(expert_id="e2", entry_verdict="SUPPRESS",
+                                 signal_direction="NEUTRAL", confidence=0.9)
+        result = agg.aggregate(
+            [eo1, eo2],
+            expected_expert_ids=["e1", "e2"],
+            symbol="BTCUSDT", tf_sec=300, ts_ms=TS,
+        )
+        assert result.responding_count == 1
+        assert result.abstaining_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +204,7 @@ class TestRosterTruth:
         assert result.responding_count == 1
         assert result.abstaining_count == 1
         assert result.admissibility == "INADMISSIBLE"
+        assert result.admissibility_reason == "solicited_expert_missing_output"
 
     def test_all_solicited_present(self):
         agg = ChamberAggregator("ENTRY", DEFAULT_CONFIG)
@@ -212,6 +228,7 @@ class TestRosterTruth:
         assert result.expert_count == 0
         assert result.responding_count == 0
         assert result.admissibility == "QUORUM_INSUFFICIENT"
+        assert result.admissibility_reason == "responding_below_min_quorum"
 
     def test_invariant_responding_plus_abstaining_equals_expert_count(self):
         agg = ChamberAggregator("ENTRY", DEFAULT_CONFIG)
@@ -239,6 +256,7 @@ class TestDuplicateExpertId:
             symbol="BTCUSDT", tf_sec=300, ts_ms=TS,
         )
         assert result.admissibility == "INADMISSIBLE"
+        assert result.admissibility_reason == "duplicate_expert_id"
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +276,7 @@ class TestLifecycleChamberStub:
         assert result.responding_count == 0
         assert result.abstaining_count == 0
         assert result.admissibility == "QUORUM_INSUFFICIENT"
+        assert result.admissibility_reason == "responding_below_min_quorum"
         assert result.consensus_direction is None
         assert result.consensus_strength == 0.0
 
@@ -315,6 +334,7 @@ class TestChamberId:
             symbol="BTCUSDT", tf_sec=300, ts_ms=TS,
         )
         assert result.chamber_id == f"entry_BTCUSDT_{TS}"
+        assert result.cycle_key == f"ENTRY:BTCUSDT:300:{TS}"
 
     def test_lifecycle_chamber_id_format(self):
         agg = ChamberAggregator("LIFECYCLE", DEFAULT_CONFIG)
@@ -324,6 +344,7 @@ class TestChamberId:
             symbol="ETHUSDT", tf_sec=60, ts_ms=TS,
         )
         assert result.chamber_id == f"lifecycle_ETHUSDT_{TS}"
+        assert result.cycle_key == f"LIFECYCLE:ETHUSDT:60:{TS}"
 
 
 # ---------------------------------------------------------------------------

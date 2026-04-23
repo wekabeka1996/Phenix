@@ -57,6 +57,7 @@ def _make_expert_output(
 
 def _make_entry_envelope(
     admissibility: str = "ADMISSIBLE",
+    admissibility_reason: str | None = None,
     consensus_direction: str = "LONG",
     consensus_strength: float = 0.8,
     expert_outputs=None,
@@ -78,6 +79,7 @@ def _make_entry_envelope(
         consensus_direction=consensus_direction,
         consensus_strength=consensus_strength,
         admissibility=admissibility,
+        admissibility_reason=admissibility_reason,
     )
     return assemble_evidence_envelope(
         chamber,
@@ -88,6 +90,7 @@ def _make_entry_envelope(
 
 def _make_lifecycle_envelope(
     admissibility: str = "QUORUM_INSUFFICIENT",
+    admissibility_reason: str | None = "responding_below_min_quorum",
     ts_ms: int = 1000000,
 ) -> JudgeEvidenceEnvelope:
     chamber = ChamberAggregate(
@@ -103,6 +106,7 @@ def _make_lifecycle_envelope(
         consensus_direction=None,
         consensus_strength=0.0,
         admissibility=admissibility,
+        admissibility_reason=admissibility_reason,
     )
     return assemble_evidence_envelope(
         chamber,
@@ -206,16 +210,22 @@ class TestEntryVerdictMapping:
         assert v.confidence == 0.0
         assert "no_consensus_direction" in v.reasoning
 
-    def test_inadmissible_unknown(self):
-        env = _make_entry_envelope(admissibility="INADMISSIBLE")
+    def test_inadmissible_suppress(self):
+        env = _make_entry_envelope(
+            admissibility="INADMISSIBLE",
+            admissibility_reason="solicited_expert_missing_output",
+        )
         v = synthesize_verdict(env, verdict_config=_VERDICT_CFG)
-        assert v.entry_verdict == "UNKNOWN"
+        assert v.entry_verdict == "SUPPRESS"
         assert v.confidence == 0.0
-        assert "inadmissible" in v.reasoning
+        assert "entry_chamber_inadmissible:solicited_expert_missing_output" in v.reasoning
+        assert v.suppression_reason == "entry_chamber_inadmissible:solicited_expert_missing_output"
+        assert v.suppression_code == "ENTRY_CHAMBER_MISSING_OUTPUT"
 
     def test_quorum_insufficient_unknown(self):
         env = _make_entry_envelope(
             admissibility="QUORUM_INSUFFICIENT",
+            admissibility_reason="responding_below_min_quorum",
             consensus_direction=None,
             consensus_strength=0.0,
             expert_outputs=[_make_expert_output(
@@ -226,6 +236,7 @@ class TestEntryVerdictMapping:
         assert v.entry_verdict == "UNKNOWN"
         assert v.confidence == 0.0
         assert "quorum_insufficient" in v.reasoning
+        assert "admissibility_reason:responding_below_min_quorum" in v.reasoning
 
 
 class TestEntryVerdictMetadata:
@@ -233,6 +244,7 @@ class TestEntryVerdictMetadata:
         env = _make_entry_envelope(symbol="ETHUSDT", ts_ms=7777777)
         v = synthesize_verdict(env, verdict_config=_VERDICT_CFG)
         assert v.verdict_id == "vrd_entry_ETHUSDT_7777777"
+        assert v.cycle_key == "ENTRY:ETHUSDT:300:7777777"
 
     def test_shadow_applied_false(self):
         env = _make_entry_envelope()
@@ -256,7 +268,7 @@ class TestEntryVerdictMetadata:
         v = synthesize_verdict(env, verdict_config=cfg)
         assert v.strategy_id == "custom"
 
-    def test_suppression_always_none(self):
+    def test_suppression_none_for_admissible_entry(self):
         env = _make_entry_envelope()
         v = synthesize_verdict(env, verdict_config=_VERDICT_CFG)
         assert v.suppression_reason is None
@@ -320,3 +332,4 @@ class TestLifecycleVerdict:
         env = _make_lifecycle_envelope(ts_ms=8888888)
         v = synthesize_verdict(env, verdict_config=_VERDICT_CFG)
         assert v.verdict_id == "vrd_lifecycle_BTCUSDT_8888888"
+        assert v.cycle_key == "LIFECYCLE:BTCUSDT:300:8888888"

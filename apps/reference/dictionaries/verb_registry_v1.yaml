@@ -79,6 +79,14 @@ registry:
   status: active
   schema: apps/reference/domains/alpha_search/schemas/alpha_score_calculated_v1.json
   since: '2026-01-08'
+  note: "Provider-scoped alpha_search score event emitted per provider on the scoring decision boundary."
+- op: EVT
+  verb: ALPHA_SCORES_AGGREGATED
+  owner: decision_making
+  status: active
+  schema: apps/reference/domains/decision_making/schemas/alpha_scores_aggregated_v1.json
+  since: '2026-04-24'
+  note: "DecisionMaking aggregate alpha telemetry side-channel emitted from local alpha_registry scoring on feature ingress."
 - op: EVT
   verb: ANCHOR_UPDATED
   owner: market_data
@@ -509,6 +517,13 @@ registry:
   schema: null
   since: '2026-03-14'
 - op: EVT
+  verb: QUADRATIC_DECISION_TRACE
+  owner: decision_making
+  status: active
+  schema: apps/reference/domains/decision_making/schemas/quadratic_decision_trace_v1.json
+  since: '2026-03-15'
+  note: "Aurora monitoring trace emitted after the quadratic decision path is reached."
+- op: EVT
   verb: QUADRATIC_KERNEL_CRASH
   owner: decision_making
   status: active
@@ -628,12 +643,6 @@ registry:
   owner: bootstrap
   status: active
   schema: apps/reference/bootstrap/schemas/startup_seed_status_v1.json
-  since: '2026-03-16'
-- op: EVT
-  verb: HANDLER_READINESS_DIAGNOSTICS
-  owner: decision_making
-  status: active
-  schema: null
   since: '2026-03-16'
 - op: EVT
   verb: TA_FEATURES_CALCULATED

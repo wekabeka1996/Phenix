@@ -84,6 +84,11 @@ def _make_chamber(
         [eo for eo in expert_outputs if eo.confidence >
             0.0 and eo.entry_verdict != "UNKNOWN"]
     )
+    admissibility_reason = None
+    if admissibility == "QUORUM_INSUFFICIENT":
+        admissibility_reason = "responding_below_min_quorum"
+    elif admissibility == "INADMISSIBLE":
+        admissibility_reason = "solicited_expert_missing_output"
     return ChamberAggregate(
         chamber_id=chamber_id,
         symbol=symbol,
@@ -97,6 +102,7 @@ def _make_chamber(
         consensus_direction=consensus_direction,
         consensus_strength=consensus_strength,
         admissibility=admissibility,
+        admissibility_reason=admissibility_reason,
     )
 
 
@@ -593,3 +599,186 @@ def test_cli_writes_artifacts_and_preserves_no_promotion_boundary(tmp_path: Path
     write_csv_rows([], tmp_path / "writer_smoke" / "surface.csv",
                    fieldnames=result_fieldnames["surface_rows"])
     assert bundle_out.is_file()
+
+
+def test_run_review_uses_cycle_key_when_stage_ids_collide_across_tf_sec(
+    tmp_path: Path,
+    caplog,
+):
+    judge_logs_dir = tmp_path / "judge_logs"
+    judge_logs_dir.mkdir(parents=True, exist_ok=True)
+    outcome_path = tmp_path / "outcomes.json"
+    calibration_path = tmp_path / "phase5_calibration.jsonl"
+    summary_path = tmp_path / "phase5_summary_report.json"
+    simulator_config_path = tmp_path / "judge_simulator.yaml"
+    review_config_path = tmp_path / "judge_review.yaml"
+
+    shared_ts = 1712003000000
+    shared_chamber_id = f"entry_BTCUSDT_{shared_ts}"
+    shared_envelope_id = f"env_entry_BTCUSDT_{shared_ts}"
+    shared_verdict_id = f"v-colliding-{shared_ts}"
+
+    _write_json(
+        outcome_path,
+        {
+            "schema_version": "1",
+            "outcomes": [
+                {
+                    "strategy_id": "aurora",
+                    "symbol": "BTCUSDT",
+                    "tf_sec": 300,
+                    "bar_close_ts": shared_ts,
+                    "matched_trade": True,
+                    "entry_price": 100.0,
+                    "exit_price": 110.0,
+                    "exit_ts_ms": shared_ts + 5000,
+                },
+                {
+                    "strategy_id": "aurora",
+                    "symbol": "BTCUSDT",
+                    "tf_sec": 900,
+                    "bar_close_ts": shared_ts,
+                    "matched_trade": True,
+                    "entry_price": 100.0,
+                    "exit_price": 90.0,
+                    "exit_ts_ms": shared_ts + 9000,
+                },
+            ],
+        },
+    )
+
+    chamber_300 = _make_chamber(
+        chamber_id=shared_chamber_id,
+        symbol="BTCUSDT",
+        tf_sec=300,
+        ts_ms=shared_ts,
+        expert_outputs=[
+            _make_expert_output(
+                expert_id="signal-300",
+                entry_verdict="OPEN_LONG",
+                symbol="BTCUSDT",
+                tf_sec=300,
+                ts_ms=shared_ts,
+                confidence=0.82,
+            )
+        ],
+        consensus_direction="LONG",
+        consensus_strength=0.82,
+        admissibility="ADMISSIBLE",
+    )
+    chamber_900 = _make_chamber(
+        chamber_id=shared_chamber_id,
+        symbol="BTCUSDT",
+        tf_sec=900,
+        ts_ms=shared_ts,
+        expert_outputs=[
+            _make_expert_output(
+                expert_id="signal-900",
+                entry_verdict="OPEN_SHORT",
+                symbol="BTCUSDT",
+                tf_sec=900,
+                ts_ms=shared_ts,
+                confidence=0.91,
+            )
+        ],
+        consensus_direction="SHORT",
+        consensus_strength=0.91,
+        admissibility="ADMISSIBLE",
+    )
+
+    _write_jsonl(
+        judge_logs_dir / "chamber_shadow.jsonl",
+        [
+            chamber_300.model_dump(mode="json"),
+            chamber_900.model_dump(mode="json"),
+        ],
+    )
+    _write_jsonl(
+        judge_logs_dir / "envelope_shadow.jsonl",
+        [
+            _make_envelope(
+                envelope_id=shared_envelope_id,
+                strategy_id="aurora",
+                symbol="BTCUSDT",
+                tf_sec=300,
+                ts_ms=shared_ts,
+                regime="TREND_UP",
+                regime_confidence=0.77,
+                chamber=chamber_300,
+            ).model_dump(mode="json"),
+            _make_envelope(
+                envelope_id=shared_envelope_id,
+                strategy_id="aurora",
+                symbol="BTCUSDT",
+                tf_sec=900,
+                ts_ms=shared_ts,
+                regime="TREND_DOWN",
+                regime_confidence=0.88,
+                chamber=chamber_900,
+            ).model_dump(mode="json"),
+        ],
+    )
+    _write_jsonl(
+        judge_logs_dir / "verdict_shadow.jsonl",
+        [
+            _make_verdict(
+                verdict_id=shared_verdict_id,
+                envelope_id=shared_envelope_id,
+                chamber_id=shared_chamber_id,
+                strategy_id="aurora",
+                symbol="BTCUSDT",
+                tf_sec=300,
+                ts_ms=shared_ts,
+                entry_verdict="OPEN_LONG",
+                confidence=0.82,
+            ).model_dump(mode="json"),
+            _make_verdict(
+                verdict_id=shared_verdict_id,
+                envelope_id=shared_envelope_id,
+                chamber_id=shared_chamber_id,
+                strategy_id="aurora",
+                symbol="BTCUSDT",
+                tf_sec=900,
+                ts_ms=shared_ts,
+                entry_verdict="OPEN_SHORT",
+                confidence=0.91,
+            ).model_dump(mode="json"),
+        ],
+    )
+
+    _write_simulator_config(
+        simulator_config_path,
+        judge_logs_path=judge_logs_dir,
+        outcome_data_path=outcome_path,
+        calibration_dataset_path=calibration_path,
+        summary_report_path=summary_path,
+    )
+    _write_review_config(
+        review_config_path,
+        simulator_config_path=simulator_config_path,
+        output_dir=tmp_path / "judge_review_artifacts",
+        segment_dimensions=["tf_sec", "regime"],
+    )
+
+    run_from_config(load_simulator_config(simulator_config_path))
+    result = run_review(validate_review_config_file(review_config_path))
+
+    assert result["bundle"]["input_coverage"]["entry_verdict_count"] == 2
+    assert result["bundle"]["input_coverage"]["chamber_joined_count"] == 2
+
+    regime_rows = {
+        row["segment_value"]: row
+        for row in result["comparison_rows"]
+        if row["segment_type"] == "regime"
+    }
+    assert regime_rows["TREND_UP"]["entry_verdict_count"] == 1
+    assert regime_rows["TREND_DOWN"]["entry_verdict_count"] == 1
+
+    tf_rows = {
+        row["segment_value"]: row
+        for row in result["comparison_rows"]
+        if row["segment_type"] == "tf_sec"
+    }
+    assert tf_rows["300"]["chamber_only_available_count"] == 1
+    assert tf_rows["900"]["chamber_only_available_count"] == 1
+    assert "collision" in caplog.text

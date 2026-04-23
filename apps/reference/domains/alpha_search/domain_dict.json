@@ -34,9 +34,9 @@
   "exports": [
     {
       "event_name": "EVT:ALPHA_SCORE_CALCULATED",
-      "target_domains": ["decision_making"],
+      "target_domains": [],
       "schema": "schemas/alpha_score_calculated_v1.json",
-      "description": "Multi-provider alpha scores for decision-making consumption."
+      "description": "Provider-scoped alpha_search score stream emitted once per provider decision boundary."
     },
     {
       "event_name": "EVT:JUDGE_ENTRY_VERDICT_V1",

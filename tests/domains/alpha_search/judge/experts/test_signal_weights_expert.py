@@ -152,6 +152,13 @@ class TestSignalWeightsFailClosed:
         score = expert.calculate_alpha("BTCUSDT", {}, features)
         assert float(score.score) != 0 or float(score.confidence) >= 0
 
+    def test_insufficient_active_features_returns_unknown(self):
+        expert = _make_expert(min_active_features=3, essential_features=["obi"])
+        features = {"obi": 0.5, "tfi": None, "delta_price": None, "ema_bias": 0.6}
+        score = expert.calculate_alpha("BTCUSDT", {}, features)
+        assert float(score.confidence) == 0.0
+        assert "NRR-INSUFFICIENT-ACTIVE-FEATURES:2/3" in score.why
+
 
 class TestSignalWeightsMetadata:
     def test_model_name(self):

@@ -12,9 +12,78 @@ SSOT: Pydantic-first. JSON schemas kept in sync manually
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from apps.reference.domains.alpha_search.judge.identity import (
+    build_cycle_key,
+    build_expert_cycle_key,
+)
+
+
+def _maybe_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _expected_expert_cycle_key(values: dict[str, Any]) -> Optional[str]:
+    symbol = values.get("symbol")
+    tf_sec = _maybe_int(values.get("tf_sec"))
+    ts_ms = _maybe_int(values.get("ts_ms"))
+    if symbol is None or tf_sec is None or ts_ms is None:
+        return None
+    entry_verdict = values.get("entry_verdict")
+    lifecycle_verdict = values.get("lifecycle_verdict")
+    if entry_verdict is None and lifecycle_verdict is None:
+        return None
+    return build_expert_cycle_key(
+        entry_verdict=entry_verdict,
+        lifecycle_verdict=lifecycle_verdict,
+        symbol=str(symbol),
+        tf_sec=tf_sec,
+        ts_ms=ts_ms,
+    )
+
+
+def _expected_scope_cycle_key(values: dict[str, Any]) -> Optional[str]:
+    verdict_scope = values.get("verdict_scope")
+    symbol = values.get("symbol")
+    tf_sec = _maybe_int(values.get("tf_sec"))
+    ts_ms = _maybe_int(values.get("ts_ms"))
+    if verdict_scope is None or symbol is None or tf_sec is None or ts_ms is None:
+        return None
+    return build_cycle_key(
+        str(verdict_scope),
+        str(symbol),
+        tf_sec,
+        ts_ms,
+    )
+
+
+def _ensure_cycle_key(
+    values: Any,
+    *,
+    expected: Optional[str],
+    model_name: str,
+) -> Any:
+    if not isinstance(values, dict) or expected is None:
+        return values
+
+    cycle_key = values.get("cycle_key")
+    if cycle_key is None:
+        updated = dict(values)
+        updated["cycle_key"] = expected
+        return updated
+
+    if str(cycle_key) != expected:
+        raise ValueError(
+            f"{model_name}.cycle_key must equal canonical cycle identity "
+            f"'{expected}'"
+        )
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -76,12 +145,24 @@ class ExpertOutput(BaseModel):
     symbol: str = Field(..., min_length=1)
     tf_sec: int = Field(..., gt=0)
     ts_ms: int = Field(..., gt=0)
+    cycle_key: Optional[str] = Field(default=None, min_length=1)
     entry_verdict: Optional[EntryVerdict] = None
     lifecycle_verdict: Optional[LifecycleVerdict] = None
     confidence: float = Field(..., ge=0.0, le=1.0)
     signal_direction: Optional[Literal["LONG", "SHORT", "NEUTRAL"]] = None
     reasoning: List[str] = Field(..., min_length=1)
     schema_version: Literal["1"] = "1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_cycle_key(cls, values: Any) -> Any:
+        return _ensure_cycle_key(
+            values,
+            expected=_expected_expert_cycle_key(values)
+            if isinstance(values, dict)
+            else None,
+            model_name="ExpertOutput",
+        )
 
     @model_validator(mode="after")
     def validate_verdict_xor(self) -> ExpertOutput:
@@ -120,6 +201,7 @@ class ChamberAggregate(BaseModel):
     symbol: str = Field(..., min_length=1)
     tf_sec: int = Field(..., gt=0)
     ts_ms: int = Field(..., gt=0)
+    cycle_key: Optional[str] = Field(default=None, min_length=1)
     verdict_scope: Literal["ENTRY", "LIFECYCLE"]
     expert_outputs: List[ExpertOutput] = Field(default_factory=list)
     expert_count: int = Field(..., ge=0)
@@ -129,7 +211,19 @@ class ChamberAggregate(BaseModel):
                                           "SHORT", "NEUTRAL", "SPLIT"]] = None
     consensus_strength: float = Field(..., ge=0.0, le=1.0)
     admissibility: Literal["ADMISSIBLE", "INADMISSIBLE", "QUORUM_INSUFFICIENT"]
+    admissibility_reason: Optional[str] = None
     schema_version: Literal["1"] = "1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_cycle_key(cls, values: Any) -> Any:
+        return _ensure_cycle_key(
+            values,
+            expected=_expected_scope_cycle_key(values)
+            if isinstance(values, dict)
+            else None,
+            model_name="ChamberAggregate",
+        )
 
     @model_validator(mode="after")
     def validate_counts(self) -> ChamberAggregate:
@@ -158,6 +252,15 @@ class ChamberAggregate(BaseModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def validate_admissibility_reason(self) -> ChamberAggregate:
+        """Fail-closed chamber states must carry an explicit reason."""
+        if self.admissibility != "ADMISSIBLE" and not self.admissibility_reason:
+            raise ValueError(
+                "Non-ADMISSIBLE chamber states require admissibility_reason"
+            )
+        return self
+
 
 # ---------------------------------------------------------------------------
 # JudgeEvidenceEnvelope
@@ -176,6 +279,7 @@ class JudgeEvidenceEnvelope(BaseModel):
     symbol: str = Field(..., min_length=1)
     tf_sec: int = Field(..., gt=0)
     ts_ms: int = Field(..., gt=0)
+    cycle_key: Optional[str] = Field(default=None, min_length=1)
     verdict_scope: Literal["ENTRY", "LIFECYCLE"]
     chamber_aggregate: ChamberAggregate
     strategy_id: str = Field(..., min_length=1)
@@ -186,6 +290,17 @@ class JudgeEvidenceEnvelope(BaseModel):
     freshness_deadline_ms: int = Field(..., gt=0)
     provenance: EnvelopeProvenance
     schema_version: Literal["1"] = "1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_cycle_key(cls, values: Any) -> Any:
+        return _ensure_cycle_key(
+            values,
+            expected=_expected_scope_cycle_key(values)
+            if isinstance(values, dict)
+            else None,
+            model_name="JudgeEvidenceEnvelope",
+        )
 
     @model_validator(mode="after")
     def validate_lifecycle_requires_position(self) -> JudgeEvidenceEnvelope:
@@ -223,6 +338,7 @@ class JudgeVerdict(BaseModel):
     symbol: str = Field(..., min_length=1)
     tf_sec: int = Field(..., gt=0)
     ts_ms: int = Field(..., gt=0)
+    cycle_key: Optional[str] = Field(default=None, min_length=1)
     verdict_scope: Literal["ENTRY", "LIFECYCLE"]
     entry_verdict: Optional[EntryVerdict] = None
     lifecycle_verdict: Optional[LifecycleVerdict] = None
@@ -235,6 +351,17 @@ class JudgeVerdict(BaseModel):
     applied: bool
     strategy_id: str = Field(..., min_length=1)
     schema_version: Literal["1"] = "1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_cycle_key(cls, values: Any) -> Any:
+        return _ensure_cycle_key(
+            values,
+            expected=_expected_scope_cycle_key(values)
+            if isinstance(values, dict)
+            else None,
+            model_name="JudgeVerdict",
+        )
 
     @model_validator(mode="after")
     def validate_verdict_scope_xor(self) -> JudgeVerdict:

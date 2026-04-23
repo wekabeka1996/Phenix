@@ -158,6 +158,141 @@ def test_decision_blocked_registered_with_schema() -> None:
     ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
 
+def test_alpha_score_contract_split_registered_with_distinct_owner_and_schema() -> None:
+    data = _load_registry()
+    registry = data.get("registry")
+    if not isinstance(registry, list):
+        raise AssertionError(
+            "verb registry: expected top-level 'registry' list")
+
+    alpha_search_entry = next(
+        (
+            e
+            for e in registry
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "ALPHA_SCORE_CALCULATED"
+        ),
+        None,
+    )
+    assert alpha_search_entry is not None, "Expected EVT:ALPHA_SCORE_CALCULATED to remain registered"
+    assert alpha_search_entry.get("owner") == "alpha_search"
+    assert alpha_search_entry.get(
+        "schema") == "apps/reference/domains/alpha_search/schemas/alpha_score_calculated_v1.json"
+
+    dm_entry = next(
+        (
+            e
+            for e in registry
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "ALPHA_SCORES_AGGREGATED"
+        ),
+        None,
+    )
+    assert dm_entry is not None, "Expected EVT:ALPHA_SCORES_AGGREGATED to be registered"
+    assert dm_entry.get("owner") == "decision_making"
+    assert dm_entry.get("status") == "active"
+
+    schema = dm_entry.get("schema")
+    assert schema == "apps/reference/domains/decision_making/schemas/alpha_scores_aggregated_v1.json"
+    assert (_repo_root(
+    ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
+
+
+def test_alpha_score_calculated_schema_is_provider_scoped() -> None:
+    schema_path = (
+        _repo_root()
+        / "apps"
+        / "reference"
+        / "domains"
+        / "alpha_search"
+        / "schemas"
+        / "alpha_score_calculated_v1.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    required = schema.get("required")
+    assert isinstance(required, list)
+    for key in ("provider_id", "model_name", "score", "confidence", "tf_sec", "bar_close_ts"):
+        assert key in required
+
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+    assert "scores" not in properties
+    assert "timestamp" not in properties
+
+
+def test_alpha_scores_aggregated_schema_requires_symbol_scores_and_timestamp() -> None:
+    schema_path = (
+        _repo_root()
+        / "apps"
+        / "reference"
+        / "domains"
+        / "decision_making"
+        / "schemas"
+        / "alpha_scores_aggregated_v1.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    valid_payload = {
+        "symbol": "BTCUSDT",
+        "scores": [{"model_name": "aurora", "score": 0.25, "confidence": 0.75}],
+        "timestamp": 1_700_000_000_000,
+    }
+    validate(valid_payload, schema)
+
+    invalid_missing_scores = {k: v for k,
+                              v in valid_payload.items() if k != "scores"}
+    with pytest.raises(ValidationError):
+        validate(invalid_missing_scores, schema)
+
+    invalid_missing_timestamp = {
+        k: v for k, v in valid_payload.items() if k != "timestamp"}
+    with pytest.raises(ValidationError):
+        validate(invalid_missing_timestamp, schema)
+
+
+def test_quadratic_decision_trace_registered_with_schema() -> None:
+    data = _load_registry()
+    registry = data.get("registry")
+    if not isinstance(registry, list):
+        raise AssertionError(
+            "verb registry: expected top-level 'registry' list")
+
+    entry = next(
+        (
+            e
+            for e in registry
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "QUADRATIC_DECISION_TRACE"
+        ),
+        None,
+    )
+    assert entry is not None, "Expected EVT:QUADRATIC_DECISION_TRACE to be registered"
+    assert entry.get("owner") == "decision_making"
+    assert entry.get("status") == "active"
+    assert entry.get("since") == "2026-03-15"
+
+    schema = entry.get("schema")
+    assert schema == "apps/reference/domains/decision_making/schemas/quadratic_decision_trace_v1.json"
+    assert (_repo_root(
+    ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
+
+
+def test_handler_readiness_diagnostics_not_registered() -> None:
+    data = _load_registry()
+    registry = data.get("registry")
+    if not isinstance(registry, list):
+        raise AssertionError(
+            "verb registry: expected top-level 'registry' list")
+
+    entry = next(
+        (
+            e
+            for e in registry
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "HANDLER_READINESS_DIAGNOSTICS"
+        ),
+        None,
+    )
+    assert entry is None, "HANDLER_READINESS_DIAGNOSTICS must not remain in verb_registry_v1.yaml"
+
+
 def test_tick_features_calculated_registered_with_schema() -> None:
     data = _load_registry()
     registry = data.get("registry")

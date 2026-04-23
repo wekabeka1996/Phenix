@@ -212,3 +212,34 @@ def test_explicit_close_producer_bridge_remains_unchanged() -> None:
         f"contract={CLOSE_PRODUCER_BRIDGE_CONTRACT}" in ref
         for ref in (decision.data_ref or [])
     )
+
+
+def test_manage_max_hold_bypasses_cmd_close_producer_adapter(
+    fsm_harness,
+    mock_clock: MockClock,
+) -> None:
+    fsm, _bus, _cfg = fsm_harness
+    feed_opened_position(fsm, "BTCUSDT", "BUY", Decimal("1.0"), Decimal("50000"))
+    manage = fsm.manage_flows["BTCUSDT"]
+    manage.position_open_ts = mock_clock.now_sec()
+
+    with patch.object(manage, "_get_max_hold_sec", return_value=1), patch(
+        "apps.reference.domains.execution_position.fsm_close.adapt_cmd_close_to_dec_close"
+    ) as producer_adapter:
+        mock_clock.set_time_ms(1_002_000)
+        result = manage.handle(
+            Message(
+                op="UPD",
+                verb="MARKET_DATA",
+                src="ws",
+                dst="exec",
+                rid="rid-max-hold-bypass",
+                pld={"symbol": "BTCUSDT", "last_price": "50000", "ts": 1_002_000},
+            )
+        )
+
+    assert result is not None
+    assert result.op == "DEC"
+    assert result.verb == "CLOSE"
+    assert result.pld["trigger"] == MANAGE_MAX_HOLD_CLOSE_TRIGGER
+    producer_adapter.assert_not_called()

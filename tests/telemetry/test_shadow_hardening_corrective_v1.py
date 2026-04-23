@@ -157,6 +157,10 @@ class TestSemanticClarity:
         assert out["local_state_after"] is not None
         assert out["local_state_before"]["state"] == "FLAT"
         assert out["local_state_after"]["state"] == "DONE"
+        assert out["rid"] == "r1"
+        assert out["payload_fragment"]["trigger"] == "CMD:CLOSE"
+        assert out["payload_fragment"]["idempotent_key"] == "r1"
+        assert out["lifecycle_id"] == "r1"
 
     def test_close_flow_input_record_has_no_transition_window(self, tmp_path):
         """INPUT record (CMD:CLOSE) carries NO before/after — only contextual payload."""
@@ -203,7 +207,7 @@ class TestSemanticClarity:
             pld={"symbol": "BTCUSDT", "last_price": "49900"},
         )
 
-        with patch.object(manage, "_get_max_hold_sec", return_value=0):
+        with patch.object(manage, "_get_max_hold_sec", return_value=1):
             result = manage.handle(message)
 
         assert result is not None

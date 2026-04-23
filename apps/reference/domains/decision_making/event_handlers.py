@@ -56,6 +56,10 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+DM_ALPHA_SCORES_AGGREGATED_EVENT = "EVT:ALPHA_SCORES_AGGREGATED"
+DM_ALPHA_SCORES_AGGREGATED_VERB = "ALPHA_SCORES_AGGREGATED"
+
+
 class DMEventHandlers:
     """FSM event listeners for the DecisionMaking domain.
 
@@ -281,7 +285,7 @@ class DMEventHandlers:
                     "timestamp": self._clock.now_ms(),
                 }
                 self._fsm.emit(
-                    "EVT:ALPHA_SCORE_CALCULATED",
+                    DM_ALPHA_SCORES_AGGREGATED_EVENT,
                     payload=alpha_payload,
                     why="alpha_scores_calculated",
                     data_ref=[
@@ -307,7 +311,7 @@ class DMEventHandlers:
 
                     wal_record = {
                         "op": "EVT",
-                        "verb": "ALPHA_SCORE_CALCULATED",
+                        "verb": DM_ALPHA_SCORES_AGGREGATED_VERB,
                         "symbol": symbol,
                         "scores": [
                             {k: json_safe_value(v)

@@ -98,6 +98,7 @@ def _make_signal_weights_expert_config(*, enabled=True):
         expert_id="judge.signal_weights_v1",
         expert_version="1.0.0",
         signal_threshold=0.162,
+        min_active_features=1,
         signal_weights=MINIMAL_WEIGHTS,
         feature_neutrals=MINIMAL_NEUTRALS,
         essential_features=[],
@@ -110,6 +111,7 @@ def _make_feature_neutrals_expert_config(*, enabled=True):
         expert_id="judge.feature_neutrals_v1",
         expert_version="1.0.0",
         signal_threshold=0.162,
+        min_active_directional_features=1,
         signal_weights=MINIMAL_WEIGHTS,
         feature_neutrals=MINIMAL_NEUTRALS,
         essential_features=[],
@@ -142,7 +144,7 @@ def _make_config(
     if sw_enabled:
         providers["judge_sw"] = ProviderConfig(
             enabled=True,
-            threshold=0.1,
+            threshold=0.162,
             judge_expert=JudgeExpertProviderConfig(
                 expert_type="signal_weights"),
         )
@@ -150,7 +152,7 @@ def _make_config(
     if fn_enabled:
         providers["judge_fn"] = ProviderConfig(
             enabled=True,
-            threshold=0.1,
+            threshold=0.162,
             judge_expert=JudgeExpertProviderConfig(
                 expert_type="feature_neutrals"),
         )
@@ -222,6 +224,28 @@ def _inject_cache_entry(plugin, symbol="BTCUSDT", tf_sec=300, bar_close_ts=17000
         features=dict(FEATURES_BULLISH),
         ts=bar_close_ts,
         price=50000.0,
+    )
+    return key
+
+
+def _inject_custom_cache_entry(
+    plugin,
+    *,
+    features,
+    symbol="BTCUSDT",
+    tf_sec=300,
+    bar_close_ts=1700000000000,
+    price=50000.0,
+):
+    """Inject a cache entry with explicit feature payload."""
+    key = (symbol, tf_sec, bar_close_ts)
+    plugin._feature_cache[key] = FeatureCacheEntry(
+        symbol=symbol,
+        tf_sec=tf_sec,
+        bar_close_ts=bar_close_ts,
+        features=dict(features),
+        ts=bar_close_ts,
+        price=price,
     )
     return key
 
@@ -333,7 +357,176 @@ class TestBridgeProducesValidExpertOutput:
         assert eo.expert_version == "1.0.0"
         assert eo.entry_verdict in (
             "OPEN_LONG", "OPEN_SHORT", "NO_ENTRY", "UNKNOWN")
+        assert eo.cycle_key == "ENTRY:BTCUSDT:300:1700000000000"
         assert eo.schema_version == "1"
+
+
+class TestEntryEdgeBranchRuntimeProof:
+    def test_entry_unknown_runtime_branch_from_deferred_essential_feature(self):
+        """Entry expert emits UNKNOWN when an essential feature is present-but-None."""
+        bus = StubEventBus()
+        cfg = AlphaSearchConfig(
+            enabled=True,
+            shadow_mode=True,
+            triggers=TriggersConfig(),
+            cache=CacheConfig(),
+            providers={
+                "judge_sw": ProviderConfig(
+                    enabled=True,
+                    threshold=0.162,
+                    judge_expert=JudgeExpertProviderConfig(
+                        expert_type="signal_weights"
+                    ),
+                ),
+            },
+            virtual_trader=VirtualTraderConfig(enabled=False),
+            judge=JudgeCortexConfig(
+                enabled=True,
+                mode="shadow",
+                experts=JudgeExpertsConfig(
+                    signal_weights=SignalWeightsExpertConfig(
+                        enabled=True,
+                        expert_id="judge.signal_weights_v1",
+                        expert_version="1.0.0",
+                        signal_threshold=0.162,
+                        signal_weights=MINIMAL_WEIGHTS,
+                        feature_neutrals=MINIMAL_NEUTRALS,
+                        essential_features=["obi"],
+                    ),
+                    feature_neutrals=_make_feature_neutrals_expert_config(
+                        enabled=False
+                    ),
+                ),
+                chamber=ChamberConfig(),
+                verdict=VerdictConfig(),
+                shadow_log=JudgeShadowLogConfig(enabled=False),
+            ),
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+        _inject_custom_cache_entry(
+            plugin,
+            features={
+                **FEATURES_BULLISH,
+                "obi": None,
+            },
+        )
+        _fire_decision(plugin)
+
+        judge_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_EXPERT_PRODUCED_V1"
+        ]
+        assert len(judge_events) == 1
+        expert_payload = judge_events[0]["payload"]
+        assert expert_payload["entry_verdict"] == "UNKNOWN"
+        assert expert_payload["signal_direction"] == "NEUTRAL"
+        assert expert_payload["reasoning"][0].startswith(
+            "authoritative_entry_verdict:UNKNOWN"
+        )
+        assert "DEFER:obi" in expert_payload["reasoning"]
+
+        chamber_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_CHAMBER_AGGREGATED_V1"
+            and e["payload"].get("verdict_scope") == "ENTRY"
+        ]
+        assert len(chamber_events) == 1
+        chamber_payload = chamber_events[0]["payload"]
+        assert chamber_payload["expert_count"] == 1
+        assert chamber_payload["responding_count"] == 0
+        assert chamber_payload["abstaining_count"] == 1
+        assert chamber_payload["admissibility"] == "QUORUM_INSUFFICIENT"
+        assert chamber_payload["admissibility_reason"] == "responding_below_min_quorum"
+
+        verdict_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_ENTRY_VERDICT_V1"
+        ]
+        assert len(verdict_events) == 1
+        verdict_payload = verdict_events[0]["payload"]
+        assert verdict_payload["entry_verdict"] == "UNKNOWN"
+        assert verdict_payload["authority_mode"] == "shadow"
+        assert verdict_payload["applied"] is False
+
+    def test_entry_unknown_runtime_branch_from_insufficient_active_features(self):
+        """Entry expert abstains when active weighted evidence is below config floor."""
+        bus = StubEventBus()
+        cfg = AlphaSearchConfig(
+            enabled=True,
+            shadow_mode=True,
+            triggers=TriggersConfig(),
+            cache=CacheConfig(),
+            providers={
+                "judge_sw": ProviderConfig(
+                    enabled=True,
+                    threshold=0.162,
+                    judge_expert=JudgeExpertProviderConfig(
+                        expert_type="signal_weights"
+                    ),
+                ),
+            },
+            virtual_trader=VirtualTraderConfig(enabled=False),
+            judge=JudgeCortexConfig(
+                enabled=True,
+                mode="shadow",
+                experts=JudgeExpertsConfig(
+                    signal_weights=SignalWeightsExpertConfig(
+                        enabled=True,
+                        expert_id="judge.signal_weights_v1",
+                        expert_version="1.0.0",
+                        signal_threshold=0.162,
+                        min_active_features=3,
+                        signal_weights=MINIMAL_WEIGHTS,
+                        feature_neutrals=MINIMAL_NEUTRALS,
+                        essential_features=["obi"],
+                    ),
+                    feature_neutrals=_make_feature_neutrals_expert_config(
+                        enabled=False
+                    ),
+                ),
+                chamber=ChamberConfig(),
+                verdict=VerdictConfig(),
+                shadow_log=JudgeShadowLogConfig(enabled=False),
+            ),
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+        _inject_custom_cache_entry(
+            plugin,
+            features={
+                "obi": 0.6,
+                "delta_price": None,
+                "ema_bias": 0.9,
+                "macro_resid": 0.2,
+            },
+        )
+        _fire_decision(plugin)
+
+        judge_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_EXPERT_PRODUCED_V1"
+        ]
+        assert len(judge_events) == 1
+        expert_payload = judge_events[0]["payload"]
+        assert expert_payload["entry_verdict"] == "UNKNOWN"
+        assert "NRR-INSUFFICIENT-ACTIVE-FEATURES:2/3" in expert_payload["reasoning"]
+
+        chamber_payload = next(
+            e["payload"]
+            for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_CHAMBER_AGGREGATED_V1"
+            and e["payload"].get("verdict_scope") == "ENTRY"
+        )
+        assert chamber_payload["admissibility"] == "QUORUM_INSUFFICIENT"
+        assert chamber_payload["admissibility_reason"] == "responding_below_min_quorum"
+
+        verdict_payload = next(
+            e["payload"]
+            for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_ENTRY_VERDICT_V1"
+        )
+        assert verdict_payload["entry_verdict"] == "UNKNOWN"
+        assert verdict_payload["suppression_reason"] is None
+        assert verdict_payload["applied"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +561,7 @@ class TestJSONLShadowLog:
             record = json.loads(lines[0])
             assert record["expert_id"] == "judge.signal_weights_v1"
             assert record["symbol"] == "BTCUSDT"
+            assert record["cycle_key"] == "ENTRY:BTCUSDT:300:1700000000000"
 
     def test_jsonl_log_not_written_when_disabled(self):
         """No JSONL file when shadow_log.enabled=False."""
@@ -590,6 +784,9 @@ class TestRepoResidentShadowActivation:
         assert envelope.ts_ms == bar_close_ts
         assert envelope.chamber_aggregate.ts_ms == bar_close_ts
         assert verdict.ts_ms == bar_close_ts
+        assert chamber.cycle_key == f"ENTRY:BTCUSDT:300:{bar_close_ts}"
+        assert envelope.cycle_key == f"ENTRY:BTCUSDT:300:{bar_close_ts}"
+        assert verdict.cycle_key == f"ENTRY:BTCUSDT:300:{bar_close_ts}"
         assert envelope.features_ref == f"bar:BTCUSDT:300:{bar_close_ts}"
         assert envelope.chamber_aggregate.chamber_id == chamber.chamber_id
         assert verdict.chamber_id == chamber.chamber_id
@@ -641,6 +838,7 @@ class TestChamberEventEmitted:
             sw_enabled=True,
             fn_enabled=True,
             chamber=ChamberConfig(),
+            verdict=VerdictConfig(),
         )
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
         _inject_cache_entry(plugin)
@@ -701,6 +899,7 @@ class TestChamberPayloadValid:
             sw_enabled=True,
             fn_enabled=True,
             chamber=ChamberConfig(),
+            verdict=VerdictConfig(),
         )
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
         _inject_cache_entry(plugin)
@@ -716,6 +915,7 @@ class TestChamberPayloadValid:
         assert agg.symbol == "BTCUSDT"
         assert agg.expert_count >= 1
         assert agg.responding_count + agg.abstaining_count == agg.expert_count
+        assert agg.cycle_key == "ENTRY:BTCUSDT:300:1700000000000"
 
     def test_entry_chamber_reflects_both_experts(self):
         """Entry chamber with 2 experts: expert_count=2, both responding."""
@@ -725,6 +925,7 @@ class TestChamberPayloadValid:
             sw_enabled=True,
             fn_enabled=True,
             chamber=ChamberConfig(),
+            verdict=VerdictConfig(),
         )
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
         _inject_cache_entry(plugin)
@@ -769,6 +970,7 @@ class TestLifecycleStubEnabled:
         assert p["expert_count"] == 0
         assert p["responding_count"] == 0
         assert p["admissibility"] == "QUORUM_INSUFFICIENT"
+        assert p["admissibility_reason"] == "responding_below_min_quorum"
 
 
 # ---------------------------------------------------------------------------
@@ -812,6 +1014,7 @@ class TestChamberRosterTruth:
             sw_enabled=True,
             fn_enabled=True,
             chamber=ChamberConfig(),
+            verdict=VerdictConfig(),
         )
         plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
 
@@ -833,6 +1036,19 @@ class TestChamberRosterTruth:
         assert p["responding_count"] == 1
         assert p["abstaining_count"] == 1
         assert p["admissibility"] == "INADMISSIBLE"
+        assert p["admissibility_reason"] == "solicited_expert_missing_output"
+
+        verdict_events = [e for e in bus.emitted
+                          if e["event"] == "EVT:JUDGE_ENTRY_VERDICT_V1"]
+        assert len(verdict_events) == 1
+        verdict_payload = verdict_events[0]["payload"]
+        assert verdict_payload["entry_verdict"] == "SUPPRESS"
+        assert (
+            verdict_payload["suppression_reason"]
+            == "entry_chamber_inadmissible:solicited_expert_missing_output"
+        )
+        assert verdict_payload["suppression_code"] == "ENTRY_CHAMBER_MISSING_OUTPUT"
+        assert verdict_payload["applied"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -955,6 +1171,7 @@ class TestVerdictEventEmitted:
         assert v.authority_mode == "shadow"
         assert v.applied is False
         assert v.strategy_id == "aurora"
+        assert v.cycle_key == "ENTRY:BTCUSDT:300:1700000000000"
 
 
 # ---------------------------------------------------------------------------
@@ -1001,6 +1218,7 @@ class TestEnvelopeEventEmitted:
         assert envelope.verdict_scope == "ENTRY"
         assert envelope.strategy_id == "aurora"
         assert envelope.features_ref is not None
+        assert envelope.cycle_key == "ENTRY:BTCUSDT:300:1700000000000"
 
 
 # ---------------------------------------------------------------------------
@@ -1030,6 +1248,7 @@ class TestLifecycleVerdictIntegration:
         assert v.verdict_scope == "LIFECYCLE"
         assert v.lifecycle_verdict == "UNKNOWN"
         assert v.applied is False
+        assert v.cycle_key == "LIFECYCLE:BTCUSDT:300:1700000000000"
 
     def test_no_lifecycle_verdict_when_disabled(self):
         """lifecycle_enabled=False → no lifecycle verdict event."""

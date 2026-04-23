@@ -19,6 +19,8 @@ from apps.reference.domains.alpha_search.judge.config_models import (
 )
 from apps.reference.domains.alpha_search.config_models import (
     AlphaSearchConfig,
+    JudgeExpertProviderConfig,
+    ProviderConfig,
     load_alpha_search_config,
 )
 
@@ -112,6 +114,7 @@ class TestSignalWeightsExpertConfig:
         assert cfg.enabled is False
         assert cfg.signal_threshold == 0.162
         assert cfg.normalize_mode == "off"
+        assert cfg.min_active_features == 1
 
     def test_empty_weights_when_enabled_fails(self):
         with pytest.raises(ValueError, match="signal_weights must be non-empty"):
@@ -182,6 +185,19 @@ class TestSignalWeightsExpertConfig:
         )
         assert cfg.symbols == ["BTCUSDT", "ETHUSDT"]
 
+    def test_min_active_features_zero_fails(self):
+        with pytest.raises(ValueError, match="min_active_features must be > 0"):
+            SignalWeightsExpertConfig(min_active_features=0)
+
+    def test_min_active_features_above_weighted_feature_count_fails(self):
+        with pytest.raises(ValueError, match="min_active_features must be <="):
+            SignalWeightsExpertConfig(
+                enabled=True,
+                signal_weights=_SW_WEIGHTS,
+                feature_neutrals=_SW_NEUTRALS,
+                min_active_features=10,
+            )
+
 
 # ---------------------------------------------------------------------------
 # C. FeatureNeutralsExpertConfig validation
@@ -208,6 +224,7 @@ class TestFeatureNeutralsExpertConfig:
         assert cfg.expert_id == "judge.feature_neutrals_v1"
         assert cfg.strength_alpha == 0.5
         assert cfg.strength_cap == 1.0
+        assert cfg.min_active_directional_features == 1
 
     def test_disabled_skips_validation(self):
         cfg = FeatureNeutralsExpertConfig(enabled=False)
@@ -281,6 +298,21 @@ class TestFeatureNeutralsExpertConfig:
         with pytest.raises(Exception):
             cfg.enabled = True
 
+    def test_min_active_directional_features_zero_fails(self):
+        with pytest.raises(ValueError, match="min_active_directional_features must be > 0"):
+            FeatureNeutralsExpertConfig(min_active_directional_features=0)
+
+    def test_min_active_directional_features_above_available_count_fails(self):
+        with pytest.raises(ValueError, match="min_active_directional_features must be <="):
+            FeatureNeutralsExpertConfig(
+                enabled=True,
+                signal_weights=_FN_WEIGHTS,
+                feature_neutrals=_FN_NEUTRALS,
+                directional_features=_FN_DIR,
+                strength_features=_FN_STR,
+                min_active_directional_features=10,
+            )
+
 
 # ---------------------------------------------------------------------------
 # D. JudgeExpertsConfig / JudgeShadowLogConfig
@@ -335,8 +367,8 @@ class TestAlphaSearchConfigIntegration:
     def test_load_from_yaml(self):
         cfg = load_alpha_search_config("config/alpha_search.yaml")
         assert cfg.judge is not None
-        assert cfg.judge.enabled is False
-        assert cfg.judge.mode == "off"
+        assert cfg.judge.enabled is True
+        assert cfg.judge.mode == "shadow"
 
     def test_existing_fields_preserved(self):
         cfg = load_alpha_search_config("config/alpha_search.yaml")
@@ -352,6 +384,33 @@ class TestAlphaSearchConfigIntegration:
         assert cfg.providers["judge_sw"].judge_expert.expert_type == "signal_weights"
         assert cfg.providers["judge_fn"].judge_expert is not None
         assert cfg.providers["judge_fn"].judge_expert.expert_type == "feature_neutrals"
+
+    def test_judge_provider_threshold_drift_fails_closed(self):
+        with pytest.raises(ValueError, match="threshold drift"):
+            AlphaSearchConfig(
+                enabled=False,
+                providers={
+                    "judge_sw": ProviderConfig(
+                        enabled=True,
+                        threshold=0.10,
+                        judge_expert=JudgeExpertProviderConfig(
+                            expert_type="signal_weights"
+                        ),
+                    )
+                },
+                judge=JudgeCortexConfig(
+                    enabled=True,
+                    mode="shadow",
+                    experts=JudgeExpertsConfig(
+                        signal_weights=SignalWeightsExpertConfig(
+                            enabled=True,
+                            signal_threshold=0.162,
+                            signal_weights=_SW_WEIGHTS,
+                            feature_neutrals=_SW_NEUTRALS,
+                        )
+                    ),
+                ),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +506,8 @@ class TestJudgeCortexConfigChamber:
         assert cfg.judge.chamber.max_staleness_ms == 30000
         assert cfg.judge.chamber.entry_enabled is True
         assert cfg.judge.chamber.lifecycle_enabled is False
+        assert cfg.judge.experts.signal_weights.min_active_features == 4
+        assert cfg.judge.experts.feature_neutrals.min_active_directional_features == 4
 
 
 # ---------------------------------------------------------------------------

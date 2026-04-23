@@ -30,6 +30,61 @@ class BracketManager:
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
 
+    async def _has_live_synced_brackets(self, symbol: str) -> bool:
+        """Return True when the current lifecycle already has live synced SL/TP."""
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return False
+
+        try:
+            has_active_lifecycle = bool(
+                self._fsm._has_active_lifecycle_for_symbol(symbol_key)
+            )
+        except Exception:
+            has_active_lifecycle = False
+
+        if not has_active_lifecycle:
+            return False
+
+        bracket_state = dict(
+            getattr(self._fsm, "_symbol_brackets", {}).get(symbol_key) or {}
+        )
+        sl_order_id = str(bracket_state.get("sl_order_id") or "").strip()
+        tp_order_id = str(bracket_state.get("tp_order_id") or "").strip()
+        if not sl_order_id or not tp_order_id:
+            return False
+
+        guardian = getattr(self._fsm, "order_guardian", None)
+        get_open_brackets = getattr(guardian, "get_our_open_brackets", None)
+        if get_open_brackets is None:
+            return False
+
+        try:
+            open_brackets = await get_open_brackets(symbol_key)
+        except Exception as exc:
+            LOG.debug(
+                "[LIMIT-DEFERRED] live bracket overlap check failed for %s: %s",
+                symbol_key,
+                exc,
+            )
+            return False
+
+        open_order_ids = {
+            str(order.get("orderId") or "").strip()
+            for order in open_brackets
+            if isinstance(order, dict) and str(order.get("orderId") or "").strip()
+        }
+        if sl_order_id not in open_order_ids or tp_order_id not in open_order_ids:
+            return False
+
+        LOG.info(
+            "📌 [LIMIT-DEFERRED] Existing live brackets already protect %s, suppressing duplicate placement (SL=%s TP=%s)",
+            symbol_key,
+            sl_order_id,
+            tp_order_id,
+        )
+        return True
+
     async def place_brackets_parallel(
         self,
         *,
@@ -371,7 +426,7 @@ class BracketManager:
 
     async def place_deferred_brackets(
         self, entry_order_id: str, bracket_data: Dict[str, Any]
-    ) -> None:
+    ) -> bool:
         """Place TP/SL after a deferred LIMIT entry fill is confirmed."""
         from apps.reference.adapters.binance_adapter import BinanceAPIError
 
@@ -395,12 +450,21 @@ class BracketManager:
         if not await self.preflight_position_check(symbol):
             LOG.warning(
                 f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets")
-            return
+            return False
 
         if not await self._fsm.order_guardian.should_place_brackets(symbol, entry_order_id):
             LOG.warning(
                 f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}")
-            return
+            return False
+
+        if await self._has_live_synced_brackets(symbol):
+            self._fsm._clear_pending_brackets(
+                entry_order_id,
+                reason="filled",
+                symbol=symbol,
+                persist_snapshot=True,
+            )
+            return True
 
         sl_side = opposite_side(side)
         sl_id = generate_client_order_id(
@@ -620,9 +684,19 @@ class BracketManager:
                 lifecycle_active=lifecycle_active,
             )
 
+        placement_success = bool(sl_resp and tp_resp)
+        if placement_success:
+            self._fsm._clear_pending_brackets(
+                entry_order_id,
+                reason="filled",
+                symbol=symbol,
+                persist_snapshot=True,
+            )
+
         LOG.info(
             f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
             f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}")
+        return placement_success
 
     async def preflight_position_check(self, symbol: str) -> bool:
         """Confirm that the exchange exposes a non-zero position before TP/SL placement.

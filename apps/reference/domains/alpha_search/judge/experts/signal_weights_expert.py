@@ -72,7 +72,9 @@ class SignalWeightsExpert(AlphaModel):
         # Compute weighted centered score
         score_raw = 0.0
         wabs_total = 0.0
+        active_feature_count = 0
         contributions: List[str] = []
+        features_used: List[str] = []
 
         for feat, w in weights.items():
             if w == 0:
@@ -85,11 +87,21 @@ class SignalWeightsExpert(AlphaModel):
             contrib = w * centered
             score_raw += contrib
             wabs_total += abs(w)
+            active_feature_count += 1
+            features_used.append(feat)
             contributions.append(f"{feat}: w={w:.3f} c={centered:.4f} → {contrib:.4f}")
 
         # Fail-closed: all weights zero or no active features
         if wabs_total == 0:
             return self._unknown_score(symbol, ["NRR-ALL-WEIGHTS-ZERO"])
+        if active_feature_count < cfg.min_active_features:
+            return self._unknown_score(
+                symbol,
+                [
+                    "NRR-INSUFFICIENT-ACTIVE-FEATURES:"
+                    f"{active_feature_count}/{cfg.min_active_features}"
+                ],
+            )
 
         score = score_raw / wabs_total
 
@@ -116,7 +128,7 @@ class SignalWeightsExpert(AlphaModel):
             symbol=symbol,
             score=Decimal(str(round(clamped_score, 8))),
             confidence=Decimal(str(round(confidence, 8))),
-            features_used=[f for f in weights if weights[f] != 0 and f in features],
+            features_used=features_used,
             why=reasoning,
         )
 

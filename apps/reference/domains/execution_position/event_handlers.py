@@ -320,10 +320,13 @@ class EPEventHandlers:
                             # PHASE 3: Get accumulated fees before write (used in two keys)
                             _pos_fees = self._fsm._accumulated_fees_by_symbol.get(
                                 sym, 0.0)
-                            _trade_id = self._fsm._last_trade_id_by_symbol.get(sym, "")
-                            _entry_side = self._fsm._last_entry_side_by_symbol.get(sym, "N/A")
+                            _trade_id = self._fsm._last_trade_id_by_symbol.get(
+                                sym, "")
+                            _entry_side = self._fsm._last_entry_side_by_symbol.get(
+                                sym, "N/A")
                             _close_ts_ms = int(closed_at * 1000)
-                            _entry_regime_epoch_ref = _pos_close_regime.get("regime_epoch_ref")
+                            _entry_regime_epoch_ref = _pos_close_regime.get(
+                                "regime_epoch_ref")
                             _get_order_logger().write({
                                 "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
                                 "event_type": "POSITION_CLOSED",
@@ -362,7 +365,8 @@ class EPEventHandlers:
                                         "realized_pnl": pos_pnl,
                                     },
                                     why="position_closed_detected",
-                                    rid=str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{_close_ts_ms}",
+                                    rid=str(rid_for_sym) if 'rid_for_sym' in locals(
+                                    ) and rid_for_sym else f"position_close:{sym}:{_close_ts_ms}",
                                 )
                         except Exception as e:
                             LOG.error(
@@ -520,7 +524,6 @@ class EPEventHandlers:
     def on_order_fill(self, event: "Message") -> None:
         """Handle adapter or canonical internal fill bookkeeping."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
-        from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_cleared
 
         payload = event.pld or {}
         skip_trade_lifecycle_log = bool(
@@ -813,32 +816,33 @@ class EPEventHandlers:
                 hold.get("notional_source"),
             )
 
-        # LIMIT-ENTRY-DEFERRED-BRACKETS: Place brackets on fill
-        if order_id in self._fsm._pending_brackets:
-            bracket_data = self._fsm._pending_brackets.pop(order_id)
-            try:
-                write_pending_brackets_cleared(
-                    entry_order_id=order_id,
-                    reason="filled",
-                    symbol=bracket_data.get("symbol", ""),
+        # LIMIT-ENTRY-DEFERRED-BRACKETS: keep pending truth until confirmed
+        # protective placement succeeds.
+        bracket_data = self._fsm._pending_brackets.get(order_id)
+        if isinstance(bracket_data, dict):
+            if _fill_status == "PARTIALLY_FILLED":
+                LOG.info(
+                    f"📌 [LIMIT-DEFERRED] Partial fill received for {symbol} entry {order_id}, "
+                    f"keeping deferred TP/SL pending until terminal fill"
                 )
-            except Exception as e:
-                LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
-            LOG.info(
-                f"📌 [LIMIT-DEFERRED] Fill received for {symbol} entry {order_id}, "
-                f"placing deferred TP/SL brackets"
-            )
-            loop = self._fsm._get_async_loop()
-            if loop:
-                self._fsm._submit_async(
-                    self._fsm._bracket_mgr.place_deferred_brackets(
-                        order_id, bracket_data),
-                    loop
+            else:
+                LOG.info(
+                    f"📌 [LIMIT-DEFERRED] Fill received for {symbol} entry {order_id}, "
+                    f"attempting deferred TP/SL placement"
                 )
-            self._fsm._persist_restore_artifact_snapshot(
-                trigger="bracket_deferred_cleared:filled",
-                allow_empty=True,
-            )
+                loop = self._fsm._get_async_loop()
+                if loop:
+                    self._fsm._submit_async(
+                        self._fsm._bracket_mgr.place_deferred_brackets(
+                            order_id, dict(bracket_data)),
+                        loop
+                    )
+                else:
+                    LOG.warning(
+                        "[LIMIT-DEFERRED] No async loop for %s entry %s; pending brackets kept",
+                        symbol,
+                        order_id,
+                    )
 
         # Best-effort cleanup of orphaned brackets
         loop = self._fsm._get_async_loop()

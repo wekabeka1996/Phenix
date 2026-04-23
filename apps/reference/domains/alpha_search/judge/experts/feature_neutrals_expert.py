@@ -34,10 +34,13 @@ def _weighted_centered_score(
 ) -> tuple:
     """Compute weighted centered score for a subset of features.
 
-    Returns (score, wabs, contributions, deferred_feature_or_None).
+    Returns (score, wabs, active_count, features_used, contributions,
+    deferred_feature_or_None).
     """
     score_raw = 0.0
     wabs_total = 0.0
+    active_count = 0
+    features_used: List[str] = []
     contributions: List[str] = []
 
     for feat, w in weights.items():
@@ -45,7 +48,7 @@ def _weighted_centered_score(
             continue
         if feat not in features or features[feat] is None:
             if feat in essential:
-                return 0.0, 0.0, [], feat
+                return 0.0, 0.0, 0, [], [], feat
             continue
         x = float(features[feat])
         n = float(neutrals.get(feat, 0.0))
@@ -53,12 +56,21 @@ def _weighted_centered_score(
         contrib = w * centered
         score_raw += contrib
         wabs_total += abs(w)
+        active_count += 1
+        features_used.append(feat)
         contributions.append(f"{feat}: w={w:.3f} c={centered:.4f} → {contrib:.4f}")
 
     if wabs_total == 0:
-        return 0.0, 0.0, contributions, None
+        return 0.0, 0.0, active_count, features_used, contributions, None
 
-    return score_raw / wabs_total, wabs_total, contributions, None
+    return (
+        score_raw / wabs_total,
+        wabs_total,
+        active_count,
+        features_used,
+        contributions,
+        None,
+    )
 
 
 class FeatureNeutralsExpert(AlphaModel):
@@ -116,7 +128,14 @@ class FeatureNeutralsExpert(AlphaModel):
 
         # Compute directional score
         dir_essential = essential & dir_set
-        dir_score, dir_wabs, dir_contribs, deferred = _weighted_centered_score(
+        (
+            dir_score,
+            dir_wabs,
+            dir_active_count,
+            dir_features_used,
+            dir_contribs,
+            deferred,
+        ) = _weighted_centered_score(
             features, w_dir, neutrals, dir_essential
         )
         if deferred:
@@ -124,12 +143,27 @@ class FeatureNeutralsExpert(AlphaModel):
 
         if dir_wabs == 0:
             return self._unknown_score(symbol, ["NRR-ALL-DIR-WEIGHTS-ZERO"])
+        if dir_active_count < cfg.min_active_directional_features:
+            return self._unknown_score(
+                symbol,
+                [
+                    "NRR-INSUFFICIENT-DIRECTIONAL-FEATURES:"
+                    f"{dir_active_count}/{cfg.min_active_directional_features}"
+                ],
+            )
 
         reasoning.append(f"dir_score={dir_score:.4f}")
         reasoning.extend([f"[dir] {c}" for c in dir_contribs])
 
         # Compute strength score (no essential requirement for strength)
-        str_score, str_wabs, str_contribs, _ = _weighted_centered_score(
+        (
+            str_score,
+            str_wabs,
+            _str_active_count,
+            str_features_used,
+            str_contribs,
+            _,
+        ) = _weighted_centered_score(
             features, w_str, neutrals, set()
         )
         strength_clamped = max(0.0, min(str_score, cfg.strength_cap))
@@ -166,8 +200,10 @@ class FeatureNeutralsExpert(AlphaModel):
         confidence = min(1.0, abs(final))
         clamped_score = max(-1.0, min(1.0, final))
 
-        all_used = [
-            f for f in weights if weights[f] != 0 and f in features
+        all_used = dir_features_used + [
+            feature
+            for feature in str_features_used
+            if feature not in dir_features_used
         ]
 
         return AlphaScore(

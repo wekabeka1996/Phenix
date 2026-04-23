@@ -179,6 +179,23 @@ class TestFeatureNeutralsFailClosed:
         s_flat = expert_flat.calculate_alpha("BTCUSDT", {}, features)
         assert abs(float(score.score) - float(s_flat.score)) < 1e-6
 
+    def test_insufficient_directional_features_returns_unknown(self):
+        expert = _make_expert(
+            min_active_directional_features=3,
+            essential_features=["obi"],
+        )
+        features = {
+            "obi": 0.5,
+            "delta_price": None,
+            "tfi": None,
+            "ema_bias": 0.6,
+            "volume_spike": 0.1,
+            "volatility_state": 0.2,
+        }
+        score = expert.calculate_alpha("BTCUSDT", {}, features)
+        assert float(score.confidence) == 0.0
+        assert "NRR-INSUFFICIENT-DIRECTIONAL-FEATURES:2/3" in score.why
+
 
 class TestFeatureNeutralsMetadata:
     def test_model_name(self):
