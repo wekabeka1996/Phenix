@@ -3,8 +3,8 @@ import time
 from vfoundation.core.fsm_core import FSMCore
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 
 

@@ -17,18 +17,18 @@ from __future__ import annotations
 import decimal
 import pytest
 
-from apps.reference.domains.decision_making.aurora_math import (
+from apps.reference.shared.decision_primitives.aurora_math import (
     apply_shield_attenuation,
     compute_aurora_math,
     AuroraMathInput,
 )
-from apps.reference.domains.decision_making.aurora_policy import (
+from apps.reference.shared.decision_primitives.aurora_policy import (
     AuroraPolicyInput,
     SideBiasState,
     apply_aurora_policy,
     compute_side_bias_multipliers,
 )
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
 )
 

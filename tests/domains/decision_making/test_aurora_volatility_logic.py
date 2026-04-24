@@ -36,7 +36,7 @@ class TestVolatilityEntryLogic:
         import sys
         sys.path.insert(0, '/home/wekabeka/Музыка/Phenix')
 
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = SimpleNamespace(
             basis_tf_sec=300,

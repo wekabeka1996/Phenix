@@ -5,8 +5,8 @@ from collections import deque
 from typing import Any, Deque, Dict, Iterable
 
 from apps.reference.config_models import AuroraConfig
-from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
-from apps.reference.domains.decision_making.position_queries import PositionQueries
+from apps.reference.shared.decision_primitives.entry_plan import EntryPlanResult
+from apps.reference.domains.decision_making.primitives.position_queries import PositionQueries
 from apps.reference.domains.objective_engine.types import (
     ObjectiveBehaviorInput,
     ObjectiveExecutionInput,

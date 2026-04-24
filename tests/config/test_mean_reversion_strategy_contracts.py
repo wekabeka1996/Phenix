@@ -441,7 +441,7 @@ def test_assigned_mean_reversion_config_loads_extracted_contract(tmp_path: Path)
 
 def test_mean_reversion_runtime_import_smoke() -> None:
     handler_mod = importlib.import_module(
-        "apps.reference.domains.decision_making.mean_reversion_handler"
+        "apps.reference.domains.strategies.runtimes.mean_reversion.handler"
     )
     plugin_mod = importlib.import_module(
         "apps.reference.domains.strategies.plugins.mean_reversion"

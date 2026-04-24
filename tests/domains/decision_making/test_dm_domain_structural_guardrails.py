@@ -19,6 +19,8 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DM_DIR = PROJECT_ROOT / "apps" / "reference" / "domains" / "decision_making"
+RETIRED_HANDLER_VERB = "_".join(["HANDLER", "READINESS", "DIAGNOSTICS"])
+RETIRED_HANDLER_EVENT = f"EVT:{RETIRED_HANDLER_VERB}"
 
 
 class TestNoPycacheGhosts:
@@ -59,7 +61,7 @@ class TestWhyCodeReExport:
 
     def test_whycode_identity(self):
         from vfoundation.core.why_codes import WhyCode as Canonical
-        from apps.reference.domains.decision_making.why_codes import WhyCode as DM
+        from apps.reference.domains.decision_making.contracts.why_codes import WhyCode as DM
         assert DM is Canonical
 
 
@@ -113,9 +115,10 @@ class TestNoDeletedModuleImports:
 class TestDomainDictConsistency:
     """Guard: domain_dict.json matches live domain state."""
 
+    DOMAIN_DICT_PATH = DM_DIR / "contracts" / "domain_dict.json"
+
     def test_domain_dict_version_matches_init(self):
-        dd = json.loads(
-            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd = json.loads(self.DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
         init_src = (DM_DIR / "__init__.py").read_text(encoding="utf-8")
         # Extract __version__ from init
         for line in init_src.splitlines():
@@ -129,8 +132,7 @@ class TestDomainDictConsistency:
         )
 
     def test_domain_dict_has_ssot_notes(self):
-        dd = json.loads(
-            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd = json.loads(self.DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
         assert "ssot_notes" in dd, "domain_dict.json must have ssot_notes section"
         assert "why_codes" in dd["ssot_notes"]
         assert "nrr" in dd["ssot_notes"]
@@ -149,30 +151,27 @@ class TestDomainDictConsistency:
             and e.get("status") != "deprecated"
         }
 
-        dd = json.loads(
-            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd = json.loads(self.DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
         dd_exports = {e["event_name"] for e in dd.get("exports", [])}
 
-        # At minimum, the high-traffic exports must be present
-        critical = {"EVT:TRADE_INTENT_PROPOSED",
-                    "EVT:STRATEGY_SIGNAL_PRODUCED"}
+        # DM must keep exporting its own core intent contract after the Package 3 split.
+        critical = {"EVT:TRADE_INTENT_PROPOSED"}
         missing_critical = critical - dd_exports
         assert not missing_critical, (
             f"Critical DM exports missing from domain_dict: {missing_critical}"
         )
 
     def test_domain_dict_does_not_export_retired_handler_readiness_diagnostics(self):
-        dd = json.loads(
-            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+        dd = json.loads(self.DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
         dd_exports = {e["event_name"] for e in dd.get("exports", [])}
 
-        assert "EVT:HANDLER_READINESS_DIAGNOSTICS" not in dd_exports, (
-            "Retired HANDLER_READINESS_DIAGNOSTICS must not remain in decision_making domain_dict exports"
+        assert RETIRED_HANDLER_EVENT not in dd_exports, (
+            "Retired handler-readiness event must not remain in decision_making domain_dict exports"
         )
 
     def test_domain_dict_exports_split_alpha_telemetry_verb_only(self):
         dd = json.loads(
-            (DM_DIR / "domain_dict.json").read_text(encoding="utf-8"))
+            self.DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
         dd_exports = {e["event_name"] for e in dd.get("exports", [])}
 
         assert "EVT:ALPHA_SCORES_AGGREGATED" in dd_exports, (
@@ -191,11 +190,11 @@ class TestDomainDictConsistency:
         hits = []
         for path in sorted(app_files):
             text = path.read_text(encoding="utf-8")
-            if "HANDLER_READINESS_DIAGNOSTICS" in text:
+            if RETIRED_HANDLER_VERB in text:
                 hits.append(str(path.relative_to(PROJECT_ROOT)))
 
         assert not hits, (
-            "Retired HANDLER_READINESS_DIAGNOSTICS must not remain in apps/reference surfaces: "
+            "Retired handler-readiness event must not remain in apps/reference surfaces: "
             f"{hits}"
         )
 

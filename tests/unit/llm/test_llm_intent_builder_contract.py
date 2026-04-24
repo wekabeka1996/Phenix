@@ -62,7 +62,7 @@ def _make_config_for_builder(
 
 def _make_builder(config) -> tuple:
     """Create IntentBuilder with minimal mock dependencies + capture reject calls."""
-    from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+    from apps.reference.domains.decision_making.intent.builder import IntentBuilder
     from apps.reference.core.time.clock import LiveClock
 
     rejected = []

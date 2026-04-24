@@ -13,7 +13,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     make_strategy_restore_snapshot,
 )
 from apps.reference.contracts.runtime_readiness import make_permissions
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 from vfoundation.core.protocol import Message
 
 _TS = 1_700_000_000_000

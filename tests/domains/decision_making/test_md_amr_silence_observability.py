@@ -15,7 +15,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
 from apps.reference.contracts.strategy_compatibility_matrix import (
     build_active_strategy_compatibility_profiles,
 )
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 from apps.reference.domains.feature_engineering.md_amr_strategy import (
     MDAMRSignal,
     MDAMRStrategyV11,
@@ -440,43 +440,43 @@ def test_md_amr_objective_multiplier_keeps_payload_and_trace_aligned() -> None:
             },
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_market_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_market_input",
             return_value=SimpleNamespace(spread_bps=1.0),
         ) as build_market_input_mock,
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.compute_readiness_completeness",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.compute_readiness_completeness",
             return_value=1.0,
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_signal_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_signal_input",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_structure_input_from_prices",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_structure_input_from_prices",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.compute_projected_order_notional",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.compute_projected_order_notional",
             return_value=100.0,
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_exposure_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_exposure_input",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_behavior_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_behavior_input",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_execution_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_execution_input",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_objective_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_objective_input",
             return_value=SimpleNamespace(),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective",
             return_value=mock_obj_score,
         ),
     ):
@@ -572,11 +572,11 @@ def test_md_amr_objective_missing_tpsl_fails_closed_before_evaluator() -> None:
         ),
         patch.object(MDAMRHandler, "_compute_tpsl", return_value=None),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective_gate",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective_gate",
             side_effect=AssertionError("evaluator must not run"),
         ),
         patch(
-            "apps.reference.domains.decision_making.md_amr_handler.inc_decision_blocked"
+            "apps.reference.domains.strategies.runtimes.md_amr.handler.inc_decision_blocked"
         ) as blocked_metric,
     ):
         handler._on_process_strategy(

@@ -17,7 +17,7 @@ from unittest.mock import Mock, MagicMock, patch
 import jsonschema
 
 # EP-01.2-INT imports
-from apps.reference.domains.decision_making.entry_plan import (
+from apps.reference.shared.decision_primitives.entry_plan import (
     EntryPlan,
     EntryPlanParams,
     EntryPlanResult,
@@ -358,7 +358,7 @@ class TestAuroraHandlerPropagation:
     def test_emit_signal_includes_volatility_liquidity(self):
         """_emit_signal should include volatility and liquidity in payload."""
         import inspect
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         # Check _emit_signal source code for volatility/liquidity
         source = inspect.getsource(AuroraHandler._emit_signal)
@@ -381,11 +381,11 @@ class TestTradeIntentSchema:
     @pytest.fixture
     def schema(self):
         schema_path = Path(__file__).parent.parent.parent / \
-            "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
+            "apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json"
         if not schema_path.exists():
             # Try relative path from workspace root
             schema_path = Path(
-                "/home/wekabeka/Музыка/Phenix/apps/reference/domains/decision_making/schemas/trade_intent_v1.json")
+                "/home/wekabeka/Музыка/Phenix/apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json")
 
         with open(schema_path) as f:
             return json.load(f)

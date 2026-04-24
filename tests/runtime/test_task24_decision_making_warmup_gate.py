@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 
 def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     blocks: list[tuple[str, str]] = []
 
@@ -14,7 +14,7 @@ def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
         blocks.append((domain, reason))
 
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
+        "apps.reference.domains.decision_making.gates.readiness_gates.inc_warmup_block",
         _fake_inc_warmup_block,
     )
 
@@ -53,7 +53,7 @@ def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
 
 
 def test_decision_making_reduce_only_bypasses_warmup_gate(monkeypatch):
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     called = {"n": 0}
 
@@ -61,7 +61,7 @@ def test_decision_making_reduce_only_bypasses_warmup_gate(monkeypatch):
         called["n"] += 1
 
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
+        "apps.reference.domains.decision_making.gates.readiness_gates.inc_warmup_block",
         _fake_inc_warmup_block,
     )
 

@@ -467,7 +467,7 @@ def test_current_aurora_config_loads_md_amr_extraction_contract() -> None:
 
 def test_md_amr_runtime_import_smoke() -> None:
     handler_mod = importlib.import_module(
-        "apps.reference.domains.decision_making.md_amr_handler"
+        "apps.reference.domains.strategies.runtimes.md_amr.handler"
     )
     plugin_mod = importlib.import_module(
         "apps.reference.domains.strategies.plugins.md_amr"

@@ -28,27 +28,27 @@ class TestNRRCodesExist:
     """ORDER-POLICY-01 NRR codes must be defined."""
     
     def test_order_type_missing_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.ORDER_TYPE_MISSING == "NRR-047"
     
     def test_unsupported_order_type_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.UNSUPPORTED_ORDER_TYPE == "NRR-048"
     
     def test_unsupported_tif_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.UNSUPPORTED_TIF == "NRR-049"
     
     def test_limit_price_missing_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.LIMIT_PRICE_MISSING == "NRR-050"
     
     def test_market_price_present_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.MARKET_PRICE_PRESENT == "NRR-051"
     
     def test_tif_required_for_limit_code(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         assert NormalizedRejectReasons.TIF_REQUIRED_FOR_LIMIT == "NRR-052"
 
 
@@ -244,7 +244,7 @@ class TestTradeIntentSchema:
         import json
         from pathlib import Path
         
-        schema_path = Path("apps/reference/domains/decision_making/schemas/trade_intent_v1.json")
+        schema_path = Path("apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json")
         with open(schema_path) as f:
             schema = json.load(f)
         
@@ -257,7 +257,7 @@ class TestTradeIntentSchema:
         import json
         from pathlib import Path
         
-        schema_path = Path("apps/reference/domains/decision_making/schemas/trade_intent_v1.json")
+        schema_path = Path("apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json")
         with open(schema_path) as f:
             schema = json.load(f)
         

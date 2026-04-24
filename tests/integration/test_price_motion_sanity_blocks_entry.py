@@ -33,7 +33,7 @@ class FakeFSM:
 
 
 def _mk_dm():
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     fsm = FakeFSM()
     opened = []

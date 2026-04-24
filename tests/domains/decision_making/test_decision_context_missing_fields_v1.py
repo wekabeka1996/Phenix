@@ -2,7 +2,7 @@ from decimal import Decimal
 
 
 def test_decision_context_tracks_missing_required_fields():
-    from apps.reference.domains.decision_making.decision_context import DecisionContext
+    from apps.reference.domains.decision_making.core.context import DecisionContext
 
     ctx = DecisionContext(symbol="BTCUSDT", ts=1, features={})
 
@@ -22,7 +22,7 @@ def test_decision_context_tracks_missing_required_fields():
 
 
 def test_decision_context_tracks_invalid_fields_and_uses_defaults():
-    from apps.reference.domains.decision_making.decision_context import DecisionContext
+    from apps.reference.domains.decision_making.core.context import DecisionContext
 
     ctx = DecisionContext(
         symbol="BTCUSDT",

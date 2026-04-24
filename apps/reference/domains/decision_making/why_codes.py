@@ -1,18 +1,15 @@
-"""Compatibility re-export for canonical WHY code helpers.
+"""Backward-compat shim for apps.reference.domains.decision_making.why_codes.
 
-This module is intentionally logic-free. The canonical source of truth is
-vfoundation.core.why_codes, and contract tests assert that the objects exposed
-here remain identical to the canonical WhyCode class and helper functions.
-
-Keep this shim only for older relative or domain-local imports; new code should
-import directly from vfoundation.core.why_codes.
+Deprecation window: one release from 2026-04-24 Package 2.
 """
 
-# Re-export the canonical objects without wrapping them so existing imports keep
-# object identity and do not fork the enum surface.
-from vfoundation.core.why_codes import (  # noqa: F401
-    WhyCode,
-    get_why_description,
-    format_why_with_details,
-    create_why_payload,
+import warnings
+
+warnings.warn(
+    "apps.reference.domains.decision_making.why_codes is moved to apps.reference.domains.decision_making.contracts.why_codes",
+    DeprecationWarning,
+    stacklevel=2,
 )
+
+from apps.reference.domains.decision_making.contracts.why_codes import *  # noqa: F401,F403
+from apps.reference.domains.decision_making.contracts.why_codes import WhyCode  # noqa: F401

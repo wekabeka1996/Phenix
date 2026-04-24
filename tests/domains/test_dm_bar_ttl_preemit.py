@@ -72,7 +72,7 @@ class TestFeaturesReadyBarTTL:
         }
         
         # Import and call the actual method
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
         result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is True, (
@@ -113,7 +113,7 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
         result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (
@@ -148,7 +148,7 @@ class TestFeaturesReadyBarTTL:
             "tf_sec": 0,  # TICK
         }
         
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
         result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (
@@ -183,7 +183,7 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
         result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is True, (
@@ -217,7 +217,7 @@ class TestFeaturesReadyBarTTL:
             "bar_close_ts": bar_close_ts,
         }
         
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
         result = ReadinessGates.features_ready(dm, "SOLUSDT", features_data)
         
         assert result is False, (

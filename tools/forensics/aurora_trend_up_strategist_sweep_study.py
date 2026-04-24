@@ -30,8 +30,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config_models import OperationalMode
-from apps.reference.domains.decision_making.operational_mode import ModeManager
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
     SideBiasState,
 )

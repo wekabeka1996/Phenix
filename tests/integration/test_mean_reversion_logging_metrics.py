@@ -14,7 +14,7 @@ from apps.reference.config_models import (
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
 )
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
 
 class _Bus:

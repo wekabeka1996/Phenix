@@ -2,7 +2,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from apps.reference.core.time.clock import MockClock
-from apps.reference.domains.decision_making.intent_emitter import IntentEmitter
+from apps.reference.domains.decision_making.intent.emitter import IntentEmitter
 
 
 def _emitter(portfolio):

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 
 class SplitClock:

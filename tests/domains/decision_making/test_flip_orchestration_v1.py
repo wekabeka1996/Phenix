@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 class _Bus:
@@ -129,7 +129,7 @@ def _mk_cfg(*, symbol: str, position_mode: str, stale_ttl_sec: int = 15):
 def _mk_dm(*, symbol: str, position_mode: str, stale_ttl_sec: int = 15) -> tuple[DecisionMaking, _Bus]:
     bus = _Bus()
     cfg = _mk_cfg(symbol=symbol, position_mode=position_mode, stale_ttl_sec=stale_ttl_sec)
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
     return dm, bus

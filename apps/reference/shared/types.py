@@ -22,11 +22,19 @@ from apps.reference.domains.feature_engineering.bar_resampler import Bar
 # ── NormalizedRejectReasons ──────────────────────────────────────────
 # Home: decision_making/normalized_reject_reasons.py
 # Consumers: execution_position
-from apps.reference.domains.decision_making.normalized_reject_reasons import (
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
     NormalizedRejectReasons,
+    TRADE_INTENT_REJECTED_CANONICAL_KEYS,
+    build_trade_intent_rejected_message,
+    normalize_trade_intent_rejected_payload,
+    stringify_trade_intent_rejected_value,
 )
 
 __all__ = [
     "Bar",
     "NormalizedRejectReasons",
+    "TRADE_INTENT_REJECTED_CANONICAL_KEYS",
+    "build_trade_intent_rejected_message",
+    "normalize_trade_intent_rejected_payload",
+    "stringify_trade_intent_rejected_value",
 ]

@@ -2,7 +2,7 @@ import unittest
 import pytest
 from unittest.mock import MagicMock
 from types import SimpleNamespace
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.config_models import create_aurora_config
 from tests.conftest import make_app_cfg_stub
 

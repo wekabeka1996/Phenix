@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from decimal import Decimal
 from typing import Dict, Any
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 from apps.reference.contracts.strategy_compatibility_matrix import StrategyCompatibilityProfile
 
 

@@ -32,5 +32,5 @@ class TestSharedNRR:
 
     def test_nrr_identity(self) -> None:
         from apps.reference.shared.types import NormalizedRejectReasons as SharedNRR
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons as OrigNRR
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons as OrigNRR
         assert SharedNRR is OrigNRR

@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

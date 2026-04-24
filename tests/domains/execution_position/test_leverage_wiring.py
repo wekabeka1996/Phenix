@@ -57,7 +57,7 @@ class TestLeverageServiceWiring:
     def _make_mock_leverage_service(self, verify_result_ok: bool = True):
         """Create mock LeverageService."""
         from apps.reference.domains.execution_position.leverage_service import VerifyResult
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         service = MagicMock()
         

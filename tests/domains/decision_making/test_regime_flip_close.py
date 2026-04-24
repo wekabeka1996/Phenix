@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.reference.config_models import create_aurora_config
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 def _to_dict(obj):
@@ -144,7 +144,7 @@ def test_regime_flip_short_in_trend_up_emits_reduce_only_close():
     symbol = "BTCUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
     _bind_registry_owner(dm, symbol)
@@ -193,7 +193,7 @@ def test_regime_flip_long_in_trend_down_emits_reduce_only_close():
     symbol = "ETHUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
     _bind_registry_owner(dm, symbol)
@@ -240,7 +240,7 @@ def test_regime_flip_uncertain_closes_any_position():
     symbol = "SOLUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
     _bind_registry_owner(dm, symbol)
@@ -285,7 +285,7 @@ def test_regime_flip_no_position_does_nothing():
     symbol = "BTCUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
@@ -318,7 +318,7 @@ def test_regime_flip_no_portfolio_does_nothing():
     symbol = "BTCUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
@@ -346,7 +346,7 @@ def test_regime_flip_long_in_bull_trend_does_nothing():
     symbol = "BTCUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +78,8 @@ _COMMON_KWARGS = dict(
 
 @pytest.fixture(autouse=True)
 def _side_effect_sinks():
-    with patch("apps.reference.domains.decision_making.intent_builder.order_logger.write") as mock_order_write, \
-            patch("apps.reference.domains.decision_making.intent_builder.print"):
+    with patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_write, \
+            patch("apps.reference.domains.decision_making.intent.builder.print"):
         yield mock_order_write
 
 
@@ -90,8 +90,8 @@ def _side_effect_sinks():
 class TestIntentBuilderDstRouting:
     """BRIDGE-SUNSET-01: WAL messages must not reference decommissioned bridge."""
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_wal_message_dst_is_execution_position(self, mock_policy, mock_wal):
         """WAL-persisted Message must have dst='execution_position'."""
         mock_policy.return_value = ("LIMIT", "GTC", 10000)
@@ -106,8 +106,8 @@ class TestIntentBuilderDstRouting:
             f"WAL message must target execution_position, got {wal_dict['dst']!r}"
         )
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_wal_message_has_no_bridge_reference(self, mock_policy, mock_wal):
         """No field in the WAL dict should contain 'bridge'."""
         mock_policy.return_value = ("LIMIT", "GTC", 10000)
@@ -123,8 +123,8 @@ class TestIntentBuilderDstRouting:
                     f"WAL field {key!r}={val!r} contains stale 'bridge' token"
                 )
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_fsm_emit_fires_after_wal_write(self, mock_policy, mock_wal):
         """FSM emit must fire after successful WAL write."""
         mock_policy.return_value = ("LIMIT", "GTC", 10000)
@@ -140,8 +140,8 @@ class TestIntentBuilderDstRouting:
         assert len(
             emit_calls) == 1, "FSM must emit exactly one TRADE_INTENT_PROPOSED"
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_wal_src_is_decision_making(self, mock_policy, mock_wal):
         """WAL message src must be 'decision_making'."""
         mock_policy.return_value = ("LIMIT", "GTC", 10000)
@@ -155,8 +155,8 @@ class TestIntentBuilderDstRouting:
         assert wal_dict["op"] == "EVT"
         assert wal_dict["verb"] == "TRADE_INTENT_PROPOSED"
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_emit_failure_keeps_pre_emit_artifacts_and_stops_post_emit_work(
         self,
         mock_policy,
@@ -213,8 +213,8 @@ class TestIntentBuilderDstRouting:
         assert arb_fn.call_count == 1
         _side_effect_sinks.assert_not_called()
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_emit_failure_log_includes_event_rid_and_validation_reason(
         self,
         mock_policy,
@@ -251,8 +251,8 @@ class TestIntentBuilderDstRouting:
         assert "RID=rid-dst-001" in log_line
         assert "Additional properties are not allowed" in log_line
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_builder_propagates_tpsl_owner_context_to_trace_and_intent(
         self,
         mock_policy,

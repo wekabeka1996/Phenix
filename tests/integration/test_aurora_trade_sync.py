@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from vfoundation.core import FSMCore
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 from apps.reference.domains.strategies.plugins.aurora_builtin import _AuroraHandlerWrapper
 
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_task32_decision_making_has_no_hardcoded_mr_imports() -> None:
-    dm_path = Path("apps/reference/domains/decision_making/decision_making.py")
+    dm_path = Path("apps/reference/domains/decision_making/core/facade.py")
     src = dm_path.read_text(encoding="utf-8")
 
     forbidden = [
@@ -14,4 +14,3 @@ def test_task32_decision_making_has_no_hardcoded_mr_imports() -> None:
     ]
     for token in forbidden:
         assert token not in src, f"Found forbidden token {token!r} in {dm_path}"
-

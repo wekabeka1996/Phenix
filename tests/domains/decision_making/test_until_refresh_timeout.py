@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
-from apps.reference.domains.decision_making.gate_protocol import GateContext, GateOutcome
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome
 from apps.reference.domains.decision_making.gates import risk_skew_gate
 from vfoundation.core.protocol import Message
 

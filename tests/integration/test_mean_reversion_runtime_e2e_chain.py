@@ -14,7 +14,7 @@ from apps.reference.config_models import (
     MeanReversion1mStrategyConfig,
     StrategyExecutionConfig,
 )
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 
@@ -218,7 +218,7 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
 
     bus = _Bus()
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
 

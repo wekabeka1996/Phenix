@@ -41,7 +41,7 @@ class _DummyDM:
         # Strategy cooldown overrides (optional)
         self._strategy_cooldown_overrides: dict = {}
 
-        from apps.reference.domains.decision_making.qos_rate_control import QoSRateControl
+        from apps.reference.domains.decision_making.gates.qos_rate_control import QoSRateControl
         self._qos = QoSRateControl(
             clock=self._clock,
             qos_state=self._qos_state,
@@ -69,7 +69,7 @@ class TestQoSPartitionIsolation:
         1. Strategy 'aurora' triggers cooldown for BTCUSDT
         2. Strategy 'mean_reversion' should NOT be blocked for same symbol
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -95,7 +95,7 @@ class TestQoSPartitionIsolation:
         """
         Verify _update_qos_state writes to strategy-specific partition.
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -116,7 +116,7 @@ class TestQoSPartitionIsolation:
         """
         Verify _calculate_next_allowed_time reads from strategy-specific partition.
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -144,7 +144,7 @@ class TestQoSPartitionIsolation:
         """
         Verify rate limit counters are partitioned by strategy_id.
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -174,7 +174,7 @@ class TestQoSPartitionDefaults:
         """
         Verify that accessing a new strategy_id creates a fresh partition.
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -199,8 +199,8 @@ class TestQoSReasonCodes:
 
     def test_cooldown_reason_code(self):
         """Verify cooldown rejection returns correct reason code."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)
@@ -217,8 +217,8 @@ class TestQoSReasonCodes:
 
     def test_rate_limit_reason_code(self):
         """Verify rate limit rejection returns correct reason code."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         clock = MockClock(start_ms=1700000000000)
         dm = _DummyDM(clock)

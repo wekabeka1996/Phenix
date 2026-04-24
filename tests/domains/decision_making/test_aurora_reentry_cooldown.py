@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 from decimal import Decimal
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.aurora_handler import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import (
     AuroraHandler,
     SymbolState,
 )
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
+from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
 
 # Setup logger to suppress noise during tests
 logging.basicConfig(level=logging.ERROR)

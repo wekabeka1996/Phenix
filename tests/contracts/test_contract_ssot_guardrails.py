@@ -27,7 +27,7 @@ class TestWhyCodeSSOT:
         """decision_making.why_codes.WhyCode must be the exact same class as
         vfoundation.core.why_codes.WhyCode (re-export, not a fork)."""
         from vfoundation.core.why_codes import WhyCode as CanonicalWhyCode
-        from apps.reference.domains.decision_making.why_codes import WhyCode as DmWhyCode
+        from apps.reference.domains.decision_making.contracts.why_codes import WhyCode as DmWhyCode
 
         assert DmWhyCode is CanonicalWhyCode, (
             "decision_making WhyCode is NOT the same object as vfoundation WhyCode. "
@@ -41,7 +41,7 @@ class TestWhyCodeSSOT:
             get_why_description as canonical_desc,
             format_why_with_details as canonical_fmt,
         )
-        from apps.reference.domains.decision_making.why_codes import (
+        from apps.reference.domains.decision_making.contracts.why_codes import (
             get_why_description as dm_desc,
             format_why_with_details as dm_fmt,
         )
@@ -97,7 +97,7 @@ class TestNRRSSOT:
 
     def test_shared_types_nrr_is_canonical(self):
         """shared/types.py NRR re-export must be the exact same class."""
-        from apps.reference.domains.decision_making.normalized_reject_reasons import (
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
             NormalizedRejectReasons as CanonicalNRR,
         )
         from apps.reference.shared.types import NormalizedRejectReasons as SharedNRR
@@ -109,7 +109,7 @@ class TestNRRSSOT:
     def test_nrr_codes_follow_format(self):
         """All NRR class-level codes must match NRR-\\d{3} or NRR-CFG-\\d{3}."""
         import re
-        from apps.reference.domains.decision_making.normalized_reject_reasons import (
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
             NormalizedRejectReasons as NRR,
         )
 

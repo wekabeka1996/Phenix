@@ -11,8 +11,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from tests.conftest import make_app_cfg_stub
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
 
 
 class DeterministicClock:

@@ -8,7 +8,7 @@ Tests cover:
 """
 import pytest
 
-from apps.reference.domains.decision_making.shields.context_shield import ContextShield
+from apps.reference.shared.decision_primitives.shields.context_shield import ContextShield
 
 
 # ---------------------------------------------------------------------------

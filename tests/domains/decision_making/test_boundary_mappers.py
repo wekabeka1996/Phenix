@@ -12,17 +12,17 @@ from types import MappingProxyType
 
 import pytest
 
-from apps.reference.domains.decision_making.boundary_mappers import (
+from apps.reference.domains.decision_making.contracts.boundary_mappers import (
     _map_warmup,
     _resolve_confidence,
     map_process_strategy_boundary_to_cmd,
     map_regime_boundary_to_event,
 )
-from apps.reference.domains.decision_making.boundary_models import (
+from apps.reference.domains.decision_making.contracts.boundary_models import (
     ProcessStrategyBoundary,
     RegimeDetectedBoundary,
 )
-from apps.reference.domains.decision_making.core_models import (
+from apps.reference.domains.decision_making.contracts.core_models import (
     ProcessStrategyCmd,
     RegimeEvent,
     WarmupState,

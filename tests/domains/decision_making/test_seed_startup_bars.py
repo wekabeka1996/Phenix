@@ -4,8 +4,8 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 
 def _make_aurora_handler() -> AuroraHandler:

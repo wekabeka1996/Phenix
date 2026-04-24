@@ -152,7 +152,7 @@ class TestBtcusdtAuroraRuntimeFields:
         assert btc_cfg.cooldown_sec == 99
 
         # ── AuroraHandler: prove per-symbol overrides are used ──
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         emitted: list[tuple[str, dict]] = []
 
@@ -271,7 +271,7 @@ class TestBtcusdtAuroraRuntimeFields:
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
 
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         emitted: list[tuple[str, dict]] = []
 
@@ -338,7 +338,7 @@ class TestBtcusdtAuroraRuntimeFields:
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
 
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
         dm = DecisionMaking(fsm=MagicMock(), config=config)
         dm._shared["latest_portfolio"] = {"equity": "1000"}

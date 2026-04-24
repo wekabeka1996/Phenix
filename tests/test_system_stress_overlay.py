@@ -339,7 +339,7 @@ class TestCheckSystemStressGate:
 
     def _call(self, symbol: str, stress_states: Optional[dict], reduce_only: bool = False,
                stress_policy: str = "attenuate"):
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
         return _check_system_stress_gate(
             symbol=symbol,
             reduce_only=reduce_only,
@@ -359,7 +359,7 @@ class TestCheckSystemStressGate:
         assert state == "STRESS"
 
     def test_extreme_denies(self) -> None:
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         out, deny, why, state = self._call("BTCUSDT", {"BTCUSDT": "EXTREME"})
         assert out == "DENY"
         assert deny == NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED
@@ -381,7 +381,7 @@ class TestCheckSystemStressGate:
         assert state == "NORMAL"
 
     def test_disabled_flag_bypasses(self) -> None:
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
         out, deny, why, state = _check_system_stress_gate(
             symbol="BTCUSDT",
             reduce_only=False,
@@ -397,11 +397,11 @@ class TestCheckSystemStressGate:
 class TestSafetyGateResultField:
 
     def test_default_system_stress_state_is_normal(self) -> None:
-        from apps.reference.domains.decision_making.safety_gates import SafetyGateResult
+        from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
         r = SafetyGateResult()
         assert r.system_stress_state == "NORMAL"
 
     def test_field_survives_allow(self) -> None:
-        from apps.reference.domains.decision_making.safety_gates import SafetyGateResult
+        from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
         r = SafetyGateResult(system_stress_state="STRESS")
         assert r.system_stress_state == "STRESS"

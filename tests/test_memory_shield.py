@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.shields.memory_shield import (
+from apps.reference.shared.decision_primitives.shields.memory_shield import (
     MemoryShield,
     _regime_bucket,
     _vol_bucket_atr_pct,

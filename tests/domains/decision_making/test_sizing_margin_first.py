@@ -3,7 +3,7 @@ from decimal import Decimal
 
 
 def test_margin_first_sizing_btc_x80_rounding_and_constraints_ok():
-    from apps.reference.domains.decision_making.sizing_margin_first import (
+    from apps.reference.shared.decision_primitives.sizing_margin_first import (
         compute_notional_target,
         compute_qty,
         validate_exchange_constraints,
@@ -42,7 +42,7 @@ def test_margin_first_sizing_btc_x80_rounding_and_constraints_ok():
 
 
 def test_margin_first_sizing_can_fail_min_notional_due_to_step_floor():
-    from apps.reference.domains.decision_making.sizing_margin_first import (
+    from apps.reference.shared.decision_primitives.sizing_margin_first import (
         compute_notional_target,
         compute_qty,
         validate_exchange_constraints,
@@ -80,7 +80,7 @@ def test_margin_first_sizing_can_fail_min_notional_due_to_step_floor():
 
 
 def test_compute_notional_target_rejects_invalid_inputs():
-    from apps.reference.domains.decision_making.sizing_margin_first import compute_notional_target
+    from apps.reference.shared.decision_primitives.sizing_margin_first import compute_notional_target
 
     with pytest.raises(ValueError):
         compute_notional_target(equity=Decimal(
@@ -98,7 +98,7 @@ def test_compute_notional_target_rejects_invalid_inputs():
 
 @pytest.mark.parametrize("bad_fee_buffer", [Decimal("-0.01"), Decimal("1")])
 def test_margin_first_helpers_reject_invalid_fee_buffer(bad_fee_buffer):
-    from apps.reference.domains.decision_making.sizing_margin_first import (
+    from apps.reference.shared.decision_primitives.sizing_margin_first import (
         compute_exposure_based_qty,
         compute_notional_target,
     )

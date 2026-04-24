@@ -1,6 +1,6 @@
 
 import pytest
-from apps.reference.domains.decision_making.schemas_decision_blocked import DecisionBlockedPayload
+from apps.reference.domains.decision_making.contracts.schemas_decision_blocked import DecisionBlockedPayload
 from pydantic import ValidationError
 
 class TestDecisionBlockedSchema:

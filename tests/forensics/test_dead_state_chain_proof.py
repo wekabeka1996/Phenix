@@ -13,7 +13,7 @@ from apps.reference.bootstrap.startup_hydration_planner import (
     StrategyHydrationPlan,
     StrategyHydrationRequirement,
 )
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 
 def _make_handler() -> AuroraHandler:
@@ -49,7 +49,7 @@ def test_cmd_process_strategy_missing_tf_sec_rejected_and_counter_not_incremente
         rejected.append(kwargs)
 
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.aurora_handler.write_trade_intent_rejected",
+        "apps.reference.domains.strategies.runtimes.aurora.handler.write_trade_intent_rejected",
         _capture_reject,
     )
 
@@ -76,7 +76,7 @@ def test_cmd_process_strategy_missing_bar_close_ts_rejected_and_counter_not_incr
         rejected.append(kwargs)
 
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.aurora_handler.write_trade_intent_rejected",
+        "apps.reference.domains.strategies.runtimes.aurora.handler.write_trade_intent_rejected",
         _capture_reject,
     )
 

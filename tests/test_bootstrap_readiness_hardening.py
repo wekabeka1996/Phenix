@@ -102,7 +102,7 @@ class TestInsufficientBootstrapBlocked:
     """Handlers must report blocked state when bars seen < required."""
 
     def test_aurora_readiness_blocked_when_insufficient(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         handler = object.__new__(AuroraHandler)
         handler.logger = logging.getLogger("tests.aurora.readiness")
@@ -122,7 +122,7 @@ class TestInsufficientBootstrapBlocked:
         assert "BARS_REQUIRED_COLD_START" in diag[0]["block_reason"]
 
     def test_md_amr_readiness_blocked_when_insufficient(self):
-        from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+        from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
         handler = object.__new__(MDAMRHandler)
         handler.mlog = logging.getLogger("tests.md_amr.readiness")
@@ -158,7 +158,7 @@ class TestSuccessfulSeedingReady:
     """After successful seeding, readiness diagnostics should show ready=True."""
 
     def test_aurora_ready_after_full_seed(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         handler = object.__new__(AuroraHandler)
         handler.logger = logging.getLogger("tests.aurora.readiness")
@@ -178,7 +178,7 @@ class TestSuccessfulSeedingReady:
             assert d["block_reason"] is None
 
     def test_md_amr_ready_after_full_seed(self):
-        from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+        from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
         handler = object.__new__(MDAMRHandler)
         handler.mlog = logging.getLogger("tests.md_amr.readiness")
@@ -286,7 +286,7 @@ class TestQuadraticTraceVisibility:
 
     def test_cold_start_gate_logs_at_info_not_debug(self, caplog):
         """BARS_REQUIRED gate must log at INFO level for operator visibility."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         handler = object.__new__(AuroraHandler)
         handler.logger = logging.getLogger("aurora_handler.test_cold_gate")
@@ -314,7 +314,7 @@ class TestMDAMRReadinessDiagnostics:
     """get_readiness_diagnostics() must return structured, complete data."""
 
     def test_diagnostics_structure(self):
-        from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+        from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
         handler = object.__new__(MDAMRHandler)
         handler.mlog = logging.getLogger("tests.md_amr.diag")
@@ -359,7 +359,7 @@ class TestNoColdWithoutExplicitBlocker:
     """Every cold strategy must have a non-None block_reason in diagnostics."""
 
     def test_aurora_cold_has_explicit_block_reason(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         handler = object.__new__(AuroraHandler)
         handler.logger = logging.getLogger("tests.aurora.cold")
@@ -381,7 +381,7 @@ class TestNoColdWithoutExplicitBlocker:
                 assert "BARS_REQUIRED_COLD_START" in d["block_reason"]
 
     def test_md_amr_cold_has_explicit_block_reason(self):
-        from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+        from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
         handler = object.__new__(MDAMRHandler)
         handler.mlog = logging.getLogger("tests.md_amr.cold")

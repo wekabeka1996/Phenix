@@ -16,71 +16,19 @@ QoS rate control, and reject normalization (NRR).
 
 ## File Map
 
-### Core Orchestration
+### Variant B Split Layout
 | File | Purpose |
 |------|---------|
-| `decision_making.py` | Thin facade: FSM event subscriptions, stress/exposure caching |
-| `event_handlers.py` | DMEventHandlers: alpha score computation, ConfigContractError handling |
-| `strategy_gateway.py` | Signal routing, degrade/flip dispatch |
-| `intent_builder.py` | Trade intent construction, safety gates, CAS guard |
-| `intent_emitter.py` | Event emission helpers (deferred, rejected, proposed) |
-| `flip_orchestration.py` | Flip lifecycle (close-then-open) |
-| `readiness_gates.py` | Warmup / readiness pre-checks |
-
-### Strategy Handlers
-| File | Purpose |
-|------|---------|
-| `aurora_handler.py` | Aurora strategy handler (5m bars) |
-| `md_amr_handler.py` | MD-AMR strategy handler (5m bars, adaptive mean reversion) |
-| `mean_reversion_handler.py` | MR strategy handler (1m/3m bars) |
-| `strategy_bridge.py` | **Sanctioned DM-facing re-export facade** for strategy classes hosted in feature_engineering (FE-DM-BOUNDARY-STABILIZATION 2026-03-15) |
-
-### Aurora Subsystem
-| File | Purpose |
-|------|---------|
-| `aurora_decision.py` | Aurora decision logic, quadratic kernel, inception filter |
-| `aurora_config_loader.py` | Aurora YAML config loading |
-| `aurora_scoring_helpers.py` | Side bias, cooldown timer helpers |
-| `aurora_holding_period.py` | Minimum holding period gate |
-| `aurora_tpsl.py` | Take-profit / stop-loss calculation |
-
-### Scoring
-| File | Purpose |
-|------|---------|
-| `quadratic_scoring_kernel.py` | QuadraticScoringKernel, ScoringResult, SideBiasState |
-
-### Gates & Shields
-| File | Purpose |
-|------|---------|
-| `safety_gates.py` | Configurable safety gate pipeline |
-| `execution_gate.py` | Exposure / hard-veto pre-checks |
-| `inception_filter.py` | Regime + confidence eligibility |
-| `shields/` | Base, ContextShield, DangerZone, MemoryShield, NullShield |
-
-### Services & Utilities
-| File | Purpose |
-|------|---------|
-| `normalized_reject_reasons.py` | NRR canonical SSOT (60 codes) |
-| `why_codes.py` | Re-export shim from `vfoundation/core/why_codes.py` |
-| `sizing_margin_first.py` | Margin-first position sizing |
-| `instrument_quantizer.py` | Exchange lot/step size quantization |
-| `decision_context.py` | DecisionContext builder |
-| `deferred_scheduler.py` | QoS retry scheduling |
-| `qos_rate_control.py` | Per-strategy rate limiting |
-| `operational_mode.py` | Mode manager (live/paper) |
-| `position_queries.py` | Portfolio position queries |
-| `config_resolver.py` | Strategy config resolution |
-| `entry_plan.py` | Entry plan builder (Entry/SL/TP, OBI modulation) |
-| `exit_manager.py` | Exit condition evaluation |
-| `regime_smoother.py` | EMA regime multiplier smoother |
-
-### Observability
-| File | Purpose |
-|------|---------|
-| `dm_log_adapter.py` | DecisionLog structured logging |
-| `mean_reversion_logger.py` | MR-specific bar logging |
-| `trade_intent_reject_wal.py` | WAL for rejected intents |
-| `dashboard.py` | Telemetry dashboard snapshot |
+| `core/` | Facade, event handlers, state, config, context, runtime readiness |
+| `gateway/` | Gate protocol, gate chain, strategy gateway |
+| `gates/` | Concrete gate implementations and readiness/rate-control helpers |
+| `intent/` | Intent builder, emitter, flip, reject WAL, truth artifacts, JSON schemas |
+| `primitives/` | DM-local helpers that remain in-tree (`position_queries.py`, `operational_mode.py`) |
+| `contracts/` | NRR, WhyCode shim, Pydantic schemas, boundary/core models, domain dictionary |
+| `observability/` | DecisionLog adapter and dashboard metrics |
+| root shims | Backward-compat re-export shims for moved handlers/primitives and the legacy facade import path |
+| `../strategies/runtimes/` | Physical home of Aurora, Mean Reversion, and MD-AMR runtimes |
+| `../../shared/decision_primitives/` | Physical home of moved shared scoring, entry/exit, sizing, and shield primitives |
 
 ## Event Map
 

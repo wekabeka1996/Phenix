@@ -10,8 +10,8 @@ from unittest import mock
 
 import pytest
 
-from apps.reference.domains.decision_making.shields.base import ShieldResult
-from apps.reference.domains.decision_making.shields.memory_shield import (
+from apps.reference.shared.decision_primitives.shields.base import ShieldResult
+from apps.reference.shared.decision_primitives.shields.memory_shield import (
     MemoryShield,
 )
 

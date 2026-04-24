@@ -11,7 +11,7 @@ from apps.reference.config_models import (
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
 )
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 from tests.conftest import make_mr_signal
 from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignalType
 

@@ -134,10 +134,6 @@
 -   **Призначення:** Записує відхилені наміри у Write-Ahead Log (WAL) та консоль/телеметрію.
 -   **Ключові Символи:** `write_trade_intent_rejected`.
 
-### `deferred_scheduler.py`
--   **Призначення:** Управляє повторами для подій, відкладених через QoS (наприклад, Risk Stale).
--   **Ключові Символи:** `DeferredIntentScheduler`.
-
 ### `schemas/trade_intent_v1.json`
 -   **Призначення:** JSON Schema контракт для `EVT:TRADE_INTENT_PROPOSED`.
 -   **Ключові Особливості:**

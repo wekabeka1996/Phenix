@@ -3,7 +3,7 @@ FE-DM-BOUNDARY-STABILIZATION — guardrail tests.
 
 Enforces:
 - DM production code does NOT import FE strategy files directly
-- strategy_bridge.py facade provides all strategy symbols
+- strategies/runtimes/bridge.py provides all strategy symbols
 - No new strategy-domain .py files added under FE without exemption
 - Bar imports in DM use shared/types.py
 """
@@ -19,6 +19,15 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FE_DIR = PROJECT_ROOT / "apps" / "reference" / "domains" / "feature_engineering"
 DM_DIR = PROJECT_ROOT / "apps" / "reference" / "domains" / "decision_making"
+DM_RUNTIME_DIRS = (
+    DM_DIR / "core",
+    DM_DIR / "gateway",
+    DM_DIR / "gates",
+    DM_DIR / "intent",
+    DM_DIR / "primitives",
+    DM_DIR / "contracts",
+    DM_DIR / "observability",
+)
 
 # Exempted FE .py files that contain strategy logic (known boundary leak).
 # If a new strategy-domain file is added to FE, this test will fail until
@@ -31,10 +40,11 @@ FE_STRATEGY_FILES_EXEMPTION = {
 
 # DM production files (not tests) that must NOT contain direct FE strategy imports.
 DM_PRODUCTION_FILES = [
-    p for p in DM_DIR.glob("*.py")
-    if not p.name.startswith("test_")
-    and p.name != "strategy_bridge.py"  # bridge is the sanctioned facade
-    and p.name != "__pycache__"
+    path
+    for root in DM_RUNTIME_DIRS
+    if root.exists()
+    for path in root.rglob("*.py")
+    if "__pycache__" not in path.parts
 ]
 
 # Forbidden direct FE strategy import prefixes
@@ -43,6 +53,8 @@ FORBIDDEN_FE_STRATEGY_PREFIXES = (
     "apps.reference.domains.feature_engineering.md_amr_strategy",
     "apps.reference.domains.feature_engineering.regime_mapping",
 )
+
+FORBIDDEN_STRATEGY_RUNTIME_PREFIX = "apps.reference.domains.strategies.runtimes"
 
 
 def _extract_imports(filepath: Path) -> list[str]:
@@ -72,8 +84,7 @@ class TestDMProductionNoDirectFEStrategyImports:
                     violations.append(f"{filepath.name}: {imp}")
 
         assert not violations, (
-            f"DM production code imports FE strategy files directly. "
-            f"Use decision_making/strategy_bridge.py instead.\n"
+            f"DM production code imports FE strategy files directly.\n"
             + "\n".join(f"  - {v}" for v in violations)
         )
 
@@ -97,10 +108,10 @@ class TestDMBarImportsUseSharedTypes:
 
 
 class TestStrategyBridgeCompleteness:
-    """Guard: strategy_bridge.py provides all required strategy symbols."""
+    """Guard: runtimes/bridge.py provides all required strategy symbols."""
 
     def test_bridge_exports_mr_strategy(self):
-        from apps.reference.domains.decision_making.strategy_bridge import (
+        from apps.reference.domains.strategies.runtimes.bridge import (
             MeanReversion1mStrategy,
             MRSignal,
             MRSignalType,
@@ -112,7 +123,7 @@ class TestStrategyBridgeCompleteness:
         assert MRSignalType is not None
 
     def test_bridge_exports_mdamr_strategy(self):
-        from apps.reference.domains.decision_making.strategy_bridge import (
+        from apps.reference.domains.strategies.runtimes.bridge import (
             MDAMRStrategyV11,
             MDAMRSignal,
         )
@@ -120,7 +131,7 @@ class TestStrategyBridgeCompleteness:
         assert MDAMRSignal is not None
 
     def test_bridge_exports_regime_mapping(self):
-        from apps.reference.domains.decision_making.strategy_bridge import (
+        from apps.reference.domains.strategies.runtimes.bridge import (
             FlatRegime,
             FlatRegimeThresholds,
             map_to_flat_regime,
@@ -130,6 +141,24 @@ class TestStrategyBridgeCompleteness:
         )
         assert FlatRegime is not None
         assert MRParameters is not None
+
+
+class TestDMProductionNoStrategyRuntimeImports:
+    """Guard: DM runtime tree must not import from strategies.runtimes directly."""
+
+    def test_no_strategy_runtime_imports_in_dm_production(self):
+        violations = []
+        for filepath in DM_PRODUCTION_FILES:
+            imports = _extract_imports(filepath)
+            for imp in imports:
+                if imp.startswith(FORBIDDEN_STRATEGY_RUNTIME_PREFIX):
+                    violations.append(
+                        f"{filepath.relative_to(PROJECT_ROOT).as_posix()}: {imp}")
+
+        assert not violations, (
+            "DM production code imports strategies.runtimes directly.\n"
+            + "\n".join(f"  - {v}" for v in violations)
+        )
 
 
 class TestNoNewStrategyFilesInFE:

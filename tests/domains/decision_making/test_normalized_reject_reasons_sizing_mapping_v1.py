@@ -25,6 +25,6 @@ import pytest
     ],
 )
 def test_normalize_maps_sizing_short_codes(raw_reason: str, expected: str):
-    from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
 
     assert NormalizedRejectReasons.normalize(raw_reason) == expected

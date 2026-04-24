@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal
-from apps.reference.domains.decision_making.operational_mode import ModeManager
+from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
 from apps.reference.config_models import OperationalMode, MemoryShieldConfig
 
 

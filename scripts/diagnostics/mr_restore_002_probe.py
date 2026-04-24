@@ -35,7 +35,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from vfoundation.core.protocol import Message
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
 
 class MiniFSM:

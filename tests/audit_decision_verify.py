@@ -9,7 +9,7 @@ from decimal import Decimal
 # Add root to path
 sys.path.append(os.getcwd())
 
-from apps.reference.domains.decision_making.entry_plan import EntryPlan, EntryPlanParams, ObiMissingPolicy
+from apps.reference.shared.decision_primitives.entry_plan import EntryPlan, EntryPlanParams, ObiMissingPolicy
 
 # ---------------------------------------------------------------------------
 # 1. The "EntryPlan" Crash Test - NOW FIXED by DM-CRITICAL-PATCHES-02

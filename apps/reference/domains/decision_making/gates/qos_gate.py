@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from ..gate_protocol import GateContext, GateOutcome, GateResult
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome, GateResult
 
 GATE_NAME = "qos"
 logger = logging.getLogger("domain_decision_making")

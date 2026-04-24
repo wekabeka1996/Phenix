@@ -2,10 +2,10 @@ import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from apps.reference.domains.decision_making.execution_gate import ExecutionGate
+from apps.reference.domains.decision_making.gates.execution_gate import ExecutionGate
 from apps.reference.config_models import ExecutionGateConfig, StructuralGateConfig, ExecutionGateName
-from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
-from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.shared.decision_primitives.entry_plan import EntryPlanResult
 
 class TestExecutionGate(unittest.TestCase):
     def setUp(self):

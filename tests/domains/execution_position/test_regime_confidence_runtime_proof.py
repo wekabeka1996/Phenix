@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.domains.decision_making.safety_gates import apply_safety_gates as _apply_safety_gates
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
+from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates as _apply_safety_gates
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
@@ -222,7 +222,7 @@ async def test_controlled_runtime_proof_persists_regime_provenance_through_order
         }
 
         with patch(
-            "apps.reference.domains.decision_making.decision_making.apply_safety_gates",
+            "apps.reference.domains.decision_making.core.facade.apply_safety_gates",
             side_effect=_capture_apply_safety_gates,
         ):
             dm._propose_trade_intent(

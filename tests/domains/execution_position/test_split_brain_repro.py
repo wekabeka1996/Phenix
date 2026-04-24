@@ -6,7 +6,7 @@ import pytest
 from vfoundation.core.protocol import Message
 
 from apps.reference.core.time import get_clock
-from apps.reference.domains.decision_making.position_queries import PositionQueries
+from apps.reference.domains.decision_making.primitives.position_queries import PositionQueries
 from apps.reference.domains.execution_position.fsm_manage import ManageState
 from apps.reference.domains.execution_position.order_index import OrderIndex
 from apps.reference.domains.execution_position.order_guardian import (

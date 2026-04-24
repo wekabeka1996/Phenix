@@ -83,7 +83,7 @@ class TestGate1RegimeConfidenceDeny:
     """
 
     def test_regime_confidence_none_causes_deny(self):
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=True,
@@ -120,7 +120,7 @@ class TestGate1RegimeConfidenceDeny:
         )
 
     def test_regime_confidence_below_threshold_causes_deny(self):
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=True,
@@ -155,7 +155,7 @@ class TestGate1RegimeConfidenceDeny:
         Proves AUDIT FINDING: setting safety_gates.enabled=false bypasses Gate 1
         and allows synthetic LLM signals through — the minimal safe fix.
         """
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=False,  # <-- the fix
@@ -200,7 +200,7 @@ class TestGate3PriceMotionDeny:
     """
 
     def test_pm_none_require_bleed_ready_causes_deny(self):
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=True,
@@ -239,7 +239,7 @@ class TestGate3PriceMotionDeny:
 
     def test_pm_gate_disabled_allows(self):
         """Confirms that disabling safety_gates entirely bypasses all gates including Gate 3."""
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=False,
@@ -284,7 +284,7 @@ class TestLLMSafetyGateSummary:
         a synthetic LLM signal for an LLM-only symbol is DENIED at Gate 1.
         This is the root cause identified in the forensic audit.
         """
-        from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+        from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 
         config = _make_config(
             safety_gates_enabled=True,

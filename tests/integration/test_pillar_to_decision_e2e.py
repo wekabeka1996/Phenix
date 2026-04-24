@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 
 def _build_handler():
@@ -41,7 +41,7 @@ def test_cmd_process_strategy_emits_quadratic_signal(monkeypatch):
     handler, emitted = _build_handler()
 
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.aurora_handler.quantize_exposure",
+        "apps.reference.domains.strategies.runtimes.aurora.handler.quantize_exposure",
         lambda **_: SimpleNamespace(
             qty="0.001",
             notional="120.0",

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 @dataclass
@@ -81,7 +81,7 @@ def test_ttl_gate_uses_signal_ts_ms() -> None:
     clock = _MockClock()
 
     with patch(
-        "apps.reference.domains.decision_making.decision_making.DomainConfigResolver"
+        "apps.reference.domains.decision_making.core.facade.DomainConfigResolver"
     ) as mock_resolver:
         mock_resolver.return_value.get_decision_making.return_value = _MockDomainConfig()
 

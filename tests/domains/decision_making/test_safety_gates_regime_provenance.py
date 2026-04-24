@@ -1,4 +1,4 @@
-from apps.reference.domains.decision_making.safety_gates import _extract_regime
+from apps.reference.domains.decision_making.gates.safety_gates import _extract_regime
 
 
 def test_extract_regime_returns_detector_cache_provenance() -> None:

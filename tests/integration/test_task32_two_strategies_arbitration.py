@@ -11,7 +11,7 @@ pytestmark = pytest.mark.skip(
     reason="FIX-MOCK-DM: STRATEGY_SIGNAL_GATEWAY requires full DM config (entry_plan). Mock incomplete."
 )
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 class _Bus:
@@ -148,7 +148,7 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
         strategies_registry=strategies_registry,
     )
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
 

@@ -2,7 +2,7 @@ import pytest
 import ast
 import decimal
 from unittest.mock import MagicMock, patch
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.risk_management.daily_gate import DailyRiskState
 from apps.reference.config_contract import ConfigContractError
@@ -173,7 +173,7 @@ def test_decision_making_contract_missing_sl(mock_fsm):
     config.trading.tca_prefs = {}
     config.trading.risk_budgets = {}
     
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         mock_res_inst = MockResolver.return_value
         dm_cfg = make_app_cfg_stub(
             domains__decision_making__qos__exposure_block_cooldown_sec=0,

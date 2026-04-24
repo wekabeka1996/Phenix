@@ -1,7 +1,7 @@
 import pytest
 import decimal
 from unittest.mock import MagicMock
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, SymbolState
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, SymbolState
 
 class DummyScoringKernel:
     @classmethod

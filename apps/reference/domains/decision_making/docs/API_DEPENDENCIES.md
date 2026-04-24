@@ -184,21 +184,6 @@ order_logger.write({
 })
 ```
 
-### Deferred Intent Scheduler
-
-```python
-from deferred_scheduler import DeferredIntentScheduler
-
-self._deferred_scheduler = DeferredIntentScheduler()
-
-# Schedule one-time retry
-self._deferred_scheduler.schedule_once(
-    symbol,
-    int(cooldown_sec * 1000),
-    retry_callback
-)
-```
-
 ## Data Flow
 
 ### Input Sources

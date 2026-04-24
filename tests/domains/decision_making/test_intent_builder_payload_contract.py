@@ -2,7 +2,7 @@ import decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 
 
 REGIME_PROVENANCE = {
@@ -151,12 +151,12 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
     builder = _make_builder()
 
     with (
-        patch("apps.reference.domains.decision_making.intent_builder.wal.append", return_value="wal-ok") as mock_wal,
-        patch("apps.reference.domains.decision_making.intent_builder.order_logger.write"),
-        patch("apps.reference.domains.decision_making.intent_builder.print"),
-        patch("apps.reference.domains.decision_making.intent_builder.emit_regime_decision_audit"),
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append", return_value="wal-ok") as mock_wal,
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
         patch(
-            "apps.reference.domains.decision_making.intent_builder._trade_lifecycle", None),
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
     ):
         builder.build_and_emit(**_build_kwargs())
 
@@ -213,13 +213,13 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
     builder = _make_builder()
 
     with (
-        patch("apps.reference.domains.decision_making.intent_builder.wal.append",
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
               return_value="wal-ok"),
-        patch("apps.reference.domains.decision_making.intent_builder.order_logger.write"),
-        patch("apps.reference.domains.decision_making.intent_builder.print"),
-        patch("apps.reference.domains.decision_making.intent_builder.emit_regime_decision_audit"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
         patch(
-            "apps.reference.domains.decision_making.intent_builder._trade_lifecycle", None),
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
     ):
         builder.build_and_emit(**_build_kwargs())
 

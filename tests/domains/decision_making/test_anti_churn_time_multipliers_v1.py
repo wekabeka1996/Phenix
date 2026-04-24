@@ -9,7 +9,7 @@ from decimal import Decimal
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 @pytest.fixture
 def mock_config():

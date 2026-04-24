@@ -10,9 +10,9 @@ pytestmark = pytest.mark.skip(
 from vfoundation.core.fsm_core import FSMCore
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 
 def test_regime_detector_subscribed_and_emits_regime_detected() -> None:

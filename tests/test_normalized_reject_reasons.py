@@ -3,7 +3,7 @@ Tests for Normalized Reject Reasons (NRR) module.
 """
 
 import pytest
-from apps.reference.domains.decision_making.normalized_reject_reasons import (
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
     NormalizedRejectReasons,
     TRADE_INTENT_REJECTED_ALLOWED_STAGES,
     TRADE_INTENT_REJECTED_CANONICAL_KEYS,

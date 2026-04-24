@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 def _make_builder():
     """Create a minimal IntentBuilder with all dependencies mocked."""
-    from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+    from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 
     mm = MagicMock()
     builder = IntentBuilder(
@@ -72,7 +72,7 @@ def _capture_order_intent_write(builder) -> dict | None:
     """Run build_and_emit and return the ORDER_INTENT entry written to order_logger."""
     written = []
     with patch(
-        "apps.reference.domains.decision_making.intent_builder.order_logger"
+        "apps.reference.domains.decision_making.intent.builder.order_logger"
     ) as mock_olog:
         mock_olog.write.side_effect = written.append
         sg = _make_sg()

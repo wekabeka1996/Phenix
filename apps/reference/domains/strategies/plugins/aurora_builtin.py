@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
 from apps.reference.config_models import AuroraConfig
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.boundary_models import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.decision_making.contracts.boundary_models import (
     ProcessStrategyBoundary,
     RegimeDetectedBoundary,
 )
-from apps.reference.domains.decision_making.boundary_mappers import (
+from apps.reference.domains.decision_making.contracts.boundary_mappers import (
     map_process_strategy_boundary_to_cmd,
     map_regime_boundary_to_event,
 )

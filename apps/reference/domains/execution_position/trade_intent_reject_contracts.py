@@ -12,7 +12,7 @@ import inspect
 import logging
 from typing import Any, Dict, Mapping, Optional
 
-from apps.reference.domains.decision_making.normalized_reject_reasons import (
+from apps.reference.shared.types import (
     TRADE_INTENT_REJECTED_CANONICAL_KEYS,
     build_trade_intent_rejected_message,
     normalize_trade_intent_rejected_payload,

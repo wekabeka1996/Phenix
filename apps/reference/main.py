@@ -51,7 +51,7 @@ from apps.reference.domains.execution_position.fsm import ExecPosFSM
 # )
 
 from apps.reference.domains.account_balance.account_connector import AccountConnector
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector

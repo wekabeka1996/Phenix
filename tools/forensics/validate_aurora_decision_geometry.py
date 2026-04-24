@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.decision_making.operational_mode import ModeManager
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import QuadraticScoringKernel
+from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
+from apps.reference.shared.decision_primitives.scoring_kernel import QuadraticScoringKernel
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.config_models import OperationalMode
 from tools.calibration.calibrate_aurora_thresholds import (

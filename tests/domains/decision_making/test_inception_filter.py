@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from apps.reference.domains.decision_making.inception_filter import check_inception_eligibility, InceptionResult
+from apps.reference.domains.decision_making.gates.inception_filter import check_inception_eligibility, InceptionResult
 
 class MockConfig:
     def __init__(self, enabled=True, action="micro_size", micro_size_fraction=0.25):

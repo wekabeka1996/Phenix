@@ -4,7 +4,7 @@ import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 
 class _Event:

@@ -10,7 +10,7 @@ from apps.reference.contracts.runtime_readiness import (
     RuntimeReadinessStatus,
     make_permissions,
 )
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
 )
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import decimal
 import pytest
 
-from apps.reference.domains.decision_making.aurora_policy import (
+from apps.reference.shared.decision_primitives.aurora_policy import (
     AuroraPolicyInput,
     AuroraPolicyDecision,
     SideBiasState,
@@ -243,7 +243,7 @@ class TestEquivalenceWithKernel:
     D = decimal.Decimal
 
     def _compute_via_kernel(self, pillar_sum, shield_mult=1.0, **kw):
-        from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+        from apps.reference.shared.decision_primitives.scoring_kernel import (
             QuadraticScoringKernel,
         )
         return QuadraticScoringKernel.compute(
@@ -285,7 +285,7 @@ class TestEquivalenceWithKernel:
         assert result.side == "buy"
 
     def test_deferred_on_missing_pillar(self):
-        from apps.reference.domains.decision_making.quadratic_scoring_kernel import QuadraticScoringKernel
+        from apps.reference.shared.decision_primitives.scoring_kernel import QuadraticScoringKernel
         result = QuadraticScoringKernel.compute(
             symbol="ETHUSDT",
             features={},

@@ -155,7 +155,7 @@ class TestRuntimeFailClosedBehavior:
         Fail-closed: Missing position_sizing → AttributeError → no trading.
         """
         from apps.reference.config_loader import get_config
-        from apps.reference.domains.decision_making.decision_making import DecisionMakingLogic
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         config = get_config()
         

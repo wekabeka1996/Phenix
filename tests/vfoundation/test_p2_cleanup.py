@@ -19,7 +19,7 @@ class TestP2AuroraFailClosed:
 
     def test_aurora_rejects_missing_decision_config(self):
         """AuroraHandler must crash if decision config is missing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
         
         # Config structure without 'decision' (None)
         config = SimpleNamespace(
@@ -37,7 +37,7 @@ class TestP2AuroraFailClosed:
 
     def test_aurora_accepts_valid_decision_config(self):
         """AuroraHandler must initialize successfully with valid decision config."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
         
         config = SimpleNamespace(
             strategies=SimpleNamespace(

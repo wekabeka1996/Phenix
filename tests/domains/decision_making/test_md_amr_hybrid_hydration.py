@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 
 class _FSMStub:

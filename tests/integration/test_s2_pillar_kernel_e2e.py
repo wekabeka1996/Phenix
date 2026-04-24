@@ -15,7 +15,7 @@ from apps.reference.domains.feature_engineering.pillar_indicators import (
     compute_strategist,
     compute_tactician,
 )
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
 )
 

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 
-from ..gate_protocol import GateContext, GateOutcome, GateResult
-from ..safety_gates import apply_safety_gates, SafetyGateResult
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome, GateResult
+from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates, SafetyGateResult
 
 GATE_NAME = "safety"
 logger = logging.getLogger("domain_decision_making")

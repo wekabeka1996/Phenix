@@ -2,7 +2,7 @@ import os
 import json
 import tempfile
 import shutil
-from apps.reference.domains.decision_making.dm_log_adapter import (
+from apps.reference.domains.decision_making.observability.log_adapter import (
     DecisionLog,
 )
 

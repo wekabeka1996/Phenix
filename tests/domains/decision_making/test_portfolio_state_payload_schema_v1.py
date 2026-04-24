@@ -2,7 +2,7 @@ from decimal import Decimal
 
 
 def test_portfolio_state_payload_accepts_legacy_shape_positions_only():
-    from apps.reference.domains.decision_making.schemas import PortfolioStatePayload
+    from apps.reference.domains.decision_making.contracts.schemas import PortfolioStatePayload
 
     p = PortfolioStatePayload(positions=[])
     assert p.schema_version == 1
@@ -12,7 +12,7 @@ def test_portfolio_state_payload_accepts_legacy_shape_positions_only():
 
 
 def test_portfolio_state_payload_parses_optional_decimals():
-    from apps.reference.domains.decision_making.schemas import PortfolioStatePayload
+    from apps.reference.domains.decision_making.contracts.schemas import PortfolioStatePayload
 
     p = PortfolioStatePayload(
         ts_ms=123,

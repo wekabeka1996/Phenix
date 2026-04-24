@@ -4,7 +4,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 class _Bus:
@@ -105,7 +105,7 @@ def test_position_mode_dynamic_allows_same_side_entry():
     now_ms = int(time.time() * 1000)
     cfg = _mk_cfg(symbol=symbol, position_mode="DYNAMIC")
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
 
@@ -130,7 +130,7 @@ def test_position_mode_strict_blocks_same_side_entry():
     now_ms = int(time.time() * 1000)
     cfg = _mk_cfg(symbol=symbol, position_mode="STRICT")
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
 
@@ -155,7 +155,7 @@ def test_position_mode_strict_blocks_same_side_entry_when_flip_disabled():
     now_ms = int(time.time() * 1000)
     cfg = _mk_cfg(symbol=symbol, position_mode="STRICT")
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg_with_flip(enabled=False)
         dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
 
@@ -179,7 +179,7 @@ def test_position_mode_dynamic_allows_same_side_entry_when_flip_disabled():
     now_ms = int(time.time() * 1000)
     cfg = _mk_cfg(symbol=symbol, position_mode="DYNAMIC")
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg_with_flip(enabled=False)
         dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
 

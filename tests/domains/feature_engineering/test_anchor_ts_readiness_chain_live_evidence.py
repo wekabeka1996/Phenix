@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
 from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 

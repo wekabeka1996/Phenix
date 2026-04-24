@@ -20,8 +20,8 @@ from apps.reference.contracts.quadratic_rollout import (
     evaluate_quadratic_shadow,
     resolve_requested_quadratic_rollout,
 )
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
 
 
 def test_aurora_emit_signal_adds_runtime_readiness_and_permissions() -> None:
@@ -707,7 +707,7 @@ def test_aurora_process_decision_blocks_cold_start_until_basis_bars_seen() -> No
 
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
-        patch("apps.reference.domains.decision_making.trade_intent_reject_wal.write_trade_intent_rejected") as rejected_wal,
+        patch("apps.reference.domains.decision_making.intent.reject_wal.write_trade_intent_rejected") as rejected_wal,
     ):
         handler = AuroraHandler(
             config=SimpleNamespace(
@@ -760,7 +760,7 @@ def test_aurora_process_decision_readiness_contract_resolution_uses_blocked_trut
 
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
-        patch("apps.reference.domains.decision_making.trade_intent_reject_wal.write_trade_intent_rejected") as rejected_wal,
+        patch("apps.reference.domains.decision_making.intent.reject_wal.write_trade_intent_rejected") as rejected_wal,
         patch(
             "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
             side_effect=ValueError("broken: profile missing"),
@@ -834,7 +834,7 @@ def test_aurora_seeded_basis_bars_bypass_cold_start_gate_into_anomaly_deferred()
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
         patch(
-            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            "apps.reference.domains.strategies.runtimes.aurora.decision.evaluate_quadratic_shadow",
             return_value=SimpleNamespace(state="NOT_REQUESTED"),
         ),
     ):
@@ -962,7 +962,7 @@ def test_aurora_objective_missing_exposure_summary_blocks_explicitly() -> None:
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
         patch(
-            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            "apps.reference.domains.strategies.runtimes.aurora.decision.evaluate_quadratic_shadow",
             return_value=SimpleNamespace(state="NOT_REQUESTED"),
         ),
     ):
@@ -1100,7 +1100,7 @@ def test_aurora_objective_missing_regime_confidence_blocks_explicitly() -> None:
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
         patch(
-            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            "apps.reference.domains.strategies.runtimes.aurora.decision.evaluate_quadratic_shadow",
             return_value=SimpleNamespace(state="NOT_REQUESTED"),
         ),
     ):
@@ -1161,7 +1161,7 @@ def test_aurora_objective_missing_regime_confidence_blocks_explicitly() -> None:
     state.regime_confidence = None
 
     with patch(
-        "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective_gate",
+        "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective_gate",
         side_effect=AssertionError("evaluator must not run"),
     ):
         handler._process_decision(

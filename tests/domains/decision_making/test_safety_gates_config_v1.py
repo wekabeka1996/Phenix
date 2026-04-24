@@ -21,7 +21,7 @@ def _test_safety_gates_lookup(safety_gates_enabled: bool | None, strategy_id: st
     
     Simulates the exact logic from _propose_trade_intent() lines 2703-2763.
     """
-    from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
     
     # Build mock config
     config = MagicMock()
@@ -82,7 +82,7 @@ class TestSafetyGatesConfigDriven:
 
     def test_safety_gates_missing_fails_closed(self):
         """T1c: safety_gates missing => FAIL-CLOSED with CONFIG_SAFETY_GATES_MISSING."""
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         apply_gates, blocked = _test_safety_gates_lookup(safety_gates_enabled=None)
         
@@ -91,7 +91,7 @@ class TestSafetyGatesConfigDriven:
 
     def test_unknown_strategy_fails_closed(self):
         """T1d: strategy not in config => FAIL-CLOSED with CONFIG_SAFETY_GATES_MISSING."""
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         apply_gates, blocked = _test_safety_gates_lookup(
             safety_gates_enabled=True,
@@ -106,19 +106,19 @@ class TestNRRCodesExist:
     """Verify that new NRR codes are correctly defined."""
 
     def test_exposure_cache_unavailable_code_exists(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         assert hasattr(NormalizedRejectReasons, "EXPOSURE_CACHE_UNAVAILABLE")
         assert NormalizedRejectReasons.EXPOSURE_CACHE_UNAVAILABLE == "NRR-053"
 
     def test_config_safety_gates_missing_code_exists(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         assert hasattr(NormalizedRejectReasons, "CONFIG_SAFETY_GATES_MISSING")
         assert NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING == "NRR-054"
 
     def test_nrr_descriptions_include_new_codes(self):
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         desc_053 = NormalizedRejectReasons.get_description(NormalizedRejectReasons.EXPOSURE_CACHE_UNAVAILABLE)
         desc_054 = NormalizedRejectReasons.get_description(NormalizedRejectReasons.CONFIG_SAFETY_GATES_MISSING)
@@ -133,7 +133,7 @@ class TestSystemStressPolicyFailClosed:
     """DM-SAFETY-BYPASSES-P1: Ensure system stress policy fails closed on config resolution error."""
 
     def test_resolve_stress_policy_exception_fails_closed(self):
-        from apps.reference.domains.decision_making.safety_gates import _resolve_stress_policy
+        from apps.reference.domains.decision_making.gates.safety_gates import _resolve_stress_policy
 
         config = MagicMock()
         # Simulate an exception accessing 'strategies' to trigger the except block
@@ -145,8 +145,8 @@ class TestSystemStressPolicyFailClosed:
         assert factor == 0.0
 
     def test_check_system_stress_gate_fails_closed_on_config_error(self):
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
 
         outcome, deny_reason, why_short, state = _check_system_stress_gate(
             symbol="BTCUSDT",

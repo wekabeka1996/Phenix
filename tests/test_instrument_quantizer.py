@@ -10,7 +10,7 @@ Tests cover:
 import pytest
 from decimal import Decimal
 
-from apps.reference.domains.decision_making.instrument_quantizer import (
+from apps.reference.shared.decision_primitives.instrument_quantizer import (
     InstrumentSpec,
     QuantizedPosition,
     floor_to_step,

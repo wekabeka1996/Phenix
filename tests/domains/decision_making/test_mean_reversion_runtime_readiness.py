@@ -19,7 +19,7 @@ from apps.reference.contracts.runtime_bar_identity import (
     RuntimeBarSourceMode,
     build_canonical_bar_identity,
 )
-from apps.reference.domains.decision_making.mean_reversion_handler import (
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import (
     MeanReversionHandler,
 )
 from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
@@ -135,7 +135,7 @@ def test_mean_reversion_live_warmup_overrides_cold_restore_snapshot() -> None:
     )
 
     with patch(
-        "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+        "apps.reference.domains.strategies.runtimes.mean_reversion.handler.get_clock",
         return_value=SimpleNamespace(
             now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
     ):
@@ -171,7 +171,7 @@ def test_mean_reversion_warmup_not_ready_emits_cold_microstructure() -> None:
     )
 
     with patch(
-        "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+        "apps.reference.domains.strategies.runtimes.mean_reversion.handler.get_clock",
         return_value=SimpleNamespace(
             now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
     ):
@@ -210,7 +210,7 @@ def test_mean_reversion_startup_gate_blocks_new_risk_but_preserves_manage() -> N
     )
     try:
         with patch(
-            "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+            "apps.reference.domains.strategies.runtimes.mean_reversion.handler.get_clock",
             return_value=SimpleNamespace(
                 now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
         ):

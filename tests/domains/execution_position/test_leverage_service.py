@@ -31,7 +31,7 @@ class TestLeverageServiceVerify:
     async def test_verify_only_rejects_on_leverage_mismatch(self):
         """When actual leverage != expected, verify returns ok=False with LEV_MISMATCH."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter returns mismatched leverage
         adapter = AsyncMock()
@@ -51,7 +51,7 @@ class TestLeverageServiceVerify:
     async def test_verify_only_rejects_on_margin_mode_mismatch(self):
         """When actual margin mode != expected, verify returns ok=False with MARGIN_MODE_MISMATCH."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter returns mismatched margin mode
         adapter = AsyncMock()
@@ -136,7 +136,7 @@ class TestLeverageServiceSetAndVerify:
     async def test_set_and_verify_rejects_when_set_leverage_fails(self):
         """When set_leverage fails, set_and_verify returns failure with LEV_SET_FAILED."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
         adapter.set_margin_mode = AsyncMock(return_value=True)
@@ -152,7 +152,7 @@ class TestLeverageServiceSetAndVerify:
     async def test_set_and_verify_rejects_when_set_margin_fails(self):
         """When set_margin_mode fails, set_and_verify returns failure."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
         adapter.set_margin_mode = AsyncMock(side_effect=Exception("API Error"))
@@ -237,7 +237,7 @@ class TestLeverageServiceFailClosed:
     async def test_fail_closed_on_adapter_get_leverage_error(self):
         """When get_current_leverage fails, verify returns failure with VERIFY_FAILED."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
         adapter.get_current_leverage = AsyncMock(side_effect=Exception("Network Error"))
@@ -253,7 +253,7 @@ class TestLeverageServiceFailClosed:
     async def test_fail_closed_on_adapter_get_margin_error(self):
         """When get_margin_mode fails, verify returns failure with VERIFY_FAILED."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
         adapter.get_current_leverage = AsyncMock(return_value=20)

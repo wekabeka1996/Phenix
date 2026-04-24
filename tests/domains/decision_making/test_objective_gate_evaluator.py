@@ -31,8 +31,8 @@ from apps.reference.config_models import (
     StrategyObjectiveMultiplierConfig,
     StrategyObjectiveRegimeProfile,
 )
-from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
-from apps.reference.domains.decision_making.objective_gate_evaluator import (
+from apps.reference.shared.decision_primitives.entry_plan import EntryPlanResult
+from apps.reference.domains.decision_making.gates.objective_gate_evaluator import (
     ObjectiveBehaviorAdapter,
     ObjectiveGateRequest,
     ObjectiveGateResult,
@@ -453,7 +453,7 @@ class TestBlockedObjectiveResult:
 class TestEvaluationError:
     def test_adapter_exception_returns_error(self) -> None:
         with patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.build_market_input",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.build_market_input",
             side_effect=ValueError("BOOM"),
         ):
             req = _make_request(
@@ -466,7 +466,7 @@ class TestEvaluationError:
 
     def test_evaluate_objective_exception_returns_error(self) -> None:
         with patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective",
             side_effect=RuntimeError("engine crash"),
         ):
             req = _make_request(

@@ -15,10 +15,10 @@ from apps.reference.config_models import (
     ContextShieldConfig,
     MemoryShieldConfig,
 )
-from apps.reference.domains.decision_making.exit_manager import ExitManager
-from apps.reference.domains.decision_making.shields.context_shield import ContextShield
-from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
-from apps.reference.domains.decision_making.operational_mode import ModeManager
+from apps.reference.shared.decision_primitives.exit_manager import ExitManager
+from apps.reference.shared.decision_primitives.shields.context_shield import ContextShield
+from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
+from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
 
 
 # ---------------------------------------------------------------------------

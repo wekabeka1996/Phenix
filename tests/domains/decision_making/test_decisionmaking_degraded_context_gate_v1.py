@@ -20,7 +20,7 @@ class _DummyDM:
             "md_amr": {"enabled": True, "critical_keys": set()},
         }
 
-        from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+        from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
 
         def _emit_deferred(**kw):
             self.emitted.append(kw)
@@ -53,9 +53,9 @@ class _DummyDM:
 
 
 def test_degraded_context_gate_defers_on_missing_critical_features():
-    from apps.reference.domains.decision_making.decision_context import create_decision_context
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
-    from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+    from apps.reference.domains.decision_making.core.context import create_decision_context
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
 
     dm = _DummyDM()
 
@@ -81,8 +81,8 @@ def test_degraded_context_gate_defers_on_missing_critical_features():
 
 
 def test_degraded_context_gate_absent_or_opt_out_contracts_do_not_defer():
-    from apps.reference.domains.decision_making.decision_context import create_decision_context
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.context import create_decision_context
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     dm = _DummyDM()
     gate = DecisionMaking._degraded_context_gate_should_defer.__get__(dm, _DummyDM)

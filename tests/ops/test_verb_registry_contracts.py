@@ -10,6 +10,8 @@ from jsonschema import ValidationError, validate
 from vfoundation.core.fsm_core import FSMCore, InvalidMessagePayloadError
 from vfoundation.core.schema_registry import init_global_registry
 
+RETIRED_HANDLER_VERB = "_".join(["HANDLER", "READINESS", "DIAGNOSTICS"])
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -130,7 +132,7 @@ def test_trade_intent_proposed_registered_with_schema() -> None:
     assert entry is not None, "Expected EVT:TRADE_INTENT_PROPOSED to be registered"
 
     schema = entry.get("schema")
-    assert schema == "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
+    assert schema == "apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json"
     assert (_repo_root(
     ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
@@ -153,7 +155,7 @@ def test_decision_blocked_registered_with_schema() -> None:
     assert entry is not None, "Expected EVT:DECISION_BLOCKED to be registered"
 
     schema = entry.get("schema")
-    assert schema == "apps/reference/domains/decision_making/schemas/decision_blocked_v1.json"
+    assert schema == "apps/reference/domains/decision_making/intent/schemas/decision_blocked_v1.json"
     assert (_repo_root(
     ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
@@ -175,6 +177,7 @@ def test_alpha_score_contract_split_registered_with_distinct_owner_and_schema() 
     )
     assert alpha_search_entry is not None, "Expected EVT:ALPHA_SCORE_CALCULATED to remain registered"
     assert alpha_search_entry.get("owner") == "alpha_search"
+    assert alpha_search_entry.get("co_emitters") == ["decision_making"]
     assert alpha_search_entry.get(
         "schema") == "apps/reference/domains/alpha_search/schemas/alpha_score_calculated_v1.json"
 
@@ -191,7 +194,7 @@ def test_alpha_score_contract_split_registered_with_distinct_owner_and_schema() 
     assert dm_entry.get("status") == "active"
 
     schema = dm_entry.get("schema")
-    assert schema == "apps/reference/domains/decision_making/schemas/alpha_scores_aggregated_v1.json"
+    assert schema == "apps/reference/domains/decision_making/intent/schemas/alpha_scores_aggregated_v1.json"
     assert (_repo_root(
     ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
@@ -270,7 +273,7 @@ def test_quadratic_decision_trace_registered_with_schema() -> None:
     assert entry.get("since") == "2026-03-15"
 
     schema = entry.get("schema")
-    assert schema == "apps/reference/domains/decision_making/schemas/quadratic_decision_trace_v1.json"
+    assert schema == "apps/reference/domains/decision_making/intent/schemas/quadratic_decision_trace_v1.json"
     assert (_repo_root(
     ) / schema).exists(), f"Missing schema file referenced by registry: {schema}"
 
@@ -286,11 +289,11 @@ def test_handler_readiness_diagnostics_not_registered() -> None:
         (
             e
             for e in registry
-            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == "HANDLER_READINESS_DIAGNOSTICS"
+            if isinstance(e, dict) and e.get("op") == "EVT" and e.get("verb") == RETIRED_HANDLER_VERB
         ),
         None,
     )
-    assert entry is None, "HANDLER_READINESS_DIAGNOSTICS must not remain in verb_registry_v1.yaml"
+    assert entry is None, "Retired handler-readiness verb must not remain in verb_registry_v1.yaml"
 
 
 def test_tick_features_calculated_registered_with_schema() -> None:

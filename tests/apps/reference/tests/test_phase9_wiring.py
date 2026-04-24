@@ -16,8 +16,8 @@ sys.modules["vfoundation.obs.domain_bridge"] = MagicMock()
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, ScoringResult
-from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, ScoringResult
+from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
 from apps.reference.config_models import (
     AuroraConfig, DecisionConfig, ExitManagerConfig
 )
@@ -64,9 +64,9 @@ class TestPhase9Wiring(unittest.TestCase):
         self.emit_fn = MagicMock()
 
         # Instantiate Handler (with patched methods to avoid heavy init)
-        with patch("apps.reference.domains.decision_making.aurora_handler.UnifiedFeatureExtractor"), \
-             patch("apps.reference.domains.decision_making.aurora_handler.ExecutionGate"), \
-             patch("apps.reference.domains.decision_making.aurora_handler.DomainConfigResolver"):
+        with patch("apps.reference.domains.strategies.runtimes.aurora.handler.UnifiedFeatureExtractor"), \
+             patch("apps.reference.domains.strategies.runtimes.aurora.handler.ExecutionGate"), \
+             patch("apps.reference.domains.strategies.runtimes.aurora.handler.DomainConfigResolver"):
             self.handler = AuroraHandler(
                 config=self.mock_config,
                 emit_fn=self.emit_fn,

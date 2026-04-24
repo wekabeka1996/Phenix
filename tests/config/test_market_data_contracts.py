@@ -233,7 +233,7 @@ def test_market_data_runtime_import_smoke() -> None:
             "apps.reference.domains.market_data.worker",
             "apps.reference.domains.market_data.market_data_connector",
             "apps.reference.domains.decision_making.gates.ttl_gate",
-            "apps.reference.domains.decision_making.readiness_gates",
+            "apps.reference.domains.decision_making.gates.readiness_gates",
             "apps.reference.domains.regime_detector.regime_detector",
         )
     }

@@ -10,7 +10,7 @@ import pytest
 from decimal import Decimal
 
 from apps.reference.config_models import ExitManagerConfig, DangerZoneExitType
-from apps.reference.domains.decision_making.exit_manager import ExitManager
+from apps.reference.shared.decision_primitives.exit_manager import ExitManager
 
 
 # ---------------------------------------------------------------------------

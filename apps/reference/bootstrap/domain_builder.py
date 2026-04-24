@@ -8,7 +8,7 @@ from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
 from apps.reference.domains.account_balance.account_connector import AccountConnector
 from apps.reference.domains.data_recorder.recorder import CsvRecorder
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
 from apps.reference.domains.market_data.bar_aggregator import BarAggregator

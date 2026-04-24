@@ -15,7 +15,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     make_strategy_restore_snapshot,
 )
 from apps.reference.contracts.runtime_readiness import make_permissions
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 _TS = 1_700_000_000_000
 

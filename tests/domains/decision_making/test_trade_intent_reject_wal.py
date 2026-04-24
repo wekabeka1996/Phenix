@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.normalized_reject_reasons import (
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
     build_trade_intent_rejected_message,
     normalize_trade_intent_rejected_payload,
 )
-from apps.reference.domains.decision_making.trade_intent_reject_wal import (
+from apps.reference.domains.decision_making.intent.reject_wal import (
     write_trade_intent_rejected,
 )
 
@@ -21,7 +21,7 @@ def test_write_trade_intent_rejected_normalizes_payload_before_wal_append() -> N
         return True
 
     with patch(
-        "apps.reference.domains.decision_making.trade_intent_reject_wal.wal.append",
+        "apps.reference.domains.decision_making.intent.reject_wal.wal.append",
         side_effect=_append,
     ):
         write_trade_intent_rejected(

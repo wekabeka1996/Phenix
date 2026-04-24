@@ -3,8 +3,8 @@ import time
 
 from apps.reference.config_loader import get_config
 from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import QuadraticScoringKernel
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.shared.decision_primitives.scoring_kernel import QuadraticScoringKernel
 
 
 class _MockFSM:

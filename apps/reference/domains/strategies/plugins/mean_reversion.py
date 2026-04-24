@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from apps.reference.config_models import AuroraConfig
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore

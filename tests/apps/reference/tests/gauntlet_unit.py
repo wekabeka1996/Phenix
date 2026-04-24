@@ -23,14 +23,14 @@ sys.modules["vfoundation.core.why_codes"] = MagicMock()
 sys.modules["vfoundation.core.why_codes"].WhyCode = MagicMock()
 sys.modules["vfoundation.core.why_codes"].format_why_with_details = MagicMock()
 
-from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
-from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
-from apps.reference.domains.decision_making.execution_gate import ExecutionGate
-from apps.reference.domains.decision_making.exit_manager import ExitManager
+from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
+from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
+from apps.reference.domains.decision_making.gates.execution_gate import ExecutionGate
+from apps.reference.shared.decision_primitives.exit_manager import ExitManager
 from apps.reference.config_models import (
     ExecutionGateConfig, ExecutionGateName, StructuralGateConfig, ExitManagerConfig
 )
-from apps.reference.domains.decision_making.entry_plan import EntryPlanResult
+from apps.reference.shared.decision_primitives.entry_plan import EntryPlanResult
 
 class TestShieldSystem(unittest.TestCase):
     def test_danger_zone_prefix(self):

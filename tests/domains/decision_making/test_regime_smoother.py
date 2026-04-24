@@ -1,7 +1,7 @@
 import pytest
 from decimal import Decimal
 from typing import Any
-from apps.reference.domains.decision_making.regime_smoother import RegimeMultiplierSmoother
+from apps.reference.domains.decision_making.gates.regime_smoother import RegimeMultiplierSmoother
 
 class MockConfig:
     def __init__(self, enabled=True, method="ema", ema_alpha=0.3, ramp_bars=6):

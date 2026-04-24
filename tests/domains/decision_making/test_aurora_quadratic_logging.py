@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     ScoringResult,
 )
 
@@ -52,7 +52,7 @@ def _build_handler(*, emit_fn, scoring_result: ScoringResult) -> AuroraHandler:
     with (
         patch.object(AuroraHandler, "_load_config", lambda self: None),
         patch(
-            "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+            "apps.reference.domains.strategies.runtimes.aurora.decision.evaluate_quadratic_shadow",
             return_value=SimpleNamespace(state="NOT_REQUESTED"),
         ),
     ):

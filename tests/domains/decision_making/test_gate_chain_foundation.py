@@ -10,12 +10,12 @@ Validates:
   • GateChain with all-PASS list
 """
 import pytest
-from apps.reference.domains.decision_making.gate_protocol import (
+from apps.reference.domains.decision_making.gateway.protocol import (
     GateContext,
     GateOutcome,
     GateResult,
 )
-from apps.reference.domains.decision_making.gate_chain import (
+from apps.reference.domains.decision_making.gateway.chain import (
     GateChain,
     GateChainResult,
     GateTraceEntry,

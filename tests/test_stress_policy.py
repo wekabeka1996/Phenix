@@ -43,7 +43,7 @@ def _make_config(policy: str = "attenuate", factor: float = 0.5, strategy_id: st
 class TestResolveStressPolicy:
 
     def _call(self, config, strategy_id: str):
-        from apps.reference.domains.decision_making.safety_gates import _resolve_stress_policy
+        from apps.reference.domains.decision_making.gates.safety_gates import _resolve_stress_policy
         return _resolve_stress_policy(config, strategy_id)
 
     def test_missing_strategy_returns_off(self) -> None:
@@ -90,7 +90,7 @@ class TestStressPolicyOff:
     """policy=off: Gate 0.5 fully bypassed for all states."""
 
     def _call(self, symbol: str, stress_states: Optional[dict]):
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
         return _check_system_stress_gate(
             symbol=symbol,
             reduce_only=False,
@@ -123,7 +123,7 @@ class TestStressPolicyAttenuate:
     """policy=attenuate: EXTREME=DENY, STRESS=ALLOW+surface state."""
 
     def _call(self, symbol: str, stress_states: Optional[dict], reduce_only: bool = False):
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
         return _check_system_stress_gate(
             symbol=symbol,
             reduce_only=reduce_only,
@@ -144,7 +144,7 @@ class TestStressPolicyAttenuate:
         assert state == "STRESS"
 
     def test_attenuate_extreme_denies(self) -> None:
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         out, deny, why, state = self._call("BTCUSDT", {"BTCUSDT": "EXTREME"})
         assert out == "DENY"
         assert deny == NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED
@@ -161,7 +161,7 @@ class TestStressPolicyBlock:
     """policy=block: STRESS and EXTREME both DENY new entries."""
 
     def _call(self, symbol: str, stress_states: Optional[dict], reduce_only: bool = False):
-        from apps.reference.domains.decision_making.safety_gates import _check_system_stress_gate
+        from apps.reference.domains.decision_making.gates.safety_gates import _check_system_stress_gate
         return _check_system_stress_gate(
             symbol=symbol,
             reduce_only=reduce_only,
@@ -176,7 +176,7 @@ class TestStressPolicyBlock:
         assert state == "NORMAL"
 
     def test_block_stress_denies(self) -> None:
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         out, deny, why, state = self._call("BTCUSDT", {"BTCUSDT": "STRESS"})
         assert out == "DENY"
         assert deny == NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED
@@ -184,7 +184,7 @@ class TestStressPolicyBlock:
         assert "policy=block" in why
 
     def test_block_extreme_denies(self) -> None:
-        from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+        from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         out, deny, why, state = self._call("BTCUSDT", {"BTCUSDT": "EXTREME"})
         assert out == "DENY"
         assert deny == NormalizedRejectReasons.SYSTEM_STRESS_ENTRY_BLOCKED

@@ -95,7 +95,7 @@ def fsm_mock():
 @pytest.fixture
 def mr_handler(mock_config, fsm_mock):
     """Create MeanReversionHandler instance with mocked dependencies."""
-    from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+    from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
     
     handler = MeanReversionHandler(fsm=fsm_mock, config=mock_config)
     handler.register()

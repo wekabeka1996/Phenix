@@ -37,7 +37,7 @@ class TestQoSPartitioning:
         dm.qos_max_intents_per_minute_per_symbol = 10
         dm._default_symbol_cooldown_sec = 3
         dm.logger = MagicMock()
-        from apps.reference.domains.decision_making.qos_rate_control import QoSRateControl
+        from apps.reference.domains.decision_making.gates.qos_rate_control import QoSRateControl
         dm._qos = QoSRateControl(
             clock=dm._clock,
             qos_state=dm._qos_state,
@@ -51,7 +51,7 @@ class TestQoSPartitioning:
 
     def test_qos_state_isolated_between_strategies(self, mock_dm):
         """Aurora and MR should have separate QoS state."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         # Simulate Aurora cooldown update
         DecisionMaking._update_symbol_cooldown(mock_dm, "BTCUSDT", "aurora")
@@ -64,7 +64,7 @@ class TestQoSPartitioning:
 
     def test_qos_allow_uses_strategy_state(self, mock_dm):
         """QoS check should use strategy-specific state."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         # Stub _get_symbol_cooldown
         mock_dm._get_symbol_cooldown = MagicMock(return_value=3)

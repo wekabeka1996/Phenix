@@ -38,7 +38,7 @@ from apps.reference.contracts.runtime_readiness import (
     partial_status,
     ready_status,
 )
-from apps.reference.domains.decision_making.runtime_readiness_builder import (
+from apps.reference.domains.decision_making.core.runtime_readiness import (
     PermissionOverlay,
     RestoreScopeSpec,
     RuntimeReadinessBuildRequest,

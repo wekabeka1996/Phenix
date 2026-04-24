@@ -4,7 +4,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 class _Bus:
@@ -151,7 +151,7 @@ def test_side_bias_window_updates_on_emitted_open_intents():
     bus = _Bus()
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
 
@@ -169,7 +169,7 @@ def test_side_bias_window_updates_on_emitted_open_intents():
     dm.symbol_states[symbol]["risk"] = {"ok": True}
     dm._per_symbol_regimes[symbol] = {"warmup": {"full_ready": True, "ticks_seen": 999}}
 
-    with patch("apps.reference.domains.decision_making.intent_builder.wal.append", lambda *_args, **_kwargs: "success-id"):
+    with patch("apps.reference.domains.decision_making.intent.builder.wal.append", lambda *_args, **_kwargs: "success-id"):
         with patch("time.time", return_value=now_sec):
             dm._propose_trade_intent(
                 symbol=symbol,

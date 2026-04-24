@@ -19,10 +19,10 @@ from apps.reference.config_models import (
     ObjectiveDataRequirementsConfig,
     ObjectiveEngineDomainConfig,
 )
-from apps.reference.domains.decision_making.mean_reversion_handler import (
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import (
     MeanReversionHandler,
 )
-from apps.reference.domains.decision_making.objective_gate_evaluator import (
+from apps.reference.domains.decision_making.gates.objective_gate_evaluator import (
     ObjectiveGateResult,
     ObjectiveGateStatus,
 )
@@ -241,14 +241,14 @@ def test_mean_reversion_missing_regime_confidence_fails_closed_before_evaluator(
 
     with (
         patch(
-            "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+            "apps.reference.domains.strategies.runtimes.mean_reversion.handler.get_clock",
             return_value=SimpleNamespace(
                 now_ms=lambda: 1_700_000_000_000,
                 now_sec=lambda: 1_700_000_000,
             ),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective_gate",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective_gate",
             side_effect=AssertionError("evaluator must not run"),
         ),
     ):
@@ -290,14 +290,14 @@ def test_mean_reversion_objective_success_updates_emitted_score_and_trace() -> N
 
     with (
         patch(
-            "apps.reference.domains.decision_making.mean_reversion_handler.get_clock",
+            "apps.reference.domains.strategies.runtimes.mean_reversion.handler.get_clock",
             return_value=SimpleNamespace(
                 now_ms=lambda: 1_700_000_000_000,
                 now_sec=lambda: 1_700_000_000,
             ),
         ),
         patch(
-            "apps.reference.domains.decision_making.objective_gate_evaluator.evaluate_objective_gate",
+            "apps.reference.domains.decision_making.gates.objective_gate_evaluator.evaluate_objective_gate",
             return_value=gate_result,
         ),
     ):

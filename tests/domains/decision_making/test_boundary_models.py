@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from apps.reference.domains.decision_making.boundary_models import (
+from apps.reference.domains.decision_making.contracts.boundary_models import (
     ProcessStrategyBoundary,
     RegimeDetectedBoundary,
     TradeIntentRoutingEnvelope,

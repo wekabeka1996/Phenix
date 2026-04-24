@@ -307,7 +307,7 @@ class TestNoLegacyDictAccess:
     def test_decision_making_uses_typed_access(self) -> None:
         """DecisionMaking uses typed config attributes, not .get()."""
         from apps.reference.config_loader import ConfigLoader
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         from unittest.mock import MagicMock
         
         loader = ConfigLoader()
@@ -325,7 +325,7 @@ class TestNoLegacyDictAccess:
     def test_config_rejects_dict_input(self) -> None:
         """Domains that require AuroraConfig must reject dict."""
         from apps.reference.config_loader import ConfigLoader
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         from unittest.mock import MagicMock
         
         mock_fsm = MagicMock()

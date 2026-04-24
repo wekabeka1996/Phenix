@@ -11,8 +11,8 @@ def test_flip_orchestration_close_uses_originating_strategy_id():
     when a symbol is assigned to a different strategy (e.g. BTCUSDT assigned to
     mean_reversion), leaving a position stuck and backtests with only 1 trade.
     """
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
-    from apps.reference.domains.decision_making.flip_orchestration import FlipOrchestrator
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
+    from apps.reference.domains.decision_making.intent.flip import FlipOrchestrator
 
     dm = DecisionMaking.__new__(DecisionMaking)  # avoid full init
     dm.latest_portfolio = {

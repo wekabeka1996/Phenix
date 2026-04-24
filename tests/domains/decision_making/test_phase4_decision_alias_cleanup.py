@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import jsonschema
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.neocortex.logic.ingest.parsers.order_parser import (
     OrderEventType,
     parse_order_log_line,
@@ -39,7 +39,7 @@ def test_safety_deny_logs_decision_intent_rejected_not_runtime_order_rejected():
     dm.logger = MagicMock()
     dm._record_blocked_intent = MagicMock()
 
-    with patch("apps.reference.domains.decision_making.decision_making.order_logger.write") as write_mock:
+    with patch("apps.reference.domains.decision_making.core.facade.order_logger.write") as write_mock:
         DecisionMaking._handle_safety_deny(
             dm,
             "ETHUSDT",

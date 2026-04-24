@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.reference.config_models import MRMicrostructureVetoConfig
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ def _valid_veto_cfg(**overrides) -> MRMicrostructureVetoConfig:
 
 def _make_actionable_signal(symbol: str, signal_type_name: str, bar: Any):
     """Build a minimal MRSignal-like object that is_signal=True."""
-    from apps.reference.domains.decision_making.strategy_bridge import (
+    from apps.reference.domains.strategies.runtimes.bridge import (
         MRSignal, MRSignalType,
     )
     sig_type = MRSignalType.LONG if signal_type_name == "LONG" else MRSignalType.SHORT
@@ -240,8 +240,8 @@ def _bar_from_dict(bar_data: dict):
 # 1. LONG + adverse TFI + adverse continuation => BLOCKED
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_toxic_flow_blocks_long(mock_blocked, mock_rejected):
     """Real _on_process_strategy path: adverse TFI + continuation => LONG blocked."""
     cfg = _valid_veto_cfg()
@@ -278,8 +278,8 @@ def test_e2e_toxic_flow_blocks_long(mock_blocked, mock_rejected):
 # 2. LONG + adverse TFI + absorption (wick) => ALLOWED
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_absorption_allows_long(mock_blocked, mock_rejected):
     """Real _on_process_strategy path: adverse TFI + absorption wick => LONG allowed."""
     cfg = _valid_veto_cfg()
@@ -319,8 +319,8 @@ def test_e2e_absorption_allows_long(mock_blocked, mock_rejected):
 # 3. SHORT + adverse TFI + adverse continuation => BLOCKED
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_toxic_flow_blocks_short(mock_blocked, mock_rejected):
     """Real _on_process_strategy path: adverse TFI + continuation => SHORT blocked."""
     cfg = _valid_veto_cfg()
@@ -355,8 +355,8 @@ def test_e2e_toxic_flow_blocks_short(mock_blocked, mock_rejected):
 # 4. SHORT + adverse TFI + absorption (wick) => ALLOWED
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_absorption_allows_short(mock_blocked, mock_rejected):
     """Real _on_process_strategy path: adverse TFI + absorption wick => SHORT allowed."""
     cfg = _valid_veto_cfg()
@@ -391,8 +391,8 @@ def test_e2e_absorption_allows_short(mock_blocked, mock_rejected):
 # 5. Missing TFI => fail-closed on real path
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_missing_tfi_fail_closed(mock_blocked, mock_rejected):
     """Real path: no TFI in features => microstructure veto blocks unconditionally."""
     cfg = _valid_veto_cfg()
@@ -426,8 +426,8 @@ def test_e2e_missing_tfi_fail_closed(mock_blocked, mock_rejected):
 # 6. OBI confirm-only semantics on real path
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_obi_confirm_only_allows(mock_blocked, mock_rejected):
     """Real path: adverse TFI but non-adverse OBI => OBI doesn't confirm => ALLOWED."""
     cfg = _valid_veto_cfg(obi_confirm_enabled=True)
@@ -460,8 +460,8 @@ def test_e2e_obi_confirm_only_allows(mock_blocked, mock_rejected):
     assert handler._emit_signal.called, "OBI-unconfirmed signal should reach _emit_signal"
 
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_obi_confirms_blocks(mock_blocked, mock_rejected):
     """Real path: adverse TFI + adverse OBI + continuation => BLOCKED."""
     cfg = _valid_veto_cfg(obi_confirm_enabled=True)
@@ -492,8 +492,8 @@ def test_e2e_obi_confirms_blocks(mock_blocked, mock_rejected):
 # 7. price_motion absent from CMD => conservative block on adverse TFI
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_missing_price_motion_conservative_block(mock_blocked, mock_rejected):
     """Real path: no price_motion in CMD => no continuation/rebound info => ambiguous block."""
     cfg = _valid_veto_cfg()
@@ -525,8 +525,8 @@ def test_e2e_missing_price_motion_conservative_block(mock_blocked, mock_rejected
 # 8. Zero-range bar => conservative block on real path
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_zero_range_bar_blocks(mock_blocked, mock_rejected):
     """Real path: zero-range bar (high == low) + adverse TFI => ZERO_RANGE block."""
     cfg = _valid_veto_cfg()
@@ -556,8 +556,8 @@ def test_e2e_zero_range_bar_blocks(mock_blocked, mock_rejected):
 # 9. price_motion cached in dedicated _last_cmd_price_motion (not features)
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_price_motion_cached_in_dedicated_dict(mock_blocked, mock_rejected):
     """Prove price_motion is cached in handler._last_cmd_price_motion, NOT in features."""
     cfg = _valid_veto_cfg()
@@ -594,8 +594,8 @@ def test_e2e_price_motion_cached_in_dedicated_dict(mock_blocked, mock_rejected):
 # 10. Veto disabled => signal passes through unimpeded on real path
 # ============================================================================
 
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_trade_intent_rejected")
-@patch("apps.reference.domains.decision_making.mean_reversion_handler.write_strategy_decision_blocked")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_trade_intent_rejected")
+@patch("apps.reference.domains.strategies.runtimes.mean_reversion.handler.write_strategy_decision_blocked")
 def test_e2e_veto_disabled_passes(mock_blocked, mock_rejected):
     """Real path: no veto config for symbol => signal emitted without veto."""
     handler, fsm = _build_e2e_handler(veto_cfg=None)

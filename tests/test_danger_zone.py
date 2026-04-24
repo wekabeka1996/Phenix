@@ -10,7 +10,7 @@ Tests cover:
 import math
 import pytest
 
-from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
+from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
 
 
 # ---------------------------------------------------------------------------

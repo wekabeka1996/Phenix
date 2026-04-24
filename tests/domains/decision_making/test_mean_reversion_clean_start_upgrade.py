@@ -34,7 +34,7 @@ from apps.reference.contracts.runtime_analytics_restore import (
     restored_restore_status,
 )
 from apps.reference.contracts.runtime_readiness import make_permissions
-from apps.reference.domains.decision_making.mean_reversion_handler import (
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import (
     MeanReversionHandler,
 )
 from vfoundation.core.protocol import Message

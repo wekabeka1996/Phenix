@@ -14,7 +14,7 @@ from apps.reference.config_models import (
     MeanReversion1mStrategyConfig,
     StrategyExecutionConfig,
 )
-from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler, normalize_ts_ms
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler, normalize_ts_ms
 
 
 class _DummyFsm:

@@ -97,7 +97,7 @@ class TestComputeRegimeTpsl:
     @pytest.fixture
     def mock_handler(self):
         """Create a minimal mock AuroraHandler for testing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, SymbolState
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, SymbolState
 
         # Build a proper mock config that passes _load_config validation
         mock_decision = MagicMock()
@@ -329,7 +329,7 @@ class TestTpslGuardrails:
     @pytest.fixture
     def mock_handler(self):
         """Create a minimal mock AuroraHandler for testing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, SymbolState
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, SymbolState
 
         # Build a proper mock config
         mock_decision = MagicMock()
@@ -491,7 +491,7 @@ class TestAtrMode:
     @pytest.fixture
     def mock_handler(self):
         """Create a minimal mock AuroraHandler for testing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, SymbolState
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, SymbolState
 
         # Build a proper mock config
         mock_decision = MagicMock()
@@ -617,7 +617,7 @@ class TestFailClosedLogic:
     @pytest.fixture
     def mock_handler(self):
         """Create a minimal mock AuroraHandler for testing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler, SymbolState
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, SymbolState
 
         # Build a proper mock config
         mock_decision = MagicMock()

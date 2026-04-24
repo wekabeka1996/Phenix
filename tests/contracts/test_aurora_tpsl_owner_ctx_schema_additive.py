@@ -17,7 +17,7 @@ STRATEGY_SIGNAL_SCHEMA_PATH = REPO_ROOT / \
 DECISION_TRACE_SCHEMA_PATH = REPO_ROOT / \
     "schemas" / "decision_trace_emitted_v1.json"
 TRADE_INTENT_SCHEMA_PATH = (
-    REPO_ROOT / "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
+    REPO_ROOT / "apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json"
 )
 
 

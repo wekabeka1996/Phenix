@@ -2,7 +2,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 from apps.reference.domains.execution_position.order_index import OrderIndex
 
 
@@ -102,12 +102,12 @@ def _emit_trade_intent_calls(builder: IntentBuilder) -> list:
     ]
 
 
-@patch("apps.reference.domains.decision_making.intent_builder.order_logger.write")
-@patch("apps.reference.domains.decision_making.intent_builder.print")
-@patch("apps.reference.domains.decision_making.intent_builder.emit_regime_decision_audit")
-@patch("apps.reference.domains.decision_making.intent_builder._trade_lifecycle", None)
-@patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
-@patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+@patch("apps.reference.domains.decision_making.intent.builder.order_logger.write")
+@patch("apps.reference.domains.decision_making.intent.builder.print")
+@patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit")
+@patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None)
+@patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
+@patch("apps.reference.domains.decision_making.intent.builder.wal.append")
 def test_reservation_released_on_arbitration_reject_and_second_attempt_can_emit(
     mock_wal,
     mock_policy,
@@ -136,12 +136,12 @@ def test_reservation_released_on_arbitration_reject_and_second_attempt_can_emit(
     assert len(_emit_trade_intent_calls(allow_builder)) == 1
 
 
-@patch("apps.reference.domains.decision_making.intent_builder.order_logger.write")
-@patch("apps.reference.domains.decision_making.intent_builder.print")
-@patch("apps.reference.domains.decision_making.intent_builder.emit_regime_decision_audit")
-@patch("apps.reference.domains.decision_making.intent_builder._trade_lifecycle", None)
-@patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
-@patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+@patch("apps.reference.domains.decision_making.intent.builder.order_logger.write")
+@patch("apps.reference.domains.decision_making.intent.builder.print")
+@patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit")
+@patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None)
+@patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
+@patch("apps.reference.domains.decision_making.intent.builder.wal.append")
 def test_reservation_released_on_wal_failure(
     mock_wal,
     mock_policy,
@@ -162,12 +162,12 @@ def test_reservation_released_on_wal_failure(
     assert _emit_trade_intent_calls(builder) == []
 
 
-@patch("apps.reference.domains.decision_making.intent_builder.order_logger.write")
-@patch("apps.reference.domains.decision_making.intent_builder.print")
-@patch("apps.reference.domains.decision_making.intent_builder.emit_regime_decision_audit")
-@patch("apps.reference.domains.decision_making.intent_builder._trade_lifecycle", None)
-@patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
-@patch("apps.reference.domains.decision_making.intent_builder.wal.append")
+@patch("apps.reference.domains.decision_making.intent.builder.order_logger.write")
+@patch("apps.reference.domains.decision_making.intent.builder.print")
+@patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit")
+@patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None)
+@patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
+@patch("apps.reference.domains.decision_making.intent.builder.wal.append")
 def test_reservation_released_on_emit_failure(
     mock_wal,
     mock_policy,

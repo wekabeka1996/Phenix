@@ -11,7 +11,7 @@ from typing import Any
 
 from apps.reference.utils.accessors import aget
 
-from ..gate_protocol import GateContext, GateOutcome, GateResult
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome, GateResult
 
 GATE_NAME = "exposure"
 logger = logging.getLogger("domain_decision_making")

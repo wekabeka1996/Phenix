@@ -2,7 +2,7 @@ import decimal
 import logging
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 
 
 class _StubEvent:

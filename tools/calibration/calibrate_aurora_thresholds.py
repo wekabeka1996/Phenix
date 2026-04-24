@@ -2030,10 +2030,10 @@ def _build_detector_event(symbol: str, bar: RecorderBar) -> Any:
 
 
 def _build_shield_cascade(decision_cfg: Any, mode_manager: Any) -> tuple[Any, Any | None]:
-    from apps.reference.domains.decision_making.shields.base import ShieldCascade
-    from apps.reference.domains.decision_making.shields.context_shield import ContextShield
-    from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
-    from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
+    from apps.reference.shared.decision_primitives.shields.base import ShieldCascade
+    from apps.reference.shared.decision_primitives.shields.context_shield import ContextShield
+    from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
+    from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
 
     scoring_engine_cfg = getattr(decision_cfg, "scoring_engine", None)
     if scoring_engine_cfg is None or not getattr(scoring_engine_cfg, "shield_enabled", False):
@@ -2135,7 +2135,7 @@ def _make_side_bias_state(
     sell_history_ms: deque[int],
     now_ms: int,
 ) -> Any:
-    from apps.reference.domains.decision_making.quadratic_scoring_kernel import SideBiasState
+    from apps.reference.shared.decision_primitives.scoring_kernel import SideBiasState
 
     window_sec = float(getattr(decision_cfg, "side_bias_window_sec", 420.0))
     cutoff_ms = now_ms - int(window_sec * 1000.0)
@@ -2240,8 +2240,8 @@ def _replay_symbol(
     window_spec: ReplayWindowSpec,
 ) -> list[ReplayObservation]:
     from apps.reference.config_models import OperationalMode
-    from apps.reference.domains.decision_making.operational_mode import ModeManager
-    from apps.reference.domains.decision_making.quadratic_scoring_kernel import QuadraticScoringKernel
+    from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
+    from apps.reference.shared.decision_primitives.scoring_kernel import QuadraticScoringKernel
     from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 
     if not bars:

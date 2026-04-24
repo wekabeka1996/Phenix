@@ -5,7 +5,7 @@ import decimal
 import pytest
 
 from apps.reference.config_models import DecisionGeometryConfig
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
 )
 

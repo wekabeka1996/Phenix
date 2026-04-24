@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

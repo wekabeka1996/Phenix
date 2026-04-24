@@ -9,7 +9,7 @@ import pytest
 
 @pytest.fixture
 def dm_minimal():
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     with patch.object(DecisionMaking, "__init__", lambda *_args, **_kwargs: None):
         dm = DecisionMaking.__new__(DecisionMaking)
@@ -53,7 +53,7 @@ def _last_trace_payload(dm):
 
 
 def test_trend_down_intent_long_denied(dm_minimal):
-    from apps.reference.domains.decision_making.normalized_reject_reasons import (
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
         NormalizedRejectReasons,
     )
 
@@ -84,7 +84,7 @@ def test_trend_down_intent_long_denied(dm_minimal):
 
 
 def test_trend_up_intent_short_denied(dm_minimal):
-    from apps.reference.domains.decision_making.normalized_reject_reasons import (
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
         NormalizedRejectReasons,
     )
 
@@ -115,7 +115,7 @@ def test_trend_up_intent_short_denied(dm_minimal):
 
 
 def test_trend_undefined_fail_closed_denied(dm_minimal):
-    from apps.reference.domains.decision_making.normalized_reject_reasons import (
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
         NormalizedRejectReasons,
     )
 

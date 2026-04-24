@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..decision_context import create_decision_context
-from ..gate_protocol import GateContext, GateOutcome, GateResult
+from apps.reference.domains.decision_making.core.context import create_decision_context
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome, GateResult
 
 GATE_NAME = "risk_skew"
 logger = logging.getLogger("domain_decision_making")

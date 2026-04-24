@@ -8,7 +8,7 @@ Test to verify PHASE 3 implementation:
 import pytest
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from vfoundation.core import FSMCore
 import pytest
 import decimal

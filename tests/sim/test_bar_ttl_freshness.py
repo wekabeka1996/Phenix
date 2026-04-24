@@ -96,7 +96,7 @@ class MockClock:
         self._now += ms
 
 # Import target
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 class TestBarTTLFreshness:
     
@@ -106,7 +106,7 @@ class TestBarTTLFreshness:
         
     @pytest.fixture
     def dm(self, clock):
-        with patch('apps.reference.domains.decision_making.decision_making.DomainConfigResolver') as mock_resolver:
+        with patch('apps.reference.domains.decision_making.core.facade.DomainConfigResolver') as mock_resolver:
             mock_resolver.return_value.get_decision_making.return_value = MockDomainConfig()
             
             # Instantiate (fsm first, config second)

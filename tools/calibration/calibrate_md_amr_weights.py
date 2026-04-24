@@ -92,7 +92,7 @@ def _require_md_amr_runtime() -> None:
         ) from exc
 
     try:
-        from apps.reference.domains.decision_making.strategy_bridge import (  # type: ignore
+        from apps.reference.domains.strategies.runtimes.bridge import (  # type: ignore
             MDAMRStrategyV11,
         )
     except Exception as exc:  # pragma: no cover

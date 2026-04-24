@@ -14,7 +14,7 @@ from apps.reference.config_models import (
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
 )
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 
@@ -326,7 +326,7 @@ def test_mean_reversion_e2e_chain_with_real_margin_first_sizing_multi_symbol(cas
 
     bus = _Bus()
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         dm_ps = case["dm_position_sizing"]
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg_prod_like_with_position_sizing(
             min_position_size_usd=int(dm_ps["min_position_size_usd"]),

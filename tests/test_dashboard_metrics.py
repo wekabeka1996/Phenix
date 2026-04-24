@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal
-from apps.reference.domains.decision_making.dashboard import DashboardMetrics, TradeOutcome
+from apps.reference.domains.decision_making.observability.dashboard import DashboardMetrics, TradeOutcome
 from apps.reference.config_models import DashboardConfig
 
 class TestDashboardMetrics(unittest.TestCase):

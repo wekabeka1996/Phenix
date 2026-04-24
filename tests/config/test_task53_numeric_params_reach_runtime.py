@@ -194,7 +194,7 @@ class TestQosSymbolCooldownSecReachesRuntime:
         mock_fsm = MagicMock()
         mock_fsm.listen = MagicMock()
         
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         dm = DecisionMaking(fsm=mock_fsm, config=config)
         
         # Check that the domain stored the config value
@@ -432,7 +432,7 @@ class TestMeanReversionConfigsReachRuntime:
         mock_fsm = MagicMock()
         mock_fsm.listen = MagicMock()
         
-        from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+        from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
         handler = MeanReversionHandler(fsm=mock_fsm, config=config)
         
         assert handler._enabled is True

@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import pytest
 
-from apps.reference.domains.decision_making.aurora_math import (
+from apps.reference.shared.decision_primitives.aurora_math import (
     AuroraMathInput,
     AuroraMathOutput,
     compute_aurora_math,

@@ -14,14 +14,14 @@ def _mk_instr(*, step_size, min_qty, min_notional, margin_pct, leverage):
 
 
 def _mk_dm(*, instruments, min_pos_usd="10", liq_cap_usd="10000"):
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.logger = logging.getLogger("tests.sizing.margin_first")
     dm.min_pos_size_usd = decimal.Decimal(str(min_pos_usd))
     dm.liq_cap_usd = decimal.Decimal(str(liq_cap_usd))
     dm.config = SimpleNamespace(instruments=instruments)
-    from apps.reference.domains.decision_making.position_queries import PositionQueries
+    from apps.reference.domains.decision_making.primitives.position_queries import PositionQueries
     dm._pos = PositionQueries(dm.config, lambda: None, dm.min_pos_size_usd, dm.liq_cap_usd, dm.logger)
     return dm
 

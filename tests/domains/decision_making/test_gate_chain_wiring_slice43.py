@@ -8,8 +8,8 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
-from apps.reference.domains.decision_making.safety_gates import SafetyGateResult
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
 
 
 def _make_dm(*, symbol="BTCUSDT", risk_score=0.3, risk_allowed=True,
@@ -91,7 +91,7 @@ def _make_event(*, symbol="BTCUSDT", side="BUY", strategy_id="aurora",
 class TestGateChainWiring:
     """Tests that process_signal() uses the gate chain correctly."""
 
-    @patch("apps.reference.domains.decision_making.safety_gates.apply_safety_gates")
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
     def test_all_gates_pass_dispatches_to_propose(self, mock_asg):
         """When all gates pass, _propose_trade_intent is called."""
         mock_asg.return_value = SafetyGateResult(outcome="ALLOW")
@@ -133,7 +133,7 @@ class TestGateChainWiring:
         dm._propose_trade_intent.assert_not_called()
         mock_asg.assert_not_called()
 
-    @patch("apps.reference.domains.decision_making.safety_gates.apply_safety_gates")
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
     def test_safety_gate_deny_handled_in_propose(self, mock_asg):
         """Safety gate DENY is now handled inside _propose_trade_intent (not chain)."""
         mock_asg.return_value = SafetyGateResult(
@@ -247,7 +247,7 @@ class TestGateChainWiring:
         assert "exception:ValueError" in call_kw["context"]
         dm._propose_trade_intent.assert_not_called()
 
-    @patch("apps.reference.domains.decision_making.safety_gates.apply_safety_gates")
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
     def test_gate_chain_trace_emitted_on_pass(self, mock_asg):
         """Gate chain trace is emitted on pass."""
         mock_asg.return_value = SafetyGateResult(outcome="ALLOW")

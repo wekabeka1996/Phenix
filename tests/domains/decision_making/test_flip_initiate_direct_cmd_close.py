@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
 
 class _Bus:
@@ -119,7 +119,7 @@ def test_initiate_flip_close_emits_cmd_close_directly():
     symbol = "BTCUSDT"
     cfg = _mk_cfg(symbol=symbol, stale_ttl_sec=15)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)
 
@@ -173,7 +173,7 @@ def test_initiate_flip_close_computes_next_allowed_ts_from_stale_ttl():
     stale_ttl_sec = 20
     cfg = _mk_cfg(symbol=symbol, stale_ttl_sec=stale_ttl_sec)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)
 
@@ -213,7 +213,7 @@ def test_initiate_flip_close_preserves_original_payload_in_deferred():
     symbol = "SOLUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)
 
@@ -268,7 +268,7 @@ def test_initiate_flip_close_fails_closed_on_missing_stale_ttl():
     # Break config: remove positions_stale_ttl_sec
     cfg.domains.position_tracking.positions_stale_ttl_sec = None
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)
 
@@ -291,7 +291,7 @@ def test_initiate_flip_close_uses_position_size_usd_when_qty_hint_missing():
     symbol = "DOGEUSDT"
     cfg = _mk_cfg(symbol=symbol)
 
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
         dm = DecisionMaking(fsm=bus, config=cfg)
 

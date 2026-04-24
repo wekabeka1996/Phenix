@@ -6,9 +6,9 @@ import pytest
 from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.gate_protocol import GateContext, GateOutcome
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome
 from apps.reference.domains.decision_making.gates import safety_gate
-from apps.reference.domains.decision_making.safety_gates import SafetyGateResult
+from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
 
 
 def _ctx(**kw) -> GateContext:

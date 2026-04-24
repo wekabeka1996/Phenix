@@ -295,7 +295,7 @@ def test_canonical_trade_intent_reject_helper_writes_observability_and_closes_li
     from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
         emit_canonical_trade_intent_rejected_event,
     )
-    from apps.reference.domains.decision_making.normalized_reject_reasons import (
+    from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
         build_trade_intent_rejected_message,
     )
     from apps.reference.telemetry.trade_lifecycle_logger import TradeLifecycleLogger

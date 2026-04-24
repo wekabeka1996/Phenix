@@ -10,16 +10,16 @@ import decimal
 from decimal import Decimal
 import pytest
 
-from apps.reference.domains.decision_making.instrument_quantizer import (
+from apps.reference.shared.decision_primitives.instrument_quantizer import (
     InstrumentSpec,
     QuantizedPosition,
     compute_risk_adjusted_notional,
     quantize_exposure,
 )
-from apps.reference.domains.decision_making.sizing_margin_first import (
+from apps.reference.shared.decision_primitives.sizing_margin_first import (
     compute_exposure_based_qty,
 )
-from apps.reference.domains.decision_making.entry_plan import (
+from apps.reference.shared.decision_primitives.entry_plan import (
     EntryPlan,
     EntryPlanParams,
     ObiMissingPolicy,

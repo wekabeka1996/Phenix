@@ -7,9 +7,9 @@ from decimal import Decimal
 # Add project root to path
 sys.path.append(".")
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 from apps.reference.config_models import DecisionConfig, ExecutionGateConfig, ExecutionGateName
-from apps.reference.domains.decision_making.execution_gate import ExecutionGate
+from apps.reference.domains.decision_making.gates.execution_gate import ExecutionGate
 
 class TestEntryPlanCrash(unittest.TestCase):
     def setUp(self):
@@ -26,8 +26,8 @@ class TestEntryPlanCrash(unittest.TestCase):
         
         # Instantiate Handler with mocked config
         # We need to mock a lot of internals to get to _process_decision without crashing earlier
-        with patch("apps.reference.domains.decision_making.aurora_handler.AuroraHandler._start_workers"), \
-             patch("apps.reference.domains.decision_making.aurora_handler.AuroraHandler._init_state_store"):
+        with patch("apps.reference.domains.strategies.runtimes.aurora.handler.AuroraHandler._start_workers"), \
+             patch("apps.reference.domains.strategies.runtimes.aurora.handler.AuroraHandler._init_state_store"):
             self.handler = AuroraHandler("aurora", self.mock_config)
             
         # Mock internal components that might be missing or fail

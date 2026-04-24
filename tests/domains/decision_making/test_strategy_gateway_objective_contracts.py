@@ -3,7 +3,7 @@ import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 
 
 class _StubEvent:
@@ -140,7 +140,7 @@ def test_mean_reversion_entry_preserves_canonical_objective_trace_through_gatewa
     )
 
     with patch(
-        "apps.reference.domains.decision_making.strategy_gateway.resolve_strategy_entry_prices",
+        "apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices",
         return_value=("0.12000", "0.13000", {"src": "test"}),
     ):
         gateway.process_signal(event)

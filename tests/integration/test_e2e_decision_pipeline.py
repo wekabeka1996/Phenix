@@ -265,7 +265,7 @@ class TestE2EDecisionPipeline:
         This is a focused integration test for MR's CMD processing.
         """
         from apps.reference.config_models import MRAssetConfig
-        from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+        from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
         
         # --- Setup mock config ---
         cfg = MagicMock()

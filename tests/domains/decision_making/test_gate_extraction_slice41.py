@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import MagicMock, PropertyMock
 from types import SimpleNamespace
 
-from apps.reference.domains.decision_making.gate_protocol import (
+from apps.reference.domains.decision_making.gateway.protocol import (
     GateContext, GateOutcome, GateResult,
 )
 from apps.reference.domains.decision_making.gates import (

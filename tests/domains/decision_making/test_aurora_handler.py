@@ -13,7 +13,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from apps.reference.domains.decision_making.aurora_handler import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import (
     AuroraHandler,
     SymbolState,
 )
@@ -361,7 +361,7 @@ class TestPortfolioStateNetPosition:
             return None  # simulate "not triggered"
 
         with patch(
-            "apps.reference.domains.decision_making.aurora_handler"
+            "apps.reference.domains.strategies.runtimes.aurora.handler"
             ".upgrade_cold_execution_restore_if_clean_start",
             side_effect=fake_upgrade,
         ):
@@ -425,12 +425,12 @@ class TestEmitStrategyBlockedContract:
         }
 
         with patch(
-            "apps.reference.domains.decision_making.aurora_handler"
+            "apps.reference.domains.strategies.runtimes.aurora.handler"
             ".write_strategy_decision_blocked",
             return_value=blocked_payload,
         ) as mock_blocked:
             with patch(
-                "apps.reference.domains.decision_making.aurora_handler"
+                "apps.reference.domains.strategies.runtimes.aurora.handler"
                 ".write_trade_intent_rejected",
             ) as mock_reject:
                 handler._emit_strategy_blocked(
@@ -560,7 +560,7 @@ class TestCanonicalSidePropagation:
         }
 
         with patch(
-            "apps.reference.domains.decision_making.aurora_decision"
+            "apps.reference.domains.strategies.runtimes.aurora.decision"
             ".evaluate_quadratic_shadow",
             return_value=None,
         ):

@@ -26,7 +26,7 @@ class Bus:
 
 
 def _decision(cfg):
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
     return DecisionMaking(fsm=Bus(), config=cfg)
 
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.decision_truth_artifacts import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.decision_making.intent.truth_artifacts import (
     canonicalize_intent_deferred_reason,
     write_strategy_decision_blocked,
 )
-from apps.reference.domains.decision_making.intent_emitter import IntentEmitter
+from apps.reference.domains.decision_making.intent.emitter import IntentEmitter
 from apps.reference.telemetry.shadow_journal import ShadowCriticalEventJournal
 
 
@@ -26,7 +26,7 @@ class _Clock:
 def test_write_strategy_decision_blocked_uses_blocked_wal_verb(monkeypatch) -> None:
     rows: list[dict] = []
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.decision_truth_artifacts.wal.append",
+        "apps.reference.domains.decision_making.intent.truth_artifacts.wal.append",
         lambda row: rows.append(dict(row)),
     )
 
@@ -55,7 +55,7 @@ def test_write_strategy_decision_blocked_uses_blocked_wal_verb(monkeypatch) -> N
 def test_intent_emitter_writes_intent_deferred_truth(monkeypatch) -> None:
     rows: list[dict] = []
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.decision_truth_artifacts.wal.append",
+        "apps.reference.domains.decision_making.intent.truth_artifacts.wal.append",
         lambda row: rows.append(dict(row)),
     )
     fsm = MagicMock()
@@ -119,7 +119,7 @@ def test_canonicalize_intent_deferred_reason_accepts_aurora_kernel_fail_closed_r
 def test_aurora_handler_blocked_helper_emits_blocked_truth(monkeypatch) -> None:
     rows: list[dict] = []
     monkeypatch.setattr(
-        "apps.reference.domains.decision_making.decision_truth_artifacts.wal.append",
+        "apps.reference.domains.decision_making.intent.truth_artifacts.wal.append",
         lambda row: rows.append(dict(row)),
     )
     emit_fn = MagicMock()

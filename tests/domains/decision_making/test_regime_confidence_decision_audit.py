@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.domains.decision_making.safety_gates import apply_safety_gates
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
+from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 from vfoundation.core.fsm_core import FSMCore
 
 
@@ -125,12 +125,12 @@ def test_allow_path_writes_regime_decision_audit_and_threshold_metadata(
     dm._builder._check_strategy_arbitration = MagicMock(return_value={"allowed": True})
 
     with patch(
-        "apps.reference.domains.decision_making.intent_builder.wal.append",
+        "apps.reference.domains.decision_making.intent.builder.wal.append",
         return_value="wal-ok",
     ), patch(
-        "apps.reference.domains.decision_making.intent_builder.order_logger.write"
+        "apps.reference.domains.decision_making.intent.builder.order_logger.write"
     ) as mock_order_write, patch(
-        "apps.reference.domains.decision_making.intent_builder.print"
+        "apps.reference.domains.decision_making.intent.builder.print"
     ):
         dm._propose_trade_intent(
             symbol="BTCUSDT",
@@ -179,7 +179,7 @@ def test_deny_path_writes_regime_decision_audit_for_threshold_block(
     dm._per_symbol_regimes["BTCUSDT"] = _regime_cache_snapshot(confidence="0.30")
 
     with patch(
-        "apps.reference.domains.decision_making.decision_making.order_logger.write"
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
     ):
         dm._propose_trade_intent(
             symbol="BTCUSDT",

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from vfoundation.core.protocol import Message
 
 class TestStrategyGatewayTimeContract:
@@ -75,7 +75,7 @@ class TestStrategyGatewayTimeContract:
             }
         )
 
-    @patch("apps.reference.domains.decision_making.strategy_gateway.resolve_strategy_entry_prices")
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices")
     def test_canonical_time_normalization_ms_downstream_success(self, mock_resolve, gateway):
         """Test ms timestamp goes through entry flow, hits NO stale reject, and proposes correctly."""
         gw, dm = gateway
@@ -93,7 +93,7 @@ class TestStrategyGatewayTimeContract:
         kwargs = dm._propose_trade_intent.call_args.kwargs
         assert kwargs["decision_ts_ms"] == valid_ms_ts
 
-    @patch("apps.reference.domains.decision_making.strategy_gateway.resolve_strategy_entry_prices")
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices")
     def test_canonical_time_normalization_sec_downstream_success(self, mock_resolve, gateway):
         """Test sec timestamp is scaled to ms, avoids SIGNAL_STALE, and reaches downstream."""
         gw, dm = gateway

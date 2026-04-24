@@ -241,7 +241,7 @@ class TestTradeIntentSchema:
         from pathlib import Path
         
         schema_path = Path(__file__).parent.parent.parent / \
-            "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
+            "apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json"
         
         if not schema_path.exists():
             pytest.skip("Schema file not found")
@@ -289,7 +289,7 @@ class TestTradeIntentSchema:
         from pathlib import Path
         
         schema_path = Path(__file__).parent.parent.parent / \
-            "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
+            "apps/reference/domains/decision_making/intent/schemas/trade_intent_v1.json"
         
         if not schema_path.exists():
             pytest.skip("Schema file not found")

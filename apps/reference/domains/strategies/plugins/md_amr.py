@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from apps.reference.config_models import AuroraConfig
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore

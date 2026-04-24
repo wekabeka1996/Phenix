@@ -160,7 +160,7 @@ class TestAuroraAdapterIntegration:
     """Integration tests with real kernel."""
 
     def test_adapter_matches_kernel_sign(self):
-        from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+        from apps.reference.shared.decision_primitives.scoring_kernel import (
             ScoringResult,
             SideBiasState,
             QuadraticScoringKernel

@@ -5,7 +5,7 @@ strategy arbitration system.  Extracted from strategy_gateway.py lines 402–414
 """
 from __future__ import annotations
 
-from ..gate_protocol import GateContext, GateOutcome, GateResult
+from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome, GateResult
 
 GATE_NAME = "arbitration"
 

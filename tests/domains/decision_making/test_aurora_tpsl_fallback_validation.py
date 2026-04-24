@@ -12,10 +12,10 @@ from apps.reference.contracts.runtime_bar_identity import (
     RuntimeBarSourceMode,
     build_canonical_bar_identity,
 )
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.entry_plan import resolve_strategy_entry_prices
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
-from apps.reference.domains.decision_making.tpsl_owner import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.shared.decision_primitives.entry_plan import resolve_strategy_entry_prices
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
+from apps.reference.shared.decision_primitives.tpsl_owner import (
     TPSL_OWNER_ENTRY_PLAN,
     TPSL_OWNER_LOSS_TP_MIN_DIST_BPS,
     TPSL_OWNER_REGIME_TPSL,

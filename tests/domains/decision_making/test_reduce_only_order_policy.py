@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 
 
 # ---------------------------------------------------------------------------

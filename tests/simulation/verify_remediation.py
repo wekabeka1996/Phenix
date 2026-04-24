@@ -11,9 +11,9 @@ sys.path.append(os.getcwd())
 
 # Import Domain Components
 try:
-    from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-    from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
-    from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
+    from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+    from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
+    from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
     from apps.reference.config_loader import get_config as load_config
     from vfoundation.core.protocol import Message
 except ImportError as e:

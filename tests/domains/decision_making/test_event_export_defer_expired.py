@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 class DummyExecution:
     gtx_retry_max = 2

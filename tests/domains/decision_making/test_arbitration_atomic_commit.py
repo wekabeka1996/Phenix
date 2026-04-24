@@ -2,10 +2,10 @@ import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
 from types import SimpleNamespace
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
-from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 from vfoundation.core.protocol import Message
-from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
 
 class TestArbitrationAtomicCommit:
     """TDD regression testing for DM-ARBITRATION-ATOMIC-COMMIT-PACK-R1.
@@ -160,7 +160,7 @@ class TestArbitrationAtomicCommit:
             self.vol_pct_60s = 0
             self.vol_pct_300s = 0
 
-    @patch("apps.reference.domains.decision_making.strategy_gateway.resolve_strategy_entry_prices")
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices")
     def test_precheck_does_not_mutate_window(self, mock_resolve, environment):
         """1. precheck_does_not_mutate_window
         Strategy A wins arbitration check but fails sizing. The window must NOT be poisoned for Strategy B.
@@ -189,8 +189,8 @@ class TestArbitrationAtomicCommit:
         gw._reject.assert_not_called()
         dm._propose_trade_intent.assert_called_once()
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_successful_path_commits_once(self, mock_resolve_policy, mock_wal, environment):
         """2. successful_path_commits_once
         When IntentBuilder proproses a trade fully, it successfully commits exactly once.
@@ -211,8 +211,8 @@ class TestArbitrationAtomicCommit:
         assert "BTCUSDT" in arb_signal_buffer
         assert arb_signal_buffer["BTCUSDT"][1] == "strat_A"
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_post_commit_wal_failure_does_not_poison_window(self, mock_resolve_policy, mock_wal, environment):
         """3. post_commit_wal_failure_does_not_poison_window
         Simulate WAL append failure.
@@ -256,8 +256,8 @@ class TestArbitrationAtomicCommit:
         assert "BTCUSDT" in arb_signal_buffer
         assert arb_signal_buffer["BTCUSDT"][1] == "strat_B"
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_post_commit_emit_failure_does_not_poison_window(self, mock_resolve_policy, mock_wal, environment):
         """4. post_commit_emit_failure_does_not_poison_window
         Simulate FSM emit failure.
@@ -299,7 +299,7 @@ class TestArbitrationAtomicCommit:
         assert "BTCUSDT" in arb_signal_buffer
         assert arb_signal_buffer["BTCUSDT"][1] == "strat_B"
 
-    @patch("apps.reference.domains.decision_making.strategy_gateway.resolve_strategy_entry_prices")
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices")
     def test_failed_candidate_does_not_create_sticky_winner(self, mock_resolve, environment):
         """5. failed_candidate_does_not_create_sticky_winner
         Downstream failures in Gateway should leave no ghost winner in the buffer.
@@ -319,8 +319,8 @@ class TestArbitrationAtomicCommit:
         assert gw._reject.call_args.kwargs["reason_code"] == "QOS_RATE_LIMIT"
         assert "BTCUSDT" not in arb_signal_buffer
 
-    @patch("apps.reference.domains.decision_making.intent_builder.wal.append")
-    @patch("apps.reference.domains.decision_making.intent_builder.IntentBuilder._resolve_order_policy")
+    @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
+    @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")
     def test_deterministic_competing_strategy_behavior(self, mock_resolve_policy, mock_wal, environment):
         """6. deterministic_competing_strategy_behavior
         If A and B both reach IntentBuilder, A commits, B is correctly blocked by A.

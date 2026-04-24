@@ -39,11 +39,11 @@ class TestS1WarmupGate:
         2. Attempt trade intent → blocked
         3. Set full_ready=true → intent allowed
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         # Monkeypatch metrics
         monkeypatch.setattr(
-            "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
+            "apps.reference.domains.decision_making.gates.readiness_gates.inc_warmup_block",
             metric_collector.inc_warmup_block,
         )
         
@@ -146,10 +146,10 @@ class TestS1WarmupGate:
         
         Critical for position closing even during startup.
         """
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         monkeypatch.setattr(
-            "apps.reference.domains.decision_making.readiness_gates.inc_warmup_block",
+            "apps.reference.domains.decision_making.gates.readiness_gates.inc_warmup_block",
             metric_collector.inc_warmup_block,
         )
         

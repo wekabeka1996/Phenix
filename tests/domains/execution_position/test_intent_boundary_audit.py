@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from vfoundation.core.protocol import Message
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.schema_registry import init_global_registry
@@ -336,15 +336,15 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
         }
 
         with patch(
-            "apps.reference.domains.decision_making.decision_making.apply_safety_gates",
+            "apps.reference.domains.decision_making.core.facade.apply_safety_gates",
             return_value=_AllowSafetyGate(),
         ), patch(
-            "apps.reference.domains.decision_making.intent_builder.wal.append",
+            "apps.reference.domains.decision_making.intent.builder.wal.append",
             return_value="wal-ok",
         ), patch(
-            "apps.reference.domains.decision_making.intent_builder.order_logger.write",
+            "apps.reference.domains.decision_making.intent.builder.order_logger.write",
         ), patch(
-            "apps.reference.domains.decision_making.intent_builder.print",
+            "apps.reference.domains.decision_making.intent.builder.print",
         ):
             dm._propose_trade_intent(
                 symbol="BTCUSDT",

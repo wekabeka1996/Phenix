@@ -58,7 +58,7 @@ def mock_config():
 @pytest.fixture
 def aurora_handler(mock_config):
     """Create AuroraHandler instance with mocked dependencies."""
-    from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+    from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
     
     emit_mock = MagicMock()
     
@@ -239,7 +239,7 @@ class TestAuroraTimeframeConfig:
     
     def test_missing_timeframe_raises_error(self, mock_config):
         """Verify handler fails if timeframe_sec is missing."""
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
         
         # Remove timeframe_sec from config
         mock_config.strategies.aurora.timeframe_sec = None

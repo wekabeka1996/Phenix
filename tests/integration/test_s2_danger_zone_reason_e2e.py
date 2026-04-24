@@ -6,10 +6,10 @@ trigger type, and that these reasons propagate through ShieldCascade correctly.
 """
 import unittest
 
-from apps.reference.domains.decision_making.shields.danger_zone import (
+from apps.reference.shared.decision_primitives.shields.danger_zone import (
     DangerZoneShield,
 )
-from apps.reference.domains.decision_making.shields.base import ShieldCascade
+from apps.reference.shared.decision_primitives.shields.base import ShieldCascade
 
 
 class TestDangerZoneReasonFormat(unittest.TestCase):

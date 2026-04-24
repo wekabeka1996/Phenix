@@ -17,7 +17,7 @@ class _DummyFsm:
 
 
 def _mk_dm(*, fsm):
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
     from apps.reference.core.time.clock import LiveClock
 
     dm = DecisionMaking.__new__(DecisionMaking)
@@ -76,7 +76,7 @@ def _mk_dm(*, fsm):
     dm._risk_budgets = {"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 200}
 
     from decimal import Decimal as _D
-    from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+    from apps.reference.domains.decision_making.intent.builder import IntentBuilder
     dm._builder = IntentBuilder(
         fsm=dm.fsm, clock=dm._clock, config=dm.config,
         tca_prefs=dm._tca_prefs, risk_budgets=dm._risk_budgets,

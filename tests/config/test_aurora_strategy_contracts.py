@@ -610,7 +610,7 @@ def test_current_aurora_config_loads_aurora_extraction_contract() -> None:
 def test_direct_runtime_consumers_receive_extracted_aurora_types() -> None:
     import logging
 
-    from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+    from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
     from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
 
     cfg = ConfigLoader(CONFIG_DIR).load_config()
@@ -634,10 +634,10 @@ def test_direct_runtime_consumers_receive_extracted_aurora_types() -> None:
 
 def test_aurora_runtime_import_smoke() -> None:
     config_resolver_mod = importlib.import_module(
-        "apps.reference.domains.decision_making.config_resolver"
+        "apps.reference.domains.decision_making.core.config_resolver"
     )
     handler_mod = importlib.import_module(
-        "apps.reference.domains.decision_making.aurora_handler"
+        "apps.reference.domains.strategies.runtimes.aurora.handler"
     )
     manage_mod = importlib.import_module(
         "apps.reference.domains.execution_position.fsm_manage"

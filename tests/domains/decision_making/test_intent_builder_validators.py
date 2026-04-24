@@ -2,7 +2,7 @@ import decimal
 
 import pytest
 
-from apps.reference.domains.decision_making.intent_builder_validators import (
+from apps.reference.domains.decision_making.intent.builder_validators import (
     normalize_trade_inputs,
     resolve_risk_budgets,
     resolve_tca_preferences,

@@ -138,7 +138,7 @@ class TestProtocolA_PingPongStress:
 
     @pytest.mark.skip(reason="T2B-03: on_features_calculated deprecated, use on_process_strategy")
     def test_reentry_blocked_within_cooldown(self):
-        from apps.reference.domains.decision_making.aurora_handler import (
+        from apps.reference.domains.strategies.runtimes.aurora.handler import (
             AuroraHandler,
         )
 
@@ -207,7 +207,7 @@ class TestProtocolA_PingPongStress:
 
     @pytest.mark.skip(reason="T2B-03: on_features_calculated deprecated, use on_process_strategy")
     def test_reentry_allowed_after_cooldown(self):
-        from apps.reference.domains.decision_making.aurora_handler import (
+        from apps.reference.domains.strategies.runtimes.aurora.handler import (
             AuroraHandler,
         )
 
@@ -264,7 +264,7 @@ class TestProtocolA_PingPongStress:
         assert payload["decision"]["action"] == "BUY"
 
     def test_per_symbol_cooldown_override(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(
             holding_period_enabled=False,
@@ -297,7 +297,7 @@ class TestProtocolB_LockedRoomTest:
     """
 
     def test_flip_blocked_and_forced_to_hold(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(
             holding_period_enabled=True,
@@ -347,7 +347,7 @@ class TestProtocolB_LockedRoomTest:
         assert block_payload["details"]["time_in_position_sec"] == 15.0
 
     def test_exit_allowed_after_holding_period(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(
             holding_period_enabled=True,
@@ -371,7 +371,7 @@ class TestProtocolB_LockedRoomTest:
         assert should_suppress is False, "Exit should be allowed after holding period"
 
     def test_emergency_override_allows_exit(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(
             holding_period_enabled=True,
@@ -508,7 +508,7 @@ class TestProtocolD_SymbolStatePersistence:
     """
 
     def test_exit_timestamp_updated_on_neutral_signal(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(holding_period_enabled=False)
         emit_fn = MagicMock()
@@ -538,7 +538,7 @@ class TestProtocolD_SymbolStatePersistence:
         assert state.entry_timestamp is None, "Entry timestamp should be cleared"
 
     def test_symbol_state_dataclass_has_exit_timestamp(self):
-        from apps.reference.domains.decision_making.aurora_handler import SymbolState
+        from apps.reference.domains.strategies.runtimes.aurora.handler import SymbolState
         state = SymbolState()
         assert hasattr(state, "last_exit_timestamp")
         state.last_exit_timestamp = 12345.0
@@ -552,7 +552,7 @@ class TestProtocolD_SymbolStatePersistence:
 class TestFullChainIntegration:
 
     def test_complete_position_lifecycle(self):
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
         config = create_mock_aurora_config(
             holding_period_enabled=True,

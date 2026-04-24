@@ -35,8 +35,8 @@ class FakeClock:
 
 def _mk_dm_for_exposure():
     """Create DecisionMaking mock for exposure cache tests."""
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
-    from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
+    from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
     from unittest.mock import MagicMock
 
     clock = FakeClock()

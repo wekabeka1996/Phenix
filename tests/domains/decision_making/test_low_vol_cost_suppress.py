@@ -47,7 +47,7 @@ def mock_config():
 @pytest.fixture
 def decision_making(mock_config):
     """Create DecisionMaking instance with mock FSM."""
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
     
     fsm = _DummyFsm()
     dm = DecisionMaking(fsm=fsm, config=mock_config)

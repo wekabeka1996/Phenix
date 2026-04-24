@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../"))
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 def dump_config():
     print("Loading config...")

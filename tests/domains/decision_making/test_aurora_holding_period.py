@@ -133,7 +133,7 @@ class ControllableClock:
 
 def create_handler_with_config(config, clock: ControllableClock = None):
     """Create AuroraHandler with given config and optional controllable clock."""
-    from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+    from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
     
     emit_fn = MagicMock()
     kwargs = {"config": config, "emit_fn": emit_fn, "strategy_id": "aurora"}

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin, _DisabledAuroraHandlerWrapper, _AuroraHandlerWrapper
 from apps.reference.config_contract import ConfigContractError
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
 
 class TestStrategyKillswitchEnforcement:
@@ -87,7 +87,7 @@ class TestStrategyKillswitchEnforcement:
         
         # Prove on_process_strategy fails closed and refuses to execute
         process_cmd = {"symbol": "BTCUSDT", "tf_sec": 300, "bar_close_ts": 123, "rid": "rid"}
-        with patch("apps.reference.domains.decision_making.aurora_handler.write_trade_intent_rejected") as mock_write:
+        with patch("apps.reference.domains.strategies.runtimes.aurora.handler.write_trade_intent_rejected") as mock_write:
             handler.on_process_strategy(process_cmd)
         
         # Verify rejection went out cleanly

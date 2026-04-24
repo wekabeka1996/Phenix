@@ -37,7 +37,7 @@ def _make_emitter(
     reject_calls: list,
 ):
     """Build an IntentEmitter with mocked injected callables."""
-    from apps.reference.domains.decision_making.intent_emitter import IntentEmitter
+    from apps.reference.domains.decision_making.intent.emitter import IntentEmitter
 
     fsm = MagicMock()
     clock = _make_clock()
@@ -168,7 +168,7 @@ def test_reduce_only_limit_close_uses_exit_limit_ttl_without_entry_ttl_rejection
     reject_calls: list = []
     emitted_payloads: list = []
 
-    from apps.reference.domains.decision_making.intent_builder import IntentBuilder
+    from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 
     fsm = MagicMock()
     fsm.emit.side_effect = (

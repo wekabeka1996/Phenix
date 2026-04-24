@@ -12,7 +12,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from ..alpha_model import AlphaModel, AlphaScore
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
     ScoringResult,
 )

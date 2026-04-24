@@ -113,7 +113,7 @@ class TestAuroraRunsOnCMD:
         Test 3: CMD(tf_sec=300) → Aurora executes.
                 CMD(tf_sec=180) → Aurora does NOT execute.
         """
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
         
         emit_mock = MagicMock()
         handler = AuroraHandler(
@@ -235,7 +235,7 @@ class TestMRRunsOnCMD:
     
     @pytest.fixture
     def mr_handler(self, mock_config, fsm_mock):
-        from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+        from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
         handler = MeanReversionHandler(fsm=fsm_mock, config=mock_config)
         handler.register()
         return handler
@@ -341,7 +341,7 @@ class TestNoDoubleExecution:
         This test documents the behavior - signal may be emitted twice.
         Future enhancement: Add bar_close_ts dedup using LRU cache.
         """
-        from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+        from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
         
         emit_mock = MagicMock()
         handler = AuroraHandler(
@@ -484,7 +484,7 @@ class TestMRRejectsCMDWithoutBar:
     
     @pytest.fixture
     def mr_handler(self, mock_config, fsm_mock):
-        from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+        from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
         handler = MeanReversionHandler(fsm=fsm_mock, config=mock_config)
         handler.register()
         return handler

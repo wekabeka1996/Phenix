@@ -8,7 +8,7 @@ import pytest
 
 from vfoundation.core.protocol import Message
 
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
 # from apps.reference.main import AuroraBridge  # REMOVED: AuroraBridge does not exist
 
 
@@ -185,7 +185,7 @@ def test_vertical_flip_close_dm_to_bridge_to_execpos(monkeypatch, fsm_harness):
 
     # 2) DecisionMaking flip orchestration will emit reduce-only close, then INTENT_DEFERRED.
     dm_cfg = _mk_dm_cfg(symbol=symbol, stale_ttl_sec=stale_ttl_sec)
-    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_domain_cfg()
         dm = DecisionMaking(fsm=bus, config=dm_cfg)  # type: ignore[arg-type]
 

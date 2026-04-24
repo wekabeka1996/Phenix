@@ -36,7 +36,7 @@ def test_audit_01_fee_insolvency_margin_pct_1_has_no_fee_buffer() -> None:
     If it fails, the sizing logic is capable of producing an unexecutable order
     when margin_pct=1.0, even before considering slippage.
     """
-    from apps.reference.domains.decision_making.sizing_margin_first import (
+    from apps.reference.shared.decision_primitives.sizing_margin_first import (
         compute_notional_target,
         compute_qty,
     )

@@ -18,8 +18,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.decision_making.position_queries import PositionQueries
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.primitives.position_queries import PositionQueries
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from vfoundation.core.protocol import Message
 
 

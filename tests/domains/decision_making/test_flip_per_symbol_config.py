@@ -105,7 +105,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_global_killswitch_off_returns_disabled(self, mock_dm):
         """If global killswitch is OFF, returns (False, 1.0) ignoring per-symbol."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         mock_dm.flip_global_enabled = False
         
@@ -118,7 +118,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_crash_when_no_instrument(self, mock_dm):
         """FAIL-CLOSED: When symbol not in instruments, RAISE ConfigContractError."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         mock_dm.config.instruments.get.return_value = None
         
@@ -129,7 +129,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_crash_when_flip_is_none(self, mock_dm):
         """FAIL-CLOSED: When instrument has no flip config, RAISE ConfigContractError."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         instr = MagicMock()
         instr.flip = None
@@ -142,7 +142,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_per_symbol_valid_config(self, mock_dm):
         """Returns per-symbol config if valid."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         flip_cfg = MagicMock()
         flip_cfg.enabled = True
@@ -158,7 +158,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_per_symbol_override_disabled(self, mock_dm):
         """Per-symbol enabled=False works."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         flip_cfg = MagicMock()
         flip_cfg.enabled = False
@@ -174,7 +174,7 @@ class TestDecisionMakingGetFlipConfig:
 
     def test_hysteresis_mult_floor_at_1(self, mock_dm):
         """hysteresis_mult is floored at 1.0 even if config has lower value."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         flip_cfg = MagicMock()
         flip_cfg.enabled = True

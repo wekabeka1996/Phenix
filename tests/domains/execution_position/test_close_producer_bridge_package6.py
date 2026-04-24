@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.decision_making.flip_orchestration import FlipOrchestrator
+from apps.reference.domains.decision_making.intent.flip import FlipOrchestrator
 from apps.reference.domains.execution_position.close_producer_bridge import (
     adapt_cmd_close_to_dec_close,
     build_close_producer_bridge_trace_ref,

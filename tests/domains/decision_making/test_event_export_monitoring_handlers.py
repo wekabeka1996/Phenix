@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from vfoundation.core.protocol import Message
-from apps.reference.domains.decision_making.event_handlers import DMEventHandlers
+from apps.reference.domains.decision_making.core.event_handlers import DMEventHandlers
 from apps.reference.config_contract import ConfigContractError
 
 

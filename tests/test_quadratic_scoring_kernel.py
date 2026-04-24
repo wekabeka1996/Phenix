@@ -6,14 +6,14 @@ import decimal
 import math
 import pytest
 
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     QuadraticScoringKernel,
 )
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+from apps.reference.shared.decision_primitives.scoring_kernel import (
     ScoringResult,
     SideBiasState,
 )
-from apps.reference.domains.decision_making.shields.null_shield import NullShield
+from apps.reference.shared.decision_primitives.shields.null_shield import NullShield
 
 
 def _base_kwargs(**overrides):

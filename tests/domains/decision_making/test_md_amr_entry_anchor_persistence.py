@@ -7,10 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from apps.reference.domains.decision_making.md_amr_entry_anchor_artifact import (
+from apps.reference.domains.strategies.runtimes.md_amr.entry_anchor_artifact import (
     MDAMREntryAnchorArtifactStore,
 )
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 from apps.reference.domains.feature_engineering.md_amr_strategy import MDAMRSignal
 
 

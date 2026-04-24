@@ -27,7 +27,7 @@ class FakeFSM:
 
 
 def test_synthetic_sol_downtrend_no_cmd_open_long():
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     fsm = FakeFSM()
     opened = []
@@ -87,7 +87,7 @@ def test_synthetic_sol_downtrend_no_cmd_open_long():
 
 
 def test_single_bar_uptick_does_not_hard_block_short_when_veto_requires_two_bars():
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     fsm = FakeFSM()
 
@@ -163,7 +163,7 @@ def test_single_bar_uptick_does_not_hard_block_short_when_veto_requires_two_bars
 
 
 def test_btc_two_bar_uptick_still_blocks_short_when_veto_requires_two_bars():
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.domains.decision_making.core.facade import DecisionMaking
 
     fsm = FakeFSM()
 

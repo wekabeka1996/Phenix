@@ -5,13 +5,13 @@ from unittest.mock import MagicMock
 
 from vfoundation.core.protocol import Message
 
-from apps.reference.domains.decision_making.normalized_reject_reasons import (
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
     NormalizedRejectReasons,
 )
-from apps.reference.domains.decision_making.regime_loss_embargo import (
+from apps.reference.domains.decision_making.gates.regime_loss_embargo import (
     RegimeLossEmbargo,
 )
-from apps.reference.domains.decision_making.strategy_gateway import StrategyGateway
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 
 
 def _make_policy(*, enabled: bool = True, threshold: float = 0.0):

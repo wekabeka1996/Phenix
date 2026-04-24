@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Local threshold-asymmetry study for Aurora TREND_UP decision boundaries."""
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import _determine_side
+from apps.reference.shared.decision_primitives.scoring_kernel import _determine_side
 from tools.forensics import aurora_sensitivity_microgrid_study as micro
 from tools.forensics import aurora_trend_up_strategist_sweep_study as prev
 

@@ -21,7 +21,7 @@ import yaml
 
 def _attach_dm_config_resolver(dm, cfg) -> None:
     """Attach DMConfigResolver for tests that bypass DecisionMaking.__init__."""
-    from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+    from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
 
     dm.config = cfg
     dm.strategies_registry = None
@@ -44,7 +44,7 @@ class TestFailClosedRiskSkew:
 
     def test_get_risk_skew_config_fails_without_config(self):
         """_get_risk_skew_config should fail if risk_skew key is missing."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         # Create nested mock without spec to allow attribute assignment
         cfg = MagicMock()
@@ -59,7 +59,7 @@ class TestFailClosedRiskSkew:
 
     def test_get_risk_skew_config_returns_value_when_present(self):
         """_get_risk_skew_config should return value from config."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
         
         cfg = MagicMock()
         cfg.domains.decision_making.risk_skew.max_skew_sec = 10
@@ -78,8 +78,8 @@ class TestFailClosedSideBias:
 
     def test_get_side_bias_params_fails_without_config(self):
         """_get_side_bias_params should fail if side_bias is missing."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
+        from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
 
         cfg = MagicMock()
         cfg.strategies.aurora.decision.side_bias_penalty_factor = None  # Missing!
@@ -109,8 +109,8 @@ class TestFailClosedSideBias:
 
     def test_get_side_bias_params_returns_values_when_present(self):
         """_get_side_bias_params should return values from config."""
-        from apps.reference.domains.decision_making.decision_making import DecisionMaking
-        from apps.reference.domains.decision_making.config_resolver import DMConfigResolver
+        from apps.reference.domains.decision_making.core.facade import DecisionMaking
+        from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
 
         cfg = MagicMock()
         cfg.strategies.aurora.decision.side_bias_penalty_factor = 0.5

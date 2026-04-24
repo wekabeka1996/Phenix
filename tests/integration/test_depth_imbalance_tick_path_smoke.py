@@ -39,7 +39,7 @@ def test_depth_imbalance_tick_path_reaches_decision_making_smoke() -> None:
 
     from apps.reference.config_loader import ConfigLoader
     from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
-    from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+    from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 
     cfg = ConfigLoader().load_config()
 

@@ -19,11 +19,11 @@ from apps.reference.contracts.strategy_compatibility_matrix import (
     regime_detector_required_bars,
 )
 from apps.reference.core.time.clock import MockClock
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.mean_reversion_handler import (
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import (
     MeanReversionHandler,
 )
-from apps.reference.domains.decision_making.readiness_gates import ReadinessGates
+from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 
 
@@ -597,10 +597,10 @@ def test_aurora_missing_regime_payload_uses_cached_previous_regime_with_traceabl
     )
 
     with patch(
-        "apps.reference.domains.decision_making.aurora_decision.evaluate_quadratic_shadow",
+        "apps.reference.domains.strategies.runtimes.aurora.decision.evaluate_quadratic_shadow",
         return_value=None,
     ), patch(
-        "apps.reference.domains.decision_making.aurora_decision.write_intent_deferred",
+        "apps.reference.domains.strategies.runtimes.aurora.decision.write_intent_deferred",
         side_effect=lambda **kwargs: kwargs,
     ):
         handler.on_process_strategy(cmd)

@@ -13,15 +13,15 @@ Tests:
 import math
 import pytest
 
-from apps.reference.domains.decision_making.shields.base import (
+from apps.reference.shared.decision_primitives.shields.base import (
     BaseShield,
     ShieldCascade,
     ShieldResult,
 )
-from apps.reference.domains.decision_making.shields.null_shield import NullShield
-from apps.reference.domains.decision_making.shields.context_shield import ContextShield
-from apps.reference.domains.decision_making.shields.memory_shield import MemoryShield
-from apps.reference.domains.decision_making.shields.danger_zone import DangerZoneShield
+from apps.reference.shared.decision_primitives.shields.null_shield import NullShield
+from apps.reference.shared.decision_primitives.shields.context_shield import ContextShield
+from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
+from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
 
 
 # =============================================================================
@@ -333,7 +333,7 @@ class TestFullIntegration:
     def test_cascade_with_quadratic_kernel(self):
         """End-to-end: pillars → quadratic → shields → final score."""
         import decimal
-        from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+        from apps.reference.shared.decision_primitives.scoring_kernel import (
             QuadraticScoringKernel,
         )
 
@@ -379,7 +379,7 @@ class TestFullIntegration:
     def test_danger_zone_vetoes_everything(self):
         """DangerZone veto → score=0, neutral."""
         import decimal
-        from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+        from apps.reference.shared.decision_primitives.scoring_kernel import (
             QuadraticScoringKernel,
         )
 

@@ -18,8 +18,8 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
-from apps.reference.domains.decision_making.md_amr_handler import MDAMRHandler
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ def test_md_amr_diagnostics_blocks_when_profile_is_none() -> None:
 def test_no_profile_is_none_fail_open_in_aurora_decision() -> None:
     """Drift prevention: aurora_decision.py must not contain 'if _profile else 0'."""
     import inspect
-    import apps.reference.domains.decision_making.aurora_decision as module
+    import apps.reference.domains.strategies.runtimes.aurora.decision as module
     assert "if _profile else 0" not in inspect.getsource(module), (
         "Residual 'if _profile else 0' found in aurora_decision — fail-open on profile=None!"
     )
@@ -282,7 +282,7 @@ def test_no_profile_is_none_fail_open_in_aurora_decision() -> None:
 def test_no_profile_is_none_fail_open_in_aurora_handler() -> None:
     """Drift prevention: aurora_handler.py must not contain 'if _profile else 0'."""
     import inspect
-    import apps.reference.domains.decision_making.aurora_handler as module
+    import apps.reference.domains.strategies.runtimes.aurora.handler as module
     assert "if _profile else 0" not in inspect.getsource(module), (
         "Residual 'if _profile else 0' found in aurora_handler — fail-open on profile=None!"
     )
@@ -291,7 +291,7 @@ def test_no_profile_is_none_fail_open_in_aurora_handler() -> None:
 def test_no_profile_is_none_fail_open_in_md_amr_handler() -> None:
     """Drift prevention: md_amr_handler.py must not contain 'if _profile else 0'."""
     import inspect
-    import apps.reference.domains.decision_making.md_amr_handler as module
+    import apps.reference.domains.strategies.runtimes.md_amr.handler as module
     assert "if _profile else 0" not in inspect.getsource(module), (
         "Residual 'if _profile else 0' found in md_amr_handler — fail-open on profile=None!"
     )
@@ -304,7 +304,7 @@ def test_no_fail_open_gate_pattern_in_aurora_handler() -> None:
     or equivalent fail-open gate logic."""
     import ast
     import inspect
-    import apps.reference.domains.decision_making.aurora_handler as module
+    import apps.reference.domains.strategies.runtimes.aurora.handler as module
 
     source = inspect.getsource(module)
     # Check for the specific fail-open pattern
@@ -318,7 +318,7 @@ def test_no_fail_open_gate_pattern_in_md_amr_handler() -> None:
     """Drift prevention: md_amr_handler must not contain 'if _basis_required else True'."""
     import ast
     import inspect
-    import apps.reference.domains.decision_making.md_amr_handler as module
+    import apps.reference.domains.strategies.runtimes.md_amr.handler as module
 
     source = inspect.getsource(module)
     assert "if _basis_required else True" not in source, (
