@@ -1,105 +1,67 @@
-basis_tf_sec: 300       # Bar-Only updates (5 min)
-uncertain_cutoff: 0.15  # P0-BUY-RECOVERY: was 0.22 → demoted marginal regimes to UNCERTAIN; lowered to match confidence_min floor (0.15) to reduce overblocking
-
-# DM-CRITICAL-PATCHES-02: Liveness guard factor
-# If no heartbeat received within (basis_tf_sec * liveness_factor) ms, block trading.
-# Default: 3 (i.e., 15 minutes for 5m basis)
+basis_tf_sec: 300
+uncertain_cutoff: 0.15
 liveness_factor: 3
-
-# Extra basis bars imported above regime_detector_required_bars() to absorb Binance fetch gaps.
-# Total import = regime_detector_required_bars() + basis_import_buffer
-# regime_detector_required_bars() = max(sma_long_period, atr_period + atr_sma_length - 1) = 301 currently.
 basis_import_buffer: 20
-
-# HYSTERESIS-SLOPE-GATE-01
-# NOTE: These are top-level regime.yaml keys (NOT under `models:`).
-# FIX-HYST-01: Increased from 35 bars (25 min confirmation at 5m basis).
-# Prevents rapid regime flipping that causes mass CANCEL_STALE_REGIME.
-# Original: 3 bars (15 min)  too responsive, median regime life = 5 min.
-hysteresis_bars: 2  # P0-BUY-RECOVERY: was 3 → each regime transition produced 2 UNCERTAIN carry bars (dominant driver of 32-44% UNCERTAIN rate); reduced to 2 (1 carry bar per transition)
+hysteresis_bars: 2
 vol_slope_gate_enabled: true
 vol_slope_gate_eps: -0.005
 vol_slope_gate_confirm_bars: 5
-
-# SCORCHED-EARTH-2026-01-27: hmm and features blocks DELETED
-# Reason: Zero runtime references found via deep grep audit.
-# These fields were loaded into AuroraConfig but never accessed by any domain code.
-# See implementation_plan.md for full forensic evidence.
-
-
-# PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
 models:
   sma_trend:
-    # TESTNET SMOKE: minimize warmup (min allowed: 2)
-    # LIVE (was): sma_short_period: 10
-    sma_short_period: 48   # R2-WINNER-2026-03-01: updated from 24 (grid top-1: sma=48/192, cross-sym score=0.3486)
-    # LIVE (was): sma_long_period: 50 (min allowed: 5)
-    sma_long_period: 192   # R2-WINNER-2026-03-01: updated from 96 (sensitivity monotone: 96144192 best)
-    confidence_multiplier: 80.0     # TUNED: Lowered from 120 to avoid saturation
+    sma_short_period: 48
+    sma_long_period: 192
+    confidence_multiplier: 80.0
     confidence_min: 0.15
     confidence_max: 0.85
   volatility:
     enabled: true
-    # TESTNET SMOKE: minimize warmup
-    # LIVE (was): atr_period: 14
-    atr_period: 14  # :   14
-    # LIVE (was): atr_sma_length: 100 (min allowed: 10)
+    atr_period: 14
     atr_sma_length: 288
     allow_close_to_close_atr: true
-    threshold_multiplier: 2.00      # TUNED: Reverted slightly to align with Volatility clustering
-    low_vol_multiplier: 0.70        # TUNED: Stricter low vol
-    high_vol_confidence_multiplier: 2.5 # TUNED: Increase confidence when vol spikes
+    threshold_multiplier: 2.0
+    low_vol_multiplier: 0.7
+    high_vol_confidence_multiplier: 2.5
     low_vol_confidence_multiplier: 3.0
   mean_reversion:
-    threshold: 0.0050               # TUNED: Adjusted for 0.5% natural spread
+    threshold: 0.005
     confidence_multiplier: 120.0
-
-#  SYSTEM STRESS GUARD (Phase 0.0)
-# Independent circuit-breaker overlay: NORMAL  STRESS  EXTREME.
-# NOT a replacement for TREND/MR regimes  a separate guard layer.
-# When enabled + state=STRESS/EXTREME, DM can gate/attenuate entries.
 system_stress:
-  enabled: true                  # ON: DM can gate/attenuate entries on STRESS/EXTREME
-  sources_enabled: ["price"]     # ["price"] | ["price","orderbook"]
-  require_l2_if_enabled: true    # fail-fast if orderbook in sources but L2 fields missing
-
-  baseline_method: rolling       # rolling | expanding
-  baseline_window: 100           # REQUIRED if rolling
-  burn_in_bars: 120              # minimum bars before emitting stress signal
-  robust_method: none            # none | mad
-
+  enabled: true
+  sources_enabled:
+  - price
+  require_l2_if_enabled: true
+  baseline_method: rolling
+  baseline_window: 100
+  burn_in_bars: 120
+  robust_method: none
   thresholds:
     atr_sigma: 2.0
     vol_sigma: 2.0
     gap_sigma: 3.0
     range_sigma: 2.5
-    volume_sigma: 0.0            # 0.0 = disabled (avoid false positives on seasonal volume)
-    spread_sigma: 0.0            # 0.0 = disabled (requires orderbook in sources_enabled)
-    depth_drop_pct: 0.0          # disabled by default; enable only with L2
-
+    volume_sigma: 0.0
+    spread_sigma: 0.0
+    depth_drop_pct: 0.0
   aggregation:
-    method: weighted_vote        # weighted_vote | k_of_n | max
-    weights:                     # REQUIRED if weighted_vote; keys must match enabled triggers
-      atr: 0.30
-      vol: 0.30
-      gap: 0.20
-      range: 0.20
-    k: 2                         # REQUIRED if k_of_n
-
+    method: weighted_vote
+    weights:
+      atr: 0.3
+      vol: 0.3
+      gap: 0.2
+      range: 0.2
+    k: 2
   state_mapping:
-    enter_stress: 0.60
-    exit_stress: 0.40
+    enter_stress: 0.6
+    exit_stress: 0.4
     enter_extreme: 0.85
-    exit_extreme: 0.70
-    # A4 preset (Phase 0.3 winner  anti-flip hard, wide CB window):
-    consecutive_bars_enter: 6    # was 3; 30 min confirmation at 5m basis
-    consecutive_bars_exit: 4     # was 2
-    min_duration_bars: 15        # was 5; re-entry cooldown (75 min at 5m = 15 bars)
-    switch_window_bars: 200      # was 50; ~16.7h window  main anti-churn stabiliser
-    max_switches_per_window: 2   # was 3; strict CB limit
-    circuit_breaker_mode: halt   # halt (fail-closed)
-
+    exit_extreme: 0.7
+    consecutive_bars_enter: 6
+    consecutive_bars_exit: 4
+    min_duration_bars: 15
+    switch_window_bars: 200
+    max_switches_per_window: 2
+    circuit_breaker_mode: halt
 regime_shift_inception:
   enabled: false
-  action: "none"
+  action: none
   micro_size_fraction: 0.25

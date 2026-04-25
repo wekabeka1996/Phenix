@@ -7,10 +7,9 @@ This module defines the complete configuration schema with full type validation.
 All models are designed to fail fast (startup validation) rather than silently accepting invalid configs.
 """
 
-from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal, Tuple
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 from apps.reference.contracts.runtime_regime_layers import normalize_structural_regime_label
 from apps.reference.config.shared.atoms import (
@@ -272,11 +271,11 @@ class MeanReversionConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field()
-    bb_window: int = Field()
-    bb_std_dev: float = Field()
-    min_vol_atr: float = Field()
-    allowed_regimes: List[str] = Field()
+    enabled: bool = Field(...)
+    bb_window: int = Field(...)
+    bb_std_dev: float = Field(...)
+    min_vol_atr: float = Field(...)
+    allowed_regimes: List[str] = Field(...)
 
 
 # Phase 2 / Pkg 7: resolve forward refs that still cross the frozen facade
@@ -298,24 +297,24 @@ DecisionConfig.model_rebuild(
 class SLConfig(BaseModel):
     """Stop-loss configuration."""
     model_config = ConfigDict(extra='forbid')
-    fixed_bps: int = Field(description='Fixed basis points')
+    fixed_bps: int = Field(..., description='Fixed basis points')
 
 
 class TPConfig(BaseModel):
     """Take-profit configuration."""
     model_config = ConfigDict(extra='forbid')
-    fixed_bps: int = Field(description='Fixed basis points')
+    fixed_bps: int = Field(..., description='Fixed basis points')
 
 
 class BracketsConfig(BaseModel):
     """Brackets (TP/SL) configuration."""
     model_config = ConfigDict(extra='forbid')
 
-    sl: Optional[SLConfig] = Field()
-    tp: Optional[TPConfig] = Field()
-    oco_emulation: bool = Field(description='Emulate OCO orders')
+    sl: Optional[SLConfig] = Field(...)
+    tp: Optional[TPConfig] = Field(...)
+    oco_emulation: bool = Field(..., description='Emulate OCO orders')
     # TASK-ZOMBIE-FIX: Removed stop_loss_bps (dead duplicate, SSOT is sl.fixed_bps)
-    offset_bps: int = Field(description='Safety offset in bps')
+    offset_bps: int = Field(..., description='Safety offset in bps')
 
 
 class TrailingDefaultsConfig(BaseModel):
@@ -323,11 +322,11 @@ class TrailingDefaultsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     activation_pct: float = Field(
-        default=0.003, description='0.3% profit to activate')
+        ..., description='0.3% profit to activate')
     trail_pct: float = Field(
-        default=0.006, description='0.6% trailing distance')
+        ..., description='0.6% trailing distance')
     min_update_interval_sec: int = Field(
-        default=5, description='Min seconds between updates')
+        ..., description='Min seconds between updates')
 
 
 class EmergencyConfig(BaseModel):
@@ -337,11 +336,11 @@ class EmergencyConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable emergency SL')
+    enabled: bool = Field(..., description='Enable emergency SL')
     wait_mode_bars: int = Field(
-        default=2, description='Wait mode bars before resuming')
+        ..., description='Wait mode bars before resuming')
     emergency_sl_bps: int = Field(
-        default=100, description='Emergency SL in basis points')
+        ..., description='Emergency SL in basis points')
 
 
 class OrphanMonitorConfig(BaseModel):
@@ -351,17 +350,17 @@ class OrphanMonitorConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable orphan monitoring')
+    enabled: bool = Field(..., description='Enable orphan monitoring')
     run_on_startup: bool = Field(
-        description='Run orphan check immediately on FSM startup')
+        ..., description='Run orphan check immediately on FSM startup')
     periodic_interval_sec: int = Field(
-        ge=5, description='Interval between orphan checks')
+        ..., ge=5, description='Interval between orphan checks')
     min_order_age_sec: int = Field(
-        ge=0, description='Minimum age of order before considering it for orphan cleanup')
+        ..., ge=0, description='Minimum age of order before considering it for orphan cleanup')
     batch_cancel_limit: int = Field(
-        ge=1, description='Max number of orders to cancel in one batch')
+        ..., ge=1, description='Max number of orders to cancel in one batch')
     rate_limit_per_min: int = Field(
-        ge=1, description='Rate limit for cancel requests per minute')
+        ..., ge=1, description='Rate limit for cancel requests per minute')
 
 
 class ManageConfig(BaseModel):
@@ -371,10 +370,10 @@ class ManageConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    brackets: Optional[BracketsConfig] = Field()
-    emergency: Optional[EmergencyConfig] = Field()
-    auto: bool = Field()
-    orphan_monitor: Optional[OrphanMonitorConfig] = Field()
+    brackets: Optional[BracketsConfig] = Field(...)
+    emergency: Optional[EmergencyConfig] = Field(...)
+    auto: bool = Field(...)
+    orphan_monitor: Optional[OrphanMonitorConfig] = Field(...)
     # TASK-ZOMBIE-FIX: Removed failsafe field (dead, max_hold_sec moved to instruments.<SYM>.exit)
 
 
@@ -385,30 +384,30 @@ class ExposureConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    max_equity_utilization_pct: float = Field()
-    max_portfolio_fraction: float = Field()
+    max_equity_utilization_pct: float = Field(...)
+    max_portfolio_fraction: float = Field(...)
     # TASK-ZOMBIE-FIX: Removed max_side_utilization_pct (dead, never read in exposure_guard)
-    max_directional_ratio: float = Field()
+    max_directional_ratio: float = Field(...)
     # TASK-ZOMBIE-FIX: Removed per_symbol_cap_pct (dead, never read in exposure_guard)
-    pending_ttl_sec: int = Field()
+    pending_ttl_sec: int = Field(...)
     # TASK-ZOMBIE-FIX: Removed pending_reservation_ttl_sec (dead, never read in exposure_guard)
-    post_fill_hold_ttl_sec: int = Field()
+    post_fill_hold_ttl_sec: int = Field(...)
     # TASK-ZOMBIE-FIX: Removed positions_stale_ttl_sec (duplicate, SSOT is domains.execution_position.exposure_guard.stale_ttl_sec)
-    leverage_defaults: Dict[str, int] = Field()
+    leverage_defaults: Dict[str, int] = Field(...)
     count_pending_orders: bool = Field(
-        description='Count pending orders in exposure')
+        ..., description='Count pending orders in exposure')
     exclude_reduce_only: bool = Field(
-        description='Exclude reduce-only from exposure')
+        ..., description='Exclude reduce-only from exposure')
 
 
 class WatchdogConfig(BaseModel):
     """Watchdog configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
 
-    ack_ttl_ms: int = Field()
-    fill_ttl_ms: int = Field()
-    check_interval_ms: int = Field()
-    rps_limit: int = Field()
+    ack_ttl_ms: int = Field(...)
+    fill_ttl_ms: int = Field(...)
+    check_interval_ms: int = Field(...)
+    rps_limit: int = Field(...)
 
 
 class SMARegimeModelConfig(BaseModel):
@@ -419,15 +418,15 @@ class SMARegimeModelConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     sma_short_period: int = Field(
-        ge=2, description='Short SMA period for trend detection')
+        ..., ge=2, description='Short SMA period for trend detection')
     sma_long_period: int = Field(
-        ge=5, description='Long SMA period for trend detection')
+        ..., ge=5, description='Long SMA period for trend detection')
     confidence_multiplier: float = Field(
-        ge=1.0, description='Confidence scaling factor')
+        ..., ge=1.0, description='Confidence scaling factor')
     confidence_min: float = Field(
-        ge=0.0, le=1.0, description='Minimum confidence value')
+        ..., ge=0.0, le=1.0, description='Minimum confidence value')
     confidence_max: float = Field(
-        ge=0.0, le=1.0, description='Maximum confidence value')
+        ..., ge=0.0, le=1.0, description='Maximum confidence value')
 
 
 class VolatilityRegimeModelConfig(BaseModel):
@@ -437,20 +436,20 @@ class VolatilityRegimeModelConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable volatility regime detection')
-    atr_period: int = Field(ge=1, description='ATR calculation period')
+    enabled: bool = Field(..., description='Enable volatility regime detection')
+    atr_period: int = Field(..., ge=1, description='ATR calculation period')
     atr_sma_length: int = Field(
-        ge=10, description='ATR SMA length for baseline')
+        ..., ge=10, description='ATR SMA length for baseline')
     allow_close_to_close_atr: bool = Field(
-        description='Allow close-to-close TR/ATR when OHLC is unavailable (explicit opt-in)')
+        ..., description='Allow close-to-close TR/ATR when OHLC is unavailable (explicit opt-in)')
     threshold_multiplier: float = Field(
-        ge=1.0, description='High vol threshold (ATR > threshold_mult * avg)')
+        ..., ge=1.0, description='High vol threshold (ATR > threshold_mult * avg)')
     low_vol_multiplier: float = Field(
-        ge=0.0, le=1.0, description='Low vol threshold (ATR < low_vol_mult * avg)')
+        ..., ge=0.0, le=1.0, description='Low vol threshold (ATR < low_vol_mult * avg)')
     high_vol_confidence_multiplier: float = Field(
-        ge=1.0, description='Confidence scaling for high vol')
+        ..., ge=1.0, description='Confidence scaling for high vol')
     low_vol_confidence_multiplier: float = Field(
-        ge=1.0, description='Confidence scaling for low vol')
+        ..., ge=1.0, description='Confidence scaling for low vol')
 
 
 class MeanReversionRegimeModelConfig(BaseModel):
@@ -461,9 +460,9 @@ class MeanReversionRegimeModelConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     threshold: float = Field(
-        ge=0.0, description='Max price deviation from SMAs for MR regime')
+        ..., ge=0.0, description='Max price deviation from SMAs for MR regime')
     confidence_multiplier: float = Field(
-        ge=1.0, description='Confidence scaling factor')
+        ..., ge=1.0, description='Confidence scaling factor')
 
 
 class RegimeModelsConfig(BaseModel):
@@ -475,11 +474,11 @@ class RegimeModelsConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    sma_trend: SMARegimeModelConfig = Field(description='SMA trend model')
+    sma_trend: SMARegimeModelConfig = Field(..., description='SMA trend model')
     volatility: VolatilityRegimeModelConfig = Field(
-        description='Volatility model')
+        ..., description='Volatility model')
     mean_reversion: MeanReversionRegimeModelConfig = Field(
-        description='Mean reversion model')
+        ..., description='Mean reversion model')
 
 
 class RegimeModelConfig(BaseModel):
@@ -494,9 +493,9 @@ class RegimeModelConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    confidence_multiplier: float = Field()
-    confidence_min: float = Field()
-    confidence_max: float = Field()
+    confidence_multiplier: float = Field(...)
+    confidence_min: float = Field(...)
+    confidence_max: float = Field(...)
 
 
 class RegimeDetectorConfig(BaseModel):
@@ -504,7 +503,7 @@ class RegimeDetectorConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     models: RegimeModelsConfig = Field(
-        description='Regime detection models config')
+        ..., description='Regime detection models config')
 
 
 # ═══════════════ SYSTEM STRESS GUARD (Phase 0.0) ═══════════════
@@ -528,19 +527,19 @@ class SystemStressThresholdsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     atr_sigma: float = Field(
-        ge=0.0, le=10.0, description='ATR z-score threshold')
+        ..., ge=0.0, le=10.0, description='ATR z-score threshold')
     vol_sigma: float = Field(
-        ge=0.0, le=10.0, description='Realized vol z-score threshold')
+        ..., ge=0.0, le=10.0, description='Realized vol z-score threshold')
     gap_sigma: float = Field(
-        ge=0.0, le=10.0, description='Bar gap z-score threshold')
+        ..., ge=0.0, le=10.0, description='Bar gap z-score threshold')
     range_sigma: float = Field(
-        ge=0.0, le=10.0, description='Bar range z-score threshold')
+        ..., ge=0.0, le=10.0, description='Bar range z-score threshold')
     volume_sigma: float = Field(
-        ge=0.0, le=10.0, description='Volume z-score (0.0=disabled)')
+        ..., ge=0.0, le=10.0, description='Volume z-score (0.0=disabled)')
     spread_sigma: float = Field(
-        ge=0.0, le=10.0, description='Spread z-score (orderbook only)')
+        ..., ge=0.0, le=10.0, description='Spread z-score (orderbook only)')
     depth_drop_pct: float = Field(
-        ge=0.0, le=100.0, description='Depth drop % (orderbook only, 0.0=disabled)')
+        ..., ge=0.0, le=100.0, description='Depth drop % (orderbook only, 0.0=disabled)')
 
 
 class SystemStressAggregationConfig(BaseModel):
@@ -548,14 +547,13 @@ class SystemStressAggregationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     method: Literal["weighted_vote", "k_of_n", "max"] = Field(
-        description='Aggregation method for stress triggers'
+        ..., description='Aggregation method for stress triggers'
     )
     weights: Optional[Dict[str, float]] = Field(
-        default=None,
-        description='Trigger weights (required if method=weighted_vote). Keys must be from STRESS_TRIGGER_KEYS.'
+        ..., description='Trigger weights (required if method=weighted_vote). Keys must be from STRESS_TRIGGER_KEYS.'
     )
     k: Optional[int] = Field(
-        default=None, ge=1,
+        ..., ge=1,
         description='Minimum triggers required (required if method=k_of_n)'
     )
 
@@ -591,25 +589,25 @@ class SystemStressStateMappingConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enter_stress: float = Field(
-        ge=0.0, le=1.0, description='Composite score to enter STRESS')
+        ..., ge=0.0, le=1.0, description='Composite score to enter STRESS')
     exit_stress: float = Field(
-        ge=0.0, le=1.0, description='Composite score to exit STRESS → NORMAL')
+        ..., ge=0.0, le=1.0, description='Composite score to exit STRESS → NORMAL')
     enter_extreme: float = Field(
-        ge=0.0, le=1.0, description='Composite score to enter EXTREME')
+        ..., ge=0.0, le=1.0, description='Composite score to enter EXTREME')
     exit_extreme: float = Field(
-        ge=0.0, le=1.0, description='Composite score to exit EXTREME → STRESS')
+        ..., ge=0.0, le=1.0, description='Composite score to exit EXTREME → STRESS')
     consecutive_bars_enter: int = Field(
-        ge=1, le=20, description='Consecutive bars above threshold to confirm entry')
+        ..., ge=1, le=20, description='Consecutive bars above threshold to confirm entry')
     consecutive_bars_exit: int = Field(
-        ge=1, le=20, description='Consecutive bars below threshold to confirm exit')
+        ..., ge=1, le=20, description='Consecutive bars below threshold to confirm exit')
     min_duration_bars: int = Field(
-        ge=0, le=100, description='Minimum bars to stay in a state before allowing exit')
+        ..., ge=0, le=100, description='Minimum bars to stay in a state before allowing exit')
     switch_window_bars: int = Field(
-        ge=1, description='Rolling window (bars) for switch counting')
+        ..., ge=1, description='Rolling window (bars) for switch counting')
     max_switches_per_window: int = Field(
-        ge=1, le=50, description='Max state switches in window before circuit breaker')
+        ..., ge=1, le=50, description='Max state switches in window before circuit breaker')
     circuit_breaker_mode: Literal["halt"] = Field(
-        description='Action on max_switches breach. halt = fail-closed (block all entries).'
+        ..., description='Action on max_switches breach. halt = fail-closed (block all entries).'
     )
 
     @model_validator(mode='after')
@@ -638,37 +636,36 @@ class SystemStressConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Master enable (off by default in YAML)')
+    enabled: bool = Field(..., description='Master enable (off by default in YAML)')
     sources_enabled: List[Literal["price", "orderbook"]] = Field(
-        min_length=1,
+        ..., min_length=1,
         description='Data sources required. "price" = OHLCV only. "orderbook" = L2 required.'
     )
     require_l2_if_enabled: bool = Field(
-        description='Fail-fast if "orderbook" in sources_enabled but L2 data is unavailable'
+        ..., description='Fail-fast if "orderbook" in sources_enabled but L2 data is unavailable'
     )
     baseline_method: Literal["rolling", "expanding"] = Field(
-        description='Baseline method for z-score calculation'
+        ..., description='Baseline method for z-score calculation'
     )
     baseline_window: Optional[int] = Field(
-        default=None, ge=10,
+        ..., ge=10,
         description='Rolling window size (bars). REQUIRED if baseline_method=rolling.'
     )
     burn_in_bars: int = Field(
-        ge=1,
+        ..., ge=1,
         description='Minimum bars before stress signal is emitted (warmup period)'
     )
     robust_method: Literal["none", "mad"] = Field(
-        default="none",
-        description='Robust statistics method (none=std, mad=median absolute deviation)'
+        ..., description='Robust statistics method (none=std, mad=median absolute deviation)'
     )
     thresholds: SystemStressThresholdsConfig = Field(
-        description='Per-trigger sigma thresholds (0.0 = disabled for that trigger)'
+        ..., description='Per-trigger sigma thresholds (0.0 = disabled for that trigger)'
     )
     aggregation: SystemStressAggregationConfig = Field(
-        description='How to combine trigger signals'
+        ..., description='How to combine trigger signals'
     )
     state_mapping: SystemStressStateMappingConfig = Field(
-        description='Hysteresis rules for NORMAL/STRESS/EXTREME transitions'
+        ..., description='Hysteresis rules for NORMAL/STRESS/EXTREME transitions'
     )
 
     @model_validator(mode='after')
@@ -723,21 +720,11 @@ class SystemStressConfig(BaseModel):
 
 
 class FallbackConfig(BaseModel):
-    """Fallback configuration for execution.
-
-    P1-CONFIG-EXTRACTION: Typed fields for fail-closed fallback mode.
-    Consumed by: exposure_guard.py:_load_fallback_config()
-    """
+    """Explicit fail-closed execution safety policy."""
     model_config = ConfigDict(extra='forbid')
 
-    policy: Literal["fail_closed", "reduce_exposure"] = Field(
-        description="Fallback policy: fail_closed = block all new orders, reduce_exposure = scale down"
-    )
-    risk_reduction_pct: Decimal = Field(
-        description="Exposure reduction percentage when policy=reduce_exposure (0.0-1.0)"
-    )
-    backoff_ms: List[int] = Field(
-        description="Backoff intervals for retry attempts (ms)"
+    policy: Literal["fail_closed"] = Field(
+        ..., description="Only supported safety policy: block new orders when execution truth is unavailable."
     )
 
 
@@ -766,7 +753,7 @@ class OrdersConfig(BaseModel):
     model_config = ConfigDict(
         extra='forbid')  # Temporary: market/cancel sub-configs unknown
 
-    default_ttl_seconds: int = Field(description='Default order TTL')
+    default_ttl_seconds: int = Field(..., description='Default order TTL')
 
 
 class ExecutionConfig(BaseModel):
@@ -776,35 +763,35 @@ class ExecutionConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    manage: Optional[ManageConfig] = Field()
-    exposure: Optional[ExposureConfig] = Field()
+    manage: Optional[ManageConfig] = Field(...)
+    exposure: Optional[ExposureConfig] = Field(...)
     # Typed (ack_ttl_ms, fill_ttl_ms, rps_limit)
-    watchdog: Optional[WatchdogConfig] = Field()
+    watchdog: Optional[WatchdogConfig] = Field(...)
 
     # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Newly typed configs
-    fallback: Optional[FallbackConfig] = Field()
-    limit_orders: Optional[LimitOrdersConfig] = Field()
-    orders: Optional[OrdersConfig] = Field()
+    fallback: Optional[FallbackConfig] = Field(...)
+    limit_orders: Optional[LimitOrdersConfig] = Field(...)
+    orders: Optional[OrdersConfig] = Field(...)
 
     # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Explicit runtime fields (consumption proven)
     fsm_periodic_cleanup_enabled: bool = Field(
-        description='FSM periodic cleanup')
+        ..., description='FSM periodic cleanup')
     cooldown_after_close_ms: int = Field(
         ...,
         description="Global cooldown after any position closes (ms). Blocks new CMD:OPEN during this window.",
     )
-    anti_race_close_ms: int = Field(description='Anti-race window (ms)')
+    anti_race_close_ms: int = Field(..., description='Anti-race window (ms)')
 
     # PURGE-DIRTY-DOZEN: Removed dead fields (open_order_type, min_post_interval_per_symbol_ms) - 2026-01-25
     # Remaining DEPRECATED fields kept for backward compat parsing only:
     order_params: Optional[Dict[str, Any]] = Field(
-        default=None, description='DEPRECATED: No consumption found')
+        ..., description='DEPRECATED: No consumption found')
     preflight_backoff_ms: Optional[List[int]] = Field(
-        default=None, description='DEPRECATED: No consumption found')
+        ..., description='DEPRECATED: No consumption found')
     allow_trade_with_guardian_tidy_only: Optional[bool] = Field(
-        default=None, description='DEPRECATED')
+        ..., description='DEPRECATED')
     order_guardian: Optional[Dict[str, Any]] = Field(
-        default=None, description='DEPRECATED: Guardian not config')
+        ..., description='DEPRECATED: Guardian not config')
 
 
 # Position Tracking Domain
@@ -884,18 +871,18 @@ class DomainConfigurationConfig(BaseModel):
 
     # ALIVE: Used by preflight.py for hybrid mode coherence check
     market_data: DomainModeConfig = Field(
-        description="Market data source mode (should be 'live' for real prices)")
+        ..., description="Market data source mode (should be 'live' for real prices)")
     feature_engineering: DomainModeConfig = Field(
-        description='Feature engineering mode (should match market_data)')
+        ..., description='Feature engineering mode (should match market_data)')
     decision_making: DomainModeConfig = Field(
-        description='Decision making mode (should match market_data)')
+        ..., description='Decision making mode (should match market_data)')
     # PURGE-DIRTY-DOZEN: Made optional (dead, global trading_mode is SSOT) - 2026-01-25
     risk_management: Optional[DomainModeConfig] = Field(
-        default=None, description='DEPRECATED: Use global trading_mode')
+        ..., description='DEPRECATED: Use global trading_mode')
     execution_position: Optional[DomainModeConfig] = Field(
-        default=None, description='DEPRECATED: Use global trading_mode')
+        ..., description='DEPRECATED: Use global trading_mode')
     audit_trail: Optional[DomainModeConfig] = Field(
-        default=None, description='DEPRECATED: Use global trading_mode')
+        ..., description='DEPRECATED: Use global trading_mode')
 
 
 # SCORCHED-EARTH-2026-01-27: Typed TCAPrefsConfig (was Dict[str, Any])
@@ -904,20 +891,18 @@ class TCAPrefsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     max_slippage_pct: float = Field(
-        default=0.5, description="Max allowed slippage %")
+        ..., description="Max allowed slippage %")
     max_slippage_bps: int = Field(
-        default=10, description="Max allowed slippage in basis points")
+        ..., description="Max allowed slippage in basis points")
     max_latency_ms: int = Field(
-        default=500, description="Max allowed latency (intent to filled) in ms")
+        ..., description="Max allowed latency (intent to filled) in ms")
     maker_preference: Literal["maker", "taker", "neutral", "any"] = Field(
-        default="neutral",
-        description="Execution preference (maker/taker/neutral)"
+        ..., description="Execution preference (maker/taker/neutral)"
     )
     preferred_venue: str = Field(
-        default="binance", description="Preferred execution venue")
+        ..., description="Preferred execution venue")
     execution_priority: Literal["speed", "price", "balanced"] = Field(
-        default="speed",
-        description="Execution priority: speed (market) vs price (limit)"
+        ..., description="Execution priority: speed (market) vs price (limit)"
     )
 
 
@@ -941,14 +926,14 @@ class LLMIntentPolicyConfig(BaseModel):
     """Policy limits for external LLM intents."""
     model_config = ConfigDict(extra='forbid')
 
-    max_open_intents: int = Field(default=3, ge=1)
-    cooldown_sec: int = Field(default=30, ge=0)
-    allow_limit_only: bool = Field(default=True)
-    require_tp_sl: bool = Field(default=True)
-    max_notional_usd: Optional[float] = Field(default=None, gt=0.0)
-    max_qty: Optional[float] = Field(default=None, gt=0.0)
-    max_price_deviation_bps: Optional[float] = Field(default=None, gt=0.0)
-    allowed_tif: List[Literal["GTC"]] = Field(default_factory=lambda: ["GTC"])
+    max_open_intents: int = Field(..., ge=1)
+    cooldown_sec: int = Field(..., ge=0)
+    allow_limit_only: bool = Field(...)
+    require_tp_sl: bool = Field(...)
+    max_notional_usd: Optional[float] = Field(..., gt=0.0)
+    max_qty: Optional[float] = Field(..., gt=0.0)
+    max_price_deviation_bps: Optional[float] = Field(..., gt=0.0)
+    allowed_tif: List[Literal["GTC"]] = Field(...)
 
 
 class LLMOrchestrationConfig(BaseModel):
@@ -956,23 +941,23 @@ class LLMOrchestrationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal["baseline", "hybrid_advisory",
-                  "llm_primary"] = Field(default="baseline")
+                  "llm_primary"] = Field(...)
     llm_role: Literal["advisory", "filter",
-                      "primary"] = Field(default="advisory")
-    require_telemetry: bool = Field(default=False)
-    symbols_llm: List[str] = Field(default_factory=list)
+                      "primary"] = Field(...)
+    require_telemetry: bool = Field(...)
+    symbols_llm: List[str] = Field(...)
     allowlist_symbols: List[str] = Field(
-        default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+        ...)
     intent_policy: LLMIntentPolicyConfig = Field(
-        default_factory=LLMIntentPolicyConfig)
+        ...)
 
 
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
     model_config = ConfigDict(extra='forbid')
 
-    mode: str = Field(description='testnet | production | live')
-    execution: Optional[ExecutionConfig] = Field()
+    mode: str = Field(..., description='testnet | production | live')
+    execution: Optional[ExecutionConfig] = Field(...)
     symbols_to_track: List[str] = Field(
         ...,
         description=(
@@ -980,7 +965,7 @@ class TradingConfig(BaseModel):
             "Derived deterministically from strategies.yaml assignments by ConfigLoader unless explicitly set."
         ),
     )
-    market_data: Optional[MarketDataConfig] = Field()
+    market_data: Optional[MarketDataConfig] = Field(...)
 
     # NOTE (TASK23.FIX.B): Forbidden SSOT mirrors are intentionally NOT part of TradingConfig.
     # - instruments SSOT: root.instruments (config/aurora/instruments.yaml)
@@ -990,32 +975,31 @@ class TradingConfig(BaseModel):
 
     # Legacy risk config (still used by DailyRiskState etc)
     risk: Dict[str, Any] = Field(
-        description='Legacy risk configuration (daily gate, etc)')
+        ..., description='Legacy risk configuration (daily gate, etc)')
 
     # TCA and Risk Budgets (Strictly Typed)
-    tca_prefs: TCAPrefsConfig = Field(description='TCA Preferences')
+    tca_prefs: TCAPrefsConfig = Field(..., description='TCA Preferences')
     risk_budgets: RiskBudgetsConfig = Field(
-        description='Risk Budgeting Configuration')
+        ..., description='Risk Budgeting Configuration')
 
     # Risk management data sources (used for hybrid/live/testnet wiring)
     risk_management: "TradingRiskManagementConfig" = Field(...)
 
     # Ops configuration (killswitch, quiet hours)
     ops: Optional[OpsConfig] = Field(
-        description='Operations config (panic killswitch, quiet hours, allowlist)')
+        ..., description='Operations config (panic killswitch, quiet hours, allowlist)')
     llm_orchestration: LLMOrchestrationConfig = Field(
-        default_factory=LLMOrchestrationConfig,
-        description="Global orchestration policy for shadow-LLM strategies",
+        ..., description="Global orchestration policy for shadow-LLM strategies",
     )
 
     # CRITICAL: Domain-level mode configuration (Hybrid Mode)
     # Default is all-testnet for safety. Production MUST explicitly set live modes!
     domain_configuration: DomainConfigurationConfig = Field(
-        description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')
+        ..., description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')
 
     # Regime-specific TP/SL multipliers (for backtest overrides)
     regime_tpsl: Optional[Dict[str, Any]] = Field(
-        default=None, description="Regime-specific TP/SL multipliers")
+        ..., description="Regime-specific TP/SL multipliers")
 
     @field_validator("symbols_to_track")
     @classmethod
@@ -1030,17 +1014,17 @@ class BinanceApiEnv(BaseModel):
     """Binance API configuration for a single environment."""
     model_config = ConfigDict(extra='forbid')
 
-    api_key: Optional[str] = Field()
-    api_secret: Optional[str] = Field()
-    rest_url: Optional[str] = Field()
+    api_key: Optional[str] = Field(...)
+    api_secret: Optional[str] = Field(...)
+    rest_url: Optional[str] = Field(...)
     # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in market_data_connector.py, worker.py)
 
 
 class BinanceApiConfig(BaseModel):
     """Binance API configuration (live + testnet)."""
     model_config = ConfigDict(extra='forbid')
-    live: BinanceApiEnv = Field()
-    testnet: BinanceApiEnv = Field()
+    live: BinanceApiEnv = Field(...)
+    testnet: BinanceApiEnv = Field(...)
 
 
 # NOTE: RetrySchedulerConfig and BridgeConfig removed (BRIDGE-SUNSET-01)
@@ -1071,20 +1055,17 @@ class SystemConfig(BaseModel):
 
     # SCORCHED-EARTH-2026-01-27: logging field DELETED (LegacyLoggingConfig zombie, observability.yaml is SSOT)
     market_data: Optional[SystemMarketDataConfig] = Field(
-        default=None, description='Market data system settings')
+        ..., description='Market data system settings')
 
     # Startup Guard Configuration (TASK-EXF-WIRE-STARTUP-09)
     validate_instruments_on_startup: bool = Field(
-        default=True,
-        description="Enable startup validation of instruments.yaml against exchange (fail-closed)"
+        ..., description="Enable startup validation of instruments.yaml against exchange (fail-closed)"
     )
     warn_only_filters: bool = Field(
-        default=False,
-        description="If True, log warnings instead of crashing on filter mismatch (Dev/Shadow only)"
+        ..., description="If True, log warnings instead of crashing on filter mismatch (Dev/Shadow only)"
     )
     debug_event_listener_enabled: bool = Field(
-        default=False,
-        description=(
+        ..., description=(
             "Enable debug event listener (EVT:MARKET_TICK_RECEIVED, EVT:FEATURES_CALCULATED, EVT:TICK_FEATURES_CALCULATED, etc.). "
             "DEV ONLY: do not enable in production (high-frequency logging)."
         ),
@@ -1097,9 +1078,9 @@ class SystemRuntimeMeta(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     config_name: Optional[str] = Field(
-        default=None, description='Identifier of the loaded config profile')
+        ..., description='Identifier of the loaded config profile')
     config_dir: Optional[str] = Field(
-        default=None, description='Filesystem path of the config directory in use')
+        ..., description='Filesystem path of the config directory in use')
 
 
 class SystemMetaConfig(BaseModel):
@@ -1107,16 +1088,16 @@ class SystemMetaConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    system_config_version: Optional[str] = Field(default=None)
-    regime_config_version: Optional[str] = Field(default=None)
-    sequential_tests: Dict[str, Any] = Field()
-    risk_core: Dict[str, Any] = Field()
-    kelly: Dict[str, Any] = Field()
-    calibrator: Dict[str, Any] = Field()
-    hawkes: Dict[str, Any] = Field()
+    system_config_version: Optional[str] = Field(...)
+    regime_config_version: Optional[str] = Field(...)
+    sequential_tests: Dict[str, Any] = Field(...)
+    risk_core: Dict[str, Any] = Field(...)
+    kelly: Dict[str, Any] = Field(...)
+    calibrator: Dict[str, Any] = Field(...)
+    hawkes: Dict[str, Any] = Field(...)
     # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
-    hardening: Dict[str, Any] = Field()
-    position_tracking: Dict[str, Any] = Field()
+    hardening: Dict[str, Any] = Field(...)
+    position_tracking: Dict[str, Any] = Field(...)
     runtime: Optional[SystemRuntimeMeta] = Field(default=None)
 
 
@@ -1131,21 +1112,20 @@ class AuroraConfig(BaseModel):
 
     # Core app configs
     trading_mode: str = Field(
-        description='Trading mode: testnet | production | live')
-    trading: TradingConfig = Field()
+        ..., description='Trading mode: testnet | production | live')
+    trading: TradingConfig = Field(...)
 
     # Exchange/account/market configs
-    binance_api: BinanceApiConfig = Field()
+    binance_api: BinanceApiConfig = Field(...)
 
     # System configs
-    system: SystemConfig = Field()
-    system_meta: SystemMetaConfig = Field()
-    ops: OpsConfig = Field()
+    system: SystemConfig = Field(...)
+    system_meta: SystemMetaConfig = Field(...)
+    ops: OpsConfig = Field(...)
 
     # Observability configs (CFG-OBS-001: Centralized logging/metrics/tracing)
     observability: ObservabilityConfig = Field(
-        default_factory=ObservabilityConfig,
-        description='Centralized observability config (logging, metrics, tracing)'
+        ..., description='Centralized observability config (logging, metrics, tracing)'
     )
 
     # NOTE: bridge config removed (BRIDGE-SUNSET-01)
@@ -1153,53 +1133,52 @@ class AuroraConfig(BaseModel):
 
     # Domain configs (New)
     domains: DomainsConfig = Field(
-        description='Domain-specific configurations')
+        ..., description='Domain-specific configurations')
 
     # Canonical instruments SSOT (config/aurora/instruments.yaml)
     instruments: Dict[str, InstrumentPrecisionSpec] = Field(
-        description='Canonical instrument precision map (symbol -> tick_size/step_size)')
+        ..., description='Canonical instrument precision map (symbol -> tick_size/step_size)')
 
     # Strategies registry SSOT (config/aurora/strategies.yaml)
     # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION
     strategies_registry: Optional[StrategiesRegistryConfig] = Field(
-        default=None, description='Strategy assignments + arbitration config (from strategies.yaml)')
+        ..., description='Strategy assignments + arbitration config (from strategies.yaml)')
 
     # Canonical strategy policy namespace (SSOT: strategies/<id>.yaml)
     strategies: StrategiesConfig = Field(
-        description="Canonical strategies namespace (policy SSOT)")
+        ..., description="Canonical strategies namespace (policy SSOT)")
 
     # App-specific overrides
     # TASK23.FIX.B: Legacy root aliases must NOT be required.
     # If provided explicitly, they act as overrides; otherwise they should not block startup.
     execution: Optional[ExecutionConfig] = Field(
-        default=None, description='Override trading.execution if set')
-    brackets: Optional[BracketsConfig] = Field(default=None)
+        ..., description='Override trading.execution if set')
+    brackets: Optional[BracketsConfig] = Field(...)
     trailing: Optional[TrailingDefaultsConfig] = Field(
-        default=None, description='Global trailing stop defaults')
+        ..., description='Global trailing stop defaults')
 
     # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
     models: Optional[RegimeModelsConfig] = Field(
-        default=None, description='Regime detection models from regime.yaml')
+        ..., description='Regime detection models from regime.yaml')
 
     regime_shift_inception: Optional[RegimeShiftInceptionConfig] = Field(
-        default=None,
-        description='PKG-3: Rescue-only micro-entry on first bar of regime shift'
+        ..., description='PKG-3: Rescue-only micro-entry on first bar of regime shift'
     )
 
     # regime.yaml SSOT (top-level keys)
     # REG-FIX-01: BAR-ONLY SSOT - these fields are REQUIRED (no silent defaults)
     basis_tf_sec: int = Field(
-        description='Bar-only regime updates: only process FEATURES_CALCULATED with matching tf_sec. '
+        ..., description='Bar-only regime updates: only process FEATURES_CALCULATED with matching tf_sec. '
                     'REQUIRED - missing value fails config load (fail-closed).'
     )
     uncertain_cutoff: float = Field(
-        ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Min confidence to emit non-UNCERTAIN regime. Below this threshold, demote to UNCERTAIN. '
                     'REQUIRED - missing value fails config load (fail-closed).'
     )
     # DM-CRITICAL-PATCHES-02: Liveness guard factor
     liveness_factor: int = Field(
-        default=3, ge=1,
+        ..., ge=1,
         description='If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, '
                     'block trading. Default: 3 (i.e., 15 minutes for 5m basis).'
     )
@@ -1207,7 +1186,7 @@ class AuroraConfig(BaseModel):
     # WARMUP-SSOT: Extra bars imported above regime_detector_required_bars() for fetch gap tolerance.
     # Total startup import = regime_detector_required_bars() + basis_import_buffer.
     basis_import_buffer: int = Field(
-        default=20, ge=0,
+        ..., ge=0,
         description=(
             'Extra basis bars imported above regime_detector_required_bars() to absorb Binance fetch gaps. '
             'Source: regime.yaml. Total import = regime_required + basis_import_buffer.'
@@ -1216,21 +1195,20 @@ class AuroraConfig(BaseModel):
 
     # HYSTERESIS-SLOPE-GATE-01: Regime stability
     hysteresis_bars: int = Field(
-        default=3, ge=1, le=10,
+        ..., ge=1, le=10,
         description='Number of consecutive bars to confirm regime change before switching stable_regime.'
     )
 
     # Volatility Slope Gate: block HIGH_VOL with dying momentum
     vol_slope_gate_enabled: bool = Field(
-        default=True,
-        description='Enable vol_ratio slope gate to detect "dying storm" (HIGH_VOL with falling momentum).'
+        ..., description='Enable vol_ratio slope gate to detect "dying storm" (HIGH_VOL with falling momentum).'
     )
     vol_slope_gate_eps: float = Field(
-        default=0.0, ge=-0.1, le=0.1,
+        ..., ge=-0.1, le=0.1,
         description='Slope threshold: if vol_ratio slope <= eps for confirm_bars, force UNCERTAIN.'
     )
     vol_slope_gate_confirm_bars: int = Field(
-        default=2, ge=1, le=5,
+        ..., ge=1, le=5,
         description='Number of bars slope must stay below eps to trigger gate.'
     )
 
@@ -1241,8 +1219,7 @@ class AuroraConfig(BaseModel):
     # None = disabled (no system_stress section in YAML or explicit null).
     # When present, all sub-fields are validated even if enabled=false.
     system_stress: Optional[SystemStressConfig] = Field(
-        default=None,
-        description='System-wide stress guard (NORMAL/STRESS/EXTREME). None = disabled.'
+        ..., description='System-wide stress guard (NORMAL/STRESS/EXTREME). None = disabled.'
     )
 
     @field_validator('trading_mode')

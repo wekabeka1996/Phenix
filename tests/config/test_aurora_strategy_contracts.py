@@ -44,8 +44,8 @@ CONTRACT_CASES = {
         "optional_fields": {"sl_k_atr", "rr_by_regime"},
     },
     "AuroraExitConfig": {
-        "required": {"sl_pct", "max_hold_sec"},
-        "defaults": {"regime_tpsl": None},
+        "required": {"sl_pct", "max_hold_sec", "regime_tpsl"},
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": {"sl_pct", "max_hold_sec", "regime_tpsl"},
     },
@@ -60,9 +60,10 @@ CONTRACT_CASES = {
             "enabled",
             "activation_pct",
             "trail_pct",
+            "trail_atr_mult",
             "min_update_interval_sec",
         },
-        "defaults": {"trail_atr_mult": None},
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": {
             "enabled",
@@ -97,36 +98,37 @@ CONTRACT_CASES = {
         "optional_fields": {"value"},
     },
     "VolatilityEntryConfig": {
-        "required": {"regime_multipliers"},
-        "defaults": {"enabled": True},
+        "required": {"enabled", "regime_multipliers"},
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": set(),
     },
     "AuroraInstrumentConfig": {
-        "required": {"enabled"},
-        "defaults": {
-            "weights": None,
-            "side_bias": None,
-            "position_mode": None,
-            "leverage": None,
-            "regime_thresholds": None,
-            "regime_sizing": None,
-            "exit": None,
-            "take_profit": None,
-            "trailing_stop": None,
-            "signal_threshold": None,
-            "max_risk_score": None,
-            "cooldown_sec": None,
-            "allowed_regimes": None,
-            "scoring_version": None,
-            "feature_neutrals": None,
-            "essential_features": None,
-            "liquidity_gate": None,
-            "holding_period": None,
-            "reentry_cooldown_sec": None,
-            "timeframe_sec": None,
-            "volatility_entry_logic": None,
+        "required": {
+            "enabled",
+            "weights",
+            "side_bias",
+            "position_mode",
+            "leverage",
+            "regime_thresholds",
+            "regime_sizing",
+            "exit",
+            "take_profit",
+            "trailing_stop",
+            "signal_threshold",
+            "max_risk_score",
+            "cooldown_sec",
+            "allowed_regimes",
+            "scoring_version",
+            "feature_neutrals",
+            "essential_features",
+            "liquidity_gate",
+            "holding_period",
+            "reentry_cooldown_sec",
+            "timeframe_sec",
+            "volatility_entry_logic",
         },
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": {
             "weights",
@@ -153,16 +155,16 @@ CONTRACT_CASES = {
         },
     },
     "StrategyExecutionConfig": {
-        "required": {"entry_order_type"},
-        "defaults": {
-            "entry_tif": None,
-            "exit_order_type": None,
-            "exit_tif": None,
-            "exit_limit_ttl_ms": None,
-            "gtx_retry_max": 0,
-            "gtx_retry_offset_bps": 2.0,
-            "emit_market_fallback_marker_on_retry_exhaustion": False,
+        "required": {
+            "entry_order_type",
+            "entry_tif",
+            "exit_order_type",
+            "exit_tif",
+            "exit_limit_ttl_ms",
+            "gtx_retry_max",
+            "gtx_retry_offset_bps",
         },
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": {
             "entry_tif",
@@ -179,13 +181,12 @@ CONTRACT_CASES = {
             "timeframe_sec",
             "execution",
             "safety_gates",
+            "shadow_mode_enabled",
+            "objective",
             "decision",
             "assets",
         },
-        "defaults": {
-            "shadow_mode_enabled": False,
-            "objective": None,
-        },
+        "defaults": {},
         "default_factory_values": {},
         "optional_fields": {"objective"},
     },
@@ -397,10 +398,16 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
         execution={
             "entry_order_type": "LIMIT",
             "entry_tif": "GTC",
+            "exit_order_type": "MARKET",
+            "exit_tif": None,
+            "exit_limit_ttl_ms": None,
+            "gtx_retry_max": 0,
+            "gtx_retry_offset_bps": 2.0,
         },
         safety_gates={
             "enabled": False,
             "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
         },
     )
     assert type(llm.execution) is cm.StrategyExecutionConfig
@@ -413,6 +420,7 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
             "bb_num_std": 2.0,
             "atr_window": 14,
             "rsi_window": 14,
+            "score_multiplier": 1.0,
             "entry_threshold": 0.08,
             "rsi_oversold": 30.0,
             "rsi_overbought": 70.0,
@@ -422,6 +430,9 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
             "sl_atr_mult": 1.5,
             "tp_to_mid": True,
             "cooldown_sec": 60,
+            "confidence_base": 0.5,
+            "confidence_bb_slope": 2.0,
+            "confidence_rsi_bonus": 0.2,
         },
         regime_thresholds={
             "high_vol_pct": 0.02,
@@ -430,6 +441,9 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
         assets={
             "BTCUSDT": {
                 "enabled": True,
+                "leverage": None,
+                "strategy": None,
+                "liquidity_gate": None,
                 "allowed_regimes": ["FLAT_LOW"],
                 "position_mode": "STRICT",
             }
@@ -442,12 +456,20 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
             }
         },
         allowed_regimes=["FLAT_LOW"],
+        liquidity_gate=None,
         execution={
             "entry_order_type": "LIMIT",
             "entry_tif": "GTX",
+            "exit_order_type": None,
+            "exit_tif": None,
+            "exit_limit_ttl_ms": None,
+            "gtx_retry_max": 0,
+            "gtx_retry_offset_bps": 2.0,
         },
         safety_gates={
             "enabled": False,
+            "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
         },
         objective={
             "enabled": True,
@@ -468,6 +490,8 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
                 }
             },
         },
+        microstructure_veto=None,
+        directional_bias=None,
     )
     assert type(mr.execution) is cm.StrategyExecutionConfig
     assert type(mr.objective) is cm.StrategyObjectiveConfig
@@ -477,6 +501,7 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
         type="md_amr_v1_2",
         description="contract test",
         timeframe_sec=900,
+        defer_ttl_sec=60,
         channel_window_bars=12,
         channel_robust_pct=0.05,
         atr_window=14,
@@ -498,8 +523,34 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
         scaleout_fraction=0.5,
         scaleout_cost_model="round_trip",
         weights={"d1": 0.35, "h1": 0.30, "m30": 0.20, "m15": 0.15},
-        execution={"entry_order_type": "LIMIT", "entry_tif": "GTX"},
-        safety_gates={"enabled": False},
+        execution={
+            "entry_order_type": "LIMIT",
+            "entry_tif": "GTX",
+            "exit_order_type": "MARKET",
+            "exit_tif": None,
+            "exit_limit_ttl_ms": None,
+            "gtx_retry_max": 2,
+            "gtx_retry_offset_bps": 2.0,
+        },
+        safety_gates={
+            "enabled": False,
+            "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
+        },
+        llm_gate={
+            "enabled": False,
+            "sentiment_block_threshold": -0.8,
+            "block_ttl_sec": 14400,
+        },
+        reconciliation={
+            "enabled": True,
+            "interval_sec": 300,
+            "drift_tolerance": 1.0e-6,
+        },
+        concentration_guard={
+            "enabled": True,
+            "max_simultaneous_entries_per_bar": 2,
+        },
         progress_tracking={
             "early_progress_max_pct": 0.25,
             "partial_progress_max_pct": 0.70,
@@ -532,9 +583,15 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
         entry_anchor_persistence={
             "storage_path": "ops/restore/md_amr_entry_anchor_state_v1.json"
         },
+        optuna={
+            "oos_split_ratio": 0.3,
+            "min_oos_calmar_ratio": 0.3,
+        },
         assets={
             "BTCUSDT": {
                 "enabled": True,
+                "cooldown_sec": 60,
+                "position_mode": "STRICT",
                 "allowed_regimes": ["low_flat"],
                 "exit": {
                     "sl_pct": 0.01,
@@ -683,7 +740,7 @@ def test_aurora_root_tpsl_ssot_validator_still_fails_closed_on_missing_preflight
     cfg_dir = _copy_config_to_tmp(tmp_path)
     trading_path = cfg_dir / "trading.yaml"
     trading_data = _load_yaml(trading_path)
-    trading_data["trading"]["execution"].pop("preflight_backoff_ms", None)
+    trading_data["trading"]["execution"]["preflight_backoff_ms"] = None
     _write_yaml(trading_path, trading_data)
 
     with pytest.raises(ValidationError) as exc_info:

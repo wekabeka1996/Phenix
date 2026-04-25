@@ -161,7 +161,7 @@ def test_portfolio_event_trace_reaches_sidecar_after_canonical_postfill_hold(fsm
     original_log_path = fsm._trade_lifecycle_log_path
     fsm._trade_lifecycle_log_path = lambda: str(trade_lifecycle_path)
     try:
-        fsm._append_execution_fill_ingress_record(
+        fsm._fill_ingress_coordinator.append_execution_fill_ingress_record(
             canonical_msg=canonical_fill,
             trigger_event="TRADE_EXECUTED",
             fill_source="trade_executed",

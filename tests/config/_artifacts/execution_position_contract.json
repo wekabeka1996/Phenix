@@ -54,9 +54,9 @@
       "extra": "forbid",
       "fields": {
         "drift_away": {
-          "default": "PydanticUndefined",
-          "default_factory": "DriftAwayConfig",
-          "required": false
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
         },
         "enabled": {
           "default": "'<required>'",
@@ -74,9 +74,9 @@
           "required": true
         },
         "never_cancel_regimes": {
-          "default": "list",
+          "default": "'<required>'",
           "default_factory": null,
-          "required": false
+          "required": true
         }
       }
     },

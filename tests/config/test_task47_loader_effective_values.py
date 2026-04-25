@@ -20,9 +20,9 @@ def test_task47_loader_effective_values_from_ssot() -> None:
     assert cfg.strategies.aurora is not None
     btc = cfg.strategies.aurora.assets["BTCUSDT"]
     assert btc.regime_thresholds is not None
-    assert btc.regime_thresholds["MEAN_REVERSION"] == 1.05
+    assert btc.regime_thresholds["MEAN_REVERSION"] == pytest.approx(0.965366)
     assert "MEAN_REVERSION" in (btc.allowed_regimes or [])
 
-    # BTC must have 2 strategies assigned (aurora + mean_reversion).
+    # BTC is currently aurora-only in the live registry.
     assert cfg.strategies_registry is not None
-    assert set(cfg.strategies_registry.assignments["BTCUSDT"]) == {"aurora", "mean_reversion"}
+    assert set(cfg.strategies_registry.assignments["BTCUSDT"]) == {"aurora"}

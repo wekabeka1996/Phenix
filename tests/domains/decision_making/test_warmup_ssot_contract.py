@@ -43,7 +43,7 @@ class TestWarmupSSOTContract:
         handler._enabled = True
         handler._enabled_symbols = {"BTCUSDT"}
         handler._strategies = {"BTCUSDT": MagicMock()}
-        type(handler).timeframe_sec = PropertyMock(return_value=300)
+        handler._cfg = MagicMock(timeframe_sec=300)
         return handler
 
     def test_missing_required_basis_fails_closed_explicitly(self):

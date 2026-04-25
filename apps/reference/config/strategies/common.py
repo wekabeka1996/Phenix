@@ -18,9 +18,9 @@ class StrategiesArbitrationLoggingConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     rejected_why_prefix: str = Field(
-        description='Prefix for why-codes when strategy intent is rejected')
+        ..., description='Prefix for why-codes when strategy intent is rejected')
     log_level: str = Field(
-        description='Log level for arbitration events (INFO/WARNING/ERROR)')
+        ..., description='Log level for arbitration events (INFO/WARNING/ERROR)')
 
 
 class StrategiesArbitrationConfig(BaseModel):
@@ -28,12 +28,12 @@ class StrategiesArbitrationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal['priority'] = Field(
-        description="Arbitration mode: 'priority' (only supported mode, lower number = higher priority)")
+        ..., description="Arbitration mode: 'priority' (only supported mode, lower number = higher priority)")
     window_ms: int = Field(
-        description="Decision window size in ms for multi-strategy arbitration (SSOT; no silent defaults).")
+        ..., description="Decision window size in ms for multi-strategy arbitration (SSOT; no silent defaults).")
     priority: Dict[str, int] = Field(
-        description='Strategy priority ranks (lower = higher priority)')
-    logging: StrategiesArbitrationLoggingConfig = Field()
+        ..., description='Strategy priority ranks (lower = higher priority)')
+    logging: StrategiesArbitrationLoggingConfig = Field(...)
 
 
 class StrategiesRegistryConfig(BaseModel):
@@ -48,11 +48,11 @@ class StrategiesRegistryConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    version: str = Field(description='Strategies registry config version')
+    version: str = Field(..., description='Strategies registry config version')
     assignments: Dict[str, List[str]] = Field(
-        description='Per-symbol strategy assignments (symbol → list[strategy_id])')
+        ..., description='Per-symbol strategy assignments (symbol → list[strategy_id])')
     arbitration: StrategiesArbitrationConfig = Field(
-        description='Arbitration policy for strategy conflicts')
+        ..., description='Arbitration policy for strategy conflicts')
 
     @model_validator(mode='after')
     def validate_priorities_for_hybrid_symbols(self) -> 'StrategiesRegistryConfig':
@@ -73,11 +73,11 @@ class StrategiesRegistryConfig(BaseModel):
 class StrategyObjectiveMultiplierConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    m_min: float = Field(ge=0.0, le=1.0)
-    m_max: float = Field(ge=1.0)
-    lambda_scale: float = Field(ge=0.0)
-    penalty_center: float = Field()
-    penalty_scale: float = Field(gt=0.0)
+    m_min: float = Field(..., ge=0.0, le=1.0)
+    m_max: float = Field(..., ge=1.0)
+    lambda_scale: float = Field(..., ge=0.0)
+    penalty_center: float = Field(...)
+    penalty_scale: float = Field(..., gt=0.0)
 
     @model_validator(mode="after")
     def _validate_range(self) -> "StrategyObjectiveMultiplierConfig":
@@ -89,16 +89,16 @@ class StrategyObjectiveMultiplierConfig(BaseModel):
 class StrategyObjectiveGateConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    min_objective_score: float = Field(ge=0.0, le=1.0)
-    enforcement_mode: Literal["OBSERVE", "GATE", "MULTIPLY"] = Field()
+    min_objective_score: float = Field(..., ge=0.0, le=1.0)
+    enforcement_mode: Literal["OBSERVE", "GATE", "MULTIPLY"] = Field(...)
 
 
 class StrategyObjectiveRegimeProfile(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    weights: Dict[str, float] = Field()
-    multiplier: StrategyObjectiveMultiplierConfig = Field()
-    gate: StrategyObjectiveGateConfig = Field()
+    weights: Dict[str, float] = Field(...)
+    multiplier: StrategyObjectiveMultiplierConfig = Field(...)
+    gate: StrategyObjectiveGateConfig = Field(...)
 
     @model_validator(mode="after")
     def _validate_weights(self) -> "StrategyObjectiveRegimeProfile":
@@ -114,9 +114,9 @@ class StrategyObjectiveRegimeProfile(BaseModel):
 class StrategyObjectiveConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=False)
+    enabled: bool = Field(...)
     regimes: Dict[str, StrategyObjectiveRegimeProfile] = Field(
-        default_factory=dict)
+        ...)
 
     @model_validator(mode="after")
     def _validate_enabled_config(self) -> "StrategyObjectiveConfig":
@@ -132,18 +132,14 @@ class StrategiesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     aurora: Optional["AuroraStrategyConfig"] = Field(
-        default=None,
-        description="Aurora strategy config (from strategies/aurora.yaml)",
+        ..., description="Aurora strategy config (from strategies/aurora.yaml)",
     )
     mean_reversion: Optional["MeanReversion1mStrategyConfig"] = Field(
-        default=None,
-        description="Mean Reversion 1m strategy config (from strategies/mean_reversion.yaml)",
+        ..., description="Mean Reversion 1m strategy config (from strategies/mean_reversion.yaml)",
     )
     md_amr: Optional["MDAMRStrategyConfig"] = Field(
-        default=None,
-        description="MD-AMR strategy config (from strategies/md_amr.yaml)",
+        ..., description="MD-AMR strategy config (from strategies/md_amr.yaml)",
     )
     llm_microstructure: Optional["LLMMicrostructureStrategyConfig"] = Field(
-        default=None,
-        description="LLM microstructure strategy config (from strategies/llm_microstructure.yaml)",
+        ..., description="LLM microstructure strategy config (from strategies/llm_microstructure.yaml)",
     )

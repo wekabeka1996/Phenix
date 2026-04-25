@@ -14,6 +14,7 @@
     {"event_name": "EVT:PORTFOLIO_STATE_UPDATED", "source_domain": "position_tracking"},
     {"event_name": "EVT:REGIME_DETECTED", "source_domain": "regime_detector"},
     {"event_name": "EVT:RISK_ASSESSMENT_COMPLETED", "source_domain": "risk_management"},
+    {"event_name": "EVT:STRATEGY_SIGNAL_PRODUCED", "source_domain": "self"},
     {"event_name": "EVT:SYSTEM_STRESS_STATE_UPDATED", "source_domain": "system_stress"},
     {"event_name": "EVT:TRADE_EXECUTED", "source_domain": "position_tracking"},
     {"event_name": "EVT:TRADE_INTENT_REJECTED", "source_domain": "self"},

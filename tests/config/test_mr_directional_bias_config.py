@@ -13,14 +13,36 @@ Tests:
 9. Per-asset override wires correctly
 10. Legacy symmetric threshold compat (both thresholds = old value)
 """
+from copy import deepcopy
+from functools import lru_cache
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.config_models import (
     MRDirectionalBiasConfig,
     MeanReversion1mStrategyConfig,
     MRStrategyOverrideConfig,
 )
+
+
+CONFIG_DIR = Path("config/aurora")
+
+
+@lru_cache(maxsize=1)
+def _canonical_mr_kwargs() -> dict:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    assert cfg.strategies.mean_reversion is not None
+    return cfg.strategies.mean_reversion.model_dump()
+
+
+@lru_cache(maxsize=1)
+def _canonical_mr_asset_override_kwargs() -> dict:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    assert cfg.strategies.mean_reversion is not None
+    return cfg.strategies.mean_reversion.assets["DOGEUSDT"].strategy.model_dump()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -133,26 +155,8 @@ def test_funding_deadband_above_one_rejected():
 
 def test_yaml_wires_directional_bias():
     """MeanReversion1mStrategyConfig loads directional_bias at top level."""
-    data = dict(
-        enabled=True,
-        timeframe_sec=300,
-        allowed_regimes=["FLAT_LOW"],
-        execution=dict(entry_order_type="MARKET", entry_tif=None),
-        safety_gates=dict(enabled=False, system_stress_policy="off"),
-        strategy=dict(
-            bb_window=20, bb_num_std=2.0, atr_window=14, rsi_window=14,
-            entry_threshold=0.115, rsi_oversold=30, rsi_overbought=70,
-            min_bars=25, min_bb_width=0.001, max_bb_width=0.15,
-            sl_atr_mult=1.5, tp_to_mid=True, cooldown_sec=60,
-        ),
-        regime_thresholds=dict(high_vol_pct=0.003, low_vol_pct=0.001),
-        assets=dict(DOGEUSDT=dict(
-            enabled=True, position_mode="STRICT", allowed_regimes=["FLAT_LOW"],
-        )),
-        regime_sizing=dict(FLAT_LOW=dict(
-            sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
-        directional_bias=_valid_bias_kwargs(),
-    )
+    data = deepcopy(_canonical_mr_kwargs())
+    data["directional_bias"] = _valid_bias_kwargs()
     cfg = MeanReversion1mStrategyConfig(**data)
     assert cfg.directional_bias is not None
     assert cfg.directional_bias.enabled is True
@@ -160,26 +164,9 @@ def test_yaml_wires_directional_bias():
 
 
 def test_yaml_without_directional_bias():
-    """Config loads cleanly when directional_bias absent."""
-    data = dict(
-        enabled=True,
-        timeframe_sec=300,
-        allowed_regimes=["FLAT_LOW"],
-        execution=dict(entry_order_type="MARKET", entry_tif=None),
-        safety_gates=dict(enabled=False, system_stress_policy="off"),
-        strategy=dict(
-            bb_window=20, bb_num_std=2.0, atr_window=14, rsi_window=14,
-            entry_threshold=0.115, rsi_oversold=30, rsi_overbought=70,
-            min_bars=25, min_bb_width=0.001, max_bb_width=0.15,
-            sl_atr_mult=1.5, tp_to_mid=True, cooldown_sec=60,
-        ),
-        regime_thresholds=dict(high_vol_pct=0.003, low_vol_pct=0.001),
-        assets=dict(DOGEUSDT=dict(
-            enabled=True, position_mode="STRICT", allowed_regimes=["FLAT_LOW"],
-        )),
-        regime_sizing=dict(FLAT_LOW=dict(
-            sizing_mult=0.8, stop_mult=1.0, target_mult=0.8)),
-    )
+    """Config loads cleanly when directional_bias is explicit null."""
+    data = deepcopy(_canonical_mr_kwargs())
+    data["directional_bias"] = None
     cfg = MeanReversion1mStrategyConfig(**data)
     assert cfg.directional_bias is None
 
@@ -187,12 +174,12 @@ def test_yaml_without_directional_bias():
 # ── 9. Per-asset override ────────────────────────────────────────────────────
 
 def test_per_asset_directional_bias_override():
-    override = MRStrategyOverrideConfig(
-        directional_bias=MRDirectionalBiasConfig(**_valid_bias_kwargs(
-            base_long_threshold=0.05,
-            base_short_threshold=0.08,
-        )),
+    payload = deepcopy(_canonical_mr_asset_override_kwargs())
+    payload["directional_bias"] = _valid_bias_kwargs(
+        base_long_threshold=0.05,
+        base_short_threshold=0.08,
     )
+    override = MRStrategyOverrideConfig(**payload)
     assert override.directional_bias is not None
     assert override.directional_bias.base_long_threshold == 0.05
     assert override.directional_bias.base_short_threshold == 0.08

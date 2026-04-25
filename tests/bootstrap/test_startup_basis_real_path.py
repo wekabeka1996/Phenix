@@ -111,9 +111,9 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
     assert plan.plans["aurora:ETHUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["aurora:SOLUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["aurora:BNBUSDT"].requirement.basis_required_bars == 301
-    assert plan.plans["aurora:DOGEUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["md_amr:XRPUSDT"].requirement.basis_required_bars == 96
-    assert plan.plans["mean_reversion:DOGEUSDT"].requirement.basis_required_bars == 301
+    assert "aurora:DOGEUSDT" not in plan.plans
+    assert "mean_reversion:DOGEUSDT" not in plan.plans
     assert any(
         action.action == "SEED_HANDLER_BASIS_COUNTER"
         for action in plan.plans["aurora:BTCUSDT"].actions
@@ -122,17 +122,13 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
         action.action == "SEED_HANDLER_BASIS_COUNTER"
         for action in plan.plans["md_amr:XRPUSDT"].actions
     )
-    assert all(
-        action.action != "SEED_HANDLER_BASIS_COUNTER"
-        for action in plan.plans["mean_reversion:DOGEUSDT"].actions
-    )
 
 
 def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> None:
     config = _load_live_config()
     bus = _Bus()
     started_handlers = _build_started_handlers(config, bus)
-    assert "mean_reversion" in started_handlers
+    assert set(started_handlers) == {"aurora", "md_amr"}
     report = build_startup_analytics_restore_report(
         config=config,
         snapshot_data={"timestamp_utc": "2026-03-15T09:09:15+00:00"},
@@ -170,7 +166,6 @@ def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> 
     assert aurora_handler._bars_seen_since_restart["ETHUSDT"] >= 301
     assert aurora_handler._bars_seen_since_restart["SOLUSDT"] >= 301
     assert aurora_handler._bars_seen_since_restart["BNBUSDT"] >= 301
-    assert aurora_handler._bars_seen_since_restart["DOGEUSDT"] >= 301
     assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
     assert summary["imports"]["BTCUSDT:300"] >= 301
     assert summary["imports"]["BNBUSDT:300"] >= 301

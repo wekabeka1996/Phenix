@@ -29,8 +29,13 @@ def _make_em(
 ):
     cfg = ExitManagerConfig(
         danger_zone_action=danger_action,
+        max_hold_time_sec=kwargs.pop("max_hold_time_sec", 3600),
         time_exit_enabled=time_exit_enabled,
+        signal_reversal_threshold=kwargs.pop(
+            "signal_reversal_threshold", -0.1),
         signal_exit_enabled=signal_exit_enabled,
+        danger_zone_tighten_factor=kwargs.pop(
+            "danger_zone_tighten_factor", 0.5),
         **kwargs,
     )
     return ExitManager(
@@ -62,7 +67,8 @@ class TestTrailingActivation:
 
     def test_activated_above_threshold(self):
         """PnL > activation_pct but above trail → no exit (just active)."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.003, trailing_atr_mult=1.5)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.003, trailing_atr_mult=1.5)
         # Long: entry=100, current=102, mfe=103, atr=2 → trail=103-3=100
         # current(102) > trail(100) → hold
         ok, reason, sl = em.check_exit(
@@ -87,7 +93,8 @@ class TestTrailingActivation:
 class TestTrailingExit:
     def test_long_trail_exit(self):
         """LONG: price drops below trail stop → EXIT."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.003, trailing_atr_mult=1.5)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.003, trailing_atr_mult=1.5)
         # entry=100, mfe=110, atr=2 → trail=110-3=107
         # current=106 < 107 → EXIT
         ok, reason, sl = em.check_exit(
@@ -100,7 +107,8 @@ class TestTrailingExit:
 
     def test_short_trail_exit(self):
         """SHORT: price rises above trail stop → EXIT."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.003, trailing_atr_mult=1.5)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.003, trailing_atr_mult=1.5)
         # entry=100, mfe=90, atr=2 → trail=90+3=93
         # current=94 > 93 → EXIT
         ok, reason, sl = em.check_exit(
@@ -112,7 +120,8 @@ class TestTrailingExit:
 
     def test_long_hold_above_trail(self):
         """LONG: price above trail → hold."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.003, trailing_atr_mult=1.5)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.003, trailing_atr_mult=1.5)
         # entry=100, mfe=110, atr=2 → trail=110-3=107
         # current=108 > 107 → hold
         ok, reason, sl = em.check_exit(
@@ -145,7 +154,8 @@ class TestTrailingExit:
 class TestTrailingInvariants:
     def test_trail_never_below_entry_for_long(self):
         """LONG trail stop must be above entry. If not → skip trailing."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.001, trailing_atr_mult=10.0)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.001, trailing_atr_mult=10.0)
         # entry=100, mfe=105, atr=2 → trail=105-20=85 (below entry!)
         # Should NOT trigger exit even though current < trail
         ok, reason, sl = em.check_exit(
@@ -156,7 +166,8 @@ class TestTrailingInvariants:
 
     def test_trail_never_above_entry_for_short(self):
         """SHORT trail stop must be below entry. If not → skip trailing."""
-        em = _make_em(trailing_enabled=True, trailing_activation_pct=0.001, trailing_atr_mult=10.0)
+        em = _make_em(trailing_enabled=True,
+                      trailing_activation_pct=0.001, trailing_atr_mult=10.0)
         # entry=100, mfe=95, atr=2 → trail=95+20=115 (above entry!)
         ok, reason, sl = em.check_exit(
             "BTC", "SHORT", D("100"), D("110"), 0, 0.0, False,
@@ -245,7 +256,8 @@ class TestExistingExits:
         assert "SIGNAL_REVERSAL" in reason
 
     def test_no_exit_when_everything_ok(self):
-        em = _make_em(time_exit_enabled=True, max_hold_time_sec=3600, signal_exit_enabled=True)
+        em = _make_em(time_exit_enabled=True,
+                      max_hold_time_sec=3600, signal_exit_enabled=True)
         ok, reason, sl = em.check_exit(
             "BTC", "LONG", D("100"), D("101"), 100, 0.5, False,
         )

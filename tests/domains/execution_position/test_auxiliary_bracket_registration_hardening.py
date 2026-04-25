@@ -105,7 +105,7 @@ async def test_auxiliary_sl_place_order_uses_canonical_registration_contract() -
         sl_algo_client_id="SL-algo-5001",
         tp_algo_client_id=None,
     )
-    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot.assert_called_once_with(
+    fsm._persist_restore_artifact_snapshot.assert_called_once_with(
         trigger="close_executor:aux_bracket_registered",
         allow_empty=True,
     )
@@ -194,7 +194,7 @@ async def test_noncanonical_reduce_only_place_order_does_not_mutate_bracket_trut
     )
     guardian.register_bracket.assert_not_called()
     manage_flow.set_bracket_ids.assert_not_called()
-    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot.assert_not_called()
+    fsm._persist_restore_artifact_snapshot.assert_not_called()
 
 
 def test_emergency_stop_emit_uses_canonical_sl_prefix(fsm_config) -> None:

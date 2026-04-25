@@ -300,6 +300,67 @@ class CloseExecutor:
 
         return True
 
+    async def _record_auxiliary_bracket_failure(
+        self,
+        *,
+        decision: "Message",
+        payload: dict[str, Any],
+        symbol: str,
+        side: Any,
+        qty: Any,
+        client_order_id: Optional[str],
+        reason: str,
+    ) -> None:
+        bracket_role = self._canonical_auxiliary_bracket_role(client_order_id)
+        if bracket_role is None:
+            return
+        manage_flow = self._fsm.manage_flows.get(symbol)
+        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        if callable(handler):
+            await handler(
+                symbol=symbol,
+                source_path="CloseExecutor.execute_place_order",
+                failure_class="adapter_rejection",
+                reason=reason,
+                why_code="BRACKET_AUXILIARY_ADAPTER_REJECTION",
+                rid=getattr(decision, "rid", None),
+                side=side,
+                qty=qty,
+                entry_order_id=payload.get("parent_order_id")
+                or payload.get("entry_order_id")
+                or getattr(manage_flow, "entry_order_id", None),
+                entry_client_order_id=getattr(
+                    manage_flow, "entry_client_order_id", None),
+                live_position_proven=bool(
+                    manage_flow is not None
+                    and self._manage_flow_allows_bracket_sync(manage_flow)
+                ),
+            )
+            return
+        emit = getattr(self._fsm, "_emit_execution_bus_event", None)
+        if callable(emit):
+            emit(
+                "EVT:BRACKET_PLACEMENT_FAILED",
+                {
+                    "ts_ms": get_clock().now_ms(),
+                    "symbol": symbol,
+                    "source_path": "CloseExecutor.execute_place_order",
+                    "failure_class": "adapter_rejection",
+                    "reason": reason,
+                    "why_code": "BRACKET_AUXILIARY_ADAPTER_REJECTION",
+                    "remediation_action": "force_reduce_only_close",
+                    "rid": getattr(decision, "rid", None),
+                    "side": side,
+                    "qty": str(qty) if qty is not None else None,
+                    "entry_order_id": payload.get("parent_order_id")
+                    or payload.get("entry_order_id")
+                    or getattr(manage_flow, "entry_order_id", None),
+                    "entry_client_order_id": getattr(
+                        manage_flow, "entry_client_order_id", None),
+                    "why": "execution:bracket_placement_failed",
+                },
+            )
+
     async def execute_cancel_order(self, decision: "Message") -> Any:
         """Cancel a specific order for the symbol in the decision payload.
 
@@ -1220,6 +1281,15 @@ class CloseExecutor:
                 else:
                     LOG.error(
                         f"Unsupported order type for PLACE_ORDER: {order_type}")
+                    await self._record_auxiliary_bracket_failure(
+                        decision=decision,
+                        payload=pld,
+                        symbol=symbol,
+                        side=side,
+                        qty=qty,
+                        client_order_id=client_id,
+                        reason=f"unsupported_order_type:{order_type}",
+                    )
                     return
 
             LOG.info(f"✅ PLACE_ORDER success: {resp}")
@@ -1291,3 +1361,12 @@ class CloseExecutor:
 
         except Exception as e:
             LOG.error(f"❌ PLACE_ORDER failed: {e}")
+            await self._record_auxiliary_bracket_failure(
+                decision=decision,
+                payload=pld,
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                client_order_id=client_id,
+                reason=str(e),
+            )

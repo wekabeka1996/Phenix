@@ -13,6 +13,7 @@ from tests.conftest import make_app_cfg_stub
 
 from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
+from apps.reference.config_models import OperationalMode
 
 
 class DeterministicClock:
@@ -59,6 +60,7 @@ class AuroraDecisionCfg:
     reentry_cooldown_sec: float = 60.0
     holding_period: HoldingPeriodCfg = field(default_factory=HoldingPeriodCfg)
     anti_churn: Optional[AntiChurnCfg] = None
+    operational_mode: Any = OperationalMode.PARANOID
 
     # required defaults used by handler
     signal_threshold: float = 0.1

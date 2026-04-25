@@ -150,27 +150,28 @@ def test_market_data_extraction_preserves_field_contracts() -> None:
             "use_multiprocessing",
             "websocket_streams",
             "macro_sync",
+            "bar_aggregator",
         },
-        defaults={"bar_aggregator": None},
+        defaults={},
         optional_fields={"macro_sync", "bar_aggregator"},
     )
     _assert_field_contract(
         cm.SystemMarketDataConfig,
         required={
             "queue_maxsize",
+            "local_queue_maxsize",
+            "emit_workers",
             "tick_ttl_ms",
+            "bar_ttl_ms",
+            "bar_event_age_mode",
             "ws_heartbeat_sec",
             "ws_receive_timeout_sec",
+            "trade_silence_reconnect_sec",
             "proxy_batch_size",
             "proxy_queue_get_timeout_sec",
             "proxy_idle_sleep_sec",
         },
-        defaults={
-            "local_queue_maxsize": 10000,
-            "emit_workers": 4,
-            "bar_ttl_ms": 10000,
-            "bar_event_age_mode": "received",
-        },
+        defaults={},
         optional_fields={"bar_ttl_ms"},
     )
 

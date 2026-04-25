@@ -144,6 +144,8 @@ class MarketDataWorker:
         self._last_ws_text_mono = now_mono
         self._last_book_ticker_mono = now_mono
         self._last_trade_mono = now_mono
+        self._last_aggtrade_summary_mono = now_mono
+        self._aggtrade_summary_interval_sec = 30.0
 
         # Parse config
         # CFG-RUNTIME-INSTRUMENTS-SSOT-ALIGN-10: Use canonical config.instruments (not trading.instruments)
@@ -158,6 +160,25 @@ class MarketDataWorker:
         macro_sync = _dget(market_data_cfg, "macro_sync", {})
         self._anchors = _dget(macro_sync, "anchors", [])
         self._poll_interval = _dget(market_data_cfg, "poll_interval_sec", 1)
+        websocket_streams = _dget(market_data_cfg, "websocket_streams", None)
+        if not isinstance(websocket_streams, list) or not websocket_streams:
+            raise ValueError(
+                "Missing required config: trading.market_data.websocket_streams")
+        self._websocket_streams = []
+        for stream_name in websocket_streams:
+            if not isinstance(stream_name, str) or not stream_name:
+                raise ValueError(
+                    "Invalid required config: trading.market_data.websocket_streams (must be non-empty strings)")
+            self._websocket_streams.append(stream_name)
+        if "bookTicker" not in self._websocket_streams:
+            raise ValueError(
+                "Invalid required config: trading.market_data.websocket_streams must include bookTicker")
+        self._trade_stream_names = {
+            stream_name for stream_name in self._websocket_streams if stream_name in {"trade", "aggTrade"}
+        }
+        if not self._trade_stream_names:
+            raise ValueError(
+                "Invalid required config: trading.market_data.websocket_streams must include trade or aggTrade")
 
         # System-level market data settings (strict: no defaults/fallbacks)
         system = _dget(config_dict, "system", None)
@@ -171,15 +192,22 @@ class MarketDataWorker:
         ws_heartbeat_sec = _dget(system_md, "ws_heartbeat_sec", None)
         ws_receive_timeout_sec = _dget(
             system_md, "ws_receive_timeout_sec", None)
+        trade_silence_reconnect_sec = _dget(
+            system_md, "trade_silence_reconnect_sec", None)
         if not isinstance(ws_heartbeat_sec, (int, float)) or ws_heartbeat_sec <= 0:
             raise ValueError(
                 "Invalid required config: system.market_data.ws_heartbeat_sec (must be > 0)")
         if not isinstance(ws_receive_timeout_sec, (int, float)) or ws_receive_timeout_sec <= 0:
             raise ValueError(
                 "Invalid required config: system.market_data.ws_receive_timeout_sec (must be > 0)")
+        if not isinstance(trade_silence_reconnect_sec, (int, float)) or trade_silence_reconnect_sec <= 0:
+            raise ValueError(
+                "Invalid required config: system.market_data.trade_silence_reconnect_sec (must be > 0)")
 
         self._ws_heartbeat_sec = float(ws_heartbeat_sec)
         self._ws_receive_timeout_sec = float(ws_receive_timeout_sec)
+        # If no trade arrives for this long while bookTicker is alive, force reconnect.
+        self._trade_silence_reconnect_sec = float(trade_silence_reconnect_sec)
 
         # Determine mode (live vs testnet)
         _dget(config_dict, "binance_api", {})
@@ -276,6 +304,36 @@ class MarketDataWorker:
             f"ws_receive_timeout_sec={self._ws_receive_timeout_sec}"
         )
 
+    def _maybe_log_aggtrade_summary(self, *, force: bool = False) -> None:
+        now_mono = time.monotonic()
+        if not force and (now_mono - self._last_aggtrade_summary_mono) < self._aggtrade_summary_interval_sec:
+            return
+
+        self._last_aggtrade_summary_mono = now_mono
+        snapshots = self._aggregator.get_all_trade_observability_snapshots()
+        for symbol in sorted(snapshots):
+            snapshot = snapshots[symbol]
+            self._logger.info(
+                "MD_AGGTRADE_INGEST_SUMMARY symbol=%s aggtrade_raw_seen=%s aggtrade_route_attempted=%s on_trade_called=%s trade_accepted=%s trade_dropped=%s drop_reason_counts=%s",
+                symbol,
+                snapshot["aggtrade_raw_seen"],
+                snapshot["aggtrade_route_attempted"],
+                snapshot["on_trade_called"],
+                snapshot["trade_accepted"],
+                snapshot["trade_dropped"],
+                snapshot["drop_reason_counts"],
+            )
+            self._logger.info(
+                "WS_AGGREGATOR_TRADE_STATE symbol=%s buy_count=%s sell_count=%s buy_volume=%s sell_volume=%s last_trade_ts_ms=%s tick_emit_count=%s",
+                symbol,
+                snapshot["buy_count"],
+                snapshot["sell_count"],
+                snapshot["buy_volume"],
+                snapshot["sell_volume"],
+                snapshot["last_trade_ts_ms"],
+                snapshot["tick_emit_count"],
+            )
+
     def _get_ws_url(self) -> str:
         """Get WebSocket URL based on mode."""
         if self._mode == "live":
@@ -287,15 +345,15 @@ class MarketDataWorker:
         streams = []
         for symbol in self._symbols:
             symbol_lower = symbol.lower()
-            streams.append(f"{symbol_lower}@bookTicker")
-            streams.append(f"{symbol_lower}@aggTrade")
+            for stream_name in self._websocket_streams:
+                streams.append(f"{symbol_lower}@{stream_name}")
 
         # Add anchors if different from trading symbols
         for anchor in self._anchors:
             if anchor not in self._symbols:
                 anchor_lower = anchor.lower()
-                streams.append(f"{anchor_lower}@bookTicker")
-                streams.append(f"{anchor_lower}@aggTrade")
+                for stream_name in self._websocket_streams:
+                    streams.append(f"{anchor_lower}@{stream_name}")
 
         return {"method": "SUBSCRIBE", "params": streams, "id": 1}
 
@@ -360,20 +418,23 @@ class MarketDataWorker:
                 )
                 # State updated, periodic_emit will handle emission
 
-            elif event_type == "aggTrade":
+            elif event_type in self._trade_stream_names:
                 self._last_trade_mono = time.monotonic()
+                self._aggregator.note_aggtrade_raw_seen(symbol)
                 ts_ms = _dget(msg, "T", 0)
                 if ts_ms <= 0:
                     ts_ms = _dget(msg, "E", 0)
                 if ts_ms <= 0:
                     return
+                self._aggregator.note_aggtrade_route_attempted(symbol)
                 self._aggregator.on_trade(
                     symbol=symbol,
                     price=_dget(msg, "p", "0"),
                     quantity=_dget(msg, "q", "0"),
                     is_buyer_maker=_dget(msg, "m", False),
                     ts=ts_ms,
-                    trade_id=msg.get("a")
+                    trade_id=msg.get(
+                        "a") if event_type == "aggTrade" else msg.get("t")
                 )
                 self._ticks_received += 1
                 # State updated, periodic_emit will handle emission
@@ -444,6 +505,9 @@ class MarketDataWorker:
 
                     retry_delay = 1.0
                     self._last_ws_text_mono = time.monotonic()
+                    # Reset trade silence timer on each fresh connection so we don't
+                    # immediately trigger the silence check before any trades arrive.
+                    self._last_trade_mono = time.monotonic()
 
                     # Use explicit receive timeout to detect "silent stall" connections.
                     while self._running:
@@ -471,6 +535,23 @@ class MarketDataWorker:
                             except Exception as e:
                                 self._logger.error(
                                     f"Failed to parse message: {e}")
+                            # After each TEXT message: check trade-stream silence.
+                            # bookTicker keeps _last_ws_text_mono fresh, masking the absence of
+                            # trade events. Force reconnect when no trade has been seen for
+                            # trade_silence_reconnect_sec — this restores the configured trade stream
+                            # which Binance sometimes drops silently after a reconnect.
+                            trade_silence = time.monotonic() - self._last_trade_mono
+                            if trade_silence > self._trade_silence_reconnect_sec:
+                                self._logger.warning(
+                                    f"No trade event for {trade_silence:.0f}s (threshold "
+                                    f"{self._trade_silence_reconnect_sec:.0f}s); "
+                                    f"forcing reconnect to restore configured trade stream"
+                                )
+                                try:
+                                    await ws.close()
+                                except Exception:
+                                    pass
+                                break
                         elif msg.type == aiohttp.WSMsgType.ERROR:
                             self._logger.error(
                                 f"WebSocket error: {ws.exception()}")
@@ -554,6 +635,8 @@ class MarketDataWorker:
                                 "ts_ms": ts_ms,
                             }
                             self._put_with_backpressure(anchor_msg)
+
+                self._maybe_log_aggtrade_summary()
 
                 await asyncio.sleep(self._poll_interval)
 

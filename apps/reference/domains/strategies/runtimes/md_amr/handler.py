@@ -1575,7 +1575,12 @@ class MDAMRHandler:
         Empty / malformed payloads yield "" which is fail-closed:
         no POST_ONLY/MAKER_ONLY substring match → no unsafe retry/fallback.
         """
+        # 0. reject_reason_normalized (highest priority)
         raw = pld.get("reject_reason_normalized")
+        if raw is not None:
+            val = str(raw).strip().upper()
+            if val:
+                return val
 
         # 1. reject_reason (legacy / test contract)
         raw = pld.get("reject_reason")

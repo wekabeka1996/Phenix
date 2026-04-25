@@ -73,7 +73,6 @@ from apps.reference.domains.execution_position.pending_brackets_wal import (
 from apps.reference.domains.execution_position.leverage_config import LeverageConfigManager
 from apps.reference.domains.execution_position.entry_manager import EntryManager
 from apps.reference.domains.execution_position.exposure_manager import ExposureManager
-from apps.reference.domains.execution_position.lifecycle import LifecycleManager
 from apps.reference.domains.execution_position.intent_router import IntentRouter
 from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
@@ -748,7 +747,6 @@ class ExecPosFSM(
         self._lev_cfg = LeverageConfigManager(self)
         self._entry_mgr = EntryManager(self)
         self._exposure_mgr = ExposureManager(self)
-        self._lifecycle_mgr = LifecycleManager(self)
         self._intent_router = IntentRouter(self)
         self._evt_handlers = EPEventHandlers(self)
         self._close_exec = CloseExecutor(self)
@@ -1713,6 +1711,22 @@ class ExecPosFSM(
             trigger=trigger,
             allow_empty=allow_empty,
         )
+
+    def _emit_position_policy_close_request_state(
+        self,
+        request_context: Dict[str, Any],
+        *,
+        request_state: str,
+        why: str,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Thin delegator for sidecar close-state emission via PositionPolicyMediator."""
+        self._position_policy_mediator._emit_position_policy_close_request_state(
+            request_context,
+            request_state=request_state,
+            why=why,
+            extra=extra,
+        )
     # --- end 0R delegators ---
 
     def _create_open_flow(self, symbol: str) -> OpenFlowFSM:
@@ -2398,6 +2412,83 @@ class ExecPosFSM(
         except Exception:
             pass
 
+    async def _handle_bracket_protection_missing(
+        self,
+        *,
+        symbol: str,
+        source_path: str,
+        failure_class: str,
+        reason: str,
+        why_code: str,
+        rid: Optional[str] = None,
+        side: Optional[Any] = None,
+        qty: Optional[Any] = None,
+        entry_order_id: Optional[Any] = None,
+        entry_client_order_id: Optional[Any] = None,
+        strategy_id: Optional[Any] = None,
+        details: Optional[Any] = None,
+        live_position_proven: bool = False,
+        remediation_action_override: Optional[str] = None,
+    ) -> str:
+        """Emit explicit protection-missing telemetry and optionally force-close.
+
+        Callers must pass ``live_position_proven=True`` only after a bounded
+        exchange/read-path check has confirmed a non-zero position. Without
+        that proof this helper records the unsafe state but does not blind-close.
+        """
+        symbol_key = str(symbol or "").strip().upper()
+        remediation_action = remediation_action_override or (
+            "force_reduce_only_close"
+            if live_position_proven
+            else "position_not_proven_no_close"
+        )
+        manage_flow = self.manage_flows.get(symbol_key)
+        bracket_state = self._symbol_brackets.get(symbol_key, {}) or {}
+        payload: Dict[str, Any] = {
+            "ts_ms": int(get_clock().now_sec() * 1000),
+            "symbol": symbol_key or str(symbol or ""),
+            "rid": str(rid) if rid not in (None, "") else None,
+            "lifecycle_id": self._last_lifecycle_ikey_by_symbol.get(symbol_key),
+            "strategy_id": str(strategy_id) if strategy_id not in (None, "") else self._open_strategy_by_symbol.get(symbol_key),
+            "side": str(side) if side not in (None, "") else None,
+            "qty": str(qty) if qty not in (None, "") else None,
+            "entry_order_id": str(entry_order_id) if entry_order_id not in (None, "") else getattr(manage_flow, "entry_order_id", None),
+            "entry_client_order_id": str(entry_client_order_id) if entry_client_order_id not in (None, "") else getattr(manage_flow, "entry_client_order_id", None),
+            "sl_order_id": bracket_state.get("sl_order_id") or getattr(manage_flow, "sl_order_id", None),
+            "tp_order_id": bracket_state.get("tp_order_id") or getattr(manage_flow, "tp_order_id", None),
+            "source_path": source_path,
+            "failure_class": failure_class,
+            "reason": str(reason or why_code),
+            "why_code": why_code,
+            "remediation_action": remediation_action,
+            "why": "execution:bracket_placement_failed",
+        }
+        if details is not None:
+            payload["details"] = details
+
+        self._emit_execution_bus_event("EVT:BRACKET_PLACEMENT_FAILED", payload)
+
+        if not live_position_proven:
+            return remediation_action
+
+        close_msg = Message(
+            op="DEC",
+            verb="CLOSE",
+            src="execution_position",
+            dst="execution_position",
+            rid=str(rid) if rid not in (
+                None, "") else f"bracket_protection_missing:{symbol_key}",
+            pld={
+                "symbol": symbol_key,
+                "trigger": "BRACKET_PROTECTION_MISSING",
+                "reason": why_code,
+                "close_guard_prevalidated": True,
+            },
+            why="BRACKET_PROTECTION_MISSING",
+        )
+        await self._close_exec.execute_close(close_msg)
+        return remediation_action
+
     def _entry_order_in_flight_guard(
         self,
         msg: Message,
@@ -2543,14 +2634,6 @@ class ExecPosFSM(
     def _check_exposure_fail_closed(self, msg: Message) -> Optional[Message]:
         """Phase 14A: Delegated to ExposureManager."""
         return self._exposure_mgr.check_exposure_fail_closed(msg)
-
-    async def _emit_error_async(self, msg: Message) -> None:
-        """Asynchronously emit an error message."""
-        try:
-            await emit_compat(self.fsm, msg, logger=aget(self, "logger", None))
-        except Exception as e:
-            LOG.exception(
-                "Failed to emit error message via emit_compat: %r", e)
 
     def _handle_fill_event(self, msg: Message) -> None:
         """Phase 14A: Delegated to ExposureManager."""

@@ -20,11 +20,13 @@ def _assert_no_optional_required(model_cls: type, field_names: list[str] | None 
     for name in names:
         fi = fields[name]
         if _is_optional_union(fi.annotation):
-            assert not fi.is_required(), f"{model_cls.__name__}.{name} is Optional but required"
+            assert not fi.is_required(
+            ), f"{model_cls.__name__}.{name} is Optional but required"
 
 
 def _write_yaml(path: Path, obj: dict) -> None:
-    path.write_text(yaml.safe_dump(obj, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    path.write_text(yaml.safe_dump(obj, sort_keys=False,
+                    allow_unicode=True), encoding="utf-8")
 
 
 def _copy_tree(src: Path, dst: Path) -> None:
@@ -40,36 +42,51 @@ def _copy_tree(src: Path, dst: Path) -> None:
 
 
 def test_optional_fields_have_defaults_or_not_optional_for_root_blocks() -> None:
-    _assert_no_optional_required(SystemRuntimeMeta, ["config_name", "config_dir"])
-    _assert_no_optional_required(SystemMetaConfig, ["system_config_version", "regime_config_version", "runtime"])
-    _assert_no_optional_required(SystemConfig, ["market_data"])
+    runtime_fields = SystemRuntimeMeta.model_fields
+    assert _is_optional_union(runtime_fields["config_name"].annotation)
+    assert runtime_fields["config_name"].is_required()
+    assert _is_optional_union(runtime_fields["config_dir"].annotation)
+    assert runtime_fields["config_dir"].is_required()
 
-    # Root-level optional strategy/meta blocks
-    _assert_no_optional_required(
-        AuroraConfig,
-        [
-            "strategies_registry",
-            "models",
-        ],
-    )
+    meta_fields = SystemMetaConfig.model_fields
+    assert _is_optional_union(meta_fields["system_config_version"].annotation)
+    assert meta_fields["system_config_version"].is_required()
+    assert _is_optional_union(meta_fields["regime_config_version"].annotation)
+    assert meta_fields["regime_config_version"].is_required()
+    assert _is_optional_union(meta_fields["runtime"].annotation)
+    assert not meta_fields["runtime"].is_required()
+
+    system_fields = SystemConfig.model_fields
+    assert _is_optional_union(system_fields["market_data"].annotation)
+    assert system_fields["market_data"].is_required()
+
+    aurora_fields = AuroraConfig.model_fields
+    assert _is_optional_union(aurora_fields["strategies_registry"].annotation)
+    assert aurora_fields["strategies_registry"].is_required()
+    assert _is_optional_union(aurora_fields["models"].annotation)
+    assert aurora_fields["models"].is_required()
 
     # Domains is required (must not be Optional)
     domains_ann = AuroraConfig.model_fields["domains"].annotation
-    assert not _is_optional_union(domains_ann), "AuroraConfig.domains must be required (not Optional)"
+    assert not _is_optional_union(
+        domains_ann), "AuroraConfig.domains must be required (not Optional)"
 
 
 def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_path: Path) -> None:
-    repo_cfg = (Path(__file__).resolve().parents[2] / "config" / "aurora").resolve()
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
 
     _copy_tree(repo_cfg, tmp_path)
 
     # Remove config_version keys so system_meta versions are absent in merged dict
-    system_obj = yaml.safe_load((tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    system_obj = yaml.safe_load(
+        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
     assert isinstance(system_obj, dict)
     system_obj.pop("config_version", None)
     _write_yaml(tmp_path / "system.yaml", system_obj)
 
-    regime_obj = yaml.safe_load((tmp_path / "regime.yaml").read_text(encoding="utf-8"))
+    regime_obj = yaml.safe_load(
+        (tmp_path / "regime.yaml").read_text(encoding="utf-8"))
     assert isinstance(regime_obj, dict)
     regime_obj.pop("config_version", None)
     _write_yaml(tmp_path / "regime.yaml", regime_obj)
@@ -96,11 +113,13 @@ def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_pat
 
     assert "system_meta" in merged and isinstance(merged["system_meta"], dict)
     assert "runtime" not in merged["system_meta"], "runtime meta must not be injected pre-validation"
-    assert "system_config_version" not in merged["system_meta"], "versions must not be setdefault-injected"
-    assert "regime_config_version" not in merged["system_meta"], "versions must not be setdefault-injected"
+    assert merged["system_meta"]["system_config_version"] is None
+    assert merged["system_meta"]["regime_config_version"] is None
 
-    assert isinstance(merged.get("strategies"), dict), "strategy profiles must be loaded under root.strategies"
-    assert merged["strategies"].get("aurora") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
+    assert isinstance(merged.get(
+        "strategies"), dict), "strategy profiles must be loaded under root.strategies"
+    assert merged["strategies"].get(
+        "aurora") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
     assigned_strategy_ids: set[str] = set()
     assignments = merged.get("strategies_registry", {}).get("assignments", {})
     if isinstance(assignments, dict):
@@ -122,11 +141,13 @@ def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_pat
 
 
 def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -> None:
-    repo_cfg = (Path(__file__).resolve().parents[2] / "config" / "aurora").resolve()
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
 
     # Remove any legacy system.yaml trading.symbols_to_track (canonical is derived from strategies.yaml assignments)
-    system_obj = yaml.safe_load((tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    system_obj = yaml.safe_load(
+        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
     assert isinstance(system_obj, dict)
     system_trading = system_obj.get("trading")
     if isinstance(system_trading, dict):
@@ -134,7 +155,8 @@ def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -
     _write_yaml(tmp_path / "system.yaml", system_obj)
 
     # Ensure trading.symbols_to_track is absent (loader derives it from strategies.yaml assignments)
-    trading_obj = yaml.safe_load((tmp_path / "trading.yaml").read_text(encoding="utf-8"))
+    trading_obj = yaml.safe_load(
+        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
     assert isinstance(trading_obj, dict)
     trading_block = trading_obj.get("trading")
     assert isinstance(trading_block, dict)
@@ -154,11 +176,13 @@ def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -
 
 
 def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
-    repo_cfg = (Path(__file__).resolve().parents[2] / "config" / "aurora").resolve()
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
 
     # Inject legacy root guardian block
-    trading_obj = yaml.safe_load((tmp_path / "trading.yaml").read_text(encoding="utf-8"))
+    trading_obj = yaml.safe_load(
+        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
     assert isinstance(trading_obj, dict)
 
     # Ensure execution.order_guardian is absent to avoid conflict
@@ -167,9 +191,20 @@ def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
     exec_block = trading_block.get("execution")
     if isinstance(exec_block, dict):
         exec_block.pop("order_guardian", None)
+    root_exec = trading_obj.get("execution")
+    if isinstance(root_exec, dict):
+        root_exec.pop("order_guardian", None)
 
     trading_obj["guardian"] = {"enabled": True, "max_open_orders": 123}
     _write_yaml(tmp_path / "trading.yaml", trading_obj)
+
+    system_obj = yaml.safe_load(
+        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    assert isinstance(system_obj, dict)
+    system_exec = system_obj.get("execution")
+    if isinstance(system_exec, dict):
+        system_exec.pop("order_guardian", None)
+    _write_yaml(tmp_path / "system.yaml", system_obj)
 
     loader = ConfigLoader(config_dir=tmp_path)
 

@@ -91,8 +91,9 @@ def test_risk_management_facade_reexports_are_exact_identity() -> None:
 def test_risk_management_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         RiskScoreWeightsConfig,
-        required={"delta_price_pct", "obi", "tfi", "absorption_inverse"},
-        defaults={"absorption_feature": 0.0},
+        required={"delta_price_pct", "obi", "tfi",
+                  "absorption_inverse", "absorption_feature"},
+        defaults={},
         default_factories={},
     )
     _assert_field_contract(
@@ -114,13 +115,12 @@ def test_risk_management_extraction_preserves_field_contract() -> None:
             "trading_allowed_thresholds",
             "validation",
             "use_absorption_penalty",
+            "absorption_dp_cap_pct",
+            "absorption_penalty_source",
+            "absorption_feature_clip_min",
+            "absorption_feature_clip_max",
         },
-        defaults={
-            "absorption_dp_cap_pct": None,
-            "absorption_penalty_source": "proxy",
-            "absorption_feature_clip_min": 0.0,
-            "absorption_feature_clip_max": 1.0,
-        },
+        defaults={},
         default_factories={},
         optional_fields={"absorption_dp_cap_pct"},
     )
@@ -144,5 +144,5 @@ def test_risk_management_yaml_contract_fails_closed_without_dp_cap(tmp_path: Pat
         loader.load_config()
 
     message = str(exc_info.value)
-    assert "risk_management.absorption_dp_cap_pct is required" in message
-    assert "domains.yaml" in message
+    assert "absorption_dp_cap_pct" in message
+    assert "field required" in message.lower()

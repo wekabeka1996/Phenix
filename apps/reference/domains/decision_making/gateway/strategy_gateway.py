@@ -539,6 +539,24 @@ class StrategyGateway:
                 )
                 return
 
+            # === REGIME LOSS EMBARGO CHECK (early gate — before chain) ===
+            embargo = getattr(dm, '_regime_loss_embargo', None)
+            if embargo is not None and not is_reduce_path:
+                try:
+                    embargo_block = embargo.get_entry_block(symbol)
+                    if isinstance(embargo_block, dict) and embargo_block.get("blocked") is True:
+                        self._reject(
+                            symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                            reason_code=NormalizedRejectReasons.REGIME_LOSS_EMBARGO_BLOCKED,
+                            reason="DECISION",
+                            context="strategy_signal_gateway:regime_loss_embargo_blocked",
+                            why_chain=why_chain,
+                            details=embargo_block.get("details"),
+                        )
+                        return
+                except Exception:
+                    pass
+
             # === GATE CHAIN (Package 4, Slice 4.3) ===
             # Canonical pre-intent gate pipeline.
             # Ordering: arbitration → risk_skew_pre → risk → risk_skew_post →
@@ -601,7 +619,6 @@ class StrategyGateway:
             latest_risk = gate_ctx.accumulated.get(
                 "latest_risk", dm.symbol_states[symbol].get("risk") or {})
 
-
             if isinstance(why_chain, list):
                 why_chain.append(str(why_sizing))
 
@@ -646,7 +663,8 @@ class StrategyGateway:
                 max_slippage_bps=max_slip, max_latency_ms=max_lat,
                 risk_score=risk_val,
                 tpsl_owner_ctx=resolved_tpsl_owner_ctx,
-                safety_gate_result=gate_ctx.accumulated.get("safety_gate_result"),
+                safety_gate_result=gate_ctx.accumulated.get(
+                    "safety_gate_result"),
                 strategy_trace=(
                     {
                         **({"md_amr": md_amr_trace_norm} if md_amr_trace_norm else {}),
@@ -691,7 +709,8 @@ class StrategyGateway:
         dm = self._dm
 
         # Merge gate-level why_extra into why_chain
-        effective_why = (list(why_chain) if isinstance(why_chain, list) else []) + list(result.why_extra)
+        effective_why = (list(why_chain) if isinstance(
+            why_chain, list) else []) + list(result.why_extra)
 
         if result.outcome == GateOutcome.BLOCK:
             self._block(symbol)

@@ -25,9 +25,21 @@ from apps.reference.domains.objective_engine.types import (
 def base_domain_config() -> ObjectiveEngineDomainConfig:
     return ObjectiveEngineDomainConfig(
         enabled=True,
+        data_requirements={
+            "require_arce": False,
+            "require_portfolio": False,
+            "require_execution": False,
+            "strict_fail_closed": True,
+        },
+        explainability={
+            "enabled": False,
+            "emit_subcomponents": False,
+            "emit_normalization_stats": False,
+        },
         components={
             "cost": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "alpha_fee": 1.0,
                     "alpha_slippage": 0.7,
@@ -38,6 +50,7 @@ def base_domain_config() -> ObjectiveEngineDomainConfig:
             ),
             "risk": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_inventory": 1.0,
                     "phi_overflow": 3.0,
@@ -46,6 +59,7 @@ def base_domain_config() -> ObjectiveEngineDomainConfig:
             ),
             "edge": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "omega_rr": 0.9,
                     "omega_threshold_margin": 0.8,
@@ -55,6 +69,7 @@ def base_domain_config() -> ObjectiveEngineDomainConfig:
             ),
             "execution": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "omega_liquidity": 0.8,
                     "phi_spread_drag": 0.4,
@@ -63,6 +78,7 @@ def base_domain_config() -> ObjectiveEngineDomainConfig:
             ),
             "information": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_staleness": 0.15,
                     "omega_regime_confidence": 0.7,
@@ -71,6 +87,7 @@ def base_domain_config() -> ObjectiveEngineDomainConfig:
             ),
             "behavior": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_cancel_replace": 0.2,
                     "phi_blocked_intents": 0.15,
@@ -214,7 +231,8 @@ def test_evaluate_objective_cost_and_risk_penalties_are_negative(
     score = evaluate_objective(
         _base_input(
             market={"spread_bps": 9.0, "volatility_state": 2.0},
-            exposure={"current_exposure_usd": 8_000.0, "projected_exposure_usd": 12_000.0},
+            exposure={"current_exposure_usd": 8_000.0,
+                      "projected_exposure_usd": 12_000.0},
             execution={"expected_fee_bps": 5.0, "expected_slippage_bps": 4.0},
         ),
         base_domain_config,
@@ -279,8 +297,10 @@ def test_evaluate_objective_gate_blocks_low_quality_entry(
     score = evaluate_objective(
         _base_input(
             signal={"signal_score": 0.42},
-            market={"spread_bps": 12.0, "liquidity_state": 0.2, "volatility_state": 2.5},
-            exposure={"current_exposure_usd": 9_000.0, "projected_exposure_usd": 14_000.0},
+            market={"spread_bps": 12.0, "liquidity_state": 0.2,
+                    "volatility_state": 2.5},
+            exposure={"current_exposure_usd": 9_000.0,
+                      "projected_exposure_usd": 14_000.0},
             behavior={
                 "recent_cancel_replace_count": 10,
                 "recent_blocked_intent_count": 8,

@@ -37,6 +37,7 @@ def _mk_mr_cfg(*, symbol: str, enabled: bool, asset_enabled: bool = True) -> Mea
             bb_num_std=2.0,
             atr_window=14,
             rsi_window=14,
+            score_multiplier=1.0,
             entry_threshold=0.2,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
@@ -46,36 +47,59 @@ def _mk_mr_cfg(*, symbol: str, enabled: bool, asset_enabled: bool = True) -> Mea
             sl_atr_mult=1.5,
             tp_to_mid=True,
             cooldown_sec=0,
+            confidence_base=0.5,
+            confidence_bb_slope=2.0,
+            confidence_rsi_bonus=0.2,
         ),
-        regime_thresholds=MRRegimeThresholdsConfig(high_vol_pct=0.003, low_vol_pct=0.001),
+        regime_thresholds=MRRegimeThresholdsConfig(
+            high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=asset_enabled,
+                leverage=None,
                 strategy=None,
-                
+                liquidity_gate=None,
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
                 position_mode="STRICT",
             )
         },
-        regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
+        regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(
+            sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
+        liquidity_gate=None,
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
             entry_tif=None,
+            exit_order_type=None,
+            exit_tif=None,
+            exit_limit_ttl_ms=None,
+            gtx_retry_max=0,
+            gtx_retry_offset_bps=2.0,
         ),
-        safety_gates={"enabled": False},  # Fixture fix: disable safety gates
+        safety_gates={
+            "enabled": False,
+            "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
+        },
+        objective=None,
+        microstructure_veto=None,
+        directional_bias=None,
     )
 
 
 def test_mr_activation_assigned_enabled_true_ok(monkeypatch):
     symbol = "BTCUSDT"
     cfg = SimpleNamespace(
-        strategies_registry=SimpleNamespace(assignments={symbol: ["mean_reversion"]}),
-        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(symbol=symbol, enabled=True, asset_enabled=True)),
+        strategies_registry=SimpleNamespace(
+            assignments={symbol: ["mean_reversion"]}),
+        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(
+            symbol=symbol, enabled=True, asset_enabled=True)),
     )
 
-    monkeypatch.setattr(MeanReversionHandler, "_init_strategies", lambda self: None)
-    handler = MeanReversionHandler(fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
+    monkeypatch.setattr(MeanReversionHandler,
+                        "_init_strategies", lambda self: None)
+    handler = MeanReversionHandler(
+        fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
 
     assert handler.enabled is True
     assert handler.is_symbol_enabled(symbol) is True
@@ -84,23 +108,29 @@ def test_mr_activation_assigned_enabled_true_ok(monkeypatch):
 def test_mr_activation_assigned_enabled_false_raises():
     symbol = "BTCUSDT"
     cfg = SimpleNamespace(
-        strategies_registry=SimpleNamespace(assignments={symbol: ["mean_reversion"]}),
-        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(symbol=symbol, enabled=False, asset_enabled=True)),
+        strategies_registry=SimpleNamespace(
+            assignments={symbol: ["mean_reversion"]}),
+        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(
+            symbol=symbol, enabled=False, asset_enabled=True)),
     )
 
     with pytest.raises(ValueError):
-        MeanReversionHandler(fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
+        # type: ignore[arg-type]
+        MeanReversionHandler(fsm=_DummyFsm(), config=cfg)
 
 
 def test_mr_no_assignments_enabled_true_stays_disabled(monkeypatch):
     symbol = "BTCUSDT"
     cfg = SimpleNamespace(
         strategies_registry=SimpleNamespace(assignments={}),
-        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(symbol=symbol, enabled=True, asset_enabled=True)),
+        strategies=SimpleNamespace(mean_reversion=_mk_mr_cfg(
+            symbol=symbol, enabled=True, asset_enabled=True)),
     )
 
-    monkeypatch.setattr(MeanReversionHandler, "_init_strategies", lambda self: None)
-    handler = MeanReversionHandler(fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
+    monkeypatch.setattr(MeanReversionHandler,
+                        "_init_strategies", lambda self: None)
+    handler = MeanReversionHandler(
+        fsm=_DummyFsm(), config=cfg)  # type: ignore[arg-type]
 
     assert handler.enabled is False
     assert handler.is_symbol_enabled(symbol) is False

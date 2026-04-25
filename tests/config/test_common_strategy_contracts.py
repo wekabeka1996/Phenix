@@ -70,19 +70,19 @@ CONTRACT_CASES = {
         "optional_fields": set(),
     },
     "StrategyObjectiveConfig": {
-        "required": set(),
-        "defaults": {"enabled": False},
-        "default_factories": {"regimes": dict},
+        "required": {"enabled", "regimes"},
+        "defaults": {},
+        "default_factories": {},
         "optional_fields": set(),
     },
     "StrategiesConfig": {
-        "required": set(),
-        "defaults": {
-            "aurora": None,
-            "mean_reversion": None,
-            "md_amr": None,
-            "llm_microstructure": None,
+        "required": {
+            "aurora",
+            "mean_reversion",
+            "md_amr",
+            "llm_microstructure",
         },
+        "defaults": {},
         "default_factories": {},
         "optional_fields": {
             "aurora",
@@ -353,6 +353,11 @@ def test_mean_reversion_root_assignment_validator_still_fails_closed(
     tmp_path: Path,
 ) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
+    registry_path = cfg_dir / "strategies.yaml"
+    registry_payload = _load_yaml(registry_path)
+    registry_payload["assignments"]["DOGEUSDT"] = ["mean_reversion"]
+    _write_yaml(registry_path, registry_payload)
+
     mr_path = cfg_dir / "strategies" / "mean_reversion.yaml"
     mr_payload = _load_yaml(mr_path)
     mr_payload["mean_reversion"]["enabled"] = False

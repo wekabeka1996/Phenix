@@ -13,6 +13,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from apps.reference.config_models import OperationalMode
 from apps.reference.domains.strategies.runtimes.aurora.handler import (
     AuroraHandler,
     SymbolState,
@@ -29,6 +30,7 @@ class TestAuroraHandlerInit:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.15,
                         side_bias_window_sec=300,
                         side_bias_target_ratio=0.7,
@@ -70,6 +72,7 @@ class TestRegimeCaching:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
@@ -151,6 +154,7 @@ class TestSideBiasHistory:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=60,  # 60s window for easy testing
                         side_bias_target_ratio=0.72,
@@ -217,6 +221,7 @@ class TestSignalEmission:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         side_bias_target_ratio=0.72,
@@ -319,6 +324,7 @@ class TestPortfolioStateNetPosition:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
@@ -397,6 +403,7 @@ class TestEmitStrategyBlockedContract:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         regime_threshold_multipliers={"DEFAULT": 1.0},
@@ -458,6 +465,7 @@ class TestCanonicalSidePropagation:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=60,
                         side_bias_target_ratio=0.5,
@@ -585,6 +593,7 @@ class TestOnSystemStressGuard:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         regime_threshold_multipliers={"DEFAULT": 1.0},

@@ -46,12 +46,10 @@ class ExposureState:
 
 @dataclass
 class FallbackState:
-    """PHASE P0: Fallback mode state management."""
+    """Fail-closed fallback mode state management."""
     active: bool = False
     entered_at: Optional[float] = None
     reason: Optional[str] = None
-    # 50% risk reduction in fallback mode
-    risk_reduction_pct: Optional[Decimal] = None
 
 
 class ExposureGuard:
@@ -117,9 +115,7 @@ class ExposureGuard:
 
         # PHASE P0: Fallback mode configuration and state
         self.fallback_config = self._load_fallback_config()
-        self.fallback_state = FallbackState(
-            risk_reduction_pct=self.fallback_config["risk_reduction_pct"]
-        )
+        self.fallback_state = FallbackState()
 
         # State
         self.state = ExposureState(
@@ -171,7 +167,7 @@ class ExposureGuard:
 
     def _load_fallback_config(self) -> Dict[str, Any]:
         """
-        P1: Load fallback mode configuration from domains.execution_position.fallback.
+        Load fail-closed fallback mode configuration from domains.execution_position.fallback.
         Fail-closed: raises ConfigContractError if config missing.
         """
         fallback_cfg = getattr(
@@ -186,17 +182,9 @@ class ExposureGuard:
                 why="Fallback config is mandatory. Add fallback section to config/aurora/domains.yaml"
             )
         
-        config = {
-            "policy": fallback_cfg.policy,
-            "risk_reduction_pct": self._to_dec(
-                fallback_cfg.risk_reduction_pct,
-                path="domains.execution_position.fallback.risk_reduction_pct",
-                default_on_error=Decimal("0"),
-            ),
-            "backoff_ms": list(fallback_cfg.backoff_ms),
-        }
+        config = {"policy": fallback_cfg.policy}
         self.logger.info(
-            f"FALLBACK_CONFIG loaded: policy={config['policy']}, risk_reduction_pct={config['risk_reduction_pct']}, backoff_ms={config['backoff_ms']}"
+            f"FALLBACK_CONFIG loaded: policy={config['policy']}"
         )
         return config
 
@@ -241,8 +229,7 @@ class ExposureGuard:
         self._increment_metric("fallback_mode_entries_total", reason)
 
         self.logger.warning(
-            f"FALLBACK_MODE_ENTERED: reason={reason}, policy={self.fallback_config['policy']}, "
-            f"risk_reduction_pct={self.fallback_config['risk_reduction_pct']}"
+            f"FALLBACK_MODE_ENTERED: reason={reason}, policy={self.fallback_config['policy']}"
         )
 
         # Emit alert event
@@ -259,7 +246,6 @@ class ExposureGuard:
                 pld={
                     "reason": reason,
                     "policy": self.fallback_config["policy"],
-                    "risk_reduction_pct": float(self.fallback_config["risk_reduction_pct"]),
                     "entered_at_ms": now_ms
                 },
                 why="fallback_mode_entered",
@@ -279,7 +265,6 @@ class ExposureGuard:
                 metadata={
                     "reason": reason,
                     "policy": self.fallback_config["policy"],
-                    "risk_reduction_pct": float(self.fallback_config["risk_reduction_pct"])
                 }
             )
         except Exception as e:
@@ -468,13 +453,10 @@ class ExposureGuard:
             if policy == "fail_closed":
                 reason = f"FALLBACK_FAIL_CLOSED_{self.fallback_state.reason}"
                 return {"allowed": False, "reason": reason}
-            elif policy == "risk_reduction":
-                risk_reduction_pct = Decimal(str(self.fallback_config["risk_reduction_pct"]))
-                notional_usd = notional_usd * (Decimal("1") - risk_reduction_pct)
-                self.logger.warning(
-                    f"FALLBACK_REDUCE: {symbol} notional reduced to {notional_usd:.2f} "
-                    f"(-{float(risk_reduction_pct):.1%}) due to {self.fallback_state.reason}"
-                )
+            raise ConfigContractError(
+                path="domains.execution_position.fallback.policy",
+                why=f"Unsupported fallback policy: {policy!r}",
+            )
 
         # --- 1. Data Integrity & Fail-Closed ---
         def _d(v): return Decimal(str(v)) if v is not None else Decimal("0")

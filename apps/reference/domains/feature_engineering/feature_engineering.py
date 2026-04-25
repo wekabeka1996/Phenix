@@ -161,6 +161,10 @@ class FeatureEngineering:
         self.last_tick_data: Dict[str, dict] = {}
         self.symbol_states: Dict[str, SymbolFeatureState] = {}
         self._pillar_states: Dict[str, PillarState] = {}
+        self._market_tick_trade_summary_by_symbol: Dict[str, Dict[str, Any]] = {
+        }
+        self._last_market_tick_trade_summary_mono = time.monotonic()
+        self._market_tick_trade_summary_interval_sec = 30.0
 
         # Anchor price buffers for macro_sync
         self.anchor_prices: Dict[str, deque] = {
@@ -785,6 +789,8 @@ class FeatureEngineering:
 
         current_tick = event.pld
         last_tick = self.last_tick_data.get(symbol)
+        self._record_market_tick_trade_summary(symbol, current_tick)
+        self._maybe_log_market_tick_trade_summary()
 
         # First tick initializes state (no feature calc) but MUST be stored.
         if not last_tick:
@@ -830,6 +836,46 @@ class FeatureEngineering:
                     price=float(price),
                     max_gap_bins=self._macro_sync_effective_max_gap_bins(),
                 )
+
+    def _record_market_tick_trade_summary(self, symbol: str, current_tick: dict) -> None:
+        summary = self._market_tick_trade_summary_by_symbol.setdefault(
+            symbol,
+            {
+                "ticks_received": 0,
+                "buy_count": 0,
+                "sell_count": 0,
+                "buy_volume": "0",
+                "sell_volume": "0",
+                "last_ts_ms": 0,
+            },
+        )
+        summary["ticks_received"] += 1
+        summary["buy_count"] = int(current_tick.get("buy_count") or 0)
+        summary["sell_count"] = int(current_tick.get("sell_count") or 0)
+        summary["buy_volume"] = str(current_tick.get(
+            "buy_volume") if current_tick.get("buy_volume") is not None else "0")
+        summary["sell_volume"] = str(current_tick.get(
+            "sell_volume") if current_tick.get("sell_volume") is not None else "0")
+        summary["last_ts_ms"] = int(current_tick.get("ts") or 0)
+
+    def _maybe_log_market_tick_trade_summary(self, *, force: bool = False) -> None:
+        now_mono = time.monotonic()
+        if not force and (now_mono - self._last_market_tick_trade_summary_mono) < self._market_tick_trade_summary_interval_sec:
+            return
+
+        self._last_market_tick_trade_summary_mono = now_mono
+        for symbol in sorted(self._market_tick_trade_summary_by_symbol):
+            summary = self._market_tick_trade_summary_by_symbol[symbol]
+            self.logger.info(
+                "MARKET_TICK_TRADE_FIELDS_SUMMARY stage=feature_engineering symbol=%s ticks_received=%s buy_count=%s sell_count=%s buy_volume=%s sell_volume=%s last_ts_ms=%s",
+                symbol,
+                summary["ticks_received"],
+                summary["buy_count"],
+                summary["sell_count"],
+                summary["buy_volume"],
+                summary["sell_volume"],
+                summary["last_ts_ms"],
+            )
 
     def on_bar_closed(self, event: Message) -> None:
         """Handle bar closed event - emit bar-features for MR strategy.

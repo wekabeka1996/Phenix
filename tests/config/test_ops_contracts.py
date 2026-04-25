@@ -101,11 +101,8 @@ def test_ops_canonical_definition_lives_only_in_extracted_module() -> None:
 def test_ops_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         cm.OpsConfig,
-        required={"panic_killswitch"},
-        defaults={
-            "metrics_url": None,
-            "reports_dir": None,
-        },
+        required={"panic_killswitch", "metrics_url", "reports_dir"},
+        defaults={},
         optional_fields={"metrics_url", "reports_dir"},
     )
 
@@ -131,8 +128,8 @@ def test_current_aurora_config_loads_ops_contract() -> None:
 
     assert type(cfg.trading.ops) is cm.OpsConfig
     assert cfg.trading.ops.panic_killswitch is False
-    assert cfg.trading.ops.metrics_url is None
-    assert cfg.trading.ops.reports_dir is None
+    assert cfg.trading.ops.metrics_url == "http://127.0.0.1:8000/metrics"
+    assert cfg.trading.ops.reports_dir == "reports"
 
 
 def test_ops_runtime_import_smoke() -> None:

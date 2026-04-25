@@ -14,6 +14,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock
 
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
+
 
 def _make_config_for_builder(
     order_type: str = "LIMIT",
@@ -74,10 +76,13 @@ def _make_builder(config) -> tuple:
         fsm=MagicMock(),
         clock=MagicMock(),
         config=config,
-        tca_prefs={"max_slippage_bps": 5, "max_latency_ms": 100, "maker_preference": "maker"},
-        risk_budgets={"trade_cvar95_max_bps": "50", "session_cvar95_max_bps": "200"},
+        tca_prefs={"max_slippage_bps": 5,
+                   "max_latency_ms": 100, "maker_preference": "maker"},
+        risk_budgets={"trade_cvar95_max_bps": "50",
+                      "session_cvar95_max_bps": "200"},
         safe_decimal_fn=lambda v, default=None: None,
-        check_strategy_arbitration_fn=lambda *a, **kw: {"allowed": True, "reason": ""},
+        check_strategy_arbitration_fn=lambda *a, **kw: {
+            "allowed": True, "reason": ""},
         warmup_gate_fn=lambda **kw: False,  # never blocks
         emit_rejected_fn=fake_emit_rejected,
         record_blocked_fn=lambda sym: None,
@@ -172,7 +177,8 @@ class TestIntentBuilderOrderPolicyForLLM:
             "Fix: add '60: 300' to ttl_by_tf_sec alongside mapper tf_sec fix."
         )
         assert len(rejected) == 1
-        assert "MISSING_TF_SEC" in str(rejected[0].get("reason_code", ""))
+        assert str(rejected[0].get("reason_code", "")
+                   ) == NormalizedRejectReasons.MISSING_TF_SEC
 
     def test_tf_sec_60_passes_if_added_to_ttl_map(self):
         """
@@ -180,7 +186,8 @@ class TestIntentBuilderOrderPolicyForLLM:
         the builder passes and valid_for_ms=300000ms (5 minutes).
         """
         config = _make_config_for_builder(
-            ttl_by_tf_sec={60: 300, 180: 600, 300: 1200, 900: 1800},  # 60 added
+            ttl_by_tf_sec={60: 300, 180: 600,
+                           300: 1200, 900: 1800},  # 60 added
             reject_unknown_tf=True,
         )
         builder, rejected = _make_builder(config)
@@ -206,7 +213,8 @@ class TestIntentBuilderOrderPolicyForLLM:
         """
         Fail-closed: if llm_microstructure profile lacks entry_order_type, builder rejects.
         """
-        config = _make_config_for_builder(order_type=None)  # type: ignore[arg-type]
+        config = _make_config_for_builder(
+            order_type=None)  # type: ignore[arg-type]
         builder, rejected = _make_builder(config)
 
         order_type, tif, valid_for_ms = builder._resolve_order_policy(
@@ -222,4 +230,4 @@ class TestIntentBuilderOrderPolicyForLLM:
         assert order_type is None
         assert len(rejected) == 1
         rcode = str(rejected[0].get("reason_code", ""))
-        assert "ORDER_TYPE_MISSING" in rcode or "MISSING" in rcode
+        assert rcode == NormalizedRejectReasons.ORDER_TYPE_MISSING

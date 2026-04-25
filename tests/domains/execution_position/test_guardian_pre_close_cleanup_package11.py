@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from apps.reference.adapters.binance_adapter import BinanceAPIError
 from apps.reference.domains.execution_position.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
@@ -98,6 +99,24 @@ def test_guardian_pre_close_bridge_keeps_parent_context_local_and_emits_package4
     assert "parent_order_id" not in (cancel_decision.pld or {})
 
 
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        ({"status": "CANCELED", "orderId": "sl-1"}, True),
+        ({"code": -2011, "msg": "Unknown order sent"}, True),
+        ({"code": -2013, "msg": "Order does not exist"}, True),
+        ({"code": -1000, "msg": "Internal error"}, False),
+    ],
+)
+def test_order_guardian_cancel_classifier_known_cases(
+    result: dict[str, object],
+    expected: bool,
+) -> None:
+    guardian = OrderGuardian(
+        adapter=AsyncMock(), store=InMemoryStore(), poll_interval_ms=0)
+    assert guardian._is_successful_cancel(result) is expected
+
+
 @pytest.mark.asyncio
 async def test_cleanup_before_close_routes_through_package4_typed_cancel_intake() -> None:
     adapter = AsyncMock()
@@ -124,7 +143,8 @@ async def test_cleanup_before_close_routes_through_package4_typed_cancel_intake(
 
     assert cancelled == 2
     assert from_dec_cancel.call_count == 2
-    observed_ids = [call.kwargs["payload"]["order_id"] for call in from_dec_cancel.call_args_list]
+    observed_ids = [call.kwargs["payload"]["order_id"]
+                    for call in from_dec_cancel.call_args_list]
     assert observed_ids == ["sl-1", "tp-1"]
     for call in from_dec_cancel.call_args_list:
         assert "parent_order_id" not in call.kwargs["payload"]
@@ -140,7 +160,8 @@ async def test_cleanup_before_close_multiple_brackets_traverse_once_each() -> No
         {"status": "CANCELED", "orderId": "sl-1"},
         {"status": "CANCELED", "orderId": "tp-1"},
     ]
-    guardian = OrderGuardian(adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
+    guardian = OrderGuardian(
+        adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
     _register_entry_with_brackets(guardian)
 
     with patch.object(
@@ -163,7 +184,8 @@ async def test_cleanup_before_close_multiple_brackets_traverse_once_each() -> No
 @pytest.mark.asyncio
 async def test_cleanup_before_close_fails_closed_without_raw_cancel_fallback() -> None:
     adapter = AsyncMock()
-    guardian = OrderGuardian(adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
+    guardian = OrderGuardian(
+        adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
     _register_entry_with_brackets(guardian)
 
     with patch.object(
@@ -182,13 +204,41 @@ async def test_cleanup_before_close_fails_closed_without_raw_cancel_fallback() -
 
 
 @pytest.mark.asyncio
+async def test_cleanup_before_close_treats_2013_exception_as_success() -> None:
+    adapter = AsyncMock()
+    adapter.cancel_order.side_effect = [
+        BinanceAPIError(code=-2013, msg="Order does not exist"),
+        BinanceAPIError(code=-2013, msg="Order does not exist"),
+    ]
+    guardian = OrderGuardian(
+        adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
+    _register_entry_with_brackets(guardian)
+
+    with patch.object(
+        CancelSubmissionPayload,
+        "from_dec_cancel",
+        wraps=CancelSubmissionPayload.from_dec_cancel,
+    ) as from_dec_cancel:
+        cancelled = await guardian.cleanup_before_close(
+            symbol="BTCUSDT",
+            parent_order_id="entry-1",
+        )
+
+    assert cancelled == 2
+    assert from_dec_cancel.call_count == 2
+    assert adapter.cancel_order.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_cleanup_other_brackets_for_symbol_remains_unchanged() -> None:
     symbol = "BTCUSDT"
     adapter = AsyncMock()
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-old", client_order_id="TP-OLD"),
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD"),
     ]
-    adapter.cancel_order.return_value = {"status": "CANCELED", "orderId": "tp-old"}
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-old"}
     store = InMemoryStore()
     store.put(
         "order:tp-old",
@@ -221,9 +271,11 @@ async def test_background_cleanup_orphans_remains_unchanged() -> None:
     adapter = AsyncMock()
     adapter.get_open_positions.return_value = []
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-orphan", client_order_id="TP-ORPHAN"),
+        _old_bracket_order(symbol=symbol, order_id="tp-orphan",
+                           client_order_id="TP-ORPHAN"),
     ]
-    adapter.cancel_order.return_value = {"status": "CANCELED", "orderId": "tp-orphan"}
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-orphan"}
     store = InMemoryStore()
     store.put(
         "order:tp-orphan",
@@ -257,7 +309,8 @@ async def test_cleanup_before_close_introduces_no_position_amt_or_restart_work()
         {"status": "CANCELED", "orderId": "sl-1"},
         {"status": "CANCELED", "orderId": "tp-1"},
     ]
-    guardian = OrderGuardian(adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
+    guardian = OrderGuardian(
+        adapter=adapter, store=InMemoryStore(), poll_interval_ms=0)
     _register_entry_with_brackets(guardian)
 
     with patch.object(adapter, "get_open_positions", wraps=adapter.get_open_positions) as get_open_positions:

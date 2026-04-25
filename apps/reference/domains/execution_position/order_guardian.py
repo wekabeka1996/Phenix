@@ -26,7 +26,6 @@ from dataclasses import dataclass, asdict, is_dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set
 
-from apps.reference.adapters.binance_adapter import BinanceAPIError
 from apps.reference.domains.execution_position.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
@@ -1156,7 +1155,8 @@ class OrderGuardian:
             )
             return False
 
-        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        package4_trace_ref = build_cancel_submission_trace_ref(
+            status="success")
         try:
             result = await self.adapter.cancel_order(
                 submission.symbol,
@@ -1183,16 +1183,32 @@ class OrderGuardian:
             )
             return False
         except Exception as exc:
-            self._guardian_pre_close_cleanup_log_failure(
-                symbol=submission.symbol,
-                order_id=submission.order_id,
-                bracket_type=request.bracket_type,
-                parent_order_id=parent_order_id,
-                bridge_trace_ref=bridge_trace_ref,
-                package4_trace_ref=package4_trace_ref,
-                exc=exc,
+            if not self._is_missing_order_cancel_outcome(exc):
+                self._guardian_pre_close_cleanup_log_failure(
+                    symbol=submission.symbol,
+                    order_id=submission.order_id,
+                    bracket_type=request.bracket_type,
+                    parent_order_id=parent_order_id,
+                    bridge_trace_ref=bridge_trace_ref,
+                    package4_trace_ref=package4_trace_ref,
+                    exc=exc,
+                )
+                return False
+            LOG.info(
+                f"[GUARD] Bracket {submission.order_id} already absent (-2011/-2013) for {submission.symbol}",
+                extra={
+                    "event_type": "cleanup_before_close",
+                    "symbol": submission.symbol,
+                    "parent_order_id": parent_order_id,
+                    "bracket_order_id": submission.order_id,
+                    "bracket_type": request.bracket_type,
+                    "trigger": GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
+                    "bridge_path": GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
+                    "bridge_trace_ref": bridge_trace_ref,
+                    "cancel_submission_trace_ref": package4_trace_ref,
+                },
             )
-            return False
+            return True
 
     def _guardian_reconcile_cancel_log_reject(
         self,
@@ -1357,7 +1373,8 @@ class OrderGuardian:
             )
             return False
 
-        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        package4_trace_ref = build_cancel_submission_trace_ref(
+            status="success")
         try:
             result = await self.adapter.cancel_order(
                 submission.symbol,
@@ -1385,10 +1402,7 @@ class OrderGuardian:
             )
             return False
         except Exception as exc:
-            is_unknown_error = isinstance(
-                exc, BinanceAPIError
-            ) and getattr(exc, "code", None) == -2011
-            if not is_unknown_error and "unknown order" not in str(exc).lower():
+            if not self._is_missing_order_cancel_outcome(exc):
                 self._guardian_reconcile_cancel_log_failure(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -1400,7 +1414,7 @@ class OrderGuardian:
                 )
                 return False
             LOG.info(
-                f"[GUARD] Orphan {submission.order_id} already absent (-2011) for {submission.symbol}",
+                f"[GUARD] Orphan {submission.order_id} already absent (-2011/-2013) for {submission.symbol}",
                 extra={
                     "event_type": "cleanup_orphans",
                     "symbol": submission.symbol,
@@ -1630,7 +1644,8 @@ class OrderGuardian:
                         typed_cancelled = await self._execute_guardian_reconcile_cancel(
                             symbol=str(symbol or order_meta["symbol"]),
                             order_id=order_id,
-                            order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                            order_type=str(order_type or order_meta.get(
+                                "type") or "UNKNOWN"),
                             order_meta=order_meta,
                             position_amt=position_amt,
                             rid=rid,
@@ -1648,7 +1663,8 @@ class OrderGuardian:
                     typed_cancelled = await self._execute_guardian_background_orphan_cancel(
                         symbol=str(symbol or order_meta["symbol"]),
                         order_id=order_id,
-                        order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                        order_type=str(order_type or order_meta.get(
+                            "type") or "UNKNOWN"),
                         position_amt=position_amt,
                         order_meta=order_meta,
                     )
@@ -1954,7 +1970,8 @@ class OrderGuardian:
             )
             return False
 
-        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        package4_trace_ref = build_cancel_submission_trace_ref(
+            status="success")
         try:
             result = await self.adapter.cancel_order(
                 submission.symbol,
@@ -1979,10 +1996,7 @@ class OrderGuardian:
             )
             return False
         except Exception as exc:
-            is_unknown_error = isinstance(
-                exc, BinanceAPIError
-            ) and getattr(exc, "code", None) == -2011
-            if not is_unknown_error and "unknown order" not in str(exc).lower():
+            if not self._is_missing_order_cancel_outcome(exc):
                 self._guardian_background_orphan_cancel_log_failure(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -1993,7 +2007,7 @@ class OrderGuardian:
                 )
                 return False
             LOG.info(
-                f"[GUARD] Background orphan {submission.order_id} already absent (-2011) for {submission.symbol}",
+                f"[GUARD] Background orphan {submission.order_id} already absent (-2011/-2013) for {submission.symbol}",
                 extra={
                     "event_type": "guardian_background_orphan_cancel",
                     "symbol": submission.symbol,
@@ -2064,7 +2078,8 @@ class OrderGuardian:
             )
             return False
 
-        package4_trace_ref = build_cancel_submission_trace_ref(status="success")
+        package4_trace_ref = build_cancel_submission_trace_ref(
+            status="success")
         try:
             result = await self.adapter.cancel_order(
                 submission.symbol,
@@ -2091,10 +2106,7 @@ class OrderGuardian:
             )
             return False
         except Exception as exc:
-            is_unknown_error = isinstance(
-                exc, BinanceAPIError
-            ) and getattr(exc, "code", None) == -2011
-            if not is_unknown_error and "unknown order" not in str(exc).lower():
+            if not self._is_missing_order_cancel_outcome(exc):
                 self._guardian_old_bracket_cleanup_log_failure(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -2106,7 +2118,7 @@ class OrderGuardian:
                 )
                 return False
             LOG.info(
-                f"[GUARD] Old bracket {submission.order_id} already absent (-2011) for {submission.symbol}",
+                f"[GUARD] Old bracket {submission.order_id} already absent (-2011/-2013) for {submission.symbol}",
                 extra={
                     "event_type": "cleanup_other_brackets",
                     "symbol": submission.symbol,
@@ -2198,7 +2210,8 @@ class OrderGuardian:
                 typed_cancelled = await self._execute_guardian_old_bracket_cleanup_cancel(
                     symbol=symbol,
                     order_id=order_id,
-                    order_type=str(order_type or order_meta.get("type") or "UNKNOWN"),
+                    order_type=str(order_type or order_meta.get(
+                        "type") or "UNKNOWN"),
                     keep_parent_order_id=str(keep_parent_order_id),
                     order_meta=order_meta,
                 )
@@ -2214,8 +2227,24 @@ class OrderGuardian:
 
         return cancelled_count
 
+    @staticmethod
+    def _is_missing_order_cancel_outcome(outcome: Any) -> bool:
+        """Treat known Binance missing-order cancel outcomes as idempotent success."""
+        if outcome is None:
+            return False
+
+        if isinstance(outcome, dict):
+            error_code = outcome.get("code")
+            message = outcome.get("msg") or ""
+        else:
+            error_code = getattr(outcome, "code", None)
+            message = getattr(outcome, "msg", None) or ""
+
+        message_text = str(message or outcome or "").lower()
+        return error_code in (-2011, -2013) or "unknown order" in message_text or "order does not exist" in message_text
+
     def _is_successful_cancel(self, result: Dict[str, Any]) -> bool:
-        """Check if cancel was successful, treating -2011 as success"""
+        """Check if cancel was successful, treating known missing-order cases as success."""
         normalized = self._normalize_order_payload(
             result) if result is not None else None
         payload = normalized if isinstance(normalized, dict) else (
@@ -2224,10 +2253,8 @@ class OrderGuardian:
         if payload.get("status") == "CANCELED":
             return True
 
-        error_code = payload.get("code") or getattr(result, "code", None)
-        message = payload.get("msg") or getattr(result, "msg", "")
-        if error_code == -2011 or "Unknown order" in str(message):
-            LOG.debug("Treating -2011 as successful cancel")
+        if self._is_missing_order_cancel_outcome(payload):
+            LOG.debug("Treating missing-order cancel as successful cancel")
             return True
 
         return False

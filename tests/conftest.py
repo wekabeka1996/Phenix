@@ -1,3 +1,11 @@
+from typing import Optional
+from dataclasses import dataclass, field
+from apps.reference.domains.feature_engineering.bar_resampler import Bar
+from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignal, MRSignalType
+from decimal import Decimal
+from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_models import AuroraConfig, DomainsConfig
+import sys
 import pytest
 import asyncio
 import inspect
@@ -5,8 +13,41 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 from unittest.mock import MagicMock
-from apps.reference.config_models import AuroraConfig, DomainsConfig
-from apps.reference.config_loader import ConfigLoader
+
+PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+TESTS_ROOT = Path(__file__).resolve().parent
+
+
+def _is_under(path_str: str, root: Path) -> bool:
+    try:
+        return Path(path_str).resolve().is_relative_to(root)
+    except Exception:
+        return False
+
+
+def _ensure_project_root_import_precedence() -> None:
+    if PROJECT_ROOT in sys.path:
+        sys.path.remove(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
+
+    tools_mod = sys.modules.get("tools")
+    if tools_mod is None:
+        return
+
+    tools_file = getattr(tools_mod, "__file__", "") or ""
+    tools_paths = [str(path) for path in getattr(tools_mod, "__path__", [])]
+    shadowed = _is_under(tools_file, TESTS_ROOT) or any(
+        _is_under(path, TESTS_ROOT) for path in tools_paths
+    )
+    if not shadowed:
+        return
+
+    for name in list(sys.modules):
+        if name == "tools" or name.startswith("tools."):
+            sys.modules.pop(name, None)
+
+
+_ensure_project_root_import_precedence()
 
 
 # Legacy standalone harnesses with global sys.modules shims pollute collection
@@ -17,6 +58,15 @@ collect_ignore = [
     "verify_fsm_sl_fix.py",
 ]
 
+
+def pytest_sessionstart(session):  # type: ignore[override]
+    _ensure_project_root_import_precedence()
+
+
+def pytest_collectstart(collector):  # type: ignore[override]
+    _ensure_project_root_import_precedence()
+
+
 def pytest_pyfunc_call(pyfuncitem):  # type: ignore[override]
     """Minimal async test runner (no pytest-asyncio dependency).
 
@@ -24,10 +74,13 @@ def pytest_pyfunc_call(pyfuncitem):  # type: ignore[override]
     """
     testfunction = pyfuncitem.obj
     if inspect.iscoroutinefunction(testfunction):
-        funcargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}  # type: ignore[attr-defined]
+        # type: ignore[attr-defined]
+        funcargs = {name: pyfuncitem.funcargs[name]
+                    for name in pyfuncitem._fixtureinfo.argnames}
         asyncio.run(testfunction(**funcargs))
         return True
     return None
+
 
 @pytest.fixture
 def mock_fsm():
@@ -37,22 +90,25 @@ def mock_fsm():
     fsm.emit = MagicMock()
     return fsm
 
+
 @pytest.fixture
 def domains_config():
     """Load the real domains.yaml config."""
     loader = ConfigLoader()
     return loader.load_config()
 
+
 class MockAuroraConfig:
     """Custom mock config to avoid MagicMock auto-creation issues."""
+
     def __init__(self, domains_config):
         self.domains = domains_config.domains
-        
+
         # Legacy mocks
         self.trading = MagicMock()
         self.trading.risk = MagicMock()
         self.trading.risk.trading_allowed_thresholds = {}
-        
+
         self.decision = MagicMock()
         self.decision.position_sizing.min_position_size_usd = "10"
         self.decision.position_sizing.liquidity_based_cap_usd = "10000"
@@ -63,10 +119,10 @@ class MockAuroraConfig:
         self.decision.bar_gating.bar_ms = "900000"
         self.decision.behavior_fsm.high_vol_multiplier = "2.0"
         self.decision.behavior_fsm.low_vol_multiplier = "0.5"
-        
+
         self.tca_prefs = MagicMock()
         self.risk_budgets = MagicMock()
-        
+
         self.execution = MagicMock()
         self.execution.max_equity_utilization_pct = "0.95"
         self.execution.max_portfolio_fraction = "0.95"
@@ -77,7 +133,7 @@ class MockAuroraConfig:
         self.execution.watchdog.ack_ttl_ms = "8000"
         self.execution.watchdog.fill_ttl_ms = "30000"
         self.execution.watchdog.rps_limit = "10"
-        
+
         self.feature_engineering = MagicMock()
         self.feature_engineering.ema.period_short = 3
         self.feature_engineering.ema.period_long = 7
@@ -88,7 +144,7 @@ class MockAuroraConfig:
         self.feature_engineering.liquidity.depth_half = 1000
         self.feature_engineering.macro_sync.window = 60
         self.feature_engineering.macro_sync.anchors = ["BTCUSDT", "ETHUSDT"]
-        
+
         self.risk_score_weights = {}
 
     def __contains__(self, key):
@@ -96,6 +152,7 @@ class MockAuroraConfig:
 
     def get(self, key, default=None):
         return getattr(self, key, default)
+
 
 @pytest.fixture
 def root_mock_config(domains_config):
@@ -118,7 +175,8 @@ def _isolate_runtime_observability_sinks(tmp_path, monkeypatch):
     original_order_log_file = order_logger.log_file
     original_trade_log_file = trade_lifecycle._log_file
     original_trade_trades = OrderedDict(trade_lifecycle._trades)
-    original_trade_recent_terminal = OrderedDict(trade_lifecycle._recent_terminal)
+    original_trade_recent_terminal = OrderedDict(
+        trade_lifecycle._recent_terminal)
     original_trade_snapshots = dict(trade_lifecycle._snapshot_fingerprints)
     original_trade_next_sweep_at = trade_lifecycle._next_sweep_at
 
@@ -137,7 +195,8 @@ def _isolate_runtime_observability_sinks(tmp_path, monkeypatch):
     trade_lifecycle._trades = OrderedDict()
     trade_lifecycle._recent_terminal = OrderedDict()
     trade_lifecycle._snapshot_fingerprints = {}
-    trade_lifecycle._next_sweep_at = time.time() + trade_lifecycle._auto_sweep_interval_sec
+    trade_lifecycle._next_sweep_at = time.time(
+    ) + trade_lifecycle._auto_sweep_interval_sec
 
     monkeypatch.setattr(
         ExecPosFSM,
@@ -200,9 +259,6 @@ def _restore_schema_validator_module_state():
 
 
 # MR Signal Factory for Tests
-from decimal import Decimal
-from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignal, MRSignalType
-from apps.reference.domains.feature_engineering.bar_resampler import Bar
 
 
 def make_mr_signal(
@@ -232,7 +288,7 @@ def make_mr_signal(
             start_ts_ms=timestamp_ms - 60000,
             end_ts_ms=timestamp_ms,
         )
-    
+
     return MRSignal(
         signal_type=signal_type,
         symbol=symbol,
@@ -248,8 +304,6 @@ def make_mr_signal(
 
 
 # Config Stubs for Tests (no MagicMock in numeric fields)
-from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -310,17 +364,20 @@ class DecisionMakingCfgStub:
     flip_hysteresis_mult: float = 1.0
     flip: FlipCfgStub = field(default_factory=FlipCfgStub)
     qos: QosCfgStub = field(default_factory=QosCfgStub)
-    position_sizing: PositionSizingCfgStub = field(default_factory=PositionSizingCfgStub)
+    position_sizing: PositionSizingCfgStub = field(
+        default_factory=PositionSizingCfgStub)
     arming: ArmingCfgStub = field(default_factory=ArmingCfgStub)
     features: FeaturesCfgStub = field(default_factory=FeaturesCfgStub)
     bar_gating: BarGatingCfgStub = field(default_factory=BarGatingCfgStub)
-    behavior_fsm: BehaviorFsmCfgStub = field(default_factory=BehaviorFsmCfgStub)
+    behavior_fsm: BehaviorFsmCfgStub = field(
+        default_factory=BehaviorFsmCfgStub)
 
 
 @dataclass
 class DomainsCfgStub:
     """Stub for domains config."""
-    decision_making: DecisionMakingCfgStub = field(default_factory=DecisionMakingCfgStub)
+    decision_making: DecisionMakingCfgStub = field(
+        default_factory=DecisionMakingCfgStub)
 
 
 @dataclass
@@ -360,7 +417,8 @@ class AppCfgStub:
     feature_engineering_volatility_window_sec: int = 60
     feature_engineering_liquidity_depth_half: int = 1000
     feature_engineering_macro_sync_window: int = 60
-    feature_engineering_macro_sync_anchors: list = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    feature_engineering_macro_sync_anchors: list = field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
     risk_score_weights: dict = field(default_factory=dict)
 
 
@@ -388,12 +446,13 @@ def make_app_cfg_stub(**overrides):
 # STRATEGY MOCK FACTORIES (Strict Config Fix)
 # ==============================================================================
 
+
 def create_mock_mr_config():
     """Factory for mocked MeanReversion config with STRICT execution fields."""
     mr_config = MagicMock()
     mr_config.enabled = True
     mr_config.timeframe_sec = 180
-    
+
     # REQUIRED FIELD for Pydantic strict validation
     mr_config.execution = MagicMock()
     mr_config.execution.entry_order_type = "MARKET"
@@ -401,29 +460,31 @@ def create_mock_mr_config():
     mr_config.allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
     mr_config.regime_sizing = {}
     mr_config.liquidity_gate = None
-    
+
     # Defaults
     mr_config.risk = MagicMock()
     mr_config.regime_thresholds = {"DEFAULT": 0.5}
     mr_config.assets = {}
     mr_config.strategy = MagicMock()
-    
+
     return mr_config
+
 
 def create_mock_aurora_config_simple():
     """Factory for basic mocked Aurora config."""
     aurora_config = MagicMock()
     aurora_config.execution = MagicMock()
-    aurora_config.execution.entry_order_type = "LIMIT" 
+    aurora_config.execution.entry_order_type = "LIMIT"
     aurora_config.execution.entry_tif = "GTX"
     return aurora_config
 
 
 class MockClock:
     """Helper for deterministic time testing (monotonic & wall)."""
+
     def __init__(self, start_ts=1000.0):
         self._ts = start_ts
-        
+
     def __call__(self):
         """Behave like time.monotonic() when called directly."""
         return self._ts
@@ -431,16 +492,17 @@ class MockClock:
     def now_sec(self) -> float:
         """Clock interface: wall time."""
         return self._ts
-        
+
     def monotonic(self) -> float:
         """Clock interface: monotonic time."""
         return self._ts
-        
+
     def advance(self, seconds: float):
         self._ts += seconds
-        
+
     def set(self, ts: float):
         self._ts = ts
+
 
 @pytest.fixture
 def manual_clock():

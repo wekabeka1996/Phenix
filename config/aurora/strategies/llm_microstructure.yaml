@@ -1,23 +1,18 @@
 llm_microstructure:
   enabled: true
   type: external_intent
-  description: "External LLM intent strategy (contract-first ingress, fail-closed gates)"
+  description: External LLM intent strategy (contract-first ingress, fail-closed gates)
   timeframe_sec: 60
-  pending_entry_ttl_ms: 120000   # 2 min TTL for external LIMIT orders
+  pending_entry_ttl_ms: 120000
   execution:
-    entry_order_type: "LIMIT"
-    entry_tif: "GTC"
-    exit_order_type: "MARKET"
+    entry_order_type: LIMIT
+    entry_tif: GTC
+    exit_order_type: MARKET
     exit_tif: null
+    exit_limit_ttl_ms: null
     gtx_retry_max: 0
     gtx_retry_offset_bps: 2.0
-    emit_market_fallback_marker_on_retry_exhaustion: false
   safety_gates:
-    # AUDIT-FIX-2026-03-19: Disabled for llm_microstructure.
-    # Root cause: regime_confidence gate (FIX-CONF-GATE-01) fires with regime_confidence=None
-    # for LLM-only symbols that have no per_symbol_regimes entry (not processed by aurora FE pipeline).
-    # Price-motion gate also fires: pm_norm_300s=None for LLM-only symbols.
-    # Contract enforcement is done at the HTTP ingress layer (price band, TP/SL, allowlist, rate limit).
-    # The LLM system is the decision authority; internal safety gates are inapplicable to external intents.
     enabled: false
-    system_stress_policy: "off"
+    system_stress_policy: 'off'
+    stress_attenuation_factor: 0.5

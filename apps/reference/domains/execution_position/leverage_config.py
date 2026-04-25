@@ -149,6 +149,7 @@ class LeverageConfigManager:
             result[symbol] = LeverageConfig(
                 target=int(target_leverage),
                 mode=mode_normalized,
+                max_notional_value=None,
             )
 
         LOG.info(

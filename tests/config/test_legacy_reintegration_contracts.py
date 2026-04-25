@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config_models import AbsorptionConfig
@@ -40,21 +41,33 @@ class _DummyFSM:
         return None
 
 
-def test_absorption_legacy_alias_migrates_to_proxy_dp_cap_pct() -> None:
-    cfg = AbsorptionConfig.model_validate(
-        {
-            "mode": "proxy",
-            "dp_cap_pct": 0.07,
-            "proxy": {
-                "source": "aggressive_trade_imbalance",
-                "window": 30,
-                "eps": 0.0001,
-            },
-        }
-    )
+def _bracket_health(ep: ExecPosFSM):
+    return ep._bracket_health
 
-    assert cfg.proxy is not None
-    assert cfg.proxy.dp_cap_pct == pytest.approx(0.07)
+
+def test_absorption_legacy_alias_is_rejected_fail_closed() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AbsorptionConfig.model_validate(
+            {
+                "mode": "proxy",
+                "dp_cap_pct": 0.07,
+                "proxy": {
+                    "source": "aggressive_trade_imbalance",
+                    "window": 30,
+                    "eps": 0.0001,
+                },
+                "dedup": {
+                    "enabled": False,
+                    "window": 30,
+                    "threshold": 0.9,
+                },
+                "clip": 1.0,
+                "neutral": 0.0,
+            }
+        )
+
+    error_msg = str(exc_info.value)
+    assert "proxy.dp_cap_pct" in error_msg or "dp_cap_pct" in error_msg
 
 
 def test_md_amr_profile_loads_when_assigned_in_registry(tmp_path: Path) -> None:
@@ -89,7 +102,7 @@ def test_bracket_health_uses_md_amr_exit_profile(tmp_path: Path) -> None:
     ep._open_strategy_by_symbol["BTCUSDT"] = "md_amr"
     ep._last_regime_by_symbol["BTCUSDT"] = "LOW_VOLATILITY"
 
-    sl_price, tp_price = ep._compute_health_check_brackets(
+    sl_price, tp_price = _bracket_health(ep)._compute_health_check_brackets(
         symbol="BTCUSDT",
         entry_price=100.0,
         side="BUY",
@@ -111,7 +124,7 @@ def test_bracket_health_uses_aurora_registry_assignment_for_eth_recovery(tmp_pat
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
     ep._last_regime_by_symbol["ETHUSDT"] = "DEFAULT"
 
-    owner_context = ep._resolve_health_check_bracket_context(
+    owner_context = _bracket_health(ep)._resolve_health_check_bracket_context(
         symbol="ETHUSDT",
         entry_price=100.0,
         side="BUY",
@@ -138,7 +151,7 @@ def test_bracket_health_uses_registry_assignment_when_runtime_owner_missing(tmp_
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
     ep._last_regime_by_symbol["BTCUSDT"] = "LOW_VOLATILITY"
 
-    owner_context = ep._resolve_health_check_bracket_context(
+    owner_context = _bracket_health(ep)._resolve_health_check_bracket_context(
         symbol="BTCUSDT",
         entry_price=100.0,
         side="BUY",
@@ -163,7 +176,7 @@ def test_bracket_health_uses_md_amr_registry_assignment_for_xrp_recovery(tmp_pat
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)
     ep._last_regime_by_symbol["XRPUSDT"] = "DEFAULT"
 
-    owner_context = ep._resolve_health_check_bracket_context(
+    owner_context = _bracket_health(ep)._resolve_health_check_bracket_context(
         symbol="XRPUSDT",
         entry_price=1.0,
         side="BUY",
@@ -190,7 +203,7 @@ def test_bracket_health_mean_reversion_recovery_fails_closed_without_aurora_fall
     ep._open_strategy_by_symbol["DOGEUSDT"] = "aurora"
     ep._last_regime_by_symbol["DOGEUSDT"] = "DEFAULT"
 
-    owner_context = ep._resolve_health_check_bracket_context(
+    owner_context = _bracket_health(ep)._resolve_health_check_bracket_context(
         symbol="DOGEUSDT",
         entry_price=0.1,
         side="BUY",

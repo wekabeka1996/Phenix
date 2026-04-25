@@ -16,35 +16,35 @@ class MRStrategyParamsConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    bb_window: int = Field(description='Bollinger Bands window')
-    bb_num_std: float = Field(description='BB standard deviations')
-    atr_window: int = Field(description='ATR window for stops')
-    rsi_window: int = Field(description='RSI window')
+    bb_window: int = Field(..., description='Bollinger Bands window')
+    bb_num_std: float = Field(..., description='BB standard deviations')
+    atr_window: int = Field(..., description='ATR window for stops')
+    rsi_window: int = Field(..., description='RSI window')
 
-    score_multiplier: float = 1.0
+    score_multiplier: float = Field(...)
 
-    entry_threshold: float = Field(description='%B threshold for entry')
-    rsi_oversold: float = Field(description='RSI oversold level')
-    rsi_overbought: float = Field(description='RSI overbought level')
+    entry_threshold: float = Field(..., description='%B threshold for entry')
+    rsi_oversold: float = Field(..., description='RSI oversold level')
+    rsi_overbought: float = Field(..., description='RSI overbought level')
 
-    min_bars: int = Field(description='Min bars before trading')
-    min_bb_width: float = Field(description='Min BB width')
-    max_bb_width: float = Field(description='Max BB width')
+    min_bars: int = Field(..., description='Min bars before trading')
+    min_bb_width: float = Field(..., description='Min BB width')
+    max_bb_width: float = Field(..., description='Max BB width')
 
-    sl_atr_mult: float = Field(description='SL as ATR multiplier')
-    tp_to_mid: bool = Field(description='Target mid BB')
-    cooldown_sec: int = Field(description='Cooldown between signals')
+    sl_atr_mult: float = Field(..., description='SL as ATR multiplier')
+    tp_to_mid: bool = Field(..., description='Target mid BB')
+    cooldown_sec: int = Field(..., description='Cooldown between signals')
 
     confidence_base: float = Field(
-        default=0.5, ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Base confidence when BB threshold touched (0.5 = 50%)'
     )
     confidence_bb_slope: float = Field(
-        default=2.0, ge=0.1, le=20.0,
+        ..., ge=0.1, le=20.0,
         description='Slope: how fast confidence grows with |pct_b| distance from threshold'
     )
     confidence_rsi_bonus: float = Field(
-        default=0.2, ge=0.0, le=0.5,
+        ..., ge=0.0, le=0.5,
         description='Confidence bonus when RSI confirms oversold/overbought (0.2 = +20%)'
     )
 
@@ -56,33 +56,33 @@ class MRRegimeThresholdsConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    high_vol_pct: float = Field(description='ATR% for FLAT_HIGH')
-    low_vol_pct: float = Field(description='ATR% for FLAT_LOW')
+    high_vol_pct: float = Field(..., description='ATR% for FLAT_HIGH')
+    low_vol_pct: float = Field(..., description='ATR% for FLAT_LOW')
 
 
 class MRSqueezeExpansionVetoConfig(BaseModel):
     """Per-asset squeeze-expansion veto contract for MR breakout fades."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable squeeze-expansion veto')
+    enabled: bool = Field(..., description='Enable squeeze-expansion veto')
     squeeze_width_max: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Previous BB width must be at or below this squeeze threshold',
     )
     post_squeeze_width_max: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Current BB width must stay at or below this threshold after expansion',
     )
     expansion_ratio_min: float = Field(
-        gt=1.0,
+        ..., gt=1.0,
         description='Current/previous BB width ratio required to veto breakout fades',
     )
     regimes: List[str] = Field(
-        min_length=1,
+        ..., min_length=1,
         description='Flat regimes where the squeeze-expansion veto applies',
     )
     sides: List[Literal["LONG", "SHORT"]] = Field(
-        min_length=1,
+        ..., min_length=1,
         description='Signal sides where the squeeze-expansion veto applies',
     )
 
@@ -99,25 +99,25 @@ class MRMomentumSeparationVetoConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        description='Enable late-drift momentum separation veto')
+        ..., description='Enable late-drift momentum separation veto')
     lookback_bars: int = Field(
-        ge=1,
+        ..., ge=1,
         description='Number of completed bars used to measure directional drift',
     )
     min_drift_pct: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Minimum cumulative drift required to veto a counter-trend fade',
     )
     min_current_bb_width: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Current BB width floor before the late-drift veto is allowed to engage',
     )
     regimes: List[str] = Field(
-        min_length=1,
+        ..., min_length=1,
         description='Flat regimes where the momentum-separation veto applies',
     )
     sides: List[Literal["LONG", "SHORT"]] = Field(
-        min_length=1,
+        ..., min_length=1,
         description='Signal sides where the momentum-separation veto applies',
     )
 
@@ -134,52 +134,50 @@ class MRMicrostructureVetoConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable microstructure veto overlay')
+    enabled: bool = Field(..., description='Enable microstructure veto overlay')
 
     tfi_ema_span: int = Field(
-        default=5, ge=2, le=50,
+        ..., ge=2, le=50,
         description='EMA smoothing span applied to raw TFI before veto evaluation',
     )
     tfi_adverse_threshold: float = Field(
-        default=0.3, gt=0.0, le=1.0,
+        ..., gt=0.0, le=1.0,
         description='Absolute TFI value beyond which flow is classified as adverse',
     )
 
     obi_confirm_enabled: bool = Field(
-        default=False,
-        description='When true, adverse TFI must also be confirmed by adverse OBI',
+        ..., description='When true, adverse TFI must also be confirmed by adverse OBI',
     )
     obi_adverse_threshold: float = Field(
-        default=0.3, gt=0.0, le=1.0,
+        ..., gt=0.0, le=1.0,
         description='Absolute OBI value beyond which book state confirms adverse flow',
     )
 
     price_reaction_lookback_sec: int = Field(
-        default=60, ge=10, le=600,
+        ..., ge=10, le=600,
         description='Seconds of recent price action used to measure continuation vs rebound',
     )
     price_continuation_threshold: float = Field(
-        default=0.001, gt=0.0, le=0.05,
+        ..., gt=0.0, le=0.05,
         description='Min adverse price move (as fraction) to confirm toxic continuation',
     )
 
     absorption_wick_ratio_min: float = Field(
-        default=0.4, ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Min wick/range ratio on the current bar signaling absorption',
     )
     absorption_rebound_threshold: float = Field(
-        default=0.0005, ge=0.0, le=0.05,
+        ..., ge=0.0, le=0.05,
         description='Min favorable price move (as fraction) signaling rebound / absorption',
     )
 
     readiness_min_bars: int = Field(
-        default=5, ge=1, le=100,
+        ..., ge=1, le=100,
         description='Min bars of TFI data before veto can engage (warmup)',
     )
 
     missing_policy: Literal["block"] = Field(
-        default="block",
-        description=(
+        ..., description=(
             'Policy when required microstructure features (tfi) are missing: '
             '"block" = fail-closed (veto trade). '
             'NOTE: "skip" was removed in R1 hardening - fail-open is not permitted '
@@ -219,36 +217,36 @@ class MRDirectionalBiasConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable directional bias modulation')
+    enabled: bool = Field(..., description='Enable directional bias modulation')
 
     base_long_threshold: float = Field(
-        gt=0.0, le=0.5,
+        ..., gt=0.0, le=0.5,
         description='Static %B threshold for LONG entries (lower = stricter)',
     )
     base_short_threshold: float = Field(
-        gt=0.0, le=0.5,
+        ..., gt=0.0, le=0.5,
         description='Static %B threshold for SHORT entries (lower = stricter)',
     )
 
     funding_shift_magnitude: float = Field(
-        default=0.02, ge=0.0, le=0.2,
+        ..., ge=0.0, le=0.2,
         description='Max threshold shift per unit of normalized funding',
     )
     funding_normalization_scale: float = Field(
-        default=0.0003, gt=0.0,
+        ..., gt=0.0,
         description='Funding rate is divided by this before clamping to [-1,1]',
     )
     funding_deadband: float = Field(
-        default=0.1, ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Normalized funding within this band is treated as zero (noise suppression)',
     )
 
     threshold_clamp_min: float = Field(
-        default=0.01, ge=0.0, le=0.5,
+        ..., ge=0.0, le=0.5,
         description='Minimum legal threshold (prevents degenerate entries)',
     )
     threshold_clamp_max: float = Field(
-        default=0.3, ge=0.0, le=0.5,
+        ..., ge=0.0, le=0.5,
         description='Maximum legal threshold (prevents unreachable entries)',
     )
 
@@ -280,51 +278,46 @@ class MRStrategyOverrideConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     bb_window: Optional[int] = Field(
-        default=None, description='BB window size')
+        ..., description='BB window size')
     bb_num_std: Optional[float] = Field(
-        default=None, description='BB std multiplier')
+        ..., description='BB std multiplier')
     min_bb_width: Optional[float] = Field(
-        default=None, description='Min BB width filter')
+        ..., description='Min BB width filter')
     flat_low_short_min_bb_width: Optional[float] = Field(
-        default=None,
-        description='Optional stricter BB width floor for FLAT_LOW short setups only',
+        ..., description='Optional stricter BB width floor for FLAT_LOW short setups only',
     )
     squeeze_expansion_veto: Optional[MRSqueezeExpansionVetoConfig] = Field(
-        default=None,
-        description='Optional squeeze-expansion veto for breakout-from-squeeze fade traps',
+        ..., description='Optional squeeze-expansion veto for breakout-from-squeeze fade traps',
     )
     momentum_separation_veto: Optional[MRMomentumSeparationVetoConfig] = Field(
-        default=None,
-        description='Optional late-drift veto for counter-trend fade traps after expansion',
+        ..., description='Optional late-drift veto for counter-trend fade traps after expansion',
     )
     microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
-        default=None,
-        description='Optional Vector 1 microstructure veto overlay (per-asset override)',
+        ..., description='Optional Vector 1 microstructure veto overlay (per-asset override)',
     )
     directional_bias: Optional[MRDirectionalBiasConfig] = Field(
-        default=None,
-        description='Optional Vector 2 directional bias threshold modulation (per-asset override)',
+        ..., description='Optional Vector 2 directional bias threshold modulation (per-asset override)',
     )
     entry_threshold: Optional[float] = Field(
-        default=None, description='Entry distance threshold')
+        ..., description='Entry distance threshold')
     tp_to_mid: Optional[bool] = Field(
-        default=None, description='TP to mid vs outer band')
+        ..., description='TP to mid vs outer band')
     sl_atr_mult: Optional[float] = Field(
-        default=None, description='SL ATR multiplier override')
+        ..., description='SL ATR multiplier override')
     cooldown_sec: Optional[int] = Field(
-        default=None, description='Cooldown between trades')
+        ..., description='Cooldown between trades')
     sl_buffer_pct: Optional[float] = Field(
-        default=None, description='Additional SL buffer percentage (0.002 = 0.20%)')
+        ..., description='Additional SL buffer percentage (0.002 = 0.20%)')
     tp_buffer_pct: Optional[float] = Field(
-        default=None, description='Additional TP buffer percentage (0.002 = 0.20%)')
+        ..., description='Additional TP buffer percentage (0.002 = 0.20%)')
     allowed_regimes: Optional[List[str]] = Field(
-        default=None, description='Override allowed regimes for this symbol')
+        ..., description='Override allowed regimes for this symbol')
     confidence_base: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0, description='Override base confidence scalar')
+        ..., ge=0.0, le=1.0, description='Override base confidence scalar')
     confidence_bb_slope: Optional[float] = Field(
-        default=None, ge=0.1, le=20.0, description='Override BB slope multiplier')
+        ..., ge=0.1, le=20.0, description='Override BB slope multiplier')
     confidence_rsi_bonus: Optional[float] = Field(
-        default=None, ge=0.0, le=0.5, description='Override RSI confirmation bonus')
+        ..., ge=0.0, le=0.5, description='Override RSI confirmation bonus')
 
 
 class MRAssetConfig(BaseModel):
@@ -335,19 +328,18 @@ class MRAssetConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field()
+    enabled: bool = Field(...)
     leverage: Optional[LeverageConfig] = Field(
-        default=None,
-        description='Per-asset leverage configuration. Read by LeverageBootstrapper at startup.'
+        ..., description='Per-asset leverage configuration. Read by LeverageBootstrapper at startup.'
     )
     strategy: Optional[MRStrategyOverrideConfig] = Field(
-        default=None, description='Strategy parameter overrides for this symbol')
+        ..., description='Strategy parameter overrides for this symbol')
     liquidity_gate: Optional[LiquidityGateConfig] = Field(
-        default=None, description='Per-asset liquidity gate override')
+        ..., description='Per-asset liquidity gate override')
     allowed_regimes: List[str] = Field(
-        description='Regimes where trading is allowed')
+        ..., description='Regimes where trading is allowed')
     position_mode: Literal["STRICT", "DYNAMIC"] = Field(
-        description='STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap')
+        ..., description='STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap')
 
 
 class MRRegimeSizingConfig(BaseModel):
@@ -357,9 +349,9 @@ class MRRegimeSizingConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    sizing_mult: float = Field()
-    stop_mult: float = Field()
-    target_mult: float = Field()
+    sizing_mult: float = Field(...)
+    stop_mult: float = Field(...)
+    target_mult: float = Field(...)
 
 
 class MeanReversion1mStrategyConfig(BaseModel):
@@ -369,31 +361,28 @@ class MeanReversion1mStrategyConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable MR 1m strategy')
+    enabled: bool = Field(..., description='Enable MR 1m strategy')
     timeframe_sec: int = Field(
-        ge=60, le=3600, description='Bar timeframe in seconds')
-    strategy: MRStrategyParamsConfig = Field()
-    regime_thresholds: MRRegimeThresholdsConfig = Field()
-    assets: Dict[str, MRAssetConfig] = Field()
-    regime_sizing: Dict[str, MRRegimeSizingConfig] = Field()
+        ..., ge=60, le=3600, description='Bar timeframe in seconds')
+    strategy: MRStrategyParamsConfig = Field(...)
+    regime_thresholds: MRRegimeThresholdsConfig = Field(...)
+    assets: Dict[str, MRAssetConfig] = Field(...)
+    regime_sizing: Dict[str, MRRegimeSizingConfig] = Field(...)
     allowed_regimes: List[str] = Field(
-        description='Whitelist of Flat regimes to trade in (global default)')
+        ..., description='Whitelist of Flat regimes to trade in (global default)')
     liquidity_gate: Optional[LiquidityGateConfig] = Field(
-        default=None, description='Global liquidity gate for MR')
+        ..., description='Global liquidity gate for MR')
     execution: "StrategyExecutionConfig" = Field(
-        description='Execution policy (SSOT)')
+        ..., description='Execution policy (SSOT)')
     safety_gates: SafetyGatesConfig = Field(
-        description='Safety gates control (directional/price motion gates)'
+        ..., description='Safety gates control (directional/price motion gates)'
     )
     objective: Optional["StrategyObjectiveConfig"] = Field(
-        default=None,
-        description='Strategy objective configuration'
+        ..., description='Strategy objective configuration'
     )
     microstructure_veto: Optional[MRMicrostructureVetoConfig] = Field(
-        default=None,
-        description='Global microstructure veto overlay config (can be overridden per-asset)',
+        ..., description='Global microstructure veto overlay config (can be overridden per-asset)',
     )
     directional_bias: Optional[MRDirectionalBiasConfig] = Field(
-        default=None,
-        description='Global directional bias config (can be overridden per-asset)',
+        ..., description='Global directional bias config (can be overridden per-asset)',
     )

@@ -58,6 +58,49 @@ class MockQueue:
         return self._queue.full()
 
 
+def _worker_config(
+    *,
+    instruments=None,
+    anchors=None,
+    poll_interval_sec=1,
+    trading_mode="testnet",
+    domain_configuration=None,
+    websocket_streams=None,
+):
+    if instruments is None:
+        instruments = {"BTCUSDT": {}}
+    if anchors is None:
+        anchors = []
+    if websocket_streams is None:
+        websocket_streams = ["bookTicker", "aggTrade"]
+    if domain_configuration is None:
+        domain_configuration = {}
+        if trading_mode is not None:
+            domain_configuration = {
+                "market_data": {"trading_mode": trading_mode}
+            }
+
+    return {
+        "instruments": instruments,
+        "system": {
+            "market_data": {
+                "ws_heartbeat_sec": 20.0,
+                "ws_receive_timeout_sec": 60.0,
+                "trade_silence_reconnect_sec": 90.0,
+            }
+        },
+        "trading": {
+            "market_data": {
+                "macro_sync": {"anchors": anchors},
+                "poll_interval_sec": poll_interval_sec,
+                "websocket_streams": websocket_streams,
+            },
+            "domain_configuration": domain_configuration,
+        },
+        "binance_api": {},
+    }
+
+
 class TestWorkerBackpressure:
     """Test backpressure mechanism (drop-oldest policy)."""
 
@@ -66,25 +109,7 @@ class TestWorkerBackpressure:
         q = MockQueue(maxsize=10)
 
         # Create minimal config
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config()
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -104,25 +129,7 @@ class TestWorkerBackpressure:
         """Test that oldest item is dropped when queue is full."""
         q = MockQueue(maxsize=3)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config()
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -159,25 +166,7 @@ class TestWorkerMessageTypes:
         """Regression: websocket loop calls _handle_message on combined-stream JSON."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config()
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -203,25 +192,7 @@ class TestWorkerMessageTypes:
         """Test that tick messages have correct format."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config()
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -253,25 +224,10 @@ class TestWorkerMessageTypes:
         """Test that anchor update messages have correct format."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"ETHUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": ["BTCUSDT"]},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config(
+            instruments={"ETHUSDT": {}},
+            anchors=["BTCUSDT"],
+        )
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -294,25 +250,7 @@ class TestWorkerMessageTypes:
         """Test that heartbeat messages have correct format."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config()
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -344,28 +282,15 @@ class TestWorkerConfig:
         """Test that worker correctly extracts symbols from config."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {
+        config = _worker_config(
+            instruments={
                 "BTCUSDT": {"step_size": "0.001"},
                 "ETHUSDT": {"step_size": "0.01"},
             },
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": ["BTCUSDT"]},
-                    "poll_interval_sec": 2,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "live"}
-                },
-            },
-            "binance_api": {},
-        }
+            anchors=["BTCUSDT"],
+            poll_interval_sec=2,
+            trading_mode="live",
+        )
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -379,25 +304,7 @@ class TestWorkerConfig:
         """Test that worker raises error when no symbols configured."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {},  # Empty!
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config(instruments={})
 
         logger = MagicMock()
 
@@ -408,23 +315,7 @@ class TestWorkerConfig:
         """Test that worker defaults to testnet mode."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {},  # No market_data config
-            },
-            "binance_api": {},
-        }
+        config = _worker_config(trading_mode=None, domain_configuration={})
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -440,25 +331,7 @@ class TestWorkerWebSocket:
         """Test WebSocket URL for live mode."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": []},
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "live"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config(trading_mode="live")
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)
@@ -469,25 +342,10 @@ class TestWorkerWebSocket:
         """Test WebSocket subscription payload format."""
         q = MockQueue(maxsize=100)
 
-        config = {
-            "instruments": {"BTCUSDT": {}, "ETHUSDT": {}},
-            "system": {
-                "market_data": {
-                    "ws_heartbeat_sec": 20.0,
-                    "ws_receive_timeout_sec": 60.0,
-                }
-            },
-            "trading": {
-                "market_data": {
-                    "macro_sync": {"anchors": ["SOLUSDT"]},  # Extra anchor
-                    "poll_interval_sec": 1,
-                },
-                "domain_configuration": {
-                    "market_data": {"trading_mode": "testnet"}
-                },
-            },
-            "binance_api": {},
-        }
+        config = _worker_config(
+            instruments={"BTCUSDT": {}, "ETHUSDT": {}},
+            anchors=["SOLUSDT"],
+        )
 
         logger = MagicMock()
         worker = MarketDataWorker(q, config, logger)

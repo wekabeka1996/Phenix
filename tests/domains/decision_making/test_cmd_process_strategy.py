@@ -16,6 +16,8 @@ import time
 from decimal import Decimal
 from unittest.mock import MagicMock, patch, call
 
+from apps.reference.config_models import OperationalMode
+
 
 class TestCMDProcessStrategyEmission:
     """Test that FE emits CMD:PROCESS_STRATEGY correctly."""
@@ -91,6 +93,7 @@ class TestAuroraRunsOnCMD:
         decision.reentry_cooldown_sec = None
         decision.gates = None
         decision.anti_churn = None
+        decision.operational_mode = OperationalMode.PARANOID
         cfg.strategies.aurora.decision = decision
         
         cfg.strategies.aurora.assets = {
@@ -316,6 +319,7 @@ class TestNoDoubleExecution:
         decision.reentry_cooldown_sec = None
         decision.gates = None
         decision.anti_churn = None
+        decision.operational_mode = OperationalMode.PARANOID
         cfg.strategies.aurora.decision = decision
         
         cfg.strategies.aurora.assets = {

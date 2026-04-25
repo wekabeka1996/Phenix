@@ -68,6 +68,9 @@ class MarketDataProxy:
         self._batches_processed = 0
         self._last_heartbeat_ts = 0
         self._worker_alive = False
+        self._tick_trade_summary_by_symbol: Dict[str, Dict[str, Any]] = {}
+        self._last_tick_trade_summary_mono = time.monotonic()
+        self._tick_trade_summary_interval_sec = 30.0
 
         # System-level market data settings.
         # Intentionally NOT validated/loaded here:
@@ -171,6 +174,46 @@ class MarketDataProxy:
 
         return config_dict
 
+    def _record_tick_trade_summary(self, symbol: str, data: Dict[str, Any]) -> None:
+        summary = self._tick_trade_summary_by_symbol.setdefault(
+            symbol,
+            {
+                "tick_emit_count": 0,
+                "buy_count": 0,
+                "sell_count": 0,
+                "buy_volume": "0",
+                "sell_volume": "0",
+                "last_trade_ts_ms": 0,
+            },
+        )
+        summary["tick_emit_count"] += 1
+        summary["buy_count"] = int(data.get("buy_count") or 0)
+        summary["sell_count"] = int(data.get("sell_count") or 0)
+        summary["buy_volume"] = str(data.get("buy_volume") if data.get(
+            "buy_volume") is not None else "0")
+        summary["sell_volume"] = str(data.get("sell_volume") if data.get(
+            "sell_volume") is not None else "0")
+        summary["last_trade_ts_ms"] = int(data.get("ts") or 0)
+
+    def _maybe_log_tick_trade_summary(self, *, force: bool = False) -> None:
+        now_mono = time.monotonic()
+        if not force and (now_mono - self._last_tick_trade_summary_mono) < self._tick_trade_summary_interval_sec:
+            return
+
+        self._last_tick_trade_summary_mono = now_mono
+        for symbol in sorted(self._tick_trade_summary_by_symbol):
+            summary = self._tick_trade_summary_by_symbol[symbol]
+            LOG.info(
+                "MARKET_TICK_TRADE_FIELDS_SUMMARY stage=proxy symbol=%s tick_emit_count=%s buy_count=%s sell_count=%s buy_volume=%s sell_volume=%s last_trade_ts_ms=%s",
+                symbol,
+                summary["tick_emit_count"],
+                summary["buy_count"],
+                summary["sell_count"],
+                summary["buy_volume"],
+                summary["sell_volume"],
+                summary["last_trade_ts_ms"],
+            )
+
     def _emit_tick(self, tick_data: Dict[str, Any]) -> None:
         """Emit a market tick event to FSM."""
         try:
@@ -253,6 +296,8 @@ class MarketDataProxy:
                 else:
                     raise
             self._ticks_emitted += 1
+            self._record_tick_trade_summary(symbol, data)
+            self._maybe_log_tick_trade_summary()
 
         except Exception as e:
             LOG.error(f"Error emitting tick: {e}")

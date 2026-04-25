@@ -32,12 +32,20 @@ class _Bus:
         return None
 
 
-def _configure_writer(fsm, tmp_path: Path, *, mode: str = "writer_only", flush_interval_ms: int = 25) -> Path:
+def _configure_writer(
+    fsm,
+    tmp_path: Path,
+    *,
+    mode: str = "writer_only",
+    flush_interval_ms: int = 25,
+    dark_read_max_artifact_age_ms: int = 300000,
+) -> Path:
     path = tmp_path / "execution_restore.json"
     fsm.config.domains.execution_position.restore_artifact = ExecutionPositionRestoreArtifactConfig(
         mode=mode,
         storage_path=str(path),
         flush_interval_ms=flush_interval_ms,
+        dark_read_max_artifact_age_ms=dark_read_max_artifact_age_ms,
     )
     fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
     return path
@@ -374,6 +382,7 @@ def test_writer_only_startup_does_not_read_existing_restore_artifact(
         mode=ExecutionPositionRestoreArtifactMode.WRITER_ONLY,
         storage_path=str(path),
         flush_interval_ms=250,
+        dark_read_max_artifact_age_ms=300000,
     )
 
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian") as mock_guardian_cls:

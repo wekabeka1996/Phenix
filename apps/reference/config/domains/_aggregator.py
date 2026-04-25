@@ -20,10 +20,10 @@ class DomainsDebugConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     disable_positions_stale_gate: bool = Field(
-        description="DEV/SHADOW ONLY: disables position stale TTL gate (AuroraBridge portfolio freshness)."
+        ..., description="DEV/SHADOW ONLY: disables position stale TTL gate (AuroraBridge portfolio freshness)."
     )
     disable_daily_loss_limit: bool = Field(
-        description="DEV/SHADOW ONLY: disables daily loss/drawdown gate (RiskManagement DailyRiskState)."
+        ..., description="DEV/SHADOW ONLY: disables daily loss/drawdown gate (RiskManagement DailyRiskState)."
     )
 
 
@@ -34,21 +34,18 @@ class DomainsConfig(BaseModel):
         extra='forbid'
     )  # CANONICAL: strict validation, fail-fast on unknown fields
 
-    debug: DomainsDebugConfig = Field()
-    decision_making: DecisionMakingDomainConfig = Field()
-    feature_engineering: FeatureEngineeringDomainConfig = Field()
+    debug: DomainsDebugConfig = Field(...)
+    decision_making: DecisionMakingDomainConfig = Field(...)
+    feature_engineering: FeatureEngineeringDomainConfig = Field(...)
     ta_features: Optional[TAFeaturesDomainConfig] = Field(
-        default=None,
-        description="Separate TA feature core. Absent or enabled=false means no runtime wiring.",
+        ..., description="Separate TA feature core. Absent or enabled=false means no runtime wiring.",
     )
-    risk_management: RiskManagementDomainConfig = Field()
-    position_tracking: PositionTrackingDomainConfig = Field()
-    execution_position: ExecutionPositionDomainConfig = Field()
+    risk_management: RiskManagementDomainConfig = Field(...)
+    position_tracking: PositionTrackingDomainConfig = Field(...)
+    execution_position: ExecutionPositionDomainConfig = Field(...)
     shadow_telemetry: ShadowTelemetryDomainConfig = Field(
-        default_factory=ShadowTelemetryDomainConfig,
-        description="Shadow telemetry domain (read/write LLM telemetry ingress)",
+        ..., description="Shadow telemetry domain (read/write LLM telemetry ingress)",
     )
     objective_engine: ObjectiveEngineDomainConfig = Field(
-        default_factory=ObjectiveEngineDomainConfig,
-        description="Objective Engine domain configuration",
+        ..., description="Objective Engine domain configuration",
     )

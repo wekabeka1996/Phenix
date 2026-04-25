@@ -9,11 +9,11 @@ class FeatureEngineeringConfig(BaseModel):
     """Feature engineering configuration."""
     model_config = ConfigDict(extra='forbid')
 
-    ema: Dict[str, Any] = Field()
-    volume: Dict[str, Any] = Field()
-    volatility: Dict[str, Any] = Field()
-    liquidity: Dict[str, Any] = Field()
-    macro_sync: Dict[str, Any] = Field()
+    ema: Dict[str, Any] = Field(...)
+    volume: Dict[str, Any] = Field(...)
+    volatility: Dict[str, Any] = Field(...)
+    liquidity: Dict[str, Any] = Field(...)
+    macro_sync: Dict[str, Any] = Field(...)
 
 
 class EmaConfigDetailed(BaseModel):
@@ -21,9 +21,9 @@ class EmaConfigDetailed(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     period_short: int = Field(
-        ge=1, le=50, description='Short EMA period (EMA3 default). Must be < period_long.')
+        ..., ge=1, le=50, description='Short EMA period (EMA3 default). Must be < period_long.')
     period_long: int = Field(
-        ge=2, le=200, description='Long EMA period (EMA7 default). Must be > period_short.')
+        ..., ge=2, le=200, description='Long EMA period (EMA7 default). Must be > period_short.')
 
     @field_validator('period_long')
     @classmethod
@@ -41,11 +41,11 @@ class VolumeConfigDetailed(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     sma_length: int = Field(
-        ge=2, le=100, description='SMA length for volume spike calculation')
+        ..., ge=2, le=100, description='SMA length for volume spike calculation')
     window_sec: int = Field(
-        ge=1, le=3600, description='Volume aggregation window in seconds')
+        ..., ge=1, le=3600, description='Volume aggregation window in seconds')
     min_window_volume_usd: float = Field(
-        ge=0.0, description='Minimum volume threshold for active signal (Commit 6)')
+        ..., ge=0.0, description='Minimum volume threshold for active signal (Commit 6)')
 
 
 class VolatilityConfigDetailed(BaseModel):
@@ -53,9 +53,9 @@ class VolatilityConfigDetailed(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     sma_length: int = Field(
-        ge=2, le=100, description='SMA length for volatility state calculation')
+        ..., ge=2, le=100, description='SMA length for volatility state calculation')
     window_sec: int = Field(
-        ge=1, le=3600, description='Range window for volatility calculation in seconds')
+        ..., ge=1, le=3600, description='Range window for volatility calculation in seconds')
 
 
 class LiquidityConfigDetailed(BaseModel):
@@ -63,11 +63,11 @@ class LiquidityConfigDetailed(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     depth_half: float = Field(
-        gt=0, le=1000000, description='Half-depth parameter for liquidity kappa and depth imbalance (USD)')
+        ..., gt=0, le=1000000, description='Half-depth parameter for liquidity kappa and depth imbalance (USD)')
     kappa_min: float = Field(
-        ge=0.0, le=1.0, description='Minimum liquidity kappa value')
+        ..., ge=0.0, le=1.0, description='Minimum liquidity kappa value')
     kappa_max: float = Field(
-        ge=0.0, le=1.0, description='Maximum liquidity kappa value')
+        ..., ge=0.0, le=1.0, description='Maximum liquidity kappa value')
 
     @field_validator('kappa_max')
     @classmethod
@@ -85,9 +85,9 @@ class EmaBiasConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     clamp_min: float = Field(
-        ge=-1.0, le=0.0, description='Minimum clamp for EMA bias (typically -2%)')
+        ..., ge=-1.0, le=0.0, description='Minimum clamp for EMA bias (typically -2%)')
     clamp_max: float = Field(
-        ge=0.0, le=1.0, description='Maximum clamp for EMA bias (typically +2%)')
+        ..., ge=0.0, le=1.0, description='Maximum clamp for EMA bias (typically +2%)')
 
     @field_validator('clamp_max')
     @classmethod
@@ -104,11 +104,11 @@ class VolumeSpikeConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     cap_max: float = Field(
-        gt=1.0, le=10.0, description='Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)')
+        ..., gt=1.0, le=10.0, description='Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)')
     sma_len: int = Field(
-        ge=2, le=1000, description='SMA length for time-normalized volume rate samples')
+        ..., ge=2, le=1000, description='SMA length for time-normalized volume rate samples')
     eps: float = Field(
-        gt=0.0, le=1.0, description='Epsilon for spike denominator (avoid divide-by-zero)')
+        ..., gt=0.0, le=1.0, description='Epsilon for spike denominator (avoid divide-by-zero)')
 
 
 class VolumeZScoreConfig(BaseModel):
@@ -116,7 +116,7 @@ class VolumeZScoreConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     clip_sigma: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         le=10.0,
         description='Clamp Z-score to [-clip_sigma, +clip_sigma] before tanh normalization'
     )
@@ -127,20 +127,19 @@ class LargeTradeImbalanceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description="Enable large_trade_imbalance calculation and warmup blocking. If False, feature is treated as ready and value is neutral.",
+        ..., description="Enable large_trade_imbalance calculation and warmup blocking. If False, feature is treated as ready and value is neutral.",
     )
     window_ms: int = Field(
-        ge=1000,
+        ..., ge=1000,
         le=600000,
         description="Window size in milliseconds for trade aggregation (must match market_data window for correctness)",
     )
     min_trades: int = Field(
-        ge=1, le=100000, description="Minimum number of trades in window required to mark ready=true")
+        ..., ge=1, le=100000, description="Minimum number of trades in window required to mark ready=true")
     eps: float = Field(
-        gt=0.0, le=1.0, description="Epsilon for denominator guard (avoid divide-by-zero)")
+        ..., gt=0.0, le=1.0, description="Epsilon for denominator guard (avoid divide-by-zero)")
     use_notional: bool = Field(
-        description="If true, use notional (qty*price) instead of qty for imbalance")
+        ..., description="If true, use notional (qty*price) instead of qty for imbalance")
 
 
 class MacroSyncMetricsConfig(BaseModel):
@@ -148,33 +147,32 @@ class MacroSyncMetricsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        description='Enable macro sync correlation calculation')
+        ..., description='Enable macro sync correlation calculation')
     time_diff_threshold_ms: int = Field(
-        ge=100, le=60000, description='Maximum time difference (ms) between ticks for return calculation')
+        ..., ge=100, le=60000, description='Maximum time difference (ms) between ticks for return calculation')
     ttl_ms: int = Field(
-        ge=100, le=600000, description='Anchor staleness TTL (ms). If anchor older than ttl_ms → macro_sync NOT_READY')
+        ..., ge=100, le=600000, description='Anchor staleness TTL (ms). If anchor older than ttl_ms → macro_sync NOT_READY')
     min_buffer_size: int = Field(
-        ge=2, le=100, description='Minimum buffer size before computing correlation')
+        ..., ge=2, le=100, description='Minimum buffer size before computing correlation')
     window: int = Field(
-        ge=10, le=1000, description='Rolling window size for correlation calculation')
-    bin_ms: int = Field(default=1000, ge=250, le=5000,
+        ..., ge=10, le=1000, description='Rolling window size for correlation calculation')
+    bin_ms: int = Field(..., ge=250, le=5000,
                         description='Time-grid bin size in ms for Macro Sync V2 alignment')
     max_gap_bins: int = Field(
-        default=2, ge=0, le=120, description='Max consecutive missing bins allowed before NOT_READY (Macro Sync V2)')
+        ..., ge=0, le=120, description='Max consecutive missing bins allowed before NOT_READY (Macro Sync V2)')
     max_late_ms: int = Field(
-        default=0,
-        ge=0,
+        ..., ge=0,
         le=60000,
         description="Late out-of-order tolerance (ms): if a tick falls behind last_bin_ts by <= max_late_ms, it is reordered/inserted; if larger, it is dropped (without forcing NOT_READY).",
     )
-    eps: float = Field(default=1e-12, gt=0.0, le=1e-3,
+    eps: float = Field(..., gt=0.0, le=1e-3,
                        description='Epsilon for sigma/variance guards (Macro Sync V2)')
     anchors: List[str] = Field(
-        min_length=1, description='Anchor symbols for correlation (market leaders)')
-    align_mode: str = Field(pattern='^(strict_len|tail_min_len)$',
+        ..., min_length=1, description='Anchor symbols for correlation (market leaders)')
+    align_mode: str = Field(..., pattern='^(strict_len|tail_min_len)$',
                             description="Alignment mode: 'strict_len' (require exact match) or 'tail_min_len' (use shorter tail)")
     anchor_update_from_ticks: bool = Field(
-        description='Update anchor buffers from symbol ticks (set false to avoid double-count when anchor is also trade symbol)')
+        ..., description='Update anchor buffers from symbol ticks (set false to avoid double-count when anchor is also trade symbol)')
 
     @field_validator('anchors')
     @classmethod
@@ -194,11 +192,11 @@ class VolatilityStateConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     cap_max: float = Field(
-        gt=1.0, le=10.0, description='Maximum cap for volatility ratio normalization')
+        ..., gt=1.0, le=10.0, description='Maximum cap for volatility ratio normalization')
     tick_floor: float = Field(
-        gt=0.0, description='Minimum floor in price units')
+        ..., gt=0.0, description='Minimum floor in price units')
     division_eps: float = Field(
-        gt=0.0, description='Epsilon for safe division')
+        ..., gt=0.0, description='Epsilon for safe division')
 
 
 class DepthImbalanceConfig(BaseModel):
@@ -206,7 +204,7 @@ class DepthImbalanceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     use_laplace_smoothing: bool = Field(
-        description='Use Laplace smoothing (depth_half) in calculation')
+        ..., description='Use Laplace smoothing (depth_half) in calculation')
 
 
 class DeltaPriceConfig(BaseModel):
@@ -214,7 +212,7 @@ class DeltaPriceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     spike_filter_ms: int = Field(
-        ge=100, le=3600000, description='Time gap (ms) above which delta_price is zeroed to filter spikes. Increase for backtest with larger bar intervals.')
+        ..., ge=100, le=3600000, description='Time gap (ms) above which delta_price is zeroed to filter spikes. Increase for backtest with larger bar intervals.')
 
 
 class FeatureDefaultsConfig(BaseModel):
@@ -231,34 +229,34 @@ class FeatureDefaultsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     neutral_value: float = Field(
-        ge=0.0, le=1.0, description='Default neutral value for all normalized features (0.5 = center of [0,1])')
+        ..., ge=0.0, le=1.0, description='Default neutral value for all normalized features (0.5 = center of [0,1])')
     zero_value: float = Field(
-        ge=0.0, le=1.0, description='Value for truly zero/absent features (absorption placeholder)')
+        ..., ge=0.0, le=1.0, description='Value for truly zero/absent features (absorption placeholder)')
     correlation_default: float = Field(
-        ge=-1.0, le=1.0, description='Default correlation value when insufficient data')
+        ..., ge=-1.0, le=1.0, description='Default correlation value when insufficient data')
     ms_per_sec: int = Field(
-        ge=1000, le=1000, description='Milliseconds per second (constant for clarity)')
+        ..., ge=1000, le=1000, description='Milliseconds per second (constant for clarity)')
 
 
 class SpreadHealthGateConfig(BaseModel):
     """P0-2: Book health gate configuration for spread validation."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable book health gate')
+    enabled: bool = Field(..., description='Enable book health gate')
     max_age_sec: float = Field(
-        gt=0.0, le=60.0,
+        ..., gt=0.0, le=60.0,
         description='STEP 1: Hard fail if book older than this (seconds)'
     )
     min_update_events: int = Field(
-        ge=0,
+        ..., ge=0,
         description='STEP 2: Min book update events (any: qty/levels/price)'
     )
     min_trades_count: int = Field(
-        ge=0,
+        ..., ge=0,
         description='STEP 2: Min trades in window (OR with update_events)'
     )
     window_sec: float = Field(
-        gt=0.0, le=300.0,
+        ..., gt=0.0, le=300.0,
         description='Lookback window for counting events (seconds)'
     )
 
@@ -268,27 +266,27 @@ class SpreadBpsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     health_gate: SpreadHealthGateConfig = Field(
-        description='Book health gate settings')
+        ..., description='Book health gate settings')
 
 
 class FeatureBoundsConfig(BaseModel):
     """Bounds for a single feature (min/max)."""
     model_config = ConfigDict(extra='forbid')
 
-    min: float = Field(description='Minimum valid value')
-    max: float = Field(description='Maximum valid value')
+    min: float = Field(..., description='Minimum valid value')
+    max: float = Field(..., description='Maximum valid value')
 
 
 class FeatureSanityConfig(BaseModel):
     """P0-3: Feature sanity firewall configuration."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable NaN/Inf/out-of-range firewall')
+    enabled: bool = Field(..., description='Enable NaN/Inf/out-of-range firewall')
     nan_inf_behavior: Literal["neutral_and_not_ready", "neutral_only", "crash"] = Field(
-        description='Behavior on NaN/Inf: neutral_and_not_ready=safe, crash=strict'
+        ..., description='Behavior on NaN/Inf: neutral_and_not_ready=safe, crash=strict'
     )
     feature_bounds: Dict[str, FeatureBoundsConfig] = Field(
-        description='Per-feature bounds (semantic validation)'
+        ..., description='Per-feature bounds (semantic validation)'
     )
 
 
@@ -301,36 +299,34 @@ class MacroResidConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable macro_resid computation (replaces macro_sync for direction)'
+        ..., description='Enable macro_resid computation (replaces macro_sync for direction)'
     )
     beta_window: int = Field(
-        ge=10, le=500,
+        ..., ge=10, le=500,
         description='Rolling window for beta calculation (samples)'
     )
     mad_window: int = Field(
-        ge=5, le=200,
+        ..., ge=5, le=200,
         description='Rolling window for MAD calculation (samples)'
     )
     winsor_percentile: float = Field(
-        ge=0.0, le=0.25,
+        ..., ge=0.0, le=0.25,
         description='Winsorize top/bottom percentile (e.g., 0.05 = 5%)'
     )
     var_floor: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Floor for var(r_btc) to prevent div-by-zero'
     )
     scale_floor: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Floor for MAD scale to prevent explosion'
     )
     clip: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Output clip: |macro_resid| <= clip'
     )
     neutral: float = Field(
-        default=0.0,
-        description='SIGNED feature: neutral is 0.0'
+        ..., description='SIGNED feature: neutral is 0.0'
     )
 
     @model_validator(mode='after')
@@ -348,19 +344,18 @@ class AbsorptionProxyConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     source: str = Field(
-        description='Proxy source feature (NOT tfi - dedup required)'
+        ..., description='Proxy source feature (NOT tfi - dedup required)'
     )
     window: int = Field(
-        ge=5, le=500,
+        ..., ge=5, le=500,
         description='Rolling window for proxy calculation (samples)'
     )
     eps: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         description='Epsilon for division safety'
     )
     dp_cap_pct: Optional[float] = Field(
-        default=None,
-        gt=0.0, le=1.0,
+        ..., gt=0.0, le=1.0,
         description=(
             'Cap for |delta_price/price| normalisation in conflict-weighted formula. '
             'Required when absorption.mode != disabled. '
@@ -383,69 +378,38 @@ class AbsorptionDedupConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable dedup guard (mute if correlated with TFI)'
+        ..., description='Enable dedup guard (mute if correlated with TFI)'
     )
     window: int = Field(
-        ge=10, le=500,
+        ..., ge=10, le=500,
         description='Rolling correlation window (samples)'
     )
     threshold: float = Field(
-        ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='If |corr(absorption, TFI)| > threshold → mute absorption'
     )
 
 
 class AbsorptionConfig(BaseModel):
-    """R2: Absorption feature configuration (experimental, default OFF)."""
+    """R2: Absorption feature configuration."""
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal["disabled", "proxy", "full"] = Field(
-        description='Absorption mode: disabled (default), proxy, or full'
-    )
-    dp_cap_pct: Optional[float] = Field(
-        default=None,
-        gt=0.0,
-        le=1.0,
-        description=(
-            "Legacy migration alias for absorption.proxy.dp_cap_pct. "
-            "Current SSOT remains absorption.proxy.dp_cap_pct."
-        ),
+        ..., description='Absorption mode: disabled, proxy, or full'
     )
     proxy: Optional[AbsorptionProxyConfig] = Field(
-        default=None,
-        description='Proxy config (required if mode=proxy)'
+        ..., description='Proxy config (required if mode=proxy)'
     )
     dedup: Optional[AbsorptionDedupConfig] = Field(
-        default=None,
-        description='Dedup guard config'
+        ..., description='Dedup guard config'
     )
     clip: float = Field(
-        default=1.0, gt=0.0,
+        ..., gt=0.0,
         description='Output clip: |absorption| <= clip'
     )
     neutral: float = Field(
-        default=0.0,
-        description='SIGNED feature: neutral is 0.0'
+        ..., description='SIGNED feature: neutral is 0.0'
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_legacy_dp_cap_pct(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        legacy = data.get("dp_cap_pct")
-        if legacy is None:
-            return data
-        proxy = data.get("proxy")
-        if proxy is None:
-            data["proxy"] = {"dp_cap_pct": legacy}
-            return data
-        if isinstance(proxy, dict) and proxy.get("dp_cap_pct") is None:
-            proxy = dict(proxy)
-            proxy["dp_cap_pct"] = legacy
-            data["proxy"] = proxy
-        return data
 
     @model_validator(mode='after')
     def validate_proxy_required(self) -> 'AbsorptionConfig':
@@ -473,27 +437,22 @@ class TacticianConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable Tactician pillar (M15 ROC)',
+        ..., description='Enable Tactician pillar (M15 ROC)',
     )
     timeframe_sec: int = Field(
-        default=900,
-        ge=60, le=86400,
+        ..., ge=60, le=86400,
         description='Timeframe in seconds for Tactician pillar candles (default M15=900)',
     )
     roc_period: int = Field(
-        default=14,
-        ge=2, le=100,
+        ..., ge=2, le=100,
         description='ROC lookback period in bars',
     )
     sensitivity: float = Field(
-        default=3.0,
-        gt=0.0, le=10.0,
+        ..., gt=0.0, le=10.0,
         description='tanh normalization sensitivity (higher = faster saturation)',
     )
     min_bars: int = Field(
-        default=20,
-        ge=5, le=200,
+        ..., ge=5, le=200,
         description='Minimum M15 bars before pillar is ready',
     )
 
@@ -503,32 +462,26 @@ class OperatorConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable Operator pillar (H4 LinReg+ADX)',
+        ..., description='Enable Operator pillar (H4 LinReg+ADX)',
     )
     timeframe_sec: int = Field(
-        default=14400,
-        ge=60, le=86400,
+        ..., ge=60, le=86400,
         description='Timeframe in seconds for Operator pillar candles (default H4=14400)',
     )
     linreg_period: int = Field(
-        default=20,
-        ge=5, le=100,
+        ..., ge=5, le=100,
         description='Linear regression slope window (bars)',
     )
     adx_period: int = Field(
-        default=14,
-        ge=5, le=50,
+        ..., ge=5, le=50,
         description='ADX calculation period (bars)',
     )
     sensitivity: float = Field(
-        default=3.0,
-        gt=0.0, le=10.0,
+        ..., gt=0.0, le=10.0,
         description='tanh normalization sensitivity',
     )
     min_bars: int = Field(
-        default=50,
-        ge=20, le=300,
+        ..., ge=20, le=300,
         description='Minimum H4 bars before pillar is ready',
     )
 
@@ -538,27 +491,22 @@ class StrategistConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable Strategist pillar (D1 SMA200)',
+        ..., description='Enable Strategist pillar (D1 SMA200)',
     )
     timeframe_sec: int = Field(
-        default=86400,
-        ge=60, le=86400,
+        ..., ge=60, le=86400,
         description='Timeframe in seconds for Strategist pillar candles (default D1=86400)',
     )
     sma_period: int = Field(
-        default=200,
-        ge=20, le=500,
+        ..., ge=20, le=500,
         description='SMA period for territory detection',
     )
     sensitivity: float = Field(
-        default=3.0,
-        gt=0.0, le=10.0,
+        ..., gt=0.0, le=10.0,
         description='tanh normalization sensitivity',
     )
     min_bars: int = Field(
-        default=200,
-        ge=50, le=600,
+        ..., ge=50, le=600,
         description='Minimum D1 bars before pillar is ready',
     )
 
@@ -568,18 +516,15 @@ class PillarWeightsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     tactician: float = Field(
-        default=0.30,
-        ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Weight for Tactician (M15 ROC) pillar',
     )
     operator: float = Field(
-        default=0.40,
-        ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Weight for Operator (H4 LinReg+ADX) pillar',
     )
     strategist: float = Field(
-        default=0.30,
-        ge=0.0, le=1.0,
+        ..., ge=0.0, le=1.0,
         description='Weight for Strategist (D1 SMA200) pillar',
     )
 
@@ -589,22 +534,18 @@ class PillarBackfillConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Enable backfill at live startup (disable for backtest)',
+        ..., description='Enable backfill at live startup (disable for backtest)',
     )
     d1_candles: int = Field(
-        default=200,
-        ge=50, le=500,
+        ..., ge=50, le=500,
         description='Number of D1 candles to fetch (≥ sma_period)',
     )
     h4_candles: int = Field(
-        default=100,
-        ge=30, le=500,
+        ..., ge=30, le=500,
         description='Number of H4 candles to fetch',
     )
     m15_candles: int = Field(
-        default=50,
-        ge=15, le=200,
+        ..., ge=15, le=200,
         description='Number of M15 candles to fetch',
     )
 
@@ -614,15 +555,14 @@ class PillarsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description='Master switch for all pillar indicators',
+        ..., description='Master switch for all pillar indicators',
     )
-    tactician: TacticianConfig = Field(default_factory=TacticianConfig)
-    operator: OperatorConfig = Field(default_factory=OperatorConfig)
-    strategist: StrategistConfig = Field(default_factory=StrategistConfig)
-    weights: PillarWeightsConfig = Field(default_factory=PillarWeightsConfig)
+    tactician: TacticianConfig = Field(...)
+    operator: OperatorConfig = Field(...)
+    strategist: StrategistConfig = Field(...)
+    weights: PillarWeightsConfig = Field(...)
     backfill: PillarBackfillConfig = Field(
-        default_factory=PillarBackfillConfig)
+        ...)
 
 
 class LegacyFeaturesLogConfig(BaseModel):
@@ -630,12 +570,10 @@ class LegacyFeaturesLogConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal["full", "sample", "off"] = Field(
-        default="full",
-        description="Legacy FE sink mode: full (every event), sample (every N), off",
+        ..., description="Legacy FE sink mode: full (every event), sample (every N), off",
     )
     sample_every_n: int = Field(
-        default=10,
-        ge=1,
+        ..., ge=1,
         description="Sampling interval when mode=sample (write every N events per symbol)",
     )
 
@@ -651,7 +589,7 @@ class FeatureEngineeringDomainConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled_timeframes_sec: List[int] = Field(
-        min_length=1, description="Enabled timeframes in seconds for bar aggregation context")
+        ..., min_length=1, description="Enabled timeframes in seconds for bar aggregation context")
 
     @field_validator('enabled_timeframes_sec')
     @classmethod
@@ -664,55 +602,47 @@ class FeatureEngineeringDomainConfig(BaseModel):
         return v
 
     enable_new_metrics: bool = Field(
-        description='Enable Phase 1 metrics (ema_bias, volume_spike, etc.)')
+        ..., description='Enable Phase 1 metrics (ema_bias, volume_spike, etc.)')
     trace_features: bool = Field(
-        default=False, description='Enable per-tick feature logging (WARNING: high I/O cost)')
+        ..., description='Enable per-tick feature logging (WARNING: high I/O cost)')
     legacy_features_log: LegacyFeaturesLogConfig = Field(
-        default_factory=LegacyFeaturesLogConfig,
-        description="Legacy feature sink control for additive compatibility logging",
+        ..., description="Legacy feature sink control for additive compatibility logging",
     )
-    volume_input_mode: str = Field(pattern='^(integrate|sample_window_total)$',
+    volume_input_mode: str = Field(..., pattern='^(integrate|sample_window_total)$',
                                    description="Volume input mode: 'integrate' (sum ticks) or 'sample_window_total' (treat tick as pre-windowed sample)")
-    ema: EmaConfigDetailed = Field()
-    volume: VolumeConfigDetailed = Field()
-    volatility: VolatilityConfigDetailed = Field()
-    liquidity: LiquidityConfigDetailed = Field()
-    ema_bias: EmaBiasConfig = Field()
-    volume_spike: VolumeSpikeConfig = Field()
-    volume_zscore: VolumeZScoreConfig = Field()
-    large_trade_imbalance: LargeTradeImbalanceConfig = Field()
-    volatility_state: VolatilityStateConfig = Field()
-    depth_imbalance: DepthImbalanceConfig = Field()
-    delta_price: DeltaPriceConfig = Field()
-    macro_sync: MacroSyncMetricsConfig = Field()
-    defaults: FeatureDefaultsConfig = Field()
+    ema: EmaConfigDetailed = Field(...)
+    volume: VolumeConfigDetailed = Field(...)
+    volatility: VolatilityConfigDetailed = Field(...)
+    liquidity: LiquidityConfigDetailed = Field(...)
+    ema_bias: EmaBiasConfig = Field(...)
+    volume_spike: VolumeSpikeConfig = Field(...)
+    volume_zscore: VolumeZScoreConfig = Field(...)
+    large_trade_imbalance: LargeTradeImbalanceConfig = Field(...)
+    volatility_state: VolatilityStateConfig = Field(...)
+    depth_imbalance: DepthImbalanceConfig = Field(...)
+    delta_price: DeltaPriceConfig = Field(...)
+    macro_sync: MacroSyncMetricsConfig = Field(...)
+    defaults: FeatureDefaultsConfig = Field(...)
     readiness_registry: Optional[ReadinessRegistryConfig] = Field(
-        default=None,
-        description='P0-0: SSOT for declared ready keys. Required in production.'
+        ..., description='P0-0: SSOT for declared ready keys. Required in production.'
     )
     warmup: Optional[WarmupEnforcementConfig] = Field(
-        default=None,
-        description='P0-0: Warmup enforcement. Required in production.'
+        ..., description='P0-0: Warmup enforcement. Required in production.'
     )
     spread_bps: Optional[SpreadBpsConfig] = Field(
-        default=None,
-        description='P0-2: Spread health gate config. Required when spread_bps used.'
+        ..., description='P0-2: Spread health gate config. Required when spread_bps used.'
     )
     feature_sanity: Optional[FeatureSanityConfig] = Field(
-        default=None,
-        description='P0-3: NaN/Inf/out-of-range firewall. Recommended for production.'
+        ..., description='P0-3: NaN/Inf/out-of-range firewall. Recommended for production.'
     )
     macro_resid: Optional[MacroResidConfig] = Field(
-        default=None,
-        description='R1: Beta-adjusted residual (replaces macro_sync for direction). SIGNED, neutral=0.'
+        ..., description='R1: Beta-adjusted residual (replaces macro_sync for direction). SIGNED, neutral=0.'
     )
     absorption: Optional[AbsorptionConfig] = Field(
-        default=None,
-        description='R2: Absorption feature (experimental). Default OFF, no live impact.'
+        ..., description='R2: Absorption feature (experimental). Default OFF, no live impact.'
     )
     pillars: Optional[PillarsConfig] = Field(
-        default=None,
-        description='Phase 9: Multi-timeframe pillars (Tactician M15, Operator H4, Strategist D1). None = disabled.'
+        ..., description='Phase 9: Multi-timeframe pillars (Tactician M15, Operator H4, Strategist D1). None = disabled.'
     )
 
     def get_ema_alpha(self, period: str) -> float:

@@ -7,21 +7,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class ObjectiveNormalizationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    enabled: bool = Field(default=True)
-    method: str = Field(default="adaptive_z_score")
-    window_size: int = Field(default=1000, ge=10)
-    min_samples: int = Field(default=100, ge=2)
-    target_range: Tuple[float, float] = Field(default=(-1.0, 1.0))
-    epsilon: float = Field(default=1e-8)
-    smoothing_factor: float = Field(default=0.1)
-    outlier_threshold: float = Field(default=3.0)
+    enabled: bool = Field(...)
+    method: str = Field(...)
+    window_size: int = Field(..., ge=10)
+    min_samples: int = Field(..., ge=2)
+    target_range: Tuple[float, float] = Field(...)
+    epsilon: float = Field(...)
+    smoothing_factor: float = Field(...)
+    outlier_threshold: float = Field(...)
 
 
 class ObjectiveComponentConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    enabled: bool = Field()
-    normalization: Optional[ObjectiveNormalizationConfig] = Field(default=None)
-    parameters: Dict[str, Any] = Field()
+    enabled: bool = Field(...)
+    normalization: Optional[ObjectiveNormalizationConfig] = Field(...)
+    parameters: Dict[str, Any] = Field(...)
 
     @model_validator(mode="after")
     def _validate_enabled_component(self) -> "ObjectiveComponentConfig":
@@ -33,29 +33,29 @@ class ObjectiveComponentConfig(BaseModel):
 
 class ObjectiveDataRequirementsConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    require_arce: bool = Field(default=True)
-    require_portfolio: bool = Field(default=True)
-    require_execution: bool = Field(default=False)
-    strict_fail_closed: bool = Field(default=True)
+    require_arce: bool = Field(...)
+    require_portfolio: bool = Field(...)
+    require_execution: bool = Field(...)
+    strict_fail_closed: bool = Field(...)
 
 
 class ObjectiveExplainabilityConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    enabled: bool = Field(default=True)
-    emit_subcomponents: bool = Field(default=True)
-    emit_normalization_stats: bool = Field(default=False)
+    enabled: bool = Field(...)
+    emit_subcomponents: bool = Field(...)
+    emit_normalization_stats: bool = Field(...)
 
 
 class ObjectiveEngineDomainConfig(BaseModel):
     """Domain config for Objective Engine."""
     model_config = ConfigDict(extra='forbid')
-    enabled: bool = Field(default=False)
+    enabled: bool = Field(...)
     data_requirements: ObjectiveDataRequirementsConfig = Field(
-        default_factory=ObjectiveDataRequirementsConfig)
+        ...)
     explainability: ObjectiveExplainabilityConfig = Field(
-        default_factory=ObjectiveExplainabilityConfig)
+        ...)
     components: Dict[str, ObjectiveComponentConfig] = Field(
-        default_factory=dict)
+        ...)
 
     @model_validator(mode="after")
     def _validate_enabled_domain(self) -> "ObjectiveEngineDomainConfig":

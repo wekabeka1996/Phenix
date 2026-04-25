@@ -14,15 +14,15 @@ class ExposureGuardConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    pending_ttl_sec: int = Field()
-    post_fill_ttl_sec: int = Field()
-    stale_ttl_sec: int = Field()
-    max_equity_utilization_pct: float = Field()
-    max_portfolio_fraction: float = Field()
-    max_long_utilization_pct: float = Field()
-    max_short_utilization_pct: float = Field()
-    max_directional_ratio: float = Field()
-    max_concentration_pct: float = Field()
+    pending_ttl_sec: int = Field(...)
+    post_fill_ttl_sec: int = Field(...)
+    stale_ttl_sec: int = Field(...)
+    max_equity_utilization_pct: float = Field(...)
+    max_portfolio_fraction: float = Field(...)
+    max_long_utilization_pct: float = Field(...)
+    max_short_utilization_pct: float = Field(...)
+    max_directional_ratio: float = Field(...)
+    max_concentration_pct: float = Field(...)
 
 
 class FsmOpenConfig(BaseModel):
@@ -30,7 +30,7 @@ class FsmOpenConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    idempotency_window_sec: int = Field()
+    idempotency_window_sec: int = Field(...)
 
 
 class OrderIndexConfig(BaseModel):
@@ -38,7 +38,7 @@ class OrderIndexConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    ttl_sec: int = Field()
+    ttl_sec: int = Field(...)
 
 
 class MetricsCollectorConfig(BaseModel):
@@ -46,8 +46,8 @@ class MetricsCollectorConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    window_size_minutes: int = Field()
-    recent_rejections_minutes: int = Field()
+    window_size_minutes: int = Field(...)
+    recent_rejections_minutes: int = Field(...)
 
 
 class IdempotentCancelConfig(BaseModel):
@@ -55,7 +55,7 @@ class IdempotentCancelConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    max_retries: int = Field()
+    max_retries: int = Field(...)
 
 
 class ExecutionUtilsConfig(BaseModel):
@@ -63,8 +63,8 @@ class ExecutionUtilsConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    client_order_id_max_length: int = Field()
-    basis_points_base: float = Field()
+    client_order_id_max_length: int = Field(...)
+    basis_points_base: float = Field(...)
 
 
 class InflightReconcileConfig(BaseModel):
@@ -73,15 +73,15 @@ class InflightReconcileConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     inflight_ttl_sec: int = Field(
-        description="TTL before reconciliation check (seconds)"
+        ..., description="TTL before reconciliation check (seconds)"
     )
     max_ttl_sec: int = Field(
-        description="Force-clear after this TTL (seconds)"
+        ..., description="Force-clear after this TTL (seconds)"
     )
     reconcile_interval_sec: int = Field(
-        description="Interval between reconcile attempts (seconds)"
+        ..., description="Interval between reconcile attempts (seconds)"
     )
-    verbose_logging: bool = Field(description="Log reconciliation details")
+    verbose_logging: bool = Field(..., description="Log reconciliation details")
 
 
 class EventDedupConfig(BaseModel):
@@ -90,14 +90,13 @@ class EventDedupConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     max_size: int = Field(
-        default=100000, description="Max number of events to track"
+        ..., description="Max number of events to track"
     )
     ttl_ms: int = Field(
-        default=86400000, description="Event TTL in milliseconds (24h)"
+        ..., description="Event TTL in milliseconds (24h)"
     )
     warm_state: "EventDedupWarmStateConfig" = Field(
-        default_factory=lambda: EventDedupWarmStateConfig(),
-        description="Legacy config key for cache-only restart seed persistence of recent exact terminal fill identities",
+        ..., description="Legacy config key for cache-only restart seed persistence of recent exact terminal fill identities",
     )
 
 
@@ -107,16 +106,13 @@ class EventDedupWarmStateConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description="Enable restart-seeded warm-state for exact terminal fill identity continuity",
+        ..., description="Enable restart-seeded warm-state for exact terminal fill identity continuity",
     )
     storage_path: Optional[str] = Field(
-        default="logs/execution_terminal_identity_cache_v1.json",
-        description="Atomic JSON path for cache-only exact terminal fill identity seed persistence",
+        ..., description="Atomic JSON path for cache-only exact terminal fill identity seed persistence",
     )
     max_entries: int = Field(
-        default=2000,
-        description="Max exact terminal fill identities retained in warm-state snapshot",
+        ..., description="Max exact terminal fill identities retained in warm-state snapshot",
     )
 
 
@@ -126,12 +122,10 @@ class DriftAwayConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal["atr"] = Field(
-        default="atr",
-        description="Threshold mode. Supported: 'atr' (atr_14 * atr_mult).",
+        ..., description="Threshold mode. Supported: 'atr' (atr_14 * atr_mult).",
     )
     atr_mult: float = Field(
-        default=0.5,
-        ge=0.01,
+        ..., ge=0.01,
         le=10.0,
         description=(
             "Multiplier applied to atr_14. Cancel when "
@@ -146,22 +140,20 @@ class AdvancedStaleCancelConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        description="Enable advanced stale cancel (overrides simple cancel_on_regime_change path)."
+        ..., description="Enable advanced stale cancel (overrides simple cancel_on_regime_change path)."
     )
     min_age_before_cancel_sec: int = Field(
-        ge=0,
+        ..., ge=0,
         description="Order must be at least this old (seconds) before cancel is considered.",
     )
     drift_away: DriftAwayConfig = Field(
-        default_factory=DriftAwayConfig,
-        description="Price drift threshold configuration.",
+        ..., description="Price drift threshold configuration.",
     )
     may_cancel_regimes: Dict[str, List[str]] = Field(
-        description="Per-side regime labels that MAY cancel a pending entry for that side. Expected keys: BUY / SELL.",
+        ..., description="Per-side regime labels that MAY cancel a pending entry for that side. Expected keys: BUY / SELL.",
     )
     never_cancel_regimes: List[str] = Field(
-        default=["UNCERTAIN"],
-        description="Regime labels that never trigger cancel.",
+        ..., description="Regime labels that never trigger cancel.",
     )
 
     @model_validator(mode='after')
@@ -185,17 +177,17 @@ class SupersedeRepriceGuardConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        description="Enable supersede reprice guard analysis for same-side LIMIT replacements."
+        ..., description="Enable supersede reprice guard analysis for same-side LIMIT replacements."
     )
     enforce: bool = Field(
-        description="If True, skip cancel/repost when price improvement is below threshold."
+        ..., description="If True, skip cancel/repost when price improvement is below threshold."
     )
     min_price_improvement_bps: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         description="Minimum same-side price improvement in bps required to justify cancel/repost.",
     )
     min_price_improvement_atr_mult: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         description="ATR-based minimum improvement multiplier. 0 disables ATR contribution.",
     )
 
@@ -218,23 +210,22 @@ class PendingEntryTTLConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        description="Enable per-timeframe pending entry TTL (if False, uses global watchdog fill_ttl_ms)"
+        ..., description="Enable per-timeframe pending entry TTL (if False, uses global watchdog fill_ttl_ms)"
     )
     ttl_by_tf_sec: Dict[int, int] = Field(
-        description=(
+        ..., description=(
             "Map of timeframe_seconds -> entry_ttl_seconds. "
             "E.g. {180: 45, 300: 60, 900: 180} means 3m bars get 45s TTL, 5m get 60s, 15m get 180s."
         )
     )
     reject_unknown_tf: bool = Field(
-        description="If True (fail-closed), reject entry if tf_sec not in ttl_by_tf_sec map"
+        ..., description="If True (fail-closed), reject entry if tf_sec not in ttl_by_tf_sec map"
     )
     cancel_on_regime_change: bool = Field(
-        description="Cancel pending entry when EVT:REGIME_DETECTED indicates regime changed"
+        ..., description="Cancel pending entry when EVT:REGIME_DETECTED indicates regime changed"
     )
     regime_change_cancel_mode: str = Field(
-        default="immediate",
-        description=(
+        ..., description=(
             "FIX-SOFT-CANCEL-01: How to handle pending orders on regime change. "
             "'immediate' = cancel at once (original). "
             "'let_ttl_expire' = skip cancel, let order live until TTL expires naturally. "
@@ -242,10 +233,10 @@ class PendingEntryTTLConfig(BaseModel):
         )
     )
     cancel_on_supersede: bool = Field(
-        description="Cancel old pending entry when new open request arrives for same symbol"
+        ..., description="Cancel old pending entry when new open request arrives for same symbol"
     )
     cancel_on_panic: bool = Field(
-        description="Cancel pending entry immediately when panic_killswitch is activated"
+        ..., description="Cancel pending entry immediately when panic_killswitch is activated"
     )
     supersede_cancel_timeout_sec: float = Field(
         ...,
@@ -254,12 +245,10 @@ class PendingEntryTTLConfig(BaseModel):
         description="Timeout (seconds) to wait for supersede cancel confirmation before forcing new open. Explicit config required.",
     )
     supersede_reprice_guard: Optional[SupersedeRepriceGuardConfig] = Field(
-        default=None,
-        description="Same-side LIMIT supersede churn guard.",
+        ..., description="Same-side LIMIT supersede churn guard.",
     )
     advanced_stale_cancel: Optional[AdvancedStaleCancelConfig] = Field(
-        default=None,
-        description="Evidence-based stale cancel adapter for pending LIMIT entries.",
+        ..., description="Evidence-based stale cancel adapter for pending LIMIT entries.",
     )
 
     @model_validator(mode='after')
@@ -288,8 +277,7 @@ class MakerOnlyEntryConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=False,
-        description="Enable maker-only enforcement for entry LIMIT orders"
+        ..., description="Enable maker-only enforcement for entry LIMIT orders"
     )
 
 
@@ -327,20 +315,17 @@ class BracketPlacementConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     tp_widen_first_bps: int = Field(
-        default=20,
-        ge=1,
+        ..., ge=1,
         le=500,
         description="First retry: widen TP by N basis points (20 = 0.2%). Handles most -2021 cases.",
     )
     tp_widen_second_bps: int = Field(
-        default=50,
-        ge=1,
+        ..., ge=1,
         le=500,
         description="Second retry: widen TP by N basis points (50 = 0.5%). Handles volatile markets.",
     )
     retry_backoff_ms: List[int] = Field(
-        default=[200, 400],
-        min_length=1,
+        ..., min_length=1,
         max_length=5,
         description="Backoff delays between retries (ms). [200, 400] = exponential backoff.",
     )
@@ -357,14 +342,12 @@ class OrderLifecycleConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     fill_settlement_delay_ms: int = Field(
-        default=500,
-        ge=100,
+        ..., ge=100,
         le=5000,
         description="Delay after fill before bracket placement (REST API lag). 500ms typical for Binance Futures.",
     )
     position_close_cleanup_delay_ms: int = Field(
-        default=2000,
-        ge=500,
+        ..., ge=500,
         le=10000,
         description="Delay after CLOSE before orphan bracket cleanup. Exchange-side settlement time.",
     )
@@ -380,34 +363,28 @@ class ShadowCheckConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description="Enable periodic shadow exposure checks.",
+        ..., description="Enable periodic shadow exposure checks.",
     )
     check_every_n_requests: int = Field(
-        default=10,
-        ge=1,
+        ..., ge=1,
         le=100,
         description="Run shadow check every N exposure requests (sampling rate).",
     )
     tolerance_pct: float = Field(
-        default=1.0,
-        ge=0.1,
+        ..., ge=0.1,
         le=10.0,
         description="Allowed mismatch percentage before warning (1.0 = 1%).",
     )
     absolute_threshold_usd: float = Field(
-        default=5000.0,
-        ge=100.0,
+        ..., ge=100.0,
         le=1000000.0,
         description="Absolute mismatch threshold in USD (for large portfolios).",
     )
     use_absolute_for_large_portfolios: bool = Field(
-        default=True,
-        description="Use absolute threshold for portfolios above large_portfolio_threshold_usd.",
+        ..., description="Use absolute threshold for portfolios above large_portfolio_threshold_usd.",
     )
     large_portfolio_threshold_usd: float = Field(
-        default=1000000.0,
-        ge=10000.0,
+        ..., ge=10000.0,
         description="Portfolio value above which to use absolute threshold.",
     )
 
@@ -424,22 +401,18 @@ class GuardianConfig(BaseModel):
         description="Polling interval for OrderGuardian reconciliation loop.",
     )
     unified: bool = Field(
-        default=True,
-        description="Use unified guardian mode (single reconcile loop for all symbols).",
+        ..., description="Use unified guardian mode (single reconcile loop for all symbols).",
     )
     emit_tidy_event: bool = Field(
-        default=True,
-        description="Emit EVT:SYMBOL_TIDY after successful orphan cleanup.",
+        ..., description="Emit EVT:SYMBOL_TIDY after successful orphan cleanup.",
     )
     cleanup_ttl_ms: int = Field(
-        default=6000,
-        ge=1000,
+        ..., ge=1000,
         le=60000,
         description="TTL before considering an orphaned bracket for cleanup.",
     )
     symbol_cooldown_ms: int = Field(
-        default=4000,
-        ge=1000,
+        ..., ge=1000,
         le=60000,
         description="Cooldown after symbol tidy before next cleanup attempt.",
     )
@@ -451,7 +424,7 @@ class BracketHealthCheckConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True, description="Enable periodic bracket health check loop."
+        ..., description="Enable periodic bracket health check loop."
     )
     interval_sec: int = Field(
         ...,
@@ -465,8 +438,7 @@ class BracketHealthCheckConfig(BaseModel):
         description="Milliseconds after position open before checking brackets.",
     )
     max_placements_per_cycle: int = Field(
-        default=2,
-        ge=1,
+        ..., ge=1,
         le=10,
         description="Max bracket placements per cycle.",
     )
@@ -478,18 +450,15 @@ class IntentBoundaryAuditConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(
-        default=True,
-        description="Enable background audit for TRADE_INTENT_PROPOSED routing.",
+        ..., description="Enable background audit for TRADE_INTENT_PROPOSED routing.",
     )
     route_ttl_ms: int = Field(
-        default=2000,
-        ge=100,
+        ..., ge=100,
         le=60000,
         description="Milliseconds allowed for a proposed intent to reach CMD:OPEN/CMD:CLOSE routing.",
     )
     downstream_ttl_ms: int = Field(
-        default=5000,
-        ge=100,
+        ..., ge=100,
         le=120000,
         description="Milliseconds allowed after routing before a downstream execution event is observed.",
     )
@@ -712,19 +681,18 @@ class ExecutionPositionRestoreArtifactConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: ExecutionPositionRestoreArtifactMode = Field(
-        description="Restore artifact rollout mode."
+        ..., description="Restore artifact rollout mode."
     )
     storage_path: str = Field(
-        min_length=1,
+        ..., min_length=1,
         description="Canonical whole-envelope JSON path for execution restore persistence.",
     )
     flush_interval_ms: int = Field(
-        gt=0,
+        ..., gt=0,
         description="Bounded periodic flush interval while active restore state exists.",
     )
     dark_read_max_artifact_age_ms: Optional[int] = Field(
-        default=None,
-        gt=0,
+        ..., gt=0,
         description="Optional stale-age threshold for startup dark-read comparisons.",
     )
 
@@ -742,10 +710,10 @@ class ExecutionPositionStartupTruthArtifactConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: ExecutionPositionStartupTruthArtifactMode = Field(
-        description="Dedicated startup truth artifact rollout mode."
+        ..., description="Dedicated startup truth artifact rollout mode."
     )
     storage_path: str = Field(
-        min_length=1,
+        ..., min_length=1,
         description="Canonical append-only JSONL path for execution startup truth summaries.",
     )
 
@@ -756,58 +724,51 @@ class ExecutionPositionDomainConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     fallback: FallbackConfig = Field(
-        description="P1: Fallback mode config (policy, risk_reduction_pct, backoff_ms)"
+        ..., description="Explicit fail-closed fallback policy."
     )
-    exposure_guard: ExposureGuardConfig = Field()
-    fsm_open: FsmOpenConfig = Field()
-    order_index: OrderIndexConfig = Field()
-    inflight_reconcile: InflightReconcileConfig = Field()
-    metrics_collector: MetricsCollectorConfig = Field()
-    idempotent_cancel: IdempotentCancelConfig = Field()
-    utils: ExecutionUtilsConfig = Field()
+    exposure_guard: ExposureGuardConfig = Field(...)
+    fsm_open: FsmOpenConfig = Field(...)
+    order_index: OrderIndexConfig = Field(...)
+    inflight_reconcile: InflightReconcileConfig = Field(...)
+    metrics_collector: MetricsCollectorConfig = Field(...)
+    idempotent_cancel: IdempotentCancelConfig = Field(...)
+    utils: ExecutionUtilsConfig = Field(...)
     event_dedup: Optional[EventDedupConfig] = Field(
-        default=None, description="Event deduplication config"
+        ..., description="Event deduplication config"
     )
     pending_entry_ttl: PendingEntryTTLConfig = Field(
-        description="EP-01.3: Per-timeframe TTL for pending LIMIT entry orders"
+        ..., description="EP-01.3: Per-timeframe TTL for pending LIMIT entry orders"
     )
     maker_only_entry: MakerOnlyEntryConfig = Field(
-        default_factory=MakerOnlyEntryConfig,
-        description="EP-01.4: Maker-only (GTX) entry order configuration",
+        ..., description="EP-01.4: Maker-only (GTX) entry order configuration",
     )
     order_capabilities: OrderCapabilitiesConfig = Field(
-        description="ORDER-POLICY-01: Supported order types and TIF for the exchange adapter"
+        ..., description="ORDER-POLICY-01: Supported order types and TIF for the exchange adapter"
     )
     bracket_placement: BracketPlacementConfig = Field(
-        default_factory=BracketPlacementConfig,
-        description="TP/SL bracket placement retry config for -2021 error handling",
+        ..., description="TP/SL bracket placement retry config for -2021 error handling",
     )
     order_lifecycle: OrderLifecycleConfig = Field(
-        default_factory=OrderLifecycleConfig,
-        description="Settlement delays and preflight timing for order lifecycle",
+        ..., description="Settlement delays and preflight timing for order lifecycle",
     )
     shadow_check: ShadowCheckConfig = Field(
-        default_factory=ShadowCheckConfig,
-        description="Periodic shadow notional exposure validation",
+        ..., description="Periodic shadow notional exposure validation",
     )
     guardian: GuardianConfig = Field(
-        default_factory=GuardianConfig,
-        description="OrderGuardian polling and cleanup configuration",
+        ..., description="OrderGuardian polling and cleanup configuration",
     )
     intent_boundary_audit: IntentBoundaryAuditConfig = Field(
-        default_factory=IntentBoundaryAuditConfig,
-        description="Audit config for the TRADE_INTENT_PROPOSED -> execution boundary",
+        ..., description="Audit config for the TRADE_INTENT_PROPOSED -> execution boundary",
     )
     bracket_health_check: Optional[BracketHealthCheckConfig] = Field(
-        default=None,
-        description="Current-native adapter config for bracket health reconciliation.",
+        ..., description="Current-native adapter config for bracket health reconciliation.",
     )
     restore_artifact: ExecutionPositionRestoreArtifactConfig = Field(
-        description="Writer/read rollout config for the canonical execution restore artifact."
+        ..., description="Writer/read rollout config for the canonical execution restore artifact."
     )
     startup_truth_artifact: ExecutionPositionStartupTruthArtifactConfig = Field(
-        description="Writer rollout config for the dedicated execution startup truth artifact."
+        ..., description="Writer rollout config for the dedicated execution startup truth artifact."
     )
     position_policy_sidecar: PositionPolicySidecarConfig = Field(
-        description="Position Policy Sidecar typed config for open-position recommendation logic."
+        ..., description="Position Policy Sidecar typed config for open-position recommendation logic."
     )

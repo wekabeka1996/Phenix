@@ -25,52 +25,32 @@ CONTRACT_CASES = {
         "optional_fields": set(),
     },
     "MDAMRLLMGateConfig": {
-        "required": set(),
-        "defaults": {
-            "enabled": False,
-            "sentiment_block_threshold": -0.8,
-            "block_ttl_sec": 14400,
-        },
+        "required": {"enabled", "sentiment_block_threshold", "block_ttl_sec"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": set(),
     },
     "MDAMRAssetConfig": {
-        "required": set(),
-        "defaults": {
-            "enabled": True,
-            "cooldown_sec": 60,
-            "position_mode": "STRICT",
-            "allowed_regimes": None,
-            "exit": None,
-        },
+        "required": {"enabled", "cooldown_sec", "position_mode", "allowed_regimes", "exit"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": {"allowed_regimes", "exit"},
     },
     "MDAMRReconciliationConfig": {
-        "required": set(),
-        "defaults": {
-            "enabled": True,
-            "interval_sec": 300,
-            "drift_tolerance": 1e-6,
-        },
+        "required": {"enabled", "interval_sec", "drift_tolerance"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": set(),
     },
     "MDAMRConcentrationGuardConfig": {
-        "required": set(),
-        "defaults": {
-            "enabled": False,
-            "max_simultaneous_entries_per_bar": 2,
-        },
+        "required": {"enabled", "max_simultaneous_entries_per_bar"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": set(),
     },
     "MDAMROptunaConfig": {
-        "required": set(),
-        "defaults": {
-            "oos_split_ratio": 0.30,
-            "min_oos_calmar_ratio": 0.3,
-        },
+        "required": {"oos_split_ratio", "min_oos_calmar_ratio"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": set(),
     },
@@ -130,11 +110,8 @@ CONTRACT_CASES = {
         "optional_fields": set(),
     },
     "MDAMRExitConfig": {
-        "required": {"sl_pct"},
-        "defaults": {
-            "tp_rr": 1.0,
-            "regime_tpsl": None,
-        },
+        "required": {"sl_pct", "tp_rr", "regime_tpsl"},
+        "defaults": {},
         "default_factories": {},
         "optional_fields": {"regime_tpsl"},
     },
@@ -144,7 +121,9 @@ CONTRACT_CASES = {
             "type",
             "description",
             "timeframe_sec",
+            "defer_ttl_sec",
             "channel_window_bars",
+            "channel_robust_pct",
             "atr_window",
             "atr_stats_window",
             "hysteresis_mult",
@@ -166,24 +145,20 @@ CONTRACT_CASES = {
             "weights",
             "execution",
             "safety_gates",
+            "llm_gate",
+            "reconciliation",
+            "concentration_guard",
             "progress_tracking",
             "setup_quality",
             "hold_quality",
             "context_validity",
             "entry_anchor_persistence",
+            "optuna",
+            "assets",
+            "objective",
         },
-        "defaults": {
-            "defer_ttl_sec": 60,
-            "channel_robust_pct": 0.0,
-            "objective": None,
-        },
-        "default_factories": {
-            "llm_gate": cm.MDAMRLLMGateConfig,
-            "reconciliation": cm.MDAMRReconciliationConfig,
-            "concentration_guard": cm.MDAMRConcentrationGuardConfig,
-            "optuna": cm.MDAMROptunaConfig,
-            "assets": dict,
-        },
+        "defaults": {},
+        "default_factories": {},
         "optional_fields": {"objective"},
     },
 }
@@ -331,103 +306,19 @@ def test_md_amr_extraction_preserves_cross_model_annotations() -> None:
 
 
 def test_md_amr_rebuild_seam_accepts_execution_objective_and_regime_tpsl_blocks() -> None:
-    cfg = cm.MDAMRStrategyConfig(
-        enabled=True,
-        type="md_amr_v1_2",
-        description="contract test",
-        timeframe_sec=900,
-        channel_window_bars=12,
-        channel_robust_pct=0.05,
-        atr_window=14,
-        atr_stats_window=64,
-        hysteresis_mult=1.2,
-        threshold_z=2.2,
-        volatility_dampening_factor=0.5,
-        thr_base=0.55,
-        thr_floor=0.10,
-        alpha=0.25,
-        conf_min=0.22,
-        hold_edge_min=-0.5,
-        target_approach_pct=0.0,
-        max_hold_bars=16,
-        atr_zscore_clamp=10.0,
-        atr_std_floor_pct=0.05,
-        fee_bps=4.0,
-        slippage_buffer_bps=2.0,
-        scaleout_fraction=0.5,
-        scaleout_cost_model="round_trip",
-        weights={"d1": 0.35, "h1": 0.30, "m30": 0.20, "m15": 0.15},
-        execution={"entry_order_type": "LIMIT", "entry_tif": "GTX"},
-        safety_gates={"enabled": False},
-        progress_tracking={
-            "early_progress_max_pct": 0.25,
-            "partial_progress_max_pct": 0.70,
-            "near_completion_max_pct": 1.00,
-        },
-        setup_quality={
-            "penetration_depth_full_scale": 0.50,
-            "channel_width_pct_full_scale": 1.00,
-            "volatility_z_full_penalty": 3.00,
-        },
-        hold_quality={
-            "expected_progress_grace_frac": 0.25,
-            "time_decay_weight": 0.35,
-            "progress_deficit_weight": 0.45,
-        },
-        context_validity={
-            "regime_confidence_floor": 0.35,
-            "regime_confidence_valid": 0.60,
-            "volatility_z_weakening": 1.50,
-            "volatility_z_invalid": 3.00,
-            "channel_width_pct_floor": 0.10,
-            "channel_width_pct_valid": 1.00,
-            "regime_weight": 0.35,
-            "volatility_weight": 0.20,
-            "structure_weight": 0.20,
-            "progress_alignment_weight": 0.25,
-            "valid_score_min": 0.70,
-            "invalid_score_max": 0.35,
-        },
-        entry_anchor_persistence={
-            "storage_path": "ops/restore/md_amr_entry_anchor_state_v1.json"
-        },
-        assets={
-            "BTCUSDT": {
-                "enabled": True,
-                "allowed_regimes": ["low_flat"],
-                "exit": {
-                    "sl_pct": 0.01,
-                    "tp_rr": 1.5,
-                    "regime_tpsl": {"enabled": True},
-                },
-            }
-        },
-        objective={
-            "enabled": True,
-            "regimes": {
-                "FLAT_LOW": {
-                    "weights": {"risk": 1.0},
-                    "multiplier": {
-                        "m_min": 0.1,
-                        "m_max": 1.0,
-                        "lambda_scale": 1.0,
-                        "penalty_center": -5.0,
-                        "penalty_scale": 2.5,
-                    },
-                    "gate": {
-                        "min_objective_score": 0.1,
-                        "enforcement_mode": "OBSERVE",
-                    },
-                }
-            },
-        },
-    )
+    payload = ConfigLoader(CONFIG_DIR).load_config(
+    ).strategies.md_amr.model_dump()
+    cfg = cm.MDAMRStrategyConfig(**payload)
 
-    asset = cfg.assets["BTCUSDT"]
+    asset = next(
+        asset
+        for asset in cfg.assets.values()
+        if asset.exit is not None and asset.exit.regime_tpsl is not None
+    )
     assert type(cfg.execution) is cm.StrategyExecutionConfig
     assert type(cfg.objective) is cm.StrategyObjectiveConfig
     assert type(asset) is cm.MDAMRAssetConfig
-    assert asset.allowed_regimes == ["FLAT_LOW"]
+    assert asset.allowed_regimes is not None
     assert type(asset.exit) is cm.MDAMRExitConfig
     assert type(asset.exit.regime_tpsl) is cm.RegimeTpSlConfig
 

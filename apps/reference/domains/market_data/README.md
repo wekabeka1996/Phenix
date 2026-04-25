@@ -5,7 +5,7 @@ Root upstream domain. Ingests raw market data from Binance WebSocket feeds, aggr
 ## Architecture
 
 ```
-Binance WS (bookTicker + aggTrade)
+Binance WS (bookTicker + configured trade stream: trade or aggTrade)
         │
         ▼
 ┌─────────────────────────────────────────────┐
@@ -84,8 +84,10 @@ None — this is the root upstream domain with no inbound event dependencies.
 
 Managed via `AuroraConfig`:
 - `trading.market_data.use_multiprocessing` — selects data path
+- `trading.market_data.websocket_streams` — explicit WS stream list; must include `bookTicker` and one trade stream (`trade` or `aggTrade`)
 - `trading.market_data.bar_aggregator.enabled` — enables/disables bar construction
 - `trading.market_data.bar_aggregator.timeframes_sec` — bar timeframes (default fallback: `[60, 300]` in domain_builder)
 - `trading.market_data.poll_interval_sec` — worker poll interval
 - `system.market_data.queue_maxsize` — IPC queue size
+- `system.market_data.trade_silence_reconnect_sec` — reconnect threshold when trade events stop but bookTicker still flows
 - `system.market_data.proxy_batch_size` — proxy consumption batch size

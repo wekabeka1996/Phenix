@@ -3,19 +3,19 @@
     "extra": "forbid",
     "fields": {
       "anchor_symbol": {
-        "default": "'BTCUSDT'",
+        "default": "'<required>'",
         "default_factory": null,
-        "required": false
+        "required": true
       },
       "enabled": {
-        "default": "False",
+        "default": "'<required>'",
         "default_factory": null,
-        "required": false
+        "required": true
       },
       "threshold": {
-        "default": "-2.0",
+        "default": "'<required>'",
         "default_factory": null,
-        "required": false
+        "required": true
       }
     }
   },

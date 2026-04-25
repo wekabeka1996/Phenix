@@ -151,16 +151,6 @@ class ConfigLoader:
         self.provenance_map: Dict[str, str] = {}
 
     @staticmethod
-    def _is_pillars_extra_forbidden(error: dict) -> bool:
-        """Return True when ValidationError item is exactly domains.feature_engineering.pillars extra_forbidden."""
-        try:
-            loc = tuple(error.get("loc") or ())
-            err_type = str(error.get("type") or "")
-            return loc == ("domains", "feature_engineering", "pillars") and err_type == "extra_forbidden"
-        except Exception:
-            return False
-
-    @staticmethod
     def _flatten_leaf_paths(data: Any, *, prefix: str = "") -> Dict[str, Any]:
         """Flatten a nested mapping into leaf dot-paths for duplicate detection.
 
@@ -271,6 +261,11 @@ class ConfigLoader:
 
         if isinstance(regime_config, dict) and "config_version" in regime_config:
             meta["regime_config_version"] = regime_config.pop("config_version")
+        else:
+            meta["regime_config_version"] = None
+
+        if "system_config_version" not in meta:
+            meta["system_config_version"] = None
 
         return meta
 
@@ -405,38 +400,41 @@ class ConfigLoader:
         # =========================================================================
 
         strategy_configs: Dict[str, Dict[str, Any]] = {}
-        if strategies_raw and "assignments" in strategies_raw:
-            assignments = strategies_raw.get("assignments")
-            if isinstance(assignments, dict):
-                strategy_ids = set()
-                for symbol, strat_list in assignments.items():
-                    if isinstance(strat_list, list):
-                        strategy_ids.update(strat_list)
+        strategies_dir = self.config_dir / "strategies"
+        strategy_ids = set()
+        assignments = strategies_raw.get("assignments") if isinstance(
+            strategies_raw, dict) else None
+        if isinstance(assignments, dict):
+            for _, strat_list in assignments.items():
+                if isinstance(strat_list, list):
+                    strategy_ids.update(strat_list)
 
-                strategies_dir = self.config_dir / "strategies"
-                for strategy_id in strategy_ids:
-                    profile_path = strategies_dir / f"{strategy_id}.yaml"
-                    if not profile_path.exists():
-                        raise ValueError(
-                            f"strategy_config_missing({strategy_id}) "
-                            f"assigned in strategies.yaml but profile missing: {profile_path}. "
-                            f"Expected: config/aurora/strategies/{strategy_id}.yaml"
-                        )
+        profile_ids = {p.stem for p in strategies_dir.glob("*.yaml")}
+        strategy_ids.update(profile_ids)
 
-                    with open(profile_path, "r", encoding="utf-8-sig", errors="replace") as f:
-                        profile_raw = yaml.safe_load(f)
+        for strategy_id in sorted(strategy_ids):
+            profile_path = strategies_dir / f"{strategy_id}.yaml"
+            if not profile_path.exists():
+                raise ValueError(
+                    f"strategy_config_missing({strategy_id}) "
+                    f"assigned in strategies.yaml but profile missing: {profile_path}. "
+                    f"Expected: config/aurora/strategies/{strategy_id}.yaml"
+                )
 
-                    if isinstance(profile_raw, dict):
-                        data_to_merge = profile_raw[strategy_id] if strategy_id in profile_raw else profile_raw
-                        strategy_configs[strategy_id] = data_to_merge
+            with open(profile_path, "r", encoding="utf-8-sig", errors="replace") as f:
+                profile_raw = yaml.safe_load(f)
 
-                        flat_strat = self._flatten_leaf_paths(
-                            data_to_merge, prefix=f"strategies.{strategy_id}")
-                        for p in flat_strat:
-                            self.provenance_map[p] = f"strategies/{strategy_id}.yaml"
+            if isinstance(profile_raw, dict):
+                data_to_merge = profile_raw[strategy_id] if strategy_id in profile_raw else profile_raw
+                strategy_configs[strategy_id] = data_to_merge
 
-                        LOG.info(
-                            f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
+                flat_strat = self._flatten_leaf_paths(
+                    data_to_merge, prefix=f"strategies.{strategy_id}")
+                for p in flat_strat:
+                    self.provenance_map[p] = f"strategies/{strategy_id}.yaml"
+
+                LOG.info(
+                    f"??? Loaded strategy profile: {strategy_id} from {profile_path}")
 
         # Canonical runtime namespace (CFG-STRATEGY-SSOT-FREEZE-03)
         merged_config["strategies"] = strategy_configs
@@ -451,14 +449,14 @@ class ConfigLoader:
 
         CFG-OBS-001: Centralized logging/metrics/tracing configuration.
 
-        Returns:
-            ObservabilityConfig with validated settings (defaults if file missing)
         """
         try:
             obs_raw = self._load_yaml("observability.yaml")
             if not obs_raw:
-                LOG.info("observability.yaml is empty, using defaults")
-                return ObservabilityConfig()
+                raise ConfigContractError(
+                    path="observability.yaml",
+                    why="observability.yaml is mandatory and must not be empty.",
+                )
 
             config = ObservabilityConfig.model_validate(obs_raw)
             LOG.info(
@@ -472,8 +470,10 @@ class ConfigLoader:
 
             return config
         except FileNotFoundError:
-            LOG.info("observability.yaml not found, using defaults")
-            return ObservabilityConfig()
+            raise ConfigContractError(
+                path="observability.yaml",
+                why="observability.yaml is mandatory; no observability defaults are injected by ConfigLoader.",
+            )
         except ValidationError as e:
             raise ConfigContractError(
                 path="observability",
@@ -1073,6 +1073,16 @@ class ConfigLoader:
                     trading_exec, dict) else {}
                 merged_config["execution"] = exec_block
 
+            trading_block = merged_config.get("trading")
+            trading_exec_block = None
+            if isinstance(trading_block, dict):
+                trading_exec_raw = trading_block.get("execution")
+                if isinstance(trading_exec_raw, dict):
+                    trading_exec_block = trading_exec_raw
+                else:
+                    trading_exec_block = copy.deepcopy(exec_block)
+                    trading_block["execution"] = trading_exec_block
+
             if "order_guardian" in exec_block and exec_block.get("order_guardian") is not None:
                 raise ConfigContractError(
                     path="execution.order_guardian",
@@ -1082,7 +1092,19 @@ class ConfigLoader:
                     ),
                 )
 
-            exec_block["order_guardian"] = guardian_block
+            if isinstance(trading_exec_block, dict) and "order_guardian" in trading_exec_block and trading_exec_block.get("order_guardian") is not None:
+                raise ConfigContractError(
+                    path="trading.execution.order_guardian",
+                    why=(
+                        "Conflicting guardian configuration sources: found legacy root.guardian AND "
+                        "trading.execution.order_guardian. Keep only one (prefer trading.execution.order_guardian)."
+                    ),
+                )
+
+            exec_block["order_guardian"] = copy.deepcopy(guardian_block)
+            if isinstance(trading_exec_block, dict):
+                trading_exec_block["order_guardian"] = copy.deepcopy(
+                    guardian_block)
 
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
@@ -1148,30 +1170,6 @@ class ConfigLoader:
             config = AuroraConfig(**resolved_config)
             return _finalize_validated_config(config)
         except ValidationError as e:
-            # Compatibility fallback:
-            # if runtime schema does not include domains.feature_engineering.pillars,
-            # retry once after dropping only this key instead of hard-failing every trial.
-            errors = list(e.errors())
-            only_pillars_extra = bool(errors) and all(
-                self._is_pillars_extra_forbidden(err) for err in errors)
-            if only_pillars_extra:
-                try:
-                    domains_cfg = resolved_config.get("domains")
-                    fe_cfg = domains_cfg.get("feature_engineering") if isinstance(
-                        domains_cfg, dict) else None
-                    if isinstance(fe_cfg, dict) and "pillars" in fe_cfg:
-                        fe_cfg.pop("pillars", None)
-                        LOG.warning(
-                            "Config compatibility fallback: dropped domains.feature_engineering.pillars "
-                            "(schema does not accept this key in current runtime)"
-                        )
-                        config = AuroraConfig(**resolved_config)
-                        return _finalize_validated_config(config)
-                except ValidationError as e_retry:
-                    e = e_retry
-                except Exception:
-                    pass
-
             LOG.error("❌ Configuration validation failed:")
             for error in e.errors():
                 loc = ".".join(str(x) for x in error["loc"])

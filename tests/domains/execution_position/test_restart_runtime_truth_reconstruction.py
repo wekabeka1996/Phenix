@@ -42,6 +42,7 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
         mode="writer_only",
         storage_path=str(restore_path),
         flush_interval_ms=250,
+        dark_read_max_artifact_age_ms=300000,
     )
     fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
     fsm.config.domains.execution_position.startup_truth_artifact = (

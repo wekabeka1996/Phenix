@@ -83,6 +83,41 @@ class OpenExecutor:
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
 
+    async def _record_bracket_failure(
+        self,
+        *,
+        symbol: str,
+        source_path: str,
+        failure_class: str,
+        reason: str,
+        why_code: str,
+        decision: "Message",
+        side: Any = None,
+        qty: Any = None,
+        entry_resp: Optional[Dict[str, Any]] = None,
+        owner_context: Optional[Dict[str, Any]] = None,
+        live_position_proven: bool = False,
+    ) -> None:
+        entry_resp = dict(entry_resp or {})
+        owner_context = dict(owner_context or {})
+        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        if callable(handler):
+            await handler(
+                symbol=symbol,
+                source_path=source_path,
+                failure_class=failure_class,
+                reason=reason,
+                why_code=why_code,
+                rid=getattr(decision, "rid", None),
+                side=side,
+                qty=qty,
+                entry_order_id=entry_resp.get("orderId"),
+                entry_client_order_id=entry_resp.get("clientOrderId"),
+                strategy_id=owner_context.get("strategy_id"),
+                live_position_proven=live_position_proven,
+            )
+            return
+
     def _mark_submit_started(
         self,
         *,
@@ -517,9 +552,13 @@ class OpenExecutor:
         # Generate entry ID and place order
         idem_key = (decision.pld or {}).get("idempotent_key") or getattr(
             decision, "idempotent_key", None) or decision.rid
+        submission_payload = dict(decision.pld or {})
+        if order_type == "MARKET":
+            submission_payload["price"] = None
+            submission_payload["tif"] = None
         try:
             submission = OpenSubmissionPayload.from_dec_open_with_key(
-                payload=decision.pld or {},
+                payload=submission_payload,
                 normalized_qty=qty,
                 idempotent_key=str(idem_key) if idem_key else None,
             )
@@ -576,12 +615,38 @@ class OpenExecutor:
         if not await self._fsm._bracket_mgr.preflight_position_check(symbol):
             LOG.warning(
                 f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="OpenExecutor.execute_open",
+                failure_class="transient_position_preflight_false",
+                reason="market_position_preflight_false_after_entry_accept",
+                why_code="BRACKET_MARKET_PREFLIGHT_FALSE",
+                decision=decision,
+                side=side,
+                qty=qty,
+                entry_resp=entry_resp,
+                owner_context=owner_context,
+                live_position_proven=False,
+            )
             return None
 
         entry_order_id = str(entry_resp["orderId"])
         if not await self._fsm.order_guardian.should_place_brackets(symbol, entry_order_id):
             LOG.warning(
                 f"🚫 OrderGuardian blocked bracket placement for {symbol}")
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="OpenExecutor.execute_open",
+                failure_class="duplicate_or_guardian_veto",
+                reason="order_guardian_blocked_market_brackets",
+                why_code="BRACKET_MARKET_GUARDIAN_BLOCKED",
+                decision=decision,
+                side=side,
+                qty=qty,
+                entry_resp=entry_resp,
+                owner_context=owner_context,
+                live_position_proven=False,
+            )
             return None
 
         await self._fsm._bracket_mgr.place_brackets_parallel(

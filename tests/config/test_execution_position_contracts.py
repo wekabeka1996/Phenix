@@ -17,7 +17,7 @@ CONFIG_DIR = Path("config/aurora")
 ARTIFACT = (
     Path(__file__).resolve().parent
     / "_artifacts"
-    / "execution_position_contract.json"
+    / "execution_position_contract.generated.json"
 )
 
 
@@ -116,8 +116,6 @@ def test_current_aurora_config_loads_execution_position_contract() -> None:
     assert type(ep) is cm.ExecutionPositionDomainConfig
     assert type(ep.fallback) is cm.FallbackConfig
     assert ep.fallback.policy == "fail_closed"
-    assert ep.fallback.risk_reduction_pct == 0.5
-    assert ep.fallback.backoff_ms == [200, 500, 1000]
 
     assert ep.exposure_guard.pending_ttl_sec == 90
     assert ep.exposure_guard.post_fill_ttl_sec == 5

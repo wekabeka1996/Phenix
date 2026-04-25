@@ -3,14 +3,11 @@ binance_api:
     api_key: ${BINANCE_FUTURES_API_KEY_LIVE}
     api_secret: ${BINANCE_FUTURES_API_SECRET_LIVE}
     rest_url: ${BINANCE_FUTURES_BASE_URL_LIVE}
-    # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in connectors)
   testnet:
     api_key: ${BINANCE_TESTNET_API_KEY}
     api_secret: ${BINANCE_TESTNET_API_SECRET}
     rest_url: https://testnet.binancefuture.com
-    # PURGE-DEAD-CONFIG-03: ws_url removed (hardcoded in connectors)
 trading:
-  # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
   mode: hybrid_live_data_testnet_exec
   tca_prefs:
     max_slippage_pct: 0.5
@@ -45,7 +42,6 @@ trading:
       reset_time_utc: 00:00
     profile: balanced
     soft_limits:
-      # LIVE SAFETY: Soft clipping for position sizing risk management.
       mode: clip
       clip_min_notional_usdt: 10
       directional_ratio_max: 20.0
@@ -67,7 +63,6 @@ trading:
     - bookTicker
     - trade
     use_multiprocessing: true
-    # PURGE-DIRTY-DOZEN: Removed api_call_limits (dead stub, REST replaced by WebSocket) - 2026-01-25
     macro_sync:
       enabled: true
       anchors:
@@ -84,17 +79,18 @@ trading:
       timeframes_sec:
       - 180
       - 300
-      - 900  # REGIME-BAR-FORENSICS-01: Enable 15m bars
-      - 14400 # 4h bars for operator pillar
-      - 86400 # 1d bars for strategist pillar
+      - 900
+      - 14400
+      - 86400
   ops:
     panic_killswitch: false
+    metrics_url: http://127.0.0.1:8000/metrics
+    reports_dir: reports
   execution:
     manage:
       auto: true
       brackets:
         oco_emulation: true
-        # TASK-ZOMBIE-FIX: Removed stop_loss_bps (dead duplicate, SSOT is sl.fixed_bps)
         offset_bps: 5
         sl:
           fixed_bps: 40
@@ -107,12 +103,10 @@ trading:
         min_order_age_sec: 0
         batch_cancel_limit: 50
         rate_limit_per_min: 120
-      # Emergency mode config (optional - set enabled: false to disable)
       emergency:
         enabled: false
         wait_mode_bars: 2
         emergency_sl_bps: 100
-      # TASK-ZOMBIE-FIX: Removed failsafe (dead, max_hold_sec moved to instruments.<SYM>.exit)
     fsm_periodic_cleanup_enabled: false
     cooldown_after_close_ms: 60000
     anti_race_close_ms: 800
@@ -121,15 +115,11 @@ trading:
     exposure:
       max_equity_utilization_pct: 150.0
       max_portfolio_fraction: 150.0
-      # TASK-ZOMBIE-FIX: Removed max_side_utilization_pct (dead, never read in exposure_guard)
       max_directional_ratio: 50.0
-      # TASK-ZOMBIE-FIX: Removed per_symbol_cap_pct (dead, never read in exposure_guard)
       count_pending_orders: true
       exclude_reduce_only: true
       pending_ttl_sec: 90
-      # TASK-ZOMBIE-FIX: Removed pending_reservation_ttl_sec (dead, never read in exposure_guard)
       post_fill_hold_ttl_sec: 5
-      # TASK-ZOMBIE-FIX: Removed positions_stale_ttl_sec (duplicate, SSOT is domains.execution_position.exposure_guard.stale_ttl_sec)
       leverage_defaults:
         BTCUSDT: 20
         ETHUSDT: 20
@@ -137,7 +127,6 @@ trading:
         XRPUSDT: 20
         DOGEUSDT: 20
         __default__: 20
-    # PURGE-DIRTY-DOZEN: Removed open_order_type (dead stub, order_type now in intent) - 2026-01-25
     order_params:
       LIMIT:
         timeInForce: GTC
@@ -149,17 +138,10 @@ trading:
         callbackRate: '0.5'
     watchdog:
       ack_ttl_ms: 8000
-      # FILL-PIPELINE-FIX: fill_ttl_ms is the WATCHDOG safety-net timeout.
-      # Must be >= max(pending_entry_ttl) so watchdog never races the per-TF TTL system.
-      # Per-order lifetime is controlled by domains.yaml pending_entry_ttl (600/1200/1800s).
       fill_ttl_ms: 3600000
       check_interval_ms: 1000
       rps_limit: 10
-    orders:
-      # FILL-PIPELINE-FIX: removed default_ttl_seconds: 15
-      # It silently overrode fill_ttl_ms via fsm.py:551-553, reducing watchdog timeout
-      # from 300s to 15s — causing 100% TTL_EXPIRED on all LIMIT orders.
-      # fill_ttl_ms (above) is now the SSOT for watchdog timeout.
+    orders: null
     preflight_backoff_ms:
     - 120
     - 250
@@ -167,42 +149,32 @@ trading:
     - 800
     - 1200
     - 1800
-    # PURGE-DIRTY-DOZEN: Removed min_post_interval_per_symbol_ms (dead stub, rate limit in adapter) - 2026-01-25
     allow_trade_with_guardian_tidy_only: false
     order_guardian:
       unified: true
       ledger_db_path: data/order_ledger.db
-  #
-  # HYBRID MODE CONFIGURATION (Live Data  Testnet Execution)
-  #
-  # Data domains: LIVE (read real market data)
-  # Execution domains: TESTNET (write orders to testnet)
-  # This allows safe testing with real market conditions without risking capital
   domain_configuration:
     market_data:
-      trading_mode: live      # Read LIVE Binance market data (WebSocket + REST)
+      trading_mode: live
     feature_engineering:
-      trading_mode: live      # Process features from live data
+      trading_mode: live
     decision_making:
-      trading_mode: live      # Generate signals from live features
-    # PURGE-DIRTY-DOZEN: Removed risk_management, execution_position, audit_trail trading_modes
-    # (dead legacy, global trading_mode is SSOT) - 2026-01-25
-  #
-  # RISK MANAGEMENT DATA SOURCES (Hybrid Mode)
-  #
-  # portfolio_state: testnet  use testnet account balances/positions
-  # market_data: live  use live prices for risk calculations
+      trading_mode: live
+    risk_management: null
+    execution_position: null
+    audit_trail: null
   risk_management:
     data_sources:
-      portfolio_state: testnet  # Read positions/balance from TESTNET account
-      market_data: live         # Use LIVE prices for mark-to-market valuations
+      portfolio_state: testnet
+      market_data: live
   llm_orchestration:
-    # Phase 2 owner for external-intent flow.
     mode: hybrid_advisory
     llm_role: advisory
     require_telemetry: true
-    symbols_llm: ["1000PEPEUSDT"]
-    allowlist_symbols: ["1000PEPEUSDT"]
+    symbols_llm:
+    - 1000PEPEUSDT
+    allowlist_symbols:
+    - 1000PEPEUSDT
     intent_policy:
       max_open_intents: 3
       cooldown_sec: 30
@@ -211,4 +183,6 @@ trading:
       max_notional_usd: 100.0
       max_qty: 5000.0
       max_price_deviation_bps: 20.0
-      allowed_tif: ["GTC"]
+      allowed_tif:
+      - GTC
+  regime_tpsl: null

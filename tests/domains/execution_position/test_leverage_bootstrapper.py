@@ -57,15 +57,17 @@ class TestSyncSymbol:
     @pytest.mark.asyncio
     async def test_sync_success_changes_both(self, bootstrapper, mock_adapter):
         """Successful sync when both margin and leverage need changing."""
-        target = LeverageConfig(target=20, mode="ISOLATED")
-        
+        target = LeverageConfig(
+            target=20, mode="ISOLATED", max_notional_value=None)
+
         result = await bootstrapper.sync_symbol("BTCUSDT", target)
-        
+
         assert result.success is True
         assert result.symbol == "BTCUSDT"
         assert result.margin_changed is True
         assert result.leverage_changed is True
-        mock_adapter.set_margin_mode.assert_awaited_once_with("BTCUSDT", "isolated")
+        mock_adapter.set_margin_mode.assert_awaited_once_with(
+            "BTCUSDT", "isolated")
         mock_adapter.set_leverage.assert_awaited_once_with("BTCUSDT", 20)
 
     @pytest.mark.asyncio
@@ -74,10 +76,11 @@ class TestSyncSymbol:
         # Mock: already correct state
         mock_adapter.get_margin_mode = AsyncMock(return_value="isolated")
         mock_adapter.get_current_leverage = AsyncMock(return_value=20)
-        
-        target = LeverageConfig(target=20, mode="ISOLATED")
+
+        target = LeverageConfig(
+            target=20, mode="ISOLATED", max_notional_value=None)
         result = await bootstrapper.sync_symbol("BTCUSDT", target)
-        
+
         assert result.success is True
         assert result.margin_changed is False
         assert result.leverage_changed is False
@@ -91,10 +94,11 @@ class TestSyncSymbol:
         mock_adapter.set_margin_mode.side_effect = MarginChangeError(
             code=-4048, msg="Position exists"
         )
-        
-        target = LeverageConfig(target=20, mode="ISOLATED")
+
+        target = LeverageConfig(
+            target=20, mode="ISOLATED", max_notional_value=None)
         result = await bootstrapper.sync_symbol("ETHUSDT", target)
-        
+
         assert result.success is False
         assert result.error_code == -4048
         assert "position" in result.error_msg.lower()
@@ -107,10 +111,11 @@ class TestSyncSymbol:
         mock_adapter.set_margin_mode.side_effect = MarginChangeError(
             code=-4047, msg="Open orders exist"
         )
-        
-        target = LeverageConfig(target=20, mode="ISOLATED")
+
+        target = LeverageConfig(
+            target=20, mode="ISOLATED", max_notional_value=None)
         result = await bootstrapper.sync_symbol("XRPUSDT", target)
-        
+
         assert result.success is False
         assert result.error_code == -4047
 
@@ -124,10 +129,12 @@ class TestSyncSymbol:
         mock_adapter.set_leverage.side_effect = LeverageReductionError(
             code=-4161, msg="Cannot reduce leverage in ISOLATED mode with open position"
         )
-        
-        target = LeverageConfig(target=20, mode="ISOLATED")  # Trying to reduce from 50 to 20
+
+        # Trying to reduce from 50 to 20
+        target = LeverageConfig(
+            target=20, mode="ISOLATED", max_notional_value=None)
         result = await bootstrapper.sync_symbol("SOLUSDT", target)
-        
+
         assert result.success is False
         assert result.error_code == -4161
 
@@ -138,10 +145,11 @@ class TestSyncSymbol:
         mock_adapter.set_leverage.side_effect = MaxLeverageExceededError(
             code=-2027, msg="Exceeded max allowable position"
         )
-        
-        target = LeverageConfig(target=125, mode="ISOLATED")
+
+        target = LeverageConfig(
+            target=125, mode="ISOLATED", max_notional_value=None)
         result = await bootstrapper.sync_symbol("BTCUSDT", target)
-        
+
         assert result.success is False
         assert result.error_code == -2027
 
@@ -153,12 +161,12 @@ class TestFullBootstrap:
     async def test_bootstrap_all_success(self, bootstrapper, mock_adapter):
         """All symbols sync successfully."""
         targets = {
-            "BTCUSDT": LeverageConfig(target=20, mode="ISOLATED"),
-            "ETHUSDT": LeverageConfig(target=20, mode="ISOLATED"),
+            "BTCUSDT": LeverageConfig(target=20, mode="ISOLATED", max_notional_value=None),
+            "ETHUSDT": LeverageConfig(target=20, mode="ISOLATED", max_notional_value=None),
         }
-        
+
         results = await bootstrapper.run(targets)
-        
+
         assert len(results.succeeded) == 2
         assert len(results.failed) == 0
         assert "BTCUSDT" in results.succeeded
@@ -172,16 +180,16 @@ class TestFullBootstrap:
             if symbol == "ETHUSDT":
                 raise MarginChangeError(code=-4048, msg="Position exists")
             return True
-        
+
         mock_adapter.set_margin_mode.side_effect = margin_side_effect
-        
+
         targets = {
-            "BTCUSDT": LeverageConfig(target=20, mode="ISOLATED"),
-            "ETHUSDT": LeverageConfig(target=20, mode="ISOLATED"),
+            "BTCUSDT": LeverageConfig(target=20, mode="ISOLATED", max_notional_value=None),
+            "ETHUSDT": LeverageConfig(target=20, mode="ISOLATED", max_notional_value=None),
         }
-        
+
         results = await bootstrapper.run(targets)
-        
+
         assert len(results.succeeded) == 1
         assert len(results.failed) == 1
         assert "BTCUSDT" in results.succeeded
@@ -193,7 +201,7 @@ class TestFullBootstrap:
     async def test_bootstrap_empty_targets(self, bootstrapper):
         """Empty targets dict returns empty results."""
         results = await bootstrapper.run({})
-        
+
         assert len(results.succeeded) == 0
         assert len(results.failed) == 0
 
@@ -206,7 +214,7 @@ class TestBootstrapResultAggregation:
         from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
             BootstrapResults,
         )
-        
+
         results = BootstrapResults()
         results.add_success("BTCUSDT", BootstrapResult(
             symbol="BTCUSDT", success=True, margin_changed=True, leverage_changed=True
@@ -214,7 +222,7 @@ class TestBootstrapResultAggregation:
         results.add_failure("ETHUSDT", BootstrapResult(
             symbol="ETHUSDT", success=False, error_code=-4048, error_msg="Position exists"
         ))
-        
+
         assert results.all_succeeded is False
         assert len(results.succeeded) == 1
         assert len(results.failed) == 1

@@ -1,0 +1,14 @@
+---
+title: Order lifecycle
+---
+sequenceDiagram
+    participant Client
+    participant Bridge
+    participant ExecPosFSM
+    participant Adapter
+    Client->>Bridge: CMD:OPEN
+    Bridge->>ExecPosFSM: DEC:OPEN
+    ExecPosFSM->>Adapter: SEND_ORDER
+    Adapter->>Exchange: place
+    Exchange-->>Adapter: ack/fill/cancel
+    Adapter-->>ExecPosFSM: ORDER_STATE_CHANGED

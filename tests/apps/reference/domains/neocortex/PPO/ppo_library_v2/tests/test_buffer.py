@@ -2,15 +2,24 @@
 import sys
 from pathlib import Path
 
-import torch
 import pytest
 
-PPO_ROOT = Path(__file__).resolve().parents[8] / "apps" / "reference" / "domains" / "neocortex" / "PPO" / "ppo_library_v2"
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+PPO_ROOT = Path(__file__).resolve(
+).parents[8] / "apps" / "reference" / "domains" / "neocortex" / "PPO" / "ppo_library_v2"
 if str(PPO_ROOT) not in sys.path:
     sys.path.insert(0, str(PPO_ROOT))
 
-from ppo_system.learning.buffer import TrajectoryBuffer
+if HAS_TORCH:
+    from ppo_system.learning.buffer import TrajectoryBuffer
 
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_gae_calculation_with_bootstrap():
     """
     Unit-тест: перевіряє, що GAE коректно розраховується з урахуванням
@@ -33,19 +42,19 @@ def test_gae_calculation_with_bootstrap():
             logp=torch.zeros(N),
             done=done
         )
-    
+
     assert buf.full
-    
+
     # Bootstrap-оцінки для незавершених середовищ 1 та 2
     last_values = torch.tensor([0.0, 10.0, 20.0])
     buf.finalize(last_values)
-    
+
     batch = buf.get()
-    
+
     # Перевірки
     assert batch["adv"].numel() == T * N
     assert torch.isfinite(batch["adv"]).all()
-    
+
     # Перевіряємо, що returns для останнього кроку незавершених епізодів
     # враховують bootstrap value.
     # ret = adv + val. val=0, тому ret=adv.
@@ -53,7 +62,7 @@ def test_gae_calculation_with_bootstrap():
     # adv[-3] -> env 0, t=3 (done), adv = rew - val = 1 - 0 = 1
     # adv[-2] -> env 1, t=3 (not done), adv = rew + gamma*last_val - val = 1 + 0.99*10 - 0 = 10.9
     # adv[-1] -> env 2, t=3 (not done), adv = rew + gamma*last_val - val = 1 + 0.99*20 - 0 = 20.8
-    
+
     adv_flat = buf.adv.view(-1)
     assert adv_flat[-3].item() == pytest.approx(1.0)
     assert adv_flat[-2].item() > 10.0

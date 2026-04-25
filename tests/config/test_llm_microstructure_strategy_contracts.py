@@ -24,12 +24,11 @@ CONTRACT_CASES = {
             "type",
             "description",
             "timeframe_sec",
+            "pending_entry_ttl_ms",
             "execution",
             "safety_gates",
         },
-        "defaults": {
-            "pending_entry_ttl_ms": None,
-        },
+        "defaults": {},
         "default_factories": {},
         "optional_fields": {"pending_entry_ttl_ms"},
     },
@@ -143,13 +142,14 @@ def test_llm_microstructure_rebuild_seam_accepts_execution_block() -> None:
             "entry_tif": "GTC",
             "exit_order_type": "MARKET",
             "exit_tif": None,
+            "exit_limit_ttl_ms": None,
             "gtx_retry_max": 0,
             "gtx_retry_offset_bps": 2.0,
-            "emit_market_fallback_marker_on_retry_exhaustion": False,
         },
         safety_gates={
             "enabled": False,
             "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
         },
     )
 

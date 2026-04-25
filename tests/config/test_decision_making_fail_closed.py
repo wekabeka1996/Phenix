@@ -45,30 +45,30 @@ class TestFailClosedRiskSkew:
     def test_get_risk_skew_config_fails_without_config(self):
         """_get_risk_skew_config should fail if risk_skew key is missing."""
         from apps.reference.domains.decision_making.core.facade import DecisionMaking
-        
+
         # Create nested mock without spec to allow attribute assignment
         cfg = MagicMock()
         cfg.domains.decision_making.risk_skew.max_skew_sec = None  # Missing!
-        
+
         with patch.object(DecisionMaking, '__init__', lambda x, y, z: None):
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.config = cfg
-            
+
             with pytest.raises(ValueError, match="risk_skew.*max_skew_sec.*required"):
                 dm._get_risk_skew_config("max_skew_sec")
 
     def test_get_risk_skew_config_returns_value_when_present(self):
         """_get_risk_skew_config should return value from config."""
         from apps.reference.domains.decision_making.core.facade import DecisionMaking
-        
+
         cfg = MagicMock()
         cfg.domains.decision_making.risk_skew.max_skew_sec = 10
         cfg.domains.decision_making.risk_skew.defer_window_sec = 120
-        
+
         with patch.object(DecisionMaking, '__init__', lambda x, y, z: None):
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.config = cfg
-            
+
             assert dm._get_risk_skew_config("max_skew_sec") == 10
             assert dm._get_risk_skew_config("defer_window_sec") == 120
 
@@ -136,7 +136,8 @@ class TestFailClosedSideBias:
                 logger=dm.logger,
             )
 
-            penalty, window, target, min_intents = dm._get_side_bias_params("BTCUSDT")
+            penalty, window, target, min_intents = dm._get_side_bias_params(
+                "BTCUSDT")
             assert penalty == 0.5
             assert window == 60
             assert target == 0.6
@@ -149,10 +150,10 @@ class TestFailClosedProductionConfig:
     def test_production_config_has_risk_skew_values(self):
         """Production config must have all risk_skew values."""
         from apps.reference.config_loader import get_config
-        
+
         cfg = get_config()
         risk_skew = cfg.domains.decision_making.risk_skew
-        
+
         assert risk_skew.max_skew_sec == 5
         assert risk_skew.max_defer_count == 3
         assert risk_skew.defer_cooldown_sec == 2
@@ -162,10 +163,10 @@ class TestFailClosedProductionConfig:
     def test_production_config_has_risk_gate_values(self):
         """Production config must have all risk_gate values."""
         from apps.reference.config_loader import get_config
-        
+
         cfg = get_config()
         risk_gate = cfg.domains.decision_making.risk_gate
-        
+
         assert risk_gate.threshold_pct_testnet == 20.0
         assert risk_gate.threshold_pct_production == 50.0
         assert risk_gate.min_intents_for_check == 10
@@ -173,7 +174,7 @@ class TestFailClosedProductionConfig:
     def test_production_config_has_side_bias_values(self):
         """Production config must have side_bias values."""
         from apps.reference.config_loader import get_config
-        
+
         cfg = get_config()
         dm = cfg.strategies.aurora.decision
 
@@ -189,17 +190,20 @@ class TestFailClosedProductionConfig:
         decision = raw.get("aurora", {}).get("decision", {})
         assert isinstance(decision, dict)
 
-        assert dm.side_bias_penalty_factor == pytest.approx(float(decision["side_bias_penalty_factor"]))
+        assert dm.side_bias_penalty_factor == pytest.approx(
+            float(decision["side_bias_penalty_factor"]))
         assert dm.side_bias_window_sec == int(decision["side_bias_window_sec"])
-        assert dm.side_bias_target_ratio == pytest.approx(float(decision["side_bias_target_ratio"]))
-        assert dm.side_bias_min_intents == int(decision["side_bias_min_intents"])
+        assert dm.side_bias_target_ratio == pytest.approx(
+            float(decision["side_bias_target_ratio"]))
+        assert dm.side_bias_min_intents == int(
+            decision["side_bias_min_intents"])
 
     def test_production_config_has_positions_stale_ttl(self):
         """Production config must have positions_stale_ttl_sec."""
         from apps.reference.config_loader import get_config
-        
+
         cfg = get_config()
-        
+
         assert cfg.domains.position_tracking.positions_stale_ttl_sec == 15
 
 
@@ -209,10 +213,11 @@ class TestNoHardcodedDefaults:
     def test_no_fallback_patterns_in_decision_making(self):
         """decision_making.py should not have fallback default patterns."""
         from pathlib import Path
-        
-        dm_path = Path(__file__).parent.parent.parent / "apps/reference/domains/decision_making/decision_making.py"
+
+        dm_path = Path(__file__).parent.parent.parent / \
+            "apps/reference/domains/decision_making/decision_making.py"
         content = dm_path.read_text()
-        
+
         # Should NOT find old fallback patterns
         assert "default_penalty = 0.50" not in content
         assert "default_window = 60" not in content
@@ -223,10 +228,11 @@ class TestNoHardcodedDefaults:
     def test_get_risk_skew_config_no_default_param(self):
         """_get_risk_skew_config should not accept default parameter."""
         from pathlib import Path
-        
-        dm_path = Path(__file__).parent.parent.parent / "apps/reference/domains/decision_making/decision_making.py"
+
+        dm_path = Path(__file__).parent.parent.parent / \
+            "apps/reference/domains/decision_making/core/facade.py"
         content = dm_path.read_text()
-        
+
         # Method signature should NOT have default parameter
         assert "def _get_risk_skew_config(self, key: str, default:" not in content
         # Should have fail-closed signature

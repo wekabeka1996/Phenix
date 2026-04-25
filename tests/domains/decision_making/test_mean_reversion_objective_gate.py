@@ -182,7 +182,17 @@ class TestMRStrictFailClosedConfig:
         return ObjectiveEngineDomainConfig(
             enabled=False,  # disabled avoids requiring components
             data_requirements=ObjectiveDataRequirementsConfig(
-                strict_fail_closed=strict),
+                require_arce=False,
+                require_portfolio=False,
+                require_execution=False,
+                strict_fail_closed=strict,
+            ),
+            explainability={
+                "enabled": False,
+                "emit_subcomponents": False,
+                "emit_normalization_stats": False,
+            },
+            components={},
         )
 
     def test_strict_true(self) -> None:

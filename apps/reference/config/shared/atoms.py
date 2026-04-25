@@ -10,23 +10,21 @@ class SignalWeights(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    obi: float = Field()
-    tfi: float = Field()
-    delta_price: float = Field()
-    ema_bias: float = Field()
-    volume_spike: float = Field()
-    volatility_state: float = Field()
-    depth_imbalance: float = Field()
+    obi: float = Field(...)
+    tfi: float = Field(...)
+    delta_price: float = Field(...)
+    ema_bias: float = Field(...)
+    volume_spike: float = Field(...)
+    volatility_state: float = Field(...)
+    depth_imbalance: float = Field(...)
     macro_resid: float = Field(
-        description="R1: Beta-adjusted residual weight (SIGNED, neutral=0)"
+        ..., description="R1: Beta-adjusted residual weight (SIGNED, neutral=0)"
     )
     macro_sync: Optional[float] = Field(
-        default=0.0,
-        description="DEPRECATED: Use macro_resid. Kept for backward compat.",
+        ..., description="DEPRECATED: Use macro_resid. Kept for backward compat.",
     )
     absorption: float = Field(
-        default=0.0,
-        description=(
+        ..., description=(
             "R2: Absorption feature weight (SIGNED [-1,1], neutral=0.0). "
             "0.0 = disabled (backward compat). Set >0 after Phase 2 calibration."
         ),
@@ -38,8 +36,8 @@ class BarGatingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enable: bool = Field()
-    bar_ms: int = Field(description="Bar duration in milliseconds")
+    enable: bool = Field(...)
+    bar_ms: int = Field(..., description="Bar duration in milliseconds")
 
 
 class BehaviorFsmConfig(BaseModel):
@@ -47,9 +45,9 @@ class BehaviorFsmConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enable: bool = Field()
-    high_vol_multiplier: float = Field()
-    low_vol_multiplier: float = Field()
+    enable: bool = Field(...)
+    high_vol_multiplier: float = Field(...)
+    low_vol_multiplier: float = Field(...)
 
 
 class SignalsConfig(BaseModel):
@@ -58,16 +56,16 @@ class SignalsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     normalize_signals_mode: Literal["signed_v2"] = Field(
-        description=(
+        ..., description=(
             "Signal normalization mode. Production invariant is 'signed_v2'. "
             "No other value is valid in production config. "
             "Forensic/offline passthrough: pass normalize_mode='off' directly to the scoring fn, "
             "bypassing this config. 'legacy_v1' + 'off' removed from YAML boundary."
         )
     )
-    enable_new_metrics: bool = Field()
+    enable_new_metrics: bool = Field(...)
     delta_price_cap_pct: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         le=1.0,
         description="Delta price cap as pct of price (e.g. 0.02 = 2%). Required (no hardcoded fallback).",
     )
@@ -79,17 +77,17 @@ class DirectionStrengthScoringConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     directional_features: List[str] = Field(
-        description="Signed features that define direction (dir component)."
+        ..., description="Signed features that define direction (dir component)."
     )
     strength_features: List[str] = Field(
-        description="Magnitude/confirmation features (strength component)."
+        ..., description="Magnitude/confirmation features (strength component)."
     )
     strength_alpha: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         description="Strength influence: final = dir * (1 + strength_alpha * strength).",
     )
     strength_cap: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         description="Clamp for strength component (>=0).",
     )
 
@@ -106,21 +104,19 @@ class LiquidityGateConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = Field(description="Enable liquidity gate")
+    enabled: bool = Field(..., description="Enable liquidity gate")
     kappa_min: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Minimum kappa required to pass gate",
     )
     kappa_max: float = Field(
-        default=1.0,
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Max kappa (clamping)",
     )
     failsafe_qty_check: bool = Field(
-        default=True,
-        description="[NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes",
+        ..., description="[NOT_IMPLEMENTED] Reserved: double-check min_qty even if gate passes",
     )
 
 
@@ -129,8 +125,8 @@ class PositionSizingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    min_position_size_usd: float = Field()
-    liquidity_based_cap_usd: float = Field()
+    min_position_size_usd: float = Field(...)
+    liquidity_based_cap_usd: float = Field(...)
 
 
 class KellyConfig(BaseModel):
@@ -138,15 +134,14 @@ class KellyConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    base_probability: float = Field()
-    kelly_cap: float = Field()
-    kelly_alpha: float = Field()
-    payoff_ratio_r: float = Field()
-    p_min: float = Field(default=0.45, description="Minimum probability clamp")
-    p_max: float = Field(default=0.65, description="Maximum probability clamp")
+    base_probability: float = Field(...)
+    kelly_cap: float = Field(...)
+    kelly_alpha: float = Field(...)
+    payoff_ratio_r: float = Field(...)
+    p_min: float = Field(..., description="Minimum probability clamp")
+    p_max: float = Field(..., description="Maximum probability clamp")
     uplift_factor: float = Field(
-        default=0.20,
-        description="Score-to-probability uplift multiplier",
+        ..., description="Score-to-probability uplift multiplier",
     )
 
 
@@ -155,16 +150,15 @@ class QosConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    exposure_block_cooldown_sec: int = Field()
+    exposure_block_cooldown_sec: int = Field(...)
     symbol_cooldown_sec: int = Field(
-        description="Global fallback cooldown. Per-symbol config takes priority."
+        ..., description="Global fallback cooldown. Per-symbol config takes priority."
     )
-    max_intents_per_minute_per_symbol: int = Field()
-    mode: str = Field(description="defer | block")
-    enforce: bool = Field()
+    max_intents_per_minute_per_symbol: int = Field(...)
+    mode: str = Field(..., description="defer | block")
+    enforce: bool = Field(...)
     apply_to_strategies: List[str] = Field(
-        default_factory=list,
-        description=(
+        ..., description=(
             "Optional allowlist of strategy_id values that should have QoS applied in the strategy gateway. "
             "Empty => apply to all strategies (backward compatible)."
         ),
@@ -176,8 +170,8 @@ class ROIExitConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = Field()
-    target_roi_pct: float = Field()
+    enabled: bool = Field(...)
+    target_roi_pct: float = Field(...)
 
 
 class PrecisionConfig(BaseModel):
@@ -185,9 +179,9 @@ class PrecisionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    quantity_min_threshold: float = Field()
-    flat_position_threshold: float = Field()
-    decimal_places: int = Field()
+    quantity_min_threshold: float = Field(...)
+    flat_position_threshold: float = Field(...)
+    decimal_places: int = Field(...)
 
 
 __all__ = [

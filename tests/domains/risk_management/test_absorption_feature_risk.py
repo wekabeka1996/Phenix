@@ -94,7 +94,8 @@ def _compute_risk(
     else:
         applied_feature = D("0")
 
-    score = dp_pct * dw + abs(d_obi) * ow + abs(d_tfi) * tw + applied_toxicity + applied_feature
+    score = dp_pct * dw + abs(d_obi) * ow + abs(d_tfi) * \
+        tw + applied_toxicity + applied_feature
     score = max(D("0"), min(D("1"), score))
 
     return {
@@ -122,8 +123,10 @@ class TestRiskScoreDefaultProxyUnchanged(unittest.TestCase):
             use_penalty=False, source="proxy", absorption_feature_w=0.0
         )
         # With penalty disabled, absorption never matters
-        r1 = _compute_risk(100, 5.0, 0.1, 0.5, absorption=0.9, domain_cfg=cfg_no_absfeat)
-        r2 = _compute_risk(100, 5.0, 0.1, 0.5, absorption=0.1, domain_cfg=cfg_no_absfeat)
+        r1 = _compute_risk(100, 5.0, 0.1, 0.5, absorption=0.9,
+                           domain_cfg=cfg_no_absfeat)
+        r2 = _compute_risk(100, 5.0, 0.1, 0.5, absorption=0.1,
+                           domain_cfg=cfg_no_absfeat)
 
         self.assertAlmostEqual(r1["risk_score"], r2["risk_score"], places=10,
                                msg="source='proxy', penalty disabled: absorption value must not change score")
@@ -171,8 +174,10 @@ class TestRiskScoreFeatureOnlyUsesAbsorption(unittest.TestCase):
             use_penalty=True, source="feature",
             absorption_inverse=0.3, absorption_feature_w=0.3,
         )
-        r_pos = _compute_risk(100, 5.0, 0.1, 0.5, absorption=+0.6, domain_cfg=cfg)
-        r_neg = _compute_risk(100, 5.0, 0.1, 0.5, absorption=-0.6, domain_cfg=cfg)
+        r_pos = _compute_risk(100, 5.0, 0.1, 0.5,
+                              absorption=+0.6, domain_cfg=cfg)
+        r_neg = _compute_risk(100, 5.0, 0.1, 0.5,
+                              absorption=-0.6, domain_cfg=cfg)
 
         self.assertAlmostEqual(r_pos["absorption_feature_term"], r_neg["absorption_feature_term"],
                                places=10, msg="|absorption| must be symmetric to sign")
@@ -233,28 +238,34 @@ class TestConfigNewFieldsStrictValidation(unittest.TestCase):
         )
         self.assertAlmostEqual(cfg.absorption_feature, 0.2)
 
-    def test_risk_score_weights_default_absorption_feature_zero(self):
+    def test_risk_score_weights_requires_explicit_absorption_feature(self):
         from apps.reference.config_models import RiskScoreWeightsConfig
-        cfg = RiskScoreWeightsConfig(
-            delta_price_pct=0.1, obi=0.3, tfi=0.3, absorption_inverse=0.3,
-        )
-        self.assertEqual(cfg.absorption_feature, 0.0,
-                         "Default absorption_feature must be 0.0 (backward compat)")
+        with self.assertRaises(ValidationError) as ctx:
+            RiskScoreWeightsConfig(
+                delta_price_pct=0.1, obi=0.3, tfi=0.3, absorption_inverse=0.3,
+            )
+        self.assertIn("absorption_feature", str(ctx.exception))
 
-    def test_risk_management_domain_new_fields_have_defaults(self):
+    def test_risk_management_domain_requires_explicit_new_fields(self):
         from apps.reference.config_models import RiskManagementDomainConfig
-        cfg = RiskManagementDomainConfig(
-            use_absorption_penalty=False,
-            risk_score_weights={
-                "delta_price_pct": 0.1, "obi": 0.3,
-                "tfi": 0.3, "absorption_inverse": 0.3,
-            },
-            trading_allowed_thresholds={"max_risk_score": 0.96},
-            validation={"total_weight_min": 0.5, "total_weight_max": 2.0},
-        )
-        self.assertEqual(cfg.absorption_penalty_source, "proxy")
-        self.assertAlmostEqual(cfg.absorption_feature_clip_min, 0.0)
-        self.assertAlmostEqual(cfg.absorption_feature_clip_max, 1.0)
+        with self.assertRaises(ValidationError) as ctx:
+            RiskManagementDomainConfig(
+                use_absorption_penalty=False,
+                absorption_dp_cap_pct=None,
+                risk_score_weights={
+                    "delta_price_pct": 0.1,
+                    "obi": 0.3,
+                    "tfi": 0.3,
+                    "absorption_inverse": 0.3,
+                    "absorption_feature": 0.0,
+                },
+                trading_allowed_thresholds={"max_risk_score": 0.96},
+                validation={"total_weight_min": 0.5, "total_weight_max": 2.0},
+            )
+        err = str(ctx.exception)
+        self.assertIn("absorption_penalty_source", err)
+        self.assertIn("absorption_feature_clip_min", err)
+        self.assertIn("absorption_feature_clip_max", err)
 
 
 class TestConfigInvalidSourceRejected(unittest.TestCase):
@@ -265,10 +276,16 @@ class TestConfigInvalidSourceRejected(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             RiskManagementDomainConfig(
                 use_absorption_penalty=False,
+                absorption_dp_cap_pct=None,
                 absorption_penalty_source="magic_source",   # invalid Literal
+                absorption_feature_clip_min=0.0,
+                absorption_feature_clip_max=1.0,
                 risk_score_weights={
-                    "delta_price_pct": 0.1, "obi": 0.3,
-                    "tfi": 0.3, "absorption_inverse": 0.3,
+                    "delta_price_pct": 0.1,
+                    "obi": 0.3,
+                    "tfi": 0.3,
+                    "absorption_inverse": 0.3,
+                    "absorption_feature": 0.0,
                 },
                 trading_allowed_thresholds={"max_risk_score": 0.96},
                 validation={"total_weight_min": 0.5, "total_weight_max": 2.0},

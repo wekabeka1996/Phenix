@@ -140,118 +140,88 @@ def test_observability_canonical_definitions_live_only_in_extracted_module() -> 
 def test_observability_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         cm.LogRotationConfig,
-        required=set(),
-        defaults={"max_bytes": 10485760, "backup_count": 5},
+        required={"max_bytes", "backup_count"},
+        defaults={},
         factory_fields={},
         dynamic_factories={},
     )
     _assert_field_contract(
         cm.ConsoleLogConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "level": "INFO",
-            "format": "text",
-            "colorize": False,
-        },
+        required={"enabled", "level", "format", "colorize"},
+        defaults={},
         factory_fields={},
         dynamic_factories={},
     )
     _assert_field_contract(
         cm.CoreLogSinkConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "path": "logs/aurora_core.log",
-            "level": "DEBUG",
-            "format": "text",
-            "max_bytes": None,
-            "backup_count": None,
-        },
+        required={"enabled", "path", "level",
+                  "format", "max_bytes", "backup_count"},
+        defaults={},
         factory_fields={},
         dynamic_factories={},
         optional_fields={"max_bytes", "backup_count"},
     )
     _assert_field_contract(
         cm.DomainLogConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "level": "DEBUG",
-            "max_bytes": 5242880,
-            "backup_count": 3,
-        },
+        required={"enabled", "level", "max_bytes", "backup_count"},
+        defaults={},
         factory_fields={},
         dynamic_factories={},
     )
     _assert_field_contract(
         cm.EventChainLogConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "path": "logs/event_chain.log",
-            "level": "INFO",
-            "format": "json",
-            "max_bytes": 10485760,
-            "backup_count": 5,
-        },
+        required={"enabled", "path", "level",
+                  "format", "max_bytes", "backup_count"},
+        defaults={},
         factory_fields={},
         dynamic_factories={},
     )
     _assert_field_contract(
         cm.ObservabilityLoggingConfig,
-        required=set(),
-        defaults={"default_level": "INFO", "default_format": "text"},
-        factory_fields={
-            "rotation": cm.LogRotationConfig,
-            "console": cm.ConsoleLogConfig,
-            "core": cm.CoreLogSinkConfig,
-            "domains": dict,
-            "event_chain": cm.EventChainLogConfig,
+        required={
+            "default_level",
+            "default_format",
+            "rotation",
+            "console",
+            "core",
+            "domains",
+            "event_chain",
         },
+        defaults={},
+        factory_fields={},
         dynamic_factories={},
     )
     _assert_field_contract(
         cm.AlertsConfig,
-        required=set(),
-        defaults={
-            "slack_webhook_url": None,
-            "deduplication_window_sec": 300,
-            "max_alerts_per_hour": 10,
-            "risk_gate_threshold_pct": 80,
-            "wal_size_threshold_mb": 500,
-            "cb_active_threshold_sec": 60,
-            "recent_alerts_max_keys": 5000,
-            "entropy_volume_threshold": 3000,
-            "entropy_error_rate_threshold": 0.5,
+        required={
+            "slack_webhook_url",
+            "deduplication_window_sec",
+            "max_alerts_per_hour",
+            "risk_gate_threshold_pct",
+            "wal_size_threshold_mb",
+            "cb_active_threshold_sec",
+            "recent_alerts_max_keys",
+            "entropy_volume_threshold",
+            "entropy_error_rate_threshold",
         },
+        defaults={},
         factory_fields={},
         dynamic_factories={},
         optional_fields={"slack_webhook_url"},
     )
     _assert_field_contract(
         cm.ShadowCriticalEventJournalConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "path": "logs/shadow_critical_event_journal_v1.jsonl",
-            "schema_version": "1.0.0",
-            "instrumentation_version": "1.0.0",
-        },
+        required={"enabled", "path", "schema_version",
+                  "instrumentation_version", "critical_events"},
+        defaults={},
         factory_fields={},
-        dynamic_factories={
-            "critical_events": list(DEFAULT_CRITICAL_EVENTS),
-        },
+        dynamic_factories={},
     )
     _assert_field_contract(
         cm.ObservabilityConfig,
-        required=set(),
-        defaults={"config_version": "1.0.0"},
-        factory_fields={
-            "logging": cm.ObservabilityLoggingConfig,
-            "alerts": cm.AlertsConfig,
-            "shadow_journal": cm.ShadowCriticalEventJournalConfig,
-        },
+        required={"config_version", "logging", "alerts", "shadow_journal"},
+        defaults={},
+        factory_fields={},
         dynamic_factories={},
     )
 

@@ -1,33 +1,21 @@
-# ==============================================================================
-# Aurora Strategy Profile  SSOT
-# ==============================================================================
-# CFG-STRATEGY-SSOT-FREEZE-02:
-# - Strategy policy SSOT: this file (no policy in trading.yaml/domains.yaml)
-# - Global Aurora policy: aurora.decision (migrated from trading.yaml)
-# - Per-symbol Aurora params: aurora.assets (migrated from aurora_instruments.yaml)
-# ==============================================================================
-
 aurora:
   enabled: true
-  # SCORCHED-EARTH-2026-01-27: legacy_tick_path_enabled DELETED from schema
   type: bar_driven
-  description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
+  description: Bar-driven multi-signal alpha strategy (5m basis) with regime awareness
   timeframe_sec: 300
-
-  # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
-  # LIMIT entries require explicit tif. No silent fallbacks.
   execution:
-    entry_order_type: "LIMIT"   # MUST be one of: LIMIT, MARKET
-    entry_tif: "GTX"            # MUST be set for LIMIT. One of: GTC, GTX, IOC, FOK
-
-  # DM-SAFETY-BYPASSES-P1: Explicit safety gates control (fail-closed if missing)
-  # Aurora is trend-following  directional sanity and price motion gates APPLY.
-  # Phase 0.6: attenuate  EXTREME denies entry; STRESS halves position size.
+    entry_order_type: LIMIT
+    entry_tif: GTX
+    exit_order_type: null
+    exit_tif: null
+    exit_limit_ttl_ms: null
+    gtx_retry_max: 0
+    gtx_retry_offset_bps: 2.0
   safety_gates:
     enabled: true
-    system_stress_policy: attenuate   # "off" | "attenuate" | "block"
-    stress_attenuation_factor: 0.50   # margin_pct_mult *= 0.5 when STRESS
-
+    system_stress_policy: attenuate
+    stress_attenuation_factor: 0.5
+  shadow_mode_enabled: false
   objective:
     enabled: true
     regimes:
@@ -47,7 +35,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       LOW_VOLATILITY:
         weights:
           cost: 1.0
@@ -64,7 +52,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.05
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       TREND_UP:
         weights:
           cost: 1.0
@@ -81,7 +69,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       TREND_DOWN:
         weights:
           cost: 1.0
@@ -98,7 +86,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       MEAN_REVERSION:
         weights:
           cost: 1.5
@@ -115,7 +103,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.08
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       UNCERTAIN:
         weights:
           cost: 2.0
@@ -132,7 +120,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.15
-          enforcement_mode: "GATE"
+          enforcement_mode: GATE
       FLAT_LOW:
         weights:
           cost: 1.0
@@ -149,7 +137,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "OBSERVE"
+          enforcement_mode: OBSERVE
       FLAT_NORMAL:
         weights:
           cost: 1.0
@@ -166,7 +154,7 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "OBSERVE"
+          enforcement_mode: OBSERVE
       FLAT_HIGH:
         weights:
           cost: 1.0
@@ -183,55 +171,74 @@ aurora:
           penalty_scale: 2.5
         gate:
           min_objective_score: 0.1
-          enforcement_mode: "OBSERVE"
-
-  # Global Aurora policy (DecisionConfig)
+          enforcement_mode: OBSERVE
   decision:
-    regime_smoothing:
-      enabled: false
-      method: "ema"
-      ema_alpha: 0.3
-      ramp_bars: 6
     testnet:
       signal_threshold: 0.162
     production:
       signal_threshold: 0.162
     signal_threshold: 0.162
-    # Phase 9: Sensitivity debug lever (neutral=1.0, production=1.0)
-    score_multiplier: 1.0
-    decision_geometry:
-      admission_mode: linear
-      sizing_mode: quadratic
-      admission_shield_floor: 0.75
-    neutral_threshold: 0.05
-    symbols_to_track:
-      - BTCUSDT
-      - ETHUSDT
-      - SOLUSDT
-      - DOGEUSDT
-      - XRPUSDT
-      - BNBUSDT
+    cooldown_sec: 6
+    side_bias_min_score: null
+    side_bias_penalty_factor: 0.25
+    side_bias_target_ratio: 0.72
+    side_bias_window_sec: 420
+    side_bias_min_intents: 18
+    retry_ttl_ms: 5000
+    retry_max_count: 3
+    retry_backoff_factor: 1.5
+    signal_weights:
+      obi: 0.42
+      tfi: 0.15
+      delta_price: 0.15
+      ema_bias: 0.15
+      volume_spike: 0.1
+      volatility_state: 0.1
+      depth_imbalance: -0.15
+      macro_resid: 0.1
+      macro_sync: 0.0
+      absorption: 0.0
+    signals:
+      normalize_signals_mode: signed_v2
+      enable_new_metrics: true
+      delta_price_cap_pct: 0.02
+    direction_strength_scoring:
+      directional_features:
+      - obi
+      - tfi
+      - delta_price
+      - ema_bias
+      - depth_imbalance
+      - macro_resid
+      - macro_sync
+      - absorption
+      strength_features:
+      - volume_spike
+      - volatility_state
+      strength_alpha: 0.5
+      strength_cap: 1.0
+    kelly:
+      base_probability: 0.5
+      kelly_cap: 0.25
+      kelly_alpha: 0.8
+      payoff_ratio_r: 1.5
+      p_min: 0.45
+      p_max: 0.65
+      uplift_factor: 0.2
+    qos:
+      exposure_block_cooldown_sec: 30
+      symbol_cooldown_sec: 1
+      max_intents_per_minute_per_symbol: 60
+      mode: defer
+      enforce: false
+      apply_to_strategies: []
+    bar_gating: null
     behavior_fsm:
       enable: false
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
-    regime_threshold_multipliers:
-      HIGH_VOLATILITY: 0.20
-      LOW_VOLATILITY: 0.12
-      MEAN_REVERSION: 0.16
-      TREND_UP: 0.14    # patched2: raised from 0.85  TREND_UP was -EV, lower barrier wrong
-      TREND_DOWN: 0.14
-      UNCERTAIN: 0.18
-      DEFAULT: 0.16
-    side_bias_min_score: null
-    side_bias_window_sec: 420
-    side_bias_target_ratio: 0.72
-    side_bias_penalty_factor: 0.25
-    side_bias_min_intents: 18
-    cooldown_sec: 6
-    retry_ttl_ms: 5000
-    retry_max_count: 3
-    retry_backoff_factor: 1.5
+    roi_exit: null
+    mean_reversion: null
     regime_thresholds:
       HIGH_VOLATILITY: 0.18
       LOW_VOLATILITY: 0.14
@@ -240,150 +247,29 @@ aurora:
       TREND_DOWN: 0.12
       UNCERTAIN: 99.0
       DEFAULT: 0.12
-    kelly:
-      base_probability: 0.5
-      kelly_cap: 0.25
-      kelly_alpha: 0.8
-      payoff_ratio_r: 1.5
-      p_min: 0.45
-      p_max: 0.65
-      uplift_factor: 0.20
-    qos:
-      mode: defer
-      enforce: false
-      exposure_block_cooldown_sec: 30
-      symbol_cooldown_sec: 1
-      max_intents_per_minute_per_symbol: 60
-    # Phase 9 Migration complete: V2 legacy surfaces removed (direction_strength_scoring, feature_neutrals, signal_weights)
-    signals:
-      normalize_signals_mode: signed_v2
-      enable_new_metrics: true
-      delta_price_cap_pct: 0.02
-    bar_gating: null
-    roi_exit: null
-    mean_reversion: null
-
-    #  Phase 5: Exit Manager (Global)
-    # BUG-FIX: handler crashes (fail-closed) if exit: is missing.
-    # Per-symbol overrides in assets.<SYM>.exit still apply.
-    exit:
-      time_exit_enabled: false
-      max_hold_time_sec: 86400        # 24h hard stop (safety net)
-      signal_exit_enabled: true
-      signal_reversal_threshold: -0.10
-      danger_zone_action: "TIGHTEN_STOPS"
-      danger_zone_tighten_factor: 0.5
-
-    #  Phase 9: Quadratic Brain — sole active scoring path.
-    scoring_version: "quadratic"
-
-    # === Phase 9: Quadratic Scoring Engine / Shield Cascade ===
-    # shield_enabled: true activates the real cascade (DangerZone → Context → Memory).
-    # NullShield is used only if this block is absent or shield_enabled: false.
-    scoring_engine:
-      shield_enabled: true
-
-      danger_zone_shield:
-        enabled: true
-        vol_threshold: 0.98        # P0-BUY-RECOVERY: was 0.95 → DZ fired on 57% bars (100% from vol subcondition); raised to 0.98 as secondary defense after FE volatility window fix
-        spread_threshold: 50.0     # Block when spread > 50 bps (never fired in audit window; unchanged)
-        motion_threshold: 3.0      # Block when price motion sigma > 3.0 (inert: feature key not wired)
-
-      context_shield:
-        enabled: true
-        regime_multipliers:
-          TREND_UP: 1.0
-          TREND_DOWN: 1.0
-          MEAN_REVERSION: 0.75
-          LOW_VOLATILITY: 0.85
-          HIGH_VOLATILITY: 0.30    # Sharp reduction in high-vol regime
-          UNCERTAIN: 0.55
-        default_multiplier: 0.80   # Unknown regimes: conservative
-        no_regime_multiplier: 0.50 # No regime received yet: very cautious
-        ttl_ms: 14400000           # 4h regime TTL before stale policy kicks in
-        stale_mult_normal: 0.70    # Stale regime in safe regimes
-        stale_mult_danger: 0.35    # Stale regime in HIGH_VOLATILITY
-        danger_regimes:
-          - HIGH_VOLATILITY
-
-      memory_shield:
-        enabled: true
-        decay_rate: 0.95           # 5% decay per bar
-        max_states: 200            # LRU cap: 200 distinct states
-        unknown_threshold: 10.0    # < 10 visits = UNKNOWN state
-        exploring_threshold: 50.0  # 10-50 visits = EXPLORING state
-        unknown_multiplier: 0.60   # UNKNOWN: 60% of signal
-        exploring_multiplier: 0.80 # EXPLORING: 80% of signal
-        known_multiplier: 1.00     # KNOWN: full signal
-        storage_path: null         # null = in-memory only (no persistence)
-        flush_interval_sec: 60.0   # Would flush every 60s if persistence enabled
-
-    # DEPRECATED (Phase 9): direction_strength_scoring was used by v2 linear path (AuroraScoringKernel).
-    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
-    direction_strength_scoring:
-      directional_features:
-        - obi
-        - tfi
-        - delta_price
-        - ema_bias
-        - depth_imbalance
-        # R1: macro_resid replaces macro_sync in directional scoring
-        - macro_resid
-        # Legacy: kept for telemetry; not weighted in v2 by default
-        - macro_sync
-        # R2: absorption (SIGNED [-1,1], neutral=0.0)
-        - absorption
-      strength_features:
-        - volume_spike
-        - volatility_state
-      strength_alpha: 0.5
-      strength_cap: 1.0
-
-    liquidity_gate:
-      enabled: true
-      kappa_min: 0.1
-      kappa_max: 1.0
-      failsafe_qty_check: true
-
-    essential_features:
-      - obi
-      - delta_price
-      - macro_resid
-
-    # [Phase 3 Fix] Anchor Shock Veto: Block long signals during BTC crash
-    anchor_shock_veto:
-      enabled: true
-      anchor_symbol: "BTCUSDT"
-      threshold: -2.0  # Block BUY if macro_resid < -2.0 (strong crash)
-
-    # === Minimum Holding Period (Anti-Churn Gate) ===
-    # Prevents HFT-style churn by enforcing minimum time in position before
-    # allowing signal-based exits. Does NOT affect safety exits (SL/TP/Risk).
-    # RFC: docs/RFC_min_duration_logic.md
-    holding_period:
-      enabled: true
-      min_duration_sec: 900         # Minimum seconds to hold position
-      emergency_exit_threshold: 0.90  # |score| threshold for emergency override
-      apply_to_flips: true          # Also apply holding period to FLIP signals
-
-    # === VOL-ADJ-GATES-01: Sigma-normalized Motion Gates ===
-    # Anti-Flat: Block entry when normalized motion too small (fee churn in dead market)
-    # Anti-FOMO: Block entry when normalized motion too extreme (snapback risk)
-    # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
-    gates:
-      enabled: true
-      anti_flat_sigma: 0.48  # Block ENTRY if |pm_norm| < 0.5 (dead market)
-      anti_fomo_sigma: 10.0  # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
-      # P0-2: FIXED 900  300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
-      motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
-
-    # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
-    # Prevents immediate re-entry after position closes.
-    # After exiting a position, wait this many seconds before allowing new entry.
-    reentry_cooldown_sec: 900  # Global default: 600 seconds
-
-    # DEPRECATED (Phase 9): feature_neutrals was used by v2 linear scoring.
-    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
+    regime_threshold_multipliers:
+      HIGH_VOLATILITY: 0.2
+      LOW_VOLATILITY: 0.12
+      MEAN_REVERSION: 0.16
+      TREND_UP: 0.14
+      TREND_DOWN: 0.14
+      UNCERTAIN: 0.18
+      DEFAULT: 0.16
+    regime_smoothing:
+      enabled: false
+      method: ema
+      ema_alpha: 0.3
+      ramp_bars: 6
+    blocked_regimes: null
+    symbols_to_track:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - DOGEUSDT
+    - XRPUSDT
+    - BNBUSDT
+    neutral_threshold: 0.05
+    scoring_version: quadratic
     feature_neutrals:
       obi: 0.0
       tfi: 0.0
@@ -394,418 +280,90 @@ aurora:
       depth_imbalance: 0.5
       macro_sync: 0.5
       macro_resid: 0.0
-      absorption: 0.0    # R2: SIGNED feature, neutral is 0.0
-
-    # DEPRECATED (Phase 9): signal_weights was used by v2 linear scoring.
-    # Not consumed by QuadraticScoringKernel. Retained for config schema backward-compatibility.
-    signal_weights:
-      obi: 0.42
-      tfi: 0.15
-      delta_price: 0.15
-      ema_bias: 0.15
-      volume_spike: 0.10
-      volatility_state: 0.10
-      # depth_imbalance: phi in [0,1], higher = ASK dominance (sell pressure) -> negative weight
-      depth_imbalance: -0.15
-      # R1: macro_resid replaces macro_sync in directional scoring
-      macro_resid: 0.10
-      # macro_sync: 0.0  # DEPRECATED for scoring (kept as telemetry)
-      # R2: absorption starts at 0.05 (conservative). Calibrate in Phase 2.
       absorption: 0.0
-
-  # Per-symbol overrides (AuroraInstrumentConfig)
+    essential_features:
+    - obi
+    - delta_price
+    - macro_resid
+    liquidity_gate:
+      enabled: true
+      kappa_min: 0.1
+      kappa_max: 1.0
+      failsafe_qty_check: true
+    anchor_shock_veto:
+      enabled: true
+      anchor_symbol: BTCUSDT
+      threshold: -2.0
+    score_multiplier: 1.0
+    decision_geometry:
+      admission_mode: linear
+      admission_power: null
+      sizing_mode: quadratic
+      sizing_power: null
+      admission_shield_floor: 0.75
+    scoring_engine:
+      exposure_cap: 1.0
+      min_pillar_confidence: 0.0
+      shield_enabled: true
+      context_shield:
+        enabled: true
+        regime_multipliers:
+          TREND_UP: 1.0
+          TREND_DOWN: 1.0
+          MEAN_REVERSION: 0.75
+          LOW_VOLATILITY: 0.85
+          HIGH_VOLATILITY: 0.3
+          UNCERTAIN: 0.55
+        default_multiplier: 0.8
+        no_regime_multiplier: 0.5
+        ttl_ms: 14400000
+        stale_mult_normal: 0.7
+        stale_mult_danger: 0.35
+        danger_regimes:
+        - HIGH_VOLATILITY
+      memory_shield:
+        enabled: true
+        decay_rate: 0.95
+        max_states: 200
+        unknown_threshold: 10
+        exploring_threshold: 50
+        unknown_multiplier: 0.6
+        exploring_multiplier: 0.8
+        known_multiplier: 1.0
+        storage_path: null
+        flush_interval_sec: 60.0
+      danger_zone_shield:
+        enabled: true
+        vol_threshold: 0.98
+        spread_threshold: 50.0
+        motion_threshold: 3.0
+    quadratic_rollout: null
+    holding_period:
+      enabled: true
+      min_duration_sec: 900.0
+      emergency_exit_threshold: 0.9
+      apply_to_flips: true
+    reentry_cooldown_sec: 900
+    gates:
+      enabled: true
+      anti_flat_sigma: 0.48
+      anti_fomo_sigma: 10.0
+      motion_window_sec: 300
+    entry_plan: null
+    money_management: null
+    execution: null
+    exit:
+      time_exit_enabled: false
+      max_hold_time_sec: 86400
+      signal_exit_enabled: true
+      signal_reversal_threshold: -0.1
+      danger_zone_action: TIGHTEN_STOPS
+      danger_zone_tighten_factor: 0.5
+    operational_mode: paranoid
+    dashboard: null
   assets:
-    # ETHUSDT - Phase 3+ tuned parameters
-    # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
     ETHUSDT:
       enabled: true
-      position_mode: "STRICT"
-
-      # P1: Active Leverage Management
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      # Holding period: P1.5 mirror BTC
-      holding_period:
-        enabled: true
-        min_duration_sec: 20              # P1.5: was 360 (mirror BTC)
-        emergency_exit_threshold: 0.7     # P1.5: was 0.68 (mirror BTC)
-        apply_to_flips: true              # P1.5: added (mirror BTC)
-
-      # Re-entry cooldown: P1.5 mirror BTC
-      reentry_cooldown_sec: 300           # P1.5: was 120 (mirror BTC)
-
-      # P1.5: weights mirrored from BTC
-      weights:
-        ema_bias: -0.119873              # P1.5: was 0.20
-        volume_spike: 0.243661           # P1.5: was 0.20
-        macro_resid: -0.0689669          # P1.5: was 0.25
-        obi: 0.101274                    # P1.5: was 0.15
-        tfi: 0.134215                    # P1.5: was 0.093
-        volatility_state: 0.00633937     # P1.5: was 0.036
-        depth_imbalance: -0.0894987      # P1.5: was -0.256
-        delta_price: 0.181047            # P1.5: was 0.10
-        absorption: 0.0551244            # P1.5: was 0.0
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.1                   # P1.5: was 0.2 (mirror BTC)
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
-      side_bias:
-        penalty_factor: 0.5              # P1.5: was 0.9 (mirror BTC)
-        window_sec: 600
-        target_ratio: 0.60
-
-      # 2026-04-23: ETH runtime narrowed to TREND_UP only; non-TREND_UP
-      # entries remain commented for operator visibility.
-      regime_thresholds:
-        # HIGH_VOLATILITY: 1.016497      # Calibrated: was 0.18
-        # LOW_VOLATILITY: 0.860672       # Calibrated: was 0.12
-        TREND_UP: 0.603259               # Calibrated: was 0.1
-        # TREND_DOWN: 2.672487           # Calibrated: was 0.1
-        # MEAN_REVERSION: 0.831195       # Calibrated: was 0.07
-        # UNCERTAIN: 0.756778            # Calibrated: was 99.0
-        DEFAULT: 1.0                     # Calibrated: was 99.0
-
-      regime_sizing:
-        # HIGH_VOLATILITY: 0.7
-        # LOW_VOLATILITY: 0.7            # P1.5: was 0.8
-        TREND_UP: 1.3                    # P1.5: added (mirror BTC)
-        # TREND_DOWN: 1.3                # P1.5: added (mirror BTC)
-        # MEAN_REVERSION: 0.7            # P1.5: was 0.8
-
-      exit:
-        sl_pct: 0.004                    # 40 bps SL for TREND_UP-only ETH runtime
-        max_hold_sec: null
-        regime_tpsl:
-          enabled: true
-          mode: "pct_mult"
-          sl_mult:
-            # LOW_VOLATILITY: 1.49       # balanced SL recalibration
-            # HIGH_VOLATILITY: 1.93      # balanced SL recalibration
-            TREND_UP: 1.0                # P1.5: was 1.05
-            # TREND_DOWN: 1.0           # P1.5: was 1.05
-            DEFAULT: 1.84
-          tp_mult:
-            # LOW_VOLATILITY: 0.50       # min_tp_rr floor; lower values clamp to 0.50
-            # HIGH_VOLATILITY: 0.53
-            TREND_UP: 2.25               # 40 bps SL x 2.25 = 90 bps TP
-            # TREND_DOWN: 3.5           # P1.5: was 1.20 (mirror BTC)
-            DEFAULT: 0.50
-          # Guardrails mirrored from BTC
-          min_sl_pct: 0.003              # P1.5: was 0.0008
-          max_sl_pct: 0.06              # P1.5: was 0.015
-          min_tp_rr: 0.5               # P1.5: was 0.3
-          max_tp_rr: 5.0               # P1.5: was 3.5
-          min_dist_bps: 15              # P1.5: was 5
-
-      # P1.5: take_profit mirrored from BTC
-      take_profit:
-        tp_low_ratio: 1.0               # P1.5: was 0.4
-        tp_high_ratio: 1.65
-        partial_exit_pct: 0.5           # P1.5: was 0.7
-
-      # P1.5: trailing_stop mirrored from BTC
-      trailing_stop:
-        enabled: false
-        activation_pct: 0.02            # P1.5: was 0.003
-        trail_pct: 0.01                 # P1.5: was 0.006
-        min_update_interval_sec: 5
-
-      allowed_regimes:
-        - "TREND_UP"
-        # - "TREND_DOWN"
-        # - "MEAN_REVERSION"
-        # - "HIGH_VOLATILITY"
-      signal_threshold:
-        enabled: true
-        value: 0.001004                  # Calibrated 2026-04-14: was 0.162 (GO_CANDIDATE, fwd3=+0.04bps, val3=+3.91bps)
-      cooldown_sec: null
-
-      volatility_entry_logic:
-        enabled: true
-        regime_multipliers:
-          # HIGH_VOLATILITY: 0.15        # P1.5: was 0.32
-          # LOW_VOLATILITY: 0.08         # P1.5: was 0.17
-          TREND_UP: 0.10                 # P1.5: was 0.22
-          # TREND_DOWN: 0.10             # P1.5: was 0.22
-          # MEAN_REVERSION: 0.12         # P1.5: was 0.25
-          # UNCERTAIN: 0.13              # P1.5: was 0.25
-          DEFAULT: 0.12                  # P1.5: was 0.22
-
-      timeframe_sec: null
-
-    # SOLUSDT - Phase 3 tuned parameters
-    SOLUSDT:
-      # Holding period: SOL
-      holding_period:
-        min_duration_sec: 1800
-        emergency_exit_threshold: 0.90
-
-      # P1: Active Leverage Management
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      # Re-entry cooldown: conservative for ALT
-      reentry_cooldown_sec: 900
-
-      # Adjusted weights: Liquidity moved to Gate
-      weights:
-        ema_bias: -0.176429
-        volume_spike: 0.238007
-        # R1: macro_resid replaces macro_sync
-        macro_resid: -0.0492056
-        # macro_sync: 0.0  # DEPRECATED (telemetry only)
-        # liquidity_kappa: 0.25 (Moved to Gate)
-        obi: 0.135947
-        tfi: 0.263238
-        volatility_state: 0.0119935
-        depth_imbalance: 0.0148722
-        delta_price: 0.294059
-        absorption: 0.0562502 # R2: placeholder, calibrate in Phase 2
-      enabled: true
-      position_mode: "STRICT"
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.15
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
-      side_bias:
-        penalty_factor: 0.0
-        window_sec: 300
-        target_ratio: 0.5
-
-      regime_thresholds:
-        HIGH_VOLATILITY: 1.15    # SOL
-        LOW_VOLATILITY: 0.75
-        MEAN_REVERSION: 1.00
-        UNCERTAIN: 99.0
-        DEFAULT: 99.0
-
-      regime_sizing:
-        HIGH_VOLATILITY: 0.7
-        LOW_VOLATILITY: 0.9
-        MEAN_REVERSION: 1.0
-
-      exit:
-        sl_pct: 0.00675
-        max_hold_sec: null
-        regime_tpsl:
-          enabled: true
-          mode: "pct_mult"
-          # SOL
-          sl_mult:
-            DEFAULT: 1.0
-            FLAT_LOW: 0.60        # Tight SL  flat
-            LOW_VOLATILITY: 1.10
-            FLAT_NORMAL: 0.75
-            MEAN_REVERSION: 1.35
-            TREND_UP: 1.15        # Wide SL
-            TREND_DOWN: 1.15
-            HIGH_VOLATILITY: 1.30 #  SL  SOL ( )
-            UNCERTAIN: 1.35
-          tp_mult:
-            DEFAULT: 1.0
-            FLAT_LOW: 0.65
-            LOW_VOLATILITY: 1.35
-            FLAT_NORMAL: 0.80
-            MEAN_REVERSION: 0.97
-            TREND_UP: 1.30        # Higher TP for trends
-            TREND_DOWN: 1.30
-            HIGH_VOLATILITY: 1.53
-            UNCERTAIN: 1.36
-          min_sl_pct: 0.0025      # 0.25% -   SL
-          max_sl_pct: 0.020       # 2.0% max (  )
-          min_tp_rr: 0.25         #   RR  SOL ( )
-          max_tp_rr: 3.5          #     SOL
-          min_dist_bps: 14        # P0.5: lowered from 18 to accommodate tighter LOW_VOL TP (15.1 bps)
-
-      take_profit:
-        tp_low_ratio: 0.36
-        tp_high_ratio: 0.60
-        partial_exit_pct: 0.31
-
-      allowed_regimes: ["TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # 2026-04-22: TREND_UP removed from trading allowlist; P1.5 already removed LOW_VOLATILITY
-
-      trailing_stop:
-        enabled: true
-        activation_pct: 0.046
-        trail_pct: 0.018
-        min_update_interval_sec: 5
-
-      signal_threshold:
-        enabled: false                   # Disabled 2026-04-14: SOL no edge on calibration (NO_GO, fwd3=-2.15bps)
-        value: 0.0232
-      cooldown_sec: null
-
-      # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
-      volatility_entry_logic:
-        enabled: true
-        regime_multipliers:
-          HIGH_VOLATILITY: 0.37   # Deep offset (wider range)
-          LOW_VOLATILITY: 0.16    # Tight offset
-          MEAN_REVERSION: 0.28
-          TREND_UP: 0.24
-          TREND_DOWN: 0.24
-          UNCERTAIN: 0.27
-          DEFAULT: 0.24           # REQUIRED fallback
-
-      timeframe_sec: null
-
-    # =========================================================================
-    # P2-2: DOGE/XRP REMOVED - MR-only symbols per strategies.yaml registry
-    # =========================================================================
-    # DOGEUSDT and XRPUSDT are assigned to mean_reversion ONLY in strategies.yaml.
-    # Keeping them in aurora.assets was a source of confusion.
-    # Registry SSOT (strategies_registry.assignments) now controls activation.
-    # See: dm_strategy_ssot_implement_01.md, P1-1 fix.
-    # =========================================================================
-
-    # BTCUSDT - Golden Run Configuration (CLEAN SLATE RESTORE)
-    BTCUSDT:
-      enabled: true
-      position_mode: "STRICT"
-
-      # 1. Leverage & Sizing
-      leverage:
-        target: 35
-        mode: "ISOLATED"
-      side_bias:
-        penalty_factor: 0.5
-        window_sec: 600
-        target_ratio: 0.60
-
-      # 2. Weights (Standard)
-      weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
-        volatility_state: 0.00633937
-        depth_imbalance: -0.0894987
-        delta_price: 0.181047
-        absorption: 0.0551244 # R2: placeholder, calibrate in Phase 2
-
-      # 3. Safety Gates
-      holding_period:
-        enabled: true
-        min_duration_sec: 20
-        emergency_exit_threshold: 0.7
-        apply_to_flips: true
-      reentry_cooldown_sec: 300
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.1
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
-      # 4. Regime Filters (The Logic)
-      # Calibrated 2026-04-14: candidate overlay applied (pillar weights 0.65/0.30/0.05, fwd3=+1.73bps)
-      regime_thresholds:
-        HIGH_VOLATILITY: 0.351595        # Calibrated: was 0.18
-        LOW_VOLATILITY: 0.894536         # Calibrated: was 0.12
-        TREND_UP: 0.544187               # Calibrated: was 0.1
-        TREND_DOWN: 2.280437             # Calibrated: was 0.1
-        MEAN_REVERSION: 0.965366         # Calibrated: was 0.07
-        UNCERTAIN: 0.724744              # Calibrated: was 99.0
-        DEFAULT: 1.0                     # Calibrated: was 99.0
-
-      # 5. Position Sizing per Regime
-      regime_sizing:
-        HIGH_VOLATILITY: 0.7   # patched4a: attenuate 0.500.20 (R4_CUM: 86% SL rate, n=42, 103 USDT)
-        LOW_VOLATILITY: 0.7    # patched4a: attenuate 0.750.25 (R4_CUM: 65% SL rate, n=54, 159 USDT)
-        TREND_UP: 1.3
-        TREND_DOWN: 1.3
-        MEAN_REVERSION: 0.7  # Redundant safety
-
-      # 6. Exits (The Profit Engine)
-      exit:
-        sl_pct: 0.005  # Base 0.5%
-        max_hold_sec: null
-
-        regime_tpsl:
-          enabled: true
-          mode: "pct_mult"
-          sl_mult:
-            LOW_VOLATILITY: 1.27
-            HIGH_VOLATILITY: 1.65
-            TREND_UP: 1.0
-            TREND_DOWN: 1.0
-            DEFAULT: 1.64
-          tp_mult:
-            LOW_VOLATILITY: 0.50
-            HIGH_VOLATILITY: 0.53
-            TREND_UP: 1.9
-            TREND_DOWN: 1.9
-            DEFAULT: 0.50
-          # Guardrails
-          min_sl_pct: 0.003
-          max_sl_pct: 0.06
-          min_tp_rr: 0.5
-          max_tp_rr: 5.0
-          min_dist_bps: 15
-
-      take_profit:
-        tp_low_ratio: 1.0
-        tp_high_ratio: 1.65
-        partial_exit_pct: 0.5
-
-      trailing_stop:
-        enabled: false
-        activation_pct: 0.02
-        trail_pct: 0.01
-        min_update_interval_sec: 5
-
-      allowed_regimes: ["TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]  # 2026-04-22: TREND_UP removed from trading allowlist; P1.5 already removed LOW_VOLATILITY
-      signal_threshold:
-        enabled: true
-        value: 0.000610                  # Calibrated 2026-04-14: was 0.162 (fwd3=+1.73bps, val failed -5.48bps)
-      cooldown_sec: null
-
-      # 7. Entry Logic (Smart Pullback)
-      # High Vol: Deep pullback (0.5). Low Vol: Moderate (0.2).
-      volatility_entry_logic:
-        enabled: true
-        regime_multipliers:
-          HIGH_VOLATILITY: 0.15
-          LOW_VOLATILITY: 0.08
-          TREND_UP: 0.10
-          TREND_DOWN: 0.10
-          MEAN_REVERSION: 0.12
-          UNCERTAIN: 0.13
-          DEFAULT: 0.12
-
-      timeframe_sec: null
-
-    # =========================================================================
-    # BNBUSDT — calibrated 2026-04-14 from BTC/ETH baseline
-    # Prev: SOL-clone placeholder with legacy regime multipliers (1.35/0.80/1.10)
-    # Fix: absolute regime thresholds aligned with quadratic scoring range
-    # =========================================================================
-    BNBUSDT:
-      enabled: true
-      position_mode: "STRICT"
-
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      holding_period:
-        enabled: true
-        min_duration_sec: 20
-        emergency_exit_threshold: 0.7
-        apply_to_flips: true
-
-      reentry_cooldown_sec: 300
-
-      # Calibrated: BTC-aligned weights (recorder data Mar-Apr 2026)
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661
@@ -816,20 +374,309 @@ aurora:
         depth_imbalance: -0.0894987
         delta_price: 0.181047
         absorption: 0.0551244
-
+      side_bias:
+        penalty_factor: 0.5
+        window_sec: 600
+        target_ratio: 0.6
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
+      regime_thresholds:
+        TREND_UP: 0.603259
+        DEFAULT: 1.0
+      regime_sizing:
+        TREND_UP: 1.3
+      exit:
+        sl_pct: 0.004
+        max_hold_sec: null
+        regime_tpsl:
+          enabled: true
+          mode: pct_mult
+          sl_mult:
+            TREND_UP: 1.0
+            DEFAULT: 1.84
+          tp_mult:
+            TREND_UP: 2.25
+            DEFAULT: 0.5
+          sl_k_atr: null
+          rr_by_regime: null
+          min_sl_pct: 0.003
+          max_sl_pct: 0.06
+          min_tp_rr: 0.5
+          max_tp_rr: 5.0
+          min_dist_bps: 15
+      take_profit:
+        tp_low_ratio: 1.0
+        tp_high_ratio: 1.65
+        partial_exit_pct: 0.5
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.02
+        trail_pct: 0.01
+        trail_atr_mult: null
+        min_update_interval_sec: 5
+      signal_threshold:
+        enabled: true
+        value: 0.001004
+      cooldown_sec: null
+      allowed_regimes:
+      - TREND_UP
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
       liquidity_gate:
         enabled: true
         kappa_min: 0.1
         kappa_max: 1.0
         failsafe_qty_check: true
-
+      holding_period:
+        enabled: true
+        min_duration_sec: 20.0
+        emergency_exit_threshold: 0.7
+        apply_to_flips: true
+      reentry_cooldown_sec: 300
+      timeframe_sec: null
+      volatility_entry_logic:
+        enabled: true
+        regime_multipliers:
+          TREND_UP: 0.1
+          DEFAULT: 0.12
+      max_risk_score: null
+    SOLUSDT:
+      enabled: true
+      weights:
+        ema_bias: -0.176429
+        volume_spike: 0.238007
+        macro_resid: -0.0492056
+        obi: 0.135947
+        tfi: 0.263238
+        volatility_state: 0.0119935
+        depth_imbalance: 0.0148722
+        delta_price: 0.294059
+        absorption: 0.0562502
+      side_bias:
+        penalty_factor: 0.0
+        window_sec: 300
+        target_ratio: 0.5
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.15
+        LOW_VOLATILITY: 0.75
+        MEAN_REVERSION: 1.0
+        UNCERTAIN: 99.0
+        DEFAULT: 99.0
+      regime_sizing:
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.9
+        MEAN_REVERSION: 1.0
+      exit:
+        sl_pct: 0.00675
+        max_hold_sec: null
+        regime_tpsl:
+          enabled: true
+          mode: pct_mult
+          sl_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.6
+            LOW_VOLATILITY: 1.1
+            FLAT_NORMAL: 0.75
+            MEAN_REVERSION: 1.35
+            TREND_UP: 1.15
+            TREND_DOWN: 1.15
+            HIGH_VOLATILITY: 1.3
+            UNCERTAIN: 1.35
+          tp_mult:
+            DEFAULT: 1.0
+            FLAT_LOW: 0.65
+            LOW_VOLATILITY: 1.35
+            FLAT_NORMAL: 0.8
+            MEAN_REVERSION: 0.97
+            TREND_UP: 1.3
+            TREND_DOWN: 1.3
+            HIGH_VOLATILITY: 1.53
+            UNCERTAIN: 1.36
+          sl_k_atr: null
+          rr_by_regime: null
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.02
+          min_tp_rr: 0.25
+          max_tp_rr: 3.5
+          min_dist_bps: 14
+      take_profit:
+        tp_low_ratio: 0.36
+        tp_high_ratio: 0.6
+        partial_exit_pct: 0.31
+      trailing_stop:
+        enabled: true
+        activation_pct: 0.046
+        trail_pct: 0.018
+        trail_atr_mult: null
+        min_update_interval_sec: 5
+      signal_threshold:
+        enabled: false
+        value: 0.0232
+      cooldown_sec: null
+      allowed_regimes:
+      - TREND_DOWN
+      - MEAN_REVERSION
+      - HIGH_VOLATILITY
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.15
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: false
+        min_duration_sec: 1800.0
+        emergency_exit_threshold: 0.9
+        apply_to_flips: true
+      reentry_cooldown_sec: 900
+      timeframe_sec: null
+      volatility_entry_logic:
+        enabled: true
+        regime_multipliers:
+          HIGH_VOLATILITY: 0.37
+          LOW_VOLATILITY: 0.16
+          MEAN_REVERSION: 0.28
+          TREND_UP: 0.24
+          TREND_DOWN: 0.24
+          UNCERTAIN: 0.27
+          DEFAULT: 0.24
+      max_risk_score: null
+    BTCUSDT:
+      enabled: true
+      weights:
+        ema_bias: -0.119873
+        volume_spike: 0.243661
+        macro_resid: -0.0689669
+        obi: 0.101274
+        tfi: 0.134215
+        volatility_state: 0.00633937
+        depth_imbalance: -0.0894987
+        delta_price: 0.181047
+        absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
         window_sec: 600
-        target_ratio: 0.60
-
-      # Calibrated: absolute thresholds aligned with quadratic scoring
-      # Prev: multipliers 1.35/0.80/1.10/1.0 — blocked all entries
+        target_ratio: 0.6
+      position_mode: STRICT
+      leverage:
+        target: 35
+        mode: ISOLATED
+        max_notional_value: null
+      regime_thresholds:
+        HIGH_VOLATILITY: 0.351595
+        LOW_VOLATILITY: 0.894536
+        TREND_UP: 0.544187
+        TREND_DOWN: 2.280437
+        MEAN_REVERSION: 0.965366
+        UNCERTAIN: 0.724744
+        DEFAULT: 1.0
+      regime_sizing:
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.7
+        TREND_UP: 1.3
+        TREND_DOWN: 1.3
+        MEAN_REVERSION: 0.7
+      exit:
+        sl_pct: 0.005
+        max_hold_sec: null
+        regime_tpsl:
+          enabled: true
+          mode: pct_mult
+          sl_mult:
+            LOW_VOLATILITY: 1.27
+            HIGH_VOLATILITY: 1.65
+            TREND_UP: 1.0
+            TREND_DOWN: 1.0
+            DEFAULT: 1.64
+          tp_mult:
+            LOW_VOLATILITY: 0.5
+            HIGH_VOLATILITY: 0.53
+            TREND_UP: 1.9
+            TREND_DOWN: 1.9
+            DEFAULT: 0.5
+          sl_k_atr: null
+          rr_by_regime: null
+          min_sl_pct: 0.003
+          max_sl_pct: 0.06
+          min_tp_rr: 0.5
+          max_tp_rr: 5.0
+          min_dist_bps: 15
+      take_profit:
+        tp_low_ratio: 1.0
+        tp_high_ratio: 1.65
+        partial_exit_pct: 0.5
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.02
+        trail_pct: 0.01
+        trail_atr_mult: null
+        min_update_interval_sec: 5
+      signal_threshold:
+        enabled: true
+        value: 0.00061
+      cooldown_sec: null
+      allowed_regimes:
+      - TREND_DOWN
+      - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: true
+        min_duration_sec: 20.0
+        emergency_exit_threshold: 0.7
+        apply_to_flips: true
+      reentry_cooldown_sec: 300
+      timeframe_sec: null
+      volatility_entry_logic:
+        enabled: true
+        regime_multipliers:
+          HIGH_VOLATILITY: 0.15
+          LOW_VOLATILITY: 0.08
+          TREND_UP: 0.1
+          TREND_DOWN: 0.1
+          MEAN_REVERSION: 0.12
+          UNCERTAIN: 0.13
+          DEFAULT: 0.12
+      max_risk_score: null
+    BNBUSDT:
+      enabled: true
+      weights:
+        ema_bias: -0.119873
+        volume_spike: 0.243661
+        macro_resid: -0.0689669
+        obi: 0.101274
+        tfi: 0.134215
+        volatility_state: 0.00633937
+        depth_imbalance: -0.0894987
+        delta_price: 0.181047
+        absorption: 0.0551244
+      side_bias:
+        penalty_factor: 0.5
+        window_sec: 600
+        target_ratio: 0.6
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18
         LOW_VOLATILITY: 0.12
@@ -838,20 +685,18 @@ aurora:
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
         DEFAULT: 99.0
-
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
         TREND_UP: 1.3
         TREND_DOWN: 1.3
         MEAN_REVERSION: 0.7
-
       exit:
         sl_pct: 0.005
         max_hold_sec: null
         regime_tpsl:
           enabled: true
-          mode: "pct_mult"
+          mode: pct_mult
           sl_mult:
             LOW_VOLATILITY: 1.27
             HIGH_VOLATILITY: 1.65
@@ -859,150 +704,161 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.50
+            LOW_VOLATILITY: 0.5
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.50
+            DEFAULT: 0.5
+          sl_k_atr: null
+          rr_by_regime: null
           min_sl_pct: 0.003
           max_sl_pct: 0.06
           min_tp_rr: 0.5
           max_tp_rr: 5.0
           min_dist_bps: 15
-
       take_profit:
         tp_low_ratio: 1.0
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
-
       trailing_stop:
         enabled: false
         activation_pct: 0.02
         trail_pct: 0.01
+        trail_atr_mult: null
         min_update_interval_sec: 5
-
-      # 2026-04-22: TREND_UP removed from allowed_regimes; keep TREND_DOWN + MR + HIGH_VOL only.
-      allowed_regimes: ["TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]
-
       signal_threshold:
         enabled: true
         value: 0.162
       cooldown_sec: null
-
+      allowed_regimes:
+      - TREND_DOWN
+      - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: true
+        min_duration_sec: 20.0
+        emergency_exit_threshold: 0.7
+        apply_to_flips: true
+      reentry_cooldown_sec: 300
+      timeframe_sec: null
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
           HIGH_VOLATILITY: 0.15
           LOW_VOLATILITY: 0.08
-          TREND_UP: 0.10
-          TREND_DOWN: 0.10
+          TREND_UP: 0.1
+          TREND_DOWN: 0.1
           MEAN_REVERSION: 0.12
           UNCERTAIN: 0.13
           DEFAULT: 0.12
-
-      timeframe_sec: null
-
-    # =========================================================================
-    # 1000PEPEUSDT  based on SOLUSDT aurora config (meme token, high volatility)
-    # =========================================================================
+      max_risk_score: null
     1000PEPEUSDT:
-      enabled: false  # patched4a: BLOCK  Sep closed: 662 USDT, ev/t=4.27; sim artifact (2.1B-unit position)
-      position_mode: "STRICT"
-
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      holding_period:
-        min_duration_sec: 35
-        emergency_exit_threshold: 0.65
-
-      reentry_cooldown_sec: 120
-
+      enabled: false
       weights:
-        ema_bias: 0.20
-        volume_spike: 0.20
+        ema_bias: 0.2
+        volume_spike: 0.2
         macro_resid: 0.25
         obi: 0.25
         tfi: 0.09
         volatility_state: 0.05
-        depth_imbalance: -0.20
-        delta_price: 0.10
-        absorption: 0.0    # R2: placeholder, calibrate in Phase 2
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.15
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
+        depth_imbalance: -0.2
+        delta_price: 0.1
+        absorption: 0.0
       side_bias:
         penalty_factor: 0.0
         window_sec: 300
         target_ratio: 0.5
-
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 1.35
-        LOW_VOLATILITY: 0.80
-        MEAN_REVERSION: 1.10
+        LOW_VOLATILITY: 0.8
+        MEAN_REVERSION: 1.1
         UNCERTAIN: 99.0
         DEFAULT: 99.0
-
       regime_sizing:
         HIGH_VOLATILITY: 0.5
         LOW_VOLATILITY: 1.0
         MEAN_REVERSION: 0.75
-
       exit:
         sl_pct: 0.01512
         max_hold_sec: 3000
         regime_tpsl:
           enabled: true
-          mode: "pct_mult"
+          mode: pct_mult
           sl_mult:
             DEFAULT: 1.0
-            FLAT_LOW: 0.60
+            FLAT_LOW: 0.6
             LOW_VOLATILITY: 0.65
             FLAT_NORMAL: 0.75
             MEAN_REVERSION: 0.85
             TREND_UP: 1.15
             TREND_DOWN: 1.15
-            HIGH_VOLATILITY: 1.50
-            UNCERTAIN: 1.00
+            HIGH_VOLATILITY: 1.5
+            UNCERTAIN: 1.0
           tp_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.65
-            LOW_VOLATILITY: 0.70
-            FLAT_NORMAL: 0.80
+            LOW_VOLATILITY: 0.7
+            FLAT_NORMAL: 0.8
             MEAN_REVERSION: 0.75
-            TREND_UP: 1.30
-            TREND_DOWN: 1.30
-            HIGH_VOLATILITY: 1.10
-            UNCERTAIN: 1.00
+            TREND_UP: 1.3
+            TREND_DOWN: 1.3
+            HIGH_VOLATILITY: 1.1
+            UNCERTAIN: 1.0
+          sl_k_atr: null
+          rr_by_regime: null
           min_sl_pct: 0.0025
-          max_sl_pct: 0.020
+          max_sl_pct: 0.02
           min_tp_rr: 0.25
           max_tp_rr: 1.2
           min_dist_bps: 18
-
       take_profit:
         tp_low_ratio: 0.36
-        tp_high_ratio: 0.60
+        tp_high_ratio: 0.6
         partial_exit_pct: 0.31
-
       trailing_stop:
         enabled: true
         activation_pct: 0.046
         trail_pct: 0.018
+        trail_atr_mult: null
         min_update_interval_sec: 5
-
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION", "TREND_UP"]  # disabled here; regime list kept non-empty to satisfy strict allowlist contract
-
       signal_threshold:
         enabled: true
         value: 0.008
       cooldown_sec: null
-
+      allowed_regimes:
+      - TREND_DOWN
+      - LOW_VOLATILITY
+      - FLAT_NORMAL
+      - MEAN_REVERSION
+      - TREND_UP
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.15
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: false
+        min_duration_sec: 35.0
+        emergency_exit_threshold: 0.65
+        apply_to_flips: true
+      reentry_cooldown_sec: 120
+      timeframe_sec: null
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
@@ -1013,31 +869,9 @@ aurora:
           TREND_DOWN: 0.2
           UNCERTAIN: 0.25
           DEFAULT: 0.2
-
-      timeframe_sec: null
-
-    # =========================================================================
-    # DOGEUSDT — calibrated 2026-04-14 from BTC/ETH baseline
-    # Prev: SOL-clone placeholder with legacy regime multipliers
-    # Fix: absolute regime thresholds, BTC-aligned weights, wider allowed_regimes
-    # =========================================================================
+      max_risk_score: null
     DOGEUSDT:
       enabled: true
-      position_mode: "STRICT"
-
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      holding_period:
-        enabled: true
-        min_duration_sec: 20
-        emergency_exit_threshold: 0.7
-        apply_to_flips: true
-
-      reentry_cooldown_sec: 300
-
-      # Calibrated: BTC-aligned weights (recorder data Mar-Apr 2026)
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661
@@ -1048,20 +882,15 @@ aurora:
         depth_imbalance: -0.0894987
         delta_price: 0.181047
         absorption: 0.0551244
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.1
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
       side_bias:
         penalty_factor: 0.5
         window_sec: 600
-        target_ratio: 0.60
-
-      # Calibrated: absolute thresholds aligned with quadratic scoring
-      # Prev: multipliers 1.35/0.80/1.10/1.0 — blocked all entries (0 active bars)
+        target_ratio: 0.6
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18
         LOW_VOLATILITY: 0.12
@@ -1070,20 +899,18 @@ aurora:
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
         DEFAULT: 99.0
-
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
         TREND_UP: 1.3
         TREND_DOWN: 1.3
         MEAN_REVERSION: 0.7
-
       exit:
         sl_pct: 0.005
         max_hold_sec: null
         regime_tpsl:
           enabled: true
-          mode: "pct_mult"
+          mode: pct_mult
           sl_mult:
             LOW_VOLATILITY: 1.27
             HIGH_VOLATILITY: 1.65
@@ -1091,71 +918,64 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.50
+            LOW_VOLATILITY: 0.5
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.50
+            DEFAULT: 0.5
+          sl_k_atr: null
+          rr_by_regime: null
           min_sl_pct: 0.003
           max_sl_pct: 0.06
           min_tp_rr: 0.5
           max_tp_rr: 5.0
           min_dist_bps: 15
-
       take_profit:
         tp_low_ratio: 1.0
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
-
       trailing_stop:
         enabled: false
         activation_pct: 0.02
         trail_pct: 0.01
+        trail_atr_mult: null
         min_update_interval_sec: 5
-
-      # 2026-04-22: TREND_UP removed from allowed_regimes; keep TREND_DOWN + MR + HIGH_VOL only.
-      allowed_regimes: ["TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]
-
       signal_threshold:
         enabled: true
         value: 0.162
       cooldown_sec: null
-
+      allowed_regimes:
+      - TREND_DOWN
+      - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: true
+        min_duration_sec: 20.0
+        emergency_exit_threshold: 0.7
+        apply_to_flips: true
+      reentry_cooldown_sec: 300
+      timeframe_sec: null
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
           HIGH_VOLATILITY: 0.15
           LOW_VOLATILITY: 0.08
-          TREND_UP: 0.10
-          TREND_DOWN: 0.10
+          TREND_UP: 0.1
+          TREND_DOWN: 0.1
           MEAN_REVERSION: 0.12
           UNCERTAIN: 0.13
           DEFAULT: 0.12
-
-      timeframe_sec: null
-
-    # =========================================================================
-    # XRPUSDT — calibrated 2026-04-14 from BTC/ETH baseline
-    # Prev: SOL-clone placeholder with legacy regime multipliers
-    # Fix: absolute regime thresholds, BTC-aligned weights, wider allowed_regimes
-    # =========================================================================
+      max_risk_score: null
     XRPUSDT:
       enabled: true
-      position_mode: "STRICT"
-
-      leverage:
-        target: 20
-        mode: "ISOLATED"
-
-      holding_period:
-        enabled: true
-        min_duration_sec: 20
-        emergency_exit_threshold: 0.7
-        apply_to_flips: true
-
-      reentry_cooldown_sec: 300
-
-      # Calibrated: BTC-aligned weights (recorder data Mar-Apr 2026)
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661
@@ -1166,20 +986,15 @@ aurora:
         depth_imbalance: -0.0894987
         delta_price: 0.181047
         absorption: 0.0551244
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.1
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
       side_bias:
         penalty_factor: 0.5
         window_sec: 600
-        target_ratio: 0.60
-
-      # Calibrated: absolute thresholds aligned with quadratic scoring
-      # Prev: multipliers 1.35/0.80/1.10/1.0 — blocked all entries (0 active bars)
+        target_ratio: 0.6
+      position_mode: STRICT
+      leverage:
+        target: 20
+        mode: ISOLATED
+        max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18
         LOW_VOLATILITY: 0.12
@@ -1188,20 +1003,18 @@ aurora:
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
         DEFAULT: 99.0
-
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
         TREND_UP: 1.3
         TREND_DOWN: 1.3
         MEAN_REVERSION: 0.7
-
       exit:
         sl_pct: 0.005
         max_hold_sec: null
         regime_tpsl:
           enabled: true
-          mode: "pct_mult"
+          mode: pct_mult
           sl_mult:
             LOW_VOLATILITY: 1.27
             HIGH_VOLATILITY: 1.65
@@ -1209,45 +1022,59 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.50
+            LOW_VOLATILITY: 0.5
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.50
+            DEFAULT: 0.5
+          sl_k_atr: null
+          rr_by_regime: null
           min_sl_pct: 0.003
           max_sl_pct: 0.06
           min_tp_rr: 0.5
           max_tp_rr: 5.0
           min_dist_bps: 15
-
       take_profit:
         tp_low_ratio: 1.0
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
-
       trailing_stop:
         enabled: false
         activation_pct: 0.02
         trail_pct: 0.01
+        trail_atr_mult: null
         min_update_interval_sec: 5
-
-      # 2026-04-22: TREND_UP removed from allowed_regimes; keep TREND_DOWN + MR + HIGH_VOL only.
-      allowed_regimes: ["TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]
-
       signal_threshold:
         enabled: true
         value: 0.162
       cooldown_sec: null
-
+      allowed_regimes:
+      - TREND_DOWN
+      - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      scoring_version: null
+      feature_neutrals: null
+      essential_features: null
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
+      holding_period:
+        enabled: true
+        min_duration_sec: 20.0
+        emergency_exit_threshold: 0.7
+        apply_to_flips: true
+      reentry_cooldown_sec: 300
+      timeframe_sec: null
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
           HIGH_VOLATILITY: 0.15
           LOW_VOLATILITY: 0.08
-          TREND_UP: 0.10
-          TREND_DOWN: 0.10
+          TREND_UP: 0.1
+          TREND_DOWN: 0.1
           MEAN_REVERSION: 0.12
           UNCERTAIN: 0.13
           DEFAULT: 0.12
-
-      timeframe_sec: null
+      max_risk_score: null

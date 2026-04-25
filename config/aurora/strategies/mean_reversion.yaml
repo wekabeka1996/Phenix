@@ -1,42 +1,23 @@
-# ==================================================================================
-# 3m Mean Reversion Strategy Configuration
-# ==================================================================================
-# Phase B4: Production configuration for Mean Reversion 3m strategy
-#
-# This config defines parameters for the bar-based MR strategy that uses:
-# - Bollinger Bands for entry signals
-# - FLAT regime filtering
-# - ATR-based stops adjusted by regime type
-#
-# Source: January 2024 research calibration
-# ==================================================================================
-
 mean_reversion:
-  # Global enable/disable
-  # CFG-STRATEGIES-SSOT-05: SSOT for MR config (no longer in trading.yaml)
   enabled: true
-
-  # Timeframe for bar aggregation
-  # FIX-TF-ALIGNMENT: Changed from 180 (3m) to 300 (5m) to match the active bar pipeline.
-  # The strategy operates on 5m bars; 3m inputs were rejected by the runtime path.
-  timeframe_sec: 300  # 5-minute bars
-
-  # Global allowed regimes whitelist (default; can be overridden per-asset)
-  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-
-  # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
-  # MR uses MARKET orders for fast mean-reversion entries
+  timeframe_sec: 300
+  allowed_regimes:
+  - FLAT_LOW
+  - FLAT_NORMAL
+  - FLAT_HIGH
+  - MEAN_REVERSION
   execution:
-    entry_order_type: "MARKET"   # MUST be one of: LIMIT, MARKET
-    entry_tif: null              # null for MARKET orders (ignored)
-
-  # DM-SAFETY-BYPASSES-P1: Explicit safety gates control (fail-closed if missing)
-  # Mean reversion trades AGAINST trend  safety gates DISABLED.
-  # Phase 0.6: off  MR is counter-trend; stress overlay does not apply.
+    entry_order_type: MARKET
+    entry_tif: null
+    exit_order_type: null
+    exit_tif: null
+    exit_limit_ttl_ms: null
+    gtx_retry_max: 0
+    gtx_retry_offset_bps: 2.0
   safety_gates:
     enabled: false
-    system_stress_policy: "off"       # "off" | "attenuate" | "block" (quoted: YAML parses bare 'off' as bool)
-
+    system_stress_policy: 'off'
+    stress_attenuation_factor: 0.5
   objective:
     enabled: true
     regimes:
@@ -56,7 +37,7 @@ mean_reversion:
           penalty_scale: 2.0
         gate:
           min_objective_score: 0.05
-          enforcement_mode: "OBSERVE"
+          enforcement_mode: OBSERVE
       FLAT_NORMAL:
         weights:
           cost: 1.0
@@ -73,7 +54,7 @@ mean_reversion:
           penalty_scale: 2.0
         gate:
           min_objective_score: 0.06
-          enforcement_mode: "OBSERVE"
+          enforcement_mode: OBSERVE
       FLAT_HIGH:
         weights:
           cost: 1.2
@@ -90,7 +71,7 @@ mean_reversion:
           penalty_scale: 2.0
         gate:
           min_objective_score: 0.08
-          enforcement_mode: "OBSERVE"
+          enforcement_mode: OBSERVE
       MEAN_REVERSION:
         weights:
           cost: 1.3
@@ -107,140 +88,125 @@ mean_reversion:
           penalty_scale: 2.0
         gate:
           min_objective_score: 0.06
-          enforcement_mode: "OBSERVE"
-
-
-  #
-  # Strategy Parameters (global defaults)
-  #
+          enforcement_mode: OBSERVE
   strategy:
-    # Bollinger Bands
     bb_window: 20
     bb_num_std: 2.0
-
-    # Other indicators
     atr_window: 14
     rsi_window: 14
-
-    # Entry thresholds
-    entry_threshold: 0.115     # %B threshold (5% inside band)
+    entry_threshold: 0.115
     rsi_oversold: 30
     rsi_overbought: 70
-
-    # Minimum bars before generating signals
     min_bars: 25
-
-    # BB width filters (avoid too tight/wide ranges)
-    min_bb_width: 0.001        # 0.1%
-    max_bb_width: 0.19         # 19% (calibrated, was 15%)
-
-    # Stop loss (ATR multiple)
+    min_bb_width: 0.001
+    max_bb_width: 0.19
     sl_atr_mult: 1.5
-
-    # Take profit: target mid BB
     tp_to_mid: true
-
-    # Cooldown between signals (seconds)
     cooldown_sec: 60
-
-    #  Tier D: Confidence Scalars
-    # Controls how signal confidence [0, 1] is calculated:
-    #   confidence = confidence_base + |pct_b_distance| * confidence_bb_slope
-    #   + confidence_rsi_bonus (if RSI confirms)
-    # Clamped to 1.0 before emitting.
-    confidence_base: 0.5        # Base confidence when BB threshold just touched (50%)
-    confidence_bb_slope: 2.0    # Sensitivity: 0.1 extra distance  +0.2 confidence
-    confidence_rsi_bonus: 0.2   # Bonus when RSI confirms oversold/overbought (+20%)
-
-  #
-  # FLAT Regime Thresholds (for regime classification)
-  #
+    confidence_base: 0.5
+    confidence_bb_slope: 2.0
+    confidence_rsi_bonus: 0.2
+    score_multiplier: 1.0
   regime_thresholds:
-    high_vol_pct: 0.003        # 0.3% ATR  FLAT_HIGH
-    low_vol_pct: 0.001         # 0.1% ATR  FLAT_LOW
-
-  #
-  # Per-Asset Configurations
-  #
-  # Champion parameters from Phase 3 Track B production testing
-  # Source: trading.yaml optimization (December 2025)
-
+    high_vol_pct: 0.003
+    low_vol_pct: 0.001
   assets:
-    # --- DOGE (CALIBRATED 2026-04-15) ---
-    # Calibration source: reports/calibration/mean_reversion/20260415_090104_DOGEUSDT
-    # Key findings:
-    #   - Only FLAT_LOW profitable (PF=4.38, +0.37%, 4 trades)
-    #   - FLAT_NORMAL catastrophic (PF=0.29, -2.50%)
-    #   - TPSL surface: tight SL (0.5 ATR) + midline TP is least-bad config
-    #   - MFE/MAE: adverse excursion > favorable (0.27% vs 0.21%) — structural loser without regime filter
     DOGEUSDT:
       enabled: true
-      position_mode: "STRICT"
-
-      # P1: Active Leverage Management
+      position_mode: STRICT
       leverage:
         target: 10
-        mode: "ISOLATED"
-
+        mode: ISOLATED
+        max_notional_value: null
       strategy:
-        bb_window: 25          # calibrated (was 20)
-        bb_num_std: 2.13       # calibrated (was 2.1)
-        min_bb_width: 0.004    # calibrated (was 0.005)
-        entry_threshold: 0.063 # calibrated (was 0.05)
-        sl_atr_mult: 0.5      # TPSL surface best cell (was 2.0) — tight SL critical
-        tp_to_mid: true        # midline TP always beats outer (was false)
-        cooldown_sec: 309      # calibrated (was 210)
-      # Regime Gating — CALIBRATED: FLAT_LOW profitable (PF=4.38), LOW_VOL is its Aurora parent
-      # HIGH_VOLATILITY: 0 trades in calibration window — allowed for coverage
-      # Was: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-      allowed_regimes: ["FLAT_LOW"]
-
-    # --- BTC (BRONZE ) ---
+        bb_window: 25
+        bb_num_std: 2.13
+        min_bb_width: 0.004
+        entry_threshold: 0.063
+        sl_atr_mult: 0.5
+        tp_to_mid: true
+        cooldown_sec: 309
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      liquidity_gate: null
     BTCUSDT:
       enabled: false
-      position_mode: "STRICT"
-
-      # P1: Active Leverage Management
+      position_mode: STRICT
       leverage:
         target: 12
-        mode: "ISOLATED"
-
+        mode: ISOLATED
+        max_notional_value: null
       strategy:
         bb_window: 40
         bb_num_std: 1.6
         min_bb_width: 0.004
         entry_threshold: 0.24
-        tp_to_mid: true      # Default behavior
-        sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
-        cooldown_sec: 360    # No cooldown
-      # Regime Gating - BTC conservative (+$103) - include MEAN_REVERSION for backtest
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-
-    # --- XRP (SILVER ) ---
+        tp_to_mid: true
+        sl_atr_mult: 2.0
+        cooldown_sec: 360
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      liquidity_gate: null
     XRPUSDT:
       enabled: false
-      position_mode: "STRICT"
-
-      # P1: Active Leverage Management
+      position_mode: STRICT
       leverage:
         target: 10
-        mode: "ISOLATED"
-
+        mode: ISOLATED
+        max_notional_value: null
       strategy:
         bb_window: 40
         bb_num_std: 2.5
         min_bb_width: 0.007
         entry_threshold: 0.05
         tp_to_mid: true
-        sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
+        sl_atr_mult: 2.0
         cooldown_sec: 165
-      # Regime Gating - XRP stable (+$121) - similar to DOGE
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-
-    # --- Optional assets (disabled) ---
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      liquidity_gate: null
     ETHUSDT:
       enabled: false
-      position_mode: "STRICT"
+      position_mode: STRICT
       strategy:
         bb_window: null
         bb_num_std: null
@@ -249,11 +215,27 @@ mean_reversion:
         tp_to_mid: null
         sl_atr_mult: null
         cooldown_sec: null
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      leverage: null
+      liquidity_gate: null
     SOLUSDT:
       enabled: false
-      position_mode: "STRICT"
+      position_mode: STRICT
       strategy:
         bb_window: 24
         bb_num_std: 1.8
@@ -262,62 +244,56 @@ mean_reversion:
         tp_to_mid: true
         sl_atr_mult: 1.0
         cooldown_sec: 210
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-
-  #
-  # Vector 1: Microstructure Veto Overlay
-  #
-  # Bivariate logic using TFI (Trade Flow Imbalance) + price reaction.
-  # Blocks toxic continuation, allows absorption.
-  # Fail-closed when required features are missing.
-  #
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      leverage: null
+      liquidity_gate: null
   microstructure_veto:
-    enabled: false                          # Disabled by default until validated
-    tfi_ema_span: 5                         # EMA smoothing for raw TFI
-    tfi_adverse_threshold: 0.3              # |TFI| > 0.3 = adverse flow
-    obi_confirm_enabled: false              # OBI is confirm-only, not sole driver
-    obi_adverse_threshold: 0.3              # |OBI| > 0.3 = adverse book state
-    price_reaction_lookback_sec: 60         # 60s window for price continuation
-    price_continuation_threshold: 0.001     # 0.1% adverse move = toxic continuation
-    absorption_wick_ratio_min: 0.4          # Wick >= 40% of range = absorption
-    absorption_rebound_threshold: 0.0005    # 0.05% favorable move = rebound
-    readiness_min_bars: 5                   # Min bars before veto engages
-    missing_policy: "block"                 # Only "block" accepted (fail-closed); "skip" removed in R1 hardening
-
-  #
-  # Vector 2: Directional Bias Threshold Modulation
-  #
-  # Splits symmetric entry_threshold into base_long and base_short.
-  # Funding rate modulates thresholds dynamically.
-  # Missing funding degrades to static split thresholds (no fail-closed).
-  #
+    enabled: false
+    tfi_ema_span: 5
+    tfi_adverse_threshold: 0.3
+    obi_confirm_enabled: false
+    obi_adverse_threshold: 0.3
+    price_reaction_lookback_sec: 60
+    price_continuation_threshold: 0.001
+    absorption_wick_ratio_min: 0.4
+    absorption_rebound_threshold: 0.0005
+    readiness_min_bars: 5
+    missing_policy: block
   directional_bias:
-    enabled: false                          # Disabled by default until validated
-    base_long_threshold: 0.115              # Static %B for LONG (matches legacy entry_threshold)
-    base_short_threshold: 0.115             # Static %B for SHORT (matches legacy entry_threshold)
-    funding_shift_magnitude: 0.02           # Max threshold shift per unit normalized funding
-    funding_normalization_scale: 0.0003     # funding_rate / this = normalized [-1, 1]
-    funding_deadband: 0.1                   # |norm_funding| < 0.1 = zero (noise)
-    threshold_clamp_min: 0.01               # Floor: prevents degenerate entries
-    threshold_clamp_max: 0.3                # Ceiling: prevents unreachable entries
-
-  #
-  # Regime Sizing Multipliers
-  #
-  # Adjust position size based on FLAT regime type
-
+    enabled: false
+    base_long_threshold: 0.115
+    base_short_threshold: 0.115
+    funding_shift_magnitude: 0.02
+    funding_normalization_scale: 0.0003
+    funding_deadband: 0.1
+    threshold_clamp_min: 0.01
+    threshold_clamp_max: 0.3
   regime_sizing:
     FLAT_LOW:
-      sizing_mult: 0.8         # Smaller size in low vol
-      stop_mult: 1.0           # Tighter stops -> Standard stops (prevent suffocation)
-      target_mult: 0.8         # Smaller targets
-
+      sizing_mult: 0.8
+      stop_mult: 1.0
+      target_mult: 0.8
     FLAT_NORMAL:
-      sizing_mult: 1.0         # Standard size
-      stop_mult: 1.0           # Standard stops
-      target_mult: 1.0         # Standard targets
-
+      sizing_mult: 1.0
+      stop_mult: 1.0
+      target_mult: 1.0
     FLAT_HIGH:
-      sizing_mult: 0.7         # Smaller size in high vol
-      stop_mult: 1.5           # Wider stops
-      target_mult: 1.2         # Larger targets
+      sizing_mult: 0.7
+      stop_mult: 1.5
+      target_mult: 1.2
+  liquidity_gate: null

@@ -121,116 +121,64 @@ def test_shadow_telemetry_facade_reexports_are_exact_identity() -> None:
 def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         ShadowTelemetryIngestConfig,
-        required=set(),
-        defaults={
-            "source": "ipc_tap",
-            "ipc_endpoint": "tcp://127.0.0.1:7101",
-            "queue_maxsize": 50000,
-            "overflow_policy": "fail_closed",
-        },
+        required={"source", "ipc_endpoint", "allowlist_events",
+                  "queue_maxsize", "overflow_policy"},
+        defaults={},
         class_factories={},
-        dynamic_factories={
-            "allowlist_events": [
-                "EVT:BAR_CLOSED",
-                "EVT:FEATURES_CALCULATED",
-                "EVT:TICK_FEATURES_CALCULATED",
-                "EVT:RISK_ASSESSMENT_COMPLETED",
-                "EVT:REGIME_DETECTED",
-                "EVT:STRATEGY_SIGNAL_PRODUCED",
-                "EVT:TRADE_INTENT_PROPOSED",
-                "EVT:TRADE_INTENT_REJECTED",
-                "EVT:INTENT_DEFERRED",
-                "EVT:DECISION_BLOCKED",
-                "EVT:STRATEGY_DECISION_BLOCKED",
-                "EVT:ORDER_PLACED",
-                "EVT:ORDER_REJECTED",
-                "EVT:ORDER_STATE_CHANGED",
-                "EVT:TRADE_EXECUTED",
-                "EVT:POSITION_CLOSED",
-            ],
-        },
+        dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetryApiWriteConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "intents_endpoint": "/intents/llm/v1",
-            "rate_limit_per_min": 30,
-            "max_body_kb": 64,
-            "require_snapshot_ref": True,
-            "idempotency_ttl_sec": 300,
-            "consequential": True,
+        required={
+            "enabled",
+            "intents_endpoint",
+            "rate_limit_per_min",
+            "max_body_kb",
+            "symbol_allowlist",
+            "require_snapshot_ref",
+            "idempotency_ttl_sec",
+            "consequential",
         },
+        defaults={},
         class_factories={},
-        dynamic_factories={
-            "symbol_allowlist": ["BTCUSDT", "ETHUSDT"],
-        },
+        dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetryApiConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "host": "0.0.0.0",
-            "port": 8443,
-            "tls": True,
-            "auth_mode": "bearer",
-        },
-        class_factories={
-            "write": ShadowTelemetryApiWriteConfig,
-        },
+        required={"enabled", "host", "port", "tls", "auth_mode", "write"},
+        defaults={},
+        class_factories={},
         dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetryEgressToMainConfig,
-        required=set(),
-        defaults={
-            "mode": "ipc",
-            "ipc_commands_endpoint": "tcp://127.0.0.1:7102",
-            "queue_maxsize": 50000,
-            "overflow_policy": "fail_closed",
-        },
+        required={"mode", "ipc_commands_endpoint",
+                  "queue_maxsize", "overflow_policy"},
+        defaults={},
         class_factories={},
         dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetryTfPolicyConfig,
-        required=set(),
-        defaults={
-            "bar_snapshots_enabled": True,
-            "tick_snapshots_mode": "sampled",
-            "tick_sample_every_n": 20,
-            "min_tf_sec_for_full": 60,
-        },
+        required={"bar_snapshots_enabled", "tick_snapshots_mode",
+                  "tick_sample_every_n", "min_tf_sec_for_full"},
+        defaults={},
         class_factories={},
         dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetrySnapshotConfig,
-        required=set(),
-        defaults={
-            "trigger_event": "EVT:FEATURES_CALCULATED",
-            "output_dir": "data/shadow_telemetry/snapshots",
-        },
-        class_factories={
-            "tf_policy": ShadowTelemetryTfPolicyConfig,
-        },
+        required={"trigger_event", "tf_policy", "output_dir"},
+        defaults={},
+        class_factories={},
         dynamic_factories={},
     )
     _assert_field_contract(
         ShadowTelemetryDomainConfig,
-        required=set(),
-        defaults={
-            "enabled": False,
-            "required_for_mode": False,
-        },
-        class_factories={
-            "ingest": ShadowTelemetryIngestConfig,
-            "api": ShadowTelemetryApiConfig,
-            "egress_to_main": ShadowTelemetryEgressToMainConfig,
-            "snapshot": ShadowTelemetrySnapshotConfig,
-        },
+        required={"enabled", "required_for_mode",
+                  "ingest", "api", "egress_to_main", "snapshot"},
+        defaults={},
+        class_factories={},
         dynamic_factories={},
     )
 

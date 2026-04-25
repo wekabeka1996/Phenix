@@ -245,7 +245,7 @@
 ### `trailing.activation_pct`
 - **Type:** `float`
 - **Logic Owner:** `execution_position` (ManageFlowFSM trailing)
-- **Code Reference:** `apps/reference/config_models.py:721` (model: `TrailingDefaultsConfig`); `apps/reference/domains/execution_position/fsm_manage.py:1231` (func: `_check_trailing_stop`)
+- **Code Reference:** `apps/reference/config/strategies/common.py` (model: `TrailingDefaultsConfig`); `apps/reference/domains/execution_position/fsm_manage.py:1231` (func: `_check_trailing_stop`)
 - **Mathematical/Architectural Role:**
     > **Поріг активації трейлінгу від entry.** Для BUY:  
     > `activation_threshold = entry_price * (1 + activation_pct)`; активація коли `current_price >= activation_threshold`.  
@@ -290,7 +290,7 @@
 ### `sequential_tests.wald.alpha`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Зберігається як `config.system_meta.sequential_tests` (dict) для аудиту/майбутніх модулів. У поточному runtime-циклі споживача не знайдено.
 - **Tuning Sensitivity:**
@@ -303,7 +303,7 @@
 ### `sequential_tests.wald.beta`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані для Wald sequential test (ймовірнісний поріг/помилка II роду). Наразі не підключено до runtime.
 - **Tuning Sensitivity:**
@@ -316,7 +316,7 @@
 ### `sequential_tests.wald.mu0`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: гіпотеза `H0` (середнє) для Wald test. У поточному runtime не використовується.
 - **Tuning Sensitivity:**
@@ -329,7 +329,7 @@
 ### `sequential_tests.wald.mu1`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: гіпотеза `H1` (середнє) для Wald test. У поточному runtime не використовується.
 - **Tuning Sensitivity:**
@@ -342,7 +342,7 @@
 ### `sequential_tests.wald.sigma`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: оцінка σ для Wald test. Наразі не підключено до runtime-алгоритмів.
 - **Tuning Sensitivity:**
@@ -355,7 +355,7 @@
 ### `sequential_tests.glr.alpha`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані для GLR тесту. У поточному runtime не читається.
 - **Tuning Sensitivity:**
@@ -368,7 +368,7 @@
 ### `sequential_tests.glr.beta`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані для GLR тесту. У поточному runtime не читається.
 - **Tuning Sensitivity:**
@@ -381,7 +381,7 @@
 ### `sequential_tests.glr.min_samples`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: мінімальна кількість семплів для GLR. Наразі не споживається runtime.
 - **Tuning Sensitivity:**
@@ -394,7 +394,7 @@
 ### `risk_core.cvar_threshold_bps`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані для “risk_core” (CVaR threshold у bps). У поточній реалізації risk домену споживача цього ключа не знайдено; зберігається в `config.system_meta.risk_core`.
 - **Tuning Sensitivity:**
@@ -407,7 +407,7 @@
 ### `risk_core.stress_scenarios`
 - **Type:** `list[string]`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Перелік назв stress-сценаріїв (напр., `flash_crash`, `volatility_spike`). Наразі лише зберігається як метадані.
 - **Tuning Sensitivity:**
@@ -420,7 +420,7 @@
 ### `risk_core.inventory_limits.max_abs_position`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: максимальна абсолютна позиція (units). Наразі не підключено в `risk_management` runtime.
 - **Tuning Sensitivity:**
@@ -433,7 +433,7 @@
 ### `risk_core.inventory_limits.max_daily_notional`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: денний notional cap (USD). Наразі не споживається runtime.
 - **Tuning Sensitivity:**
@@ -446,7 +446,7 @@
 ### `kelly.fraction_cap`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only; не плутати з `decision.kelly`)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`); `apps/reference/config_models.py:638` (field: `DecisionConfig.kelly`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`); `apps/reference/config_models.py:638` (field: `DecisionConfig.kelly`)
 - **Mathematical/Architectural Role:**
     > Метадані “Kelly cap” у `config.system_meta.kelly`. У живій логіці sizing (DecisionMaking) використовується **інший** Kelly-контур (`domains.decision_making.*` / `decision.kelly`), а цей блок наразі не має споживача.
 - **Tuning Sensitivity:**
@@ -459,7 +459,7 @@
 ### `kelly.decay_half_life_days`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: half-life у днях для decay у Kelly-контурі. Наразі не споживається runtime.
 - **Tuning Sensitivity:**
@@ -472,7 +472,7 @@
 ### `calibrator.state_store.backend`
 - **Type:** `string`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані для calibrator state store (напр., `sqlite`). У поточному runtime calibrator не інтегровано.
 - **Tuning Sensitivity:**
@@ -485,7 +485,7 @@
 ### `calibrator.state_store.path`
 - **Type:** `string` *(path)*
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: шлях до state DB (`data/calibrator/state.db`). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -498,7 +498,7 @@
 ### `calibrator.state_store.versioning`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: чи увімкнено версіонування калібратора. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -511,7 +511,7 @@
 ### `calibrator.state_store.retention_days`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: політика retention у днях для state store. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -524,7 +524,7 @@
 ### `hawkes.enabled`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: перемикач Hawkes-модуля. У runtime споживача не знайдено; зберігається у `config.system_meta.hawkes`.
 - **Tuning Sensitivity:**
@@ -537,7 +537,7 @@
 ### `hawkes.kernel.decay_beta_ms`
 - **Type:** `float` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: параметр decay kernel (β) для Hawkes у ms. Наразі не споживається runtime.
 - **Tuning Sensitivity:**
@@ -550,7 +550,7 @@
 ### `hawkes.eta_max`
 - **Type:** `float`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: верхня межа η для Hawkes. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -563,7 +563,7 @@
 ### `hawkes.update_interval_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: інтервал оновлення Hawkes-оцінок. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -576,7 +576,7 @@
 ### `hawkes.window_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: розмір вікна для Hawkes. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -589,7 +589,7 @@
 ### `hawkes.bivariate`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: bivariate режим Hawkes. Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -602,7 +602,7 @@
 ### `hardening.ttl_config.entry_place_ttl_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: TTL для постановки entry-ордера (коментар у YAML: “5 seconds for entry orders”). Наразі не знайдено читання в runtime.
 - **Tuning Sensitivity:**
@@ -615,7 +615,7 @@
 ### `hardening.ttl_config.bracket_place_ttl_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: TTL для постановки брекетів (TP/SL) (коментар: “3 seconds for bracket orders”). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -628,7 +628,7 @@
 ### `hardening.ttl_config.cancel_ttl_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: TTL для cancel-операцій (коментар: “2 seconds for cancellations”). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -641,7 +641,7 @@
 ### `hardening.retry_config.max_tries`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: максимальна кількість ретраїв (коментар: “Maximum retry attempts”). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -654,7 +654,7 @@
 ### `hardening.retry_config.backoff_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: базовий backoff для ретраїв (коментар: “Base backoff time”). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -667,7 +667,7 @@
 ### `hardening.retry_config.jitter`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: чи додавати jitter до backoff (коментар: “Add random jitter”). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -680,7 +680,7 @@
 ### `hardening.circuit_breaker.fail_max`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: кількість fail-ів для відкриття circuit (коментар у YAML). Не знайдено runtime-споживача цього конкретного конфіга.
 - **Tuning Sensitivity:**
@@ -693,7 +693,7 @@
 ### `hardening.circuit_breaker.reset_timeout_sec`
 - **Type:** `int` *(seconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: час у OPEN перед HALF_OPEN (коментар у YAML). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -706,7 +706,7 @@
 ### `hardening.circuit_breaker.exclude`
 - **Type:** `list[string]` *(regex patterns)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: винятки, які не рахуються як fail у circuit breaker (regex на exception-string). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -719,7 +719,7 @@
 ### `hardening.circuit_breaker.open_threshold_pct`
 - **Type:** `int` *(percent)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: open якщо >X% викликів fail у вікні (коментар у YAML). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -732,7 +732,7 @@
 ### `hardening.circuit_breaker.error_rate_window_sec`
 - **Type:** `int` *(seconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: rolling window для error-rate (коментар у YAML). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -745,7 +745,7 @@
 ### `hardening.circuit_breaker.half_open_attempts`
 - **Type:** `int`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: кількість тестових викликів у HALF_OPEN (коментар у YAML). Наразі не використовується runtime.
 - **Tuning Sensitivity:**
@@ -758,7 +758,7 @@
 ### `hardening.market_data.max_allowed_lag_ms`
 - **Type:** `int` *(milliseconds)*
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: максимальний дозволений lag маркет-даних. У поточному `market_data`/DM/RD контурі цей параметр не читається; lag гейти реалізовані через `bar_ttl_ms`/`ws_receive_timeout_sec` та інші механізми.
 - **Tuning Sensitivity:**
@@ -771,7 +771,7 @@
 ### `hardening.market_data.sequence_check_enabled`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: чи увімкнено sequence number validation. Наразі у WS worker присутня власна логіка по out-of-order (`trades_dropped_out_of_order` у payload), але цей перемикач не wired.
 - **Tuning Sensitivity:**
@@ -784,7 +784,7 @@
 ### `hardening.wal.integrity_check_enabled`
 - **Type:** `bool`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: toggle для WAL integrity checks. Наразі логіка WAL має локальні перевірки/помилки, але цей параметр не прочитується як конфіг.
 - **Tuning Sensitivity:**
@@ -797,7 +797,7 @@
 ### `hardening.wal.hash_algorithm`
 - **Type:** `string`
 - **Logic Owner:** `system_meta` *(metadata only; AURORA_HARDENING_V1)*
-- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config_models.py:2925` (model: `SystemMetaConfig`)
+- **Code Reference:** `apps/reference/config_loader.py:232` (func: `_extract_system_meta`); `apps/reference/config/system/observability.py` (model: `SystemMetaConfig`)
 - **Mathematical/Architectural Role:**
     > Метадані: алгоритм хешування для WAL integrity (коментар: `"sha256"`). Наразі не використовується runtime.
 - **Tuning Sensitivity:**

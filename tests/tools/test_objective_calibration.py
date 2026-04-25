@@ -319,10 +319,17 @@ def test_mean_reversion_calibrator_emits_overlay_and_report(tmp_path: Path) -> N
         str(Path("tools/calibration/calibrate_mean_reversion_params.py")))
     main = module["main"]
     out_dir = tmp_path / "mr_calibration"
+    registry_path = tmp_path / "strategies_registry.yaml"
+    registry_path.write_text(
+        "version: \"1.0.0\"\nassignments:\n  DOGEUSDT:\n    - mean_reversion\n",
+        encoding="utf-8",
+    )
     rc = main(
         [
             "--mr-yaml",
             "config/aurora/strategies/mean_reversion.yaml",
+            "--strategies-registry",
+            str(registry_path),
             "--recorder-dir",
             str(recorder_dir),
             "--symbols",

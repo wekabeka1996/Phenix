@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
+from apps.reference.config_models import OperationalMode
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin, _DisabledAuroraHandlerWrapper, _AuroraHandlerWrapper
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
@@ -18,7 +19,7 @@ class TestStrategyKillswitchEnforcement:
             enabled=enabled,
             timeframe_sec=300,
             decision=SimpleNamespace(
-                operational_mode="testnet",
+                operational_mode=OperationalMode.PARANOID,
                 signal_threshold="0.1",
                 side_bias_window_sec="60",
                 side_bias_target_ratio="0.5",

@@ -11,6 +11,31 @@ def _emitter(portfolio):
     def _propose_trade_intent(**kwargs):
         emitted.append(kwargs)
 
+    def _emit_reduce_only_close(*, symbol, reason, rid, strategy_id):
+        curr_pos = next(
+            (p for p in portfolio.get("positions", []) if p.get("symbol") == symbol),
+            None,
+        )
+        if curr_pos is None:
+            return False
+
+        position_amt = Decimal(str(curr_pos.get("positionAmt", "0")))
+        if position_amt == Decimal("0"):
+            return False
+
+        emitted.append(
+            {
+                "symbol": symbol,
+                "side": "SELL" if position_amt > 0 else "BUY",
+                "qty": abs(position_amt),
+                "reduce_only": True,
+                "strategy_id": strategy_id,
+                "rid": rid,
+                "reason": reason,
+            }
+        )
+        return True
+
     emitter = IntentEmitter(
         fsm=SimpleNamespace(emit=lambda *args, **kwargs: None),
         clock=MockClock(start_ms=1_700_000_000_000),
@@ -19,6 +44,8 @@ def _emitter(portfolio):
         get_portfolio=lambda: portfolio,
         propose_trade_intent=_propose_trade_intent,
         logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        emit_reduce_only_close_fn=_emit_reduce_only_close,
+        registry_lookup_fn=lambda _symbol: ["aurora"],
     )
     return emitter, emitted
 

@@ -99,56 +99,49 @@ def test_objective_engine_facade_reexports_are_exact_identity() -> None:
 def test_objective_engine_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         ObjectiveNormalizationConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "method": "adaptive_z_score",
-            "window_size": 1000,
-            "min_samples": 100,
-            "target_range": (-1.0, 1.0),
-            "epsilon": 1e-8,
-            "smoothing_factor": 0.1,
-            "outlier_threshold": 3.0,
+        required={
+            "enabled",
+            "method",
+            "window_size",
+            "min_samples",
+            "target_range",
+            "epsilon",
+            "smoothing_factor",
+            "outlier_threshold",
         },
+        defaults={},
         default_factories={},
     )
     _assert_field_contract(
         ObjectiveComponentConfig,
-        required={"enabled", "parameters"},
-        defaults={"normalization": None},
+        required={"enabled", "normalization", "parameters"},
+        defaults={},
         default_factories={},
         optional_fields={"normalization"},
     )
     _assert_field_contract(
         ObjectiveDataRequirementsConfig,
-        required=set(),
-        defaults={
-            "require_arce": True,
-            "require_portfolio": True,
-            "require_execution": False,
-            "strict_fail_closed": True,
+        required={
+            "require_arce",
+            "require_portfolio",
+            "require_execution",
+            "strict_fail_closed",
         },
+        defaults={},
         default_factories={},
     )
     _assert_field_contract(
         ObjectiveExplainabilityConfig,
-        required=set(),
-        defaults={
-            "enabled": True,
-            "emit_subcomponents": True,
-            "emit_normalization_stats": False,
-        },
+        required={"enabled", "emit_subcomponents", "emit_normalization_stats"},
+        defaults={},
         default_factories={},
     )
     _assert_field_contract(
         ObjectiveEngineDomainConfig,
-        required=set(),
-        defaults={"enabled": False},
-        default_factories={
-            "data_requirements": ObjectiveDataRequirementsConfig,
-            "explainability": ObjectiveExplainabilityConfig,
-            "components": dict,
-        },
+        required={"enabled", "data_requirements",
+                  "explainability", "components"},
+        defaults={},
+        default_factories={},
     )
 
 
@@ -157,6 +150,15 @@ def test_objective_engine_regime_coverage_negative_fixture_still_raises(
 ) -> None:
     cfg_dir = tmp_path / "aurora"
     shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    registry_path = cfg_dir / "strategies.yaml"
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    registry["assignments"]["DOGEUSDT"] = ["mean_reversion"]
+    registry["arbitration"]["priority"].setdefault("mean_reversion", 2)
+    registry_path.write_text(
+        yaml.safe_dump(registry, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
 
     mr_path = cfg_dir / "strategies" / "mean_reversion.yaml"
     mr_wrapper = yaml.safe_load(mr_path.read_text(encoding="utf-8"))

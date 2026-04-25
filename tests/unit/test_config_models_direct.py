@@ -224,7 +224,8 @@ class TestInstrumentPrecisionSpec:
                     max_notional_utilization=0.5
                 ),
                 sizing=InstrumentSizingConfig(margin_pct=0.1),
-                flip=FlipOrchestrationConfig(enabled=True, hysteresis_mult=1.3),
+                flip=FlipOrchestrationConfig(
+                    enabled=True, hysteresis_mult=1.3),
             )
         assert "target_leverage" in str(exc_info.value)
 
@@ -242,7 +243,9 @@ class TestSignalWeights:
             volume_spike=0.1,
             volatility_state=0.4,
             depth_imbalance=0.6,
-            macro_resid=0.0
+            macro_resid=0.0,
+            macro_sync=0.0,
+            absorption=0.0,
         )
         assert weights.obi == 1.0
         assert weights.macro_resid == 0.0
@@ -258,7 +261,9 @@ class TestSignalWeights:
                 volume_spike=0.1,
                 volatility_state=0.4,
                 depth_imbalance=0.6,
-                macro_resid=0.0
+                macro_resid=0.0,
+                macro_sync=0.0,
+                absorption=0.0,
             )
         assert "ema_bias" in str(exc_info.value)
 
@@ -274,6 +279,8 @@ class TestSignalWeights:
                 volatility_state=0.4,
                 depth_imbalance=0.6,
                 macro_resid=0.0,
+                macro_sync=0.0,
+                absorption=0.0,
                 unknown_signal="should_fail"  # Extra field
             )
         error_str = str(exc_info.value)

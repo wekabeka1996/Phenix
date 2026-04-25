@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from decimal import Decimal
 
+from apps.reference.config_models import OperationalMode
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -60,6 +62,7 @@ def mock_config():
     # giving toxic config (time_exit after 1s, signal_reversal at threshold 1.0)
     # that forces should_exit=True and bypasses the holding period check.
     decision.exit = None
+    decision.operational_mode = OperationalMode.PARANOID
 
     cfg.strategies.aurora.decision = decision
     

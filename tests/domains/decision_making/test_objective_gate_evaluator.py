@@ -51,10 +51,20 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
     return ObjectiveEngineDomainConfig(
         enabled=enabled,
         data_requirements=ObjectiveDataRequirementsConfig(
-            strict_fail_closed=strict_fail_closed),
+            require_arce=False,
+            require_portfolio=False,
+            require_execution=False,
+            strict_fail_closed=strict_fail_closed,
+        ),
+        explainability={
+            "enabled": False,
+            "emit_subcomponents": False,
+            "emit_normalization_stats": False,
+        },
         components={
             "cost": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "alpha_fee": 1.0, "alpha_slippage": 0.7,
                     "alpha_spread": 0.3, "base_fee_bps": 4.0,
@@ -63,6 +73,7 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
             ),
             "risk": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_inventory": 1.0, "phi_overflow": 3.0,
                     "phi_volatility": 0.5,
@@ -70,6 +81,7 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
             ),
             "edge": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "omega_rr": 0.9, "omega_threshold_margin": 0.8,
                     "phi_stop_distance": 0.2, "phi_rr_consistency": 0.2,
@@ -77,6 +89,7 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
             ),
             "execution": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "omega_liquidity": 0.8, "phi_spread_drag": 0.4,
                     "phi_notional_pressure": 0.3,
@@ -84,6 +97,7 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
             ),
             "information": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_staleness": 0.15, "omega_regime_confidence": 0.7,
                     "omega_readiness": 0.5,
@@ -91,6 +105,7 @@ def _domain_cfg(*, enabled: bool = True, strict_fail_closed: bool = True) -> Obj
             ),
             "behavior": ObjectiveComponentConfig(
                 enabled=True,
+                normalization=None,
                 parameters={
                     "phi_cancel_replace": 0.2, "phi_blocked_intents": 0.15,
                     "phi_reentry": 0.1, "window_sec": 3600,
@@ -300,7 +315,7 @@ class TestPreconditionFailures:
     def test_disabled_cost_component(self) -> None:
         d = _domain_cfg()
         d.components["cost"] = ObjectiveComponentConfig(
-            enabled=False, parameters={
+            enabled=False, normalization=None, parameters={
                 "alpha_fee": 1.0, "alpha_slippage": 0.7,
                 "alpha_spread": 0.3, "base_fee_bps": 4.0,
                 "slippage_from_spread_ratio": 0.5,

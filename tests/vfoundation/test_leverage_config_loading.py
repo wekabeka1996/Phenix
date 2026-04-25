@@ -22,7 +22,9 @@ def make_aurora_asset(enabled: bool, leverage: dict | None = None) -> MagicMock:
     mock.enabled = enabled
     if leverage:
         from apps.reference.config_models import LeverageConfig
-        mock.leverage = LeverageConfig(**leverage)
+        leverage_payload = dict(leverage)
+        leverage_payload.setdefault("max_notional_value", None)
+        mock.leverage = LeverageConfig(**leverage_payload)
     else:
         mock.leverage = None
     return mock
@@ -35,7 +37,9 @@ def make_mr_asset(enabled: bool, leverage: dict | None = None) -> MagicMock:
     mock.enabled = enabled
     if leverage:
         from apps.reference.config_models import LeverageConfig
-        mock.leverage = LeverageConfig(**leverage)
+        leverage_payload = dict(leverage)
+        leverage_payload.setdefault("max_notional_value", None)
+        mock.leverage = LeverageConfig(**leverage_payload)
     else:
         mock.leverage = None
     return mock
@@ -47,52 +51,61 @@ class TestLeverageConfigModel:
     def test_leverage_config_valid(self):
         """LeverageConfig must accept valid bounds."""
         from apps.reference.config_models import LeverageConfig
-        
-        cfg = LeverageConfig(target=20, mode="ISOLATED")
+
+        cfg = LeverageConfig(target=20, mode="ISOLATED",
+                             max_notional_value=None)
         assert cfg.target == 20
         assert cfg.mode == "ISOLATED"
-        
-        cfg_cross = LeverageConfig(target=50, mode="CROSSED")
+
+        cfg_cross = LeverageConfig(
+            target=50, mode="CROSSED", max_notional_value=None)
         assert cfg_cross.mode == "CROSSED"
 
     def test_leverage_config_bounds(self):
         """LeverageConfig must reject out-of-bounds values."""
         from apps.reference.config_models import LeverageConfig
-        
+
         # Valid edge cases
-        LeverageConfig(target=1, mode="ISOLATED")   # min
-        LeverageConfig(target=125, mode="ISOLATED") # max
-        
+        LeverageConfig(target=1, mode="ISOLATED",
+                       max_notional_value=None)   # min
+        LeverageConfig(target=125, mode="ISOLATED",
+                       max_notional_value=None)  # max
+
         # Invalid: too low
         with pytest.raises(ValidationError):
-            LeverageConfig(target=0, mode="ISOLATED")
-        
+            LeverageConfig(target=0, mode="ISOLATED", max_notional_value=None)
+
         # Invalid: too high
         with pytest.raises(ValidationError):
-            LeverageConfig(target=126, mode="ISOLATED")
-        
+            LeverageConfig(target=126, mode="ISOLATED",
+                           max_notional_value=None)
+
         # Invalid: negative
         with pytest.raises(ValidationError):
-            LeverageConfig(target=-10, mode="ISOLATED")
+            LeverageConfig(target=-10, mode="ISOLATED",
+                           max_notional_value=None)
 
     def test_leverage_config_mode_enum(self):
         """LeverageConfig must reject invalid modes."""
         from apps.reference.config_models import LeverageConfig
-        
+
         with pytest.raises(ValidationError):
-            LeverageConfig(target=20, mode="INVALID")
-        
+            LeverageConfig(target=20, mode="INVALID", max_notional_value=None)
+
         with pytest.raises(ValidationError):
-            LeverageConfig(target=20, mode="cross")  # lowercase not allowed
+            # lowercase not allowed
+            LeverageConfig(target=20, mode="cross", max_notional_value=None)
 
     def test_leverage_config_optional_max_notional(self):
-        """max_notional_value is optional."""
+        """max_notional_value accepts explicit null or Decimal value."""
         from apps.reference.config_models import LeverageConfig
-        
-        cfg = LeverageConfig(target=50, mode="ISOLATED")
+
+        cfg = LeverageConfig(target=50, mode="ISOLATED",
+                             max_notional_value=None)
         assert cfg.max_notional_value is None
-        
-        cfg_with = LeverageConfig(target=50, mode="ISOLATED", max_notional_value=Decimal("1000000"))
+
+        cfg_with = LeverageConfig(
+            target=50, mode="ISOLATED", max_notional_value=Decimal("1000000"))
         assert cfg_with.max_notional_value == Decimal("1000000")
 
 
@@ -104,11 +117,11 @@ class TestAuroraAssetLeverageConfig:
         # Use mock to avoid required fields complexity
         cfg = make_aurora_asset(enabled=True, leverage=None)
         assert cfg.leverage is None
-        
+
     def test_aurora_asset_with_leverage(self):
         """AuroraInstrumentConfig must accept leverage dict."""
         from apps.reference.config_models import LeverageConfig
-        
+
         cfg = make_aurora_asset(
             enabled=True,
             leverage={"target": 50, "mode": "ISOLATED"},
@@ -124,10 +137,13 @@ class TestMRAssetLeverageConfig:
     def test_mr_asset_has_leverage_field(self):
         """MRAssetConfig must have optional leverage field."""
         from apps.reference.config_models import MRAssetConfig
-        
+
         # Without leverage
         cfg = MRAssetConfig(
             enabled=True,
+            leverage=None,
+            strategy=None,
+            liquidity_gate=None,
             position_mode="STRICT",
             allowed_regimes=["FLAT_LOW", "FLAT_NORMAL"],
         )
@@ -136,12 +152,15 @@ class TestMRAssetLeverageConfig:
     def test_mr_asset_with_leverage(self):
         """MRAssetConfig must accept leverage dict."""
         from apps.reference.config_models import MRAssetConfig, LeverageConfig
-        
+
         cfg = MRAssetConfig(
             enabled=True,
+            leverage={"target": 10, "mode": "ISOLATED",
+                      "max_notional_value": None},
+            strategy=None,
+            liquidity_gate=None,
             position_mode="STRICT",
             allowed_regimes=["FLAT_LOW"],
-            leverage={"target": 10, "mode": "ISOLATED"},
         )
         assert cfg.leverage is not None
         assert isinstance(cfg.leverage, LeverageConfig)
@@ -153,12 +172,12 @@ class TestStrategyLeverageResolution:
 
     def test_strategy_assignment_resolution(self):
         """Verify leverage resolution based on strategy assignment."""
-        
+
         # 1. Mock Assignment (Router) - як у strategies.yaml
         assignments = {
             "BTCUSDT": "mean_reversion",  # BTC assigned to MR
             "ETHUSDT": "aurora",          # ETH assigned to Aurora
-            "DOGEUSDT": "mean_reversion", # DOGE assigned to MR
+            "DOGEUSDT": "mean_reversion",  # DOGE assigned to MR
         }
 
         # 2. Mock Strategy Configs (як завантажено з YAML)
@@ -173,7 +192,7 @@ class TestStrategyLeverageResolution:
                 leverage={"target": 99, "mode": "CROSSED"},  # Wrong value
             ),
         }
-        
+
         mr_assets = {
             "DOGEUSDT": make_mr_asset(
                 enabled=True,
@@ -187,7 +206,7 @@ class TestStrategyLeverageResolution:
 
         # 3. Resolve Logic (симуляція LeverageBootstrapper)
         resolved_leverage = {}
-        
+
         for symbol, strategy_name in assignments.items():
             if strategy_name == "aurora":
                 cfg = aurora_assets.get(symbol)
@@ -195,27 +214,31 @@ class TestStrategyLeverageResolution:
                 cfg = mr_assets.get(symbol)
             else:
                 cfg = None
-            
+
             if cfg and cfg.leverage:
                 resolved_leverage[symbol] = cfg.leverage.target
 
         # 4. Assertions
-        assert resolved_leverage.get("ETHUSDT") == 20, "ETH should get Aurora leverage"
-        assert resolved_leverage.get("DOGEUSDT") == 10, "DOGE should get MR leverage (not Aurora 99)"
-        assert resolved_leverage.get("BTCUSDT") == 15, "BTC should get MR leverage"
-        
+        assert resolved_leverage.get(
+            "ETHUSDT") == 20, "ETH should get Aurora leverage"
+        assert resolved_leverage.get(
+            "DOGEUSDT") == 10, "DOGE should get MR leverage (not Aurora 99)"
+        assert resolved_leverage.get(
+            "BTCUSDT") == 15, "BTC should get MR leverage"
+
         # Ensure Aurora DOGE (99x) was NOT used
-        assert resolved_leverage.get("DOGEUSDT") != 99, "Cross-strategy contamination!"
+        assert resolved_leverage.get(
+            "DOGEUSDT") != 99, "Cross-strategy contamination!"
 
     def test_missing_leverage_returns_none(self):
         """Symbols without leverage config should resolve to None."""
-        
+
         aurora_assets = {
             "SOLUSDT": make_aurora_asset(
                 enabled=True,
                 leverage=None,  # NO leverage field
             ),
         }
-        
+
         cfg = aurora_assets.get("SOLUSDT")
         assert cfg.leverage is None

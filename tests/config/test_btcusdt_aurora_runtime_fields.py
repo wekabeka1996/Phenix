@@ -52,7 +52,8 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
 
     # ── Instruments SSOT leverage (used by ExecPos bootstrap) ──
     instruments_path = cfg_dir / "instruments.yaml"
-    instruments_data = yaml.safe_load(instruments_path.read_text(encoding="utf-8"))
+    instruments_data = yaml.safe_load(
+        instruments_path.read_text(encoding="utf-8"))
     instruments_data["instruments"]["BTCUSDT"]["execution"]["target_leverage"] = 21
     instruments_data["instruments"]["BTCUSDT"]["execution"]["margin_mode"] = "isolated"
     _write_yaml(instruments_path, instruments_data)
@@ -175,7 +176,8 @@ class TestBtcusdtAuroraRuntimeFields:
         state.last_regime_heartbeat_ms = int(now * 1000)
 
         # Side-bias override affects both parameters + pruning window
-        state.buy_timestamps = [now - 200, now - 10]   # one should be pruned by 123s window
+        # one should be pruned by 123s window
+        state.buy_timestamps = [now - 200, now - 10]
         state.sell_timestamps = [now - 50]
         sb = handler._get_side_bias_state(symbol)
         assert sb.window_sec == 123
@@ -239,7 +241,8 @@ class TestBtcusdtAuroraRuntimeFields:
 
         # Signal emitted; entry_price must reflect volatility_entry_logic multiplier (BUY: 100 - 10*0.5 = 95)
         assert any(name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
-        sig = next(payload for name, payload in emitted if name == "EVT:STRATEGY_SIGNAL_PRODUCED")
+        sig = next(payload for name, payload in emitted if name ==
+                   "EVT:STRATEGY_SIGNAL_PRODUCED")
         assert sig["symbol"] == symbol
         assert sig["side"] == "BUY"
         assert Decimal(sig["price_ctx"]["entry_price"]) == Decimal("95")
@@ -253,7 +256,8 @@ class TestBtcusdtAuroraRuntimeFields:
 
         manage = ManageFlowFSM(config=config)
         assert manage._get_take_profit_params(symbol) == (0.55, 1.23, 0.66)
-        assert manage._get_trailing_stop_params(symbol) == (True, 0.031, 0.017, 7)
+        assert manage._get_trailing_stop_params(
+            symbol) == (True, 0.031, 0.017, 7)
         assert manage._get_max_hold_sec(symbol) == 1234
 
         # ── ExecutionPosition bootstrap surface: leverage config reaches collector ──
@@ -325,9 +329,11 @@ class TestBtcusdtAuroraRuntimeFields:
             }
         )
 
-        assert not any(name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
+        assert not any(
+            name == "EVT:STRATEGY_SIGNAL_PRODUCED" for name, _ in emitted)
         assert any(name == "EVT:STRATEGY_DECISION_BLOCKED" for name, _ in emitted)
-        blocked = next(payload for name, payload in emitted if name == "EVT:STRATEGY_DECISION_BLOCKED")
+        blocked = next(payload for name, payload in emitted if name ==
+                       "EVT:STRATEGY_DECISION_BLOCKED")
         assert blocked["symbol"] == symbol
         assert blocked["reason_code"] == "LIQUIDITY_LOW"
 
@@ -339,16 +345,20 @@ class TestBtcusdtAuroraRuntimeFields:
         config = loader.load_config()
 
         from apps.reference.domains.decision_making.core.facade import DecisionMaking
+        from apps.reference.domains.decision_making.gates import exposure_gate
+        from apps.reference.domains.decision_making.gateway.protocol import GateContext
 
         dm = DecisionMaking(fsm=MagicMock(), config=config)
-        dm._shared["latest_portfolio"] = {"equity": "1000"}
-        dm._clock = SimpleNamespace(now_ms=lambda: 1_000_000, now_sec=lambda: 1000.0)
+        dm.latest_portfolio = {"equity": "1000"}
+        dm._clock = SimpleNamespace(
+            now_ms=lambda: 1_000_000, now_sec=lambda: 1000.0)
 
         # Bypass unrelated gates for this audit test
         dm._record_blocked_intent = MagicMock()
         dm._emit_trade_intent_rejected = MagicMock()
         dm._emit_intent_deferred_v1 = MagicMock()
-        dm._check_strategy_arbitration = MagicMock(return_value={"allowed": True})
+        dm._check_strategy_arbitration = MagicMock(
+            return_value={"allowed": True})
         dm._warmup_gate_before_trade_intent = MagicMock(return_value=False)
         dm._precheck_exposure_cache = MagicMock(return_value=True)
         dm._is_strategy_qos_enabled = MagicMock(return_value=False)
@@ -363,27 +373,37 @@ class TestBtcusdtAuroraRuntimeFields:
             return_value=(Decimal("1"), "ok", None, {})
         )
 
-        dm._on_strategy_signal_gateway(
-            SimpleNamespace(
+        result = exposure_gate.check(
+            GateContext(
+                symbol="BTCUSDT",
+                strategy_id="aurora",
+                side="BUY",
+                rid="rid-1",
                 pld={
                     "strategy_id": "aurora",
                     "symbol": "BTCUSDT",
                     "side": "BUY",
                     "rid": "rid-1",
-                    "why_chain": [],
-                    "readiness": {"warmup_ok": True},
                     "price_ctx": {"entry_price": "100.0"},
                     "ts_ms": 1_000_000,
                     "tf_sec": 300,
                     "scoring": {"regime": "LOW_VOLATILITY"},
-                }
+                },
+                config=config,
+                clock=dm._clock,
+                dm=dm,
+                symbol_states=dm.symbol_states,
+                ts_ms=1_000_000,
+                tf_sec=300,
             )
         )
+        assert result.outcome.value == "PASS"
 
         # Regime sizing multiplier from config: strategies.aurora.assets.BTCUSDT.regime_sizing.LOW_VOLATILITY = 2.0
         kwargs = dm._calculate_position_size.call_args.kwargs
         assert kwargs["margin_pct_mult"] == Decimal("2.0")
 
         # Position mode + per-symbol cooldown are reachable via helpers (no magic fallbacks)
-        assert dm._resolve_position_mode(symbol="BTCUSDT", source="aurora") == "STRICT"
+        assert dm._resolve_position_mode(
+            symbol="BTCUSDT", source="aurora") == "STRICT"
         assert dm._get_symbol_cooldown("BTCUSDT", strategy_id="aurora") == 99

@@ -11,29 +11,29 @@ class TAFeaturesDomainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(
-        description="Master switch for ta_features runtime wiring."
+        ..., description="Master switch for ta_features runtime wiring."
     )
     timeframes_sec: List[int] = Field(
-        min_length=1,
+        ..., min_length=1,
         description="Configured BAR_CLOSED timeframes that ta_features consumes.",
     )
     warm_up_bars: int = Field(
-        ge=20,
+        ..., ge=20,
         description="Bars required before ta_features marks payloads is_warm=true.",
     )
     buffer_max_bars: int = Field(
-        ge=20,
+        ..., ge=20,
         description="Rolling OHLCV buffer length per (symbol, tf_sec). Must be >= warm_up_bars.",
     )
     log_calculations: bool = Field(
-        description="Write per-symbol JSONL calculation logs under logs/ta_features/.",
+        ..., description="Write per-symbol JSONL calculation logs under logs/ta_features/.",
     )
     log_max_bytes: int = Field(
-        ge=1,
+        ..., ge=1,
         description="Rotating JSONL maxBytes per symbol log file.",
     )
     log_backup_count: int = Field(
-        ge=0,
+        ..., ge=0,
         description="Rotating JSONL backupCount per symbol log file.",
     )
 

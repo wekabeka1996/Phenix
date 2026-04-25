@@ -12,6 +12,7 @@ import tempfile
 import pytest
 import yaml
 from pathlib import Path
+from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import ConfigLoader
 from pydantic import ValidationError
 
@@ -21,7 +22,7 @@ _CANON_AURORA_DIR = _REPO_ROOT / "config" / "aurora"
 
 
 def _read_canonical_yaml(rel_path: str) -> str:
-  return (_CANON_AURORA_DIR / rel_path).read_text(encoding="utf-8")
+    return (_CANON_AURORA_DIR / rel_path).read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -80,6 +81,11 @@ def base_domains_yaml():
     return _read_canonical_yaml("domains.yaml")
 
 
+@pytest.fixture
+def base_observability_yaml():
+    """Canonical observability.yaml (strict, mandatory)."""
+    return _read_canonical_yaml("observability.yaml")
+
 
 @pytest.fixture
 def base_instruments_yaml():
@@ -100,6 +106,12 @@ def create_strategy_profiles(temp_config_dir):
     (strategies_dir / "mean_reversion.yaml").write_text(
         _read_canonical_yaml("strategies/mean_reversion.yaml"), encoding="utf-8"
     )
+    (strategies_dir / "md_amr.yaml").write_text(
+        _read_canonical_yaml("strategies/md_amr.yaml"), encoding="utf-8"
+    )
+    (strategies_dir / "llm_microstructure.yaml").write_text(
+        _read_canonical_yaml("strategies/llm_microstructure.yaml"), encoding="utf-8"
+    )
 
 
 def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
@@ -113,11 +125,12 @@ def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
     asset_cfg = assets.setdefault(symbol, {})
     assert isinstance(asset_cfg, dict)
     asset_cfg["enabled"] = True
-    mr_profile_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    mr_profile_path.write_text(yaml.safe_dump(
+        payload, sort_keys=False), encoding="utf-8")
 
 
 def test_strict_mode_fails_on_missing_strategies_yaml(
-    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_instruments_yaml
+    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_observability_yaml, base_instruments_yaml
 ):
     """Test A1: Strict mode fails when strategies.yaml is missing."""
     # Setup: NO strategies.yaml
@@ -125,13 +138,14 @@ def test_strict_mode_fails_on_missing_strategies_yaml(
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     # Enable strict mode
     os.environ["STRICT_CONFIG_CONFLICTS"] = "1"
     try:
         loader = ConfigLoader(config_dir=temp_config_dir)
-        
+
         from apps.reference.config_contract import ConfigContractError
         with pytest.raises(ConfigContractError) as exc_info:
             loader.load_config()
@@ -144,7 +158,7 @@ def test_strict_mode_fails_on_missing_strategies_yaml(
 
 
 def test_missing_strategies_yaml_fails_even_non_strict(
-    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_instruments_yaml
+    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_observability_yaml, base_instruments_yaml
 ):
     """Test A2: strategies.yaml is mandatory even in non-strict mode."""
     # Setup: NO strategies.yaml
@@ -152,6 +166,7 @@ def test_missing_strategies_yaml_fails_even_non_strict(
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     # Disable strict mode
@@ -166,7 +181,7 @@ def test_missing_strategies_yaml_fails_even_non_strict(
 
 
 def test_strategies_yaml_extra_keys_fail_validation(
-    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml,
+    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_observability_yaml,
     base_instruments_yaml
 ):
     """Test B: Extra keys in strategies.yaml cause Pydantic ValidationError (extra='forbid')."""
@@ -195,21 +210,22 @@ unknown_key: "invalid"
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
-    
+
     with pytest.raises(ValidationError) as exc_info:
         loader.load_config()
 
     error_msg = str(exc_info.value)
-    assert "extra" in error_msg.lower() or "unexpected" in error_msg.lower(), \
+    assert "extra inputs are not permitted" in error_msg.lower() or "unknown_key" in error_msg.lower(), \
         "ValidationError должен упоминать extra/unexpected fields"
 
 
 def test_strategies_yaml_loads_successfully(
     temp_config_dir, base_strategies_yaml, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_observability_yaml, base_instruments_yaml
 ):
     """Test C: Valid strategies.yaml loads successfully with correct structure."""
     _enable_mean_reversion_asset(temp_config_dir, "BTCUSDT")
@@ -218,6 +234,7 @@ def test_strategies_yaml_loads_successfully(
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
@@ -226,16 +243,16 @@ def test_strategies_yaml_loads_successfully(
     # Verify strategies_registry loaded
     assert config.strategies_registry is not None, "strategies_registry должен загрузиться"
     assert config.strategies_registry.version == "1.0.0"
-    
+
     # Verify assignments
     assert "ETHUSDT" in config.strategies_registry.assignments
     assert "aurora" in config.strategies_registry.assignments["ETHUSDT"]
-    
+
     assert "BTCUSDT" in config.strategies_registry.assignments
     assert len(config.strategies_registry.assignments["BTCUSDT"]) == 2
     assert "aurora" in config.strategies_registry.assignments["BTCUSDT"]
     assert "mean_reversion" in config.strategies_registry.assignments["BTCUSDT"]
-    
+
     # Verify arbitration
     assert config.strategies_registry.arbitration.mode == "priority"
     assert config.strategies_registry.arbitration.priority["aurora"] == 1
@@ -245,7 +262,7 @@ def test_strategies_yaml_loads_successfully(
 
 def test_invalid_mode_fails_validation(
     temp_config_dir, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_observability_yaml, base_instruments_yaml
 ):
     """Test D: Invalid arbitration mode causes ValidationError."""
     strategies_with_invalid_mode = """
@@ -270,10 +287,11 @@ arbitration:
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
-    
+
     with pytest.raises(ValidationError) as exc_info:
         loader.load_config()
 
@@ -284,7 +302,7 @@ arbitration:
 
 def test_missing_priority_for_hybrid_symbol_fails(
     temp_config_dir, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_observability_yaml, base_instruments_yaml
 ):
     """Test E: Missing priority for hybrid symbol strategy causes ValidationError."""
     _enable_mean_reversion_asset(temp_config_dir, "BTCUSDT")
@@ -312,11 +330,12 @@ arbitration:
     (temp_config_dir / "system.yaml").write_text(base_system_yaml, encoding="utf-8")
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml, encoding="utf-8")
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml, encoding="utf-8")
+    (temp_config_dir / "observability.yaml").write_text(base_observability_yaml, encoding="utf-8")
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml, encoding="utf-8")
 
     loader = ConfigLoader(config_dir=temp_config_dir)
-    
-    with pytest.raises(ValueError) as exc_info:
+
+    with pytest.raises(ValidationError) as exc_info:
         loader.load_config()
 
     error_msg = str(exc_info.value)

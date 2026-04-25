@@ -33,13 +33,15 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     dm.strategies_registry = None
     dm._cfg.strategies_registry = None
     dm._flip.handle_flip_orchestration = lambda *args, **kwargs: None
+    dm._regime_loss_embargo.get_entry_block = lambda *_args, **_kwargs: None
 
     symbol = "ETHUSDT"
 
     # Provide risk so the strategy gateway reaches feature-related gates.
     fsm.emit(
         "EVT:RISK_ASSESSMENT_COMPLETED",
-        {"symbol": symbol, "ts": int(time.time() * 1000), "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}},
+        {"symbol": symbol, "ts": int(time.time(
+        ) * 1000), "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}},
         why="test",
     )
 
@@ -47,13 +49,19 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     now_ms = int(time.time() * 1000)
     fsm.emit(
         "EVT:FEATURES_CALCULATED",
-        {"ts": now_ms, "symbol": symbol, "features": {"price": "100.0"}},
+        {"ts": now_ms, "symbol": symbol, "tf_sec": 60, "features": {"price": "100.0", "delta_price": "0.0", "obi": "0.0", "tfi": "0.0", "absorption": "0.0"},
+         "warmup": {"full_ready": True, "ticks_seen": 10},
+         "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
+         "bar": {"symbol": symbol, "timeframe_sec": 60, "start_ts_ms": now_ms, "end_ts_ms": now_ms, "open": "100.0", "high": "100.0", "low": "100.0", "close": "100.0", "volume": "0.0"},
+         "source_mode": "live",
+         "diagnostics": {}},
         why="test",
     )
 
     fsm.emit(
         "EVT:STRATEGY_SIGNAL_PRODUCED",
-        {"strategy_id": "stratX", "symbol": symbol, "side": "BUY", "rid": "rid-1", "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
+        {"strategy_id": "stratX", "symbol": symbol, "side": "BUY", "rid": "rid-1",
+            "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
         why="test",
     )
 
@@ -61,7 +69,8 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
 
     # Gate uses NRR SSOT code.
     reason = str(deferred[0].get("reason") or "")
-    assert NormalizedRejectReasons.normalize(reason) == NormalizedRejectReasons.DATA_NOT_READY
+    assert NormalizedRejectReasons.normalize(
+        reason) == NormalizedRejectReasons.DATA_NOT_READY
 
     # Ensure details carry missing critical info.
     original_event = deferred[0].get("original_event") or {}
@@ -87,22 +96,30 @@ def test_degraded_context_gate_ignores_global_lists_when_strategy_contract_absen
     dm.strategies_registry = None
     dm._cfg.strategies_registry = None
     dm._flip.handle_flip_orchestration = lambda *args, **kwargs: None
+    dm._regime_loss_embargo.get_entry_block = lambda *_args, **_kwargs: None
 
     symbol = "ETHUSDT"
     now_ms = int(time.time() * 1000)
     fsm.emit(
         "EVT:RISK_ASSESSMENT_COMPLETED",
-        {"symbol": symbol, "ts": now_ms, "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}},
+        {"symbol": symbol, "ts": now_ms, "risk_parameters": {
+            "is_trading_allowed": True, "risk_score": 0.0}},
         why="test",
     )
     fsm.emit(
         "EVT:FEATURES_CALCULATED",
-        {"ts": now_ms, "symbol": symbol, "features": {}},
+        {"ts": now_ms, "symbol": symbol, "tf_sec": 60, "features": {"price": "100.0", "delta_price": "0.0", "obi": "0.0", "tfi": "0.0", "absorption": "0.0"},
+         "warmup": {"full_ready": True, "ticks_seen": 10},
+         "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
+         "bar": {"symbol": symbol, "timeframe_sec": 60, "start_ts_ms": now_ms, "end_ts_ms": now_ms, "open": "100.0", "high": "100.0", "low": "100.0", "close": "100.0", "volume": "0.0"},
+         "source_mode": "live",
+         "diagnostics": {}},
         why="test",
     )
     fsm.emit(
         "EVT:STRATEGY_SIGNAL_PRODUCED",
-        {"strategy_id": "stratZ", "symbol": symbol, "side": "BUY", "rid": "rid-absent", "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
+        {"strategy_id": "stratZ", "symbol": symbol, "side": "BUY", "rid": "rid-absent",
+            "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
         why="test",
     )
 

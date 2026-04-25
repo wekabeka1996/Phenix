@@ -221,7 +221,7 @@ def _build_open_executor_fsm() -> SimpleNamespace:
         instruments={"BTCUSDT": instrument_spec},
         strategies=SimpleNamespace(aurora=SimpleNamespace(assets={})),
     )
-    return SimpleNamespace(
+    fsm = SimpleNamespace(
         adapter=adapter,
         config=config,
         _supersede_canceling=set(),
@@ -254,6 +254,11 @@ def _build_open_executor_fsm() -> SimpleNamespace:
         bus=MagicMock(),
         log_adapter=SimpleNamespace(log_trade_execution=MagicMock()),
     )
+    fsm.clear_supersede_canceling = lambda symbol: fsm._supersede_canceling.discard(
+        symbol)
+    fsm.dequeue_supersede = lambda symbol: fsm._supersede_queue.pop(
+        symbol, None)
+    return fsm
 
 
 @pytest.mark.asyncio

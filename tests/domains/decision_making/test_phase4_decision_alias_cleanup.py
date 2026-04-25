@@ -47,6 +47,7 @@ def test_safety_deny_logs_decision_intent_rejected_not_runtime_order_rejected():
             "rid-phase4-alias-cleanup",
             [],
             _make_sg(),
+            strategy_id="aurora",
         )
 
     logged_entry = write_mock.call_args_list[-1].args[0]

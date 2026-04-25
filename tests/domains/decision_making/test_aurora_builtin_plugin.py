@@ -12,6 +12,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from apps.reference.config_models import OperationalMode
 from apps.reference.domains.strategies.plugins.aurora_builtin import (
     AuroraBuiltinPlugin,
     _AuroraHandlerWrapper,
@@ -31,6 +32,7 @@ class TestAuroraBuiltinPlugin:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         side_bias_target_ratio=0.72,
@@ -72,6 +74,7 @@ class TestAuroraBuiltinPlugin:
                 aurora=SimpleNamespace(
                     timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
+                        operational_mode=OperationalMode.PARANOID,
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
                         side_bias_target_ratio=0.72,

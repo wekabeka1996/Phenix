@@ -30,6 +30,71 @@ class BracketManager:
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
 
+    async def _record_bracket_failure(
+        self,
+        *,
+        symbol: str,
+        source_path: str,
+        failure_class: str,
+        reason: str,
+        why_code: str,
+        rid: Any = None,
+        side: Any = None,
+        qty: Any = None,
+        entry_order_id: Any = None,
+        entry_client_order_id: Any = None,
+        strategy_id: Any = None,
+        details: Any = None,
+        live_position_proven: bool = False,
+        remediation_action_override: Optional[str] = None,
+    ) -> None:
+        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        if callable(handler):
+            await handler(
+                symbol=symbol,
+                source_path=source_path,
+                failure_class=failure_class,
+                reason=reason,
+                why_code=why_code,
+                rid=rid,
+                side=side,
+                qty=qty,
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                strategy_id=strategy_id,
+                details=details,
+                live_position_proven=live_position_proven,
+                remediation_action_override=remediation_action_override,
+            )
+            return
+
+        emit = getattr(self._fsm, "_emit_execution_bus_event", None)
+        if callable(emit):
+            emit(
+                "EVT:BRACKET_PLACEMENT_FAILED",
+                {
+                    "ts_ms": get_clock().now_ms(),
+                    "symbol": symbol,
+                    "source_path": source_path,
+                    "failure_class": failure_class,
+                    "reason": reason,
+                    "why_code": why_code,
+                    "remediation_action": remediation_action_override or (
+                        "force_reduce_only_close"
+                        if live_position_proven
+                        else "position_not_proven_no_close"
+                    ),
+                    "rid": rid,
+                    "side": side,
+                    "qty": str(qty) if qty is not None else None,
+                    "entry_order_id": str(entry_order_id) if entry_order_id is not None else None,
+                    "entry_client_order_id": str(entry_client_order_id) if entry_client_order_id is not None else None,
+                    "strategy_id": str(strategy_id) if strategy_id is not None else None,
+                    "details": details,
+                    "why": "execution:bracket_placement_failed",
+                },
+            )
+
     async def _has_live_synced_brackets(self, symbol: str) -> bool:
         """Return True when the current lifecycle already has live synced SL/TP."""
         symbol_key = str(symbol or "").strip().upper()
@@ -189,24 +254,64 @@ class BracketManager:
             LOG.error(f"Error placing brackets in parallel: {e}")
             # Fall back to the older sequential behavior to salvage bracket
             # placement when one side of the parallel path fails unexpectedly.
-            sl_resp = await self._fsm.adapter.place_stop_market_close_position(
-                symbol, sl_side, str(sl), new_client_order_id=sl_id)
             try:
-                tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
-                    symbol, tp_side, str(tp), new_client_order_id=tp_id)
-            except BinanceAPIError as e:
-                if e.code == -2021:
-                    tp_adj = tp * tp_widen_first
-                    tp_adj = quantize_stop_price(
-                        tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL")
-                    try:
-                        tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
-                            symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
-                    except BinanceAPIError:
-                        tp_resp = await self._fsm.adapter.place_limit_reduce_only(
-                            symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
-                else:
-                    raise
+                sl_resp = await self._fsm.adapter.place_stop_market_close_position(
+                    symbol, sl_side, str(sl), new_client_order_id=sl_id)
+                try:
+                    tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
+                        symbol, tp_side, str(tp), new_client_order_id=tp_id)
+                except BinanceAPIError as retry_error:
+                    if retry_error.code == -2021:
+                        tp_adj = tp * tp_widen_first
+                        tp_adj = quantize_stop_price(
+                            tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL")
+                        try:
+                            tp_resp = await self._fsm.adapter.place_take_profit_market_close_position(
+                                symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
+                        except BinanceAPIError:
+                            tp_resp = await self._fsm.adapter.place_limit_reduce_only(
+                                symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
+                    else:
+                        raise
+            except Exception as final_error:
+                await self._record_bracket_failure(
+                    symbol=symbol,
+                    source_path="BracketManager.place_brackets_parallel",
+                    failure_class="adapter_rejection",
+                    reason=str(final_error),
+                    why_code="BRACKET_PRIMARY_ADAPTER_REJECTION",
+                    rid=getattr(decision, "rid", None),
+                    side=side,
+                    qty=qty,
+                    entry_order_id=entry_resp.get("orderId"),
+                    entry_client_order_id=entry_resp.get("clientOrderId"),
+                    strategy_id=(owner_context or {}).get("strategy_id"),
+                    details={"initial_error": str(e)},
+                    live_position_proven=True,
+                )
+                raise
+
+        if not (sl_resp and tp_resp):
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="BracketManager.place_brackets_parallel",
+                failure_class="adapter_rejection",
+                reason="primary_bracket_response_missing",
+                why_code="BRACKET_PRIMARY_RESPONSE_MISSING",
+                rid=getattr(decision, "rid", None),
+                side=side,
+                qty=qty,
+                entry_order_id=entry_resp.get("orderId"),
+                entry_client_order_id=entry_resp.get("clientOrderId"),
+                strategy_id=(owner_context or {}).get("strategy_id"),
+                details={
+                    "sl_response_present": sl_resp is not None,
+                    "tp_response_present": tp_resp is not None,
+                },
+                live_position_proven=True,
+            )
+            raise RuntimeError(
+                "primary bracket placement did not return both SL and TP responses")
 
         # Register results
         self._register_bracket_results(
@@ -450,14 +555,57 @@ class BracketManager:
         if not await self.preflight_position_check(symbol):
             LOG.warning(
                 f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets")
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="BracketManager.place_deferred_brackets",
+                failure_class="transient_position_preflight_false",
+                reason="deferred_position_preflight_false",
+                why_code="BRACKET_DEFERRED_PREFLIGHT_FALSE",
+                rid=rid,
+                side=side,
+                qty=bracket_data.get("qty"),
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                strategy_id=bracket_data.get("strategy_id"),
+                live_position_proven=False,
+            )
             return False
 
         if not await self._fsm.order_guardian.should_place_brackets(symbol, entry_order_id):
             LOG.warning(
                 f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}")
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="BracketManager.place_deferred_brackets",
+                failure_class="duplicate_or_guardian_veto",
+                reason="order_guardian_blocked_deferred_brackets",
+                why_code="BRACKET_DEFERRED_GUARDIAN_BLOCKED",
+                rid=rid,
+                side=side,
+                qty=bracket_data.get("qty"),
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                strategy_id=bracket_data.get("strategy_id"),
+                live_position_proven=False,
+            )
             return False
 
         if await self._has_live_synced_brackets(symbol):
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="BracketManager.place_deferred_brackets",
+                failure_class="duplicate_already_existing_brackets",
+                reason="existing_exchange_brackets_already_protect_position",
+                why_code="BRACKET_DEFERRED_EXISTING_EXCHANGE_BRACKETS",
+                rid=rid,
+                side=side,
+                qty=bracket_data.get("qty"),
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                strategy_id=bracket_data.get("strategy_id"),
+                live_position_proven=False,
+                remediation_action_override="existing_exchange_brackets_synced",
+            )
             self._fsm._clear_pending_brackets(
                 entry_order_id,
                 reason="filled",
@@ -691,6 +839,54 @@ class BracketManager:
                 reason="filled",
                 symbol=symbol,
                 persist_snapshot=True,
+            )
+        else:
+            # A1-REMEDIATION: preflight_position_check already confirmed the position is live.
+            # Any bracket placement failure after that point must use live_position_proven=True
+            # so the protection-missing handler can trigger a force-close.  We distinguish
+            # three partial-failure sub-cases to produce precise observability payloads.
+            sl_present = sl_resp is not None
+            tp_present = tp_resp is not None
+            common_details = {
+                "sl_response_present": sl_present,
+                "tp_response_present": tp_present,
+                "missing_sl": not sl_present,
+                "missing_tp": not tp_present,
+                "preflight_position_confirmed": True,
+                "deferred_brackets": True,
+            }
+
+            if not sl_present and not tp_present:
+                # Both legs failed — position is fully unprotected.
+                why_code = "BRACKET_DEFERRED_BOTH_FAILED"
+                reason = "deferred_both_sl_and_tp_placement_failed_after_preflight"
+                failure_class = "adapter_rejection"
+            elif not sl_present:
+                # SL failed, TP placed — downside unprotected. Critical: requires remediation.
+                why_code = "BRACKET_DEFERRED_SL_MISSING"
+                reason = "deferred_sl_placement_failed_tp_placed_after_preflight"
+                failure_class = "adapter_rejection_partial_sl_missing"
+            else:
+                # SL placed, TP failed — upside exit missing. Policy: full SL+TP pair required;
+                # no silent partial-protection accepted.  Trigger remediation.
+                why_code = "BRACKET_DEFERRED_TP_MISSING"
+                reason = "deferred_tp_placement_failed_sl_placed_after_preflight"
+                failure_class = "adapter_rejection_partial_tp_missing"
+
+            await self._record_bracket_failure(
+                symbol=symbol,
+                source_path="BracketManager.place_deferred_brackets",
+                failure_class=failure_class,
+                reason=reason,
+                why_code=why_code,
+                rid=rid,
+                side=side,
+                qty=bracket_data.get("qty"),
+                entry_order_id=entry_order_id,
+                entry_client_order_id=entry_client_order_id,
+                strategy_id=bracket_data.get("strategy_id"),
+                details=common_details,
+                live_position_proven=True,
             )
 
         LOG.info(

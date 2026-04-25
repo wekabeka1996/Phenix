@@ -12,6 +12,8 @@ from apps.reference.config_models import (
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
     StrategyExecutionConfig,
+    LeverageConfig,
+    LiquidityGateConfig,
 )
 from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler
 
@@ -38,6 +40,7 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             bb_num_std=2.0,
             atr_window=14,
             rsi_window=14,
+            score_multiplier=1.0,
             entry_threshold=0.05,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
@@ -47,15 +50,23 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             sl_atr_mult=1.5,
             tp_to_mid=True,
             cooldown_sec=60,
+            confidence_base=0.5,
+            confidence_bb_slope=5.0,
+            confidence_rsi_bonus=0.2,
         ),
         regime_thresholds=MRRegimeThresholdsConfig(
             high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=True,
+                leverage=LeverageConfig(
+                    target=10, mode="ISOLATED", max_notional_value=None),
                 position_mode="STRICT",
+                liquidity_gate=None,
                 allowed_regimes=["FLAT_LOW"],
                 strategy=MRStrategyOverrideConfig(
+                    microstructure_veto=None,
+                    directional_bias=None,
                     entry_threshold=0.123,
                     tp_to_mid=False,
                     cooldown_sec=321,
@@ -80,7 +91,12 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
                         sides=["LONG", "SHORT"],
                     ),
                     sl_atr_mult=None,
+                    sl_buffer_pct=None,
+                    tp_buffer_pct=None,
                     allowed_regimes=["FLAT_HIGH"],
+                    confidence_base=None,
+                    confidence_bb_slope=None,
+                    confidence_rsi_bonus=None,
                 ),
 
             )
@@ -90,11 +106,25 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             "FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0),
         },
         allowed_regimes=["FLAT_NORMAL"],
+        liquidity_gate=LiquidityGateConfig(
+            enabled=False, kappa_min=0.0, kappa_max=1.0, failsafe_qty_check=False),
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
             entry_tif=None,
+            exit_order_type=None,
+            exit_tif=None,
+            exit_limit_ttl_ms=None,
+            gtx_retry_max=0,
+            gtx_retry_offset_bps=2.0,
         ),
-        safety_gates={"enabled": False},
+        safety_gates={
+            "enabled": False,
+            "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
+        },
+        objective=None,
+        microstructure_veto=None,
+        directional_bias=None,
     )
 
     cfg = SimpleNamespace(
@@ -152,6 +182,7 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
             bb_num_std=2.0,
             atr_window=14,
             rsi_window=14,
+            score_multiplier=1.0,
             entry_threshold=0.05,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
@@ -161,13 +192,19 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
             sl_atr_mult=1.5,
             tp_to_mid=True,
             cooldown_sec=60,
+            confidence_base=0.5,
+            confidence_bb_slope=5.0,
+            confidence_rsi_bonus=0.2,
         ),
         regime_thresholds=MRRegimeThresholdsConfig(
             high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=True,
+                leverage=LeverageConfig(
+                    target=10, mode="ISOLATED", max_notional_value=None),
                 position_mode="STRICT",
+                liquidity_gate=None,
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL"],
                 strategy=None,
 
@@ -176,11 +213,25 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
         regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(
             sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_HIGH"],
+        liquidity_gate=LiquidityGateConfig(
+            enabled=False, kappa_min=0.0, kappa_max=1.0, failsafe_qty_check=False),
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
             entry_tif=None,
+            exit_order_type=None,
+            exit_tif=None,
+            exit_limit_ttl_ms=None,
+            gtx_retry_max=0,
+            gtx_retry_offset_bps=2.0,
         ),
-        safety_gates={"enabled": False},
+        safety_gates={
+            "enabled": False,
+            "system_stress_policy": "off",
+            "stress_attenuation_factor": 0.5,
+        },
+        objective=None,
+        microstructure_veto=None,
+        directional_bias=None,
     )
 
     cfg = SimpleNamespace(

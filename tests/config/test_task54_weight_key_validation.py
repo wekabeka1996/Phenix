@@ -16,14 +16,15 @@ from apps.reference.config_models import (
 
 def _make_minimal_aurora_instrument_config(**overrides):
     """Create minimal valid AuroraInstrumentConfig with all required fields.
-    
-    Note: max_risk_score must be OMITTED (not set to None) per MR-RISK-GATE-NONE-FIX-01.
+
+    Note: max_risk_score is required-nullable in the current strict contract.
     """
     base = {
         "enabled": True,
         "position_mode": "STRICT",
         "weights": None,
         "side_bias": None,
+        "leverage": None,
         "regime_thresholds": None,
         "regime_sizing": None,
         "exit": None,
@@ -31,10 +32,17 @@ def _make_minimal_aurora_instrument_config(**overrides):
         "trailing_stop": None,
         # PURGE-04: execution and ema_clamp removed from model
         "signal_threshold": None,
-        # max_risk_score OMITTED - explicit null is forbidden
+        "max_risk_score": None,
         "cooldown_sec": None,
         "allowed_regimes": None,
+        "scoring_version": None,
+        "feature_neutrals": None,
+        "essential_features": None,
+        "liquidity_gate": None,
+        "holding_period": None,
+        "reentry_cooldown_sec": None,
         "timeframe_sec": None,
+        "volatility_entry_logic": None,
     }
     base.update(overrides)
     return AuroraInstrumentConfig(**base)
@@ -80,7 +88,7 @@ class TestWeightKeyValidation:
                     "obi": 0.15,
                 }
             )
-        
+
         error_msg = str(exc_info.value)
         assert "Invalid weight keys" in error_msg
         assert "ema" in error_msg
@@ -95,20 +103,21 @@ class TestWeightKeyValidation:
                     "volatility": 0.5,  # Should be volatility_state
                 }
             )
-        
+
         error_msg = str(exc_info.value)
         assert "volatility" in error_msg.lower()
 
     def test_all_legacy_keys_rejected(self):
         """All legacy abbreviated keys should be rejected."""
         legacy_keys = ["ema", "volume", "macro", "liquidity", "volatility"]
-        
+
         for legacy_key in legacy_keys:
             with pytest.raises(ValidationError) as exc_info:
                 _make_minimal_aurora_instrument_config(
                     weights={legacy_key: 1.0}
                 )
-            assert "Invalid weight keys" in str(exc_info.value), f"Key '{legacy_key}' should be rejected"
+            assert "Invalid weight keys" in str(
+                exc_info.value), f"Key '{legacy_key}' should be rejected"
 
     def test_none_weights_accepted(self):
         """None weights should be valid (uses global fallback)."""
@@ -146,20 +155,20 @@ class TestConfigLoadWithNewWeights:
         """aurora.yaml should load without weight key validation errors."""
         from apps.reference.config_loader import ConfigLoader
         import os
-        
+
         # Skip if not in project root
         config_path = "config/aurora/strategies/aurora.yaml"
         if not os.path.exists(config_path):
             pytest.skip("aurora.yaml not found")
-        
+
         # This will raise ValidationError if weight keys are invalid
         loader = ConfigLoader()
         config = loader.load_config()
-        
+
         # Verify aurora assets loaded
         aurora_cfg = config.strategies.aurora
         assert aurora_cfg is not None
-        
+
         # Check weights for each symbol
         for symbol in ["ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BTCUSDT"]:
             instr_cfg = aurora_cfg.assets.get(symbol)
@@ -172,15 +181,15 @@ class TestConfigLoadWithNewWeights:
         """Global signal_weights should also use canonical keys."""
         from apps.reference.config_loader import ConfigLoader
         import os
-        
+
         if not os.path.exists("config/aurora/strategies/aurora.yaml"):
             pytest.skip("aurora.yaml not found")
-        
+
         loader = ConfigLoader()
         config = loader.load_config()
-        
+
         # Global weights from strategies.aurora.decision.signal_weights
         global_weights = config.strategies.aurora.decision.signal_weights.model_dump()
-        
+
         for key in global_weights.keys():
             assert key in CANONICAL_WEIGHT_KEYS, f"Global signal_weights has non-canonical key: '{key}'"

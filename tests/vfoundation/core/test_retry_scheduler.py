@@ -16,6 +16,8 @@ from vfoundation.core.retry_scheduler import RetryScheduler
 @pytest.fixture
 def fsm_mock():
     fsm = MagicMock(spec=FSMCore)
+    fsm.emit = MagicMock()
+    fsm.emit._emit_compat_mode = "message"
     return fsm
 
 
@@ -54,16 +56,16 @@ def test_bind_loop_not_running(fsm_mock, on_no_loop_mock):
     scheduler = RetryScheduler(fsm=fsm_mock, on_no_loop=on_no_loop_mock)
     loop = MagicMock(spec=asyncio.AbstractEventLoop)
     loop.is_running.return_value = False
-    
+
     with pytest.raises(RuntimeError, match="requires a running asyncio loop"):
         scheduler.bind_loop(loop)
-        
+
     on_no_loop_mock.assert_called_once()
 
 
 def test_register_deferred_no_loop(fsm_mock, on_no_loop_mock):
     scheduler = RetryScheduler(fsm=fsm_mock, on_no_loop=on_no_loop_mock)
-    
+
     result = scheduler.register_deferred({"retry_key": "test"})
     assert result is False
     on_no_loop_mock.assert_called_once()
@@ -75,7 +77,7 @@ def test_register_deferred_missing_key(fsm_mock, logger_mock):
     loop.is_running.return_value = True
     loop._thread_id = threading.get_ident()
     scheduler._loop = loop
-    
+
     result = scheduler.register_deferred({"symbol": "BTC"})
     assert result is False
     logger_mock.warning.assert_called_with(
@@ -89,7 +91,7 @@ def test_register_deferred_missing_original_event(fsm_mock, logger_mock):
     loop.is_running.return_value = True
     loop._thread_id = threading.get_ident()
     scheduler._loop = loop
-    
+
     result = scheduler.register_deferred({"retry_key": "test1"})
     assert result is False
     logger_mock.warning.assert_called_with(
@@ -120,7 +122,7 @@ def test_cancel_pending_existing(fsm_mock):
     task_mock.done.return_value = False
     scheduler._pending = {"k1": {"symbol": "BTCUSDT"}}
     scheduler._retry_tasks = {"k1": task_mock}
-    
+
     result = scheduler.cancel_pending("k1")
     assert result is True
     assert "k1" not in scheduler._pending
@@ -143,7 +145,7 @@ def test_clear_all_pending(fsm_mock):
         "k2": {"symbol": "ETHUSDT", "retry_key": "k2", "original_event": {}},
     }
     scheduler._retry_tasks = {"k1": task1, "k2": task2}
-    
+
     count = scheduler.clear_all_pending(emit_dropped=False)
     assert count == 2
     assert scheduler._pending == {}
@@ -151,10 +153,11 @@ def test_clear_all_pending(fsm_mock):
     task1.cancel.assert_called_once()
     task2.cancel.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_execute_retry_success(fsm_mock):
     scheduler = RetryScheduler(fsm=fsm_mock)
-    
+
     # Mock internal state
     scheduler._pending = {
         "k1": {
@@ -170,19 +173,21 @@ async def test_execute_retry_success(fsm_mock):
         }
     }
     scheduler._attempts = {"k1": 1}
-    
+
     # Run _execute_retry directly
     await scheduler._execute_retry("k1")
-    
+
     # Should be removed from pending after successful execute
     assert "k1" not in scheduler._pending
     # Should emit compat
     fsm_mock.emit.assert_called_once()
-    
+
+
 @pytest.mark.asyncio
 async def test_execute_retry_max_attempts_reached(fsm_mock, logger_mock):
-    scheduler = RetryScheduler(fsm=fsm_mock, logger=logger_mock, default_max_attempts=2)
-    
+    scheduler = RetryScheduler(
+        fsm=fsm_mock, logger=logger_mock, default_max_attempts=2)
+
     scheduler._pending = {
         "k1": {
             "retry_key": "k1",
@@ -193,10 +198,11 @@ async def test_execute_retry_max_attempts_reached(fsm_mock, logger_mock):
         }
     }
     scheduler._attempts = {"k1": 2}
-    
+
     await scheduler._execute_retry("k1")
-    
+
     assert "k1" not in scheduler._pending
-    logger_mock.warning.assert_called_with("RetryScheduler: Dropping %s (reason=%s, attempts=%d/%d)", "k1", "MAX_ATTEMPTS_EXCEEDED", 3, 2)
+    logger_mock.warning.assert_called_with(
+        "RetryScheduler: Dropping %s (reason=%s, attempts=%d/%d)", "k1", "MAX_ATTEMPTS_EXCEEDED", 3, 2)
     # Dropped intent should be emitted
     assert fsm_mock.emit.call_count == 1

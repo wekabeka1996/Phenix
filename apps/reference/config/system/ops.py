@@ -11,14 +11,12 @@ class OpsConfig(BaseModel):
 
     # Emergency controls (A-01 fix)
     panic_killswitch: bool = Field(
-        description='Emergency kill switch - blocks all new CMD:OPEN when True')
+        ..., description='Emergency kill switch - blocks all new CMD:OPEN when True')
 
     # Used in tooling only
     metrics_url: Optional[str] = Field(
-        default=None,
-        description='Metrics endpoint (tooling only)'
+        ..., description='Metrics endpoint (tooling only)'
     )
     reports_dir: Optional[str] = Field(
-        default=None,
-        description='Reports output directory (tooling only)'
+        ..., description='Reports output directory (tooling only)'
     )

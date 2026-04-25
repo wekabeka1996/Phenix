@@ -270,7 +270,7 @@ def test_current_eth_low_vol_regime_tpsl_survives_guardrails() -> None:
     assert result["tpsl_ctx"]["regime_used"] == "LOW_VOLATILITY"
 
 
-def test_current_sol_low_vol_regime_tpsl_fails_tp_min_dist_guardrail() -> None:
+def test_current_sol_low_vol_regime_tpsl_survives_tp_min_dist_guardrail() -> None:
     assets = _load_current_aurora_assets()
     instr_cfg = _build_instr_cfg(assets["SOLUSDT"])
     handler, _ = _make_handler("SOLUSDT", instr_cfg)
@@ -288,7 +288,7 @@ def test_current_sol_low_vol_regime_tpsl_fails_tp_min_dist_guardrail() -> None:
     assert candidate is not None
     tp_dist_bps = ((candidate["target_price"] -
                    Decimal("100")) / Decimal("100")) * Decimal("10000")
-    assert tp_dist_bps < Decimal(str(regime_tpsl_cfg.min_dist_bps))
+    assert tp_dist_bps > Decimal(str(regime_tpsl_cfg.min_dist_bps))
 
     guarded = handler._apply_tpsl_guardrails(
         symbol="SOLUSDT",
@@ -298,8 +298,8 @@ def test_current_sol_low_vol_regime_tpsl_fails_tp_min_dist_guardrail() -> None:
         regime_tpsl_cfg=regime_tpsl_cfg,
     )
 
-    assert guarded is None
-    assert handler._get_tpsl_owner_loss_reason() == TPSL_OWNER_LOSS_TP_MIN_DIST_BPS
+    assert guarded is not None
+    assert handler._get_tpsl_owner_loss_reason() is None
 
 
 def test_aurora_success_path_keeps_regime_tpsl_as_final_owner() -> None:
@@ -361,7 +361,7 @@ def test_aurora_success_path_keeps_regime_tpsl_as_final_owner() -> None:
     )
 
 
-def test_aurora_guardrail_fail_falls_back_to_entry_plan_owner() -> None:
+def test_aurora_sol_success_path_keeps_regime_tpsl_as_final_owner() -> None:
     assets = _load_current_aurora_assets()
     entry_plan_raw = _load_current_entry_plan_cfg()
     instr_cfg = _build_instr_cfg(assets["SOLUSDT"])
@@ -380,13 +380,13 @@ def test_aurora_guardrail_fail_falls_back_to_entry_plan_owner() -> None:
 
     assert len(emitted) == 1
     _, payload = emitted[0]
-    assert payload["price_ctx"].get("stop_price") is None
-    assert payload["price_ctx"].get("target_price") is None
-    assert payload.get("tpsl_ctx") is None
+    assert payload["price_ctx"].get("stop_price") is not None
+    assert payload["price_ctx"].get("target_price") is not None
+    assert payload.get("tpsl_ctx") is not None
     assert payload["tpsl_owner_ctx"] == {
         "intended_owner": TPSL_OWNER_REGIME_TPSL,
-        "final_owner": None,
-        "owner_loss_reason": TPSL_OWNER_LOSS_TP_MIN_DIST_BPS,
+        "final_owner": TPSL_OWNER_REGIME_TPSL,
+        "owner_loss_reason": None,
     }
 
     payload["runtime_permissions"] = {
@@ -401,35 +401,24 @@ def test_aurora_guardrail_fail_falls_back_to_entry_plan_owner() -> None:
     gateway._reject.assert_not_called()
     dm._propose_trade_intent.assert_called_once()
     kwargs = dm._propose_trade_intent.call_args.kwargs
-    assert kwargs["entry_plan_trace"] is not None
-    assert kwargs["stop_price"] is not None
-    assert kwargs["target_price"] is not None
+    assert kwargs["entry_plan_trace"] is None
+    assert kwargs["stop_price"] == payload["price_ctx"]["stop_price"]
+    assert kwargs["target_price"] == payload["price_ctx"]["target_price"]
     assert kwargs["tpsl_owner_ctx"] == {
         "intended_owner": TPSL_OWNER_REGIME_TPSL,
-        "final_owner": TPSL_OWNER_ENTRY_PLAN,
-        "owner_loss_reason": TPSL_OWNER_LOSS_TP_MIN_DIST_BPS,
+        "final_owner": TPSL_OWNER_REGIME_TPSL,
+        "owner_loss_reason": None,
     }
     assert any(
         call.args == (
             "[%s] TPSL_OWNER_RESOLVED intended=%s final=%s reason=%s",
             "SOLUSDT",
             TPSL_OWNER_REGIME_TPSL,
-            TPSL_OWNER_ENTRY_PLAN,
-            TPSL_OWNER_LOSS_TP_MIN_DIST_BPS,
+            TPSL_OWNER_REGIME_TPSL,
+            None,
         )
         for call in gateway.logger.info.call_args_list
     )
-
-    ref_price = Decimal(payload["price_ctx"]["entry_price"])
-    atr_value = Decimal(str(payload["volatility"]["atr_14"]))
-    min_offset = ref_price * Decimal("0.0001")
-    sl_offset = max(
-        Decimal(str(entry_plan_raw["sl_k_atr"])) * atr_value, min_offset)
-    tp_offset = max(
-        Decimal(str(entry_plan_raw["tp_k_atr"])) * atr_value, min_offset)
-
-    assert kwargs["stop_price"] == str(ref_price - sl_offset)
-    assert kwargs["target_price"] == str(ref_price + tp_offset)
 
 
 def test_entry_plan_fallback_preserves_long_and_short_geometry() -> None:

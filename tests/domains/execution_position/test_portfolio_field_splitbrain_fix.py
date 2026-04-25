@@ -127,6 +127,11 @@ def _sidecar_config(
                 "bracket_mutation": False,
                 "exact_targeting": False,
             },
+            "peak_giveback_close": {
+                "enabled": False,
+                "edge_arm_usd": 25.0,
+                "giveback_trigger_pct": 50.0,
+            },
         }
     )
 

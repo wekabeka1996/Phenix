@@ -7,53 +7,41 @@ BUG FIX: Previously fsm.py had hardcoded defaults sl_bps=50, tp_bps=100
 FIX: Now uses DomainConfigResolver.get_brackets_strict() which FAILS if config is missing.
 """
 
+from functools import lru_cache
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.config_models import (
-    AuroraConfig, 
-    TradingConfig, 
-    ExecutionConfig, 
-    ManageConfig, 
+    AuroraConfig,
+    TradingConfig,
+    ExecutionConfig,
+    ManageConfig,
     BracketsConfig,
     SLConfig,
     TPConfig,
     DomainsConfig,
-    ExecutionPositionDomainConfig,
-    WatchdogConfig,
-    ExposureGuardConfig,
-    FsmOpenConfig,
-    OrderIndexConfig,
-    InflightReconcileConfig,
-    MetricsCollectorConfig,
-    IdempotentCancelConfig,
-    ExecutionUtilsConfig,
-    DomainsDebugConfig,
-    DecisionMakingDomainConfig,
-    FeatureEngineeringDomainConfig,
-    RiskManagementDomainConfig,
-    PositionTrackingDomainConfig,
-    # NOTE: AccountObserverDomainConfig removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
 )
+
+
+CONFIG_DIR = Path("config/aurora")
+
+
+@lru_cache(maxsize=1)
+def _canonical_domains_config() -> DomainsConfig:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    assert cfg.domains is not None
+    return cfg.domains
 
 
 class TestBracketsFailClosed:
     """Test that brackets config loading is fail-closed (no defaults)."""
 
     def _create_minimal_domains_config(self) -> DomainsConfig:
-        """Create minimal valid DomainsConfig for testing."""
-        return DomainsConfig(
-            debug=DomainsDebugConfig(
-                disable_positions_stale_gate=False,
-                disable_daily_loss_limit=False,
-            ),
-            decision_making=MagicMock(spec=DecisionMakingDomainConfig),
-            feature_engineering=MagicMock(spec=FeatureEngineeringDomainConfig),
-            risk_management=MagicMock(spec=RiskManagementDomainConfig),
-            position_tracking=MagicMock(spec=PositionTrackingDomainConfig),
-            # NOTE: account_observer removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
-            execution_position=MagicMock(spec=ExecutionPositionDomainConfig),
-        )
+        """Use the current strict canonical domains baseline for resolver-only tests."""
+        return _canonical_domains_config().model_copy(deep=True)
 
     def test_get_brackets_strict_success(self):
         """Test that valid brackets config is loaded correctly."""
@@ -123,7 +111,7 @@ class TestBracketsFailClosed:
     def test_no_hardcoded_defaults_in_resolver(self):
         """
         Verify that resolver does NOT use any hardcoded defaults.
-        
+
         This is the regression test for the bug where sl_bps=50, tp_bps=100
         were hardcoded and caused wrong TP/SL for DOGE.
         """
@@ -162,7 +150,7 @@ class TestBracketsFailClosed:
         # Verify production values
         assert brackets.sl.fixed_bps == 40, "Production SL should be 40 bps"
         assert brackets.tp.fixed_bps == 80, "Production TP should be 80 bps"
-        
+
         # NOT the old hardcoded defaults!
         assert brackets.sl.fixed_bps != 50, "Should NOT use hardcoded default 50"
         assert brackets.tp.fixed_bps != 100, "Should NOT use hardcoded default 100"

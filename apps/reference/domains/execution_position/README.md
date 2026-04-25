@@ -102,7 +102,6 @@ See `domain_dict.json` for the full export list. Key events:
 | `bracket_manager.py` | SL/TP bracket placement |
 | `watchdog.py` | Order timeout detection |
 | `entry_manager.py` | Entry lifecycle management |
-| `lifecycle.py` | Lifecycle coordination |
 
 ### Execution (3 files)
 | File | Role |

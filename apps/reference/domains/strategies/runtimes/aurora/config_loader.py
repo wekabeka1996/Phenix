@@ -102,8 +102,26 @@ class AuroraConfigLoaderMixin:
 
         if decision:
             # Phase 6: Modes (Init first as used by shields)
-            op_mode = getattr(decision, "operational_mode",
-                              OperationalMode.PARANOID)
+            op_mode_raw = getattr(decision, "operational_mode", None)
+            if isinstance(op_mode_raw, OperationalMode):
+                op_mode = op_mode_raw
+            elif isinstance(op_mode_raw, str):
+                normalized_op_mode = op_mode_raw.strip().lower()
+                if normalized_op_mode in {
+                    OperationalMode.PARANOID.value,
+                    OperationalMode.CURIOUS.value,
+                }:
+                    op_mode = OperationalMode(normalized_op_mode)
+                elif normalized_op_mode in {"testnet", "production"}:
+                    op_mode = OperationalMode.PARANOID
+                else:
+                    from apps.reference.config_contract import ConfigContractError
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.operational_mode",
+                        why="operational_mode must resolve to 'paranoid' or 'curious'. Unsupported legacy alias provided.",
+                    )
+            else:
+                op_mode = OperationalMode.PARANOID
             self.mode_manager = ModeManager(op_mode)
 
             if self._strict_pydantic_config:
@@ -394,7 +412,11 @@ class AuroraConfigLoaderMixin:
                     "ExitManager config missing! Defaulting to disabled (Dangerous!)")
                 exit_cfg = ExitManagerConfig(
                     time_exit_enabled=False,
+                    max_hold_time_sec=86400,
                     signal_exit_enabled=False,
+                    signal_reversal_threshold=-0.1,
+                    danger_zone_action="TIGHTEN_STOPS",
+                    danger_zone_tighten_factor=0.5,
                 )
 
             # Compatibility probe: older config objects may expose trailing_stop
@@ -457,10 +479,9 @@ class AuroraConfigLoaderMixin:
                     "DecisionMakingDomainConfig.entry_plan missing: EntryPlan logic disabled (Structural Gate will block).")
 
             # Phase 6: Dashboard
-            dash_cfg = getattr(decision, "dashboard",
-                               None) or DashboardConfig(enabled=False)
+            dash_cfg = getattr(decision, "dashboard", None)
             self.dashboard = DashboardMetrics(
-                dash_cfg) if dash_cfg.enabled else None
+                dash_cfg) if dash_cfg is not None and dash_cfg.enabled else None
 
         else:
             # P2: FAIL-CLOSED — decision config is mandatory

@@ -93,8 +93,10 @@ class TestSystemStressThresholds:
 
     def test_extra_field_forbidden(self):
         with pytest.raises(ValidationError) as exc_info:
-            SystemStressThresholdsConfig(**_valid_thresholds(), unknown_field=1.0)
-        assert "Extra inputs" in str(exc_info.value) or "unknown_field" in str(exc_info.value)
+            SystemStressThresholdsConfig(
+                **_valid_thresholds(), unknown_field=1.0)
+        assert "Extra inputs" in str(
+            exc_info.value) or "unknown_field" in str(exc_info.value)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -112,29 +114,33 @@ class TestSystemStressAggregation:
             SystemStressAggregationConfig(
                 method="weighted_vote",
                 weights={"atr": 0.50, "vol": 0.10},  # sum = 0.60
+                k=None,
             )
 
     def test_weights_required_for_weighted_vote(self):
         with pytest.raises(ValidationError, match="weights required"):
-            SystemStressAggregationConfig(method="weighted_vote", weights=None)
+            SystemStressAggregationConfig(
+                method="weighted_vote", weights=None, k=None)
 
     def test_invalid_weight_key_rejected(self):
         with pytest.raises(ValidationError, match="invalid keys"):
             SystemStressAggregationConfig(
                 method="weighted_vote",
                 weights={"atr": 0.5, "vol_sigam": 0.5},  # typo: vol_sigam
+                k=None,
             )
 
     def test_k_required_for_k_of_n(self):
         with pytest.raises(ValidationError, match="k required"):
-            SystemStressAggregationConfig(method="k_of_n", k=None)
+            SystemStressAggregationConfig(
+                method="k_of_n", weights=None, k=None)
 
     def test_valid_k_of_n(self):
-        cfg = SystemStressAggregationConfig(method="k_of_n", k=3)
+        cfg = SystemStressAggregationConfig(method="k_of_n", weights=None, k=3)
         assert cfg.k == 3
 
     def test_valid_max_method(self):
-        cfg = SystemStressAggregationConfig(method="max")
+        cfg = SystemStressAggregationConfig(method="max", weights=None, k=None)
         assert cfg.method == "max"
 
 
@@ -233,7 +239,9 @@ class TestSystemStressConfig:
                 thresholds=_valid_thresholds(spread_sigma=3.0),
                 aggregation=dict(
                     method="weighted_vote",
-                    weights={"atr": 0.25, "vol": 0.25, "gap": 0.15, "range": 0.15, "spread": 0.20},
+                    weights={"atr": 0.25, "vol": 0.25, "gap": 0.15,
+                             "range": 0.15, "spread": 0.20},
+                    k=None,
                 ),
             )
         )
@@ -248,7 +256,9 @@ class TestSystemStressConfig:
                     aggregation=dict(
                         method="weighted_vote",
                         # 'volume' has sigma=0, so weight for it is wasted
-                        weights={"atr": 0.25, "vol": 0.25, "gap": 0.20, "volume": 0.30},
+                        weights={"atr": 0.25, "vol": 0.25,
+                                 "gap": 0.20, "volume": 0.30},
+                        k=None,
                     ),
                 )
             )
@@ -290,15 +300,15 @@ class TestSystemStressConfigLoader:
     """Integration: system_stress loaded through real ConfigLoader."""
 
     def test_config_loads_without_system_stress(self, tmp_path: Path):
-        """Existing config without system_stress → None (backward compat)."""
+        """Existing config with explicit null system_stress → None."""
         from apps.reference.config_loader import ConfigLoader
 
         cfg_dir = _copy_config_to_tmp(tmp_path)
 
-        # Ensure regime.yaml does NOT have system_stress
+        # Current strict contract requires an explicit null instead of omitting the key.
         regime_path = cfg_dir / "regime.yaml"
         regime = yaml.safe_load(regime_path.read_text(encoding="utf-8"))
-        regime.pop("system_stress", None)
+        regime["system_stress"] = None
         _write_yaml(regime_path, regime)
 
         loader = ConfigLoader(config_dir=cfg_dir)

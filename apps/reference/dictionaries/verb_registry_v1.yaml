@@ -585,6 +585,12 @@ registry:
   schema: null
   since: '2026-03-14'
 - op: EVT
+  verb: BRACKET_PLACEMENT_FAILED
+  owner: execution_position
+  status: active
+  schema: apps/reference/domains/execution_position/schemas/bracket_placement_failed_v1.json
+  since: '2026-04-25'
+- op: EVT
   verb: LLM_INTENT_RECEIVED_V1
   owner: shadow_telemetry
   status: experimental

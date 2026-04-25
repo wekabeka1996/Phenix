@@ -63,6 +63,12 @@ class TradeTick:
 class WebSocketAggregator:
     """Aggregates WebSocket data streams into market tick events."""
 
+    @staticmethod
+    def _increment_drop_reason(state: Dict[str, Any], reason: str) -> None:
+        state["trade_dropped"] += 1
+        drop_reason_counts = state["drop_reason_counts"]
+        drop_reason_counts[reason] = int(drop_reason_counts.get(reason, 0)) + 1
+
     def __init__(
         self,
         symbols: list[str],
@@ -108,6 +114,13 @@ class WebSocketAggregator:
                 "trades_dropped_out_of_order": 0,
                 "trades_dropped_missing_ts": 0,
                 "trades_dropped_bad_qty": 0,
+                "aggtrade_raw_seen": 0,
+                "aggtrade_route_attempted": 0,
+                "on_trade_called": 0,
+                "trade_accepted": 0,
+                "trade_dropped": 0,
+                "drop_reason_counts": {},
+                "tick_emit_count": 0,
                 # Price history
                 "prices": deque(maxlen=10),
                 "latest_price": decimal.Decimal(0),
@@ -121,6 +134,46 @@ class WebSocketAggregator:
 
         self.on_tick_callback: Optional[Callable] = None
         self.on_anchor_update_callback: Optional[Callable] = None
+
+    def note_aggtrade_raw_seen(self, symbol: str) -> None:
+        if symbol not in self.state:
+            return
+        self.state[symbol]["aggtrade_raw_seen"] += 1
+
+    def note_aggtrade_route_attempted(self, symbol: str) -> None:
+        if symbol not in self.state:
+            return
+        self.state[symbol]["aggtrade_route_attempted"] += 1
+
+    def get_trade_observability_snapshot(self, symbol: str) -> Optional[Dict[str, Any]]:
+        if symbol not in self.state:
+            return None
+
+        self._cleanup_window(symbol)
+        state = self.state[symbol]
+        return {
+            "symbol": symbol,
+            "aggtrade_raw_seen": int(state["aggtrade_raw_seen"]),
+            "aggtrade_route_attempted": int(state["aggtrade_route_attempted"]),
+            "on_trade_called": int(state["on_trade_called"]),
+            "trade_accepted": int(state["trade_accepted"]),
+            "trade_dropped": int(state["trade_dropped"]),
+            "drop_reason_counts": dict(state["drop_reason_counts"]),
+            "buy_count": int(state["buy_trades"]),
+            "sell_count": int(state["sell_trades"]),
+            "buy_volume": _format_fixed_point(float(state["buy_qty"])),
+            "sell_volume": _format_fixed_point(float(state["sell_qty"])),
+            "last_trade_ts_ms": int(state["last_trade_ts_ms"] or 0),
+            "tick_emit_count": int(state["tick_emit_count"]),
+        }
+
+    def get_all_trade_observability_snapshots(self) -> Dict[str, Dict[str, Any]]:
+        snapshots: Dict[str, Dict[str, Any]] = {}
+        for symbol in self.state:
+            snapshot = self.get_trade_observability_snapshot(symbol)
+            if snapshot is not None:
+                snapshots[symbol] = snapshot
+        return snapshots
 
     def set_tick_callback(self, callback: Callable) -> None:
         """
@@ -191,19 +244,23 @@ class WebSocketAggregator:
             return
 
         state = self.state[symbol]
+        state["on_trade_called"] += 1
 
         ts_ms = int(ts) if ts else 0
         if ts_ms <= 0:
             state["trades_dropped_missing_ts"] += 1
+            self._increment_drop_reason(state, "missing_ts")
             return
 
         try:
             qty = float(quantity)
         except Exception:
             state["trades_dropped_bad_qty"] += 1
+            self._increment_drop_reason(state, "bad_qty")
             return
         if (not math.isfinite(qty)) or qty <= 0:
             state["trades_dropped_bad_qty"] += 1
+            self._increment_drop_reason(state, "bad_qty")
             return
 
         try:
@@ -215,6 +272,7 @@ class WebSocketAggregator:
 
         # Deduplication check (only for accepted trades; do not "burn" ids on drops)
         if trade_id is not None and trade_id in state["seen_trade_ids"]:
+            self._increment_drop_reason(state, "duplicate_trade_id")
             return
 
         last_ts_ms = int(state["last_trade_ts_ms"] or 0)
@@ -224,6 +282,7 @@ class WebSocketAggregator:
                 ts_ms = last_ts_ms
             else:
                 state["trades_dropped_out_of_order"] += 1
+                self._increment_drop_reason(state, "out_of_order")
                 return
 
         if trade_id is not None:
@@ -234,8 +293,10 @@ class WebSocketAggregator:
 
         # OPTIMIZATION: don't clean up on every trade; cleanup happens lazily.
         state["trades_window"].append(
-            TradeTick(ts_ms=ts_ms, qty=qty, side=side, price=trade_price, trade_id=trade_id)
+            TradeTick(ts_ms=ts_ms, qty=qty, side=side,
+                      price=trade_price, trade_id=trade_id)
         )
+        state["trade_accepted"] += 1
         if side == _SIDE_BUY:
             state["buy_trades"] += 1
             state["buy_qty"] += qty
@@ -268,7 +329,8 @@ class WebSocketAggregator:
     def _cleanup_window(self, symbol: str) -> None:
         """Lazy cleanup of old trades from the window."""
         state = self.state[symbol]
-        current_ts_ms = max(int(state["last_book_ts_ms"] or 0), int(state["last_trade_ts_ms"] or 0))
+        current_ts_ms = max(int(state["last_book_ts_ms"] or 0), int(
+            state["last_trade_ts_ms"] or 0))
         if current_ts_ms <= 0:
             return
         window_cutoff_ts_ms = current_ts_ms - self.window_ms
@@ -320,7 +382,10 @@ class WebSocketAggregator:
 
         state = self.state[symbol]
 
-        # Need both bookTicker and trade data
+        # Need bookTicker and at least one observed trade price.
+        # When the rolling trade window has been fully cleaned up, keep emitting a
+        # schema-valid zero-volume tick so downstream can distinguish stale flow
+        # from "no price observed yet".
         if state["bid_ask_time"] is None or not state["prices"]:
             return None
 
@@ -331,6 +396,7 @@ class WebSocketAggregator:
         sell_trades = state["sell_trades"]
         buy_qty = float(state["buy_qty"])
         sell_qty = float(state["sell_qty"])
+        state["tick_emit_count"] += 1
 
         # OBI: Order Book Imbalance
         depth = bid_size + ask_size
@@ -367,7 +433,8 @@ class WebSocketAggregator:
             "bid_size": str(bid_size),  # NOW REAL!
             "ask_size": str(ask_size),  # NOW REAL!
             "buy_volume": _format_fixed_point(buy_qty),  # quantity (windowed)
-            "sell_volume": _format_fixed_point(sell_qty),  # quantity (windowed)
+            # quantity (windowed)
+            "sell_volume": _format_fixed_point(sell_qty),
             "buy_count": int(buy_trades),
             "sell_count": int(sell_trades),
             "buy_notional": _format_fixed_point(float(state["buy_notional"])),
@@ -403,7 +470,8 @@ class WebSocketAggregator:
                 for anchor in self.anchors:
                     if anchor in self.state:
                         price = self.state[anchor]["latest_price"]
-                        ts_ms = int(self.state[anchor].get("last_price_ts_ms") or 0)
+                        ts_ms = int(self.state[anchor].get(
+                            "last_price_ts_ms") or 0)
                         if price and self.on_anchor_update_callback and ts_ms > 0:
                             await self.on_anchor_update_callback(anchor, str(price), ts_ms)
 

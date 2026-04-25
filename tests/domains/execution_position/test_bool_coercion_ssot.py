@@ -144,7 +144,7 @@ class TestConsumerImportDriftGuard:
 
     _CONSUMER_FILES = [
         "apps/reference/domains/execution_position/order_guardian.py",
-        "apps/reference/domains/execution_position/fsm.py",
+        "apps/reference/domains/execution_position/bracket_health.py",
         "apps/reference/domains/execution_position/fsm_manage.py",
         "apps/reference/domains/execution_position/close_executor.py",
     ]

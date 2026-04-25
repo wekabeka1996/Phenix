@@ -1,7 +1,0 @@
-﻿
-LineNumber Line                                                                
----------- ----                                                                
-      9887 2026-04-18 16:35:00,987 - apps.reference.domains.decision_making....
-      9893 2026-04-18 16:35:00,992 - apps.reference.domains.decision_making....
-
-

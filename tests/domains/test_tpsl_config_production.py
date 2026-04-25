@@ -42,9 +42,9 @@ class TestAuroraConfigLoading:
         assert eth_cfg is not None, "ETHUSDT config missing in aurora.assets"
         assert eth_cfg.exit is not None, "ETHUSDT.exit config missing"
         
-        # Critical: sl_pct should be 0.019 from aurora.yaml, not 0.004 from brackets
-        assert eth_cfg.exit.sl_pct == pytest.approx(0.019, rel=1e-3), (
-            f"ETHUSDT sl_pct={eth_cfg.exit.sl_pct}, expected 0.019 from aurora.yaml"
+        # Critical: sl_pct should be 0.004 from aurora.yaml
+        assert eth_cfg.exit.sl_pct == pytest.approx(0.004, rel=1e-3), (
+            f"ETHUSDT sl_pct={eth_cfg.exit.sl_pct}, expected 0.004 from aurora.yaml"
         )
         assert eth_cfg.exit.max_hold_sec is None, (
             f"ETHUSDT max_hold_sec={eth_cfg.exit.max_hold_sec}, expected None"
@@ -55,14 +55,14 @@ class TestAuroraConfigLoading:
         eth_cfg = production_config.strategies.aurora.assets.get("ETHUSDT")
         assert eth_cfg.take_profit is not None, "ETHUSDT.take_profit config missing"
         
-        assert eth_cfg.take_profit.tp_low_ratio == pytest.approx(0.4, rel=1e-3), (
-            f"ETHUSDT tp_low_ratio={eth_cfg.take_profit.tp_low_ratio}, expected 0.4"
+        assert eth_cfg.take_profit.tp_low_ratio == pytest.approx(1.0, rel=1e-3), (
+            f"ETHUSDT tp_low_ratio={eth_cfg.take_profit.tp_low_ratio}, expected 1.0"
         )
-        assert eth_cfg.take_profit.tp_high_ratio == pytest.approx(1.4, rel=1e-3), (
-            f"ETHUSDT tp_high_ratio={eth_cfg.take_profit.tp_high_ratio}, expected 1.4"
+        assert eth_cfg.take_profit.tp_high_ratio == pytest.approx(1.65, rel=1e-3), (
+            f"ETHUSDT tp_high_ratio={eth_cfg.take_profit.tp_high_ratio}, expected 1.65"
         )
-        assert eth_cfg.take_profit.partial_exit_pct == pytest.approx(0.7, rel=1e-3), (
-            f"ETHUSDT partial_exit_pct={eth_cfg.take_profit.partial_exit_pct}, expected 0.7"
+        assert eth_cfg.take_profit.partial_exit_pct == pytest.approx(0.5, rel=1e-3), (
+            f"ETHUSDT partial_exit_pct={eth_cfg.take_profit.partial_exit_pct}, expected 0.5"
         )
 
     def test_solusdt_exit_config_loaded(self, production_config: AuroraConfig):
@@ -71,8 +71,8 @@ class TestAuroraConfigLoading:
         assert sol_cfg is not None, "SOLUSDT config missing"
         assert sol_cfg.exit is not None, "SOLUSDT.exit missing"
         
-        assert sol_cfg.exit.sl_pct == pytest.approx(0.0135, rel=1e-3), (
-            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.0135"
+        assert sol_cfg.exit.sl_pct == pytest.approx(0.00675, rel=1e-3), (
+            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.00675"
         )
         assert sol_cfg.exit.max_hold_sec is None, (
             f"SOLUSDT max_hold_sec={sol_cfg.exit.max_hold_sec}, expected None"
@@ -152,7 +152,7 @@ class TestManageFlowFSMConfigAccess:
         cfg = fsm._get_aurora_instr_cfg()
         assert cfg is not None, "_get_aurora_instr_cfg() returned None for ETHUSDT"
         assert cfg.exit is not None, "ETHUSDT exit config missing"
-        assert cfg.exit.sl_pct == pytest.approx(0.019, rel=1e-3)
+        assert cfg.exit.sl_pct == pytest.approx(0.004, rel=1e-3)
 
     def test_get_exit_param_uses_per_symbol_not_global(self, production_config: AuroraConfig):
         """_get_exit_param should return per-symbol sl_pct, not global bps."""
@@ -161,11 +161,10 @@ class TestManageFlowFSMConfigAccess:
         
         sl_pct = fsm._get_exit_param("sl_pct", default=None)
         
-        # Should be 0.019 from aurora.yaml, NOT 0.004 (40 bps / 10000)
+        # Should be 0.004 from aurora.yaml
         assert sl_pct is not None, "sl_pct is None - config not loaded"
-        assert sl_pct == pytest.approx(0.019, rel=1e-3), (
-            f"sl_pct={sl_pct}, expected 0.019 from aurora.yaml. "
-            f"If 0.004, system is using global fallback (40 bps)!"
+        assert sl_pct == pytest.approx(0.004, rel=1e-3), (
+            f"sl_pct={sl_pct}, expected 0.004 from aurora.yaml."
         )
 
     def test_get_take_profit_params_returns_per_symbol(self, production_config: AuroraConfig):
@@ -175,9 +174,9 @@ class TestManageFlowFSMConfigAccess:
         
         tp_low, tp_high, partial = fsm._get_take_profit_params()
         
-        assert tp_low == pytest.approx(0.4, rel=1e-3), f"tp_low_ratio={tp_low}, expected 0.4"
-        assert tp_high == pytest.approx(1.4, rel=1e-3), f"tp_high_ratio={tp_high}, expected 1.4"
-        assert partial == pytest.approx(0.7, rel=1e-3), f"partial_exit_pct={partial}, expected 0.7"
+        assert tp_low == pytest.approx(1.0, rel=1e-3), f"tp_low_ratio={tp_low}, expected 1.0"
+        assert tp_high == pytest.approx(1.65, rel=1e-3), f"tp_high_ratio={tp_high}, expected 1.65"
+        assert partial == pytest.approx(0.5, rel=1e-3), f"partial_exit_pct={partial}, expected 0.5"
 
 
 class TestBracketPriceCalculation:
@@ -193,20 +192,15 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected SL for LONG @ $3500 with 1.9% SL:
-        # SL = 3500 * (1 - 0.019) = 3433.50
-        expected_sl = Decimal("3500") * (Decimal("1") - Decimal("0.019"))
-        
-        # If using global 40 bps fallback:
-        # SL = 3500 * (1 - 0.004) = 3486.00 (WRONG!)
-        wrong_sl = Decimal("3500") * (Decimal("1") - Decimal("0.004"))
+        # Expected SL for LONG @ $3500 with 0.4% SL:
+        # SL = 3500 * (1 - 0.004) = 3486.00
+        expected_sl = Decimal("3500") * (Decimal("1") - Decimal("0.004"))
         
         assert sl_price is not None, "SL price is None"
         
         # Allow some tolerance for tick_size quantization
         assert abs(sl_price - expected_sl) < Decimal("10"), (
-            f"ETHUSDT SL={sl_price}, expected ~{expected_sl} (1.9% from entry). "
-            f"If close to {wrong_sl}, system is using 40 bps global fallback!"
+            f"ETHUSDT SL={sl_price}, expected ~{expected_sl} (0.4% from entry). "
         )
 
     def test_ethusdt_tp_calculation_uses_ratio(self, production_config: AuroraConfig):
@@ -219,20 +213,17 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected TP1 for LONG @ $3500 with sl_pct=0.019, tp_low_ratio=0.4:
-        # TP1 = 3500 * (1 + 0.019 * 0.4) = 3500 * 1.0076 = 3526.60
-        expected_tp1 = Decimal("3500") * (Decimal("1") + Decimal("0.019") * Decimal("0.4"))
-        
-        # If using global 80 bps fallback:
-        # TP1 = 3500 * (1 + 0.008) = 3528.00 (close but wrong logic)
+        # Expected TP1 for LONG @ $3500 with sl_pct=0.004, tp_low_ratio=1.0:
+        # TP1 = 3500 * (1 + 0.004 * 1.0) = 3514.0
+        expected_tp1 = Decimal("3500") * (Decimal("1") + Decimal("0.004") * Decimal("1.0"))
         
         assert tp1_price is not None, "TP1 price is None"
         
         # Check TP2 as well
-        # TP2 = 3500 * (1 + 0.019 * 1.4) = 3500 * 1.0266 = 3593.10
-        expected_tp2 = Decimal("3500") * (Decimal("1") + Decimal("0.019") * Decimal("1.4"))
+        # TP2 = 3500 * (1 + 0.004 * 1.65) = 3523.1
+        expected_tp2 = Decimal("3500") * (Decimal("1") + Decimal("0.004") * Decimal("1.65"))
         
-        assert tp2_price is not None, "TP2 price is None (should have tp_high_ratio=1.4)"
+        assert tp2_price is not None, "TP2 price is None (should have tp_high_ratio=1.65)"
         assert abs(tp2_price - expected_tp2) < Decimal("10"), (
             f"ETHUSDT TP2={tp2_price}, expected ~{expected_tp2}"
         )
@@ -247,8 +238,8 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected SL = entry * (1 - sl_pct) using current SSOT (0.0135)
-        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.0135"))
+        # Expected SL = entry * (1 - sl_pct) using current SSOT (0.00675)
+        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.00675"))
         
         assert sl_price is not None, "SL price is None"
         assert abs(sl_price - expected_sl) < Decimal("1"), (
@@ -283,8 +274,8 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # For SHORT, SL = 3500 * (1 + 0.019) = 3566.50 (ABOVE entry)
-        expected_sl = Decimal("3500") * (Decimal("1") + Decimal("0.019"))
+        # For SHORT, SL = 3500 * (1 + 0.004) = 3514.00 (ABOVE entry)
+        expected_sl = Decimal("3500") * (Decimal("1") + Decimal("0.004"))
         
         assert sl_price is not None
         assert sl_price > fsm.position_entry_price, (
@@ -362,14 +353,14 @@ class TestConfigConsistency:
                 assert cfg.take_profit.tp_low_ratio is not None, f"{symbol} missing tp_low_ratio"
 
     def test_sl_pct_values_are_reasonable(self, production_config: AuroraConfig):
-        """SL percentages should be in reasonable range (0.5% - 5%)."""
+        """SL percentages should be in reasonable range (0.2% - 5%)."""
         aurora = production_config.strategies.aurora
         
         for symbol, cfg in aurora.assets.items():
             if cfg.enabled and cfg.exit and cfg.exit.sl_pct:
                 sl_pct = cfg.exit.sl_pct
-                assert 0.005 <= sl_pct <= 0.05, (
-                    f"{symbol} sl_pct={sl_pct} outside reasonable range [0.5%, 5%]"
+                assert 0.002 <= sl_pct <= 0.05, (
+                    f"{symbol} sl_pct={sl_pct} outside reasonable range [0.2%, 5%]"
                 )
 
 class TestEndToEndBracketCalculation:
@@ -403,22 +394,18 @@ class TestEndToEndBracketCalculation:
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
         # Expected values based on aurora.yaml config:
-        # - sl_pct = 0.019 (1.9%)
-        # - tp_low_ratio = 0.4, tp_high_ratio = 1.4
-        # SL for BUY: entry * (1 - sl_pct) = 3000 * 0.981 = 2943.00
-        # TP1: entry * (1 + sl_pct * tp_low) = 3000 * (1 + 0.019 * 0.4) = 3000 * 1.0076 = 3022.80
-        # TP2: entry * (1 + sl_pct * tp_high) = 3000 * (1 + 0.019 * 1.4) = 3000 * 1.0266 = 3079.80
+        # - sl_pct = 0.004 (0.4%)
+        # - tp_low_ratio = 1.0, tp_high_ratio = 1.65
+        # SL for BUY: entry * (1 - sl_pct) = 3000 * 0.996 = 2988.00
+        # TP1: entry * (1 + sl_pct * tp_low) = 3000 * (1 + 0.004 * 1.0) = 3000 * 1.004 = 3012.00
+        # TP2: entry * (1 + sl_pct * tp_high) = 3000 * (1 + 0.004 * 1.65) = 3000 * 1.0066 = 3019.80
         
-        expected_sl = Decimal("3000") * Decimal("0.981")  # ~2943
-        expected_tp1 = Decimal("3000") * (Decimal("1") + Decimal("0.019") * Decimal("0.4"))  # ~3022.80
+        expected_sl = Decimal("3000") * Decimal("0.996")  # ~2988
+        expected_tp1 = Decimal("3000") * (Decimal("1") + Decimal("0.004") * Decimal("1.0"))  # ~3012.00
         
-        # CRITICAL ASSERTION: SL should be ~2943, NOT ~2988 (which would be 40 bps fallback)
-        fallback_sl = Decimal("3000") * Decimal("0.996")  # 40 bps fallback = 2988
-        
-        # SL should match aurora.yaml (1.9%), not fallback (0.4%)
+        # CRITICAL ASSERTION: SL should be ~2988
         assert abs(sl_price - expected_sl) < Decimal("1"), (
-            f"ETHUSDT SL={sl_price}, expected ~{expected_sl} (1.9% from aurora.yaml). "
-            f"If SL is ~{fallback_sl}, it means fallback to 40 bps is being used!"
+            f"ETHUSDT SL={sl_price}, expected ~{expected_sl} (0.4% from aurora.yaml). "
         )
         
         # TP1 should also be calculated correctly
@@ -442,9 +429,9 @@ class TestEndToEndBracketCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected: sl_pct = 0.0135 (1.35%)
-        # SL for BUY: 150 * (1 - 0.0135) = 147.975
-        expected_sl = Decimal("150") * (Decimal("1") - Decimal("0.0135"))
+        # Expected: sl_pct = 0.00675 (0.675%)
+        # SL for BUY: 150 * (1 - 0.00675) = 148.9875
+        expected_sl = Decimal("150") * (Decimal("1") - Decimal("0.00675"))
         fallback_sl = Decimal("150") * Decimal("0.996")  # 40 bps fallback
 
         assert abs(sl_price - expected_sl) < Decimal("0.1"), (

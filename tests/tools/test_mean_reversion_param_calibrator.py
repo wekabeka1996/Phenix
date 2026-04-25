@@ -47,6 +47,16 @@ def _write_mr_recorder(root: Path, *, symbol: str, start_day: date, day_count: i
         pd.DataFrame(rows).to_csv(day_dir / f"{symbol}_300.csv", index=False)
 
 
+def _write_mr_registry(path: Path, *, symbols: list[str]) -> None:
+    payload = {
+        "version": "1.0.0",
+        "assignments": {
+            str(symbol).upper(): ["mean_reversion"] for symbol in symbols
+        },
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 def test_mean_reversion_calibrator_help_works(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         calibrator.main(["--help"])
@@ -62,11 +72,15 @@ def test_mean_reversion_calibrator_writes_required_artifacts(tmp_path: Path) -> 
     _write_mr_recorder(recorder_root, symbol="DOGEUSDT",
                        start_day=date(2026, 4, 1), day_count=8)
     out_dir = tmp_path / "artifacts"
+    registry_path = tmp_path / "strategies_registry.yaml"
+    _write_mr_registry(registry_path, symbols=["DOGEUSDT"])
     yaml_path = Path("config/aurora/strategies/mean_reversion.yaml")
     original_yaml = yaml_path.read_text(encoding="utf-8")
 
     rc = calibrator.main(
         [
+            "--strategies-registry",
+            str(registry_path),
             "--recorder-dir",
             str(recorder_root),
             "--symbols",
@@ -150,9 +164,13 @@ def test_mean_reversion_calibrator_fails_closed_when_data_insufficient(tmp_path:
     _write_mr_recorder(recorder_root, symbol="DOGEUSDT",
                        start_day=date(2026, 4, 1), day_count=3)
     out_dir = tmp_path / "failed_artifacts"
+    registry_path = tmp_path / "strategies_registry.yaml"
+    _write_mr_registry(registry_path, symbols=["DOGEUSDT"])
 
     rc = calibrator.main(
         [
+            "--strategies-registry",
+            str(registry_path),
             "--recorder-dir",
             str(recorder_root),
             "--symbols",
@@ -273,9 +291,13 @@ def test_tpsl_surface_produces_artifacts(tmp_path: Path) -> None:
     _write_mr_recorder(recorder_root, symbol="DOGEUSDT",
                        start_day=date(2026, 4, 1), day_count=8)
     out_dir = tmp_path / "tpsl_artifacts"
+    registry_path = tmp_path / "strategies_registry.yaml"
+    _write_mr_registry(registry_path, symbols=["DOGEUSDT"])
 
     rc = calibrator.main(
         [
+            "--strategies-registry",
+            str(registry_path),
             "--recorder-dir",
             str(recorder_root),
             "--symbols",

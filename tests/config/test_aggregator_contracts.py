@@ -108,15 +108,15 @@ def test_aggregator_extraction_preserves_field_contract() -> None:
             "debug",
             "decision_making",
             "feature_engineering",
+            "ta_features",
             "risk_management",
             "position_tracking",
             "execution_position",
+            "shadow_telemetry",
+            "objective_engine",
         },
-        defaults={"ta_features": None},
-        class_factories={
-            "shadow_telemetry": cm.ShadowTelemetryDomainConfig,
-            "objective_engine": cm.ObjectiveEngineDomainConfig,
-        },
+        defaults={},
+        class_factories={},
         optional_fields={"ta_features"},
     )
 
@@ -124,9 +124,12 @@ def test_aggregator_extraction_preserves_field_contract() -> None:
     assert fields["debug"].annotation is cm.DomainsDebugConfig
     assert fields["decision_making"].annotation is cm.DecisionMakingDomainConfig
     assert fields["feature_engineering"].annotation is cm.FeatureEngineeringDomainConfig
+    assert _is_optional_union(fields["ta_features"].annotation)
     assert fields["risk_management"].annotation is cm.RiskManagementDomainConfig
     assert fields["position_tracking"].annotation is cm.PositionTrackingDomainConfig
     assert fields["execution_position"].annotation is cm.ExecutionPositionDomainConfig
+    assert fields["shadow_telemetry"].annotation is cm.ShadowTelemetryDomainConfig
+    assert fields["objective_engine"].annotation is cm.ObjectiveEngineDomainConfig
 
 
 def test_current_aurora_config_loads_aggregator_contract() -> None:

@@ -40,9 +40,40 @@ def _bar(symbol: str, tf_sec: int, ts_ms: int, close: str) -> dict:
 
 def test_config_allows_d1_for_pillars_but_rejects_it_for_emit_timeframes() -> None:
     pillars_cfg = PillarsConfig(
-        tactician=TacticianConfig(timeframe_sec=900),
-        operator=OperatorConfig(timeframe_sec=14400),
-        strategist=StrategistConfig(timeframe_sec=86400),
+        enabled=True,
+        tactician=TacticianConfig(
+            enabled=True,
+            timeframe_sec=900,
+            roc_period=14,
+            sensitivity=1.0,
+            min_bars=20,
+        ),
+        operator=OperatorConfig(
+            enabled=True,
+            timeframe_sec=14400,
+            linreg_period=20,
+            adx_period=14,
+            sensitivity=1.0,
+            min_bars=40,
+        ),
+        strategist=StrategistConfig(
+            enabled=True,
+            timeframe_sec=86400,
+            sma_period=200,
+            sensitivity=1.0,
+            min_bars=200,
+        ),
+        weights={
+            "tactician": 0.3,
+            "operator": 0.4,
+            "strategist": 0.3,
+        },
+        backfill={
+            "enabled": True,
+            "d1_candles": 200,
+            "h4_candles": 80,
+            "m15_candles": 40,
+        },
     )
     assert pillars_cfg.strategist.timeframe_sec == 86400
 
@@ -83,16 +114,20 @@ def test_pillar_internal_timeframes_update_without_emitting_events() -> None:
     fe.calc_engine.compute_pillars = _fake_compute_pillars
 
     symbol = "BTCUSDT"
-    fe.on_bar_closed(SimpleNamespace(pld={"bar": _bar(symbol, 14400, 1_700_000_000_000, "100.0")}))
+    fe.on_bar_closed(SimpleNamespace(
+        pld={"bar": _bar(symbol, 14400, 1_700_000_000_000, "100.0")}))
 
     assert symbol in fe._pillar_states
     assert len(fe._pillar_states[symbol].h4_closes) == 1
-    assert not any(name == "EVT:FEATURES_CALCULATED" for name, *_ in fsm.emitted)
+    assert not any(name == "EVT:FEATURES_CALCULATED" for name,
+                   *_ in fsm.emitted)
     assert not any(name == "CMD:PROCESS_STRATEGY" for name, *_ in fsm.emitted)
 
-    fe.on_bar_closed(SimpleNamespace(pld={"bar": _bar(symbol, 300, 1_700_000_300_000, "101.0")}))
+    fe.on_bar_closed(SimpleNamespace(
+        pld={"bar": _bar(symbol, 300, 1_700_000_300_000, "101.0")}))
 
-    feature_events = [item for item in fsm.emitted if item[0] == "EVT:FEATURES_CALCULATED"]
+    feature_events = [item for item in fsm.emitted if item[0]
+                      == "EVT:FEATURES_CALCULATED"]
     assert feature_events, "Expected FEATURES_CALCULATED for emit timeframe"
     features = feature_events[-1][1]["features"]
     assert "pillar_sum" in features
@@ -100,4 +135,3 @@ def test_pillar_internal_timeframes_update_without_emitting_events() -> None:
     assert "pillar_operator" in features
     assert "pillar_strategist" in features
     assert "pillar_contribs" in features
-

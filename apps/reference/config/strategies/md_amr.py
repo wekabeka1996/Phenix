@@ -11,10 +11,10 @@ class MDAMRWeightsConfig(BaseModel):
     """Raw directional weights for MD-AMR multi-timeframe compass."""
     model_config = ConfigDict(extra='forbid')
 
-    d1: float = Field(ge=0.0)
-    h1: float = Field(ge=0.0)
-    m30: float = Field(ge=0.0)
-    m15: float = Field(ge=0.0)
+    d1: float = Field(..., ge=0.0)
+    h1: float = Field(..., ge=0.0)
+    m30: float = Field(..., ge=0.0)
+    m15: float = Field(..., ge=0.0)
 
     @model_validator(mode='after')
     def _validate_positive_weight_budget(self) -> 'MDAMRWeightsConfig':
@@ -35,9 +35,9 @@ class MDAMRLLMGateConfig(BaseModel):
     """LLM macro shock binary block gate."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=False)
-    sentiment_block_threshold: float = Field(default=-0.8, ge=-1.0, le=1.0)
-    block_ttl_sec: int = Field(default=14400, ge=60)
+    enabled: bool = Field(...)
+    sentiment_block_threshold: float = Field(..., ge=-1.0, le=1.0)
+    block_ttl_sec: int = Field(..., ge=60)
 
 
 _MD_AMR_ALLOWED_REGIME_ALIASES: Dict[str, str] = {
@@ -67,16 +67,14 @@ class MDAMRAssetConfig(BaseModel):
     """Per-asset enablement/config for md_amr."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=True)
-    cooldown_sec: int = Field(default=60, ge=0)
-    position_mode: Literal["STRICT", "DYNAMIC"] = Field(default="STRICT")
+    enabled: bool = Field(...)
+    cooldown_sec: int = Field(..., ge=0)
+    position_mode: Literal["STRICT", "DYNAMIC"] = Field(...)
     allowed_regimes: Optional[List[str]] = Field(
-        default=None,
-        description="Explicit regime allowlist for md_amr. Assigned live symbols must set a non-empty list.",
+        ..., description="Explicit regime allowlist for md_amr. Assigned live symbols must set a non-empty list.",
     )
     exit: Optional["MDAMRExitConfig"] = Field(
-        default=None,
-        description="MD-AMR TP/SL config. None = no brackets emitted.",
+        ..., description="MD-AMR TP/SL config. None = no brackets emitted.",
     )
 
     @field_validator('allowed_regimes', mode='before')
@@ -105,23 +103,23 @@ class MDAMRAssetConfig(BaseModel):
 class MDAMRReconciliationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=True)
-    interval_sec: int = Field(default=300, ge=10, le=3600)
-    drift_tolerance: float = Field(default=1e-6, ge=0.0)
+    enabled: bool = Field(...)
+    interval_sec: int = Field(..., ge=10, le=3600)
+    drift_tolerance: float = Field(..., ge=0.0)
 
 
 class MDAMRConcentrationGuardConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=False)
-    max_simultaneous_entries_per_bar: int = Field(default=2, ge=1, le=20)
+    enabled: bool = Field(...)
+    max_simultaneous_entries_per_bar: int = Field(..., ge=1, le=20)
 
 
 class MDAMROptunaConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    oos_split_ratio: float = Field(default=0.30, ge=0.0, le=0.5)
-    min_oos_calmar_ratio: float = Field(default=0.3, ge=0.0)
+    oos_split_ratio: float = Field(..., ge=0.0, le=0.5)
+    min_oos_calmar_ratio: float = Field(..., ge=0.0)
 
 
 class MDAMRProgressTrackingConfig(BaseModel):
@@ -129,17 +127,17 @@ class MDAMRProgressTrackingConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     early_progress_max_pct: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Upper bound for EARLY_PROGRESS classification.",
     )
     partial_progress_max_pct: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Upper bound for PARTIAL_PROGRESS classification.",
     )
     near_completion_max_pct: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Upper bound for NEAR_COMPLETION classification. Values at or above "
@@ -165,7 +163,7 @@ class MDAMRSetupQualityConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     penetration_depth_full_scale: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         le=10.0,
         description=(
             "Penetration depth at which the penetration setup-quality sub-score "
@@ -173,7 +171,7 @@ class MDAMRSetupQualityConfig(BaseModel):
         ),
     )
     channel_width_pct_full_scale: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         le=100.0,
         description=(
             "Channel width percentage at which the channel-quality sub-score "
@@ -181,7 +179,7 @@ class MDAMRSetupQualityConfig(BaseModel):
         ),
     )
     volatility_z_full_penalty: float = Field(
-        gt=0.0,
+        ..., gt=0.0,
         le=100.0,
         description=(
             "ATR z-score at which the setup-quality volatility sub-score reaches 0.0."
@@ -194,7 +192,7 @@ class MDAMRHoldQualityConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     expected_progress_grace_frac: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         lt=1.0,
         description=(
             "Initial fraction of max_hold_bars during which anchored progress is "
@@ -203,12 +201,12 @@ class MDAMRHoldQualityConfig(BaseModel):
         ),
     )
     time_decay_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Penalty weight applied to time_decay when deriving hold_quality.",
     )
     progress_deficit_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Penalty weight applied to progress_deficit when deriving hold_quality."
@@ -231,7 +229,7 @@ class MDAMRContextValidityConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     regime_confidence_floor: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Confidence at or below this level contributes zero regime-validity "
@@ -239,7 +237,7 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     regime_confidence_valid: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Confidence at or above this level contributes full regime-validity "
@@ -247,7 +245,7 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     volatility_z_weakening: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=100.0,
         description=(
             "ATR z-score where elevated local volatility starts weakening "
@@ -255,12 +253,12 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     volatility_z_invalid: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=100.0,
         description="ATR z-score where volatility-validity reaches zero.",
     )
     channel_width_pct_floor: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=100.0,
         description=(
             "Channel width percentage at or below which local channel context "
@@ -268,7 +266,7 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     channel_width_pct_valid: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=100.0,
         description=(
             "Channel width percentage at or above which channel sanity "
@@ -276,22 +274,22 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     regime_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Weight of the regime-validity component.",
     )
     volatility_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Weight of the local volatility-validity component.",
     )
     structure_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Weight of the local structure-validity component.",
     )
     progress_alignment_weight: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Weight of the thesis-progress alignment component derived from "
@@ -299,12 +297,12 @@ class MDAMRContextValidityConfig(BaseModel):
         ),
     )
     valid_score_min: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description="Minimum context_validity score required to classify the context as VALID.",
     )
     invalid_score_max: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "Maximum context_validity score still classified as INVALID. Scores "
@@ -348,7 +346,7 @@ class MDAMREntryAnchorPersistenceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     storage_path: str = Field(
-        min_length=1,
+        ..., min_length=1,
         description=(
             "Path to the md_amr strategy-local entry-anchor restart artifact. "
             "Stores only strategy-local anchor state; execution entry price is "
@@ -361,32 +359,32 @@ class MDAMRExitConfig(BaseModel):
     """Per-symbol exit/TP/SL config for md_amr strategy."""
     model_config = ConfigDict(extra='forbid')
 
-    sl_pct: float = Field(gt=0.0, lt=0.5)
-    tp_rr: float = Field(default=1.0, gt=0.0, lt=20.0)
-    regime_tpsl: Optional["RegimeTpSlConfig"] = Field(default=None)
+    sl_pct: float = Field(..., gt=0.0, lt=0.5)
+    tp_rr: float = Field(..., gt=0.0, lt=20.0)
+    regime_tpsl: Optional["RegimeTpSlConfig"] = Field(...)
 
 
 class MDAMRStrategyConfig(BaseModel):
     """Full configuration for MD-AMR strategy."""
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(description='Enable md_amr strategy')
-    type: str = Field(description='Strategy type identifier')
-    description: str = Field(description='Human-readable profile description')
-    timeframe_sec: int = Field(ge=60, le=86400)
-    defer_ttl_sec: int = Field(default=60, ge=1, le=300)
-    channel_window_bars: int = Field(ge=3, le=256)
-    channel_robust_pct: float = Field(default=0.0, ge=0.0, le=0.25)
-    atr_window: int = Field(ge=2, le=256)
-    atr_stats_window: int = Field(ge=8, le=512)
-    hysteresis_mult: float = Field(ge=1.0, le=3.0)
-    threshold_z: float = Field(ge=0.1, le=10.0)
-    volatility_dampening_factor: float = Field(ge=0.0, le=1.0)
-    thr_base: float = Field(ge=0.05, le=0.99)
-    thr_floor: float = Field(ge=0.01, le=0.50)
-    alpha: float = Field(ge=0.0, le=1.0)
+    enabled: bool = Field(..., description='Enable md_amr strategy')
+    type: str = Field(..., description='Strategy type identifier')
+    description: str = Field(..., description='Human-readable profile description')
+    timeframe_sec: int = Field(..., ge=60, le=86400)
+    defer_ttl_sec: int = Field(..., ge=1, le=300)
+    channel_window_bars: int = Field(..., ge=3, le=256)
+    channel_robust_pct: float = Field(..., ge=0.0, le=0.25)
+    atr_window: int = Field(..., ge=2, le=256)
+    atr_stats_window: int = Field(..., ge=8, le=512)
+    hysteresis_mult: float = Field(..., ge=1.0, le=3.0)
+    threshold_z: float = Field(..., ge=0.1, le=10.0)
+    volatility_dampening_factor: float = Field(..., ge=0.0, le=1.0)
+    thr_base: float = Field(..., ge=0.05, le=0.99)
+    thr_floor: float = Field(..., ge=0.01, le=0.50)
+    alpha: float = Field(..., ge=0.0, le=1.0)
     conf_min: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         le=1.0,
         description=(
             "DEPRECATED in exit path (Package A): conf_min no longer triggers "
@@ -396,7 +394,7 @@ class MDAMRStrategyConfig(BaseModel):
         ),
     )
     hold_edge_min: float = Field(
-        ge=-1.0,
+        ..., ge=-1.0,
         lt=0.0,
         description=(
             "Package A (Exit Semantics Repair): minimum hold_edge before EDGE_GONE_KILLSWITCH. "
@@ -406,7 +404,7 @@ class MDAMRStrategyConfig(BaseModel):
         ),
     )
     target_approach_pct: float = Field(
-        ge=0.0,
+        ..., ge=0.0,
         lt=0.05,
         description=(
             "Package B (Hold Calibration): tolerance for FEE_AWARE_SCALEOUT target zone. "
@@ -415,37 +413,36 @@ class MDAMRStrategyConfig(BaseModel):
             "Set to 0.0 for strict exact-target semantics (Package A baseline behavior)."
         ),
     )
-    max_hold_bars: int = Field(ge=1, le=10000)
-    atr_zscore_clamp: float = Field(ge=1.0, le=100.0)
-    atr_std_floor_pct: float = Field(ge=0.0, le=1.0)
-    fee_bps: float = Field(ge=0.0)
-    slippage_buffer_bps: float = Field(ge=0.0)
-    scaleout_fraction: float = Field(ge=0.01, le=1.0)
-    scaleout_cost_model: Literal["one_way", "round_trip"] = Field()
-    weights: MDAMRWeightsConfig = Field()
+    max_hold_bars: int = Field(..., ge=1, le=10000)
+    atr_zscore_clamp: float = Field(..., ge=1.0, le=100.0)
+    atr_std_floor_pct: float = Field(..., ge=0.0, le=1.0)
+    fee_bps: float = Field(..., ge=0.0)
+    slippage_buffer_bps: float = Field(..., ge=0.0)
+    scaleout_fraction: float = Field(..., ge=0.01, le=1.0)
+    scaleout_cost_model: Literal["one_way", "round_trip"] = Field(...)
+    weights: MDAMRWeightsConfig = Field(...)
     execution: "StrategyExecutionConfig" = Field(
-        description="Execution policy (SSOT)")
-    safety_gates: SafetyGatesConfig = Field(description="Safety gates control")
-    llm_gate: MDAMRLLMGateConfig = Field(default_factory=MDAMRLLMGateConfig)
+        ..., description="Execution policy (SSOT)")
+    safety_gates: SafetyGatesConfig = Field(..., description="Safety gates control")
+    llm_gate: MDAMRLLMGateConfig = Field(...)
     reconciliation: MDAMRReconciliationConfig = Field(
-        default_factory=MDAMRReconciliationConfig)
+        ...)
     concentration_guard: MDAMRConcentrationGuardConfig = Field(
-        default_factory=MDAMRConcentrationGuardConfig)
+        ...)
     progress_tracking: MDAMRProgressTrackingConfig = Field(
-        description="Package C.1 progress-state thresholds")
+        ..., description="Package C.1 progress-state thresholds")
     setup_quality: MDAMRSetupQualityConfig = Field(
-        description="Package C.2 setup-quality thresholds")
+        ..., description="Package C.2 setup-quality thresholds")
     hold_quality: MDAMRHoldQualityConfig = Field(
-        description="Package C.3 hold-quality / soft-decay overlay")
+        ..., description="Package C.3 hold-quality / soft-decay overlay")
     context_validity: MDAMRContextValidityConfig = Field(
-        description="Package C.4 lightweight context-validity overlay")
+        ..., description="Package C.4 lightweight context-validity overlay")
     entry_anchor_persistence: MDAMREntryAnchorPersistenceConfig = Field(
-        description="Package D.2-PRE strategy-local entry-anchor restart artifact")
-    optuna: MDAMROptunaConfig = Field(default_factory=MDAMROptunaConfig)
-    assets: Dict[str, MDAMRAssetConfig] = Field(default_factory=dict)
+        ..., description="Package D.2-PRE strategy-local entry-anchor restart artifact")
+    optuna: MDAMROptunaConfig = Field(...)
+    assets: Dict[str, MDAMRAssetConfig] = Field(...)
     objective: Optional["StrategyObjectiveConfig"] = Field(
-        default=None,
-        description="Strategy objective configuration"
+        ..., description="Strategy objective configuration"
     )
 
     @model_validator(mode='after')

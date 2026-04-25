@@ -60,6 +60,7 @@ class ManageState(str, Enum):
     TRACKING = "TRACKING"
     BRACKETS_PENDING = "BRACKETS_PENDING"
     BRACKETS_PLACED = "BRACKETS_PLACED"
+    PROTECTION_MISSING = "PROTECTION_MISSING"
     EMIT_DEC_ADJUST = "EMIT_DEC_ADJUST"
     ERROR = "ERROR"
     EMERGENCY = "EMERGENCY"
@@ -675,6 +676,98 @@ class ManageFlowFSM:
                 return role, True, f"matched_{role.lower()}_tracked_bracket_hint"
         return "UNKNOWN", False, "no_tracked_bracket_match"
 
+    def _bracket_failure_payload(
+        self,
+        msg: Message,
+        *,
+        failure_class: str,
+        reason: str,
+        why_code: str,
+        source_path: str,
+        remediation_action: str,
+        details: Optional[Union[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "ts_ms": self._now_ms(),
+            "symbol": (msg.pld or {}).get("symbol") or self.symbol,
+            "rid": msg.rid,
+            "side": self.position_side or (msg.pld or {}).get("side"),
+            "qty": str(self.position_qty) if self.position_qty is not None else (msg.pld or {}).get("qty"),
+            "entry_order_id": self.entry_order_id or (msg.pld or {}).get("orderId"),
+            "entry_client_order_id": self.entry_client_order_id or self._client_order_id_from_payload(msg.pld or {}),
+            "sl_order_id": self.sl_order_id,
+            "tp_order_id": self.tp_order_id,
+            "source_path": source_path,
+            "failure_class": failure_class,
+            "reason": reason,
+            "why_code": why_code,
+            "remediation_action": remediation_action,
+        }
+        if details is not None:
+            payload["details"] = details
+        return payload
+
+    def _protection_missing_close_decision(
+        self,
+        msg: Message,
+        *,
+        reason: str,
+        why_code: str,
+    ) -> Optional[Message]:
+        symbol = (msg.pld or {}).get("symbol") or self.symbol
+        if not symbol or self.position_qty is None or self.position_entry_price is None or self.position_side is None:
+            return None
+        return Message(
+            op="DEC",
+            verb="CLOSE",
+            src="execution_position",
+            dst="execution_position",
+            rid=msg.rid,
+            why=why_code[:80],
+            pld={
+                "symbol": symbol,
+                "trigger": "BRACKET_PROTECTION_MISSING",
+                "reason": reason,
+                "close_guard_prevalidated": True,
+            },
+            data_ref=msg.data_ref.copy() if msg.data_ref else [],
+        )
+
+    def _handle_bracket_placement_failure(
+        self,
+        msg: Message,
+        *,
+        failure_class: str,
+        reason: str,
+        why_code: str,
+        source_path: str,
+        details: Optional[Union[str, Dict[str, Any]]] = None,
+    ) -> Optional[Message]:
+        close_decision = self._protection_missing_close_decision(
+            msg,
+            reason=reason,
+            why_code=why_code,
+        )
+        remediation_action = (
+            "force_reduce_only_close"
+            if close_decision is not None
+            else "position_not_proven_no_close"
+        )
+        self.state = ManageState.PROTECTION_MISSING
+        self._emit_observability(
+            "EVT:BRACKET_PLACEMENT_FAILED",
+            self._bracket_failure_payload(
+                msg,
+                failure_class=failure_class,
+                reason=reason,
+                why_code=why_code,
+                source_path=source_path,
+                remediation_action=remediation_action,
+                details=details,
+            ),
+        )
+        return close_decision
+
     def _emit_guard_blocked_event(self, msg: Message, reason: str) -> None:
         payload = {
             "ts_ms": self._now_ms(),
@@ -888,6 +981,7 @@ class ManageFlowFSM:
                 ManageState.TRACKING,
                 ManageState.BRACKETS_PENDING,
                 ManageState.BRACKETS_PLACED,
+                ManageState.PROTECTION_MISSING,
                 ManageState.EMIT_DEC_ADJUST,
                 ManageState.ERROR,
                 ManageState.EMERGENCY,
@@ -968,8 +1062,8 @@ class ManageFlowFSM:
         """Update position state on fill event."""
         try:
             pld = msg.pld or {}
-            qty = Decimal(str(pld["qty"] if "qty" in pld else 0))
-            price = Decimal(str(pld["price"] if "price" in pld else 0))
+            qty = Decimal(str(pld["qty"])) if "qty" in pld else None
+            price = Decimal(str(pld["price"])) if "price" in pld else None
             side = pld.get("side")  # BUY or SELL
             # Phase 0: extract symbol from fill event
             symbol = pld.get("symbol")
@@ -1075,15 +1169,43 @@ class ManageFlowFSM:
             self.tp_algo_client_id = None
 
         if not self._should_place_brackets():
-            self.state = ManageState.TRACKING
-            return None
+            return self._handle_bracket_placement_failure(
+                msg,
+                failure_class="config_contract_error",
+                reason="bracket_config_missing",
+                why_code="BRACKET_CONFIG_MISSING",
+                source_path="ManageFlowFSM._place_brackets",
+            )
 
         try:
+            if self.position_qty is None or self.position_entry_price is None or self.position_side is None:
+                return self._handle_bracket_placement_failure(
+                    msg,
+                    failure_class="runtime_data_missing",
+                    reason="position_qty_entry_price_or_side_missing",
+                    why_code="BRACKET_RUNTIME_DATA_MISSING",
+                    source_path="ManageFlowFSM._place_brackets",
+                    details={
+                        "position_qty_present": self.position_qty is not None,
+                        "position_entry_price_present": self.position_entry_price is not None,
+                        "position_side_present": self.position_side is not None,
+                    },
+                )
+
             # Calculate bracket prices (Phase A2: returns sl, tp1, tp2)
             sl_price, tp1_price, tp2_price = self._calculate_bracket_prices()
             if sl_price is None or tp1_price is None:
-                self.state = ManageState.TRACKING
-                return None
+                return self._handle_bracket_placement_failure(
+                    msg,
+                    failure_class="runtime_data_missing",
+                    reason="bracket_price_calculation_returned_none",
+                    why_code="BRACKET_PRICE_MISSING",
+                    source_path="ManageFlowFSM._place_brackets",
+                    details={
+                        "sl_price_present": sl_price is not None,
+                        "tp1_price_present": tp1_price is not None,
+                    },
+                )
 
             self.sl_price = sl_price
             self.tp1_price = tp1_price
@@ -1094,8 +1216,13 @@ class ManageFlowFSM:
             # Get current mark price (use entry price as proxy if not available)
             current_mark = self.position_entry_price
             if current_mark is None:
-                self.state = ManageState.TRACKING
-                return None
+                return self._handle_bracket_placement_failure(
+                    msg,
+                    failure_class="runtime_data_missing",
+                    reason="position_entry_price_missing",
+                    why_code="BRACKET_MARK_PRICE_MISSING",
+                    source_path="ManageFlowFSM._place_brackets",
+                )
 
             # Convert BUY/SELL to LONG/SHORT for validation
             validation_side = "LONG" if self.position_side == "BUY" else "SHORT" if self.position_side == "SELL" else self.position_side or "LONG"
@@ -1110,8 +1237,13 @@ class ManageFlowFSM:
             if not is_sl_valid:
                 cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
                 self._metrics["fsm_bracket_validation_failed"] = cur + 1
-                self.state = ManageState.TRACKING
-                return None
+                return self._handle_bracket_placement_failure(
+                    msg,
+                    failure_class="bracket_validation_failed",
+                    reason=str(sl_reason or "sl_validation_failed"),
+                    why_code="BRACKET_SL_VALIDATION_FAILED",
+                    source_path="ManageFlowFSM._place_brackets",
+                )
 
             # Validate TP1 price
             is_tp1_valid, tp1_reason = TPSLValidationRules.validate_stop_price_for_side(
@@ -1123,8 +1255,13 @@ class ManageFlowFSM:
             if not is_tp1_valid:
                 cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
                 self._metrics["fsm_bracket_validation_failed"] = cur + 1
-                self.state = ManageState.TRACKING
-                return None
+                return self._handle_bracket_placement_failure(
+                    msg,
+                    failure_class="bracket_validation_failed",
+                    reason=str(tp1_reason or "tp_validation_failed"),
+                    why_code="BRACKET_TP_VALIDATION_FAILED",
+                    source_path="ManageFlowFSM._place_brackets",
+                )
 
             # Validate TP2 price if present
             if tp2_price is not None:
@@ -1137,8 +1274,13 @@ class ManageFlowFSM:
                 if not is_tp2_valid:
                     cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
                     self._metrics["fsm_bracket_validation_failed"] = cur + 1
-                    self.state = ManageState.TRACKING
-                    return None
+                    return self._handle_bracket_placement_failure(
+                        msg,
+                        failure_class="bracket_validation_failed",
+                        reason=str(tp2_reason or "tp2_validation_failed"),
+                        why_code="BRACKET_TP2_VALIDATION_FAILED",
+                        source_path="ManageFlowFSM._place_brackets",
+                    )
 
             # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
             # Read offset_bps from config (FAIL-CLOSED: no default)
@@ -1284,8 +1426,15 @@ class ManageFlowFSM:
         except (ValueError, TypeError, KeyError) as e:
             LOG.warning(f"Failed to place brackets: {e}")
             self._metrics["fsm_errors_total"] += 1
-            self.state = ManageState.TRACKING
-            return None
+            failure_class = "config_contract_error" if isinstance(
+                e, (ValueError, KeyError)) else "runtime_data_invalid"
+            return self._handle_bracket_placement_failure(
+                msg,
+                failure_class=failure_class,
+                reason=str(e),
+                why_code="BRACKET_PLACEMENT_FAILED",
+                source_path="ManageFlowFSM._place_brackets",
+            )
 
     def _should_place_brackets(self) -> bool:
         """Check if brackets should be placed based on config."""

@@ -16,7 +16,7 @@ CONFIG_DIR = Path("config/aurora")
 ARTIFACT = (
     Path(__file__).resolve().parent
     / "_artifacts"
-    / "decision_making_contract.json"
+    / "decision_making_contract.generated.json"
 )
 
 

@@ -205,8 +205,8 @@ class TestPsiVectorCompletion:
     @pytest.mark.legacy
     def test_psi_vector_weights_completeness(self):
         """
-        Test: psi_vector.weights contains all 9 metric weights.
-        Expected: weights dict has keys for all 9 metrics.
+        Test: psi_vector.weights contains all current metric weights.
+        Expected: weights dict has keys for the full SignalWeights contract.
         """
         config = ConfigLoader().load_config()
         weights = (
@@ -219,11 +219,12 @@ class TestPsiVectorCompletion:
 
         expected_weight_keys = {
             "obi", "tfi", "delta_price",  # Legacy (3)
-            # New (6)
-            "ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_resid", "macro_sync"
+            # Current surface (7)
+            "ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_resid", "macro_sync", "absorption"
         }
 
-        print(f"\n[OK] Expected weight keys (9 total): {expected_weight_keys}")
+        print(
+            f"\n[OK] Expected weight keys (10 total): {expected_weight_keys}")
         print(f"[OK] Actual weights: {weights}")
 
         weight_keys = set(weights.keys())
@@ -298,7 +299,7 @@ class TestNormalizedMetricsComposition:
     @pytest.mark.legacy
     def test_signal_score_composition_formula(self):
         """
-        Test: Signal score = Σ(phi_i * weight_i) for all 8 metrics.
+        Test: Signal score = Σ(phi_i * weight_i) for the full weight surface.
         Expected: Correct weighted composition.
         """
         config = ConfigLoader().load_config()
@@ -318,7 +319,10 @@ class TestNormalizedMetricsComposition:
             "ema_bias": Decimal("0.7"),
             "volume_spike": Decimal("0.8"),
             "volatility_state": Decimal("0.6"),
-            "depth_imbalance": Decimal("0.5"),            "macro_resid": Decimal("0.9"),            "macro_sync": Decimal("0.9"),
+            "depth_imbalance": Decimal("0.5"),
+            "macro_resid": Decimal("0.9"),
+            "macro_sync": Decimal("0.9"),
+            "absorption": Decimal("0.0"),
         }
 
         # Manual calculation
@@ -342,7 +346,9 @@ class TestNormalizedMetricsComposition:
             Decimal("0.8") * Decimal(str(weights["volume_spike"])) +
             Decimal("0.6") * Decimal(str(weights["volatility_state"])) +
             Decimal("0.5") * Decimal(str(weights["depth_imbalance"])) +
-            Decimal("0.9") * Decimal(str(weights["macro_sync"]))
+            Decimal("0.9") * Decimal(str(weights["macro_resid"])) +
+            Decimal("0.9") * Decimal(str(weights["macro_sync"])) +
+            Decimal("0.0") * Decimal(str(weights["absorption"]))
         )
 
         print(f"  Manual verification: {manual_score}")

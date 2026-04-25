@@ -38,10 +38,10 @@ class TestConfigStrictness:
         with pytest.raises(ValidationError):
             LeverageConfig(target=20, mode="CROSS")  # must be CROSSED
 
-    def test_fallback_config_requires_fields(self):
-        """Missing required fields must fail-fast."""
+    def test_fallback_config_requires_policy(self):
+        """FallbackConfig must fail-fast when the explicit safety policy is omitted."""
         with pytest.raises(ValidationError) as excinfo:
-            FallbackConfig(policy="fail_closed")
+            FallbackConfig()
         _assert_has_error_type(excinfo.value, "missing")
 
     def test_fallback_config_forbids_extra_fields(self):
@@ -49,8 +49,6 @@ class TestConfigStrictness:
         with pytest.raises(ValidationError) as excinfo:
             FallbackConfig(
                 policy="fail_closed",
-                risk_reduction_pct=Decimal("0.5"),
-                backoff_ms=[200, 500, 1000],
                 typo_field="oops",
             )
         _assert_has_error_type(excinfo.value, "extra_forbidden")

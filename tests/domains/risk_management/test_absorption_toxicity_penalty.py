@@ -188,9 +188,13 @@ class TestDpCapPctFailClosed(unittest.TestCase):
                     "obi": 0.3,
                     "tfi": 0.3,
                     "absorption_inverse": 0.3,
+                    "absorption_feature": 0.2,
                 },
                 trading_allowed_thresholds={"max_risk_score": 0.96},
                 validation={"total_weight_min": 0.5, "total_weight_max": 2.0},
+                absorption_penalty_source="feature",
+                absorption_feature_clip_min=0.0,
+                absorption_feature_clip_max=1.0,
             )
         err = str(ctx.exception)
         self.assertIn("absorption_dp_cap_pct", err,
@@ -210,9 +214,13 @@ class TestDpCapPctFailClosed(unittest.TestCase):
                 "obi": 0.3,
                 "tfi": 0.3,
                 "absorption_inverse": 0.3,
+                "absorption_feature": 0.2,
             },
             trading_allowed_thresholds={"max_risk_score": 0.96},
             validation={"total_weight_min": 0.5, "total_weight_max": 2.0},
+            absorption_penalty_source="feature",
+            absorption_feature_clip_min=0.0,
+            absorption_feature_clip_max=1.0,
         )
         self.assertFalse(cfg.use_absorption_penalty)
         self.assertIsNone(cfg.absorption_dp_cap_pct)
@@ -229,9 +237,13 @@ class TestDpCapPctFailClosed(unittest.TestCase):
                 "obi": 0.3,
                 "tfi": 0.3,
                 "absorption_inverse": 0.3,
+                "absorption_feature": 0.2,
             },
             trading_allowed_thresholds={"max_risk_score": 0.96},
             validation={"total_weight_min": 0.5, "total_weight_max": 2.0},
+            absorption_penalty_source="feature",
+            absorption_feature_clip_min=0.0,
+            absorption_feature_clip_max=1.0,
         )
         self.assertTrue(cfg.use_absorption_penalty)
         self.assertAlmostEqual(cfg.absorption_dp_cap_pct, 0.02)

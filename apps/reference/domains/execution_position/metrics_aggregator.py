@@ -305,11 +305,3 @@ class StructuredMetricsLogger:
     def export_metrics(self, filepath: str) -> None:
         """Export metrics to file."""
         self.aggregator.export_events_jsonl(filepath)
-
-
-# Global instance
-logging.getLogger(__name__).info(
-    "TOMBSTONE_HIT module=metrics_aggregator surface=global_metrics_logger "
-    "reason=module_imported_at_runtime — report to Package-0 audit"
-)
-metrics_logger = StructuredMetricsLogger()

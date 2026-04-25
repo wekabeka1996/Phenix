@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from apps.reference.config_models import OperationalMode
 
 
 # Create a minimal ScoringResult for testing
@@ -66,7 +67,7 @@ def create_mock_config(
     decision.side_bias_penalty_factor = 0.25
     decision.side_bias_min_intents = 18
     decision.regime_threshold_multipliers = {"DEFAULT": 1.0}
-    decision.operational_mode = "paranoid"
+    decision.operational_mode = OperationalMode.PARANOID
     decision.neutral_threshold = 0.05
     decision.holding_period = hp_cfg
     decision.direction_strength_scoring = None
