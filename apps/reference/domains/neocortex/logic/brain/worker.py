@@ -1,9 +1,11 @@
+# QUARANTINED: legacy_runtime
 """
 Brain Worker Process (Service Pattern)
 
 Long-running process that maintains BrainCore state (PyTorch model)
 and processes requests via Multiprocessing Queues.
 """
+__quarantined__ = True
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, List

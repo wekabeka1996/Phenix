@@ -57,9 +57,65 @@ decision_making:
     enabled: true
     min_abs_delta_price: 0.0
     min_confidence: 0.0
-    min_regime_confidence: 0.42
+    min_regime_confidence: 0.45
     hard_veto_consecutive_bars: 2
     consecutive_bars: 1
+  low_vol_cost_floor_gate:
+    enabled: true
+    enforce_in_modes:
+    - testnet
+    - hybrid_live_data_testnet_exec
+    observe_only_in_modes:
+    - live
+    - production
+    regimes:
+    - LOW_VOLATILITY
+    fee:
+      open_fee_bps: 4.0
+      close_fee_bps: 4.0
+      fee_source: explicit_config
+    slippage:
+      buffer_bps: 2.0
+      source: explicit_config
+    thresholds:
+      target_net_fee_multiple: 2.0
+      min_tp_fee_coverage: 3.0
+      min_rr: 1.2
+      min_regime_confidence_by_regime:
+        DEFAULT: 0.45
+        LOW_VOLATILITY: 0.65
+      min_regime_confidence_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.45
+            LOW_VOLATILITY: 0.72
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.45
+            LOW_VOLATILITY: 0.72
+      min_direction_confidence_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.62
+      min_direction_confidence_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.68
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.68
+    direction_confidence:
+      required: true
+      allowed_sources:
+      - strategy_confidence
+      - signal_score
+      - final_score
+      - judge_confidence
+      missing_policy: fail_closed
+    geometry:
+      require_tpsl: true
+      missing_policy: fail_closed
   price_motion_sanity:
     enabled: true
     k_vol: 2.0
@@ -74,6 +130,7 @@ decision_making:
   regime_loss_embargo:
     enabled: true
     min_loss_threshold_net: 0.0
+  neocortex_enforcement_mode: shadow
   fail_closed_on_degraded_context: false
   degraded_context_critical_keys: []
   degraded_context_critical_keys_by_strategy: {}
@@ -424,7 +481,9 @@ execution_position:
   guardian:
     poll_interval_ms: 500
     unified: true
+    # Deprecated compatibility alias; keep equal to emit_tidy_monitoring_event.
     emit_tidy_event: true
+    emit_tidy_monitoring_event: true
     cleanup_ttl_ms: 6000
     symbol_cooldown_ms: 4000
   intent_boundary_audit:
@@ -447,7 +506,7 @@ execution_position:
   position_policy_sidecar:
     mode: enable
     freshness:
-      portfolio_max_age_ms: 15000
+      portfolio_max_age_ms: 60000
       features_max_age_ms: 15000
       regime_max_age_ms: 30000
       order_state_max_age_ms: 15000

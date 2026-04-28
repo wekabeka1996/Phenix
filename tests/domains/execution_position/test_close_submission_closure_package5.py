@@ -111,6 +111,15 @@ def _build_close_executor_fsm(
     return fsm, place_close
 
 
+def _close_boundary_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if row.get("source_fsm") == "CloseExecutor"
+        and row.get("order_kind") == "CLOSE"
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Typed payload unit tests
 # ---------------------------------------------------------------------------
@@ -254,6 +263,178 @@ class TestCloseSubmissionTraceRef:
 
 
 # ---------------------------------------------------------------------------
+# Truth-gate seam tests
+# ---------------------------------------------------------------------------
+
+
+class TestCloseExecutorTruthGate:
+
+    @pytest.mark.asyncio
+    async def test_missing_symbol_successful_read_is_genuinely_flat(self) -> None:
+        fsm, _ = _build_close_executor_fsm(position_amt=0.25, symbol="ETHUSDT")
+        executor = CloseExecutor(fsm)
+
+        resolution = await executor._resolve_close_position_truth(
+            symbol="BTCUSDT",
+        )
+
+        assert resolution.classification.value == "GENUINELY_FLAT"
+        assert resolution.position_amt == Decimal("0")
+        assert resolution.reason == "missing_symbol"
+
+    @pytest.mark.asyncio
+    async def test_read_failure_is_position_truth_unresolved(self) -> None:
+        fsm, _ = _build_close_executor_fsm(position_amt=0.25)
+        fsm.adapter.get_open_positions.side_effect = RuntimeError("boom")
+        executor = CloseExecutor(fsm)
+
+        resolution = await executor._resolve_close_position_truth(
+            symbol="BTCUSDT",
+        )
+
+        assert resolution.classification.value == "POSITION_TRUTH_UNRESOLVED"
+        assert resolution.position_amt is None
+        assert resolution.reason == "read_failed"
+
+    @pytest.mark.asyncio
+    async def test_present_symbol_is_submittable(self) -> None:
+        fsm, _ = _build_close_executor_fsm(position_amt=0.25)
+        executor = CloseExecutor(fsm)
+
+        resolution = await executor._resolve_close_position_truth(
+            symbol="BTCUSDT",
+        )
+
+        assert (
+            resolution.classification.value
+            == "POSITION_PRESENT_AND_SUBMITTABLE"
+        )
+        assert resolution.position_amt == Decimal("0.25")
+        assert resolution.reason == "matched_live_position"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "open_positions, get_open_positions_side_effect, qty, expected_call_count",
+        [
+            (
+                [{"symbol": "ETHUSDT", "positionAmt": "0.25"}],
+                None,
+                "0.04",
+                0,
+            ),
+            (
+                None,
+                RuntimeError("boom"),
+                "0.04",
+                0,
+            ),
+            (
+                [{"symbol": "BTCUSDT", "positionAmt": "0.25"}],
+                None,
+                "0.04",
+                1,
+            ),
+        ],
+    )
+    async def test_only_present_submittable_reaches_typed_close_submission(
+        self,
+        open_positions: list[dict[str, str]] | None,
+        get_open_positions_side_effect: Exception | None,
+        qty: str,
+        expected_call_count: int,
+    ) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.25)
+        if get_open_positions_side_effect is None:
+            fsm.adapter.get_open_positions = AsyncMock(
+                return_value=list(open_positions or [])
+            )
+        else:
+            fsm.adapter.get_open_positions.side_effect = (
+                get_open_positions_side_effect
+            )
+
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            qty=qty,
+            idempotent_key="GATE-1",
+        )
+
+        with patch.object(
+            executor,
+            "_build_close_submission",
+            wraps=executor._build_close_submission,
+        ) as wrapped:
+            await executor.execute_close(decision)
+
+        assert wrapped.call_count == expected_call_count
+        assert place_close.await_count == expected_call_count
+
+    @pytest.mark.asyncio
+    async def test_full_close_preconditions_stay_outside_truth_helper(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.25)
+        manage = SimpleNamespace(
+            _closing_position=False,
+            _closing_position_ts=0.0,
+        )
+        fsm.manage_flows["BTCUSDT"] = manage
+
+        def _read_positions() -> list[dict[str, str]]:
+            assert manage._closing_position is True
+            assert manage._closing_position_ts > 0.0
+            return [{"symbol": "ETHUSDT", "positionAmt": "0.25"}]
+
+        fsm.adapter.get_open_positions = AsyncMock(side_effect=_read_positions)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(symbol="BTCUSDT")
+
+        with patch.object(
+            executor,
+            "_build_close_submission",
+            wraps=executor._build_close_submission,
+        ) as wrapped:
+            await executor.execute_close(decision)
+
+        assert wrapped.call_count == 0
+        place_close.assert_not_awaited()
+        assert manage._closing_position is False
+        assert manage._closing_position_ts == 0.0
+
+    @pytest.mark.asyncio
+    async def test_full_close_read_failure_fails_closed_before_typed_submission(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.25)
+        manage = SimpleNamespace(
+            _closing_position=False,
+            _closing_position_ts=0.0,
+        )
+        fsm.manage_flows["BTCUSDT"] = manage
+        fsm.adapter.get_open_positions = AsyncMock(
+            side_effect=RuntimeError("boom")
+        )
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(symbol="BTCUSDT")
+
+        with patch.object(
+            executor,
+            "_build_close_submission",
+            wraps=executor._build_close_submission,
+        ) as wrapped, patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+        ) as order_log_write:
+            await executor.execute_close(decision)
+
+        assert wrapped.call_count == 0
+        place_close.assert_not_awaited()
+        order_log_write.assert_not_called()
+        fsm._clear_symbol_brackets.assert_not_called()
+        fsm._persist_restore_artifact_snapshot.assert_not_called()
+        fsm.order_guardian.cleanup_orphans.assert_not_awaited()
+        fsm.order_guardian.reconcile_symbol.assert_not_awaited()
+        assert manage._closing_position is False
+        assert manage._closing_position_ts == 0.0
+
+
+# ---------------------------------------------------------------------------
 # Executor wiring tests
 # ---------------------------------------------------------------------------
 
@@ -265,14 +446,29 @@ class TestCloseExecutorFullCloseBranch:
         fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
         executor = CloseExecutor(fsm)
         decision = _dec_close_decision(
-            symbol="BTCUSDT", idempotent_key="FULL-1"
+            symbol="BTCUSDT",
+            idempotent_key="FULL-1",
+            data_ref=[
+                "obs://execution_position/close_producer_bridge?contract=close_producer_bridge_v1&status=success",
+            ],
         )
+        records: list[dict[str, Any]] = []
+        sequence: list[str] = []
+
+        async def _capture_place(*args, **kwargs):
+            sequence.append("adapter")
+            return {"status": "NEW", "orderId": "close-123"}
+
+        place_close.side_effect = _capture_place
 
         with patch(
             "apps.reference.domains.execution_position.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
-        ) as wrapped:
+        ) as wrapped, patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            side_effect=lambda entry: records.append(dict(entry)),
+        ):
             await executor.execute_close(decision)
 
         assert wrapped.call_count == 1
@@ -287,6 +483,24 @@ class TestCloseExecutorFullCloseBranch:
             status="success", partial_close=False
         )
         assert success_ref in list(decision.data_ref)
+
+        boundary_rows = _close_boundary_rows(records)
+        assert [row["event_type"] for row in boundary_rows] == [
+            "ORDER_INTENT",
+            "ORDER_PLACED",
+        ]
+        assert sequence == ["adapter"]
+        assert boundary_rows[0]["metadata"]["trace_kind"] == "CLOSE_SUBMIT_ATTEMPT"
+        assert "outcome" not in boundary_rows[0]["metadata"]
+        assert boundary_rows[1]["metadata"]["trace_kind"] == "CLOSE_SUBMIT_OUTCOME"
+        assert boundary_rows[1]["metadata"]["outcome"] == "submitted"
+        assert boundary_rows[1]["adapter_response"]["orderId"] == "close-123"
+        for row in boundary_rows:
+            assert row["rid"] == decision.rid
+            assert row["client_order_id"].startswith("CLOSE-")
+            assert row["source_fsm"] == "CloseExecutor"
+            assert row["order_kind"] == "CLOSE"
+            assert list(row.get("data_ref") or []) == list(decision.data_ref)
 
     @pytest.mark.asyncio
     async def test_full_close_short_position_derives_buy(self) -> None:
@@ -313,14 +527,28 @@ class TestCloseExecutorPartialCloseBranch:
         fsm, place_close = _build_close_executor_fsm(position_amt=0.10)
         executor = CloseExecutor(fsm)
         decision = _dec_close_decision(
-            symbol="BTCUSDT", qty="0.04", idempotent_key="PART-1"
+            symbol="BTCUSDT",
+            qty="0.04",
+            idempotent_key="PART-1",
+            data_ref=[
+                "obs://execution_position/close_producer_bridge?contract=close_producer_bridge_v1&status=success",
+            ],
         )
+        records: list[dict[str, Any]] = []
+
+        async def _capture_place(*args, **kwargs):
+            return {"status": "NEW", "orderId": "close-partial-123"}
+
+        place_close.side_effect = _capture_place
 
         with patch(
             "apps.reference.domains.execution_position.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
-        ) as wrapped:
+        ) as wrapped, patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            side_effect=lambda entry: records.append(dict(entry)),
+        ):
             await executor.execute_close(decision)
 
         assert wrapped.call_count == 1
@@ -337,6 +565,18 @@ class TestCloseExecutorPartialCloseBranch:
         fsm.order_guardian.reconcile_symbol.assert_awaited_once()
         # Partial branch does NOT trigger the full-branch restore persistence.
         fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot.assert_not_called()
+
+        boundary_rows = _close_boundary_rows(records)
+        assert [row["event_type"] for row in boundary_rows] == [
+            "ORDER_INTENT",
+            "ORDER_PLACED",
+        ]
+        assert boundary_rows[0]["metadata"]["partial_close"] is True
+        assert boundary_rows[1]["metadata"]["partial_close"] is True
+        assert boundary_rows[1]["metadata"]["outcome"] == "submitted"
+        assert boundary_rows[1]["adapter_response"]["orderId"] == "close-partial-123"
+        for row in boundary_rows:
+            assert list(row.get("data_ref") or []) == list(decision.data_ref)
 
     @pytest.mark.asyncio
     async def test_partial_close_short_derives_buy_side(self) -> None:
@@ -370,11 +610,14 @@ class TestCloseExecutorFailClosed:
             "apps.reference.domains.execution_position.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
-        ) as wrapped:
+        ) as wrapped, patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+        ) as order_log_write:
             await executor.execute_close(decision)
 
         wrapped.assert_not_called()
         place_close.assert_not_awaited()
+        order_log_write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_seam_reject_prevents_adapter_call_and_emits_reject_trace(self) -> None:
@@ -395,14 +638,59 @@ class TestCloseExecutorFailClosed:
             "apps.reference.domains.execution_position.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             side_effect=_always_raise,
-        ):
+        ), patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+        ) as order_log_write:
             await executor.execute_close(decision)
 
         place_close.assert_not_awaited()
+        order_log_write.assert_not_called()
         reject_ref = build_close_submission_trace_ref(
             status="reject", partial_close=False, reason="adapter_validation"
         )
         assert reject_ref in list(decision.data_ref)
+
+    @pytest.mark.asyncio
+    async def test_adapter_exception_writes_seam_local_order_rejected_and_reraises(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            idempotent_key="FAIL-1",
+            data_ref=[
+                "obs://execution_position/close_producer_bridge?contract=close_producer_bridge_v1&status=success",
+            ],
+        )
+        records: list[dict[str, Any]] = []
+        sequence: list[str] = []
+        expected_error = RuntimeError("adapter boom")
+
+        async def _raise_place(*args, **kwargs):
+            sequence.append("adapter")
+            raise expected_error
+
+        place_close.side_effect = _raise_place
+
+        with patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            side_effect=lambda entry: records.append(dict(entry)),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await executor.execute_close(decision)
+
+        assert exc_info.value is expected_error
+        boundary_rows = _close_boundary_rows(records)
+        assert [row["event_type"] for row in boundary_rows] == [
+            "ORDER_INTENT",
+            "ORDER_REJECTED",
+        ]
+        assert sequence == ["adapter"]
+        assert boundary_rows[1]["metadata"]["trace_kind"] == "CLOSE_SUBMIT_OUTCOME"
+        assert boundary_rows[1]["metadata"]["outcome"] == "rejected"
+        assert boundary_rows[1]["metadata"]["exception_class"] == "RuntimeError"
+        assert boundary_rows[1]["metadata"]["exception_message"] == "adapter boom"
+        assert list(boundary_rows[1].get("data_ref")
+                    or []) == list(decision.data_ref)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("qty", ["not-a-number", "-0.01"])

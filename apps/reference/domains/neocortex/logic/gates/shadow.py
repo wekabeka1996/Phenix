@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -74,6 +74,7 @@ class ShadowGateEvaluator:
         gates.append(self._check_dataset_contract(config))
         gates.append(self._check_performance_contract(config))
         gates.append(self._check_time_contract_mode(config))
+        gates.append(self._check_causal_time_hard_gate(config))
         gates.append(self._check_dataset_admission_selftest(config))
         gates.append(self._check_operational_budget_contract(config))
 
@@ -92,8 +93,8 @@ class ShadowGateEvaluator:
                 evaluated_at_ms if evaluated_at_ms is not None else time.time() * 1000.0
             ),
             overall_status=overall_status,
-            mode=str(config.neuro.performance.operating_mode),
-            startup_enforcement=str(config.neuro.shadow_gates.startup_enforcement),
+            mode=cast(Literal["live_shadow", "offline_replay"], str(config.neuro.performance.operating_mode)),
+            startup_enforcement=cast(Literal["strict", "report_only"], str(config.neuro.shadow_gates.startup_enforcement)),
             gates=gates,
             blocking_gate_ids=blocking_gate_ids,
         )
@@ -445,4 +446,51 @@ class ShadowGateEvaluator:
             "operational.budget_contract",
             "Operational buffer/flush budget contract is sane.",
             evidence_anchor="config.neuro.performance.{queue_limit,flush_*}",
+        )
+    def _check_causal_time_hard_gate(self, config: NeocortexConfig) -> ShadowGateResult:
+        """Phase 1 I3 hard gate: production-shadow must never accept non-causal timestamp policy.
+
+        Fails closed if feature_missing_timestamp_policy=legacy_non_causal_file_offset
+        when operating_mode=live_shadow.
+        Also fails if ANY non-fail_closed policy is configured for live_shadow.
+        In offline_replay this is a warn-only gate (diagnostic legacy is allowed but dataset
+        admission keeps non-causal rows diagnostics_only).
+        """
+        policy = config.replay.feature_missing_timestamp_policy
+        mode = config.neuro.performance.operating_mode
+
+        if mode == "live_shadow":
+            if policy != "fail_closed":
+                return self._fail(
+                    "causal_time.hard_gate",
+                    (
+                        f"Production-shadow (live_shadow) requires "
+                        f"feature_missing_timestamp_policy='fail_closed'; "
+                        f"got {policy!r}. Non-causal timestamps cannot become trainable "
+                        f"or authority-adjacent."
+                    ),
+                    evidence_anchor="config.replay.feature_missing_timestamp_policy",
+                )
+            return self._pass(
+                "causal_time.hard_gate",
+                "I3 causal time hard gate: live_shadow uses fail_closed timestamp policy.",
+                evidence_anchor="config.replay.feature_missing_timestamp_policy=fail_closed",
+            )
+
+        # offline_replay: allow legacy compat only if diagnostics_legacy is explicitly declared.
+        # Rows are still kept non-trainable by parser I3 fields; this gate documents the contract.
+        if policy == "legacy_non_causal_file_offset":
+            return self._warn(
+                "causal_time.hard_gate",
+                (
+                    "offline_replay uses legacy_non_causal_file_offset policy. "
+                    "All non-causal rows will have trainable=false and "
+                    "dataset_visibility=diagnostics_only per I3."
+                ),
+                evidence_anchor="config.replay.feature_missing_timestamp_policy=legacy_non_causal_file_offset",
+            )
+        return self._pass(
+            "causal_time.hard_gate",
+            "I3 causal time hard gate: causal timestamp policy is strictest available.",
+            evidence_anchor=f"config.replay.feature_missing_timestamp_policy={policy!r}",
         )

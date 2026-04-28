@@ -25,7 +25,7 @@
 Emitted when a trade intent has been successfully evaluated, approved through all QoS controls, and is ready for execution routing.
 
 ### Schema Reference
-`schemas/trade_intent_v1.json` (JSON Schema 2020-12)
+schemas/trade_intent_v1.json (JSON Schema 2020-12)
 
 ### Payload Structure
 
@@ -33,8 +33,8 @@ Emitted when a trade intent has been successfully evaluated, approved through al
 {
   "instrument": "BTCUSDT",
   "side": "buy",
-  "p": "0.55",
-  "payoff_ratio_r": "2.0",
+  "p": "0.5",
+  "payoff_ratio_r": "1.5",
   "tca_budget": {
     "max_slippage_bps": "10",
     "max_latency_ms": 500,
@@ -45,7 +45,7 @@ Emitted when a trade intent has been successfully evaluated, approved through al
     "session_cvar95_max_bps": "200"
   },
   "size": {
-    "kelly_fraction": "0.1",
+    "kelly_fraction": "0.1666666666666666666666666667",
     "notional_cap_usd": "50.0"
   },
   "order": {
@@ -83,8 +83,10 @@ Emitted when a trade intent has been successfully evaluated, approved through al
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `p` | string | ✅ | Win probability estimate [0.0-1.0] |
-| `payoff_ratio_r` | string | ✅ | Reward-to-risk ratio |
+| `p` | string | ✅ | Win probability estimate derived from decision.kelly.base_probability on this boundary |
+| `payoff_ratio_r` | string | ✅ | Reward-to-risk ratio derived from decision.kelly.payoff_ratio_r |
+
+At the intent boundary these fields are resolved from decision.kelly SSOT. When trace is present, trace.kelly_provenance carries the config source path and the Kelly formula used for size.kelly_fraction.
 
 #### TCA Budget
 
@@ -105,7 +107,7 @@ Emitted when a trade intent has been successfully evaluated, approved through al
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `size.kelly_fraction` | string | ✅ | Kelly criterion fraction [0.0-1.0] |
+| `size.kelly_fraction` | string | ✅ | Kelly fraction derived from config-backed p and payoff_ratio_r, capped by decision.kelly.kelly_cap |
 | `size.notional_cap_usd` | string | ✅ | Max notional value in USD |
 
 #### Metadata
@@ -127,7 +129,7 @@ Emitted when a trade intent has been successfully evaluated, approved through al
 ["sizing=slbps", "q=0.01", "sl_bps=50", "m_regime=1.2", "kappa=1.0"]
 
 // Kelly-based sizing
-["kelly_fraction=0.1", "probability=0.55", "payoff=2.0"]
+["kelly_fraction=0.1666666666666666666666666667", "probability=0.5", "payoff=1.5"]
 
 // Risk-limited sizing
 ["capped_by_liquidity", "notional_cap=1000.0", "original=1500.0"]

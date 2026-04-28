@@ -32,7 +32,7 @@
 - **`atr_period`:** `int` (14).
 - **`entry_k_atr` / `sl_k_atr` / `tp_k_atr`:** Множники ATR для розрахунку відступів ціни входу (0.3), Stop Loss (1.5) та Take Profit (2.0).
 - **`obi_weight` / `obi_mod_clamp_min` / `obi_mod_clamp_max`:** Модуляція відступів на основі Order Book Imbalance.
-- **`structural_stop_enabled`:** `bool` (`false`). 
+- **`structural_stop_enabled`:** `bool` (`false`).
 - **`confidence_scale`:** `float` (0.5).
 - **`min_stop_bps`:** `int` (15). Жорсткий мінімум для відстані Stop Loss.
 
@@ -53,7 +53,7 @@
 - **`regime_loss_embargo`:** Ембарго на торгівлю після збитків у певному режимі (`enabled: true`, `min_loss_threshold_net: 0.0`).
 
 ### Контекстні гейти (Degraded Context)
-- **`fail_closed_on_degraded_context`:** `bool` (`false`). 
+- **`fail_closed_on_degraded_context`:** `bool` (`false`).
 - **`degraded_context_contracts_by_strategy`:** Визначає, які фічі є "критичними" (`critical_keys`). Якщо критична фіча `NaN`, стратегія блокується.
 
 ---
@@ -83,8 +83,8 @@
 - **`warmup.enforcement_mode`:** `fail_fast`. Якщо хоча б одна фіча не готова (`check_full_ready_invariant: true`), домен сигналізує про неготовність.
 
 ### `feature_sanity`
-- **Role:** Жорсткі математичні межі для кожної фічі (Hard Bounds). 
-- **`nan_inf_behavior`:** `neutral_and_not_ready`. 
+- **Role:** Жорсткі математичні межі для кожної фічі (Hard Bounds).
+- **`nan_inf_behavior`:** `neutral_and_not_ready`.
 - Межі: `obi` [-1, 1], `tfi` [-1, 1], `macro_resid` [-3, 3], `volume_spike` [0, 10].
 
 ### `macro_resid` та `absorption`
@@ -102,7 +102,7 @@
 
 ## 4. TA Features Domain (`ta_features`)
 
-- **`timeframes_sec`:** `[180, 300, 900]`. 
+- **`timeframes_sec`:** `[180, 300, 900]`.
 - **`warm_up_bars`:** `int` (30). Кількість свічок для прогріву індикаторів.
 - **`buffer_max_bars`:** `int` (300).
 
@@ -121,7 +121,7 @@
 ## 6. Position Tracking Domain (`position_tracking`)
 
 - **`precision`:** Математична точність портфелю (`decimal_places: 2`, `quantity_min_threshold: 1.0e-09`, `flat_position_threshold: 1.0e-12`).
-- **`positions_stale_ttl_sec`:** 15 сек. 
+- **`positions_stale_ttl_sec`:** 15 сек.
 
 ---
 
@@ -130,7 +130,7 @@
 Керує станом ордерів, взаємодіє з біржею та захищає виконання.
 
 ### Базові налаштування та Ліміти
-- **`fallback.policy`:** `fail_closed`. 
+- **`fallback.policy`:** `fail_closed`.
 - **`exposure_guard`:** Ліміти капіталу (`max_equity_utilization_pct: 150.0`, `max_directional_ratio: 20.0`, `max_concentration_pct: 500.0`).
 - **`pending_ttl_sec`:** `int` (90). Час життя наміру на відкриття.
 
@@ -139,12 +139,12 @@
 - **`event_dedup`:** Дедуплікація біржових подій. Розмір кешу `100000`, зберігає стан на диску (`execution_terminal_identity_cache_v1.json`).
 
 ### Pending Limit Orders
-- **`cancel_on_regime_change`:** `true`. 
+- **`cancel_on_regime_change`:** `true`.
 - **`supersede_reprice_guard`:** `true`. Дозволяє перевиставити ордер за кращою ціною (мінімум на `5 bps` та `0.1 ATR`).
-- **`advanced_stale_cancel`:** Скасовує старі ордери (понад 300 сек), якщо ціна відхилилася більше ніж на `0.5 ATR`. 
+- **`advanced_stale_cancel`:** Скасовує старі ордери (понад 300 сек), якщо ціна відхилилася більше ніж на `0.5 ATR`.
 
 ### Guardian та Стан
-- **`guardian`:** `unified: true`, `emit_tidy_event: true`. 
+- **`guardian`:** `unified: true`, `emit_tidy_event: true` (deprecated compatibility alias), `emit_tidy_monitoring_event: true` (monitoring-only tidy telemetry; does not control `EVT:SYMBOL_TIDY`).
 - **`restore_artifact`:** Стан зберігається у `execution_position_restore_envelope_v1.json` кожні 30 секунд (Crash Recovery).
 
 ### 7.1. `position_policy_sidecar` (AI-Augmented Position Management)

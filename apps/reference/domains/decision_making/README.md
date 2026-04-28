@@ -11,7 +11,7 @@ QoS rate control, and reject normalization (NRR).
 - **WhyCode**: re-exported from `vfoundation/core/why_codes.py` (canonical SSOT)
 - **NRR**: `normalized_reject_reasons.py` (canonical SSOT)
 - **Events**: registered in `verb_registry_v1.yaml` with `owner: decision_making`
-- **Schemas**: `schemas/` directory (JSON Schema) + `schemas.py` / `schemas_decision_blocked.py` (Pydantic)
+- **Schemas**: `intent/schemas/` (JSON Schema) + `schemas/` package / `schemas_decision_blocked.py` (Pydantic)
 - See `docs/contracts/CONTRACT_ARCHITECTURE.md` for full rules
 
 ## File Map

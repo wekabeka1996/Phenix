@@ -704,6 +704,38 @@ class ConfigLoader:
             else:
                 LOG.warning(msg)
 
+    def _validate_order_guardian_surface_conflicts(self, resolved_config: Dict[str, Any]) -> None:
+        """Fail fast on divergent deprecated guardian config surfaces.
+
+        F5: execution.order_guardian and trading.execution.order_guardian remain
+        temporarily supported, but they must be equal when both are present.
+        """
+        execution_block = resolved_config.get("execution")
+        root_guardian = None
+        if isinstance(execution_block, dict):
+            root_guardian = execution_block.get("order_guardian")
+
+        trading_block = resolved_config.get("trading")
+        trading_guardian = None
+        if isinstance(trading_block, dict):
+            trading_execution_block = trading_block.get("execution")
+            if isinstance(trading_execution_block, dict):
+                trading_guardian = trading_execution_block.get(
+                    "order_guardian")
+
+        if root_guardian is None or trading_guardian is None:
+            return
+
+        if root_guardian != trading_guardian:
+            raise ConfigContractError(
+                path="execution.order_guardian",
+                why=(
+                    "Conflicting deprecated guardian configuration surfaces: "
+                    "execution.order_guardian and trading.execution.order_guardian differ. "
+                    "Keep only one or make them equal."
+                ),
+            )
+
     def _fail_fast_validate_instruments_precision(self, resolved_config: Dict[str, Any]) -> None:
         """Startup fail-fast: ensure constraints exist for active symbols.
 
@@ -1109,6 +1141,9 @@ class ConfigLoader:
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
 
+        # Fail fast on divergent deprecated guardian config surfaces before runtime construction.
+        self._validate_order_guardian_surface_conflicts(resolved_config)
+
         # BACKTEST BTC-only support: allow subset run when data is limited.
         # SCORCHED-EARTH-2026-01-27: Use externalized logic (Separation of Concerns)
         apply_backtest_symbols_filter(resolved_config)
@@ -1204,7 +1239,7 @@ class ConfigLoader:
             )
 
         missing = []
-        for k in ("enabled", "min_abs_delta_price", "min_confidence", "consecutive_bars"):
+        for k in ("enabled", "min_abs_delta_price", "min_confidence", "min_regime_confidence", "consecutive_bars"):
             if k not in ds or ds.get(k) is None:
                 missing.append(k)
 

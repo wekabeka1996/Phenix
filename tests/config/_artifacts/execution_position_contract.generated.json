@@ -373,6 +373,11 @@
           "default_factory": null,
           "required": true
         },
+        "emit_tidy_monitoring_event": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
         "cleanup_ttl_ms": {
           "default": "'<required>'",
           "default_factory": null,

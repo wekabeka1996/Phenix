@@ -83,6 +83,7 @@ from apps.reference.domains.shadow_telemetry.main_bridge import (
     LLMIntentIngressBridge,
     register_llm_command_mapper,
 )
+from apps.reference.domains.shadow_telemetry.ledger_writer import ShadowTelemetrySink
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
 from vfoundation.core import FSMCore
@@ -518,6 +519,7 @@ def main() -> None:
     _init_order_index(fsm, config)
     shadow_event_tap_publisher: Optional[ShadowEventTapPublisher] = None
     llm_intent_ingress_bridge: Optional[LLMIntentIngressBridge] = None
+    shadow_telemetry_sink: Optional[ShadowTelemetrySink] = None
 
     fsm.emit = build_emit_with_monitoring(
         original_emit=fsm.emit,
@@ -825,6 +827,13 @@ def main() -> None:
             shadow_event_tap_publisher = ShadowEventTapPublisher(
                 shadow_cfg, logger=LOG.getChild("shadow_telemetry"))
             shadow_event_tap_publisher.start()
+            shadow_telemetry_sink = ShadowTelemetrySink(
+                path=Path("logs") / "shadow_telemetry" /
+                "decision_ledger_v1.jsonl",
+                logger=LOG.getChild("shadow_telemetry.ledger"),
+            )
+            shadow_telemetry_sink.start()
+            shadow_telemetry_sink.register(fsm)
             llm_intent_ingress_bridge = LLMIntentIngressBridge(
                 fsm=fsm,
                 config=config,
@@ -834,9 +843,10 @@ def main() -> None:
             register_llm_command_mapper(
                 fsm, logger=LOG.getChild("shadow_telemetry"))
             LOG.info(
-                " Shadow telemetry bridges started (tap=%s, ingress=%s)",
+                " Shadow telemetry bridges started (tap=%s, ingress=%s, ledger=%s)",
                 bool(shadow_event_tap_publisher),
                 bool(llm_intent_ingress_bridge),
+                bool(shadow_telemetry_sink),
             )
         else:
             LOG.info(" Shadow telemetry bridges disabled by config")
@@ -1486,6 +1496,8 @@ def main() -> None:
                 locals().get("retry_scheduler")),                               timeout_sec=2.0),
             ShutdownStage("shadow_event_tap",   _safe_stop(
                 shadow_event_tap_publisher), timeout_sec=2.0),
+            ShutdownStage("shadow_telemetry_sink", _safe_stop(
+                shadow_telemetry_sink), timeout_sec=2.0),
             ShutdownStage("llm_ingress_bridge", _safe_stop(
                 llm_intent_ingress_bridge), timeout_sec=2.0),
         ).add_stage(

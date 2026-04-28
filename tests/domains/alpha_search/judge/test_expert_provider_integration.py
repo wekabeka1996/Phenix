@@ -33,9 +33,11 @@ from apps.reference.domains.alpha_search.config_models import (
 )
 from apps.reference.domains.alpha_search.judge.config_models import (
     ChamberConfig,
+    ConfidenceLadderTier,
     JudgeCortexConfig,
     JudgeExpertsConfig,
     JudgeShadowLogConfig,
+    ShadowPlanConfig,
     SignalWeightsExpertConfig,
     FeatureNeutralsExpertConfig,
     VerdictConfig,
@@ -44,6 +46,7 @@ from apps.reference.domains.alpha_search.judge.contracts import (
     ChamberAggregate,
     ExpertOutput,
     JudgeEvidenceEnvelope,
+    ShadowEntryPlan,
     JudgeVerdict,
 )
 from apps.reference.domains.alpha_search.judge.chamber import ChamberAggregator
@@ -119,6 +122,35 @@ def _make_feature_neutrals_expert_config(*, enabled=True):
         strength_features=[],
         strength_alpha=0.5,
         strength_cap=1.0,
+    )
+
+
+def _make_shadow_plan_config() -> ShadowPlanConfig:
+    return ShadowPlanConfig(
+        enabled=True,
+        confidence_ladder=[
+            ConfidenceLadderTier(
+                name="low",
+                min_confidence=0.20,
+                limit_offset_bps=0,
+                tp_offset_pct=0.010,
+                sl_offset_pct=0.006,
+            ),
+            ConfidenceLadderTier(
+                name="medium",
+                min_confidence=0.35,
+                limit_offset_bps=3,
+                tp_offset_pct=0.015,
+                sl_offset_pct=0.008,
+            ),
+            ConfidenceLadderTier(
+                name="high",
+                min_confidence=0.50,
+                limit_offset_bps=5,
+                tp_offset_pct=0.020,
+                sl_offset_pct=0.010,
+            ),
+        ],
     )
 
 
@@ -1324,6 +1356,85 @@ class TestVerdictJSONLLogs:
             record = json.loads(lines[0])
             assert record["verdict_scope"] == "ENTRY"
             assert record["authority_mode"] == "shadow"
+
+
+# ---------------------------------------------------------------------------
+# Test: J6-S3 — Shadow entry plan event/log emission
+# ---------------------------------------------------------------------------
+
+
+class TestShadowEntryPlanIntegration:
+    def test_shadow_entry_plan_events_emitted_after_verdict(self):
+        bus = StubEventBus()
+        cfg = _make_config(
+            judge_mode="shadow",
+            sw_enabled=True,
+            fn_enabled=True,
+            chamber=ChamberConfig(),
+            verdict=VerdictConfig(shadow_plan=_make_shadow_plan_config()),
+        )
+        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+        _inject_cache_entry(plugin)
+        _fire_decision(plugin)
+
+        verdict_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_ENTRY_VERDICT_V1"
+        ]
+        shadow_plan_events = [
+            e for e in bus.emitted
+            if e["event"] == "EVT:JUDGE_SHADOW_ENTRY_PLAN_V1"
+        ]
+
+        assert len(verdict_events) == 1
+        assert len(shadow_plan_events) == 3
+
+        plans = [ShadowEntryPlan(**event["payload"])
+                 for event in shadow_plan_events]
+        assert [plan.confidence_tier for plan in plans] == [
+            "low", "medium", "high"]
+        assert all(plan.entry_price_ref == 50000.0 for plan in plans)
+        assert all(plan.source_verdict_id ==
+                   verdict_events[0]["payload"]["verdict_id"] for plan in plans)
+        assert all(plan.source_envelope_id ==
+                   verdict_events[0]["payload"]["envelope_id"] for plan in plans)
+
+        event_names = [event["event"] for event in bus.emitted]
+        verdict_idx = event_names.index("EVT:JUDGE_ENTRY_VERDICT_V1")
+        first_shadow_idx = event_names.index("EVT:JUDGE_SHADOW_ENTRY_PLAN_V1")
+        assert verdict_idx < first_shadow_idx
+
+    def test_shadow_entry_plan_jsonl_written_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bus = StubEventBus()
+            cfg = _make_config(
+                judge_mode="shadow",
+                sw_enabled=True,
+                fn_enabled=True,
+                shadow_log_enabled=True,
+                shadow_log_dir=tmpdir,
+                chamber=ChamberConfig(),
+                verdict=VerdictConfig(shadow_plan=_make_shadow_plan_config()),
+            )
+            plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+            _inject_cache_entry(plugin)
+            _fire_decision(plugin)
+
+            shadow_plan_files = [
+                filename
+                for filename in os.listdir(tmpdir)
+                if filename.startswith("shadow_entry_plan_") and filename.endswith(".jsonl")
+            ]
+            assert len(shadow_plan_files) == 1
+
+            with open(os.path.join(tmpdir, shadow_plan_files[0]), "r") as handle:
+                lines = handle.readlines()
+            assert len(lines) == 3
+
+            record = json.loads(lines[0])
+            plan = ShadowEntryPlan(**record)
+            assert plan.symbol == "BTCUSDT"
+            assert plan.entry_order_type == "HYPOTHETICAL_LIMIT"
 
 
 # ---------------------------------------------------------------------------

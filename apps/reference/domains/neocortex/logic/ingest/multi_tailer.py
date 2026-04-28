@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 Multi-Source Tailer
 
@@ -26,6 +27,7 @@ Architecture:
     │              Handler (Adapter)                                  │
     └─────────────────────────────────────────────────────────────────┘
 """
+__quarantined__ = True
 
 import asyncio
 import json
@@ -515,6 +517,7 @@ class MultiTailer:
                             "source_offset": line_start_offset,
                             "event_time_source": entry.time_source,
                             "event_time_is_causal": entry.time_is_causal,
+                            "event_time_provenance": entry.time_provenance.value,
                         })
 
                         self._features_processed += 1
@@ -815,7 +818,8 @@ class MultiTailer:
         if fill_qty > 0.0 and fill_price is not None:
             total_priced_qty = episode.priced_fill_quantity + fill_qty
             if total_priced_qty > 0.0:
-                weighted_entry = (episode.entry_price or 0.0) * episode.priced_fill_quantity
+                weighted_entry = (episode.entry_price or 0.0) * \
+                    episode.priced_fill_quantity
                 weighted_entry += fill_price * fill_qty
                 episode.entry_price = weighted_entry / total_priced_qty
                 episode.priced_fill_quantity = total_priced_qty
@@ -835,7 +839,8 @@ class MultiTailer:
     ) -> EpisodeReward:
         entry_ts_ms = episode.event_ts_ms
         close_ts_ms = core_entry.close_ts_ms or core_entry.event_ts_ms
-        quantity = episode.filled_quantity if episode.filled_quantity > 0.0 else self._coerce_positive_float(episode.quantity)
+        quantity = episode.filled_quantity if episode.filled_quantity > 0.0 else self._coerce_positive_float(
+            episode.quantity)
         if quantity is None:
             quantity = self._coerce_positive_float(core_entry.quantity)
         entry_price = self._coerce_positive_float(episode.entry_price)
@@ -977,7 +982,8 @@ class MultiTailer:
             except ValueError as exc:
                 self._mark_unresolved(
                     "filled_identity_conflict",
-                    {"symbol": symbol, "error": str(exc), "episode_key": episode_key},
+                    {"symbol": symbol, "error": str(
+                        exc), "episode_key": episode_key},
                 )
                 return
 
@@ -998,7 +1004,8 @@ class MultiTailer:
 
         if order.event_type == OrderEventType.REJECTED:
             episode_key = self._resolve_existing_episode_key(order)
-            episode = self._pop_staged_episode(episode_key) if episode_key else None
+            episode = self._pop_staged_episode(
+                episode_key) if episode_key else None
             if episode is None:
                 episode = Episode(
                     symbol=symbol,
@@ -1091,41 +1098,6 @@ class MultiTailer:
                     reason,
                 )
             return
-            # Handle cancelled orders (e.g., regime change cancellations in backtest).
-            # A cancellation means the agent committed to an action but it was never
-            # executed — no state transition occurred.  Training on this as a full
-            # episode with reward=0.0 is dangerous because:
-            #   1. It contributes zero-variance advantages that can trigger NaN in PPO
-            #      (adv.std() == 0 → division by zero in normalization).
-            #   2. It's pure noise: the market gave no feedback, so there's nothing to
-            #      learn from this specific (S, A) pair.
-            #
-            # Policy decision: apply a small negative penalty to discourage
-            # indecisive behaviour, but SKIP episode delivery when no market features
-            # were captured (no state to learn from).
-            if symbol in self._pending_episodes:
-                episode = self._pending_episodes.pop(symbol)
-                reason = order.raw.get("reason", "UNKNOWN")
-
-                has_features = bool(episode.features)
-                if has_features:
-                    # Small penalty to discourage timeout/cancelled orders.
-                    episode.reward = -0.001
-                    episode.position_closed = True
-
-                    if self.episode_handler:
-                        await self.episode_handler(episode)
-                    self._episodes_completed += 1
-                    logger.info(
-                        "ORDER_CANCELLED: %s reason=%s (episode with penalty=-0.001)",
-                        symbol, reason,
-                    )
-                else:
-                    # No features attached → no useful (S,A,R) tuple.  Drop silently.
-                    logger.info(
-                        "ORDER_CANCELLED: %s reason=%s (dropped — no features/state captured)",
-                        symbol, reason,
-                    )
 
     async def _process_core(self):
         """Process core log for position closes and equity updates."""
@@ -1197,7 +1169,8 @@ class MultiTailer:
         if episode_key is None:
             self._mark_unresolved(
                 "close_unmatched_trade_id",
-                {"symbol": symbol, "trade_id": trade_id, "close_ts_ms": core_entry.close_ts_ms},
+                {"symbol": symbol, "trade_id": trade_id,
+                    "close_ts_ms": core_entry.close_ts_ms},
             )
             return
 
@@ -1248,7 +1221,8 @@ class MultiTailer:
         else:
             import numpy as np
 
-            episode.reward = float(np.tanh(float(reward_contract.net_pnl) / self.REWARD_SCALE))
+            episode.reward = float(
+                np.tanh(float(reward_contract.net_pnl) / self.REWARD_SCALE))
             logger.debug(
                 "Structured reward applied: symbol=%s net_pnl=%s reward=%s trade_id=%s complete=%s",
                 symbol,
@@ -1306,12 +1280,14 @@ class MultiTailer:
             fees = None
         close_price_raw = payload.get("close_price")
         try:
-            close_price = float(close_price_raw) if close_price_raw is not None else None
+            close_price = float(
+                close_price_raw) if close_price_raw is not None else None
         except (TypeError, ValueError):
             close_price = None
         realized_pnl_raw = payload.get("realized_pnl")
         try:
-            realized_pnl = float(realized_pnl_raw) if realized_pnl_raw is not None else None
+            realized_pnl = float(
+                realized_pnl_raw) if realized_pnl_raw is not None else None
         except (TypeError, ValueError):
             realized_pnl = None
 

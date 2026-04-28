@@ -37,6 +37,7 @@ class DMConfigSpec:
     bar_ms: int
     behavior_enabled: bool
     normalize_signals_mode: str
+    neocortex_enforcement_mode: str
 
     @classmethod
     def load(
@@ -171,4 +172,5 @@ class DMConfigSpec:
             bar_ms=int(dm_cfg.bar_gating.bar_ms),
             behavior_enabled=bool(dm_cfg.behavior_fsm.enable),
             normalize_signals_mode=normalize_signals_mode,
+            neocortex_enforcement_mode=str(dm_cfg.neocortex_enforcement_mode),
         )

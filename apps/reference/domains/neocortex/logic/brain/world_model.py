@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 World Model (RNN Dynamics)
 
@@ -9,6 +10,7 @@ Used for:
     - Hallucination / Dreaming (Simulating futures)
     - Planning (PPO state value estimation)
 """
+__quarantined__ = True
 
 from typing import Tuple, Optional
 import logging

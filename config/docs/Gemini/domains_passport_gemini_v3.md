@@ -53,7 +53,7 @@
 - **`advanced_stale_cancel`:** Скасовує старі ордери (понад 300 сек), якщо ціна відхилилася (drift away) більше ніж на `0.5 ATR`. Жорстко прописано, що `BUY` ордери скасовуються при `TREND_DOWN`, але ніколи не скасовуються при `UNCERTAIN` чи `MEAN_REVERSION`.
 
 ### `guardian`, `restore_artifact` та `startup_truth_artifact`
-- **`guardian`:** Періодичний прибиральник (GC). `unified: true`, `emit_tidy_event: true`. 
+- **`guardian`:** Періодичний прибиральник (GC). `unified: true`, `emit_tidy_event: true` (deprecated compatibility alias), `emit_tidy_monitoring_event: true` (monitoring-only tidy telemetry; does not control `EVT:SYMBOL_TIDY`).
 - **`restore_artifact`:** Стан екзекуції зберігається у `execution_position_restore_envelope_v1.json` (`mode: authoritative`) кожні 30 секунд. Це основа Crash Recovery системи.
 - **`startup_truth_artifact`:** Запис початкового стану у `writer_only` режимі при старті.
 

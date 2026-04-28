@@ -34,9 +34,12 @@ class TestPendingEntryTTLConfig:
             ttl_by_tf_sec={180: 45, 300: 60, 900: 180},
             reject_unknown_tf=True,
             cancel_on_regime_change=True,
+            regime_change_cancel_mode="immediate",
             cancel_on_supersede=True,
             cancel_on_panic=True,
             supersede_cancel_timeout_sec=5.0,
+            supersede_reprice_guard=None,
+            advanced_stale_cancel=None,
         )
         
         assert cfg.enabled is True
@@ -54,9 +57,12 @@ class TestPendingEntryTTLConfig:
                 ttl_by_tf_sec={30: 15},  # 30 < 60 = invalid
                 reject_unknown_tf=True,
                 cancel_on_regime_change=True,
+                regime_change_cancel_mode="immediate",
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
                 supersede_cancel_timeout_sec=5.0,
+                supersede_reprice_guard=None,
+                advanced_stale_cancel=None,
             )
         
         assert "tf_sec must be >= 60" in str(exc_info.value)
@@ -72,9 +78,12 @@ class TestPendingEntryTTLConfig:
                 ttl_by_tf_sec={180: 0},  # TTL = 0 = invalid
                 reject_unknown_tf=True,
                 cancel_on_regime_change=True,
+                regime_change_cancel_mode="immediate",
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
                 supersede_cancel_timeout_sec=5.0,
+                supersede_reprice_guard=None,
+                advanced_stale_cancel=None,
             )
         
         assert "TTL must be > 0" in str(exc_info.value)
@@ -90,9 +99,12 @@ class TestPendingEntryTTLConfig:
                 ttl_by_tf_sec={180: 45},
                 reject_unknown_tf=True,
                 cancel_on_regime_change=True,
+                regime_change_cancel_mode="immediate",
                 cancel_on_supersede=True,
                 cancel_on_panic=True,
                 supersede_cancel_timeout_sec=5.0,
+                supersede_reprice_guard=None,
+                advanced_stale_cancel=None,
                 unknown_field=123,  # Extra field
             )
 
@@ -356,7 +368,7 @@ class TestConfigLoading:
         pe_ttl = config["execution_position"]["pending_entry_ttl"]
         assert pe_ttl["enabled"] is True
         assert "ttl_by_tf_sec" in pe_ttl
-        assert 180 in pe_ttl["ttl_by_tf_sec"]
+        assert "180" in pe_ttl["ttl_by_tf_sec"]
 
 
 # ============================================================================

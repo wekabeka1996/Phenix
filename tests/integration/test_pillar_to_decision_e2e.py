@@ -9,6 +9,9 @@ from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHand
 def _build_handler():
     cfg = get_config().model_copy(deep=True)
     cfg.strategies.aurora.decision.scoring_version = "quadratic"
+    # Ensure TREND_UP is allowed for BTCUSDT so the test reaches the kernel.
+    if "BTCUSDT" in cfg.strategies.aurora.assets:
+        cfg.strategies.aurora.assets["BTCUSDT"].allowed_regimes.append("TREND_UP")
 
     emitted: list[tuple[str, dict]] = []
 

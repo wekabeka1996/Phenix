@@ -19,10 +19,13 @@ Out of scope:
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.reference.domains.execution_position.cancel_bridge_utils import (
+    build_trace_ref,
+    clean_required_str,
+)
 from vfoundation.core.protocol import Message, truncate_why
 
 
@@ -38,15 +41,6 @@ _GUARDIAN_PRE_CLOSE_CLEANUP_TRACE_REF_PREFIX = (
 
 class GuardianPreCloseCleanupBridgeError(ValueError):
     """Fail-closed error for guardian pre-close cleanup normalization."""
-
-
-def _clean_required_str(value: Any, *, field_name: str) -> str:
-    cleaned = str(value or "").strip()
-    if not cleaned:
-        raise GuardianPreCloseCleanupBridgeError(
-            f"guardian pre-close cleanup missing required field: {field_name}"
-        )
-    return cleaned
 
 
 class GuardianPreCloseCleanupRequest(BaseModel):
@@ -70,15 +64,29 @@ class GuardianPreCloseCleanupRequest(BaseModel):
     ) -> "GuardianPreCloseCleanupRequest":
         try:
             return cls(
-                symbol=_clean_required_str(symbol, field_name="symbol").upper(),
-                order_id=_clean_required_str(order_id, field_name="order_id"),
-                bracket_type=_clean_required_str(
+                symbol=clean_required_str(
+                    symbol,
+                    field_name="symbol",
+                    message_prefix="guardian pre-close cleanup",
+                    error_type=GuardianPreCloseCleanupBridgeError,
+                ).upper(),
+                order_id=clean_required_str(
+                    order_id,
+                    field_name="order_id",
+                    message_prefix="guardian pre-close cleanup",
+                    error_type=GuardianPreCloseCleanupBridgeError,
+                ),
+                bracket_type=clean_required_str(
                     bracket_type,
                     field_name="bracket_type",
+                    message_prefix="guardian pre-close cleanup",
+                    error_type=GuardianPreCloseCleanupBridgeError,
                 ).upper(),
-                parent_order_id=_clean_required_str(
+                parent_order_id=clean_required_str(
                     parent_order_id,
                     field_name="parent_order_id",
+                    message_prefix="guardian pre-close cleanup",
+                    error_type=GuardianPreCloseCleanupBridgeError,
                 ),
             )
         except Exception as exc:
@@ -111,7 +119,10 @@ def build_guardian_pre_close_cleanup_trace_ref(
     }
     if reason is not None:
         params["reason"] = reason[:80]
-    return f"{_GUARDIAN_PRE_CLOSE_CLEANUP_TRACE_REF_PREFIX}{urlencode(params)}"
+    return build_trace_ref(
+        prefix=_GUARDIAN_PRE_CLOSE_CLEANUP_TRACE_REF_PREFIX,
+        params=params,
+    )
 
 
 def adapt_guardian_pre_close_cleanup_to_dec_cancel(

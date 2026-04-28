@@ -1,5 +1,7 @@
+# QUARANTINED: legacy_runtime
 # path: ppo_library/ppo_system/utils/safety.py
 from __future__ import annotations
+__quarantined__ = True
 from dataclasses import dataclass
 from typing import Dict, Tuple, Optional, Any, Literal
 import logging

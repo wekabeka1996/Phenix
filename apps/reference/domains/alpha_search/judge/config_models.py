@@ -19,11 +19,25 @@ The full CortexMode type surface is preserved for forward compatibility.
 
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .contracts import CortexMode
 
 NormalizeMode = Literal["off", "signed_v2"]
+IntrabarAmbiguityPolicy = Literal["mark_ambiguous", "prioritize_sl", "prioritize_tp"]
+
+
+class ShadowSimulatorConfig(BaseModel):
+    """Config for Shadow Plan Fill Simulator (J6-S4)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    max_bars_after_signal: int = 12
+    intrabar_ambiguity_policy: IntrabarAmbiguityPolicy = "mark_ambiguous"
+    fees_bps: float = 2.0
+    slippage_bps: float = 1.0
+
 
 
 class SignalWeightsExpertConfig(BaseModel):
@@ -250,6 +264,61 @@ class ChamberConfig(BaseModel):
         return v
 
 
+class ConfidenceLadderTier(BaseModel):
+    """One tier in the shadow entry plan confidence ladder."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(..., min_length=1)
+    min_confidence: float = Field(..., ge=0.0, le=1.0)
+    limit_offset_bps: int = Field(..., ge=0)
+    tp_offset_pct: float = Field(..., gt=0.0)
+    sl_offset_pct: float = Field(..., gt=0.0)
+
+
+class ShadowPlanConfig(BaseModel):
+    """Config for shadow LIMIT plan telemetry (J6-S3)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    order_type: Literal["HYPOTHETICAL_LIMIT"] = "HYPOTHETICAL_LIMIT"
+    emit_all_tiers: bool = True
+    actionable_tiers: List[str] = Field(default_factory=list)
+    price_ref_source: Literal["verdict_context"] = "verdict_context"
+    confidence_ladder: List[ConfidenceLadderTier] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_confidence_ladder(self) -> "ShadowPlanConfig":
+        names: set[str] = set()
+        min_confidences = [
+            tier.min_confidence for tier in self.confidence_ladder]
+
+        if min_confidences != sorted(min_confidences):
+            raise ValueError(
+                "confidence_ladder must be sorted ascending by min_confidence"
+            )
+
+        for tier in self.confidence_ladder:
+            if tier.name in names:
+                raise ValueError("confidence_ladder tier names must be unique")
+            names.add(tier.name)
+
+        if self.enabled and not self.confidence_ladder:
+            raise ValueError(
+                "shadow_plan.enabled=true requires non-empty confidence_ladder"
+            )
+
+        if self.actionable_tiers:
+            invalid_tiers = [t for t in self.actionable_tiers if t not in names]
+            if invalid_tiers:
+                raise ValueError(
+                    f"actionable_tiers {invalid_tiers} not found in confidence_ladder"
+                )
+
+        return self
+
+
 class VerdictConfig(BaseModel):
     """Config for verdict assembly (Phase 4).
 
@@ -267,6 +336,7 @@ class VerdictConfig(BaseModel):
     strategy_id: str = "aurora"
     cortex_version: str = "phase4_shadow_v1"
     split_confidence_discount: float = 0.5
+    shadow_plan: Optional[ShadowPlanConfig] = None
 
     @field_validator("split_confidence_discount")
     @classmethod
@@ -298,6 +368,7 @@ class JudgeCortexConfig(BaseModel):
     shadow_log: Optional[JudgeShadowLogConfig] = None
     chamber: Optional[ChamberConfig] = None
     verdict: Optional[VerdictConfig] = None
+    simulator: Optional[ShadowSimulatorConfig] = None
 
     @model_validator(mode="after")
     def validate_phase2_mode_admission(self) -> "JudgeCortexConfig":

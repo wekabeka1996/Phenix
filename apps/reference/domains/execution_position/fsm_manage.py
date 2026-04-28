@@ -11,7 +11,7 @@ Shadow-mode: decisions only, no live modifications.
 from __future__ import annotations
 
 import logging
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from enum import Enum
 
 # T2B-04: Time abstraction for deterministic testing
@@ -33,7 +33,6 @@ from apps.reference.utils.accessors import aget, dget
 from apps.reference.domains.execution_position.utils import (
     classify_client_order_id,
     generate_client_order_id,
-    quantize_stop_price,
     coerce_exchange_bool,
 )
 from apps.reference.telemetry.shadow_journal import (
@@ -1331,6 +1330,23 @@ class ManageFlowFSM:
                 else:
                     tp2_price = tp2_price - tp2_offset
 
+            # Safety offset can move an aligned price off the tick lattice.
+            # Snap again before emit and fail closed if the final value is invalid.
+            sl_price, tp1_price, tp2_price = self._quantize_prices(
+                symbol, sl_price, tp1_price, tp2_price)
+            for label, final_price in (
+                ("SL", sl_price),
+                ("TP1", tp1_price),
+                ("TP2", tp2_price),
+            ):
+                if final_price is None:
+                    continue
+                if final_price % tick_size != 0:
+                    raise ValueError(
+                        f"{label} bracket stopPrice {final_price} is not aligned to "
+                        f"instruments.{symbol}.tick_size={tick_size}"
+                    )
+
             # Update stored prices
             self.sl_price = sl_price
             self.tp1_price = tp1_price
@@ -1574,21 +1590,24 @@ class ManageFlowFSM:
             raise ValueError(
                 f"instruments.{symbol}.tick_size must be > 0, got {tick_size_dec}")
 
-        # FIX-1111: side-aware rounding  bracket orders are always the opposite side
-        # BUY position  SELL brackets  FLOOR (avoid trigger too early)
-        # SELL position  BUY brackets  CEIL (avoid trigger too early)
+        # FIX-1111: side-aware rounding. Bracket orders are always the opposite side.
         bracket_side = self._get_opposite_side() if self.position_side else "SELL"
-        tick_size_float = float(tick_size_dec)
+        rounding_mode = ROUND_UP if bracket_side == "BUY" else ROUND_DOWN
+
+        def _snap_to_tick(price: Decimal) -> Decimal:
+            snapped = (
+                (price / tick_size_dec).to_integral_value(rounding=rounding_mode)
+                * tick_size_dec
+            )
+            # Preserve a plain decimal string representation without scientific notation.
+            return Decimal(format(snapped.normalize(), "f"))
 
         if sl_price is not None:
-            sl_price = Decimal(str(quantize_stop_price(
-                float(sl_price), tick_size_float, side=bracket_side)))
+            sl_price = _snap_to_tick(sl_price)
         if tp1_price is not None:
-            tp1_price = Decimal(str(quantize_stop_price(
-                float(tp1_price), tick_size_float, side=bracket_side)))
+            tp1_price = _snap_to_tick(tp1_price)
         if tp2_price is not None:
-            tp2_price = Decimal(str(quantize_stop_price(
-                float(tp2_price), tick_size_float, side=bracket_side)))
+            tp2_price = _snap_to_tick(tp2_price)
 
         return sl_price, tp1_price, tp2_price
 

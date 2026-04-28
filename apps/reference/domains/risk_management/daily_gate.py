@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any, Tuple
 
 from apps.reference.config_contract import ConfigContractError
 
+
 def _d(x: Any):
     """Safe Decimal conversion with fallback to 0."""
     from decimal import Decimal as D, InvalidOperation
@@ -24,6 +25,18 @@ def _d(x: Any):
         return D(str(x))
     except (InvalidOperation, ValueError, TypeError):
         return D("0")
+
+
+def _parse_decimal_config(value: Any, *, path: str):
+    """Strict Decimal conversion for config fields that must fail closed."""
+    from decimal import Decimal as D, InvalidOperation
+    try:
+        return D(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ConfigContractError(
+            path=path,
+            why=f"Invalid decimal config value: {value!r}",
+        ) from exc
 
 
 def _fmt_pct(val: Any) -> str:
@@ -79,12 +92,14 @@ class DailyRiskState:
         # Persisted state is keyed by *wall-clock* date and will leak across runs, causing
         # false drawdown breaches (e.g., reference_equity from a prior run).
         try:
-            trading_mode = str(getattr(cfg, "trading_mode", "")).strip().lower()
+            trading_mode = str(
+                getattr(cfg, "trading_mode", "")).strip().lower()
         except Exception:
             trading_mode = ""
         self._persist_state = trading_mode != "backtest"
 
-        self._state_path = Path(os.environ.get("AURORA_RISK_GATE_STATE_PATH", "data/risk_gate_state.json"))
+        self._state_path = Path(os.environ.get(
+            "AURORA_RISK_GATE_STATE_PATH", "data/risk_gate_state.json"))
         if self._persist_state:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._last_gate_open: Optional[bool] = None
@@ -92,20 +107,23 @@ class DailyRiskState:
         # Strict Object Config: No dict support (Task 18)
         # cfg must be AuroraConfig object
         if hasattr(cfg, "dict") or isinstance(cfg, dict):
-             if isinstance(cfg, dict):
-                 raise TypeError("DailyRiskState requires AuroraConfig, got dict")
-        
+            if isinstance(cfg, dict):
+                raise TypeError(
+                    "DailyRiskState requires AuroraConfig, got dict")
+
         # Access strictly via AuroraConfig -> trading -> risk (Dict[str, Any])
         try:
-             risk_cfg = cfg.trading.risk
+            risk_cfg = cfg.trading.risk
         except AttributeError:
-             # Fallback or error? Strict means we expect formatting.
-             # If cfg is not AuroraConfig, this crashes, which is good.
-             risk_cfg = {}
+            # Fallback or error? Strict means we expect formatting.
+            # If cfg is not AuroraConfig, this crashes, which is good.
+            risk_cfg = {}
 
-        daily_cfg = risk_cfg["daily"] if isinstance(risk_cfg, dict) and "daily" in risk_cfg else {}
+        daily_cfg = risk_cfg["daily"] if isinstance(
+            risk_cfg, dict) and "daily" in risk_cfg else {}
 
-        enabled = daily_cfg.get("enabled") if isinstance(daily_cfg, dict) else None
+        enabled = daily_cfg.get("enabled") if isinstance(
+            daily_cfg, dict) else None
         if enabled is None:
             raise ConfigContractError(
                 path="risk.daily.enabled",
@@ -128,7 +146,10 @@ class DailyRiskState:
         reset_parts = reset_time_str.split(":")
 
         self.cfg = DailyConfig(
-            max_drawdown_pct=_d(max_dd) if max_dd is not None else _d("0"),
+            max_drawdown_pct=_parse_decimal_config(
+                max_dd,
+                path="risk.daily.max_drawdown_pct",
+            ) if max_dd is not None else _d("0"),
             reset_h=int(reset_parts[0] if len(reset_parts) > 0 else "0"),
             reset_m=int(reset_parts[1] if len(reset_parts) > 1 else "0"),
         )
@@ -191,8 +212,10 @@ class DailyRiskState:
         }
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            tmp = self._state_path.with_suffix(
+                self._state_path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False,
+                           separators=(",", ":")), encoding="utf-8")
             tmp.replace(self._state_path)
         except Exception:
             # Fail-safe: persistence errors must never crash trading loop.

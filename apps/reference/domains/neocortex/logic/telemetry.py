@@ -21,6 +21,11 @@ from typing import Dict, Any, Optional, Literal, List
 from datetime import datetime
 from collections import deque
 
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    record_failure_outcome,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,7 +78,7 @@ class TelemetryLogger:
 
     def __init__(
         self,
-        log_dir: Path = None,
+        log_dir: Path | None = None,
         filename: str = "neocortex_metrics.csv",
         max_memory_buffer: int = 1000,
         max_file_bytes: int = 10 * 1024 * 1024,
@@ -113,7 +118,7 @@ class TelemetryLogger:
         self._last_flush_ts_ms = int(time.time() * 1000.0)
 
         # Memory buffer for rolling statistics
-        self._memory_buffer: deque = deque(maxlen=max_memory_buffer)
+        self._memory_buffer: deque[dict[str, object]] = deque(maxlen=max_memory_buffer)
 
         # Initialize CSV file with headers if new
         self._init_csv()
@@ -130,29 +135,25 @@ class TelemetryLogger:
                 logger.info(f"Created new metrics CSV: {self.filepath}")
 
     def _rotate_if_needed(self) -> None:
-        try:
-            if not self.filepath.exists():
-                return
-            if self.filepath.stat().st_size < self._max_file_bytes:
-                return
+        if not self.filepath.exists():
+            return
+        if self.filepath.stat().st_size < self._max_file_bytes:
+            return
 
-            for idx in range(self._backup_count - 1, 0, -1):
-                src = Path(f"{self.filepath}.{idx}")
-                dst = Path(f"{self.filepath}.{idx + 1}")
-                if src.exists():
-                    src.replace(dst)
+        for idx in range(self._backup_count - 1, 0, -1):
+            src = Path(f"{self.filepath}.{idx}")
+            dst = Path(f"{self.filepath}.{idx + 1}")
+            if src.exists():
+                src.replace(dst)
 
-            self.filepath.replace(Path(f"{self.filepath}.1"))
+        self.filepath.replace(Path(f"{self.filepath}.1"))
 
-            with open(self.filepath, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
-                writer.writeheader()
-            logger.info("Telemetry CSV rotated: %s", self.filepath)
-        except Exception as e:
-            logger.warning("Failed to rotate telemetry CSV: %s",
-                           e, exc_info=True)
+        with open(self.filepath, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
+            writer.writeheader()
+        logger.info("Telemetry CSV rotated: %s", self.filepath)
 
-    def log_step(self, metrics: Dict[str, Any]):
+    def log_step(self, metrics: Dict[str, Any]) -> None:
         """
         Log a single step of metrics to CSV.
 
@@ -162,7 +163,7 @@ class TelemetryLogger:
         self._step += 1
 
         # Build row with all columns
-        row = {col: "" for col in self.COLUMNS}
+        row: dict[str, object] = {col: "" for col in self.COLUMNS}
 
         # Timestamps
         now = time.time()
@@ -218,12 +219,26 @@ class TelemetryLogger:
             return
 
         rows = list(self._pending_rows)
+        try:
+            self._rotate_if_needed()
+            with open(self.filepath, 'a', newline='', encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
+                writer.writerows(rows)
+                f.flush()
+        except (OSError, IOError, RuntimeError, ValueError, csv.Error) as error:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                "TELEMETRY_FLUSH_FAILED",
+                source="neocortex.telemetry.TelemetryLogger._flush_locked",
+                detail=type(error).__name__,
+                message=str(error),
+                recoverable=True,
+                fallback_applied=False,
+            )
+            logger.warning("Telemetry flush failed: %s", error, exc_info=True)
+            return
+
         self._pending_rows.clear()
-        self._rotate_if_needed()
-        with open(self.filepath, 'a', newline='', encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
-            writer.writerows(rows)
-            f.flush()
         self._flush_count += 1
         self._rows_flushed += len(rows)
         self._last_flush_ts_ms = now_ms
@@ -247,15 +262,15 @@ class TelemetryLogger:
 
     def log_training(
         self,
-        vae_loss: float = None,
-        vae_mse: float = None,
-        vae_kld: float = None,
-        wm_loss: float = None,
-        ppo_loss_pi: float = None,
-        ppo_loss_v: float = None,
-        ppo_entropy: float = None,
-        train_step: int = None
-    ):
+        vae_loss: float | None = None,
+        vae_mse: float | None = None,
+        vae_kld: float | None = None,
+        wm_loss: float | None = None,
+        ppo_loss_pi: float | None = None,
+        ppo_loss_v: float | None = None,
+        ppo_entropy: float | None = None,
+        train_step: int | None = None,
+    ) -> None:
         """
         Log training metrics.
 
@@ -279,7 +294,7 @@ class TelemetryLogger:
         action_name: str,
         confidence: float,
         value: float
-    ):
+    ) -> None:
         """
         Log shadow intent emission.
 
@@ -302,7 +317,7 @@ class TelemetryLogger:
         realized_regime: int,
         oracle_reward: float,
         oracle_correct: bool,
-    ):
+    ) -> None:
         """
         Log a settled Regime Oracle prediction.
 
@@ -323,9 +338,9 @@ class TelemetryLogger:
     def log_episode(
         self,
         reward: float,
-        pnl: float = None,
-        symbol: str = None
-    ):
+        pnl: float | None = None,
+        symbol: str | None = None,
+    ) -> None:
         """
         Log completed episode with reward.
 
@@ -342,10 +357,10 @@ class TelemetryLogger:
     def log_buffer_stats(
         self,
         buffer_size: int,
-        episodes_collected: int = None,
-        episodes_processed: int = None,
-        samples_since_train: int = None
-    ):
+        episodes_collected: int | None = None,
+        episodes_processed: int | None = None,
+        samples_since_train: int | None = None,
+    ) -> None:
         """
         Log buffer/memory statistics.
         """
@@ -360,7 +375,7 @@ class TelemetryLogger:
         self,
         nodes: int,
         edges: int
-    ):
+    ) -> None:
         """
         Log CausalGraph statistics.
         """
@@ -397,7 +412,7 @@ class TelemetryLogger:
             for row in recent:
                 try:
                     if row.get(col):
-                        values.append(float(row[col]))
+                        values.append(float(str(row[col])))
                 except (ValueError, TypeError):
                     pass
 
@@ -485,7 +500,7 @@ class TelemetryLogger:
 _telemetry_instance: Optional[TelemetryLogger] = None
 
 
-def get_telemetry(log_dir: Path = None) -> TelemetryLogger:
+def get_telemetry(log_dir: Path | None = None) -> TelemetryLogger:
     """
     Get or create the global telemetry logger instance.
 

@@ -70,7 +70,8 @@ def test_daily_helpers_parse_and_format_fallbacks() -> None:
 
 
 def test_daily_gate_open_property_and_active_date_before_reset(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(tmp_path / "risk_gate_state.json"))
+    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH",
+                       str(tmp_path / "risk_gate_state.json"))
     gate = DailyRiskState(_cfg_live(enabled=False))
     assert gate.is_gate_open is True
 
@@ -81,9 +82,11 @@ def test_daily_gate_open_property_and_active_date_before_reset(monkeypatch, tmp_
 
 
 def test_daily_load_state_non_persist_and_save_exception(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(tmp_path / "risk_gate_state.json"))
+    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH",
+                       str(tmp_path / "risk_gate_state.json"))
 
-    cfg_backtest = get_config().model_copy(deep=True, update={"trading_mode": "backtest"})
+    cfg_backtest = get_config().model_copy(
+        deep=True, update={"trading_mode": "backtest"})
     gate = DailyRiskState(cfg_backtest)
     gate._load_state()  # non-persist branch
 
@@ -95,7 +98,8 @@ def test_daily_load_state_non_persist_and_save_exception(monkeypatch, tmp_path: 
             self.called = True
 
     gate2 = DailyRiskState(_cfg_live(enabled=True), logger=_Log())
-    monkeypatch.setattr(daily_gate_mod.json, "dumps", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(daily_gate_mod.json, "dumps", lambda *_a,
+                        **_k: (_ for _ in ()).throw(RuntimeError("x")))
     gate2._save_state()
     assert gate2.log.called is True
 
@@ -193,6 +197,30 @@ def test_daily_state_enabled_missing_required_fields_raises() -> None:
         DailyRiskState(cfg)
 
 
+@pytest.mark.parametrize("invalid_value", ["bad", object()])
+def test_daily_state_invalid_max_drawdown_pct_raises(invalid_value: object) -> None:
+    cfg = get_config().model_copy(
+        deep=True,
+        update={
+            "trading_mode": "live",
+            "trading": get_config().trading.model_copy(
+                update={
+                    "risk": {
+                        **get_config().trading.risk,
+                        "daily": {
+                            "enabled": True,
+                            "max_drawdown_pct": invalid_value,
+                            "reset_time_utc": "00:00",
+                        },
+                    }
+                }
+            ),
+        },
+    )
+    with pytest.raises(ConfigContractError, match="max_drawdown_pct"):
+        DailyRiskState(cfg)
+
+
 def test_daily_load_state_branches(monkeypatch, tmp_path: Path) -> None:
     state_path = tmp_path / "risk_gate_state.json"
     monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(state_path))
@@ -203,13 +231,15 @@ def test_daily_load_state_branches(monkeypatch, tmp_path: Path) -> None:
     cfg = _cfg_live(enabled=True)
 
     # Branch: existing file, but no last_reset_date -> reset()
-    state_path.write_text(json.dumps({"reference_equity": "1000"}), encoding="utf-8")
+    state_path.write_text(json.dumps(
+        {"reference_equity": "1000"}), encoding="utf-8")
     gate = DailyRiskState(cfg)
     assert gate.reference_equity == _d("0")
 
     # Branch: stale last_reset_date -> reset()
     state_path.write_text(
-        json.dumps({"reference_equity": "1000", "last_reset_date": "2026-02-20"}),
+        json.dumps({"reference_equity": "1000",
+                   "last_reset_date": "2026-02-20"}),
         encoding="utf-8",
     )
     gate2 = DailyRiskState(cfg)
@@ -231,11 +261,13 @@ def test_daily_load_state_branches(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_daily_reference_equity_setter_and_update_alias(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(tmp_path / "risk_gate_state.json"))
+    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH",
+                       str(tmp_path / "risk_gate_state.json"))
     gate = DailyRiskState(_cfg_live(enabled=True))
 
     gate.reference_equity = "1500"
-    gate.update_portfolio({"equity_cross_usdt": "1500"}, now=datetime(2026, 2, 24, 12, 0, tzinfo=timezone.utc))
+    gate.update_portfolio({"equity_cross_usdt": "1500"}, now=datetime(
+        2026, 2, 24, 12, 0, tzinfo=timezone.utc))
 
     assert gate.reference_equity == _d("1500")
 
@@ -289,19 +321,22 @@ def test_on_portfolio_state_updated_timestamp_parsing_paths(monkeypatch) -> None
 
     # ms timestamp
     rm.on_portfolio_state_updated(
-        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t", dst="any", pld={"event_time_ms": 1700000000000}, why="t")
+        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t",
+                dst="any", pld={"event_time_ms": 1700000000000}, why="t")
     )
     assert calls[-1] is not None
 
     # sec timestamp fallback branch
     rm.on_portfolio_state_updated(
-        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t", dst="any", pld={"ts": 1700000000}, why="t")
+        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t",
+                dst="any", pld={"ts": 1700000000}, why="t")
     )
     assert calls[-1] is not None
 
     # invalid timestamp -> None branch
     rm.on_portfolio_state_updated(
-        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t", dst="any", pld={"ts": "bad"}, why="t")
+        Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED",
+                src="t", dst="any", pld={"ts": "bad"}, why="t")
     )
     assert calls[-1] is None
 
@@ -369,7 +404,8 @@ def test_get_risk_score_weights_and_max_score_error_branches() -> None:
 
 
 def test_risk_score_high_and_price_invalid_paths(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH", str(tmp_path / "risk_gate_state.json"))
+    monkeypatch.setenv("AURORA_RISK_GATE_STATE_PATH",
+                       str(tmp_path / "risk_gate_state.json"))
     cfg = _cfg_live(enabled=False)
     rm = RiskManagement(fsm=_DummyFsm(), config=cfg)
 
@@ -491,6 +527,8 @@ def test_validate_risk_thresholds_error_branches() -> None:
 
     out = rm.validate_risk_thresholds()
     assert out["valid"] is False
-    assert any("Missing required threshold" in issue for issue in out["issues"])
-    assert any("Missing required risk weight" in issue for issue in out["issues"])
+    assert any(
+        "Missing required threshold" in issue for issue in out["issues"])
+    assert any(
+        "Missing required risk weight" in issue for issue in out["issues"])
     assert any("Invalid risk weight value" in issue for issue in out["issues"])

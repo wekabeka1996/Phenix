@@ -140,6 +140,16 @@ class DecisionAuditRecord(BaseModel):
     min_regime_confidence: Optional[float] = Field(
         default=None, ge=0.0, le=1.0
     )
+    resolved_min_regime_confidence: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0
+    )
+    resolved_min_regime_confidence_source: Optional[str] = Field(default=None)
+    resolved_min_regime_confidence_strategy_id: Optional[str] = Field(
+        default=None)
+    resolved_min_regime_confidence_regime_key: Optional[str] = Field(
+        default=None)
+    regime_confidence_gate_verdict: Literal["ALLOW",
+                                            "DENY", "BYPASS"] = "BYPASS"
     threshold_applied: bool = False
     threshold_verdict: Literal["PASS", "BLOCK", "BYPASS"] = "BYPASS"
     threshold_reason: str = Field(..., min_length=1)
@@ -167,7 +177,8 @@ def append_regime_confidence_audit_record(
     target = _resolve_log_file(log_file=log_file)
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+        handle.write(json.dumps(
+            payload, ensure_ascii=False, default=str) + "\n")
     return payload
 
 
@@ -188,7 +199,8 @@ def _build_mismatch(
     raw_confidence = _coerce_float(detector_event.get("raw_confidence"))
     if regime_used is None and regime_confidence_used is None:
         return False, None
-    regime_differs = bool(raw_regime) and bool(regime_used) and raw_regime != regime_used
+    regime_differs = bool(raw_regime) and bool(
+        regime_used) and raw_regime != regime_used
     confidence_differs = (
         raw_confidence is not None
         and regime_confidence_used is not None
@@ -315,7 +327,8 @@ def emit_regime_decision_audit(
     regime_provenance = getattr(sg, "regime_provenance", None)
     detector_event = _extract_detector_event(regime_provenance)
     regime_used = getattr(sg, "regime", None)
-    regime_confidence_used = _coerce_float(getattr(sg, "regime_confidence", None))
+    regime_confidence_used = _coerce_float(
+        getattr(sg, "regime_confidence", None))
     mismatch, mismatch_reason = _build_mismatch(
         detector_event=detector_event,
         regime_used=regime_used,
@@ -335,18 +348,21 @@ def emit_regime_decision_audit(
         detector_event_rid=detector_event.get("rid"),
         detector_event_ts_ms=_coerce_int(detector_event.get("ts_ms")),
         bar_close_ts_ms=_coerce_int(
-            detector_event.get("bar_close_ts_ms") or detector_event.get("ts_ms")
+            detector_event.get(
+                "bar_close_ts_ms") or detector_event.get("ts_ms")
         ),
         basis_tf_sec=_coerce_int(detector_event.get("basis_tf_sec")),
         structural_regime_ref=detector_event.get("structural_regime_ref"),
         source_model=detector_event.get("source_model"),
         pre_cutoff_source_model=detector_event.get("pre_cutoff_source_model"),
         pre_cutoff_regime=detector_event.get("pre_cutoff_regime"),
-        pre_cutoff_confidence=_coerce_float(detector_event.get("pre_cutoff_confidence")),
+        pre_cutoff_confidence=_coerce_float(
+            detector_event.get("pre_cutoff_confidence")),
         raw_regime=detector_event.get("raw_regime"),
         raw_confidence=_coerce_float(detector_event.get("raw_confidence")),
         stable_confidence=_coerce_float(
-            detector_event.get("stable_confidence") or detector_event.get("confidence")
+            detector_event.get(
+                "stable_confidence") or detector_event.get("confidence")
         ),
         confidence_min=_coerce_float(detector_event.get("confidence_min")),
         confidence_max=_coerce_float(detector_event.get("confidence_max")),
@@ -356,10 +372,12 @@ def emit_regime_decision_audit(
         pre_cutoff_clamped_to_max=_coerce_bool(
             detector_event.get("pre_cutoff_clamped_to_max")
         ),
-        pre_cutoff_boundary_reason=detector_event.get("pre_cutoff_boundary_reason"),
+        pre_cutoff_boundary_reason=detector_event.get(
+            "pre_cutoff_boundary_reason"),
         raw_boundary_reason=detector_event.get("raw_boundary_reason"),
         uncertain_cutoff=_coerce_float(detector_event.get("uncertain_cutoff")),
-        demoted_to_uncertain=_coerce_bool(detector_event.get("demoted_to_uncertain")),
+        demoted_to_uncertain=_coerce_bool(
+            detector_event.get("demoted_to_uncertain")),
         hysteresis_confirm_count=_coerce_int(
             detector_event.get("hysteresis_confirm_count")
         ),
@@ -370,8 +388,24 @@ def emit_regime_decision_audit(
         min_regime_confidence=_coerce_float(
             getattr(sg, "min_regime_confidence", None)
         ),
+        resolved_min_regime_confidence=_coerce_float(
+            getattr(sg, "resolved_min_regime_confidence", None)
+        ),
+        resolved_min_regime_confidence_source=getattr(
+            sg, "resolved_min_regime_confidence_source", None
+        ),
+        resolved_min_regime_confidence_strategy_id=getattr(
+            sg, "resolved_min_regime_confidence_strategy_id", None
+        ),
+        resolved_min_regime_confidence_regime_key=getattr(
+            sg, "resolved_min_regime_confidence_regime_key", None
+        ),
+        regime_confidence_gate_verdict=str(
+            getattr(sg, "regime_confidence_gate_verdict", "BYPASS") or "BYPASS"
+        ),
         threshold_applied=bool(getattr(sg, "threshold_applied", False)),
-        threshold_verdict=str(getattr(sg, "threshold_verdict", "BYPASS") or "BYPASS"),
+        threshold_verdict=str(
+            getattr(sg, "threshold_verdict", "BYPASS") or "BYPASS"),
         threshold_reason=str(
             getattr(sg, "threshold_reason", "threshold_not_evaluated")
             or "threshold_not_evaluated"
@@ -385,7 +419,8 @@ def emit_regime_decision_audit(
     sink = logger or LOG
     sink.info(
         "[%s] REGIME_AUDIT decision rid=%s strategy=%s outcome=%s regime=%s conf=%s "
-        "raw_conf=%s stable_conf=%s threshold=%s verdict=%s applied=%s reason=%s "
+        "raw_conf=%s stable_conf=%s threshold=%s resolved_threshold=%s source=%s strategy_source=%s key=%s "
+        "gate_verdict=%s verdict=%s applied=%s reason=%s "
         "bar_ts=%s ref=%s mismatch=%s mismatch_reason=%s",
         symbol,
         payload["rid"],
@@ -396,6 +431,11 @@ def emit_regime_decision_audit(
         _fmt_float(payload.get("raw_confidence")),
         _fmt_float(payload.get("stable_confidence")),
         _fmt_float(payload.get("min_regime_confidence")),
+        _fmt_float(payload.get("resolved_min_regime_confidence")),
+        payload.get("resolved_min_regime_confidence_source"),
+        payload.get("resolved_min_regime_confidence_strategy_id"),
+        payload.get("resolved_min_regime_confidence_regime_key"),
+        payload.get("regime_confidence_gate_verdict"),
         payload["threshold_verdict"],
         _fmt_bool(payload.get("threshold_applied")),
         payload["threshold_reason"],

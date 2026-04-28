@@ -30,6 +30,46 @@
     "position_snapshot": { "type": "object" },
     "feature_ref": { "type": "object" },
     "regime_ref": { "type": "object" },
-    "freshness_snapshot": { "type": "object" }
+    "freshness_snapshot": { "type": "object" },
+    "sidecar_config_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "peak_giveback_close",
+        "freshness",
+        "source_config_path"
+      ],
+      "properties": {
+        "mode": { "type": "string", "enum": ["disable", "shadow", "enable"] },
+        "peak_giveback_close": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "edge_arm_usd", "giveback_trigger_pct"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "edge_arm_usd": { "type": "number" },
+            "giveback_trigger_pct": { "type": "number" }
+          }
+        },
+        "freshness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "portfolio_max_age_ms",
+            "features_max_age_ms",
+            "regime_max_age_ms",
+            "order_state_max_age_ms"
+          ],
+          "properties": {
+            "portfolio_max_age_ms": { "type": "integer", "minimum": 0 },
+            "features_max_age_ms": { "type": "integer", "minimum": 0 },
+            "regime_max_age_ms": { "type": "integer", "minimum": 0 },
+            "order_state_max_age_ms": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "source_config_path": { "type": ["string", "null"] }
+      }
+    }
   }
 }

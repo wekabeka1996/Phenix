@@ -63,15 +63,15 @@ def _make_intent_payload(**overrides) -> dict:
             "max_latency_ms": 100,
             "maker_preference": "False",
         },
-        "p": "0.75",
-        "payoff_ratio_r": "2.0",
+        "p": "0.5",
+        "payoff_ratio_r": "1.5",
         "risk_budget": {
             "trade_cvar95_max_bps": "50",
             "session_cvar95_max_bps": "100",
         },
         "size": {
             "notional_cap_usd": "500",
-            "kelly_fraction": "0.1",
+            "kelly_fraction": "0.1666666666666666666666666667",
         },
         "risk_context": {"risk_score": 0.55},
         "why": ["typed_open_intake_test"],

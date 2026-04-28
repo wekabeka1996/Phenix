@@ -17,6 +17,20 @@ from datetime import datetime
 from enum import Enum
 import math
 
+from apps.reference.domains.neocortex.contracts.causal_time import (
+    CausalTimeDecision,
+    make_causal_decision,
+)
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    record_failure_outcome,
+)
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+    coerce_causal_time_provenance,
+    is_causal_time_provenance,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +61,13 @@ class CoreLogEntry:
     unrealized_pnl: Optional[float] = None
     reason: Optional[str] = None
     raw_line: str = ""
+    time_source: str = "log_timestamp"
+    time_is_causal: bool = False
+    time_provenance: CausalTimeProvenance = CausalTimeProvenance.UNKNOWN
+    # Phase 1 I3 fields — always set by parse_core_log_line
+    trainable: bool = False
+    dataset_visibility: str = "diagnostics_only"
+    reason_code: Optional[str] = None
 
 
 # Pattern: Position closed
@@ -54,7 +75,8 @@ class CoreLogEntry:
 POSITION_CLOSED_PATTERN = re.compile(
     r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})'  # Timestamp
     r' - .+? - INFO - '
-    r'\[([A-Z0-9]+)\] Position closed \(([^)]+)\)'  # [SYMBOL] Position closed (reason)
+    # [SYMBOL] Position closed (reason)
+    r'\[([A-Z0-9]+)\] Position closed \(([^)]+)\)'
 )
 
 TIMESTAMP_PATTERN = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})')
@@ -85,7 +107,8 @@ def _extract_field(line: str, key: str) -> Optional[str]:
     """
     Extract field value from both key=value and JSON-like snippets in log lines.
     """
-    json_match = re.search(rf'"{re.escape(key)}"\s*:\s*"?(?P<val>[^",\s}}]+)"?', line)
+    json_match = re.search(
+        rf'"{re.escape(key)}"\s*:\s*"?(?P<val>[^",\s}}]+)"?', line)
     if json_match:
         return json_match.group("val")
 
@@ -142,10 +165,10 @@ def parse_scientific_notation(value: str) -> float:
 def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
     """
     Parse a single core log line.
-    
+
     Args:
         line: Raw log line
-        
+
     Returns:
         CoreLogEntry if relevant event found, None otherwise
     """
@@ -185,8 +208,26 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
             close_ts_ms = _normalize_epoch_to_ms(close_ts_ms_raw)
             event_ts_ms = close_ts_ms or log_event_ts_ms
             if event_ts_ms is None:
+                record_failure_outcome(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "MISSING_REQUIRED_STATE",
+                    source="neocortex.ingest.parsers.core_parser.parse_core_log_line",
+                    detail="POSITION_CLOSED",
+                    message="structured core row missing timestamp",
+                    recoverable=True,
+                    fallback_applied=False,
+                )
                 return None
+            if close_ts_ms is not None:
+                time_source = "close_ts_ms"
+                time_provenance = CausalTimeProvenance.AURORA_EVENT
+            else:
+                time_source = "log_timestamp"
+                time_provenance = CausalTimeProvenance.CAPTURED_WALLCLOCK
 
+            decision_structured: CausalTimeDecision = make_causal_decision(
+                event_ts_ms, time_provenance
+            )
             return CoreLogEntry(
                 timestamp=event_ts_ms / 1000.0,
                 event_ts_ms=event_ts_ms,
@@ -196,7 +237,8 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
                 realized_pnl=parse_scientific_notation(realized_pnl_raw)
                 if realized_pnl_raw is not None
                 else None,
-                realized_pnl_net=parse_scientific_notation(realized_pnl_net_raw)
+                realized_pnl_net=parse_scientific_notation(
+                    realized_pnl_net_raw)
                 if realized_pnl_net_raw is not None
                 else None,
                 trade_id=trade_id,
@@ -210,16 +252,35 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
                 quantity=parse_scientific_notation(quantity_raw)
                 if quantity_raw is not None
                 else None,
-                fees=parse_scientific_notation(fees_raw) if fees_raw is not None else None,
+                fees=parse_scientific_notation(
+                    fees_raw) if fees_raw is not None else None,
                 raw_line=line,
+                time_source=time_source,
+                time_is_causal=decision_structured.event_time_is_causal,
+                time_provenance=time_provenance,
+                trainable=decision_structured.trainable,
+                dataset_visibility=decision_structured.dataset_visibility,
+                reason_code=decision_structured.reason_code,
             )
-    
+
     # Try Position Closed pattern
     match = POSITION_CLOSED_PATTERN.match(line)
     if match:
         event_ts_ms = parse_timestamp_ms(match.group(1))
         if event_ts_ms is None:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.ingest.parsers.core_parser.parse_core_log_line",
+                detail="POSITION_CLOSED",
+                message="position close row missing timestamp",
+                recoverable=True,
+                fallback_applied=False,
+            )
             return None
+        decision_close: CausalTimeDecision = make_causal_decision(
+            event_ts_ms, CausalTimeProvenance.CAPTURED_WALLCLOCK
+        )
         return CoreLogEntry(
             timestamp=event_ts_ms / 1000.0,
             event_ts_ms=event_ts_ms,
@@ -227,15 +288,33 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
             event_type=CoreEventType.POSITION_CLOSED,
             symbol=match.group(2),
             reason=match.group(3),
-            raw_line=line
+            raw_line=line,
+            time_source="log_timestamp",
+            time_is_causal=False,
+            time_provenance=CausalTimeProvenance.CAPTURED_WALLCLOCK,
+            trainable=decision_close.trainable,
+            dataset_visibility=decision_close.dataset_visibility,
+            reason_code=decision_close.reason_code,
         )
-    
+
     # Try Equity pattern
     match = EQUITY_PATTERN.match(line)
     if match:
         event_ts_ms = parse_timestamp_ms(match.group(1))
         if event_ts_ms is None:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.ingest.parsers.core_parser.parse_core_log_line",
+                detail="EQUITY_UPDATE",
+                message="equity update row missing timestamp",
+                recoverable=True,
+                fallback_applied=False,
+            )
             return None
+        decision_equity: CausalTimeDecision = make_causal_decision(
+            event_ts_ms, CausalTimeProvenance.CAPTURED_WALLCLOCK
+        )
         return CoreLogEntry(
             timestamp=event_ts_ms / 1000.0,
             event_ts_ms=event_ts_ms,
@@ -243,34 +322,58 @@ def parse_core_log_line(line: str) -> Optional[CoreLogEntry]:
             event_type=CoreEventType.EQUITY_UPDATE,
             equity=parse_scientific_notation(match.group(2)),
             unrealized_pnl=parse_scientific_notation(match.group(3)),
-            raw_line=line
+            raw_line=line,
+            time_source="log_timestamp",
+            time_is_causal=False,
+            time_provenance=CausalTimeProvenance.CAPTURED_WALLCLOCK,
+            trainable=decision_equity.trainable,
+            dataset_visibility=decision_equity.dataset_visibility,
+            reason_code=decision_equity.reason_code,
         )
-    
+
     # Try Portfolio pattern
     match = PORTFOLIO_PATTERN.match(line)
     if match:
         event_ts_ms = parse_timestamp_ms(match.group(1))
         if event_ts_ms is None:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.ingest.parsers.core_parser.parse_core_log_line",
+                detail="PORTFOLIO_UPDATE",
+                message="portfolio update row missing timestamp",
+                recoverable=True,
+                fallback_applied=False,
+            )
             return None
+        decision_portfolio: CausalTimeDecision = make_causal_decision(
+            event_ts_ms, CausalTimeProvenance.CAPTURED_WALLCLOCK
+        )
         return CoreLogEntry(
             timestamp=event_ts_ms / 1000.0,
             event_ts_ms=event_ts_ms,
             timestamp_str=match.group(1),
             event_type=CoreEventType.PORTFOLIO_UPDATE,
             equity=float(match.group(2)),
-            raw_line=line
+            raw_line=line,
+            time_source="log_timestamp",
+            time_is_causal=False,
+            time_provenance=CausalTimeProvenance.CAPTURED_WALLCLOCK,
+            trainable=decision_portfolio.trainable,
+            dataset_visibility=decision_portfolio.dataset_visibility,
+            reason_code=decision_portfolio.reason_code,
         )
-    
+
     return None
 
 
 def parse_core_log_file(file_path: str) -> List[CoreLogEntry]:
     """
     Parse an entire core log file for relevant events.
-    
+
     Args:
         file_path: Path to log file
-        
+
     Returns:
         List of CoreLogEntry objects
     """
@@ -286,14 +389,14 @@ def parse_core_log_file(file_path: str) -> List[CoreLogEntry]:
 def extract_position_closes(file_path: str) -> List[CoreLogEntry]:
     """
     Extract only position close events from core log.
-    
+
     Args:
         file_path: Path to log file
-        
+
     Returns:
         List of CoreLogEntry with POSITION_CLOSED events
     """
     return [
-        e for e in parse_core_log_file(file_path) 
+        e for e in parse_core_log_file(file_path)
         if e.event_type == CoreEventType.POSITION_CLOSED
     ]

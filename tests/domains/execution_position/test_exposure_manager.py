@@ -232,34 +232,6 @@ async def test_check_shadow_notional_absolute_threshold(mock_emit, exposure_mana
     mock_emit.assert_not_called()
 
 
-def test_handle_fill_event(exposure_manager, fsm):
-    tasks = []
-    fsm._submit_async = lambda coro, loop: tasks.append(coro)
-
-    msg = Message(op="EVT", verb="ORDER_FILLED", src="src", dst="dst", pld={
-        "idempotent_key": "res_1",
-        "symbol": "BTCUSDT",
-        "qty": 1.0,
-        "price": 50000,
-        "side": "BUY"
-    })
-
-    exposure_manager.handle_fill_event(msg)
-
-    fsm.exposure_guard.on_fill.assert_called_with(
-        "res_1", Decimal("50000.0"), symbol="BTCUSDT", side="BUY")
-    fsm.metrics_collector.record_postfill_hold.assert_called_once()
-    assert len(tasks) == 1  # EXPOSURE_SUMMARY_UPDATED
-
-
-def test_handle_fill_event_fallback(exposure_manager, fsm):
-    msg = Message(op="EVT", verb="ORDER_FILLED", src="src", dst="dst", pld={})
-    exposure_manager.handle_fill_event(msg)
-    # The reserve_key falls back to the auto-generated msg.rid
-    fsm.exposure_guard.on_fill.assert_called_with(
-        msg.rid, Decimal("0"), symbol="UNKNOWN", side="UNKNOWN")
-
-
 @patch("apps.reference.domains.execution_position.pending_brackets_wal.write_pending_brackets_cleared")
 def test_handle_cancel_event(mock_wal, exposure_manager, fsm):
     tasks = []

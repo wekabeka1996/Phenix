@@ -3,7 +3,7 @@ Exposure management for execution_position domain.
 
 Extracted from ExecPosFSM (Phase 14A decomposition).
 Handles exposure fail-closed checks, shadow notional auditing,
-fill/cancel event processing, and exposure summary updates.
+cancel event processing, and exposure summary updates.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ LOG = logging.getLogger(__name__)
 
 
 class ExposureManager:
-    """Manages exposure checks, shadow auditing, and fill/cancel handling."""
+    """Manages exposure checks, shadow auditing, and cancel handling."""
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
@@ -57,14 +57,17 @@ class ExposureManager:
 
         try:
             notional_abs = Decimal(str(qty)) * Decimal(str(price_ref))
-            notional_signed = -notional_abs if side in {"SELL", "SHORT"} else notional_abs
+            notional_signed = - \
+                notional_abs if side in {"SELL", "SHORT"} else notional_abs
 
             reduce_only = bool(pld.get("reduce_only", False))
-            reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
+            reserve_key = pld.get(
+                "idempotent_key") or msg.rid or f"rid_{msg.rid}"
 
             # EXP-FIX: Detect FLIP/Reduce (Opposite side order)
             is_flip = False
-            positions = self._fsm._latest_portfolio_state.get("positions") or []
+            positions = self._fsm._latest_portfolio_state.get(
+                "positions") or []
             for p in positions:
                 if isinstance(p, dict) and str(p.get("symbol", "")).strip() == symbol:
                     curr_qty_str = str(p.get("net_position", "0"))
@@ -115,13 +118,15 @@ class ExposureManager:
                 )
 
                 if hasattr(self._fsm, "metrics_collector") and self._fsm.metrics_collector:
-                    self._fsm.metrics_collector.record_exposure_fail_closed(reason)
+                    self._fsm.metrics_collector.record_exposure_fail_closed(
+                        reason)
 
                 return error_msg
 
             # Soft-limit clipping
             try:
-                clipped_abs = exposure_check.get("clipped_notional_abs") if isinstance(exposure_check, dict) else None
+                clipped_abs = exposure_check.get("clipped_notional_abs") if isinstance(
+                    exposure_check, dict) else None
                 if clipped_abs is not None:
                     clipped_abs_dec = Decimal(str(clipped_abs))
                     if clipped_abs_dec > Decimal("0") and clipped_abs_dec < abs(notional_signed):
@@ -135,7 +140,9 @@ class ExposureManager:
                                 "clip_reasons": exposure_check.get("clip_reasons", []),
                             }
                             notional_abs = clipped_abs_dec
-                            notional_signed = -clipped_abs_dec if side in {"SELL", "SHORT"} else clipped_abs_dec
+                            notional_signed = - \
+                                clipped_abs_dec if side in {
+                                    "SELL", "SHORT"} else clipped_abs_dec
             except Exception:
                 pass
 
@@ -181,7 +188,8 @@ class ExposureManager:
             try:
                 wal.append(error_msg.model_dump())
             except Exception as wal_e:
-                LOG.warning(f"Failed to write ERR:OPEN(EXPOSURE_CHECK_ERROR) to WAL: {wal_e}")
+                LOG.warning(
+                    f"Failed to write ERR:OPEN(EXPOSURE_CHECK_ERROR) to WAL: {wal_e}")
 
             return error_msg
 
@@ -254,105 +262,6 @@ class ExposureManager:
         except Exception as e:
             LOG.error(f"SHADOW_CHECK_ERROR: {e}", exc_info=True)
 
-    def handle_fill_event(self, msg: "Message") -> None:
-        """
-        EXP-FIX: Handle order fill events for post-fill hold mechanism.
-        """
-        from vfoundation.core.fsm_emit_compat import Message, emit_compat
-
-        pld = msg.pld or {}
-        reserve_key = pld.get("idempotent_key") or pld.get(
-            "client_order_id") or msg.rid
-
-        if not reserve_key:
-            LOG.warning("FILL_EVENT_SKIP: No reserve_key found in fill event")
-            return
-
-        qty = pld["qty"] if "qty" in pld else 0
-        price = pld["price"] if "price" in pld else 0
-        try:
-            notional_usd = Decimal(str(qty)) * Decimal(str(price))
-            fill_symbol = pld.get("symbol")
-            if not fill_symbol:
-                fill_symbol = (
-                    self._fsm.exposure_guard.state.pending_exposure.get(reserve_key, {}).get("symbol")
-                    if hasattr(self._fsm.exposure_guard, "state") and hasattr(self._fsm.exposure_guard.state, "pending_exposure")
-                    else None
-                )
-            fill_symbol = str(fill_symbol or "UNKNOWN")
-
-            fill_side_raw = pld.get("side")
-            fill_side = str(fill_side_raw).upper() if fill_side_raw is not None else "UNKNOWN"
-            if fill_side == "UNKNOWN":
-                fill_side = (
-                    str(self._fsm.exposure_guard.state.pending_exposure.get(reserve_key, {}).get("side") or "UNKNOWN").upper()
-                    if hasattr(self._fsm.exposure_guard, "state") and hasattr(self._fsm.exposure_guard.state, "pending_exposure")
-                    else "UNKNOWN"
-                )
-
-            self._fsm.exposure_guard.on_fill(reserve_key, notional_usd, symbol=fill_symbol, side=fill_side)
-
-            if hasattr(self._fsm, "metrics_collector") and self._fsm.metrics_collector:
-                self._fsm.metrics_collector.record_postfill_hold(
-                    len(self._fsm.exposure_guard.state.postfill_reservations)
-                )
-
-            # REGIME-LOG: Include close-time regime
-            _close_regime_ctx = self._fsm._open_regime_by_symbol.get(fill_symbol, {})
-            order_logger.write({
-                "rid": pld["rid"] if "rid" in pld else f"fill_{reserve_key}",
-                "event_type": "ORDER_STATE_CHANGED",
-                "symbol": fill_symbol,
-                "side": fill_side,
-                "quantity": float(qty),
-                "price": float(price),
-                "client_order_id": pld["client_order_id"] if "client_order_id" in pld else "",
-                "order_id": pld["order_id"] if "order_id" in pld else "",
-                "source_fsm": "ExecPosFSM",
-                "reservation_id": reserve_key,
-                "regime_at_open": _close_regime_ctx.get("regime"),
-                "regime_confidence_at_open": _close_regime_ctx.get("regime_confidence"),
-                "metadata": {"fill_status": "FILLED", "notional_usd": float(notional_usd)}
-            })
-
-            LOG.debug(
-                f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
-        except Exception as e:
-            LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
-
-        # EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
-        try:
-            exposure_summary = self._fsm.exposure_guard.get_exposure_summary()
-            exposure_msg = Message(
-                op="EVT",
-                verb="EXPOSURE_SUMMARY_UPDATED",
-                src="execution_position",
-                dst="decision_making",
-                rid=pld.get("rid") or msg.rid or f"fill_{reserve_key}",
-                pld={
-                    "exposure_summary": exposure_summary,
-                    "fill_order_id": pld.get("order_id"),
-                    "fill_symbol": pld.get("symbol"),
-                    "fill_quantity": qty,
-                    "timestamp_ms": get_clock().now_ms()
-                },
-                why="exposure_summary_updated_after_fill",
-            )
-            loop = self._fsm._get_async_loop()
-            if loop:
-                self._fsm._submit_async(
-                    emit_compat(self._fsm.fsm, exposure_msg, logger=LOG), loop
-                )
-        except Exception as e:
-            LOG.debug(
-                f"Failed to emit exposure summary update after fill: {e}")
-
-        # Notify watchdog of order fill
-        order_id = pld.get("order_id")
-        if order_id:
-            self._fsm.watchdog.ensure_started()
-            self._fsm.watchdog.on_order_fill(order_id)
-
     def handle_cancel_event(self, msg: "Message") -> None:
         """
         EXP-FIX: Handle order cancellation events for exposure summary update.
@@ -375,7 +284,8 @@ class ExposureManager:
                 write_pending_brackets_cleared(
                     entry_order_id=order_id,
                     reason="cancelled",
-                    symbol=bracket_data.get("symbol", "") if bracket_data else "",
+                    symbol=bracket_data.get(
+                        "symbol", "") if bracket_data else "",
                 )
             except Exception as e:
                 LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
@@ -392,9 +302,11 @@ class ExposureManager:
             if hasattr(self._fsm.fsm, "order_index") and self._fsm.fsm.order_index:
                 ref = None
                 if order_id:
-                    ref = self._fsm.fsm.order_index.get(exchangeOrderId=str(order_id))
+                    ref = self._fsm.fsm.order_index.get(
+                        exchangeOrderId=str(order_id))
                 if ref is None and client_order_id:
-                    ref = self._fsm.fsm.order_index.get(clientOrderId=str(client_order_id))
+                    ref = self._fsm.fsm.order_index.get(
+                        clientOrderId=str(client_order_id))
                 if ref is not None:
                     self._fsm.fsm.order_index.mark_terminal(ref)
         except Exception:
@@ -443,7 +355,8 @@ class ExposureManager:
                             break
 
             if not has_more_pending:
-                LOG.info(f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
+                LOG.info(
+                    f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
                 self._fsm._entry_mgr.process_queued_supersede(symbol)
 
     async def emit_exposure_update_async(self, msg: "Message") -> None:

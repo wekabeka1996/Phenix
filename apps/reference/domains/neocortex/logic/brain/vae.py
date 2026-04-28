@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 Variational Autoencoder (VAE)
 
@@ -6,6 +7,7 @@ Architecture:
     Encoder: x -> MLP -> (mu, logvar) -> z
     Decoder: z -> MLP -> x_hat
 """
+__quarantined__ = True
 
 from typing import Tuple, Optional
 import logging

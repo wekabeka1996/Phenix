@@ -31,9 +31,18 @@ def _safe_decimal(value, default=None):
 
 
 def _make_config():
+    kelly_cfg = SimpleNamespace(
+        base_probability="0.5",
+        kelly_cap="0.25",
+        kelly_alpha="0.8",
+        payoff_ratio_r="1.5",
+        p_min="0.45",
+        p_max="0.65",
+        uplift_factor="0.2",
+    )
     strategy_cfg = SimpleNamespace(
         execution=SimpleNamespace(entry_order_type="LIMIT", entry_tif="GTC"),
-        decision=SimpleNamespace(kelly=SimpleNamespace(fraction="0.15")),
+        decision=SimpleNamespace(kelly=kelly_cfg),
     )
     return SimpleNamespace(strategies=SimpleNamespace(aurora=strategy_cfg))
 
@@ -119,7 +128,8 @@ def test_reservation_released_on_arbitration_reject_and_second_attempt_can_emit(
 
     reject_builder = _make_builder(
         order_index=order_index,
-        arb_fn=MagicMock(return_value={"allowed": False, "reason": "blocked_for_test"}),
+        arb_fn=MagicMock(
+            return_value={"allowed": False, "reason": "blocked_for_test"}),
     )
     reject_builder.build_and_emit(**_build_kwargs(rid="RID-ARB-REJECT"))
 
@@ -128,7 +138,8 @@ def test_reservation_released_on_arbitration_reject_and_second_attempt_can_emit(
 
     allow_builder = _make_builder(
         order_index=order_index,
-        arb_fn=MagicMock(side_effect=lambda *_, commit=False, **__: {"allowed": True, "reason": None}),
+        arb_fn=MagicMock(side_effect=lambda *_, commit=False,
+                         **__: {"allowed": True, "reason": None}),
     )
     allow_builder.build_and_emit(**_build_kwargs(rid="RID-ARB-ALLOW"))
 
@@ -153,7 +164,8 @@ def test_reservation_released_on_wal_failure(
 
     builder = _make_builder(
         order_index=order_index,
-        arb_fn=MagicMock(side_effect=lambda *_, commit=False, **__: {"allowed": True, "reason": None}),
+        arb_fn=MagicMock(side_effect=lambda *_, commit=False,
+                         **__: {"allowed": True, "reason": None}),
     )
     builder.build_and_emit(**_build_kwargs(rid="RID-WAL-FAIL"))
 
@@ -179,7 +191,8 @@ def test_reservation_released_on_emit_failure(
 
     builder = _make_builder(
         order_index=order_index,
-        arb_fn=MagicMock(side_effect=lambda *_, commit=False, **__: {"allowed": True, "reason": None}),
+        arb_fn=MagicMock(side_effect=lambda *_, commit=False,
+                         **__: {"allowed": True, "reason": None}),
     )
 
     def _emit_side_effect(event_name, *args, **kwargs):

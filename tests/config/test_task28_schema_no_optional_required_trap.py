@@ -4,6 +4,7 @@ from typing import Any, get_args, get_origin
 import pytest
 import yaml
 
+from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config_models import AuroraConfig, SystemConfig, SystemMetaConfig, SystemRuntimeMeta
 
@@ -231,3 +232,104 @@ def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
     assert isinstance(cfg.execution.order_guardian, dict)
     assert cfg.execution.order_guardian.get("enabled") is True
     assert cfg.execution.order_guardian.get("max_open_orders") == 123
+
+
+@pytest.mark.parametrize(
+    ("system_guardian", "trading_guardian"),
+    [
+        ({"unified": True, "ledger_db_path": "data/shared_order_ledger.db"}, None),
+        (None, {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"}),
+        (
+            {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"},
+            {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"},
+        ),
+    ],
+)
+def test_order_guardian_surfaces_load_when_non_conflicting(
+    tmp_path: Path,
+    system_guardian: dict[str, Any] | None,
+    trading_guardian: dict[str, Any] | None,
+) -> None:
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
+    _copy_tree(repo_cfg, tmp_path)
+
+    system_obj = yaml.safe_load(
+        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    assert isinstance(system_obj, dict)
+    system_exec = system_obj.get("execution")
+    assert isinstance(system_exec, dict)
+    system_exec["order_guardian"] = system_guardian
+    _write_yaml(tmp_path / "system.yaml", system_obj)
+
+    trading_obj = yaml.safe_load(
+        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
+    assert isinstance(trading_obj, dict)
+    trading_block = trading_obj.get("trading")
+    assert isinstance(trading_block, dict)
+    trading_exec = trading_block.get("execution")
+    assert isinstance(trading_exec, dict)
+    trading_exec["order_guardian"] = trading_guardian
+    _write_yaml(tmp_path / "trading.yaml", trading_obj)
+
+    cfg = ConfigLoader(config_dir=tmp_path).load_config()
+
+    assert cfg.execution is not None
+    assert cfg.trading is not None
+    assert cfg.trading.execution is not None
+    assert cfg.execution.order_guardian == system_guardian
+    assert cfg.trading.execution.order_guardian == trading_guardian
+
+
+def test_order_guardian_surfaces_fail_when_divergent_at_config_load(tmp_path: Path) -> None:
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
+    _copy_tree(repo_cfg, tmp_path)
+
+    system_obj = yaml.safe_load(
+        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    assert isinstance(system_obj, dict)
+    system_exec = system_obj.get("execution")
+    assert isinstance(system_exec, dict)
+    system_exec["order_guardian"] = {
+        "unified": True,
+        "ledger_db_path": "data/root_order_ledger.db",
+    }
+    _write_yaml(tmp_path / "system.yaml", system_obj)
+
+    trading_obj = yaml.safe_load(
+        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
+    assert isinstance(trading_obj, dict)
+    trading_block = trading_obj.get("trading")
+    assert isinstance(trading_block, dict)
+    trading_exec = trading_block.get("execution")
+    assert isinstance(trading_exec, dict)
+    trading_exec["order_guardian"] = {
+        "unified": False,
+        "ledger_db_path": "data/trading_order_ledger.db",
+    }
+    _write_yaml(tmp_path / "trading.yaml", trading_obj)
+
+    with pytest.raises(ConfigContractError, match=r"execution\.order_guardian") as exc_info:
+        ConfigLoader(config_dir=tmp_path).load_config()
+
+    message = str(exc_info.value)
+    assert "trading.execution.order_guardian" in message
+    assert "differ" in message
+
+
+def test_root_guardian_conflict_with_existing_order_guardian_still_fails(tmp_path: Path) -> None:
+    repo_cfg = (Path(__file__).resolve(
+    ).parents[2] / "config" / "aurora").resolve()
+    _copy_tree(repo_cfg, tmp_path)
+
+    trading_obj = yaml.safe_load(
+        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
+    assert isinstance(trading_obj, dict)
+    trading_obj["guardian"] = {"enabled": True, "max_open_orders": 123}
+    _write_yaml(tmp_path / "trading.yaml", trading_obj)
+
+    with pytest.raises(ConfigContractError, match=r"legacy root\.guardian") as exc_info:
+        ConfigLoader(config_dir=tmp_path).load_config()
+
+    assert "execution.order_guardian" in str(exc_info.value)

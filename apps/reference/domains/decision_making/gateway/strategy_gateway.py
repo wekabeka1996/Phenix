@@ -2,7 +2,10 @@
 Extracted from decision_making.py (Phase 14A, STEP 10). LOC budget: <=500.
 """
 import decimal
+import json
+import math
 import uuid
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
@@ -12,7 +15,9 @@ from apps.reference.contracts.reject_reasons import normalize_config_error
 from vfoundation.core.protocol import Message
 
 from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.decision_making.contracts.schemas_decision_blocked import DecisionBlockedPayload
 from apps.reference.domains.decision_making.core.context import create_decision_context
+from apps.reference.domains.decision_making.intent.truth_artifacts import write_decision_blocked
 from apps.reference.shared.decision_primitives.entry_plan import resolve_strategy_entry_prices
 from apps.reference.shared.decision_primitives.tpsl_owner import resolve_gateway_tpsl_owner_ctx
 from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome
@@ -22,6 +27,15 @@ from apps.reference.domains.decision_making.gates import (
     exposure_gate, ttl_gate, warmup_gate, safety_gate,
     arbitration_gate,
 )
+from apps.reference.domains.neocortex.contracts.control_decision import (
+    AuthorityMode,
+    ControlDecisionAction,
+    ControlDecisionApplyResult,
+    ControlDecisionRequest,
+    ControlDecisionRequestKind,
+)
+from apps.reference.domains.neocortex.contracts.observation_envelope import ObservationEnvelope
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import CausalTimeProvenance
 
 if TYPE_CHECKING:
     from apps.reference.domains.decision_making.core.facade import DecisionMaking
@@ -134,6 +148,328 @@ class StrategyGateway:
             )
         except Exception as e:
             self.logger.error(f"Error emitting GATE_CHAIN_TRACE: {e}")
+
+    def _authority_journal_path(self, name: str) -> Path | None:
+        bridge = getattr(self._dm, "__dict__", {}).get(
+            "_neocortex_authority_bridge")
+        data_dir = getattr(bridge, "data_dir", None)
+        if data_dir is None:
+            return None
+        return Path(data_dir) / name
+
+    def _append_authority_journal_row(self, name: str, payload: dict[str, Any]) -> None:
+        path = self._authority_journal_path(name)
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, sort_keys=True,
+                             ensure_ascii=True) + "\n")
+        except Exception as exc:
+            try:
+                from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+                    FailureOutcomeTaxonomy,
+                    FailureReasonCode,
+                    record_failure_outcome,
+                )
+
+                record_failure_outcome(
+                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                    FailureReasonCode.TELEMETRY_FLUSH_FAILED,
+                    source="decision_making.gateway.strategy_gateway._append_authority_journal_row",
+                    location=f"strategy_gateway.{name}",
+                    detail=type(exc).__name__,
+                    message="Authority journal append failed",
+                )
+            except Exception:
+                pass
+            self.logger.warning(
+                "Authority journal append degraded path=%s", path, exc_info=exc)
+
+    def _emit_neocortex_veto(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        why_chain: list[str],
+        authority_context: dict[str, Any],
+    ) -> None:
+        blocked_payload = write_decision_blocked(
+            symbol=symbol,
+            reason_code="NEOCORTEX_VETO",
+            reason="Neocortex vetoed the proposed trade",
+            path="decision_making.gateway.strategy_gateway:phase5_authority",
+            why="neocortex veto",
+            stage="strategy_gateway",
+            src="decision_making",
+            ts_ms=self._clock.now_ms(),
+            rid=str(rid),
+            why_chain=why_chain,
+            details=dict(authority_context),
+        )
+        payload_obj = DecisionBlockedPayload.model_validate(blocked_payload)
+        self._dm.fsm.emit(
+            "EVT:DECISION_BLOCKED",
+            payload=payload_obj.model_dump(),
+            why="decision_blocked:NEOCORTEX_VETO",
+            data_ref=why_chain,
+        )
+        self._dm._record_blocked_intent(symbol)
+
+    def _coerce_numeric_vector(self, values: list[Any], *, fallback: float) -> tuple[float, ...]:
+        normalized: list[float] = []
+        for value in values:
+            if isinstance(value, bool):
+                normalized.append(float(value))
+                continue
+            if isinstance(value, (int, float)):
+                numeric = float(value)
+                if math.isfinite(numeric):
+                    normalized.append(numeric)
+        if not normalized:
+            normalized.append(float(fallback))
+        return tuple(normalized)
+
+    def _build_authority_observation(
+        self,
+        *,
+        decision_id: str,
+        symbol: str,
+        side: str,
+        rid: str,
+        strategy_id: str,
+        qty_dec: decimal.Decimal,
+        entry_price_dec: decimal.Decimal,
+        decision_basis_ts_ms: int,
+        latest_risk: dict[str, Any],
+        gate_ctx: GateContext,
+        chain_result: Any,
+    ) -> ObservationEnvelope:
+        snapshot_builder = getattr(self._dm, "__dict__", {}).get(
+            "_build_pre_authority_snapshot")
+        projection: dict[str, Any] = {}
+        if callable(snapshot_builder):
+            raw_projection, _flags = snapshot_builder(
+                symbol=symbol,
+                side=side,
+                qty=qty_dec,
+                reduce_only=False,
+                rid=str(rid),
+                strategy_id=str(strategy_id),
+                proposed_action=("OPEN_LONG" if str(
+                    side).upper() == "BUY" else "OPEN_SHORT"),
+                decision_ts_ms=decision_basis_ts_ms,
+                decision_basis_ts=decision_basis_ts_ms,
+                sg=gate_ctx.accumulated.get("safety_gate_result"),
+            )
+            if isinstance(raw_projection, dict):
+                projection = dict(raw_projection)
+
+        observation_block = projection.get("observation") if isinstance(
+            projection.get("observation"), dict) else {}
+        market_features = observation_block.get("features") if isinstance(
+            observation_block.get("features"), dict) else {}
+        candidate_intent_summary = projection.get("intent") if isinstance(
+            projection.get("intent"), dict) else {}
+        if not candidate_intent_summary:
+            candidate_intent_summary = {
+                "rid": str(rid),
+                "strategy_id": str(strategy_id),
+                "side": str(side).upper(),
+                "quantity": str(qty_dec),
+                "reduce_only": False,
+                "proposed_action": "OPEN_LONG" if str(side).upper() == "BUY" else "OPEN_SHORT",
+            }
+
+        regime_state = projection.get("regime_state") if isinstance(
+            projection.get("regime_state"), dict) else {}
+        portfolio_state = projection.get("portfolio_position") if isinstance(
+            projection.get("portfolio_position"), dict) else {}
+        gate_trace_summary = {
+            "final_outcome": chain_result.final_outcome.value if hasattr(chain_result.final_outcome, "value") else str(chain_result.final_outcome),
+            "total_elapsed_ms": float(chain_result.total_elapsed_ms),
+            "gates": [
+                {
+                    "gate_name": entry.gate_name,
+                    "outcome": entry.outcome,
+                    "reason_code": entry.reason_code,
+                    "elapsed_ms": float(entry.elapsed_ms),
+                }
+                for entry in chain_result.trace
+            ],
+        }
+        feature_ts_ms = projection.get("feature_event_ts_ms")
+        portfolio_ts_ms = projection.get("portfolio_event_ts_ms")
+        tick_ts_ms = projection.get("tick_ts_ms") or decision_basis_ts_ms
+        feature_age_ms = None if feature_ts_ms is None else int(
+            decision_basis_ts_ms) - int(feature_ts_ms)
+        portfolio_age_ms = None if portfolio_ts_ms is None else int(
+            decision_basis_ts_ms) - int(portfolio_ts_ms)
+        risk_score = float(
+            (latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
+        state_vector = self._coerce_numeric_vector(
+            [value for _key, value in sorted(market_features.items())],
+            fallback=float(entry_price_dec),
+        )
+        context_vector = self._coerce_numeric_vector(
+            [
+                1.0 if str(side).upper() == "BUY" else -1.0,
+                float(qty_dec),
+                float(entry_price_dec),
+                risk_score,
+                float(chain_result.total_elapsed_ms),
+                float(len(chain_result.trace)),
+                gate_ctx.accumulated.get("_qos_enabled", False),
+            ],
+            fallback=0.0,
+        )
+        return ObservationEnvelope(
+            observation_id=decision_id,
+            symbol=str(symbol),
+            decision_basis_ts_ms=int(decision_basis_ts_ms),
+            source_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+            source_event_id=str(rid),
+            event_time_source=CausalTimeProvenance.AURORA_EVENT,
+            event_time_is_causal=True,
+            trainable=True,
+            dataset_visibility="trainable",
+            freshness={
+                "snapshot_age_ms": max(0, int(decision_basis_ts_ms) - int(tick_ts_ms)),
+                "feature_age_ms": feature_age_ms,
+                "portfolio_age_ms": portfolio_age_ms,
+            },
+            missingness={
+                "market_features_missing": not bool(market_features),
+                "regime_state_missing": not bool(regime_state),
+                "portfolio_state_missing": not bool(portfolio_state),
+            },
+            market_features=dict(market_features),
+            regime_state=dict(regime_state),
+            risk_state=dict(latest_risk),
+            portfolio_state=dict(portfolio_state),
+            system_stress_state={
+                "trigger_event_type": projection.get("trigger_event_type") or "EVT:AUTHORITY_DECISION",
+                "chain_total_elapsed_ms": float(chain_result.total_elapsed_ms),
+            },
+            candidate_intent_summary=dict(candidate_intent_summary),
+            gate_trace_summary=gate_trace_summary,
+            state_vector=state_vector,
+            context_vector=context_vector,
+        )
+
+    def _evaluate_neocortex_authority(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        rid: str,
+        strategy_id: str,
+        qty_dec: decimal.Decimal,
+        entry_price_dec: decimal.Decimal,
+        decision_basis_ts_ms: int,
+        latest_risk: dict[str, Any],
+        gate_ctx: GateContext,
+        chain_result: Any,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        bridge = getattr(self._dm, "__dict__", {}).get(
+            "_neocortex_authority_bridge")
+        if bridge is None:
+            return None, False
+
+        short_circuit_reason = getattr(bridge, "short_circuit_reason", None)
+        if short_circuit_reason == "TRUST_DISABLED":
+            return ({
+                "decision_id": None,
+                "authority_mode": getattr(bridge, "authority_mode", AuthorityMode.SHADOW).value,
+                "action": ControlDecisionAction.FALLBACK.value,
+                "apply_result": ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value,
+                "reason_code": "TRUST_DISABLED",
+                "reason_text": "Neocortex trust_enabled=false",
+            }, False)
+
+        decision_id = str(uuid.uuid4())
+        authority_mode = getattr(
+            bridge, "authority_mode", AuthorityMode.SHADOW)
+        deadline_ms = int(getattr(bridge, "deadline_ms", 1))
+        observation = self._build_authority_observation(
+            decision_id=decision_id,
+            symbol=symbol,
+            side=side,
+            rid=rid,
+            strategy_id=strategy_id,
+            qty_dec=qty_dec,
+            entry_price_dec=entry_price_dec,
+            decision_basis_ts_ms=decision_basis_ts_ms,
+            latest_risk=latest_risk,
+            gate_ctx=gate_ctx,
+            chain_result=chain_result,
+        )
+        request = ControlDecisionRequest(
+            decision_id=decision_id,
+            rid=str(rid),
+            symbol=str(symbol),
+            request_kind=ControlDecisionRequestKind.NEW_RISK_INTENT,
+            authority_mode=authority_mode,
+            decision_basis_ts_ms=int(decision_basis_ts_ms),
+            deadline_ms=deadline_ms,
+            expires_at_ms=int(decision_basis_ts_ms) + deadline_ms,
+            observation=observation,
+            candidate_intent_summary=dict(
+                observation.candidate_intent_summary),
+            idempotent_key=decision_id,
+        )
+        self._append_authority_journal_row(
+            "authority_request_journal_v1.jsonl",
+            request.model_dump(mode="json"),
+        )
+        response = bridge.decide(request)
+
+        if int(response.returned_at_ms) > int(request.expires_at_ms):
+            apply_result = ControlDecisionApplyResult.LATE_IGNORED
+        elif response.action == ControlDecisionAction.FALLBACK:
+            apply_result = ControlDecisionApplyResult.FALLBACK_BASELINE
+        elif authority_mode == AuthorityMode.GATED and response.action == ControlDecisionAction.DENY:
+            apply_result = ControlDecisionApplyResult.GATED_DENY
+        elif authority_mode == AuthorityMode.GATED and response.action == ControlDecisionAction.MODULATE:
+            apply_result = ControlDecisionApplyResult.GATED_MODULATE_RECORDED
+        elif authority_mode == AuthorityMode.GATED:
+            apply_result = ControlDecisionApplyResult.GATED_ALLOW
+        elif authority_mode == AuthorityMode.ADVISORY:
+            apply_result = ControlDecisionApplyResult.ADVISORY_RECORDED
+        else:
+            apply_result = ControlDecisionApplyResult.SHADOW_RECORDED
+
+        authority_context: dict[str, Any] = {
+            "decision_id": request.decision_id,
+            "authority_mode": request.authority_mode.value,
+            "action": response.action.value,
+            "apply_result": apply_result.value,
+            "reason_code": response.reason_code,
+            "reason_text": response.reason_text,
+            "idempotent_key": response.idempotent_key,
+        }
+        if response.overlay_patch is not None:
+            authority_context["overlay_patch"] = dict(response.overlay_patch)
+
+        response_row = response.model_dump(mode="json")
+        response_row["apply_result"] = apply_result.value
+        response_row["authority_mode"] = request.authority_mode.value
+        response_row["expires_at_ms"] = int(request.expires_at_ms)
+        self._append_authority_journal_row(
+            "authority_response_journal_v1.jsonl",
+            response_row,
+        )
+
+        if apply_result == ControlDecisionApplyResult.GATED_DENY:
+            self._emit_neocortex_veto(
+                symbol=symbol,
+                rid=str(rid),
+                why_chain=["neocortex_veto"],
+                authority_context=authority_context,
+            )
+            return authority_context, True
+        return authority_context, False
 
     def _validate_md_amr_trace(self, trace: Any) -> tuple[bool, dict[str, Any]]:
         required = ["dir_score", "thr_buy", "thr_sell", "w_raw",
@@ -618,6 +954,7 @@ class StrategyGateway:
             qos_enabled = gate_ctx.accumulated.get("_qos_enabled", False)
             latest_risk = gate_ctx.accumulated.get(
                 "latest_risk", dm.symbol_states[symbol].get("risk") or {})
+            authority_context = None
 
             if isinstance(why_chain, list):
                 why_chain.append(str(why_sizing))
@@ -650,6 +987,21 @@ class StrategyGateway:
             risk_val = float(
                 (latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
 
+            authority_context, authority_blocked = self._evaluate_neocortex_authority(
+                symbol=symbol,
+                side=side,
+                rid=str(rid),
+                strategy_id=str(strategy_id_s),
+                qty_dec=decimal.Decimal(str(qty_dec)),
+                entry_price_dec=entry_price_dec,
+                decision_basis_ts_ms=int(timestamp_ms),
+                latest_risk=latest_risk,
+                gate_ctx=gate_ctx,
+                chain_result=chain_result,
+            )
+            if authority_blocked:
+                return
+
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(
                 symbol=symbol, side=side,
@@ -663,6 +1015,7 @@ class StrategyGateway:
                 max_slippage_bps=max_slip, max_latency_ms=max_lat,
                 risk_score=risk_val,
                 tpsl_owner_ctx=resolved_tpsl_owner_ctx,
+                authority_context=authority_context,
                 safety_gate_result=gate_ctx.accumulated.get(
                     "safety_gate_result"),
                 strategy_trace=(

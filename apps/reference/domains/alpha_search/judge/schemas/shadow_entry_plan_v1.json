@@ -1,0 +1,164 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_search/judge/shadow_entry_plan_v1.json",
+    "title": "ShadowEntryPlan v1",
+    "description": "Shadow-only hypothetical LIMIT entry plan telemetry for an entry verdict.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "plan_id",
+        "source_verdict_id",
+        "source_envelope_id",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "cycle_key",
+        "authority_mode",
+        "applied",
+        "shadow_only",
+        "final_entry_verdict",
+        "suppressed",
+        "suppression_reason",
+        "entry_side",
+        "confidence",
+        "confidence_tier",
+        "tier_min_confidence",
+        "actionable",
+        "entry_price_ref",
+        "limit_offset_bps",
+        "limit_price",
+        "tp_price",
+        "sl_price",
+        "tp_offset_pct",
+        "sl_offset_pct",
+        "risk_reward",
+        "entry_order_type",
+        "plan_reason_codes",
+        "strategy_id",
+        "schema_version"
+    ],
+    "properties": {
+        "plan_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "source_verdict_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "source_envelope_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "symbol": {
+            "type": "string",
+            "minLength": 1
+        },
+        "tf_sec": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "ts_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+        },
+        "cycle_key": {
+            "type": ["string", "null"],
+            "minLength": 1
+        },
+        "authority_mode": {
+            "type": "string",
+            "enum": ["shadow"]
+        },
+        "applied": {
+            "type": "boolean",
+            "enum": [false]
+        },
+        "shadow_only": {
+            "type": "boolean",
+            "enum": [true]
+        },
+        "final_entry_verdict": {
+            "type": "string",
+            "enum": ["OPEN_LONG", "OPEN_SHORT", "NO_ENTRY", "SUPPRESS", "UNKNOWN"]
+        },
+        "suppressed": {
+            "type": "boolean"
+        },
+        "suppression_reason": {
+            "type": ["string", "null"]
+        },
+        "entry_side": {
+            "type": ["string", "null"],
+            "enum": ["BUY", "SELL", null]
+        },
+        "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "confidence_tier": {
+            "type": "string",
+            "minLength": 1
+        },
+        "tier_min_confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "actionable": {
+            "type": "boolean"
+        },
+        "entry_price_ref": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "limit_offset_bps": {
+            "type": ["integer", "null"],
+            "minimum": 0
+        },
+        "limit_price": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "tp_price": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "sl_price": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "tp_offset_pct": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "sl_offset_pct": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "risk_reward": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0
+        },
+        "entry_order_type": {
+            "type": "string",
+            "enum": ["HYPOTHETICAL_LIMIT"]
+        },
+        "plan_reason_codes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 1
+        },
+        "strategy_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "schema_version": {
+            "type": "string",
+            "enum": ["1"]
+        }
+    }
+}

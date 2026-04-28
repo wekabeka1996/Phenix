@@ -10,10 +10,12 @@ import pytest
 
 from apps.reference.domains.alpha_search.judge.config_models import (
     ChamberConfig,
+    ConfidenceLadderTier,
     FeatureNeutralsExpertConfig,
     JudgeCortexConfig,
     JudgeExpertsConfig,
     JudgeShadowLogConfig,
+    ShadowPlanConfig,
     SignalWeightsExpertConfig,
     VerdictConfig,
 )
@@ -522,6 +524,7 @@ class TestVerdictConfig:
         assert cfg.strategy_id == "aurora"
         assert cfg.cortex_version == "phase4_shadow_v1"
         assert cfg.split_confidence_discount == 0.5
+        assert cfg.shadow_plan is None
 
     def test_custom_values(self):
         cfg = VerdictConfig(
@@ -562,6 +565,90 @@ class TestVerdictConfig:
     def test_lifecycle_enabled_explicit(self):
         cfg = VerdictConfig(lifecycle_enabled=True)
         assert cfg.lifecycle_enabled is True
+
+    def test_shadow_plan_block_accepted(self):
+        cfg = VerdictConfig(
+            shadow_plan=ShadowPlanConfig(
+                enabled=True,
+                confidence_ladder=[
+                    ConfidenceLadderTier(
+                        name="low",
+                        min_confidence=0.2,
+                        limit_offset_bps=0,
+                        tp_offset_pct=0.01,
+                        sl_offset_pct=0.006,
+                    ),
+                    ConfidenceLadderTier(
+                        name="high",
+                        min_confidence=0.5,
+                        limit_offset_bps=5,
+                        tp_offset_pct=0.02,
+                        sl_offset_pct=0.01,
+                    ),
+                ],
+            )
+        )
+        assert cfg.shadow_plan is not None
+        assert cfg.shadow_plan.enabled is True
+        assert cfg.shadow_plan.confidence_ladder[1].name == "high"
+
+
+class TestShadowPlanConfig:
+    def test_defaults(self):
+        cfg = ShadowPlanConfig()
+        assert cfg.enabled is False
+        assert cfg.order_type == "HYPOTHETICAL_LIMIT"
+        assert cfg.emit_all_tiers is True
+        assert cfg.price_ref_source == "verdict_context"
+        assert cfg.confidence_ladder == []
+
+    def test_enabled_requires_non_empty_ladder(self):
+        with pytest.raises(ValueError, match="requires non-empty confidence_ladder"):
+            ShadowPlanConfig(enabled=True)
+
+    def test_ladder_must_be_sorted_ascending(self):
+        with pytest.raises(ValueError, match="sorted ascending"):
+            ShadowPlanConfig(
+                enabled=True,
+                confidence_ladder=[
+                    ConfidenceLadderTier(
+                        name="high",
+                        min_confidence=0.5,
+                        limit_offset_bps=5,
+                        tp_offset_pct=0.02,
+                        sl_offset_pct=0.01,
+                    ),
+                    ConfidenceLadderTier(
+                        name="low",
+                        min_confidence=0.2,
+                        limit_offset_bps=0,
+                        tp_offset_pct=0.01,
+                        sl_offset_pct=0.006,
+                    ),
+                ],
+            )
+
+    def test_duplicate_tier_names_rejected(self):
+        with pytest.raises(ValueError, match="tier names must be unique"):
+            ShadowPlanConfig(
+                enabled=True,
+                confidence_ladder=[
+                    ConfidenceLadderTier(
+                        name="low",
+                        min_confidence=0.2,
+                        limit_offset_bps=0,
+                        tp_offset_pct=0.01,
+                        sl_offset_pct=0.006,
+                    ),
+                    ConfidenceLadderTier(
+                        name="low",
+                        min_confidence=0.5,
+                        limit_offset_bps=5,
+                        tp_offset_pct=0.02,
+                        sl_offset_pct=0.01,
+                    ),
+                ],
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +705,10 @@ class TestJudgeCortexConfigVerdict:
         assert cfg.judge.verdict.strategy_id == "aurora"
         assert cfg.judge.verdict.cortex_version == "phase4_shadow_v1"
         assert cfg.judge.verdict.split_confidence_discount == 0.5
+        assert cfg.judge.verdict.shadow_plan is not None
+        assert cfg.judge.verdict.shadow_plan.enabled is True
+        assert len(cfg.judge.verdict.shadow_plan.confidence_ladder) == 3
+        assert cfg.judge.verdict.shadow_plan.confidence_ladder[1].name == "medium"
 
 
 # ---------------------------------------------------------------------------

@@ -7,11 +7,11 @@ and caches `jsonschema.Draft7Validator` instances for O(1) message validation.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
+from jsonschema import RefResolver
 from jsonschema.validators import Draft7Validator
-from jsonschema.exceptions import SchemaError
 
 logger = logging.getLogger("schema_registry")
 
@@ -29,6 +29,39 @@ class VerbSchemaRegistry:
         self.project_root = Path(project_root)
         self._validators: Dict[Tuple[str, str], Draft7Validator] = {}
         self._unsupported_verbs: set[Tuple[str, str]] = set()
+        self._dir_stores: Dict[Path, Dict[str, Any]] = {}
+
+    @staticmethod
+    def _directory_uri(schema_dir: Path) -> str:
+        """Return a file URI suitable for resolving sibling JSON schemas."""
+        return schema_dir.resolve().as_uri().rstrip("/") + "/"
+
+    def _load_directory_store(self, schema_dir: Path) -> Dict[str, Any]:
+        """Load and cache sibling schemas for local $ref resolution."""
+        resolved_dir = schema_dir.resolve()
+        cached = self._dir_stores.get(resolved_dir)
+        if cached is not None:
+            return cached
+
+        store: Dict[str, Any] = {}
+        for schema_file in sorted(resolved_dir.glob("*.json")):
+            try:
+                with open(schema_file, "r", encoding="utf-8") as handle:
+                    sibling_schema = json.load(handle)
+            except Exception as exc:
+                logger.debug(
+                    "Skipping sibling schema during resolver store load: %s (%s)",
+                    schema_file,
+                    exc,
+                )
+                continue
+
+            schema_uri = schema_file.resolve().as_uri()
+            store[schema_file.name] = sibling_schema
+            store[schema_uri] = sibling_schema
+
+        self._dir_stores[resolved_dir] = store
+        return store
 
     def load_registry(self, yaml_path: str) -> None:
         """
@@ -82,10 +115,19 @@ class VerbSchemaRegistry:
             try:
                 with open(schema_file, "r", encoding="utf-8") as f:
                     schema_dict = json.load(f)
-                
+
                 # Check for Draft7 validity natively if drafts are specified
                 Draft7Validator.check_schema(schema_dict)
-                self._validators[key] = Draft7Validator(schema_dict)
+                schema_dir = schema_file.parent
+                resolver = RefResolver(
+                    self._directory_uri(schema_dir),
+                    {},
+                    store=self._load_directory_store(schema_dir),
+                )
+                self._validators[key] = Draft7Validator(
+                    schema_dict,
+                    resolver=resolver,
+                )
                 loaded_count += 1
             except Exception as e:
                 logger.error(f"Failed to compile schema for {op}:{verb} from {schema_file}: {e}")

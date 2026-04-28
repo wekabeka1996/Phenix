@@ -10,6 +10,7 @@ import re
 import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
@@ -206,3 +207,62 @@ class TestQuantizePricesSideAware:
         fsm.position_side = "BUY"
         with pytest.raises(ValueError, match="tick_size must be > 0"):
             fsm._quantize_prices("BTCUSDT", Decimal("50000"), None, None)
+
+
+class TestBracketEmissionAfterSafetyOffset:
+    """Regression for post-offset bracket prices staying on the tick lattice."""
+
+    def test_place_brackets_resnaps_sl_and_tp1_after_offset(self, fsm_config):
+        eth_spec = SimpleNamespace(
+            tick_size=Decimal("0.01"),
+            step_size=Decimal("0.001"),
+            min_qty=Decimal("0.001"),
+            min_notional=Decimal("20"),
+        )
+        eth_spec.execution = SimpleNamespace(target_leverage=20)
+        fsm_config.instruments["ETHUSDT"] = eth_spec
+        fsm_config.trading.execution.manage.brackets = SimpleNamespace(
+            offset_bps=5,
+            working_type_default="MARK_PRICE",
+            price_protect=True,
+            oco_emulation=True,
+        )
+
+        fsm = ManageFlowFSM(config=fsm_config)
+        fsm.symbol = "ETHUSDT"
+        fsm.position_side = "BUY"
+        fsm.position_qty = Decimal("3.332")
+        fsm.position_entry_price = Decimal("2359.54")
+        fsm.position_open_ts = 1777230633.6956818
+        fsm.closePosition = True
+        fsm._intent_sl_price = Decimal("2351.39")
+        fsm._intent_tp_price = Decimal("2382.08")
+
+        result = fsm._place_brackets(
+            _msg(symbol="ETHUSDT", rid="aurora_ETHUSDT_1777230600530")
+        )
+
+        assert result is not None
+        assert result.op == "DEC"
+        assert result.verb == "BATCH"
+
+        orders = result.pld["messages"]
+        assert len(orders) == 2
+
+        sl_pld = orders[0]["pld"]
+        tp_pld = orders[1]["pld"]
+        assert sl_pld["order_type"] == "STOP_MARKET"
+        assert tp_pld["order_type"] == "TAKE_PROFIT_MARKET"
+        assert "qty" not in sl_pld
+        assert "qty" not in tp_pld
+        assert sl_pld["reduceOnly"] is True
+        assert tp_pld["reduceOnly"] is True
+
+        for payload, expected_stop in (
+            (sl_pld, Decimal("2350.21")),
+            (tp_pld, Decimal("2383.27")),
+        ):
+            stop_price = payload["stopPrice"]
+            assert stop_price == str(expected_stop)
+            assert "e" not in stop_price.lower()
+            assert Decimal(stop_price) % Decimal("0.01") == 0

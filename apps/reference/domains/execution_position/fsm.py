@@ -485,14 +485,13 @@ class ExecPosFSM(
         self._guardian_cfg: Dict[str, Any] = self._resolve_guardian_config()
         self._guardian_unified: bool = bool(
             dget(self._guardian_cfg, "unified", True))
+        self._guardian_emit_tidy_monitoring_event: bool = bool(
+            self._guardian_cfg["emit_tidy_monitoring_event"])
         self._guardian_emit_tidy_event: bool = bool(
-            dget(self._guardian_cfg, "emit_tidy_event", True))
+            self._guardian_cfg["emit_tidy_event"])
         self._guardian_poll_interval_ms: int = int(
             dget(self._guardian_cfg, "poll_interval_ms", 500))
-        self._fsm_cleanup_enabled: bool = bool(
-            self._get_config_value(
-                ["execution", "fsm_periodic_cleanup_enabled"], default=True)
-        )
+        self._fsm_cleanup_enabled: bool = self._resolve_fsm_periodic_cleanup_enabled()
 
         # BUS-FAILCLOSED-01: Fail-closed bus wiring.
         # Silent LocalBus fallback caused production-invisible intent drops
@@ -689,7 +688,12 @@ class ExecPosFSM(
 
             try:
                 self.order_guardian = OrderGuardian(
-                    self.adapter, config=self.config, poll_interval_ms=poll_interval_ms, bus=self.bus)
+                    self.adapter,
+                    config=self.config,
+                    poll_interval_ms=poll_interval_ms,
+                    bus=self.bus,
+                    emit_tidy_monitoring_event=self._guardian_emit_tidy_monitoring_event,
+                )
                 LOG.info(" OrderGuardian initialized for ExecPosFSM")
 
                 #  FIX: Defer OrderGuardian startup until after FSM initialization
@@ -724,6 +728,7 @@ class ExecPosFSM(
                 config=self.config,
                 poll_interval_ms=poll_interval_ms,
                 bus=self.bus,
+                emit_tidy_monitoring_event=self._guardian_emit_tidy_monitoring_event,
             )
             LOG.info(" OrderGuardian initialized for ExecPosFSM (shadow mode)")
             guardian_symbols = self._collect_guardian_symbols()
@@ -2635,10 +2640,6 @@ class ExecPosFSM(
         """Phase 14A: Delegated to ExposureManager."""
         return self._exposure_mgr.check_exposure_fail_closed(msg)
 
-    def _handle_fill_event(self, msg: Message) -> None:
-        """Phase 14A: Delegated to ExposureManager."""
-        self._exposure_mgr.handle_fill_event(msg)
-
     def _handle_cancel_event(self, msg: Message) -> None:
         """Phase 14A: Delegated to ExposureManager."""
         self._exposure_mgr.handle_cancel_event(msg)
@@ -2713,7 +2714,7 @@ class ExecPosFSM(
         position_symbols: Set[str] = set()
         pre_cleanup_order_symbols: Set[str] = set()
         fresh_order_symbols: Set[str] = set()
-        guardian_symbols: Set[str] = set()
+        guardian_seed_symbols: Set[str] = set()
         positions_fetch_succeeded = False
         pre_cleanup_open_orders_fetch_succeeded = False
         post_cleanup_open_orders_fetch_succeeded = False
@@ -2779,8 +2780,9 @@ class ExecPosFSM(
                                 str(symbol).strip().upper())
                             symbols_with_positions.add(symbol)
 
-                    guardian_symbols.update(self._collect_guardian_symbols())
-                    symbols_with_positions.update(guardian_symbols)
+                    guardian_seed_symbols.update(
+                        self._collect_guardian_symbols())
+                    symbols_with_positions.update(guardian_seed_symbols)
                     symbols_with_positions.update(authoritative_symbols)
 
                     # Link existing orders for each symbol
@@ -2856,13 +2858,12 @@ class ExecPosFSM(
                     "guardian_cleanup_invoked": guardian_cleanup_invoked,
                     "position_symbols_observed": sorted(position_symbols),
                     "pre_cleanup_order_symbols_observed": sorted(pre_cleanup_order_symbols),
-                    "guardian_symbols_observed": sorted(guardian_symbols),
+                    "guardian_symbols_observed": [],
                     "fresh_order_symbols_observed": sorted(fresh_order_symbols),
                 },
                 symbols_considered=sorted(
                     position_symbols
                     | pre_cleanup_order_symbols
-                    | guardian_symbols
                     | fresh_order_symbols
                     | {
                         str(item.symbol).strip().upper()

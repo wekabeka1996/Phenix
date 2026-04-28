@@ -75,7 +75,7 @@ def test_single_attempt_by_rid(fsm_harness):
     # Logic in _on_trade_intent_proposed: if result is None -> emit REJECT
     # OrderGuardian returns None on dup.
     assert len(rejects_2) == 1, "Second attempt must be explicitly rejected (dedup)"
-    reason = rejects_2[0][1][0]["reason"]
+    reason = rejects_2[0][1][0]["why"]
     assert reason in ["IDEMPOTENCY_FAIL", "internal_error_no_result"], f"Unexpected rejection reason: {reason}"
 
 

@@ -24,10 +24,13 @@ Out of scope:
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.reference.domains.execution_position.cancel_bridge_utils import (
+    build_trace_ref,
+    clean_required_str,
+)
 from vfoundation.core.protocol import Message, truncate_why
 
 
@@ -43,15 +46,6 @@ _GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRACE_REF_PREFIX = (
 
 class GuardianBackgroundOrphanCancelBridgeError(ValueError):
     """Fail-closed error for guardian background orphan cancel normalization."""
-
-
-def _clean_required_str(value: Any, *, field_name: str) -> str:
-    cleaned = str(value or "").strip()
-    if not cleaned:
-        raise GuardianBackgroundOrphanCancelBridgeError(
-            f"guardian background orphan cancel missing required field: {field_name}"
-        )
-    return cleaned
 
 
 class GuardianBackgroundOrphanCancelRequest(BaseModel):
@@ -80,11 +74,23 @@ class GuardianBackgroundOrphanCancelRequest(BaseModel):
     ) -> "GuardianBackgroundOrphanCancelRequest":
         try:
             return cls(
-                symbol=_clean_required_str(symbol, field_name="symbol").upper(),
-                order_id=_clean_required_str(order_id, field_name="order_id"),
-                order_type=_clean_required_str(
+                symbol=clean_required_str(
+                    symbol,
+                    field_name="symbol",
+                    message_prefix="guardian background orphan cancel",
+                    error_type=GuardianBackgroundOrphanCancelBridgeError,
+                ).upper(),
+                order_id=clean_required_str(
+                    order_id,
+                    field_name="order_id",
+                    message_prefix="guardian background orphan cancel",
+                    error_type=GuardianBackgroundOrphanCancelBridgeError,
+                ),
+                order_type=clean_required_str(
                     order_type,
                     field_name="order_type",
+                    message_prefix="guardian background orphan cancel",
+                    error_type=GuardianBackgroundOrphanCancelBridgeError,
                 ).upper(),
             )
         except Exception as exc:
@@ -117,8 +123,9 @@ def build_guardian_background_orphan_cancel_trace_ref(
     }
     if reason is not None:
         params["reason"] = reason[:80]
-    return (
-        f"{_GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRACE_REF_PREFIX}{urlencode(params)}"
+    return build_trace_ref(
+        prefix=_GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRACE_REF_PREFIX,
+        params=params,
     )
 
 

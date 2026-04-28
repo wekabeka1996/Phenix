@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
+from enum import Enum
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -52,6 +54,19 @@ if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
 
 LOG = logging.getLogger(__name__)
+
+
+class _ClosePositionTruthClassification(str, Enum):
+    GENUINELY_FLAT = "GENUINELY_FLAT"
+    POSITION_TRUTH_UNRESOLVED = "POSITION_TRUTH_UNRESOLVED"
+    POSITION_PRESENT_AND_SUBMITTABLE = "POSITION_PRESENT_AND_SUBMITTABLE"
+
+
+@dataclass(frozen=True)
+class _ClosePositionTruthResolution:
+    classification: _ClosePositionTruthClassification
+    position_amt: Optional[Decimal] = None
+    reason: Optional[str] = None
 
 
 class CloseExecutor:
@@ -315,7 +330,8 @@ class CloseExecutor:
         if bracket_role is None:
             return
         manage_flow = self._fsm.manage_flows.get(symbol)
-        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        handler = getattr(
+            self._fsm, "_handle_bracket_protection_missing", None)
         if callable(handler):
             await handler(
                 symbol=symbol,
@@ -477,6 +493,99 @@ class CloseExecutor:
             reason,
             details,
         )
+
+    async def _submit_close_order(
+        self,
+        *,
+        decision: "Message",
+        submission: CloseSubmissionPayload,
+    ) -> Any:
+        rid = getattr(decision, "rid", None) or "manual-close"
+
+        def _write_boundary_row(
+            event_type: str,
+            *,
+            trace_kind: str,
+            why: str,
+            outcome: Optional[str] = None,
+            adapter_response: Any = None,
+            error: Exception | None = None,
+        ) -> None:
+            metadata: dict[str, Any] = {
+                "contract": CLOSE_SUBMISSION_CONTRACT,
+                "path": CLOSE_SUBMISSION_PATH,
+                "partial_close": submission.partial_close,
+                "trace_kind": trace_kind,
+            }
+            if outcome is not None:
+                metadata["outcome"] = outcome
+            if error is not None:
+                metadata["exception_class"] = type(error).__name__
+                metadata["exception_message"] = str(error)
+                exchange_code = getattr(error, "binance_code", None)
+                if exchange_code is None:
+                    exchange_code = getattr(error, "code", None)
+                if exchange_code is not None:
+                    metadata["exchange_code"] = exchange_code
+
+            payload = {
+                "rid": rid,
+                "event_type": event_type,
+                "symbol": submission.symbol,
+                "side": submission.side,
+                "quantity": float(submission.quantity),
+                "client_order_id": submission.client_order_id,
+                "source_fsm": "CloseExecutor",
+                "order_kind": "CLOSE",
+                "order_type": "MARKET",
+                "why": why,
+                "timestamp": get_clock().now_ms(),
+                "data_ref": list(getattr(decision, "data_ref", None) or []),
+                "metadata": metadata,
+            }
+            if adapter_response is not None:
+                payload["adapter_response"] = adapter_response
+
+            try:
+                order_logger.write(payload)
+            except Exception:
+                LOG.warning(
+                    "Failed to write close submit boundary row: rid=%s event_type=%s",
+                    rid,
+                    event_type,
+                    exc_info=True,
+                )
+
+        _write_boundary_row(
+            "ORDER_INTENT",
+            trace_kind="CLOSE_SUBMIT_ATTEMPT",
+            why="close_submit_attempt",
+        )
+        try:
+            response = await self._fsm.adapter.place_market_reduce_only(
+                submission.symbol,
+                submission.side,
+                submission.quantity,
+                new_client_order_id=submission.client_order_id,
+            )
+        except Exception as exc:
+            _write_boundary_row(
+                "ORDER_REJECTED",
+                trace_kind="CLOSE_SUBMIT_OUTCOME",
+                why="close_submit_rejected",
+                outcome="rejected",
+                error=exc,
+            )
+            raise
+
+        _write_boundary_row(
+            "ORDER_PLACED",
+            trace_kind="CLOSE_SUBMIT_OUTCOME",
+            why="close_submit_returned_without_exception",
+            outcome="submitted",
+            adapter_response=response,
+        )
+        return response
 
     def _parse_requested_close_qty(
         self,
@@ -668,7 +777,8 @@ class CloseExecutor:
                 request.bracket_type,
                 request.order_id,
             )
-            cancel_tasks.append((request, self.execute_cancel_order(cancel_decision)))
+            cancel_tasks.append(
+                (request, self.execute_cancel_order(cancel_decision)))
 
         if not cancel_tasks:
             return
@@ -694,7 +804,8 @@ class CloseExecutor:
                         bracket_type=bracket_type,
                         order_id=order_id,
                         reason="close_cancel_idempotent",
-                        adapter_response={"status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
+                        adapter_response={
+                            "status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
                     )
                 else:
                     LOG.warning(
@@ -822,7 +933,8 @@ class CloseExecutor:
                 request.order_type,
                 request.order_id,
             )
-            cancel_tasks.append((request, self.execute_cancel_order(cancel_decision)))
+            cancel_tasks.append(
+                (request, self.execute_cancel_order(cancel_decision)))
 
         if not cancel_tasks:
             return 0
@@ -850,7 +962,8 @@ class CloseExecutor:
                         order_type=order_type,
                         order_id=order_id,
                         reason="reconcile_cancel_idempotent",
-                        adapter_response={"status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
+                        adapter_response={
+                            "status": "UNKNOWN_ORDER_ALREADY_ABSENT"},
                     )
                 else:
                     LOG.warning(
@@ -977,6 +1090,74 @@ class CloseExecutor:
         )
         return submission
 
+    async def _resolve_close_position_truth(
+        self,
+        *,
+        symbol: str,
+    ) -> _ClosePositionTruthResolution:
+        symbol_upper = str(symbol or "").strip().upper()
+        try:
+            positions = await self._fsm.adapter.get_open_positions()
+            positions_list = [
+                p.to_dict() if hasattr(p, "to_dict") else (
+                    p.__dict__ if not isinstance(p, dict) else p
+                )
+                for p in positions
+            ]
+        except Exception:
+            return _ClosePositionTruthResolution(
+                classification=(
+                    _ClosePositionTruthClassification
+                    .POSITION_TRUTH_UNRESOLVED
+                ),
+                reason="read_failed",
+            )
+
+        for pos in positions_list:
+            if not isinstance(pos, dict):
+                return _ClosePositionTruthResolution(
+                    classification=(
+                        _ClosePositionTruthClassification
+                        .POSITION_TRUTH_UNRESOLVED
+                    ),
+                    reason="unreadable_position_payload",
+                )
+            if str(pos.get("symbol") or "").strip().upper() != symbol_upper:
+                continue
+            raw_amt = pos.get("positionAmt")
+            try:
+                amt = Decimal(str(raw_amt))
+            except (InvalidOperation, TypeError, ValueError):
+                return _ClosePositionTruthResolution(
+                    classification=(
+                        _ClosePositionTruthClassification
+                        .POSITION_TRUTH_UNRESOLVED
+                    ),
+                    reason="position_amt_unreadable",
+                )
+            if abs(amt) < Decimal("1e-10"):
+                return _ClosePositionTruthResolution(
+                    classification=(
+                        _ClosePositionTruthClassification.GENUINELY_FLAT
+                    ),
+                    position_amt=Decimal("0"),
+                    reason="matched_zero_position",
+                )
+            return _ClosePositionTruthResolution(
+                classification=(
+                    _ClosePositionTruthClassification
+                    .POSITION_PRESENT_AND_SUBMITTABLE
+                ),
+                position_amt=amt,
+                reason="matched_live_position",
+            )
+
+        return _ClosePositionTruthResolution(
+            classification=_ClosePositionTruthClassification.GENUINELY_FLAT,
+            position_amt=Decimal("0"),
+            reason="missing_symbol",
+        )
+
     async def execute_close(self, decision: "Message") -> None:
         """Execute CLOSE/CLOSE_POSITION with bracket cleanup and reconcile passes.
 
@@ -999,27 +1180,33 @@ class CloseExecutor:
             return
 
         if requested_close_qty is not None:
-            try:
-                positions = await self._fsm.adapter.get_open_positions()
-                positions_list = [
-                    p.to_dict() if hasattr(p, "to_dict") else (
-                        p.__dict__ if not isinstance(p, dict) else p
-                    )
-                    for p in positions
-                ]
-                pos = next(
-                    (p for p in positions_list if p.get("symbol") == symbol), None)
-            except Exception:
-                pos = None
+            truth = await self._resolve_close_position_truth(symbol=symbol)
+            if truth.classification is (
+                _ClosePositionTruthClassification
+                .POSITION_TRUTH_UNRESOLVED
+            ):
+                LOG.warning(
+                    "Close position truth unresolved for %s during partial close; failing closed",
+                    symbol,
+                )
+                self._emit_position_policy_close_state(
+                    pld,
+                    request_state="execution_noop",
+                    why=(
+                        "position_policy_sidecar:"
+                        "execution_noop_position_truth_unresolved"
+                    ),
+                    extra={
+                        "execution_result": "position_truth_unresolved",
+                        "close_cmd_rid": getattr(decision, "rid", None),
+                    },
+                )
+                return
 
-            amt = 0.0
-            if pos is not None:
-                try:
-                    amt = float(pos["positionAmt"]
-                                if "positionAmt" in pos else 0)
-                except Exception:
-                    amt = 0.0
-            if abs(amt) < 1e-10:
+            amt = truth.position_amt or Decimal("0")
+            if truth.classification is (
+                _ClosePositionTruthClassification.GENUINELY_FLAT
+            ):
                 LOG.info(f"No open position to close for {symbol}")
                 self._emit_position_policy_close_state(
                     pld,
@@ -1037,21 +1224,19 @@ class CloseExecutor:
                 )
                 return
 
-            position_qty = abs(Decimal(str(amt)))
+            position_qty = abs(amt)
             if Decimal("0") < requested_close_qty < position_qty:
                 submission = self._build_close_submission(
                     decision=decision,
                     symbol=symbol,
-                    position_amt=Decimal(str(amt)),
+                    position_amt=amt,
                     requested_qty=requested_close_qty,
                 )
                 if submission is None:
                     return
-                await self._fsm.adapter.place_market_reduce_only(
-                    submission.symbol,
-                    submission.side,
-                    submission.quantity,
-                    new_client_order_id=submission.client_order_id,
+                await self._submit_close_order(
+                    decision=decision,
+                    submission=submission,
                 )
                 self._emit_position_policy_close_state(
                     pld,
@@ -1115,24 +1300,33 @@ class CloseExecutor:
 
         # Re-read the exchange position after bracket cancellation so the close
         # order uses current on-exchange size rather than cached intent state.
-        try:
-            positions = await self._fsm.adapter.get_open_positions()
-            positions_list = [
-                p.to_dict() if hasattr(p, 'to_dict') else (
-                    p.__dict__ if not isinstance(p, dict) else p)
-                for p in positions
-            ]
-            pos = next(
-                (p for p in positions_list if p.get("symbol") == symbol), None)
-        except Exception:
-            pos = None
-        amt = 0.0
-        if pos is not None:
-            try:
-                amt = float(pos["positionAmt"] if "positionAmt" in pos else 0)
-            except Exception:
-                amt = 0.0
-        if abs(amt) < 1e-10:
+        truth = await self._resolve_close_position_truth(symbol=symbol)
+        if truth.classification is (
+            _ClosePositionTruthClassification.POSITION_TRUTH_UNRESOLVED
+        ):
+            LOG.warning(
+                "Close position truth unresolved for %s after tracked teardown; failing closed",
+                symbol,
+            )
+            self._emit_position_policy_close_state(
+                pld,
+                request_state="execution_noop",
+                why=(
+                    "position_policy_sidecar:"
+                    "execution_noop_position_truth_unresolved"
+                ),
+                extra={
+                    "execution_result": "position_truth_unresolved",
+                    "close_cmd_rid": getattr(decision, "rid", None),
+                },
+            )
+            if manage:
+                manage._closing_position = False
+                manage._closing_position_ts = 0.0
+            return
+
+        amt = truth.position_amt or Decimal("0")
+        if truth.classification is _ClosePositionTruthClassification.GENUINELY_FLAT:
             LOG.info(f"No open position to close for {symbol}")
             self._emit_position_policy_close_state(
                 pld,
@@ -1148,13 +1342,16 @@ class CloseExecutor:
                 trigger="close_executor:no_position_full",
                 allow_empty=True,
             )
+            if manage:
+                manage._closing_position = False
+                manage._closing_position_ts = 0.0
             return
         close_side = "SELL" if amt > 0 else "BUY"
-        close_qty = str(abs(Decimal(str(amt))))
+        close_qty = str(abs(amt))
         submission = self._build_close_submission(
             decision=decision,
             symbol=symbol,
-            position_amt=Decimal(str(amt)),
+            position_amt=amt,
             requested_qty=None,
         )
         if submission is None:
@@ -1162,11 +1359,9 @@ class CloseExecutor:
         close_side = submission.side
         close_qty = submission.quantity
         close_id = submission.client_order_id
-        await self._fsm.adapter.place_market_reduce_only(
-            submission.symbol,
-            submission.side,
-            submission.quantity,
-            new_client_order_id=submission.client_order_id,
+        await self._submit_close_order(
+            decision=decision,
+            submission=submission,
         )
         self._emit_position_policy_close_state(
             pld,
@@ -1238,6 +1433,7 @@ class CloseExecutor:
         manage = self._fsm.manage_flows.get(symbol)
         if manage:
             manage._closing_position = False
+            manage._closing_position_ts = 0.0
             LOG.info(
                 f"🔓 [PHASE A2] Cleared closing flag for {symbol} - CLOSE complete")
 

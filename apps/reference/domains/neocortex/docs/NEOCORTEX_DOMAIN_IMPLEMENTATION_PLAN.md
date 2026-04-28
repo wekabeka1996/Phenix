@@ -84,16 +84,16 @@
 
 ### 2.2. Класи проблем, які треба “випалити” при порту
 
-1) **Fallback‑поведінка** (ImportError → degraded, “fail‑open”, “safe fallback defaults”)  
+1) **Fallback‑поведінка** (ImportError → degraded, “fail‑open”, “safe fallback defaults”)
 → замінити на **fail‑closed** + явні залежності/конфіги.
 
-2) **Hardcoded тюнінги** (пороги, альфи, таймінги, weights)  
+2) **Hardcoded тюнінги** (пороги, альфи, таймінги, weights)
 → винести 1:1 у YAML і зробити Pydantic‑обовʼязковими.
 
-3) **Невідтворюваність** (рандом без seed)  
+3) **Невідтворюваність** (рандом без seed)
 → `rng_seed` у YAML + детермінізм у важливих місцях (router/selector).
 
-4) **Неправильна “Telemetry” семантика**  
+4) **Неправильна “Telemetry” семантика**
 → замість GPU/CPU метрик: market/portfolio/system features.
 
 ---
@@ -102,16 +102,16 @@
 
 ### 3.1. Подієва модель і протокол повідомлень
 
-**Message** (Pydantic): `vfoundation/core/protocol.py`  
+**Message** (Pydantic): `vfoundation/core/protocol.py`
 Ключові поля:
 - `op`, `verb`, `src`, `dst`, `rid`, `ts`, `ttl_ms`, `idempotent_key`, `pld`, `why`, `data_ref`, …
 Обмеження:
 - `why` ≤ 80 символів (є `truncate_why()`).
 
-**Event bus**: `vfoundation/core/fsm_core.py`  
+**Event bus**: `vfoundation/core/fsm_core.py`
 `FSMCore.listen("EVT:...", callback)` / `FSMCore.emit("EVT:...", payload, why, data_ref)`
 
-**Router (опціонально для доменів)**: `vfoundation/core/routing.py`  
+**Router (опціонально для доменів)**: `vfoundation/core/routing.py`
 Є idempotency (single‑flight), circuit breaker, WAL append before handler.
 
 ### 3.2. WAL та DR‑патерни
@@ -127,18 +127,18 @@
 
 ### 3.3. SSOT YAML + Pydantic‑валідація у Aurora
 
-**ConfigLoader**: `apps/reference/config_loader.py`  
+**ConfigLoader**: `apps/reference/config_loader.py`
 Важливі патерни:
 - YAML load + deep_merge (fail‑closed на конфліктах типів);
 - provenance map (звідки взявся параметр);
 - строгий режим конфліктів/дублікатів шляхів (SSOT‑інваріант);
 - ENV підстановки тільки через `${VAR}` у YAML (але це не “параметр у коді”).
 
-**Pydantic V2 schema**: `apps/reference/config_models.py`  
+**Pydantic V2 schema**: `apps/reference/config_models.py`
 Патерн:
 - `ConfigDict(extra='forbid')`, валідатори, fail‑fast на старті.
 
-**DomainConfigResolver**: `apps/reference/domain_config.py`  
+**DomainConfigResolver**: `apps/reference/domain_config.py`
 Важливо:
 - canonical‑only доступ (`config.domains`), без fallback на legacy.
 
@@ -349,7 +349,7 @@ Neocortex‑інтент повинен:
 
 ### 5.4. Алгоритм генерації TradeIntent (як робимо “нормальну математику”)
 
-**Вхід:** Observation + internal state (latent/world model) + budgets/config.  
+**Вхід:** Observation + internal state (latent/world model) + budgets/config.
 **Вихід:** payload під `trade_intent_v1.json` або shadow intent.
 
 Пайплайн (R2 shadow → R3 trade):
@@ -380,20 +380,20 @@ Neocortex‑інтент повинен:
 
 ### 5.6. Мінімальна математична специфікація (адаптація living_latent → трейдинг)
 
-**Стан середовища**: `s_t = concat(market_features_t, portfolio_features_t, regime_features_t)`  
+**Стан середовища**: `s_t = concat(market_features_t, portfolio_features_t, regime_features_t)`
 **Латент**: `z_t = Encoder(s_t)` (AE/VAE).
 
 **World model**: апроксимація `p(z_{t+1} | z_t, a_t)` або `p(s_{t+1} | s_t, a_t)` (енсамбль).
 
-**Surprisal**: `Surp_t = -log p(z_t | z_{t-1}, a_{t-1})` (NLL під world model).  
+**Surprisal**: `Surp_t = -log p(z_t | z_{t-1}, a_{t-1})` (NLL під world model).
 **Disagreement**: дисперсія прогнозів ансамблю (епістемічна невизначеність).
 
-**EFE (proxy)**: `EFE_t = w_s * EMA(Surp_t) + w_d * EMA(Disagree_t)` (ваги/EMA з YAML).  
+**EFE (proxy)**: `EFE_t = w_s * EMA(Surp_t) + w_d * EMA(Disagree_t)` (ваги/EMA з YAML).
 У трейдингу EFE використовується як **штраф за “непередбачуваність/новизну”**, а не як єдина ціль.
 
 **Viability**: реконструкційна помилка AE + conformal tau; якщо `error > tau` → стан поза “viable envelope”.
 
-**Empowerment (proxy)**: `I(a; z_{t+1} | z_t)` для дискретного `a` (HOLD/OPEN/CLOSE/…), оцінюється InfoNCE/контрастивно.  
+**Empowerment (proxy)**: `I(a; z_{t+1} | z_t)` для дискретного `a` (HOLD/OPEN/CLOSE/…), оцінюється InfoNCE/контрастивно.
 У трейдингу empowerment корисний як “контрольованість” (де дії мають прогнозований ефект), але не як привід торгувати без risk gates.
 
 ---
@@ -558,9 +558,11 @@ neocortex:
       session_cvar95_max_bps: "200"
 
     size:
-      kelly_fraction: "0.10"
+      kelly_fraction: "0.1666666666666666666666666667"
       notional_cap_usd: "500"
 ```
+
+> Цей sample mirrors поточний accepted TradeIntent boundary example для Kelly metadata. Pre-cutover WAL рядки можуть містити legacy synthetic `p` / `payoff_ratio_r` / `size.kelly_fraction` і не є trustworthy ML/RL labels. `kelly_alpha` та `uplift_factor` на цій provenance seam залишаються intentionally unapplied.
 
 **`config/aurora/neocortex/safety.yaml`**
 ```yaml

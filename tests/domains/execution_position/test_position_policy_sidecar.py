@@ -188,6 +188,9 @@ def test_position_policy_sidecar_recommends_and_emits_bounded_close_request_in_e
     assert recommended["trace_id"] == request["trace_id"]
     assert request["request_id"].startswith("ppsreq:pps:BTCUSDT:")
     assert 0.0 <= recommended["score_snapshot"]["soft_close_pressure"] <= 1.0
+    assert recommended["policy_source"] == "position_policy_sidecar"
+    assert recommended["peak_giveback_snapshot"]["policy_enabled"] is False
+    assert recommended["peak_giveback_snapshot"]["peak_giveback_state"] == "peak_giveback_disabled"
     assert request["policy_source"] == "position_policy_sidecar"
     assert request["requested_action"] == "SOFT_CLOSE"
     assert request["target_mode"] == "symbol_current_net_only"
@@ -237,10 +240,12 @@ def test_position_policy_sidecar_shadow_mode_does_not_emit_close_request(tmp_pat
         )
     )
     sidecar.on_features_calculated(
-        _event(symbol="BTCUSDT", ts_ms=now_ms + 1, orderbook_imbalance=0.0, signal_score=0.0)
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 1,
+               orderbook_imbalance=0.0, signal_score=0.0)
     )
     sidecar.on_regime_detected(
-        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2,
+               regime="TREND_DOWN", confidence=0.10)
     )
 
     assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" in _topics(bus)
@@ -751,6 +756,19 @@ def test_execpos_position_policy_sidecar_mode_wiring_and_ordering(fsm_config, tm
 
     assert fsm._position_policy_sidecar is not None
     assert "EVT:POSITION_POLICY_SIDECAR_MODE_ACTIVE" in _topics(bus)
+    mode_active = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_MODE_ACTIVE")[-1]
+    assert mode_active["sidecar_config_snapshot"]["mode"] == "shadow"
+    assert mode_active["sidecar_config_snapshot"]["peak_giveback_close"] == {
+        "enabled": False,
+        "edge_arm_usd": 25.0,
+        "giveback_trigger_pct": 50.0,
+    }
+    assert mode_active["sidecar_config_snapshot"]["freshness"] == {
+        "portfolio_max_age_ms": 15_000,
+        "features_max_age_ms": 15_000,
+        "regime_max_age_ms": 15_000,
+        "order_state_max_age_ms": 15_000,
+    }
 
     call_order: list[str] = []
     fsm._handle_cancel_event = lambda event: call_order.append("incumbent")
@@ -821,12 +839,14 @@ def test_execpos_position_policy_close_request_state_links_request_to_reconcile(
         )
     )
     sidecar.on_regime_detected(
-        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2,
+               regime="TREND_DOWN", confidence=0.10)
     )
 
     request = _payloads(bus, "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST")[-1]
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
-    emitted = [row for row in states if row["request_state"] == "close_command_emitted"]
+    emitted = [row for row in states if row["request_state"]
+               == "close_command_emitted"]
     assert len(emitted) == 1
     assert emitted[0]["request_id"] == request["request_id"]
     assert emitted[0]["trace_id"] == request["trace_id"]
@@ -940,10 +960,12 @@ def test_execpos_position_policy_close_request_suppresses_when_manage_flow_closi
         "portfolio_correlation": {},
     }
 
-    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(
+        _event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
-    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    suppressed = [
+        row for row in states if row["request_state"] == "suppressed"]
     assert len(suppressed) == 1
     assert suppressed[0]["request_id"] == "ppsreq:test-closing"
     assert suppressed[0]["suppression_reason"] == "manage_flow_close_in_progress"
@@ -1007,10 +1029,12 @@ def test_execpos_position_policy_close_request_forbidden_capabilities_fail_close
         "portfolio_correlation": {},
     }
 
-    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(
+        _event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
-    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    suppressed = [
+        row for row in states if row["request_state"] == "suppressed"]
     assert len(suppressed) == 1
     assert suppressed[0]["request_id"] == "ppsreq:test-forbidden"
     assert suppressed[0]["suppression_reason"] == "exact_targeting_forbidden"
@@ -1020,7 +1044,8 @@ def test_execpos_position_policy_close_request_forbidden_capabilities_fail_close
 def test_execpos_position_policy_close_request_rejects_bracket_mutation_scope(fsm_config, tmp_path: Path) -> None:
     fsm_config.trading.execution.watchdog.check_interval_ms = 1_000
     fsm_config.trading.execution.watchdog.rps_limit = 10
-    sidecar_cfg = _sidecar_config(tmp_path, mode="enable", recommend_soft_close_at=0.45)
+    sidecar_cfg = _sidecar_config(
+        tmp_path, mode="enable", recommend_soft_close_at=0.45)
     sidecar_cfg.allowed_actions.bracket_mutation = True
     fsm_config.domains.execution_position.position_policy_sidecar = sidecar_cfg
 
@@ -1073,10 +1098,12 @@ def test_execpos_position_policy_close_request_rejects_bracket_mutation_scope(fs
         "portfolio_correlation": {},
     }
 
-    fsm._position_policy_mediator.on_position_policy_close_request(_event(**request_payload))
+    fsm._position_policy_mediator.on_position_policy_close_request(
+        _event(**request_payload))
 
     states = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE")
-    suppressed = [row for row in states if row["request_state"] == "suppressed"]
+    suppressed = [
+        row for row in states if row["request_state"] == "suppressed"]
     assert len(suppressed) == 1
     assert suppressed[0]["request_id"] == "ppsreq:test-bracket-mutation"
     assert suppressed[0]["suppression_reason"] == "bracket_mutation_forbidden"

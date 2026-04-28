@@ -9,7 +9,11 @@ Formula B (opt-in):  Confusion-weighted matrix with per-pair rewards.
 
 from __future__ import annotations
 
+# QUARANTINED: legacy_runtime
+__quarantined__ = True
+
 import logging
+import math
 from typing import Dict, List, Optional
 
 from .regime_labeler import REGIME_NAMES
@@ -21,7 +25,8 @@ NUM_ACTIONS = 5
 
 # Formula B: Confusion reward matrix  C[predicted][realized]
 # Rows = predicted action, Cols = realized regime
-# NOTE: This is the default fallback; production uses the YAML config matrix.
+# NOTE: Kept as a documented legacy reference for tests/audits. Runtime Formula B
+# requires an explicit matrix from config and must not fall back to this constant.
 #                         T_UP    T_DOWN   MR      H_VOL   EXHAUST
 REWARD_MATRIX: List[List[float]] = [
     # predicted TREND_UP
@@ -46,6 +51,31 @@ ACTION_NAMES = [
 ]
 
 
+def _validated_reward_matrix(reward_matrix: Optional[List[List[float]]]) -> List[List[float]]:
+    if reward_matrix is None:
+        raise ValueError(
+            "reward_matrix is required when reward_matrix_enabled=True")
+    if len(reward_matrix) != NUM_ACTIONS:
+        raise ValueError(f"reward_matrix must have {NUM_ACTIONS} rows")
+    validated: List[List[float]] = []
+    for row_index, row in enumerate(reward_matrix):
+        if len(row) != NUM_ACTIONS:
+            raise ValueError(
+                f"reward_matrix row {row_index} must have {NUM_ACTIONS} columns"
+            )
+        validated_row: List[float] = []
+        for column_index, value in enumerate(row):
+            numeric = float(value)
+            if not math.isfinite(numeric):
+                raise ValueError(
+                    "reward_matrix values must be finite: "
+                    f"row={row_index} col={column_index} value={value!r}"
+                )
+            validated_row.append(numeric)
+        validated.append(validated_row)
+    return validated
+
+
 class RegimeRewardCalculator:
     """Compute reward for a regime prediction given the realized regime.
 
@@ -65,10 +95,9 @@ class RegimeRewardCalculator:
         self.reward_wrong = reward_wrong
         self.reward_matrix_enabled = reward_matrix_enabled
 
-        # Formula B: use config matrix if provided, else hardcoded default
-        self._reward_matrix: List[List[float]] = (
-            reward_matrix if reward_matrix is not None else REWARD_MATRIX
-        )
+        self._reward_matrix: List[List[float]] = []
+        if self.reward_matrix_enabled:
+            self._reward_matrix = _validated_reward_matrix(reward_matrix)
 
         # Build weight vector indexed by action (0-4)
         self._class_weights: List[float] = [1.0] * NUM_ACTIONS

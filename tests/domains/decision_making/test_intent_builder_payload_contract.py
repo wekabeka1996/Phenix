@@ -47,10 +47,15 @@ class _FakeSG:
         self.vol_pct_10s = 1.1
         self.vol_pct_60s = 1.2
         self.vol_pct_300s = 1.3
-        self.min_regime_confidence = 0.42
+        self.min_regime_confidence = 0.45
+        self.resolved_min_regime_confidence = 0.45
+        self.resolved_min_regime_confidence_source = "scalar_legacy"
+        self.resolved_min_regime_confidence_strategy_id = None
+        self.resolved_min_regime_confidence_regime_key = None
+        self.regime_confidence_gate_verdict = "ALLOW"
         self.threshold_applied = True
         self.threshold_verdict = "PASS"
-        self.threshold_reason = "regime_confidence=0.82 >= min=0.42"
+        self.threshold_reason = "regime_confidence=0.82 >= min=0.45"
 
 
 def _safe_decimal(value, default=None):
@@ -63,12 +68,22 @@ def _safe_decimal(value, default=None):
 
 
 def _make_config():
+    kelly_cfg = SimpleNamespace(
+        base_probability="0.5",
+        kelly_cap="0.25",
+        kelly_alpha="0.8",
+        payoff_ratio_r="1.5",
+        p_min="0.45",
+        p_max="0.65",
+        uplift_factor="0.2",
+        fraction="0.99",
+    )
     strategy_cfg = SimpleNamespace(
         execution=SimpleNamespace(
             entry_order_type="LIMIT",
             entry_tif="GTC",
         ),
-        decision=SimpleNamespace(kelly=SimpleNamespace(fraction="0.15")),
+        decision=SimpleNamespace(kelly=kelly_cfg),
     )
     order_capabilities = SimpleNamespace(
         supported_order_types=["LIMIT", "MARKET"],
@@ -147,6 +162,48 @@ def _build_kwargs() -> dict:
     }
 
 
+def _expected_kelly_fraction() -> str:
+    probability = decimal.Decimal("0.5")
+    return str(
+        probability - ((decimal.Decimal("1") - probability) /
+                       decimal.Decimal("1.5"))
+    )
+
+
+def _expected_kelly_provenance() -> dict:
+    expected_fraction = _expected_kelly_fraction()
+    return {
+        "source_path": "config.strategies.aurora.decision.kelly",
+        "p": {
+            "source": "config.strategies.aurora.decision.kelly.base_probability",
+            "raw": "0.5",
+            "p_min": "0.45",
+            "p_max": "0.65",
+            "value": "0.5",
+        },
+        "payoff_ratio_r": {
+            "source": "config.strategies.aurora.decision.kelly.payoff_ratio_r",
+            "value": "1.5",
+        },
+        "kelly_fraction": {
+            "formula": "p - (1 - p) / payoff_ratio_r",
+            "full_kelly": expected_fraction,
+            "kelly_cap": "0.25",
+            "value": expected_fraction,
+        },
+        "unapplied_config_fields": {
+            "kelly_alpha": {
+                "value": "0.8",
+                "reason": "boundary_semantics_not_proven",
+            },
+            "uplift_factor": {
+                "value": "0.2",
+                "reason": "no_score01_probability_producer_on_hot_path",
+            },
+        },
+    }
+
+
 def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
     builder = _make_builder()
 
@@ -176,8 +233,8 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
             "order_type": "LIMIT",
             "tif": "GTC",
         },
-        "p": "0.75",
-        "payoff_ratio_r": "2.0",
+        "p": "0.5",
+        "payoff_ratio_r": "1.5",
         "tca_budget": {
             "max_slippage_bps": "25",
             "max_latency_ms": 3000,
@@ -190,7 +247,7 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
         },
         "size": {
             "notional_cap_usd": "75000.375",
-            "kelly_fraction": "0.15",
+            "kelly_fraction": _expected_kelly_fraction(),
         },
         "valid_for_ms": 10000,
         "why": ["alpha", "beta"],
@@ -205,7 +262,11 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
         "regime_provenance": REGIME_PROVENANCE,
         "regime_epoch_ref": "epoch:BTCUSDT:123",
         "tpsl_owner_ctx": OWNER_CTX,
-        "trace": {"objective": {"score": 0.9}, "model": "aurora"},
+        "trace": {
+            "objective": {"score": 0.9},
+            "model": "aurora",
+            "kelly_provenance": _expected_kelly_provenance(),
+        },
     }
 
 
@@ -232,11 +293,18 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
     assert decision_trace_calls == [
         {
             "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
             "ts": 1700000001234,
             "intent_side": "LONG",
             "signal_score": 0.91,
             "regime": "TREND_UP",
             "regime_confidence": 0.82,
+            "min_regime_confidence": 0.45,
+            "resolved_min_regime_confidence": 0.45,
+            "resolved_min_regime_confidence_source": "scalar_legacy",
+            "resolved_min_regime_confidence_strategy_id": None,
+            "resolved_min_regime_confidence_regime_key": None,
+            "regime_confidence_gate_verdict": "ALLOW",
             "trend_dir": 1,
             "trend_run_length": 7,
             "delta_price": 12.5,

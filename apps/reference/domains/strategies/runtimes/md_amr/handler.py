@@ -52,6 +52,9 @@ from apps.reference.domains.decision_making.core.runtime_readiness import (
     RuntimeReadinessBuildRequest,
     build_runtime_readiness,
 )
+from apps.reference.domains.decision_making.intent.truth_artifacts import (
+    write_strategy_decision_blocked,
+)
 from apps.reference.domains.strategies.runtimes.md_amr.entry_anchor_artifact import (
     MDAMREntryAnchorArtifactStore,
     MDAMREntryAnchorRecord,
@@ -1153,6 +1156,41 @@ class MDAMRHandler:
                 atr_stats_window=int(self._cfg.atr_stats_window),
             )
 
+    def _emit_strategy_blocked(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        ts_ms: int,
+        reason_code: str,
+        reason: str,
+        context: str,
+        why: str,
+        why_chain: list[str],
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        tf_sec = getattr(self, "timeframe_sec", None)
+        payload = write_strategy_decision_blocked(
+            strategy_id="md_amr",
+            symbol=symbol,
+            reason_code=str(reason_code),
+            reason=str(reason),
+            context=str(context),
+            src="md_amr_handler:_emit_strategy_blocked",
+            ts_ms=int(ts_ms),
+            rid=str(rid),
+            why=str(why),
+            why_chain=list(why_chain),
+            details=dict(details) if details else None,
+            tf_sec=int(tf_sec) if tf_sec is not None else None,
+        )
+        self.fsm.emit(
+            "EVT:STRATEGY_DECISION_BLOCKED",
+            payload=payload,
+            why=f"md_amr_strategy_blocked:{reason_code}",
+        )
+        self._record_objective_blocked_payload(payload)
+
     def _emit_trade_intent_rejected_mandatory_warmup(
         self,
         *,
@@ -1161,23 +1199,17 @@ class MDAMRHandler:
         rid: str,
         ts_ms: int,
     ) -> None:
-        payload = {
-            "symbol": symbol,
-            "strategy_id": "md_amr",
-            "side": str(side).lower(),
-            "rid": str(rid),
-            "reason_code": "MANDATORY_LIVE_WARMUP",
-            "stage": "READINESS",
-            "why": "mandatory_live_warmup",
-            "context": "md_amr_handler:mandatory_live_warmup",
-            "why_chain": ["mandatory_live_warmup"],
-            "details": {"mandatory_warmup_until_ms": int(self.mandatory_warmup_until)},
-            "ts_ms": int(ts_ms),
-        }
-        self.fsm.emit(
-            "EVT:TRADE_INTENT_REJECTED",
-            payload=payload,
-            why="intent_rejected:MANDATORY_LIVE_WARMUP",
+        self._emit_strategy_blocked(
+            symbol=symbol,
+            rid=rid,
+            ts_ms=ts_ms,
+            reason_code="MANDATORY_LIVE_WARMUP",
+            reason="mandatory_live_warmup",
+            context="md_amr_handler:mandatory_live_warmup",
+            why="mandatory_live_warmup",
+            why_chain=["mandatory_live_warmup"],
+            details={"mandatory_warmup_until_ms": int(
+                self.mandatory_warmup_until)},
         )
 
     def _emit_trade_intent_rejected_gate(
@@ -1193,23 +1225,18 @@ class MDAMRHandler:
         why_chain: list[str],
         details: Dict[str, Any],
     ) -> None:
-        payload = {
-            "symbol": symbol,
-            "strategy_id": "md_amr",
-            "side": str(side).lower(),
-            "rid": str(rid),
-            "reason_code": str(reason_code),
-            "stage": str(stage).upper(),
-            "why": str(why),
-            "context": str(why),
-            "why_chain": list(why_chain),
-            "details": details,
-            "ts_ms": int(ts_ms),
-        }
-        self.fsm.emit(
-            "EVT:TRADE_INTENT_REJECTED",
-            payload=payload,
-            why=f"intent_rejected:{reason_code}",
+        # Legacy helper name retained so existing local tests can still stub the
+        # MD_AMR branch seam while runtime semantics stay canonical.
+        self._emit_strategy_blocked(
+            symbol=symbol,
+            rid=rid,
+            ts_ms=ts_ms,
+            reason_code=str(reason_code),
+            reason=str(why),
+            context=str(why),
+            why=str(why),
+            why_chain=list(why_chain),
+            details=details,
         )
 
     def _entry_regime_allowed(
@@ -1525,8 +1552,7 @@ class MDAMRHandler:
                 int(pld.get("ts_ms") or get_clock().now_ms())
             )
 
-    def _on_trade_intent_rejected(self, event: Message) -> None:
-        pld = event.pld or {}
+    def _record_objective_blocked_payload(self, pld: dict) -> None:
         if not isinstance(pld, dict):
             return
         if str(pld.get("strategy_id") or "") != "md_amr":
@@ -1534,9 +1560,15 @@ class MDAMRHandler:
         symbol = str(pld.get("symbol") or "")
         if symbol not in self._enabled_symbols:
             return
-        self._objective_blocked_ts_ms.setdefault(symbol, deque()).append(
-            int(pld.get("ts_ms") or get_clock().now_ms())
-        )
+        ts_ms = int(pld.get("ts_ms") or get_clock().now_ms())
+        blocked_ts_ms = self._objective_blocked_ts_ms.setdefault(
+            symbol, deque())
+        if blocked_ts_ms and blocked_ts_ms[-1] == ts_ms:
+            return
+        blocked_ts_ms.append(ts_ms)
+
+    def _on_trade_intent_rejected(self, event: Message) -> None:
+        self._record_objective_blocked_payload(event.pld or {})
 
     def reconcile_position(self, symbol: str, exchange_qty: Decimal) -> None:
         """Best-effort local position reconciliation against exchange truth."""

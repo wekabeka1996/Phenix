@@ -252,7 +252,8 @@ async def test_close_without_trade_id_fails_closed(tmp_path):
     )
 
     await tailer._handle_position_close(
-        _close_entry(trade_id=None, close_price=110.0, realized_pnl_net=4.9, fees=0.1)
+        _close_entry(trade_id=None, close_price=110.0,
+                     realized_pnl_net=4.9, fees=0.1)
     )
 
     assert captured == []
@@ -262,7 +263,8 @@ async def test_close_without_trade_id_fails_closed(tmp_path):
 
 def test_adapter_marks_incomplete_reward_as_reward_missing():
     adapter = object.__new__(NeocortexAdapter)
-    adapter.config = SimpleNamespace(ingest=SimpleNamespace(feature_list=["rsi"]))
+    adapter.config = SimpleNamespace(
+        ingest=SimpleNamespace(feature_list=["rsi"]))
     adapter._emit_alert = MagicMock()
 
     episode = Episode(
@@ -305,3 +307,51 @@ def test_adapter_marks_incomplete_reward_as_reward_missing():
     assert payload["reward_complete"] is False
     assert payload["episode_reward"]["reward_complete"] is False
     assert payload["reward"] == pytest.approx(0.4)
+
+
+def test_adapter_preserves_missing_reward_as_none():
+    adapter = object.__new__(NeocortexAdapter)
+    adapter.config = SimpleNamespace(
+        ingest=SimpleNamespace(feature_list=["rsi"]))
+    adapter._emit_alert = MagicMock()
+
+    episode = Episode(
+        symbol="BTCUSDT",
+        timestamp=1_700_000_000.2,
+        event_ts_ms=1_700_000_000_200,
+        features={"rsi": 50.0},
+        side="BUY",
+        reward=None,
+        pnl=None,
+        trade_id="BTCUSDT:trade:1",
+        executed_entry=True,
+        entry_anchor_event="ORDER_FILLED",
+        lifecycle_state="OPEN",
+    )
+
+    payload = NeocortexAdapter._episode_to_dict(adapter, episode)
+
+    assert payload["reward"] is None
+    assert payload["reward_missing"] is True
+    assert payload["reward_complete"] is False
+
+
+def test_adapter_treats_absent_reward_key_as_missing():
+    adapter = object.__new__(NeocortexAdapter)
+    adapter.config = SimpleNamespace(
+        ingest=SimpleNamespace(feature_list=["rsi"]))
+    adapter._emit_alert = MagicMock()
+
+    payload = NeocortexAdapter._episode_to_dict(
+        adapter,
+        {
+            "symbol": "BTCUSDT",
+            "timestamp": 1_700_000_000.2,
+            "features": {"rsi": 50.0},
+            "side": "BUY",
+        },
+    )
+
+    assert payload["reward"] is None
+    assert payload["reward_missing"] is True
+    assert payload["reward_complete"] is False

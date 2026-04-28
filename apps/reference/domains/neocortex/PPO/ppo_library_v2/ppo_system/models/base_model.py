@@ -1,5 +1,7 @@
+# QUARANTINED: legacy_runtime
 # path: ppo_library/ppo_system/models/base_model.py
 from __future__ import annotations
+__quarantined__ = True
 from abc import ABC, abstractmethod
 from typing import Tuple, Union, Optional
 import torch

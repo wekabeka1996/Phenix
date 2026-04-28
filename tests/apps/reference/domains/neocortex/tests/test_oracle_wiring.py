@@ -79,9 +79,13 @@ def _make_ingest_config() -> dict:
         "feature_list": FEATURE_LIST,
         "normalization_method": "zscore",
         "normalization_window": 100,
+        "normalization_scope": "per_symbol",
         "buffer_size": 1000,
         "min_samples_before_ready": 1,
         "nan_strategy": "zero",
+        "price_feature_mode": "raw",
+        "delta_price_mode": "raw",
+        "feature_clip_abs": {},
     }
 
 
@@ -93,6 +97,7 @@ def _make_neuro_config(reward_mode: str = "pnl", action_dim: int = 3) -> dict:
             "latent_dim": 8,
             "learning_rate": 0.001,
             "beta": 0.1,
+            "free_bits_per_dim": 0.0,
             "batch_size": 16,
             "use_mean": True,
         },
@@ -107,14 +112,65 @@ def _make_neuro_config(reward_mode: str = "pnl", action_dim: int = 3) -> dict:
             "state_dim": 8,
             "action_dim": action_dim,
             "hidden_dims": [32],
+            "objective_split_enforced": True,
+            "policy_training_mode": "disabled",
             "learning_rate": 0.0003,
             "gamma": 0.99,
             "gae_lambda": 0.95,
             "clip_epsilon": 0.2,
+            "entropy_coef": 0.01,
+            "max_grad_norm": 0.5,
+            "numerical_safety": {
+                "gradient_clip_threshold": 1.0,
+                "on_invalid": "sanitize",
+            },
             "rollout_length": 64,
             "num_epochs": 4,
             "minibatch_size": 16,
             "reward_mode": reward_mode,
+        },
+        "sequence": {
+            "inference_mode": "stateless_per_event",
+            "representation_training_mode": "independent_rows",
+            "reset_on_replay_start": True,
+            "reset_on_symbol_switch": True,
+            "reset_on_objective_family_switch": True,
+            "reset_on_episode_boundary": True,
+        },
+        "dataset": {
+            "manifest_version": 1,
+            "split": {
+                "train_ratio": 0.7,
+                "val_ratio": 0.15,
+                "test_ratio": 0.15,
+            },
+        },
+        "evaluation": {
+            "report_version": 1,
+            "calibration_bins": 5,
+            "confidence_bucket_edges": [0.25, 0.5, 0.75, 0.9],
+            "missing_confidence_policy": "not_available",
+            "advisory_status": "forbidden",
+        },
+        "performance": {
+            "operating_mode": "offline_replay",
+            "shadow_intent_emit_policy": "decimate_observational",
+            "shadow_intent_decimation_stride": 10,
+            "shadow_jsonl_write_policy": "buffered",
+            "telemetry_write_policy": "buffered",
+            "non_critical_queue_limit": 2048,
+            "shadow_log_flush_threshold": 64,
+            "telemetry_flush_threshold": 64,
+            "flush_interval_ms": 1000,
+            "non_critical_overflow_policy": "drop_oldest",
+        },
+        "shadow_gates": {
+            "gate_set_version": 1,
+            "startup_enforcement": "strict",
+            "allow_advisory_influence": False,
+            "allow_live_authority": False,
+            "allow_policy_training_reenable": False,
+            "require_domain_manifest_contracts": True,
         },
         "checkpoint_every_n_steps": 100,
         "keep_last_n_checkpoints": 3,
@@ -134,6 +190,7 @@ def _make_oracle_config() -> dict:
         "reward_correct": 1.0,
         "reward_wrong": -0.5,
         "reward_matrix_enabled": False,
+        "reward_matrix": None,
         "class_weights": {
             "PREDICT_TREND_UP": 1.5,
             "PREDICT_TREND_DOWN": 1.5,
@@ -449,7 +506,8 @@ class TestOracleSettlement:
         # Feed 5 calm bars + 1 vol spike bar
         for i in range(5):
             await adapter.handle_features(
-                _make_features_payload(timestamp=float(i), volatility_state=0.1)
+                _make_features_payload(
+                    timestamp=float(i), volatility_state=0.1)
             )
         # 6th bar: vol spike -> realized regime = HIGH_VOLATILITY (volatility_state > 0.8)
         await adapter.handle_features(

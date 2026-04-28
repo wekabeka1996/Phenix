@@ -4,7 +4,7 @@
 > - **Document path:** `config/docs/domains_passport.md`
 > - **Audit date:** 2026-03-18
 > - **Audit mode:** Code-driven sync (auto-generated document)
-> - **Major drifts found:** 
+> - **Major drifts found:**
 >   1. The `account_observer` domain has been completely removed from the codebase (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01), matching its absence in this document.
 >   2. `shadow_telemetry` and `objective_engine` domains are present in `domains.yaml` and actively used as Phase 2/3 subsystems, but are **missing from this auto-generated passport**.
 >   3. `domains.decision_making.qos` and `domains.decision_making.directional_sanity` parameters match the SSOT definition.
@@ -19,7 +19,7 @@
 - **Депрекейт і fail-fast для дублювань:** `apps/reference/config_loader.py:904` забороняє `feature_engineering` у `trading.yaml` (SSOT тільки тут).
 - **Market Data не належить `domains.yaml`:** у `domains.yaml` **немає** домену `market_data`; runtime читає налаштування market data з `config.trading.market_data.*` (тобто SSOT для market_data — `trading.yaml`, не `domains.yaml`). (`apps/reference/domains/market_data/market_data_connector.py:78`)
 
-**Дата генерації:** `2026-02-03`  
+**Дата генерації:** `2026-02-03`
 **Leaf keys (включно з пустими мапами):** `217`
 
 ---
@@ -2444,7 +2444,7 @@
 - **Logic Owner:** `execution_position`
 - **Code Reference:** apps/reference/domains/execution_position/exposure_guard.py:79 (ExposureGuard.__init__) ; apps/reference/domains/execution_position/exposure_guard.py:648 (func: can_open)
 - **Mathematical/Architectural Role:**
-    > Hard gate for MARGIN utilization in `ExposureGuard.can_open()`: 
+    > Hard gate for MARGIN utilization in `ExposureGuard.can_open()`:
     > - `order_margin = order_notional_abs / leverage`
     > - `total_margin_used = open_positions_margin_usd + total_pending_margin + order_margin`
     > - `equity_margin_limit = equity_free_usdt * (max_equity_utilization_pct / 100)`
@@ -2477,7 +2477,7 @@
 - **Logic Owner:** `execution_position`
 - **Code Reference:** apps/reference/domains/execution_position/exposure_guard.py:79 (ExposureGuard.__init__) ; apps/reference/domains/execution_position/exposure_guard.py:648 (func: can_open)
 - **Mathematical/Architectural Role:**
-    > Hard gate for NOTIONAL-based cap in `ExposureGuard.can_open()`: 
+    > Hard gate for NOTIONAL-based cap in `ExposureGuard.can_open()`:
     > - `projected_notional = open_positions_usd + pending_notional + post_notional + order_notional_abs`
     > - `p_frac_limit = equity_free_usdt * max_portfolio_fraction`
     > Block if `projected_notional > p_frac_limit` (`PORTFOLIO_FRACTION_BREACH`).
@@ -2617,11 +2617,24 @@
 - **Logic Owner:** `execution_position`
 - **Code Reference:** apps/reference/domains/execution_position/fsm.py:777 (func: _resolve_guardian_config)
 - **Mathematical/Architectural Role:**
-    > Boolean gate/feature flag controlling whether a logic branch is active.
+    > Deprecated compatibility alias for `emit_tidy_monitoring_event`. It is not an operational gate and must not be used to suppress `EVT:SYMBOL_TIDY`.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** `true` ⇒ гілка активна (більше enforcement/compute).
-    - 🔽 **Too Low:** `false` ⇒ гілка неактивна (менше enforcement/compute).
-- **Invariant/Constraints:** Strict schema: unknown fields forbidden (Pydantic `extra='forbid'`).
+    - 🔼 **Too High:** `true` ⇒ legacy value matches monitoring tidy telemetry enabled.
+    - 🔽 **Too Low:** `false` ⇒ legacy value matches monitoring tidy telemetry disabled when F9 wires the monitoring event only.
+- **Invariant/Constraints:** Compatibility field. If present with `emit_tidy_monitoring_event`, both values must be equal. Does not control `EVT:SYMBOL_TIDY` or entry-gate readiness.
+- **SSOT Status:** **DEPRECATED_COMPAT** (canonical behavior is `emit_tidy_monitoring_event`)
+
+---
+### `domains.execution_position.guardian.emit_tidy_monitoring_event`
+- **Type:** `bool`
+- **Logic Owner:** `execution_position`
+- **Code Reference:** apps/reference/domains/execution_position/config_resolver.py (func: _resolve_guardian_config)
+- **Mathematical/Architectural Role:**
+    > Explicit monitoring-only tidy flag. Intended to control `EVT:EXECUTION_TIDY_PERFORMED` only. It does not control `EVT:SYMBOL_TIDY` and does not affect the entry tidy gate.
+- **Tuning Sensitivity:**
+    - 🔼 **Too High:** `true` ⇒ monitoring tidy telemetry remains enabled when F9 wires the flag.
+    - 🔽 **Too Low:** `false` ⇒ monitoring tidy telemetry may be disabled by future monitoring-only wiring; operational `SYMBOL_TIDY` must continue.
+- **Invariant/Constraints:** Strict schema: unknown fields forbidden (Pydantic `extra='forbid'`). During compatibility, legacy `emit_tidy_event` must be absent or equal.
 - **SSOT Status:** **CONFIRMED** (canonical `config.domains.*` SSOT)
 
 ---

@@ -1,19 +1,20 @@
+# QUARANTINED: legacy_runtime
 """
 Brain Bridge (Service Client)
 
 Orchestrates communication with the persistent Brain Service Worker.
 Replaces ProcessPoolExecutor with explicit Task/Result queues.
 """
+__quarantined__ = True
 
 import asyncio
 import logging
 import multiprocessing as mp
+import queue
 import threading
 import uuid
 import time
 from typing import List, Dict, Any, Optional
-from concurrent.futures import Future
-
 import numpy as np
 
 from apps.reference.domains.neocortex.config_models import NeuroConfig
@@ -28,16 +29,16 @@ class BrainBridge:
     Client for the Brain Service Worker.
     Maintains the Task/Result queues and a background listener thread.
     """
-    
+
     def __init__(self, config: NeuroConfig, max_workers: int = 1, rng_seed: int = 0):
         self.config = config
         self.rng_seed = int(rng_seed)
-        
+
         # State
         self._process: Optional[mp.Process] = None
         self._task_queue: Optional[mp.Queue] = None
         self._result_queue: Optional[mp.Queue] = None
-        
+
         self._futures: Dict[str, asyncio.Future] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._listener_thread: Optional[threading.Thread] = None
@@ -50,38 +51,41 @@ class BrainBridge:
         """
         if self._initialized:
             return True
-            
+
         try:
             self._loop = asyncio.get_running_loop()
-            
+
             # Use spawn context (PyTorch requirement)
             ctx = mp.get_context("spawn")
             self._task_queue = ctx.Queue()
             self._result_queue = ctx.Queue()
-            
+
             # Convert config to dict
             config_dict = self.config.model_dump()
-            
+
             # Spawn
             logger.info("Spawning Brain Service Worker...")
             self._process = ctx.Process(
                 target=brain_service_worker,
-                args=(self._task_queue, self._result_queue, config_dict, self.rng_seed),
-                daemon=True # Kill if parent dies
+                args=(self._task_queue, self._result_queue,
+                      config_dict, self.rng_seed),
+                daemon=True  # Kill if parent dies
             )
             self._process.start()
-            
+
             # Wait for INIT response (blocking get, execute in thread)
-            logger.info("Waiting up to 300s for BrainCore initialization (PyTorch/CUDA)...")
+            logger.info(
+                "Waiting up to 300s for BrainCore initialization (PyTorch/CUDA)...")
             init_result = await self._loop.run_in_executor(None, self._wait_for_init)
-            
+
             if init_result and init_result.success:
                 logger.info("BrainBridge: Worker Initialized Successfully")
                 self._initialized = True
-                
+
                 # Start listener thread
                 self._shutdown_event.clear()
-                self._listener_thread = threading.Thread(target=self._result_listener, daemon=True)
+                self._listener_thread = threading.Thread(
+                    target=self._result_listener, daemon=True)
                 self._listener_thread.start()
                 return True
             else:
@@ -89,7 +93,7 @@ class BrainBridge:
                 logger.error(f"BrainBridge Init Failed: {err}")
                 self._kill()
                 return False
-                
+
         except Exception as e:
             logger.error(f"BrainBridge start exception: {e}", exc_info=True)
             self._kill()
@@ -101,7 +105,8 @@ class BrainBridge:
             # 300s timeout for PyTorch/CUDA model loading
             if self._result_queue:
                 return self._result_queue.get(block=True, timeout=300.0)
-        except Exception:
+        except queue.Empty:
+            logger.error("BrainBridge init timed out waiting for worker INIT")
             return None
         return None
 
@@ -112,16 +117,17 @@ class BrainBridge:
                 # Poll with short timeout to allow shutdown check
                 if self._result_queue is None:
                     break
-                    
+
                 try:
                     result: BridgeResult = self._result_queue.get(timeout=0.1)
-                except Exception: # Empty
+                except queue.Empty:
                     continue
-                    
+
                 # Schedule future resolution on main loop
                 if self._loop and not self._loop.is_closed():
-                    self._loop.call_soon_threadsafe(self._complete_future, result)
-                    
+                    self._loop.call_soon_threadsafe(
+                        self._complete_future, result)
+
             except Exception as e:
                 logger.error(f"BrainBridge Listener Error: {e}")
                 time.sleep(1)
@@ -133,50 +139,31 @@ class BrainBridge:
             if result.success:
                 future.set_result(result.data)
             else:
-                # return error as dict if expected, or raise exception?
-                # The existing code expects dict return for errors often.
-                # Let's standardize on returning exceptions implies failure logic upstream.
-                # BUT existing logic handled `{"error": ...}` return values in many cases.
-                # Let's verify callers.
-                # train_async returns Dict. If error, returns {"error": ...}
-                pass
-                # Actually, Future should hold the result.
-                # If the worker returned an error object/string in data, we pass it?
-                # No, BridgeResult has .error field.
-                
-                # If it's a "soft" error, maybe we should resolve with the error dict if that is the contract.
-                # Legacy code returned {"error": str(e)}.
-                # So we can construct that here if needed, or raise.
-                # Let's raise Exception, and catch in _submit wrapper?
-                # Or just resolve with error dict?
-                # Let's try to mimic legacy:
-                # If result.error is present, return {"error": result.error} (?)
-                # Wait, acts return dict. Train returns dict.
-                # But encode returns ndarray.
-                
-                # I should handle this in the specific methods or here.
-                # Simpler: raise Exception from Future, and let methods catch and format.
                 future.set_exception(RuntimeError(result.error))
 
     def _submit(self, type: str, payload: Any) -> asyncio.Future:
         """Internal submit helper."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            loop = asyncio.get_running_loop()
+            self._loop = loop
         if not self._initialized or self._task_queue is None:
-            f = self._loop.create_future()
+            f = loop.create_future()
             f.set_exception(RuntimeError("BrainBridge not initialized"))
             return f
 
         task_id = str(uuid.uuid4())
         task = BridgeTask(id=task_id, type=type, payload=payload)
-        
-        future = self._loop.create_future()
+
+        future = loop.create_future()
         self._futures[task_id] = future
-        
+
         try:
             self._task_queue.put(task)
         except Exception as e:
             del self._futures[task_id]
             future.set_exception(e)
-            
+
         return future
 
     # --- Public API (Matches Legacy Interface) ---
@@ -216,14 +203,16 @@ class BrainBridge:
             return await self._submit("ENCODE", obs.features_vector)
         except Exception as e:
             logger.error(f"encode_async failed: {e}")
-            return np.zeros(self.config.vae.latent_dim, dtype=np.float32)
+            raise RuntimeError(
+                "BrainBridge encode failed; no synthetic latent produced") from e
 
     async def act_async(self, z: np.ndarray) -> Dict[str, Any]:
         try:
             return await self._submit("ACT", z)
         except Exception as e:
             logger.error(f"act_async failed: {e}")
-            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0, "error": str(e)}
+            raise RuntimeError(
+                "BrainBridge act failed; no synthetic FLAT action produced") from e
 
     async def reset_sequence_state_async(self, reason: str = "manual") -> Dict[str, Any]:
         try:
@@ -235,30 +224,34 @@ class BrainBridge:
     async def save_async(self, path: str) -> bool:
         try:
             return await self._submit("SAVE", str(path))
-        except Exception:
+        except Exception as e:
+            logger.error("save_async failed: %s", e, exc_info=True)
             return False
 
     async def load_async(self, path: str) -> bool:
         try:
             return await self._submit("LOAD", str(path))
-        except Exception:
+        except Exception as e:
+            logger.error("load_async failed: %s", e, exc_info=True)
             return False
 
     def shutdown(self):
         logger.info("Shutting down BrainBridge...")
         self._shutdown_event.set()
         self._initialized = False
-        
+
         if self._task_queue:
             try:
-                self._task_queue.put(BridgeTask(id="SHUTDOWN", type="SHUTDOWN", payload=None))
-            except Exception:
-                pass
-                
+                self._task_queue.put(BridgeTask(
+                    id="SHUTDOWN", type="SHUTDOWN", payload=None))
+            except Exception as e:
+                logger.debug(
+                    "BrainBridge shutdown signal failed: %s", e, exc_info=True)
+
         # Wait logic?
         if self._listener_thread:
             self._listener_thread.join(timeout=1.0)
-            
+
         self._kill()
         logger.info("BrainBridge shutdown complete")
 
@@ -269,9 +262,8 @@ class BrainBridge:
                 self._process.terminate()
                 self._process.join(timeout=1.0)
             self._process = None
-        
+
         # Close queues?
         # In python mp.Queue, strict cleanup is tricky, but letting GC handle it usually works if process dead.
         self._task_queue = None
         self._result_queue = None
-

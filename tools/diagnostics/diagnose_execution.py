@@ -30,8 +30,7 @@ def test_guardian_config():
             try:
                 from apps.reference.domains.execution_position.infra.ledger_store_adapter import LedgerStoreAdapter
 
-                impl = getattr(og, "_impl", None)
-                store = getattr(impl, "store", None)
+                store = getattr(og, "store", None)
                 if isinstance(store, LedgerStoreAdapter):
                     db_path = getattr(store.ledger, "db_path", "UNKNOWN")
                 else:

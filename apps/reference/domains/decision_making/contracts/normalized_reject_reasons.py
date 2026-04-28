@@ -190,7 +190,8 @@ def normalize_trade_intent_rejected_payload(
     if side is not None:
         normalized["side"] = side
 
-    rid = _first_payload_text(raw, "rid") or _stringify_payload_value(fallback_rid)
+    rid = _first_payload_text(
+        raw, "rid") or _stringify_payload_value(fallback_rid)
     if rid is not None:
         normalized["rid"] = rid
 
@@ -334,6 +335,8 @@ class NormalizedRejectReasons:
     MICROSTRUCTURE_VETO = "NRR-060"
     # Regime loss embargo: shared entry gate block
     REGIME_LOSS_EMBARGO_BLOCKED = "NRR-061"
+    # LVC-2: LOW_VOLATILITY fee-adjusted entry gate
+    LOW_VOL_COST_FLOOR_BLOCKED = "NRR-062"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex normalization is intentionally partial: not every NRR constant is
@@ -554,6 +557,8 @@ class NormalizedRejectReasons:
             "NRR-LIQUIDITY-GATE-BLOCKED": cls.LIQUIDITY_LOW,
             "NRR-LIQUIDITY-NOT-READY": cls.LIQUIDITY_NOT_READY,
             "NRR-REGIME-UNSUPPORTED": cls.REGIME_UNSUPPORTED,
+            "LOW_VOL_COST_FLOOR_BLOCKED": cls.LOW_VOL_COST_FLOOR_BLOCKED,
+            "LOW_VOL_COST_FLOOR": cls.LOW_VOL_COST_FLOOR_BLOCKED,
         }
         for short_code, nrr_code in short_code_map.items():
             if raw_upper == short_code or raw_upper.startswith(short_code + ":") or raw_upper.startswith(short_code + " "):
@@ -632,6 +637,7 @@ class NormalizedRejectReasons:
             cls.EXPOSURE_CACHE_UNAVAILABLE: "Exposure cache missing/stale/error (fail-closed)",
             cls.CONFIG_SAFETY_GATES_MISSING: "Strategy safety_gates.enabled config missing (fail-closed)",
             cls.REGIME_LOSS_EMBARGO_BLOCKED: "Symbol is blocked by the regime loss embargo policy",
+            cls.LOW_VOL_COST_FLOOR_BLOCKED: "LOW_VOL entry blocked by the fee-adjusted cost-floor gate",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

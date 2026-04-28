@@ -5,8 +5,10 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-REGISTRY_PATH = PROJECT_ROOT / "apps" / "reference" / "dictionaries" / "verb_registry_v1.yaml"
-DOMAIN_DICT_PATH = PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position" / "domain_dict.json"
+REGISTRY_PATH = PROJECT_ROOT / "apps" / "reference" / \
+    "dictionaries" / "verb_registry_v1.yaml"
+DOMAIN_DICT_PATH = PROJECT_ROOT / "apps" / "reference" / \
+    "domains" / "execution_position" / "domain_dict.json"
 
 SIDECAR_EVENT_VERBS = {
     "POSITION_POLICY_SIDECAR_MODE_ACTIVE": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_mode_active_v1.json",
@@ -22,9 +24,31 @@ SIDECAR_COMMAND_VERBS = {
     "POSITION_POLICY_SIDECAR_CLOSE_REQUEST": "apps/reference/domains/execution_position/schemas/cmd_position_policy_sidecar_close_request_v1.json",
 }
 
+MODE_ACTIVE_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "position_policy_sidecar_mode_active_v1.json"
+)
+EVALUATED_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "position_policy_sidecar_evaluated_v1.json"
+)
+SCORES_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "position_policy_sidecar_scores_v1.json"
+)
+SUPPRESSED_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "position_policy_sidecar_suppressed_v1.json"
+)
+RECOMMENDED_SCHEMA_PATH = (
+    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
+    / "schemas" / "position_policy_sidecar_recommended_v1.json"
+)
+
 
 def test_position_policy_sidecar_verbs_are_registered_with_schema_paths() -> None:
-    registry = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))["registry"]
+    registry = yaml.safe_load(
+        REGISTRY_PATH.read_text(encoding="utf-8"))["registry"]
     by_op_verb = {(entry["op"], entry["verb"]): entry for entry in registry}
 
     for verb, schema_path in SIDECAR_EVENT_VERBS.items():
@@ -43,7 +67,8 @@ def test_position_policy_sidecar_verbs_are_registered_with_schema_paths() -> Non
 def test_execution_position_domain_dict_exports_sidecar_events_and_self_imports() -> None:
     domain_dict = json.loads(DOMAIN_DICT_PATH.read_text(encoding="utf-8"))
 
-    imports = {(row["event_name"], row["source_domain"]) for row in domain_dict["imports"]}
+    imports = {(row["event_name"], row["source_domain"])
+               for row in domain_dict["imports"]}
     exports = {row["event_name"] for row in domain_dict["exports"]}
     components = set(domain_dict["components"])
 
@@ -67,6 +92,116 @@ CLOSE_REQUEST_SCHEMA_PATH = (
     PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
     / "schemas" / "cmd_position_policy_sidecar_close_request_v1.json"
 )
+
+
+def _sidecar_config_snapshot() -> dict:
+    return {
+        "mode": "shadow",
+        "peak_giveback_close": {
+            "enabled": True,
+            "edge_arm_usd": 25.0,
+            "giveback_trigger_pct": 50.0,
+        },
+        "freshness": {
+            "portfolio_max_age_ms": 15_000,
+            "features_max_age_ms": 15_000,
+            "regime_max_age_ms": 15_000,
+            "order_state_max_age_ms": 15_000,
+        },
+        "source_config_path": "config/aurora/domains.yaml",
+    }
+
+
+def _peak_giveback_snapshot(*, null_economics: bool = False) -> dict:
+    snapshot = {
+        "policy_enabled": True,
+        "mark_price": 110.0,
+        "entry_price": 100.0,
+        "position_qty": 1.0,
+        "side": "BUY",
+        "unrealized_pnl_usdt": 10.0,
+        "unrealized_pnl_pct": 10.0,
+        "peak_edge_usd": 30.0,
+        "current_edge_usd": 10.0,
+        "giveback_pct": 66.6666666667,
+        "is_armed": True,
+        "arm_threshold_usd": 25.0,
+        "giveback_trigger_pct": 50.0,
+        "threshold_crossed": True,
+        "peak_giveback_state": "peak_giveback_threshold_met",
+        "reason_codes": ["peak_giveback_armed", "peak_giveback_threshold_met"],
+        "null_reasons": {},
+    }
+    if null_economics:
+        snapshot.update(
+            {
+                "mark_price": None,
+                "unrealized_pnl_usdt": None,
+                "unrealized_pnl_pct": None,
+                "current_edge_usd": None,
+                "giveback_pct": None,
+                "threshold_crossed": None,
+                "peak_giveback_state": "peak_giveback_unavailable_economics_missing",
+                "reason_codes": ["peak_giveback_unavailable_economics_missing"],
+                "null_reasons": {
+                    "mark_price": "missing_mark_price",
+                    "unrealized_pnl_usdt": "missing_unrealized_pnl_usdt",
+                    "unrealized_pnl_pct": "missing_unrealized_pnl_pct",
+                    "current_edge_usd": "missing_unrealized_pnl_usdt",
+                    "giveback_pct": "missing_current_edge_usd",
+                    "threshold_crossed": "threshold_not_evaluable",
+                },
+            }
+        )
+    return snapshot
+
+
+def _policy_payload(*, event_type: str) -> dict:
+    payload = {
+        "ts_ms": 1_700_000_000_000,
+        "trace_id": "pps:BTCUSDT:1:1",
+        "symbol": "BTCUSDT",
+        "sidecar_version": "1.0.0",
+        "mode": "shadow",
+        "evaluation_mode": "bounded_soft_close_policy",
+        "event_type": event_type,
+        "reason_codes": ["trigger:portfolio_state_updated", "peak_giveback_not_armed_below_edge"],
+        "position_snapshot": {"symbol": "BTCUSDT"},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {"portfolio_fresh": True, "features_fresh": True, "regime_fresh": True},
+        "peak_giveback_snapshot": _peak_giveback_snapshot(null_economics=True),
+    }
+    if event_type in {
+        "POSITION_POLICY_SIDECAR_SCORES",
+        "POSITION_POLICY_SIDECAR_EVALUATED",
+        "POSITION_POLICY_SIDECAR_RECOMMENDED",
+    }:
+        payload["score_snapshot"] = {"soft_close_pressure": 0.25}
+    if event_type == "POSITION_POLICY_SIDECAR_SUPPRESSED":
+        payload["suppression_reason"] = "portfolio_stale"
+        payload["score_snapshot"] = {"soft_close_pressure": 0.25}
+    if event_type == "POSITION_POLICY_SIDECAR_RECOMMENDED":
+        payload["policy_source"] = "position_policy_sidecar:peak_giveback"
+    return payload
+
+
+def _mode_active_payload() -> dict:
+    return {
+        "ts_ms": 1_700_000_000_000,
+        "trace_id": "pps:__DOMAIN__:1:1",
+        "symbol": "__DOMAIN__",
+        "sidecar_version": "1.0.0",
+        "mode": "shadow",
+        "evaluation_mode": "bounded_soft_close_policy",
+        "event_type": "POSITION_POLICY_SIDECAR_MODE_ACTIVE",
+        "reason_codes": ["sidecar_initialized"],
+        "position_snapshot": {},
+        "feature_ref": {},
+        "regime_ref": {},
+        "freshness_snapshot": {},
+        "sidecar_config_snapshot": _sidecar_config_snapshot(),
+    }
 
 
 def _close_request_payload(*, policy_source: str = "position_policy_sidecar") -> dict:
@@ -94,7 +229,28 @@ def _close_request_payload(*, policy_source: str = "position_policy_sidecar") ->
         "freshness_snapshot": {},
         "fill_correlation": {},
         "portfolio_correlation": {},
+        "peak_giveback_snapshot": _peak_giveback_snapshot(),
     }
+
+
+def test_mode_active_payload_conforms_to_schema_with_sidecar_config_snapshot() -> None:
+    import jsonschema
+
+    schema = json.loads(MODE_ACTIVE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    jsonschema.validate(_mode_active_payload(), schema)
+
+
+def test_sidecar_policy_payloads_conform_to_schema_with_peak_giveback_snapshot() -> None:
+    import jsonschema
+
+    for schema_path, event_type in (
+        (EVALUATED_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_EVALUATED"),
+        (SCORES_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_SCORES"),
+        (SUPPRESSED_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_SUPPRESSED"),
+        (RECOMMENDED_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_RECOMMENDED"),
+    ):
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        jsonschema.validate(_policy_payload(event_type=event_type), schema)
 
 
 def test_close_request_payload_conforms_to_schema_base_source() -> None:
@@ -111,8 +267,25 @@ def test_close_request_payload_conforms_to_schema_peak_giveback_source() -> None
     import jsonschema
 
     schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
-    payload = _close_request_payload(policy_source="position_policy_sidecar:peak_giveback")
+    payload = _close_request_payload(
+        policy_source="position_policy_sidecar:peak_giveback")
     jsonschema.validate(payload, schema)  # must not raise
+
+
+def test_close_request_schema_rejects_peak_giveback_snapshot_without_null_reasons() -> None:
+    import jsonschema
+
+    schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+    payload = _close_request_payload(
+        policy_source="position_policy_sidecar:peak_giveback")
+    del payload["peak_giveback_snapshot"]["null_reasons"]
+
+    try:
+        jsonschema.validate(payload, schema)
+        raise AssertionError(
+            "Schema should reject peak_giveback_snapshot without null_reasons")
+    except jsonschema.ValidationError:
+        pass
 
 
 def test_close_request_schema_rejects_invalid_policy_source() -> None:
@@ -125,6 +298,7 @@ def test_close_request_schema_rejects_invalid_policy_source() -> None:
         payload = _close_request_payload(policy_source=bad_source)
         try:
             jsonschema.validate(payload, schema)
-            raise AssertionError(f"Schema should reject policy_source={bad_source!r}")
+            raise AssertionError(
+                f"Schema should reject policy_source={bad_source!r}")
         except jsonschema.ValidationError:
             pass  # expected

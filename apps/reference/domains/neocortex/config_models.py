@@ -27,39 +27,45 @@ class SystemConfig(BaseModel):
 
     # Paths
     data_dir: Path = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         description="Directory for logs, checkpoints, embeddings"
     )
     checkpoint_dir: Path = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         description="Model checkpoint storage"
     )
 
     # Multiprocessing
     brain_workers: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=8,
         description="Number of brain worker processes for ML inference"
     )
     queue_maxsize: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=10, le=10000,
         description="Max size of inter-process queues"
     )
 
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         description="Logging verbosity"
     )
     log_to_file: bool = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         description="Whether to write logs to file"
     )
 
     # Run Mode
     run_mode: Literal["live", "backtest"] = Field(
-        default="backtest",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Execution mode: 'live' (real logs) or 'backtest' (historical/simulated logs)"
     )
 
     # Reproducibility
     rng_seed: int = Field(
-        default=DEFAULT_RNG_SEED,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0,
         description="Global RNG seed for reproducible runs"
     )
@@ -82,49 +88,55 @@ class IngestConfig(BaseModel):
 
     # Feature selection
     feature_list: List[str] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         min_length=1,
         description="Ordered list of features to ingest from EVT:FEATURES_CALCULATED"
     )
 
     # Normalization (NO DEFAULTS - must be explicitly chosen)
     normalization_method: Literal["zscore", "minmax", "robust"] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Feature scaling method"
     )
     normalization_window: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=10, le=10000,
         description="Rolling window size for normalization statistics"
     )
     normalization_scope: Literal["global", "per_symbol"] = Field(
-        default="per_symbol",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Normalization scope for running statistics."
     )
     price_feature_mode: Literal["raw", "log", "drop"] = Field(
-        default="log",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="How to represent `price` for ML input."
     )
     delta_price_mode: Literal["raw", "pct"] = Field(
-        default="pct",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="How to represent `delta_price` for ML input."
     )
     feature_clip_abs: Dict[str, float] = Field(
-        default_factory=dict,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Optional per-feature absolute clipping bounds before normalization."
     )
 
     # Buffering
     buffer_size: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=100, le=100000,
         description="Max observations to keep in memory buffer"
     )
 
     # Timestep handling
     min_samples_before_ready: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="Minimum samples required before marking ingest as 'ready'"
     )
 
     # Robustness
     nan_strategy: Literal["zero", "ignore", "ffill"] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Strategy for handling NaN/None values in features"
     )
 
@@ -177,83 +189,95 @@ class VAEConfig(BaseModel):
             model_config = ConfigDict(extra='forbid', frozen=True)
 
             start: float = Field(
-                default=0.5,
+                json_schema_extra={"default_class": "runtime_behavior"},
                 ge=0.0, le=50.0,
                 description="Initial alpha value at step 0."
             )
             end: float = Field(
-                default=2.0,
+                json_schema_extra={"default_class": "runtime_behavior"},
                 ge=0.0, le=50.0,
                 description="Final alpha value after `steps` updates."
             )
             steps: int = Field(
-                default=10000,
+                json_schema_extra={"default_class": "runtime_behavior"},
                 ge=1, le=10_000_000,
                 description="Number of update steps for linear interpolation."
             )
 
         enabled: bool = Field(
-            default=False,
+            json_schema_extra={"default_class": "runtime_behavior"},
             description="Enable auxiliary regime-classification head on latent mean."
         )
         alpha: float = Field(
+            json_schema_extra={"default_class": "structural_safe"},
             default=0.2,
             ge=0.0, le=10.0,
             description="Auxiliary CE weight in total VAE loss."
         )
         num_classes: int = Field(
+            json_schema_extra={"default_class": "structural_safe"},
             default=5,
             ge=2, le=64,
             description="Number of classes for auxiliary regime supervision."
         )
         ema_decay: float = Field(
+            json_schema_extra={"default_class": "structural_safe"},
             default=0.99,
             ge=0.0, lt=1.0,
             description="EMA decay for dynamic class-frequency tracking."
         )
         alpha_schedule: Optional[AlphaScheduleConfig] = Field(
+            json_schema_extra={"default_class": "structural_safe"},
             default=None,
             description="Optional linear schedule for auxiliary alpha."
         )
 
     # Architecture (NO DEFAULTS)
     input_dim: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="Input feature dimension (must match len(feature_list))"
     )
     hidden_dims: List[int] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         min_length=1,
         description="Encoder/decoder hidden layer sizes, e.g. [128, 64]"
     )
     latent_dim: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=2, le=512,
         description="Latent space dimensionality"
     )
 
     # Training
     learning_rate: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.1,
         description="Adam optimizer learning rate"
     )
     beta: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=10.0,
         description="KL divergence weight in VAE loss"
     )
     free_bits_per_dim: float = Field(
-        default=0.0,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, le=10.0,
         description="Per-dimension free-bits floor for KL regularization."
     )
     batch_size: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=1024,
         description="Training batch size"
     )
 
     # Inference
     use_mean: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Whether to use mean (True) or sample (False) during encoding"
     )
     regime_aux: RegimeAuxConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=RegimeAuxConfig,
         description="Auxiliary latent supervision settings."
     )
@@ -266,24 +290,29 @@ class WorldModelConfig(BaseModel):
 
     # Architecture
     hidden_dim: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=16, le=2048,
         description="RNN hidden state dimension"
     )
     num_layers: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=8,
         description="Number of RNN layers"
     )
     dropout: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, le=0.9,
         description="RNN dropout probability"
     )
 
     # Training
     learning_rate: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.01,
         description="Adam optimizer learning rate"
     )
     sequence_length: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=2, le=512,
         description="Training sequence length (BPTT)"
     )
@@ -295,14 +324,17 @@ class PPOEntropyScheduleConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     start: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, le=0.5,
         description="Initial entropy coefficient"
     )
     end: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, le=0.5,
         description="Final entropy coefficient"
     )
     total_steps: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=10_000_000,
         description="Number of update steps over which to linearly decay"
     )
@@ -324,12 +356,12 @@ class PPONumericalSafetyConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     gradient_clip_threshold: float = Field(
-        default=1.0,
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=10.0,
         description="Gradient norm threshold used by numerical safety validator"
     )
     on_invalid: Literal["zero_grads", "skip_step", "sanitize"] = Field(
-        default="sanitize",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Recovery strategy for invalid gradients"
     )
 
@@ -341,31 +373,34 @@ class PPOConfig(BaseModel):
 
     # Network architecture (NO DEFAULTS)
     state_dim: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="State dimension (typically VAE latent_dim + market context)"
     )
     action_dim: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="Action space dimension (3 for [LONG, SHORT, FLAT] or 5 for regime oracle)"
     )
     hidden_dims: List[int] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         min_length=1,
         description="Policy/Value network hidden layers, e.g. [256, 128]"
     )
 
     # Reward mode: pnl (legacy) or regime_oracle (REGIME_PIVOT_PLAN)
     reward_mode: Literal["pnl", "regime_oracle"] = Field(
-        default="pnl",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Reward source: 'pnl' (trade PnL) or 'regime_oracle' (self-supervised regime prediction)"
     )
     objective_split_enforced: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Reject mixed objective families and enforce explicit routing for regime, execution, and policy samples"
     )
     policy_training_mode: Literal["disabled", "execution_only"] = Field(
-        default="disabled",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
-            "Policy training contour after objective split. "
+            "Whether PPO policy is enabled for training.\n"
             "'disabled' fail-closes policy training until a clean PolicySample producer exists. "
             "'execution_only' allows only explicit policy-family samples."
         )
@@ -373,52 +408,60 @@ class PPOConfig(BaseModel):
 
     # Training
     learning_rate: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.01,
         description="Adam optimizer learning rate"
     )
     gamma: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=1.0,
         description="Discount factor for future rewards"
     )
     gae_lambda: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=1.0,
         description="GAE lambda for advantage estimation"
     )
     clip_epsilon: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.5,
         description="PPO clipping epsilon"
     )
 
     # Entropy bonus coefficient (prevents policy collapse)
     entropy_coef: float = Field(
-        default=0.01,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, le=0.5,
         description="Entropy bonus coefficient. Higher values encourage exploration and prevent mode collapse"
     )
     entropy_schedule: Optional[PPOEntropyScheduleConfig] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="Optional linear schedule for entropy_coef"
     )
     max_grad_norm: float = Field(
-        default=0.5,
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=10.0,
         description="Gradient clipping norm passed to PPO updater"
     )
     numerical_safety: PPONumericalSafetyConfig = Field(
-        default_factory=PPONumericalSafetyConfig,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Numerical safety settings passed into PPO SafetyConfig"
     )
 
     # Rollout
     rollout_length: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=10000,
         description="Steps to collect before policy update"
     )
     num_epochs: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100,
         description="Optimization epochs per rollout"
     )
     minibatch_size: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=1024,
         description="Minibatch size for PPO updates"
     )
@@ -430,35 +473,35 @@ class SequenceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     inference_mode: Literal["stateless_per_event"] = Field(
-        default="stateless_per_event",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
-            "Inference-time recurrent contract. "
+            "How sequences are processed at inference time.\n"
             "'stateless_per_event' resets hidden state before every event to forbid cross-symbol "
             "and cross-objective leakage until a clean per-stream sequence owner exists."
         ),
     )
     representation_training_mode: Literal["independent_rows"] = Field(
-        default="independent_rows",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
-            "Representation training contract. "
+            "How representation learning is batched.\n"
             "'independent_rows' forbids treating arbitrary recent batches as one temporal sequence "
             "until explicit sequence-owner metadata exists."
         ),
     )
     reset_on_replay_start: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Reset sequence state deterministically at replay/adapter start."
     )
     reset_on_symbol_switch: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Symbol switches are reset-worthy boundaries under the canonical sequence contract."
     )
     reset_on_objective_family_switch: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Objective-family switches are reset-worthy boundaries under the canonical sequence contract."
     )
     reset_on_episode_boundary: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Episode/lifecycle terminal boundaries are reset-worthy under the canonical sequence contract."
     )
 
@@ -469,19 +512,19 @@ class DatasetSplitConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     train_ratio: float = Field(
-        default=0.7,
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, lt=1.0,
-        description="Fraction of trainable samples assigned to the train split."
+        description="Ratio of data for training set"
     )
     val_ratio: float = Field(
-        default=0.15,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, lt=1.0,
-        description="Fraction of trainable samples assigned to the validation split."
+        description="Ratio of data for validation set"
     )
     test_ratio: float = Field(
-        default=0.15,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.0, lt=1.0,
-        description="Fraction of trainable samples assigned to the test split."
+        description="Ratio of data for testing set"
     )
 
     @model_validator(mode="after")
@@ -498,12 +541,12 @@ class DatasetConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     manifest_version: int = Field(
-        default=1,
+        json_schema_extra={"default_class": "structural_safe"},
         ge=1,
         description="Dataset manifest schema version."
     )
     split: DatasetSplitConfig = Field(
-        default_factory=DatasetSplitConfig,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Deterministic split-by-time configuration."
     )
 
@@ -514,7 +557,7 @@ class PerformanceConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     operating_mode: Literal["live_shadow", "offline_replay"] = Field(
-        default="offline_replay",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
             "Operating shape for hot-path behavior. "
             "'live_shadow' prioritizes low-latency observational fidelity with no decimation. "
@@ -522,7 +565,7 @@ class PerformanceConfig(BaseModel):
         ),
     )
     shadow_intent_emit_policy: Literal["emit_all", "decimate_observational"] = Field(
-        default="decimate_observational",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
             "Policy for non-critical shadow observational outputs. "
             "'emit_all' keeps every shadow output. "
@@ -530,40 +573,40 @@ class PerformanceConfig(BaseModel):
         ),
     )
     shadow_intent_decimation_stride: int = Field(
-        default=10,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100000,
         description="Deterministic stride for observational shadow decimation in offline replay."
     )
     shadow_jsonl_write_policy: Literal["immediate", "buffered"] = Field(
-        default="buffered",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Write policy for non-critical shadow JSONL observational logs."
     )
     telemetry_write_policy: Literal["immediate", "buffered"] = Field(
-        default="buffered",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Write policy for non-critical telemetry CSV rows."
     )
     non_critical_queue_limit: int = Field(
-        default=2048,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100000,
         description="Max buffered non-critical rows before explicit overflow policy applies."
     )
     shadow_log_flush_threshold: int = Field(
-        default=64,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100000,
         description="Buffered shadow JSONL rows before flush."
     )
     telemetry_flush_threshold: int = Field(
-        default=64,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100000,
         description="Buffered telemetry rows before flush."
     )
     flush_interval_ms: int = Field(
-        default=1000,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=600000,
         description="Time-based flush cadence for buffered non-critical outputs."
     )
     non_critical_overflow_policy: Literal["drop_oldest", "drop_newest"] = Field(
-        default="drop_oldest",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Explicit overflow policy for non-critical observational buffers."
     )
 
@@ -587,25 +630,25 @@ class EvaluationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     report_version: int = Field(
-        default=1,
+        json_schema_extra={"default_class": "structural_safe"},
         ge=1,
         description="Machine-readable evaluator report version."
     )
     calibration_bins: int = Field(
-        default=5,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100,
         description="Number of equal-width confidence bins for calibration reports."
     )
     confidence_bucket_edges: List[float] = Field(
-        default_factory=lambda: [0.25, 0.50, 0.75, 0.90],
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Strictly increasing confidence bucket edges used by disagreement reporting."
     )
     missing_confidence_policy: Literal["not_available"] = Field(
-        default="not_available",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Missing or unsupported confidence signals must produce an explicit not_available calibration report."
     )
     advisory_status: Literal["forbidden"] = Field(
-        default="forbidden",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="P9 is evaluation-only; advisory remains forbidden."
     )
 
@@ -635,12 +678,12 @@ class ShadowGateConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     gate_set_version: int = Field(
-        default=1,
+        json_schema_extra={"default_class": "structural_safe"},
         ge=1,
         description="Machine-readable production-shadow gate set version."
     )
     startup_enforcement: Literal["strict", "report_only"] = Field(
-        default="strict",
+        json_schema_extra={"default_class": "runtime_behavior"},
         description=(
             "Startup gate enforcement mode. "
             "'strict' blocks startup on any blocking gate failure. "
@@ -648,19 +691,19 @@ class ShadowGateConfig(BaseModel):
         ),
     )
     allow_advisory_influence: bool = Field(
-        default=False,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Forbidden in production shadow. Must remain false until a future advisory-hardening package."
     )
     allow_live_authority: bool = Field(
-        default=False,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Forbidden in production shadow. Must remain false."
     )
     allow_policy_training_reenable: bool = Field(
-        default=False,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Forbidden in production shadow. Policy training stays blocked until a future package re-opens it."
     )
     require_domain_manifest_contracts: bool = Field(
-        default=True,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Require domain.yaml to expose the canonical contract sections needed for production shadow."
     )
 
@@ -670,43 +713,53 @@ class NeuroConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    vae: VAEConfig
-    world_model: WorldModelConfig
-    ppo: PPOConfig
+    vae: VAEConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"})
+    world_model: WorldModelConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"})
+    ppo: PPOConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"})
     sequence: SequenceConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=SequenceConfig,
         description="Canonical sequence semantics configuration."
     )
     dataset: DatasetConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=DatasetConfig,
         description="Canonical dataset hygiene / provenance configuration."
     )
     evaluation: EvaluationConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=EvaluationConfig,
         description="Offline evaluator / calibration / disagreement configuration."
     )
     performance: PerformanceConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=PerformanceConfig,
         description="Performance/replay operating contract."
     )
     shadow_gates: ShadowGateConfig = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default_factory=ShadowGateConfig,
         description="Production-shadow startup/runtime gate configuration."
     )
 
     # Checkpointing (NO DEFAULTS)
     checkpoint_every_n_steps: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="Save model checkpoint every N steps"
     )
     keep_last_n_checkpoints: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=100,
         description="Number of recent checkpoints to retain"
     )
 
     # Dream / PPO Training Trigger
     dream_episode_threshold: int = Field(
-        default=1,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1,
         description="Number of completed episodes before triggering PPO training. 1=immediate (backtest), 10+=batched (prod)"
     )
@@ -722,6 +775,7 @@ class ReplayConfig(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     enabled: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Enable data ingestion"
     )
 
@@ -729,14 +783,17 @@ class ReplayConfig(BaseModel):
     # Phase 6: WAL Tailing (legacy)
     # =========================================================================
     wal_dir: Path = Field(
+        json_schema_extra={"default_class": "legacy_compat"},
         default=Path("ops/wal"),
         description="Directory containing WAL files (Phase 6)"
     )
     wal_glob: str = Field(
+        json_schema_extra={"default_class": "legacy_compat"},
         default="",
         description="DEPRECATED: Use wal_dir instead."
     )
     filter_verb: str = Field(
+        json_schema_extra={"default_class": "legacy_compat"},
         default="FEATURES_CALCULATED",
         description="Event verb to filter for in WAL (Phase 6)"
     )
@@ -745,18 +802,22 @@ class ReplayConfig(BaseModel):
     # Phase 7: Multi-Source Ingestion
     # =========================================================================
     features_dir: Optional[Path] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="Directory with feature logs per symbol (Phase 7)"
     )
     orders_file: Optional[Path] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="Path to order log JSONL file (Phase 7)"
     )
     core_log: Optional[Path] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="Path to aurora_core.log for rewards (Phase 7)"
     )
     symbols: Optional[List[str]] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="List of symbols to monitor (Phase 7)"
     )
@@ -765,31 +826,36 @@ class ReplayConfig(BaseModel):
     # Common Settings
     # =========================================================================
     batch_size: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         default=100,
         ge=1, le=10000,
         description="Number of events to process before yielding"
     )
     poll_interval: float = Field(
-        default=0.1,
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=0.01, le=10.0,
         description="Seconds to wait when tailing for new data"
     )
     max_feature_lines_total_per_cycle: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         default=1000,
         ge=1, le=100000,
         description="Hard cap of feature lines processed per run-loop cycle"
     )
     max_feature_lines_per_symbol_per_cycle: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         default=200,
         ge=1, le=100000,
         description="Hard cap of feature lines processed per symbol per cycle"
     )
     max_order_lines_per_cycle: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         default=500,
         ge=1, le=100000,
         description="Hard cap of order log lines processed per run-loop cycle"
     )
     max_core_lines_per_cycle: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         default=500,
         ge=1, le=100000,
         description="Hard cap of core log lines processed per run-loop cycle"
@@ -797,15 +863,16 @@ class ReplayConfig(BaseModel):
     feature_missing_timestamp_policy: Literal[
         "fail_closed", "legacy_non_causal_file_offset"
     ] = Field(
-        default="fail_closed",
+        json_schema_extra={"default_class": "structural_safe"},
         description=(
-            "Policy for feature rows without causal timestamps. "
+            "What to do when features lack causal event_ts_ms (Invariant I3).\n"
             "'fail_closed' rejects the row. "
             "'legacy_non_causal_file_offset' synthesizes deterministic non-causal "
             "event_ts_ms from explicit replay config for compatibility only."
         ),
     )
     legacy_feature_base_ts_ms: Optional[int] = Field(
+        json_schema_extra={"default_class": "legacy_compat"},
         default=None,
         ge=1,
         description=(
@@ -862,6 +929,7 @@ class OracleConfig(BaseModel):
 
     # Look-ahead horizon
     horizon_bars: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=1, le=50,
         description="Number of bars into the future to evaluate predictions (5 bars = 25min on 5m TF)"
     )
@@ -872,56 +940,134 @@ class OracleConfig(BaseModel):
     #   ema_bias = [0,1] centered at 0.5 (labeler re-centers to 0)
     #   volatility_state = [0,1] where 0=calm, 1=high vol
     high_vol_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=1.0,
         description="volatility_state(t+H) above which HIGH_VOLATILITY is labeled"
     )
     exhaustion_vol_now_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=1.0,
         description="volatility_state(t) above which vol is considered 'was high' for exhaustion"
     )
     exhaustion_vol_future_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=1.0,
         description="volatility_state(t+H) below which vol is considered 'collapsed' for exhaustion"
     )
     trend_delta_pct_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.1,
         description="delta_price/price above which trend is detected (e.g. 0.0003 = 0.03%)"
     )
     trend_ema_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.1,
         description="(ema_bias - 0.5) above which EMA confirms trend direction"
     )
     mr_delta_pct_threshold: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=0.1,
         description="delta_price/price below which mean-reversion is labeled"
     )
 
     # Reward scaling
     reward_correct: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         gt=0.0, le=10.0,
         description="Reward for correct regime prediction"
     )
     reward_wrong: float = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         ge=-10.0, le=0.0,
         description="Penalty for incorrect regime prediction"
     )
 
     # Formula B toggle
     reward_matrix_enabled: bool = Field(
-        default=False,
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Enable confusion-weighted reward matrix (Formula B). False = use Formula A (exact match)"
     )
 
     # Formula B: explicit reward matrix C[predicted][realized] (5x5)
     reward_matrix: Optional[List[List[float]]] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="5x5 confusion reward matrix. Rows=predicted, Cols=realized. Required when reward_matrix_enabled=True"
     )
 
     # Class weights to counteract label imbalance
     class_weights: Dict[str, float] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
         description="Per-action class weights (action_name -> weight). Rare regimes get higher weight"
     )
+
+
+# =============================================================================
+# AUTHORITY CONFIGURATION (06 §6.2 mandatory keys)
+# =============================================================================
+
+class AuthorityConfig(BaseModel):
+    """Neocortex Authority Seam configuration (Phase 5 consumer: NeocortexAuthorityBridge).
+
+    All fields are runtime_behavior and required from YAML.
+    Declared but not consumed until Phase 5.
+    """
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    mode: Literal["shadow", "advisory", "gated"] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Authority operating mode. 'shadow'=observe-only, 'advisory'=influence, 'gated'=hard gate.",
+    )
+    deadline_ms: int = Field(
+        ge=1, le=1000,
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Max milliseconds authority may take before fallback is applied (invariant I6).",
+    )
+    fallback_policy: Literal["baseline_yaml"] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Policy when authority deadline is missed. 'baseline_yaml'=use existing Aurora baseline.",
+    )
+    max_inflight_per_symbol: int = Field(
+        ge=1, le=10,
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Max concurrent authority requests per symbol (invariant I6).",
+    )
+    modulation_allowlist: List[str] = Field(
+        min_length=1,
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Canonical overlay knobs permitted for modulation. Non-empty list.",
+    )
+    signal_threshold_bias_bounds: List[float] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="[min, max] inclusive bounds for signal_threshold_bias overlay.",
+    )
+    cooldown_mult_bounds: List[float] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="[min, max] inclusive bounds for cooldown_mult overlay. min must be > 0.",
+    )
+
+    @model_validator(mode="after")
+    def validate_bounds_contract(self):
+        stb = self.signal_threshold_bias_bounds
+        if len(stb) != 2:
+            raise ValueError(
+                "signal_threshold_bias_bounds must have exactly 2 elements [min, max]")
+        if stb[0] > stb[1]:
+            raise ValueError(
+                "signal_threshold_bias_bounds[0] must be <= signal_threshold_bias_bounds[1]")
+
+        cm = self.cooldown_mult_bounds
+        if len(cm) != 2:
+            raise ValueError(
+                "cooldown_mult_bounds must have exactly 2 elements [min, max]")
+        if cm[0] <= 0:
+            raise ValueError("cooldown_mult_bounds[0] must be > 0")
+        if cm[0] > cm[1]:
+            raise ValueError(
+                "cooldown_mult_bounds[0] must be <= cooldown_mult_bounds[1]")
+
+        return self
 
 
 # =============================================================================
@@ -933,17 +1079,30 @@ class NeocortexConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
+    # §6.2 global kill-switch — separate from authority.mode
+    trust_enabled: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Global Neocortex kill-switch (neocortex.trust_enabled per §6.2). "
+                    "false=authority disabled; fallback=baseline YAML.",
+    )
     system: SystemConfig
     ingest: IngestConfig
     neuro: NeuroConfig
+    # replay is required from YAML (no implicit default — Phase 2 I2)
     replay: ReplayConfig = Field(
-        default_factory=lambda: ReplayConfig(enabled=False),
-        description="Historical WAL replay settings"
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Historical WAL replay / multi-source ingestion settings. Required from YAML."
     )
     oracle: Optional[OracleConfig] = Field(
+        json_schema_extra={"default_class": "structural_safe"},
         default=None,
         description="Regime Oracle reward config (loaded from regime_oracle_reward.yaml). "
                     "Required when neuro.ppo.reward_mode='regime_oracle'"
+    )
+    # §6.2 authority seam config (declared_not_consumed_yet — Phase 5)
+    authority: AuthorityConfig = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Authority seam configuration (§6.2). Consumer: Phase 5 NeocortexAuthorityBridge.",
     )
 
     @field_validator('neuro', mode='after')
@@ -1036,14 +1195,31 @@ def load_config(config_dir: Path) -> NeocortexConfig:
     with open(neuro_path) as f:
         neuro_data = yaml.safe_load(f)
 
-    # Load optional replay config (Phase 6/7 ingestion)
-    replay_path = config_dir / "replay.yaml"
-    replay_data = None
-    if replay_path.exists():
-        with open(replay_path) as f:
-            replay_data = yaml.safe_load(f)
+    # Extract §6.2 top-level keys from system.yaml before passing to SystemConfig.
+    # trust_enabled and authority live in system.yaml but are root-level NeocortexConfig fields.
+    trust_enabled = system_data.pop("trust_enabled", None)
+    authority_data = system_data.pop("authority", None)
 
-    # Load optional oracle config (REGIME_PIVOT_PLAN: regime prediction reward)
+    if trust_enabled is None:
+        raise ValueError(
+            "Missing required key 'trust_enabled' in system.yaml (neocortex.trust_enabled per §6.2)"
+        )
+    if authority_data is None:
+        raise ValueError(
+            "Missing required key 'authority' in system.yaml (neocortex.authority.* per §6.2)"
+        )
+
+    # Load required replay config (Phase 2 I2: no implicit default)
+    replay_path = config_dir / "replay.yaml"
+    if not replay_path.exists():
+        raise FileNotFoundError(
+            f"Missing required replay config: {replay_path}. "
+            "Create replay.yaml with at least 'enabled: false' to satisfy I2."
+        )
+    with open(replay_path) as f:
+        replay_data = yaml.safe_load(f)
+
+    # Load optional oracle config (REGIME_PIVOT_PLAN)
     oracle_path = config_dir / "regime_oracle_reward.yaml"
     oracle_data = None
     if oracle_path.exists():
@@ -1052,12 +1228,13 @@ def load_config(config_dir: Path) -> NeocortexConfig:
 
     # Pydantic validation (fail on extra fields, missing fields, type errors)
     kwargs: dict = {
+        "trust_enabled": trust_enabled,
+        "authority": authority_data,
         "system": system_data,
         "ingest": ingest_data,
         "neuro": neuro_data,
+        "replay": replay_data,
     }
-    if replay_data is not None:
-        kwargs["replay"] = replay_data
     if oracle_data is not None:
         kwargs["oracle"] = oracle_data
 
@@ -1068,7 +1245,7 @@ def load_config(config_dir: Path) -> NeocortexConfig:
 # USAGE EXAMPLE
 # =============================================================================
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     # Example: Load from config directory
     config = load_config(Path(__file__).parent / "config")
     print(f"✓ Config loaded successfully")

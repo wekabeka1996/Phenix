@@ -443,7 +443,7 @@ class ShadowOfflineEvaluator:
         lifecycle_states = Counter(
             str(item.sample.get("lifecycle_state") or "unknown") for item in included
         )
-        diagnostic_categories = Counter()
+        diagnostic_categories: Counter[str] = Counter()
         for item in samples:
             diagnostic_categories.update(item.provenance.exclusion_reasons)
             diagnostic_categories.update(item.provenance.quarantine_reasons)
@@ -539,7 +539,7 @@ class ShadowOfflineEvaluator:
         }
 
     def _symbols_coverage(self, samples: Sequence[DatasetEvaluatedSample]) -> dict[str, int]:
-        counts = Counter()
+        counts: Counter[str] = Counter()
         for item in samples:
             symbol = item.provenance.symbol or item.sample.get("symbol")
             if symbol:

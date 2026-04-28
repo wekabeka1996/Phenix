@@ -6,7 +6,7 @@ Tests specifically targeting how apply_safety_gates() behaves for
 
 AUDIT FINDING: safety_gates.enabled=true causes deterministic DENY
 for LLM signals because:
-  1. regime_confidence=None < min_regime_confidence=0.42 (Gate 1)
+    1. regime_confidence=None < min_regime_confidence=0.45 (Gate 1)
   2. pm_norm_300s=None, require_bleed_ready=true (Gate 3) — secondary
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _make_clock(now_ms: int = 1_700_000_000_000) -> MagicMock:
 
 def _make_config(
     safety_gates_enabled: bool = True,
-    min_regime_confidence: float = 0.42,
+    min_regime_confidence: float = 0.45,
     ds_enabled: bool = True,
     pm_enabled: bool = True,
     require_bleed_ready: bool = True,
@@ -43,6 +43,7 @@ def _make_config(
     sg_cfg.enabled = safety_gates_enabled
     sg_cfg.system_stress_policy = system_stress_policy
     sg_cfg.stress_attenuation_factor = 0.5
+    sg_cfg.regime_confidence = None
     llm_strat = MagicMock()
     llm_strat.safety_gates = sg_cfg
     cfg.strategies.llm_microstructure = llm_strat
@@ -53,6 +54,7 @@ def _make_config(
     ds.min_abs_delta_price = 0.0
     ds.min_confidence = 0.0
     ds.min_regime_confidence = min_regime_confidence
+    ds.min_regime_confidence_by_regime = None
     ds.consecutive_bars = 1
     cfg.domains.decision_making.directional_sanity = ds
 
@@ -76,7 +78,7 @@ def _make_config(
 
 class TestGate1RegimeConfidenceDeny:
     """
-    Proves AUDIT FINDING H2: safety_gates.enabled=true + min_regime_confidence=0.42
+    Proves AUDIT FINDING H2: safety_gates.enabled=true + min_regime_confidence=0.45
     causes deterministic DENY when per_symbol_regimes has no entry for the symbol.
 
     This is the FIRST PROVEN BREAK POINT for the LLM intent path.
@@ -87,7 +89,7 @@ class TestGate1RegimeConfidenceDeny:
 
         config = _make_config(
             safety_gates_enabled=True,
-            min_regime_confidence=0.42,
+            min_regime_confidence=0.45,
         )
         clock = _make_clock()
 
@@ -112,7 +114,7 @@ class TestGate1RegimeConfidenceDeny:
 
         assert result.outcome == "DENY", (
             f"Expected DENY but got {result.outcome!r} (deny_reason={result.deny_reason!r}). "
-            "PRIMARY BREAK POINT: regime_confidence=None < min=0.42 must block LLM signal."
+            "PRIMARY BREAK POINT: regime_confidence=None < min=0.45 must block LLM signal."
         )
         assert result.deny_reason is not None
         assert result.regime_confidence is None, (
@@ -124,12 +126,13 @@ class TestGate1RegimeConfidenceDeny:
 
         config = _make_config(
             safety_gates_enabled=True,
-            min_regime_confidence=0.42,
+            min_regime_confidence=0.45,
         )
         clock = _make_clock()
 
         # Regime exists but confidence is below threshold
-        per_symbol_regimes = {"1000PEPEUSDT": {"regime": "TREND_UP", "confidence": 0.30}}
+        per_symbol_regimes = {"1000PEPEUSDT": {
+            "regime": "TREND_UP", "confidence": 0.30}}
         symbol_states: dict = {}
 
         result = apply_safety_gates(
@@ -147,7 +150,7 @@ class TestGate1RegimeConfidenceDeny:
         )
 
         assert result.outcome == "DENY", (
-            f"Expected DENY for regime_confidence=0.30 < 0.42 but got {result.outcome!r}"
+            f"Expected DENY for regime_confidence=0.30 < 0.45 but got {result.outcome!r}"
         )
 
     def test_safety_gates_disabled_allows_signal(self):
@@ -159,7 +162,7 @@ class TestGate1RegimeConfidenceDeny:
 
         config = _make_config(
             safety_gates_enabled=False,  # <-- the fix
-            min_regime_confidence=0.42,
+            min_regime_confidence=0.45,
         )
         clock = _make_clock()
 
@@ -194,7 +197,7 @@ class TestGate1RegimeConfidenceDeny:
 
 class TestGate3PriceMotionDeny:
     """
-    Proves AUDIT FINDING: even if Gate 1 were bypassed (e.g., regime_confidence >= 0.42),
+    Proves AUDIT FINDING: even if Gate 1 were bypassed (e.g., regime_confidence >= 0.45),
     Gate 3 (price motion) would block the signal because pm_norm_300s=None
     for LLM-only symbols that are not in the aurora feature pipeline.
     """
@@ -211,7 +214,8 @@ class TestGate3PriceMotionDeny:
         clock = _make_clock()
 
         # Provide sufficient regime confidence to pass Gate 1
-        per_symbol_regimes = {"1000PEPEUSDT": {"regime": "TREND_UP", "confidence": 0.90}}
+        per_symbol_regimes = {"1000PEPEUSDT": {
+            "regime": "TREND_UP", "confidence": 0.90}}
 
         # symbol_states has no price_motion data — LLM-only symbol
         symbol_states: dict = {}
@@ -247,7 +251,8 @@ class TestGate3PriceMotionDeny:
             require_bleed_ready=True,
         )
         clock = _make_clock()
-        per_symbol_regimes = {"1000PEPEUSDT": {"regime": "TREND_UP", "confidence": 0.90}}
+        per_symbol_regimes = {"1000PEPEUSDT": {
+            "regime": "TREND_UP", "confidence": 0.90}}
         symbol_states: dict = {}
 
         result = apply_safety_gates(
@@ -280,7 +285,7 @@ class TestLLMSafetyGateSummary:
 
     def test_default_config_blocks_llm_signal(self):
         """
-        With default production config (safety_gates.enabled=true, min_regime_confidence=0.42),
+        With default production config (safety_gates.enabled=true, min_regime_confidence=0.45),
         a synthetic LLM signal for an LLM-only symbol is DENIED at Gate 1.
         This is the root cause identified in the forensic audit.
         """
@@ -288,7 +293,7 @@ class TestLLMSafetyGateSummary:
 
         config = _make_config(
             safety_gates_enabled=True,
-            min_regime_confidence=0.42,
+            min_regime_confidence=0.45,
         )
         result = apply_safety_gates(
             symbol="1000PEPEUSDT",

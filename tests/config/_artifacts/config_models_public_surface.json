@@ -562,7 +562,8 @@
         "hard_veto_consecutive_bars",
         "min_abs_delta_price",
         "min_confidence",
-        "min_regime_confidence"
+        "min_regime_confidence",
+        "min_regime_confidence_by_regime"
       ],
       "kind": "pydantic_model",
       "name": "DirectionalSanityConfig"
@@ -971,6 +972,7 @@
       "fields": [
         "cleanup_ttl_ms",
         "emit_tidy_event",
+        "emit_tidy_monitoring_event",
         "poll_interval_ms",
         "symbol_cooldown_ms",
         "unified"
@@ -1999,6 +2001,13 @@
       "kind": "pydantic_model",
       "name": "ReadinessRegistryConfig"
     },
+    "RegimeConfidenceGateConfig": {
+      "fields": [
+        "min_by_regime"
+      ],
+      "kind": "pydantic_model",
+      "name": "RegimeConfidenceGateConfig"
+    },
     "RegimeDetectorConfig": {
       "fields": [
         "models"
@@ -2194,6 +2203,7 @@
     "SafetyGatesConfig": {
       "fields": [
         "enabled",
+        "regime_confidence",
         "stress_attenuation_factor",
         "system_stress_policy"
       ],

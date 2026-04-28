@@ -22,6 +22,9 @@ from apps.reference.domains.neocortex.config_models import (
     WorldModelConfig,
 )
 from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+)
 from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
 from apps.reference.domains.neocortex.logic.ingest.parsers import (
     parse_core_log_line,
@@ -39,9 +42,21 @@ from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 
 def _full_config(tmp_path: Path) -> NeocortexConfig:
     return NeocortexConfig(
+        trust_enabled=True,
+        authority={
+            "mode": "shadow",
+            "deadline_ms": 50,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["decision_making.signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-0.1, 0.1],
+            "cooldown_mult_bounds": [1.0, 3.0],
+        },
         system=SystemConfig(
             data_dir=str(tmp_path / "data"),
             checkpoint_dir=str(tmp_path / "checkpoints"),
+            run_mode="backtest",
+            rng_seed=42,
             brain_workers=1,
             queue_maxsize=100,
             log_level="INFO",
@@ -51,9 +66,13 @@ def _full_config(tmp_path: Path) -> NeocortexConfig:
             feature_list=["rsi", "obi", "vol"],
             normalization_method="zscore",
             normalization_window=100,
+            normalization_scope="per_symbol",
             buffer_size=1000,
             min_samples_before_ready=1,
             nan_strategy="zero",
+            price_feature_mode="raw",
+            delta_price_mode="raw",
+            feature_clip_abs={},
         ),
         neuro=NeuroConfig(
             vae=VAEConfig(
@@ -62,8 +81,15 @@ def _full_config(tmp_path: Path) -> NeocortexConfig:
                 latent_dim=4,
                 learning_rate=0.001,
                 beta=1.0,
+                free_bits_per_dim=0.0,
                 batch_size=2,
                 use_mean=True,
+                regime_aux={
+                    "enabled": True,
+                    "alpha": 0.2,
+                    "num_classes": 5,
+                    "ema_decay": 0.99,
+                },
             ),
             world_model=WorldModelConfig(
                 hidden_dim=16,
@@ -76,25 +102,75 @@ def _full_config(tmp_path: Path) -> NeocortexConfig:
                 state_dim=8,
                 action_dim=3,
                 hidden_dims=[16],
+                reward_mode="pnl",
+                objective_split_enforced=True,
+                policy_training_mode="disabled",
                 learning_rate=0.001,
                 gamma=0.99,
                 gae_lambda=0.95,
                 clip_epsilon=0.2,
+                entropy_coef=0.01,
+                max_grad_norm=0.5,
+                numerical_safety={
+                    "gradient_clip_threshold": 1.0,
+                    "on_invalid": "sanitize",
+                },
                 rollout_length=10,
                 num_epochs=1,
                 minibatch_size=2,
             ),
+            sequence={
+                "inference_mode": "stateless_per_event",
+                "representation_training_mode": "independent_rows",
+                "reset_on_replay_start": True,
+                "reset_on_symbol_switch": True,
+                "reset_on_objective_family_switch": True,
+                "reset_on_episode_boundary": True,
+            },
+            dataset={
+                "manifest_version": 1,
+                "split": {
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                },
+            },
+            evaluation={
+                "report_version": 1,
+                "calibration_bins": 5,
+                "confidence_bucket_edges": [0.25, 0.5, 0.75, 0.9],
+                "missing_confidence_policy": "not_available",
+                "advisory_status": "forbidden",
+            },
             performance=PerformanceConfig(
                 operating_mode="live_shadow",
                 shadow_intent_emit_policy="emit_all",
                 shadow_intent_decimation_stride=1,
                 shadow_jsonl_write_policy="buffered",
                 telemetry_write_policy="buffered",
+                non_critical_queue_limit=2048,
+                shadow_log_flush_threshold=64,
+                telemetry_flush_threshold=64,
+                flush_interval_ms=1000,
+                non_critical_overflow_policy="drop_oldest",
             ),
+            shadow_gates={
+                "gate_set_version": 1,
+                "startup_enforcement": "strict",
+                "allow_advisory_influence": False,
+                "allow_live_authority": False,
+                "allow_policy_training_reenable": False,
+                "require_domain_manifest_contracts": True,
+            },
             checkpoint_every_n_steps=100,
             keep_last_n_checkpoints=1,
+            dream_episode_threshold=1,
         ),
-        replay=ReplayConfig(enabled=False),
+        replay=ReplayConfig(
+            enabled=False,
+            poll_interval=0.1,
+            feature_missing_timestamp_policy="fail_closed",
+        ),
     )
 
 
@@ -118,7 +194,8 @@ def test_feature_log_full_line_normalizes_to_event_ts_ms_int():
     assert isinstance(entry.event_ts_ms, int)
     assert entry.event_ts_ms == 1767956322585
     assert entry.timestamp == pytest.approx(entry.event_ts_ms / 1000.0)
-    assert entry.time_is_causal is True
+    assert entry.time_is_causal is False
+    assert entry.time_provenance == CausalTimeProvenance.CAPTURED_WALLCLOCK
 
 
 def test_feature_log_pure_json_without_timestamp_fails_closed_by_default():
@@ -143,6 +220,7 @@ def test_feature_log_legacy_non_causal_mode_is_explicit_and_marked():
     assert entry.event_ts_ms == 1_772_916_000_123
     assert entry.time_is_causal is False
     assert entry.time_source == "legacy_non_causal_file_offset"
+    assert entry.time_provenance == CausalTimeProvenance.FILE_OFFSET_LEGACY
 
 
 def test_order_log_timestamp_seconds_normalized_to_ms_int():
@@ -230,10 +308,12 @@ def test_stale_cleanup_compares_canonical_ms_only(tmp_path: Path):
         side="BUY",
     )
 
-    tailer._cleanup_stale_episodes(current_event_ts_ms=1_700_000_000_500, ttl_ms=1_000)
+    tailer._cleanup_stale_episodes(
+        current_event_ts_ms=1_700_000_000_500, ttl_ms=1_000)
     assert "episode:btc:1" in tailer._pending_episodes
 
-    tailer._cleanup_stale_episodes(current_event_ts_ms=1_700_000_002_500, ttl_ms=1_000)
+    tailer._cleanup_stale_episodes(
+        current_event_ts_ms=1_700_000_002_500, ttl_ms=1_000)
     assert "episode:btc:1" not in tailer._pending_episodes
 
 

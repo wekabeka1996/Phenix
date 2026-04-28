@@ -1,4 +1,7 @@
-from apps.reference.domains.decision_making.gates.safety_gates import _extract_regime
+from apps.reference.domains.decision_making.gates.safety_gates import (
+    _extract_regime,
+    resolve_min_regime_confidence,
+)
 
 
 def test_extract_regime_returns_detector_cache_provenance() -> None:
@@ -50,3 +53,108 @@ def test_extract_regime_returns_unknown_provenance_when_missing() -> None:
     assert provenance["source_kind"] == "unknown"
     assert provenance["detector_event"] is None
     assert provenance["cache_snapshot"] is None
+
+
+def test_resolve_min_regime_confidence_uses_specific_runtime_regime() -> None:
+    resolved = resolve_min_regime_confidence(
+        "BULL_TREND",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+    )
+
+    assert resolved.threshold == 0.52
+    assert resolved.source == "domain_regime_specific"
+    assert resolved.regime_key == "TREND_UP"
+    assert resolved.mapping_present is True
+
+
+def test_resolve_min_regime_confidence_uses_default_when_regime_key_absent() -> None:
+    resolved = resolve_min_regime_confidence(
+        "LOW_VOLATILITY",
+        0.45,
+        {"DEFAULT": 0.22, "TREND_UP": 0.52},
+    )
+
+    assert resolved.threshold == 0.22
+    assert resolved.source == "domain_default"
+    assert resolved.regime_key == "DEFAULT"
+    assert resolved.mapping_present is True
+
+
+def test_resolve_min_regime_confidence_strategy_specific_beats_domain_specific() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_UP",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+        strategy_id="aurora",
+        strategy_by_regime={"DEFAULT": 0.40, "TREND_UP": 0.65},
+    )
+
+    assert resolved.threshold == 0.65
+    assert resolved.source == "strategy_regime_specific"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "TREND_UP"
+
+
+def test_resolve_min_regime_confidence_strategy_symbol_specific_beats_strategy_specific() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_UP",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        strategy_by_regime={"DEFAULT": 0.40, "TREND_UP": 0.65},
+        strategy_symbol_by_regime={"DEFAULT": 0.675, "TREND_UP": 0.975},
+    )
+
+    assert resolved.threshold == 0.975
+    assert resolved.source == "strategy_symbol_regime_specific"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "TREND_UP"
+
+
+def test_resolve_min_regime_confidence_strategy_symbol_default_beats_strategy_specific() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_UP",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        strategy_by_regime={"DEFAULT": 0.40, "TREND_UP": 0.65},
+        strategy_symbol_by_regime={"DEFAULT": 0.675},
+    )
+
+    assert resolved.threshold == 0.675
+    assert resolved.source == "strategy_symbol_default"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "DEFAULT"
+
+
+def test_resolve_min_regime_confidence_strategy_default_beats_domain_specific() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_UP",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+        strategy_id="aurora",
+        strategy_by_regime={"DEFAULT": 0.62},
+    )
+
+    assert resolved.threshold == 0.62
+    assert resolved.source == "strategy_default"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "DEFAULT"
+
+
+def test_resolve_min_regime_confidence_ignores_strategy_mapping_without_strategy_id() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_UP",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_UP": 0.52},
+        strategy_id=None,
+        strategy_by_regime={"DEFAULT": 0.62, "TREND_UP": 0.65},
+    )
+
+    assert resolved.threshold == 0.52
+    assert resolved.source == "domain_regime_specific"
+    assert resolved.strategy_id is None
+    assert resolved.regime_key == "TREND_UP"

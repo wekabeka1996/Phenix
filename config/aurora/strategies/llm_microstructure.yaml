@@ -16,3 +16,12 @@ llm_microstructure:
     enabled: false
     system_stress_policy: 'off'
     stress_attenuation_factor: 0.5
+    regime_confidence:
+      min_by_regime:
+        DEFAULT: 0.45
+        LOW_VOLATILITY: 0.45
+        HIGH_VOLATILITY: 0.45
+        MEAN_REVERSION: 0.45
+        UNCERTAIN: 0.45
+        TREND_UP: 0.65
+        TREND_DOWN: 0.65

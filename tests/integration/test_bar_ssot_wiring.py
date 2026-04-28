@@ -192,10 +192,18 @@ class TestBarAggregatorWiring:
         aggregator.on_tick = lambda *args: tick_calls.append(args)
         
         fsm.emit("EVT:MARKET_TICK_RECEIVED", {
+            "ts": 1700000000000,
             "symbol": "BTCUSDT",
+            "price": "50000.00",
+            "bid": "49999.50",
+            "ask": "50000.50",
             "mid": "50000.00",
-            "volume": "1.0",
-            "ts_ms": 1700000000000,
+            "bid_size": "1.0",
+            "ask_size": "1.0",
+            "buy_volume": "0.5",
+            "sell_volume": "0.5",
+            "data_type": "market_tick_aggregated",
+            "data_source": "websocket_live",
         }, why="test tick")
         
         assert len(tick_calls) == 1
@@ -241,10 +249,19 @@ class TestBarAggregatorFSMIntegration:
         symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         for i, symbol in enumerate(symbols):
             fsm.emit("EVT:MARKET_TICK_RECEIVED", {
+                "ts": 1700000000000,
                 "symbol": symbol,
+                "price": f"{50000 + i * 1000}.00",
+                "bid": f"{49999 + i * 1000}.50",
+                "ask": f"{50000 + i * 1000}.50",
                 "mid": f"{50000 + i * 1000}.00",
-                "volume": "1.0",
-                "ts_ms": 1700000000000,
+                "bid_size": "1.0",
+                "ask_size": "1.0",
+                "buy_volume": "0.5",
+                "sell_volume": "0.5",
+                "data_type": "market_tick_aggregated",
+                "data_source": "websocket_live",
+                "volume": "1.0", # Added for test compatibility
             }, why="test multi-symbol")
         
         # Verify bars are tracked per symbol
@@ -261,10 +278,19 @@ class TestBarAggregatorFSMIntegration:
         fsm.listen("EVT:MARKET_TICK_RECEIVED", aggregator.on_market_tick)
         
         fsm.emit("EVT:MARKET_TICK_RECEIVED", {
+            "ts": 1700000000000,
             "symbol": "BTCUSDT",
+            "price": "50000.00",
+            "bid": "49999.50",
+            "ask": "50000.50",
             "mid": "50000.00",
-            "volume": "1.0",
-            "ts_ms": 1700000000000,
+            "bid_size": "1.0",
+            "ask_size": "1.0",
+            "buy_volume": "0.5",
+            "sell_volume": "0.5",
+            "data_type": "market_tick_aggregated",
+            "data_source": "websocket_live",
+            "volume": "1.0", # Added for test compatibility
         }, why="test multi-tf")
         
         # Both timeframes should have partial bars

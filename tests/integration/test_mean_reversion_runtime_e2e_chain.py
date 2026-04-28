@@ -107,12 +107,17 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
     mr_cfg = MeanReversion1mStrategyConfig(
         enabled=True,
         timeframe_sec=180,
-        safety_gates=SafetyGatesConfig(enabled=True),
+        safety_gates=SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=1.0,
+        ),
         strategy=MRStrategyParamsConfig(
             bb_window=3,
             bb_num_std=2.0,
             atr_window=14,
             rsi_window=14,
+            score_multiplier=1.0,
             entry_threshold=0.2,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
@@ -122,20 +127,36 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
             sl_atr_mult=1.5,
             tp_to_mid=True,
             cooldown_sec=0,
+            confidence_base=0.5,
+            confidence_bb_slope=2.0,
+            confidence_rsi_bonus=0.1,
         ),
         regime_thresholds=MRRegimeThresholdsConfig(high_vol_pct=0.003, low_vol_pct=0.001),
         assets={
             symbol: MRAssetConfig(
                 enabled=True,
+                leverage=None,
                 strategy=None,
-                
+                liquidity_gate=None,
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
                 position_mode="STRICT",
             )
         },
         regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
-        execution=StrategyExecutionConfig(entry_order_type="MARKET"),
+        execution=StrategyExecutionConfig(
+            entry_order_type="MARKET",
+            entry_tif=None,
+            exit_order_type="MARKET",
+            exit_tif=None,
+            exit_limit_ttl_ms=None,
+            gtx_retry_max=0,
+            gtx_retry_offset_bps=0.0,
+        ),
+        objective=None,
+        microstructure_veto=None,
+        directional_bias=None,
+        liquidity_gate=None,
     )
 
     cfg = SimpleNamespace(

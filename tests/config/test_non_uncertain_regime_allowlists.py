@@ -6,9 +6,11 @@ from apps.reference.config_loader import ConfigLoader
 def test_active_assigned_symbols_match_live_non_uncertain_allowlists() -> None:
     cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
     aurora_expected = {
-        "ETHUSDT": {"TREND_UP"},
-        "SOLUSDT": {"TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
-        "BTCUSDT": {"TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
+        "ETHUSDT": {"TREND_UP", "TREND_DOWN"},
+        "SOLUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
+        "BTCUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
+        "BNBUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
+        "XRPUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
     }
     for symbol, expected in aurora_expected.items():
         actual = set(
@@ -20,7 +22,6 @@ def test_active_assigned_symbols_match_live_non_uncertain_allowlists() -> None:
     if cfg.strategies.md_amr is not None:
         md_amr_expected = {
             "XRPUSDT": {"MEAN_REVERSION", "TREND_DOWN"},
-            "BNBUSDT": {"MEAN_REVERSION"},
         }
         for symbol, expected in md_amr_expected.items():
             actual = set(

@@ -13,7 +13,7 @@ Architecture:
 - FSM: business signals, delegates cleanup to OrderGuardian
 
 Storage:
-- unified=True (default): LedgerStoreAdapter over SQLite OrderLedger (SSOT)
+- unified=True: LedgerStoreAdapter over SQLite OrderLedger (SSOT)
 - unified=False: InMemoryStore (ephemeral, for testing / lightweight use)
 """
 
@@ -183,38 +183,72 @@ class OrderGuardian:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _get_explicit_guardian_store_value(guardian_cfg: Any, key: str) -> tuple[bool, Any]:
+        if guardian_cfg is None:
+            return False, None
+        if isinstance(guardian_cfg, dict):
+            return key in guardian_cfg, guardian_cfg.get(key)
+
+        cfg_dict = getattr(guardian_cfg, "__dict__", None)
+        if isinstance(cfg_dict, dict):
+            if key in cfg_dict:
+                return True, cfg_dict.get(key)
+            if hasattr(guardian_cfg, "__getattr__"):
+                return False, None
+
+        try:
+            return True, getattr(guardian_cfg, key)
+        except Exception:
+            return False, None
+
+    @staticmethod
     def _resolve_guardian_cfg(cfg: Any) -> Any:
         """Resolve SSOT guardian config block from typed AuroraConfig."""
         if cfg is None:
             return None
+
+        def _get_explicit_member(node: Any, key: str) -> tuple[bool, Any]:
+            if node is None:
+                return False, None
+            if isinstance(node, dict):
+                return key in node, node.get(key)
+
+            node_dict = getattr(node, "__dict__", None)
+            if isinstance(node_dict, dict):
+                if key in node_dict:
+                    return True, node_dict.get(key)
+                if hasattr(node, "__getattr__"):
+                    return False, None
+
+            try:
+                return True, getattr(node, key)
+            except Exception:
+                return False, None
+
+        def _extract_order_guardian(node: Any) -> tuple[bool, Any]:
+            _, execution_cfg = _get_explicit_member(node, "execution")
+            if execution_cfg is None:
+                return False, None
+
+            order_guardian_present, order_guardian_cfg = _get_explicit_member(
+                execution_cfg,
+                "order_guardian",
+            )
+            if not order_guardian_present or order_guardian_cfg is None:
+                return False, None
+
+            if isinstance(order_guardian_cfg, (dict, str)):
+                return True, order_guardian_cfg
+            if not hasattr(execution_cfg, "__getattr__"):
+                return True, order_guardian_cfg
+            return False, None
 
         # NOTE: Many tests use MagicMock configs; attribute access on MagicMock
         # auto-creates nested mocks (truthy), which would incorrectly select a
         # non-real config block. Prefer explicitly-set attributes when possible.
         cfg_dict = getattr(cfg, "__dict__", None)
 
-        exec_cfg = None
-        if isinstance(cfg_dict, dict) and "execution" in cfg_dict:
-            exec_cfg = cfg_dict.get("execution")
-        else:
-            try:
-                exec_cfg = getattr(cfg, "execution", None)
-            except Exception:
-                exec_cfg = None
-
-        if exec_cfg is not None:
-            exec_dict = getattr(exec_cfg, "__dict__", None)
-            if isinstance(exec_dict, dict) and "order_guardian" in exec_dict:
-                og = exec_dict.get("order_guardian")
-            else:
-                try:
-                    og = getattr(exec_cfg, "order_guardian", None)
-                except Exception:
-                    og = None
-            if og is not None and (isinstance(og, dict) or isinstance(og, str)):
-                return og
-            if og is not None and not hasattr(cfg, "__getattr__"):
-                return og
+        root_present, root_guardian_cfg = _extract_order_guardian(cfg)
 
         trading = None
         if isinstance(cfg_dict, dict) and "trading" in cfg_dict:
@@ -225,12 +259,19 @@ class OrderGuardian:
             except Exception:
                 trading = None
 
-        trading_exec = getattr(trading, "execution",
-                               None) if trading is not None else None
-        if trading_exec is not None:
-            og = getattr(trading_exec, "order_guardian", None)
-            if og is not None and (isinstance(og, dict) or isinstance(og, str)):
-                return og
+        trading_present, trading_guardian_cfg = _extract_order_guardian(
+            trading)
+
+        if root_present and trading_present and root_guardian_cfg != trading_guardian_cfg:
+            raise ValueError(
+                "Conflicting guardian configuration sources: execution.order_guardian "
+                "and trading.execution.order_guardian differ. Keep only one or make them equal."
+            )
+
+        if root_present:
+            return root_guardian_cfg
+        if trading_present:
+            return trading_guardian_cfg
 
         # Legacy (non-SSOT) fallback
         legacy = None
@@ -255,6 +296,7 @@ class OrderGuardian:
         poll_interval_ms: int = 500,
         bus: Optional[Any] = None,
         config: Optional[Any] = None,
+        emit_tidy_monitoring_event: bool = True,
     ):
         if isinstance(config, dict):
             raise TypeError(
@@ -265,6 +307,7 @@ class OrderGuardian:
         self.poll_interval_ms = poll_interval_ms
         self.bus = bus
         self._cfg = config or {}
+        self.emit_tidy_monitoring_event = bool(emit_tidy_monitoring_event)
         self._known_symbols: Set[str] = set()
         self._metrics: Dict[str, Any] = {
             "guardian_orphans_cancelled_total": 0,
@@ -275,7 +318,7 @@ class OrderGuardian:
         }
         self._last_cycle_started_ms: float = 0.0
 
-        # Resolve store: explicit > config-driven > InMemoryStore fallback
+        # Resolve store: explicit store override > config-driven > explicit config=None compatibility
         if store is not None:
             self.store = store
         else:
@@ -301,52 +344,76 @@ class OrderGuardian:
     def _build_store_from_config(self, config: Any) -> "StoreProtocol":
         """Build LedgerStoreAdapter or InMemoryStore based on config.
 
-        When no config is provided (e.g. tests, shadow mode), defaults to
-        InMemoryStore — matching the old services/ behaviour of
-        ``store = store or InMemoryStore()``.
+        When config=None is passed explicitly (tests/manual mode), default to
+        InMemoryStore. When a config object is provided, explicit guardian
+        store settings are required; silent store defaults and silent degraded
+        store fallback are prohibited.
         """
         if config is None:
             return InMemoryStore()
 
         guardian_cfg = self._resolve_guardian_cfg(config)
+        if guardian_cfg is None:
+            raise ValueError(
+                "OrderGuardian store config is required when config object is provided. "
+                "Set execution.order_guardian or trading.execution.order_guardian explicitly, "
+                "or pass config=None/store=... for tests or manual mode."
+            )
 
-        unified = True
-        if guardian_cfg is not None:
-            if isinstance(guardian_cfg, dict):
-                unified = bool(guardian_cfg.get("unified", True))
-            else:
-                unified = bool(aget(guardian_cfg, "unified", True))
+        unified_present, unified_value = self._get_explicit_guardian_store_value(
+            guardian_cfg,
+            "unified",
+        )
+        if not unified_present or unified_value is None:
+            raise ValueError(
+                "OrderGuardian store config missing required field: order_guardian.unified"
+            )
+
+        unified = bool(unified_value)
 
         if not unified:
             return InMemoryStore()
 
         # unified=True: resolve db path and build LedgerStoreAdapter
-        db_path = None
-        if guardian_cfg is not None:
-            if isinstance(guardian_cfg, dict):
-                db_path = guardian_cfg.get("ledger_db_path")
-            else:
-                db_path = aget(guardian_cfg, "ledger_db_path", None)
+        db_path_present, db_path = self._get_explicit_guardian_store_value(
+            guardian_cfg,
+            "ledger_db_path",
+        )
+        if not db_path_present or db_path is None:
+            raise ValueError(
+                "OrderGuardian store config missing required field: "
+                "order_guardian.ledger_db_path when order_guardian.unified=true"
+            )
 
         if isinstance(db_path, Path):
             db_path = str(db_path)
-        if db_path and isinstance(db_path, str) and db_path != ":memory:":
+        if not isinstance(db_path, str) or not db_path.strip():
+            raise ValueError(
+                "OrderGuardian store config requires a non-empty string ledger_db_path "
+                "when order_guardian.unified=true"
+            )
+
+        if db_path != ":memory:":
             try:
                 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
             except Exception:
                 pass
-        elif not isinstance(db_path, str):
-            db_path = None
 
         try:
             LedgerStoreAdapter, OrderLedger = _get_ledger_store()
-            ledger = OrderLedger(db_path or ":memory:")
+            ledger = OrderLedger(db_path)
             return LedgerStoreAdapter(ledger)
         except Exception as exc:
-            LOG.warning(
-                f"[GUARD] Failed to build LedgerStoreAdapter, falling back to InMemoryStore: {exc}"
+            LOG.error(
+                "[GUARD] Failed to build LedgerStoreAdapter for explicit order_guardian config; "
+                "refusing InMemoryStore fallback: %s",
+                exc,
             )
-            return InMemoryStore()
+            raise ValueError(
+                "OrderGuardian failed to initialize LedgerStoreAdapter for explicit "
+                f"order_guardian config (ledger_db_path={db_path!r}). "
+                "No InMemoryStore fallback is allowed when order_guardian.unified=true."
+            ) from exc
 
     # ---- Registration API ----
 
@@ -530,25 +597,63 @@ class OrderGuardian:
         except Exception:
             pass
 
+    def _normalize_config_symbols(self, raw_symbols: Any) -> Set[str]:
+        if isinstance(raw_symbols, dict):
+            candidates = raw_symbols.keys()
+        elif isinstance(raw_symbols, (list, tuple, set, frozenset)):
+            candidates = raw_symbols
+        else:
+            return set()
+
+        symbols: Set[str] = set()
+        for raw_symbol in candidates:
+            symbol = str(raw_symbol or "").strip().upper()
+            if symbol:
+                symbols.add(symbol)
+        return symbols
+
     def _extract_symbols_from_config(self, cfg: Any) -> Set[str]:
-        """Best-effort extraction of instrument symbols from config structures."""
+        """Extract guardian seed symbols without legacy trading.instruments."""
         symbols: Set[str] = set()
 
         try:
             if isinstance(cfg, dict):
                 trading = cfg.get("trading") or {}
                 if isinstance(trading, dict):
-                    instruments = trading.get("instruments") or {}
-                    if isinstance(instruments, dict):
-                        symbols.update(str(s).upper()
-                                       for s in instruments.keys())
+                    symbols.update(
+                        self._normalize_config_symbols(
+                            trading.get("symbols_to_track"))
+                    )
+                if not symbols:
+                    strategies_registry = cfg.get("strategies_registry") or {}
+                    if isinstance(strategies_registry, dict):
+                        symbols.update(
+                            self._normalize_config_symbols(
+                                strategies_registry.get("assignments"))
+                        )
+                if not symbols:
+                    symbols.update(self._normalize_config_symbols(
+                        cfg.get("instruments")))
             else:
                 trading = getattr(cfg, "trading", None)
                 if trading:
-                    instruments = getattr(trading, "instruments", None)
-                    if isinstance(instruments, dict):
-                        symbols.update(str(s).upper()
-                                       for s in instruments.keys())
+                    symbols.update(
+                        self._normalize_config_symbols(
+                            getattr(trading, "symbols_to_track", None))
+                    )
+                if not symbols:
+                    strategies_registry = getattr(
+                        cfg, "strategies_registry", None)
+                    if strategies_registry:
+                        symbols.update(
+                            self._normalize_config_symbols(
+                                getattr(strategies_registry, "assignments", None))
+                        )
+                if not symbols:
+                    symbols.update(
+                        self._normalize_config_symbols(
+                            getattr(cfg, "instruments", None))
+                    )
         except Exception:
             pass
 
@@ -943,11 +1048,12 @@ class OrderGuardian:
         if rid is not None:
             payload["rid"] = rid
         try:
-            self.bus.emit(
-                "EVT:EXECUTION_TIDY_PERFORMED",
-                dict(payload),
-                why=why,
-            )
+            if self.emit_tidy_monitoring_event:
+                self.bus.emit(
+                    "EVT:EXECUTION_TIDY_PERFORMED",
+                    dict(payload),
+                    why=why,
+                )
             self.bus.emit(
                 "EVT:SYMBOL_TIDY",
                 dict(payload),

@@ -9,7 +9,7 @@
 >   2. `trading.market_data.macro_sync` and other legacy fields remain documented but accurately tagged as "legacy" or "no runtime consumer found".
 >   3. `trading.risk.*` legacy tags confirmed. `trading.execution.exposure` hard limits come from `domains.yaml` as stated.
 > - Overall confidence: HIGH
-> 
+>
 > ---
 Цей паспорт описує **торгову логіку та ризик** на рівні `trading.yaml`: режим роботи, бюджет TCA/ризику, дані ринку, виконання (execution) та оперативні запобіжники.
 
@@ -109,8 +109,8 @@
 - **Code Reference:** `apps/reference/config_loader.py:951` (func: `load_config`); `apps/reference/config_models.py:3051` (validator: `validate_trading_mode_consistency`); `apps/reference/domains/decision_making/decision_making.py:3888` (func: `_check_and_emit_risk_gate_alert`); `apps/reference/domains/execution_position/fsm.py:1774` (func: `_initialize_adapter`)
 - **Mathematical/Architectural Role:**
     > Глобальний режим *поведінки* runtime. Використовується для:
-    > - **backtest safety:** якщо `trading.mode=backtest`, loader форсує root `trading_mode=backtest` (запобігає випадковому live/testnet виконанню).  
-    > - **alert thresholds:** DM обирає пороги алерту для risk-gate залежно від `trading.mode` (testnet vs production).  
+    > - **backtest safety:** якщо `trading.mode=backtest`, loader форсує root `trading_mode=backtest` (запобігає випадковому live/testnet виконанню).
+    > - **alert thresholds:** DM обирає пороги алерту для risk-gate залежно від `trading.mode` (testnet vs production).
     > - **execution adapter mode:** `ExecPosFSM` використовує `trading.mode` як fallback для вибору `binance_api.live|testnet`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Перехід у live-like режими збільшує blast radius: реальні API виклики/жорсткіші fail-closed вимоги.
@@ -176,7 +176,7 @@
 - **Logic Owner:** `decision_making` → `execution_position` (metadata/logging)
 - **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:3109` (func: `_propose_trade_intent`); `apps/reference/domains/execution_position/fsm.py:1223` (func: `_on_trade_intent_proposed`)
 - **Mathematical/Architectural Role:**
-    > У поточному коді використовується як **TCA бюджет-метадані** у `TradeIntent` (`tca_budget.max_slippage_bps`).  
+    > У поточному коді використовується як **TCA бюджет-метадані** у `TradeIntent` (`tca_budget.max_slippage_bps`).
     > `ExecPosFSM` витягує значення й логгує для форензіки, але **не застосовує** його як hard gate/price transform.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Менше “самоконтролю” в metadata; якщо пізніше буде enforcement — дозволить більший допуск на slippage.
@@ -190,7 +190,7 @@
 - **Logic Owner:** `decision_making` → `execution_position` (metadata/logging)
 - **Code Reference:** `apps/reference/domains/decision_making/decision_making.py:3114` (func: `_propose_trade_intent`); `apps/reference/domains/execution_position/fsm.py:1224` (func: `_on_trade_intent_proposed`)
 - **Mathematical/Architectural Role:**
-    > Декларує допустиму latency (intent→fill) як metadata у `tca_budget.max_latency_ms`.  
+    > Декларує допустиму latency (intent→fill) як metadata у `tca_budget.max_latency_ms`.
     > У поточному `execution_position` **немає** enforcement (тільки логування).
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(Наразі mostly N/A)*; якщо додадуть enforcement — буде менш чутливим до затримок.
@@ -373,7 +373,7 @@
 - **Logic Owner:** `config_loader` (legacy mode overrides)
 - **Code Reference:** `apps/reference/config_loader.py:524` (func: `_resolve_mode_overrides`)
 - **Mathematical/Architectural Role:**
-    > Loader читає `trading.risk.<mode>.*` і копіює значення в `trading.risk.trading_allowed_thresholds.*` для legacy risk gates.  
+    > Loader читає `trading.risk.<mode>.*` і копіює значення в `trading.risk.trading_allowed_thresholds.*` для legacy risk gates.
     > **Важливо:** актуальний runtime risk gate використовує `domains.risk_management.trading_allowed_thresholds.max_risk_score`, тож цей ключ може не впливати на торгівлю.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(Ймовірно N/A для runtime gate)*; якщо legacy gate буде підключено — дозволить більший risk_score.
@@ -400,7 +400,7 @@
 - **Logic Owner:** legacy thresholds (loader-mutated)
 - **Code Reference:** `apps/reference/config_loader.py:531` (func: `_resolve_mode_overrides`)
 - **Mathematical/Architectural Role:**
-    > Loader інжектить/оновлює цей поріг як “результат” `risk.<mode>` overrides.  
+    > Loader інжектить/оновлює цей поріг як “результат” `risk.<mode>` overrides.
     > **Runtime gate фактично читає інший SSOT** (`domains.risk_management...`), тому значення може бути чисто документальним.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(N/A у поточному runtime)*.
@@ -440,8 +440,8 @@
 - **Logic Owner:** `risk_management` (DailyRiskState)
 - **Code Reference:** `apps/reference/domains/risk_management/daily_gate.py:103` (init); `apps/reference/domains/risk_management/daily_gate.py:262` (func: `can_open`)
 - **Mathematical/Architectural Role:**
-    > Поріг блокування нових відкриттів за intraday drawdown:  
-    > `dd_pct = (1 - equity_now / equity_open) * 100` і якщо `dd_pct >= max_drawdown_pct` → `can_open=False` (fail-closed).  
+    > Поріг блокування нових відкриттів за intraday drawdown:
+    > `dd_pct = (1 - equity_now / equity_open) * 100` і якщо `dd_pct >= max_drawdown_pct` → `can_open=False` (fail-closed).
     > **Це hard stop для нових OPEN**, не механізм примусового закриття позицій.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Дозволяє більшу просадку до блокування; менше “вибивання”, але більший tail risk.
@@ -509,9 +509,9 @@
 - **Logic Owner:** `execution_position` (SoftClipEngine + Regime Adaptation)
 - **Code Reference:** `apps/reference/domains/execution_position/soft_clip.py:74` (func: `load_soft_limit_config`); `apps/reference/domains/execution_position/soft_clip.py:195` (func: `calculate_clipped_size`); `apps/reference/domains/execution_position/exposure_guard.py:1008` (func: `on_regime_changed`)
 - **Mathematical/Architectural Role:**
-    > Soft-limit “на перекіс” (long vs short) у margin-термінах. У спрощеній реалізації:  
-    > - рахується `ratio = max(new_long_margin, new_short_margin) / min(...)`;  
-    > - якщо `ratio > directional_ratio_max` → `delta_dir_notional = 0` (тобто clip до 0).  
+    > Soft-limit “на перекіс” (long vs short) у margin-термінах. У спрощеній реалізації:
+    > - рахується `ratio = max(new_long_margin, new_short_margin) / min(...)`;
+    > - якщо `ratio > directional_ratio_max` → `delta_dir_notional = 0` (тобто clip до 0).
     > Значення також модифікується через `regime_adaptation` (див. нижче).
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Дозволяє сильніший перекіс у напрямок (більший directional exposure).
@@ -525,7 +525,7 @@
 - **Logic Owner:** `execution_position` (SoftClipEngine)
 - **Code Reference:** `apps/reference/domains/execution_position/soft_clip.py:75` (func: `load_soft_limit_config`); `apps/reference/domains/execution_position/soft_clip.py:176` (func: `calculate_clipped_size`)
 - **Mathematical/Architectural Role:**
-    > Soft limit на margin exposure по стороні (BUY vs SELL).  
+    > Soft limit на margin exposure по стороні (BUY vs SELL).
     > Для нового ордера: `allowed_extra_side = side_limit - current_side_margin`, `delta_side_notional = allowed_extra_side * leverage`, і далі clip до мінімуму з дельт.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Дозволяє більше одностороннього ризику (перекіс портфеля).
@@ -539,7 +539,7 @@
 - **Logic Owner:** `execution_position` (SoftClipEngine)
 - **Code Reference:** `apps/reference/domains/execution_position/soft_clip.py:76` (func: `load_soft_limit_config`); `apps/reference/domains/execution_position/soft_clip.py:165` (func: `calculate_clipped_size`)
 - **Mathematical/Architectural Role:**
-    > Soft limit на сумарну margin exposure.  
+    > Soft limit на сумарну margin exposure.
     > `allowed_extra_margin = margin_limit - total_margin_exposure`, `delta_margin_notional = allowed_extra_margin * leverage`, далі clip.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Дозволяє агресивніше використовувати маржу (більше позицій/сайз).
@@ -553,7 +553,7 @@
 - **Logic Owner:** `execution_position` (ExposureGuard)
 - **Code Reference:** `apps/reference/domains/execution_position/soft_clip.py:95` (func: `load_soft_limit_config`); `apps/reference/domains/execution_position/exposure_guard.py:989` (func: `on_regime_changed`)
 - **Mathematical/Architectural Role:**
-    > Дельта, що додається до базового `directional_ratio_max` у режимі `TREND_UP`:  
+    > Дельта, що додається до базового `directional_ratio_max` у режимі `TREND_UP`:
     > `new_ratio = clamp(bounds_min, base_ratio + trend_up_delta, bounds_max)`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Більше дозволений directional перекіс у тренді вгору → агресивніше нарощення позицій.
@@ -580,7 +580,7 @@
 - **Logic Owner:** `execution_position` (ExposureGuard)
 - **Code Reference:** `apps/reference/domains/execution_position/soft_clip.py:97` (func: `load_soft_limit_config`); `apps/reference/domains/execution_position/exposure_guard.py:995` (func: `on_regime_changed`)
 - **Mathematical/Architectural Role:**
-    > Дельта для консервативних bucket-ів (`FLAT`, `VOLATILE`, `UNCERTAIN`):  
+    > Дельта для консервативних bucket-ів (`FLAT`, `VOLATILE`, `UNCERTAIN`):
     > `new_ratio = clamp(bounds_min, base_ratio + flat_delta, bounds_max)`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Менше “затягування паска” у flat/uncertain; більше directional risk.
@@ -843,7 +843,7 @@
 - **Logic Owner:** `execution_position` (ManageFlowFSM safety offsets)
 - **Code Reference:** `apps/reference/domains/execution_position/fsm_manage.py:633` (func: `_place_brackets`)
 - **Mathematical/Architectural Role:**
-    > Safety-offset для SL/TP перед відправкою (anti -2021):  
+    > Safety-offset для SL/TP перед відправкою (anti -2021):
     > `offset = add_safety_offset(price, tick_size, offset_bps)` і далі ціна зсувається “подалі” від entry.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Більші офсети → менше шансів exchange reject, але гірші ціни SL/TP (далі від бажаних рівнів).
@@ -859,7 +859,7 @@
 - **Mathematical/Architectural Role:**
     > **No active consumer found for price calculation.** Поточний розрахунок SL/TP у `ManageFlowFSM` базується на:
     > 1) intent injection (з DM/стратегії), або
-    > 2) per-instrument strategy config (`strategies.aurora.assets.<SYM>.exit.sl_pct`, etc.).  
+    > 2) per-instrument strategy config (`strategies.aurora.assets.<SYM>.exit.sl_pct`, etc.).
     > `sl.fixed_bps` не використовується у цьому ланцюгу.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(N/A у поточному runtime)*.
@@ -881,12 +881,19 @@
 
 ---
 
+> Cleanup ownership note:
+> Active FSM-side cleanup ownership is decided by `trading.execution.fsm_periodic_cleanup_enabled`
+> together with `domains.execution_position.guardian.unified`. Inside
+> `trading.execution.manage.orphan_monitor`, only the loop enable/cadence surfaces are
+> currently consumed by runtime cleanup scheduling; the neighboring startup/age/batch/rate knobs
+> below remain stored or planned-only unless explicitly noted otherwise.
+
 ### `trading.execution.manage.orphan_monitor.enabled`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position` (ExecPosFSM cleanup loop)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:868` (func: `_schedule_fsm_cleanup_loop`)
+- **Code Reference:** `apps/reference/domains/execution_position/async_scheduling.py` (func: `_schedule_fsm_cleanup_loop`)
 - **Mathematical/Architectural Role:**
-    > Увімкнення periodic orphan cleanup loop (FSM-side): якщо `true`, `ExecPosFSM` може запускати `_cleanup_loop()` і викликати `order_guardian.cleanup_orphans()`.
+    > Увімкнення optional FSM-side cleanup loop: якщо `true`, `ExecPosFSM` може планувати `_cleanup_loop()` і викликати `order_guardian.cleanup_orphans()` тоді, коли cleanup ownership не централізовано unified guardian-путём.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** `true` → більше safety (менше orphan orders), але більше фонового навантаження і cancel API.
     - 🔽 **Too Low:** `false` → ризик накопичення orphan brackets після збоїв/рестартів.
@@ -910,7 +917,7 @@
 ### `trading.execution.manage.orphan_monitor.periodic_interval_sec`
 - **Type:** `int` *(seconds)*
 - **Logic Owner:** `execution_position` (FSM cleanup loop)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:4455` (func: `_cleanup_loop`)
+- **Code Reference:** `apps/reference/domains/execution_position/fsm.py` (func: `_cleanup_loop`)
 - **Mathematical/Architectural Role:**
     > Період, з яким `_cleanup_loop()` викликає `order_guardian.cleanup_orphans()` (через `clock.sleep_sec(interval)`).
 - **Tuning Sensitivity:**
@@ -936,9 +943,9 @@
 ### `trading.execution.manage.orphan_monitor.batch_cancel_limit`
 - **Type:** `int`
 - **Logic Owner:** orphan monitor (planned)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:272` (stored; not used); `apps/reference/services/order_guardian.py:695` (param: `batch_limit`, default 50)
+- **Code Reference:** `apps/reference/domains/execution_position/fsm.py` (stored in `_orphan_cfg`; no runtime consumer wired)
 - **Mathematical/Architectural Role:**
-    > **Не підключено:** `OrderGuardian.cleanup_orphans()` підтримує `batch_limit`, але `ExecPosFSM` викликає його без аргументів.
+    > **Не підключено:** поточний FSM cleanup loop викликає `order_guardian.cleanup_orphans()` без `batch_limit`, тому це значення не впливає на runtime поведінку.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(Якщо підключити)* дозволить більше cancel за цикл.
     - 🔽 **Too Low:** *(Якщо підключити)* повільніше прибирання orphan.
@@ -1014,7 +1021,7 @@
 - **Logic Owner:** `execution_position` (ManageFlowFSM)
 - **Code Reference:** `apps/reference/domains/execution_position/fsm_manage.py:1029` (func: `_check_rules`)
 - **Mathematical/Architectural Role:**
-    > Поріг adverse move для emergency stop:  
+    > Поріг adverse move для emergency stop:
     > `adverse_bps = (adverse / entry_price) * 10000`; якщо `adverse_bps >= emergency_sl_bps` → емісія `STOP_MARKET` і `WAIT_MODE`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Рідше спрацьовує emergency stop (більший допуск на просадку).
@@ -1026,7 +1033,7 @@
 ### `trading.execution.fsm_periodic_cleanup_enabled`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position` (FSM cleanup policy)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:299` (func: `__init__`); `apps/reference/domains/execution_position/fsm.py:872` (func: `_schedule_fsm_cleanup_loop`)
+- **Code Reference:** `apps/reference/domains/execution_position/config_resolver.py` (func: `_resolve_fsm_periodic_cleanup_enabled`); `apps/reference/domains/execution_position/async_scheduling.py` (func: `_schedule_fsm_cleanup_loop`)
 - **Mathematical/Architectural Role:**
     > Гейт для FSM-side cleanup loop. Якщо `guardian_unified=true` (SSOT у domains) і цей прапорець `false`, FSM cleanup блокується (cleanup делегується unified guardian).
 - **Tuning Sensitivity:**
@@ -1080,7 +1087,7 @@
 - **Logic Owner:** `limit_order_monitor` *(service exists; wiring not found in main path)*
 - **Code Reference:** `apps/reference/services/limit_order_monitor.py:93` (func: `__init__`)
 - **Mathematical/Architectural Role:**
-    > Зарезервована секція для LimitOrderMonitor (timeout/auto-cancel LIMIT).  
+    > Зарезервована секція для LimitOrderMonitor (timeout/auto-cancel LIMIT).
     > **У поточному runtime wiring цього сервісу не знайдено**, тож ключ не впливає на роботу, доки monitor не інстанціюють/не запустять.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(N/A без wiring)*.
@@ -1120,7 +1127,7 @@
 - **Logic Owner:** legacy (not used)
 - **Code Reference:** `apps/reference/config_models.py:777` (model: `ExposureConfig`); `apps/reference/domains/execution_position/exposure_guard.py:94` (SSOT is domains)
 - **Mathematical/Architectural Role:**
-    > **Не використовується** як hard directional ratio; hard ratio береться з `domains.execution_position.exposure_guard.max_directional_ratio`.  
+    > **Не використовується** як hard directional ratio; hard ratio береться з `domains.execution_position.exposure_guard.max_directional_ratio`.
     > Зверніть увагу: soft-limit directional ratio керується `trading.risk.soft_limits.directional_ratio_max`.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** *(N/A)*.
@@ -1381,7 +1388,7 @@
 - **Logic Owner:** `execution_position` (TP/SL preflight)
 - **Code Reference:** `apps/reference/domains/execution_position/fsm.py:4239` (func: `_preflight_position_check`)
 - **Mathematical/Architectural Role:**
-    > Експоненційний backoff для preflight перевірки позиції перед постановкою TP/SL після MARKET fill (REST lag).  
+    > Експоненційний backoff для preflight перевірки позиції перед постановкою TP/SL після MARKET fill (REST lag).
     > Цикл робить `sleep_ms(backoff_ms[i])` між спробами до вичерпання списку.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** Довші/більші backoff → менше шансів помилково пропустити брекети через лаг, але більший lag постановки TP/SL.
@@ -1393,20 +1400,27 @@
 ### `trading.execution.allow_trade_with_guardian_tidy_only`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position` (symbol tidy entry gate)
-- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:3554` (func: `_entry_tidy_gate_allow`)
+- **Code Reference:** `apps/reference/domains/execution_position/fsm.py` (funcs: `_on_symbol_tidy_event`, `_entry_tidy_gate_allow`)
 - **Mathematical/Architectural Role:**
     > Якщо `true`, нові ENTRY дозволяються лише коли отримано недавній `EVT:SYMBOL_TIDY` (від OrderGuardian) у межах `cleanup_ttl_ms`; інакше open блокується.
 - **Tuning Sensitivity:**
     - 🔼 **Too High:** `true` → сильніша safety (не торгувати, якщо guardian не “tidy”), але ризик over-blocking при збоях guardian.
     - 🔽 **Too Low:** `false` → gate вимкнено, відкриття не залежить від tidy.
-- **Invariant/Constraints:** Читається через `config.execution` alias; переконатися, що guardian емітить tidy events (SSOT у `domains.execution_position.guardian.emit_tidy_event`).
+- **Invariant/Constraints:** Читається через `config.execution` alias; `EVT:SYMBOL_TIDY` є operational self-readiness signal. `domains.execution_position.guardian.emit_tidy_monitoring_event` керує тільки monitoring event `EVT:EXECUTION_TIDY_PERFORMED`; deprecated `emit_tidy_event` є compatibility alias і не може трактуватися як дозвіл suppress `EVT:SYMBOL_TIDY`.
+
+---
+
+### Guardian Symbol Universe Note
+- **Configured Seed Universe:** Guardian startup/poll seed symbols беруться з `trading.symbols_to_track` first, потім з `strategies_registry.assignments`, і лише за відсутності active seed переходять до root `config.instruments` fallback.
+- **Observed Startup Truth Universe:** startup truth артефакти будуються з observed positions/open orders/fresh open orders та authoritative restore symbols.
+- **Invariant/Constraints:** Configured seed-only symbols самі по собі не повинні потрапляти в unknown truth rows або `symbols_considered`, якщо вони не були observed або authoritative.
 
 ---
 
 ### `trading.execution.order_guardian.unified`
 - **Type:** `bool`
 - **Logic Owner:** `execution_position` (OrderGuardian store mode)
-- **Code Reference:** `apps/reference/domains/execution_position/order_guardian.py:96` (func: `__init__`)
+- **Code Reference:** `apps/reference/domains/execution_position/order_guardian.py` (funcs: `__init__`, `_build_store_from_config`)
 - **Mathematical/Architectural Role:**
     > Feature flag для “unified” guardian: коли `true`, wrapper підключає persistent ledger store (sqlite) для idempotency/відновлення; коли `false`, guardian використовує in-memory store.
 - **Tuning Sensitivity:**
@@ -1419,7 +1433,7 @@
 ### `trading.execution.order_guardian.ledger_db_path`
 - **Type:** `string` *(path)*
 - **Logic Owner:** `execution_position` (OrderLedger)
-- **Code Reference:** `apps/reference/domains/execution_position/order_guardian.py:109` (func: `__init__`)
+- **Code Reference:** `apps/reference/domains/execution_position/order_guardian.py` (func: `_build_store_from_config`)
 - **Mathematical/Architectural Role:**
     > Шлях до sqlite DB для ledger store. Якщо задано і `unified=true`, wrapper створює директорію та ініціалізує `OrderLedger(db_path)`.
 - **Tuning Sensitivity:**

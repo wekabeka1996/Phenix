@@ -442,6 +442,11 @@
         "default_factory": null,
         "required": true
       },
+      "low_vol_cost_floor_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
       "price_motion_sanity": {
         "default": "'<required>'",
         "default_factory": null,
@@ -453,6 +458,11 @@
         "required": true
       },
       "regime_loss_embargo": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "neocortex_enforcement_mode": {
         "default": "'<required>'",
         "default_factory": null,
         "required": true
@@ -531,6 +541,11 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "min_regime_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       },
       "hard_veto_consecutive_bars": {
         "default": "'<required>'",
@@ -729,6 +744,166 @@
       }
     }
   },
+  "LowVolCostFloorFeeConfig": {
+    "extra": "forbid",
+    "fields": {
+      "open_fee_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "close_fee_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee_source": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "enforce_in_modes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "observe_only_in_modes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regimes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "slippage": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "thresholds": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "direction_confidence": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "geometry": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorSlippageConfig": {
+    "extra": "forbid",
+    "fields": {
+      "buffer_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "source": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorThresholdsConfig": {
+    "extra": "forbid",
+    "fields": {
+      "target_net_fee_multiple": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_tp_fee_coverage": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_rr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence_by_regime": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_direction_confidence_by_regime": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_direction_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "LowVolDirectionConfidenceConfig": {
+    "extra": "forbid",
+    "fields": {
+      "required": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "allowed_sources": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolGeometryConfig": {
+    "extra": "forbid",
+    "fields": {
+      "require_tpsl": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
   "MemoryShieldConfig": {
     "extra": "forbid",
     "fields": {
@@ -884,6 +1059,21 @@
       }
     }
   },
+  "RegimeConfidenceGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "min_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_by_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
   "RegimeLossEmbargoConfig": {
     "extra": "forbid",
     "fields": {
@@ -1016,6 +1206,11 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "regime_confidence": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   },

@@ -41,7 +41,6 @@ def _make_config_for_builder(
     exec_cfg.entry_tif = tif
     strat_cfg = MagicMock()
     strat_cfg.execution = exec_cfg
-    strat_cfg.decision.kelly.fraction = "0.1"
     strat_cfg.decision.retry_ttl_ms = 30000
     cfg.strategies.llm_microstructure = strat_cfg
     cfg.strategies.aurora = strat_cfg  # fallback

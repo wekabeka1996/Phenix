@@ -1,0 +1,922 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from apps.reference.config.domains import decision_making as domain_dm
+from apps.reference.config_loader import ConfigLoader
+from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
+    NormalizedRejectReasons,
+)
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
+from apps.reference.domains.decision_making.gates.low_vol_cost_floor import (
+    _resolve_low_vol_threshold,
+    evaluate_low_vol_cost_floor_gate,
+)
+from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
+
+
+CONFIG_DIR = Path("config/aurora")
+
+
+def _thresholds_payload(**overrides):
+    payload = {
+        "target_net_fee_multiple": 2.0,
+        "min_tp_fee_coverage": 3.0,
+        "min_rr": 1.2,
+        "min_regime_confidence_by_regime": {
+            "DEFAULT": 0.45,
+            "LOW_VOLATILITY": 0.65,
+        },
+        "min_direction_confidence_by_regime": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.62,
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _gate_config(**overrides):
+    payload = {
+        "enabled": True,
+        "enforce_in_modes": ["testnet", "hybrid_live_data_testnet_exec"],
+        "observe_only_in_modes": ["live", "production"],
+        "regimes": ["LOW_VOLATILITY"],
+        "fee": {
+            "open_fee_bps": 4.0,
+            "close_fee_bps": 4.0,
+            "fee_source": "explicit_config",
+        },
+        "slippage": {
+            "buffer_bps": 2.0,
+            "source": "explicit_config",
+        },
+        "thresholds": _thresholds_payload(),
+        "direction_confidence": {
+            "required": True,
+            "allowed_sources": [
+                "strategy_confidence",
+                "signal_score",
+                "final_score",
+                "judge_confidence",
+            ],
+            "missing_policy": "fail_closed",
+        },
+        "geometry": {
+            "require_tpsl": True,
+            "missing_policy": "fail_closed",
+        },
+    }
+    payload.update(overrides)
+    return domain_dm.LowVolCostFloorGateConfig.model_validate(payload)
+
+
+def _make_dm(*, trading_mode: str):
+    with patch.object(DecisionMaking, "__init__", lambda *_args, **_kwargs: None):
+        dm = DecisionMaking.__new__(DecisionMaking)
+    dm.logger = MagicMock()
+    dm.fsm = MagicMock()
+    dm._builder = MagicMock()
+    dm._emitter = MagicMock()
+    dm.normalize_signals_mode = "signed_v2"
+    dm.config = SimpleNamespace(
+        trading_mode=trading_mode,
+        domains=SimpleNamespace(
+            decision_making=SimpleNamespace(
+                low_vol_cost_floor_gate=_gate_config(),
+            )
+        ),
+    )
+    return dm
+
+
+def _allow_sg(*, regime: str = "LOW_VOLATILITY", regime_confidence: float = 0.8) -> SafetyGateResult:
+    return SafetyGateResult(
+        outcome="ALLOW",
+        strategy_id="aurora",
+        intent_side="LONG",
+        trace_ts_ms=1_700_000_000_999,
+        signal_score=0.9,
+        regime=regime,
+        regime_confidence=regime_confidence,
+        why_short="allow:baseline",
+    )
+
+
+def test_valid_low_vol_cost_floor_config_accepted() -> None:
+    cfg = _gate_config()
+
+    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.65
+    assert cfg.thresholds.min_direction_confidence_by_regime["DEFAULT"] == 0.55
+    assert cfg.observe_only_in_modes == ["live", "production"]
+    assert cfg.direction_confidence.required is True
+    assert cfg.direction_confidence.missing_policy == "fail_closed"
+
+
+def test_low_vol_cost_floor_config_rejects_unknown_fields() -> None:
+    try:
+        _gate_config(unexpected_field=True)
+    except Exception as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected validation failure for unknown field")
+
+    assert "unexpected_field" in message
+    assert "extra inputs are not permitted" in message.lower()
+
+
+def test_low_vol_cost_floor_thresholds_require_default_and_low_volatility() -> None:
+    try:
+        _gate_config(
+            thresholds={
+                "target_net_fee_multiple": 2.0,
+                "min_tp_fee_coverage": 3.0,
+                "min_rr": 1.2,
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55},
+            }
+        )
+    except Exception as exc:
+        message = str(exc)
+    else:
+        raise AssertionError(
+            "Expected validation failure for missing LOW_VOLATILITY threshold")
+
+    assert "LOW_VOLATILITY" in message
+
+
+def test_gate_inactive_when_disabled() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(enabled=False),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=101.0,
+        stop_price=99.0,
+        strategy_trace=None,
+        signal_score=0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.active is False
+    assert evaluation.block is False
+    assert evaluation.gate_mode == "disabled"
+
+
+def test_gate_observes_but_does_not_block_in_live_by_default() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="live",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.5,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.1,
+        stop_price=99.9,
+        strategy_trace=None,
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.active is True
+    assert evaluation.gate_mode == "observe_only"
+    assert evaluation.block is False
+    assert evaluation.threshold_failed is True
+    assert "actual_tp_bps_below_required_gross_tp" in evaluation.details["violations"]
+
+
+def test_gate_blocks_in_testnet_when_tp_below_required_fee_floor() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.1,
+        stop_price=99.0,
+        strategy_trace=None,
+        signal_score=0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.reason == "LOW_VOL_COST_FLOOR_BLOCKED"
+    assert evaluation.details["required_gross_tp_bps"] == 26.0
+    assert "actual_tp_bps_below_required_gross_tp" in evaluation.details["violations"]
+
+
+def test_gate_allows_in_testnet_when_fee_floor_rr_and_confidence_pass() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.threshold_failed is False
+    assert evaluation.details["tp_fee_coverage_ratio"] == 3.75
+    assert evaluation.details["rr_ratio"] == 1.2
+
+
+def test_regime_confidence_threshold_resolved_by_regime_map() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.6,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["resolved_min_regime_confidence"] == 0.65
+    assert "regime_confidence_below_threshold" in evaluation.details["violations"]
+
+
+def test_direction_confidence_threshold_resolved_by_regime_map() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.61,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_source"] == "signal_score"
+    assert evaluation.details["resolved_min_direction_confidence"] == 0.62
+    assert "direction_confidence_below_threshold" in evaluation.details["violations"]
+
+
+def test_missing_direction_confidence_follows_configured_policy() -> None:
+    cfg = _gate_config(
+        direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "warn_and_allow",
+        }
+    )
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.threshold_failed is False
+    assert evaluation.details["direction_confidence"] is None
+    assert "LOW_VOL_COST_FLOOR_UNSCORABLE:direction_confidence_missing" in evaluation.details[
+        "warnings"]
+
+
+def test_missing_geometry_follows_configured_policy() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=None,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert "geometry_missing" in evaluation.details["violations"]
+
+
+def test_metadata_includes_required_economic_fields() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="SELL",
+        entry_price=100.0,
+        target_price=99.70,
+        stop_price=100.25,
+        strategy_trace={"objective": {"final_score": -0.8, "side": "SELL"}},
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    expected_keys = {
+        "reason",
+        "gate_reason",
+        "regime",
+        "regime_confidence",
+        "resolved_min_regime_confidence",
+        "resolved_min_regime_confidence_source",
+        "resolved_min_regime_confidence_strategy_id",
+        "resolved_min_regime_confidence_symbol",
+        "side",
+        "direction_confidence",
+        "direction_confidence_source",
+        "direction_confidence_side_scope",
+        "direction_confidence_required",
+        "direction_confidence_missing_policy",
+        "direction_confidence_failure_reason",
+        "resolved_min_direction_confidence",
+        "resolved_min_direction_confidence_source",
+        "resolved_min_direction_confidence_strategy_id",
+        "resolved_min_direction_confidence_symbol",
+        "entry_price",
+        "target_price",
+        "stop_price",
+        "actual_tp_bps",
+        "actual_sl_bps",
+        "round_trip_fee_bps",
+        "required_gross_tp_bps",
+        "target_net_fee_multiple",
+        "tp_fee_coverage_ratio",
+        "rr_ratio",
+        "trading_mode",
+        "gate_mode",
+    }
+
+    assert expected_keys.issubset(evaluation.details.keys())
+    assert evaluation.details["direction_confidence_source"] == "final_score"
+    assert evaluation.details["direction_confidence_side_scope"] == "SELL"
+
+
+def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() -> None:
+    cfg = _gate_config(
+        thresholds=_thresholds_payload(
+            min_regime_confidence_overrides_by_strategy_symbol={
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                },
+            },
+            min_direction_confidence_overrides_by_strategy_symbol={
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                },
+            },
+        )
+    )
+
+    xrp_evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.70,
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.67,
+        reduce_only=False,
+    )
+    btc_evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.70,
+        strategy_id="aurora",
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.67,
+        reduce_only=False,
+    )
+
+    assert xrp_evaluation.block is True
+    assert xrp_evaluation.details["resolved_min_regime_confidence"] == 0.72
+    assert xrp_evaluation.details["resolved_min_regime_confidence_source"] == "strategy_symbol_override"
+    assert xrp_evaluation.details["resolved_min_direction_confidence"] == 0.68
+    assert xrp_evaluation.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
+    assert xrp_evaluation.details["resolved_min_direction_confidence_symbol"] == "XRPUSDT"
+    assert btc_evaluation.block is False
+    assert btc_evaluation.details["resolved_min_regime_confidence"] == 0.65
+    assert btc_evaluation.details["resolved_min_regime_confidence_source"] == "global_regime"
+    assert btc_evaluation.details["resolved_min_direction_confidence"] == 0.62
+    assert btc_evaluation.details["resolved_min_direction_confidence_source"] == "global_regime"
+
+
+@pytest.mark.parametrize(
+    ("strategy_id", "expected_direction_threshold", "expected_regime_threshold"),
+    [
+        ("aurora", 0.68, 0.72),
+        ("md_amr", 0.88, 0.90),
+        ("mean_reversion", 0.79, 0.82),
+        ("llm_microstructure", 0.74, 0.78),
+    ],
+)
+def test_strategy_symbol_threshold_override_supports_each_strategy(
+    strategy_id: str,
+    expected_direction_threshold: float,
+    expected_regime_threshold: float,
+) -> None:
+    cfg = _gate_config(
+        thresholds=_thresholds_payload(
+            min_regime_confidence_overrides_by_strategy_symbol={
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                },
+                "md_amr": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.90},
+                },
+                "mean_reversion": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.82},
+                },
+                "llm_microstructure": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.78},
+                },
+            },
+            min_direction_confidence_overrides_by_strategy_symbol={
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                },
+                "md_amr": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.88},
+                },
+                "mean_reversion": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.79},
+                },
+                "llm_microstructure": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.74},
+                },
+            },
+        )
+    )
+
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=1.0,
+        strategy_id=strategy_id,
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=1.0,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["resolved_min_direction_confidence"] == expected_direction_threshold
+    assert evaluation.details["resolved_min_regime_confidence"] == expected_regime_threshold
+    assert evaluation.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
+    assert evaluation.details["resolved_min_regime_confidence_source"] == "strategy_symbol_override"
+    assert evaluation.details["resolved_min_direction_confidence_strategy_id"] == strategy_id
+    assert evaluation.details["resolved_min_direction_confidence_symbol"] == "XRPUSDT"
+
+
+def test_strategy_symbol_override_default_does_not_tighten_non_low_vol_thresholds() -> None:
+    regime_resolution = _resolve_low_vol_threshold(
+        mapping={"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
+        overrides_by_strategy_symbol={
+            "aurora": {
+                "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+            },
+        },
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        regime="TREND_UP",
+    )
+    direction_resolution = _resolve_low_vol_threshold(
+        mapping={"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+        overrides_by_strategy_symbol={
+            "aurora": {
+                "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+            },
+        },
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        regime="TREND_UP",
+    )
+
+    assert regime_resolution.value == 0.45
+    assert regime_resolution.source == "strategy_symbol_override"
+    assert regime_resolution.regime_key == "DEFAULT"
+    assert direction_resolution.value == 0.55
+    assert direction_resolution.source == "strategy_symbol_override"
+    assert direction_resolution.regime_key == "DEFAULT"
+
+
+def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_assigned_strategies() -> None:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate
+
+    aurora_xrp = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=gate_cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.9,
+        strategy_id="aurora",
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.69,
+        reduce_only=False,
+    )
+    md_amr_xrp = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=gate_cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.9,
+        strategy_id="md_amr",
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.69,
+        reduce_only=False,
+    )
+    aurora_btc = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=gate_cfg,
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.9,
+        strategy_id="aurora",
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.69,
+        reduce_only=False,
+    )
+
+    assert aurora_xrp.block is False
+    assert aurora_xrp.details["resolved_min_regime_confidence"] == 0.72
+    assert aurora_xrp.details["resolved_min_direction_confidence"] == 0.68
+    assert aurora_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
+    assert md_amr_xrp.block is False
+    assert md_amr_xrp.details["resolved_min_regime_confidence"] == 0.72
+    assert md_amr_xrp.details["resolved_min_direction_confidence"] == 0.68
+    assert md_amr_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
+    assert aurora_btc.block is False
+    assert aurora_btc.details["resolved_min_regime_confidence"] == 0.65
+    assert aurora_btc.details["resolved_min_direction_confidence"] == 0.62
+
+
+def test_missing_direction_confidence_blocks_fail_closed_even_with_high_regime_confidence() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.99,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_failure_reason"] == "direction_confidence_missing"
+    assert "direction_confidence_missing" in evaluation.details["violations"]
+
+
+def test_legacy_strategy_confidence_without_side_scope_blocks_fail_closed() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence", "signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={"strategy_confidence": 0.9},
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert evaluation.details["direction_confidence_failure_reason"] == "non_side_aware_direction_confidence"
+    assert evaluation.details["direction_confidence_is_side_aware"] is False
+
+
+def test_explicit_direction_confidence_without_source_blocks_fail_closed() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={"direction_confidence": 0.9,
+                        "direction_confidence_side_scope": "BUY"},
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_failure_reason"] == "missing_direction_confidence_source"
+    assert "missing_direction_confidence_source" in evaluation.details["violations"]
+
+
+def test_explicit_direction_confidence_unsupported_source_blocks_fail_closed() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "direction_confidence": 0.9,
+            "direction_confidence_source": "mystery_confidence",
+            "direction_confidence_side_scope": "BUY",
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_source"] == "mystery_confidence"
+    assert evaluation.details["direction_confidence_failure_reason"] == "unsupported_direction_confidence_source"
+
+
+def test_explicit_direction_confidence_malformed_value_blocks_fail_closed() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "direction_confidence": "NaN",
+            "direction_confidence_source": "strategy_confidence",
+            "direction_confidence_side_scope": "BUY",
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_failure_reason"] == "invalid_direction_confidence_value"
+
+
+def test_explicit_side_aware_strategy_confidence_allows() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "direction_confidence": 0.9,
+            "direction_confidence_source": "strategy_confidence",
+            "direction_confidence_side_scope": "BUY",
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["direction_confidence"] == 0.9
+    assert evaluation.details["direction_confidence_source"] == "strategy_confidence"
+    assert evaluation.details["direction_confidence_side_scope"] == "BUY"
+
+
+def test_observe_only_direction_confidence_failure_sets_would_block_metadata() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="live",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.gate_mode == "observe_only"
+    assert evaluation.details["would_block"] is True
+    assert evaluation.details["would_block_direction_confidence"] is True
+    assert evaluation.details["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+
+
+def test_sell_side_resolves_signed_final_score_confidence() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["final_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="SELL",
+        entry_price=100.0,
+        target_price=99.70,
+        stop_price=100.25,
+        strategy_trace={"objective": {"final_score": -0.85, "side": "SELL"}},
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["direction_confidence"] == 0.85
+    assert evaluation.details["direction_confidence_source"] == "final_score"
+    assert evaluation.details["direction_confidence_side_scope"] == "SELL"
+
+
+def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
+    dm = _make_dm(trading_mode="testnet")
+    sg = _allow_sg()
+
+    with patch(
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
+    ) as mock_order_write, patch(
+        "apps.reference.domains.decision_making.core.facade.emit_regime_decision_audit"
+    ):
+        dm._propose_trade_intent(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=1,
+            price=100.0,
+            why_chain=["signal_score=0.9"],
+            rid="rid-low-vol-block-1",
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=1_700_000_000_999,
+            stop_price=99.0,
+            target_price=100.1,
+            strategy_trace=None,
+            safety_gate_result=sg,
+        )
+
+    dm._builder.build_and_emit.assert_not_called()
+    dm._emitter.emit_trade_intent_rejected.assert_called_once()
+    rejected = dm._emitter.emit_trade_intent_rejected.call_args.kwargs
+    assert rejected["reason_code"] == NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
+    assert rejected["details"]["required_gross_tp_bps"] == 26.0
+
+    decision_trace_calls = [
+        call.kwargs["payload"]
+        for call in dm.fsm.emit.call_args_list
+        if call.args and call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    ]
+    assert len(decision_trace_calls) == 1
+    assert decision_trace_calls[0]["deny_reason"] == NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["gate_mode"] == "enforced"
+
+    metadata = mock_order_write.call_args.args[0]["metadata"]
+    assert metadata["reject_reason"] == "LOW_VOL_COST_FLOOR_DENY"
+    assert metadata["low_vol_cost_floor"]["threshold_failed"] is True
+
+
+def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
+    dm = _make_dm(trading_mode="live")
+    sg = _allow_sg()
+
+    dm._propose_trade_intent(
+        symbol="BTCUSDT",
+        side="BUY",
+        qty=1,
+        price=100.0,
+        why_chain=["signal_score=0.9"],
+        rid="rid-low-vol-observe-1",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        stop_price=99.0,
+        target_price=100.1,
+        strategy_trace=None,
+        safety_gate_result=sg,
+    )
+
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    dm._builder.build_and_emit.assert_called_once()
+    kwargs = dm._builder.build_and_emit.call_args.kwargs
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["gate_mode"] == "observe_only"
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["threshold_failed"] is True
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["would_block"] is True
+    assert kwargs["sg"].low_vol_cost_floor_details["gate_mode"] == "observe_only"
+
+
+def test_propose_trade_intent_reject_metadata_includes_direction_confidence_details() -> None:
+    dm = _make_dm(trading_mode="testnet")
+    sg = _allow_sg()
+    sg.signal_score = None
+
+    with patch(
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
+    ) as mock_order_write, patch(
+        "apps.reference.domains.decision_making.core.facade.emit_regime_decision_audit"
+    ):
+        dm._propose_trade_intent(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=1,
+            price=100.0,
+            why_chain=[],
+            rid="rid-low-vol-dirconf-1",
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=1_700_000_000_999,
+            stop_price=99.75,
+            target_price=100.30,
+            strategy_trace=None,
+            safety_gate_result=sg,
+        )
+
+    rejected = dm._emitter.emit_trade_intent_rejected.call_args.kwargs
+    assert rejected["reason_code"] == NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
+    assert rejected["details"]["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert rejected["details"]["direction_confidence_failure_reason"] == "direction_confidence_missing"
+
+    metadata = mock_order_write.call_args.args[0]["metadata"]
+    assert metadata["low_vol_cost_floor"]["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert metadata["low_vol_cost_floor"]["direction_confidence_failure_reason"] == "direction_confidence_missing"

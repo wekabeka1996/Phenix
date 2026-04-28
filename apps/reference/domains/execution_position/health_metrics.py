@@ -35,6 +35,7 @@ class HealthMetricsMixin:
         self._last_entry_block_ts: dict
         self._guardian_unified: bool
         self._guardian_emit_tidy_event: bool
+        self._guardian_emit_tidy_monitoring_event: bool
         self.adapter: Optional[BinanceAdapter]
         self._last_status_ts: float
         self._domain_bridge: DomainBridge
@@ -101,6 +102,9 @@ class HealthMetricsMixin:
                 all_metrics["order_guardian"] = guardian_metrics
                 all_metrics["guardian_unified"] = self._guardian_unified
                 all_metrics["guardian_emit_tidy_event"] = self._guardian_emit_tidy_event
+                all_metrics["guardian_emit_tidy_monitoring_event"] = (
+                    self._guardian_emit_tidy_monitoring_event
+                )
         except Exception:
             pass
 

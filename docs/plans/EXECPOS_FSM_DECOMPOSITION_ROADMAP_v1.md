@@ -67,11 +67,15 @@ the next safest surgical cut that preserves runtime truth ownership?**
 
 - **F1.** `ExecPosFSM` inherits 4 mixins: `ConfigResolverMixin`,
   `AsyncSchedulingMixin`, `AdapterInitMixin`, `HealthMetricsMixin`.
-- **F2.** `__init__` constructs 9 collaborator objects (`_lev_cfg`,
-  `_entry_mgr`, `_exposure_mgr`, `_lifecycle_mgr`, `_intent_router`,
-  `_evt_handlers`, `_close_exec`, `_open_exec`, `_bracket_mgr`) plus sidecar,
+- **F2.** `__init__` constructs 8 collaborator objects (`_lev_cfg`,
+  `_entry_mgr`, `_exposure_mgr`, `_intent_router`, `_evt_handlers`,
+  `_close_exec`, `_open_exec`, `_bracket_mgr`) plus mixin-backed config /
+  scheduling / adapter / health surfaces, sidecar,
   truth_hardening, shadow_journal, intent_boundary_audit, restore/truth
   artifact writers, watchdog, order_guardian, alert_manager.
+- **F2a.** The inert `LifecycleManager` / `_lifecycle_mgr` shell has been
+  removed from the active execution_position runtime. Current ownership lives
+  on mixins plus the explicit FSM collaborators listed above.
 - **F3.** Bus wiring happens **only in `ExecPosFSM.__init__`** (8 listeners on
   `self.bus.listen`). Sidecar receives events through re-dispatch in `_on_*`
   methods, not direct subscription.

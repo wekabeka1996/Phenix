@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 WAL Tailer
 
@@ -14,6 +15,7 @@ Key Features:
 Architecture:
     WAL Files → WalTailer → NeocortexAdapter → EpisodicBuffer → BrainCore
 """
+__quarantined__ = True
 
 import asyncio
 import json

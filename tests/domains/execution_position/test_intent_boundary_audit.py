@@ -362,7 +362,9 @@ def test_decision_making_trace_intent_crosses_validated_boundary_and_starts_exec
             )
 
     assert observed_intents
-    assert observed_intents[0]["trace"] == strategy_trace
+    assert observed_intents[0]["trace"]["objective"] == strategy_trace["objective"]
+    assert observed_intents[0]["trace"]["model"] == strategy_trace["model"]
+    assert observed_intents[0]["trace"]["kelly_provenance"]["source_path"] == "config.strategies.aurora.decision.kelly"
     assert observed_intents[0]["regime_provenance"]["source_kind"] == "detector_cache"
     assert observed_intents[0]["regime_provenance"]["detector_event"][
         "structural_regime_ref"] == "structural:BTCUSDT:1700000000000"

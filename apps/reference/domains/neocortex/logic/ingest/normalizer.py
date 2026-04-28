@@ -37,8 +37,8 @@ class WelfordNormalizer:
         self._lock = threading.Lock()
 
         self._count: int = 0
-        self._mean = np.zeros((self._dim,), dtype=np.float32)
-        self._m2 = np.zeros((self._dim,), dtype=np.float32)
+        self._mean: np.ndarray = np.zeros((self._dim,), dtype=np.float32)
+        self._m2: np.ndarray = np.zeros((self._dim,), dtype=np.float32)
 
     @property
     def dim(self) -> int:

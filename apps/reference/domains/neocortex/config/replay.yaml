@@ -1,11 +1,16 @@
 # Neocortex Multi-Source Ingestion Configuration (Phase 7)
-# 
+#
 # This enables ingestion from multiple Aurora log sources:
 # - Feature logs: Real-time market features (State)
 # - Order logs: Trade intents and executions (Actions)
 # - Core logs: Position events and outcomes (Rewards)
 
 enabled: true
+
+# Legacy WAL compatibility (Phase 6)
+wal_dir: "ops/wal"
+wal_glob: ""
+filter_verb: "FEATURES_CALCULATED"
 
 # Log paths (relative to project root)
 features_dir: "logs/features"

@@ -9,6 +9,7 @@ Covers:
 """
 
 import decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,6 +36,28 @@ class _FakeSG:
     vol_pct_10s = vol_pct_60s = vol_pct_300s = 0
 
 
+def _make_config():
+    kelly_cfg = SimpleNamespace(
+        base_probability="0.5",
+        kelly_cap="0.25",
+        kelly_alpha="0.8",
+        payoff_ratio_r="1.5",
+        p_min="0.45",
+        p_max="0.65",
+        uplift_factor="0.2",
+    )
+    strategy_cfg = SimpleNamespace(
+        execution=SimpleNamespace(entry_order_type="LIMIT", entry_tif="GTC"),
+        decision=SimpleNamespace(kelly=kelly_cfg),
+    )
+    return SimpleNamespace(
+        strategies=SimpleNamespace(
+            aurora=strategy_cfg,
+            strat_A=strategy_cfg,
+        )
+    )
+
+
 def _make_builder(*, arb_fn=None) -> IntentBuilder:
     clock = MagicMock()
     clock.now_ms.return_value = 1700000000000
@@ -43,7 +66,7 @@ def _make_builder(*, arb_fn=None) -> IntentBuilder:
         logger=MagicMock(),
         fsm=MagicMock(),
         clock=clock,
-        config=MagicMock(),
+        config=_make_config(),
         tca_prefs={"max_slippage_bps": 10, "max_latency_ms": 100,
                    "maker_preference": False},
         risk_budgets={"trade_cvar95_max_bps": 50,

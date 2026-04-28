@@ -11,24 +11,30 @@ It deliberately consumes upstream sizing/price decisions instead of
 recomputing them here.
 """
 
+import asyncio
 import decimal
 import json
 import logging
+import threading
+import uuid
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr import wal
 from apps.reference.utils.accessors import aget
-from apps.reference.telemetry.metrics import inc_decision_deferred
+from apps.reference.telemetry.metrics import inc_decision_blocked, inc_decision_deferred
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.telemetry.regime_confidence_audit import (
     emit_regime_decision_audit,
 )
+from apps.reference.domains.decision_making.authority_bridge import NeocortexAuthorityBridge
+from apps.reference.domains.decision_making.contracts.schemas_decision_blocked import DecisionBlockedPayload
 from apps.reference.domains.decision_making.intent.builder_policy import resolve_order_policy as resolve_order_policy_impl
+from apps.reference.domains.decision_making.intent.truth_artifacts import write_decision_blocked
 from apps.reference.domains.decision_making.intent.builder_validators import (
     normalize_trade_inputs,
-    resolve_kelly_fraction,
+    resolve_kelly_metadata,
     resolve_risk_budgets,
     resolve_tca_preferences,
     sanitize_tpsl_payload,
@@ -39,6 +45,11 @@ from apps.reference.domains.decision_making.intent.payload_assembler import (
     build_trade_intent_payload,
 )
 from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.decision_making.schemas.control_decision import (
+    ControlDecisionAction,
+    ControlDecisionRequest,
+    ControlDecisionResponse,
+)
 
 try:
     from apps.reference.telemetry.trade_lifecycle_logger import trade_lifecycle as _trade_lifecycle
@@ -77,6 +88,11 @@ class IntentBuilder:
         get_side_bias_params_fn: Callable,
         side_intent_window: dict,
         logger: logging.Logger,
+        authority_bridge: Optional[NeocortexAuthorityBridge] = None,
+        authority_deadline_budget_ms: int = 20,
+        shadow_emit_fn: Optional[Callable[[
+            str, dict[str, Any], str], None]] = None,
+        causal_state_snapshot_fn: Optional[Callable[..., Any]] = None,
         get_regime_epoch_ref_fn: Optional[Callable[[
             str], Optional[str]]] = None,
     ) -> None:
@@ -93,6 +109,11 @@ class IntentBuilder:
         self._record_accepted = record_accepted_fn
         self._emit_deferred = emit_deferred_fn
         self._get_side_bias_params = get_side_bias_params_fn
+        self._authority_bridge = authority_bridge
+        self._authority_deadline_budget_ms = max(
+            1, int(authority_deadline_budget_ms))
+        self._shadow_emit = shadow_emit_fn
+        self._causal_state_snapshot_fn = causal_state_snapshot_fn
         self._get_regime_epoch_ref = get_regime_epoch_ref_fn or (
             lambda _symbol: None)
         self._side_intent_window = side_intent_window
@@ -125,6 +146,347 @@ class IntentBuilder:
     def _runtime_order_index(self) -> Any:
         """Return the current OrderIndex handle when the FSM exposes one."""
         return getattr(self._fsm, "order_index", None)
+
+    def _run_coroutine_sync(self, coro: Any) -> Any:
+        """Run the authority coroutine from the synchronous builder hot path."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        result_box: dict[str, Any] = {}
+        error_box: dict[str, BaseException] = {}
+        completed = threading.Event()
+
+        def _runner() -> None:
+            try:
+                result_box["value"] = asyncio.run(coro)
+            except BaseException as exc:
+                error_box["error"] = exc
+            finally:
+                completed.set()
+
+        threading.Thread(
+            target=_runner,
+            name="decision-making-authority-bridge",
+            daemon=True,
+        ).start()
+        completed.wait()
+
+        if "error" in error_box:
+            raise error_box["error"]
+        return result_box.get("value")
+
+    def _proposed_action(self, *, side: str, reduce_only: bool) -> str:
+        side_upper = str(side).upper()
+        if reduce_only:
+            return "CLOSE_SHORT" if side_upper == "BUY" else "CLOSE_LONG"
+        return "OPEN_LONG" if side_upper == "BUY" else "OPEN_SHORT"
+
+    def _build_control_decision_request(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        proposed_action: str,
+        decision_basis_ts: int,
+        causal_state_snapshot: Optional[dict[str, Any]] = None,
+    ) -> tuple[ControlDecisionRequest, int]:
+        decision_ts_ms = self._clock.now_ms()
+        request = ControlDecisionRequest(
+            decision_id=str(uuid.uuid4()),
+            rid=str(rid),
+            symbol=str(symbol),
+            proposed_action=str(proposed_action),
+            deadline_ms=decision_ts_ms + self._authority_deadline_budget_ms,
+            decision_basis_ts=int(decision_basis_ts),
+            causal_state_snapshot=causal_state_snapshot or {},
+        )
+        return request, decision_ts_ms
+
+    def _fallback_control_decision_response(
+        self,
+        *,
+        request: ControlDecisionRequest,
+        fallback_reason: str,
+    ) -> ControlDecisionResponse:
+        return ControlDecisionResponse(
+            decision_id=request.decision_id,
+            action=ControlDecisionAction.FALLBACK,
+            apply_result=None,
+            fallback_reason=str(fallback_reason),
+            ttl_ms=0,
+        )
+
+    def _snapshot_has_nan(self, value: Any) -> bool:
+        if isinstance(value, float):
+            return value != value
+        if isinstance(value, dict):
+            return any(self._snapshot_has_nan(item) for item in value.values())
+        if isinstance(value, (list, tuple, set)):
+            return any(self._snapshot_has_nan(item) for item in value)
+        return False
+
+    def _resolve_causal_state_snapshot(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: decimal.Decimal,
+        reduce_only: bool,
+        rid: str,
+        strategy_id: str,
+        proposed_action: str,
+        decision_ts_ms: int,
+        decision_basis_ts: int,
+        sg: "SafetyGateResult",
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        snapshot: dict[str, Any] = {}
+        flags: dict[str, Any] = {
+            "snapshot_missing": True,
+            "supports_counterfactual_join": False,
+            "snapshot_provider_configured": self._causal_state_snapshot_fn is not None,
+            "has_nan": False,
+            "is_stale": True,
+        }
+        if self._causal_state_snapshot_fn is None:
+            return snapshot, flags
+
+        try:
+            provided = self._causal_state_snapshot_fn(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                reduce_only=reduce_only,
+                rid=rid,
+                strategy_id=strategy_id,
+                proposed_action=proposed_action,
+                decision_ts_ms=decision_ts_ms,
+                decision_basis_ts=decision_basis_ts,
+                sg=sg,
+            )
+        except Exception:
+            self.logger.warning(
+                "[%s] Failed to build causal state snapshot rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
+            flags["snapshot_provider_error"] = True
+            return {}, flags
+
+        provider_flags: dict[str, Any] = {}
+        if isinstance(provided, tuple):
+            raw_snapshot, raw_flags = provided
+            if isinstance(raw_snapshot, dict):
+                snapshot = dict(raw_snapshot)
+            if isinstance(raw_flags, dict):
+                provider_flags = dict(raw_flags)
+        elif isinstance(provided, dict):
+            snapshot = dict(provided)
+
+        flags.update(provider_flags)
+        snapshot_ts_ms = snapshot.get("tick_ts_ms") or snapshot.get(
+            "feature_event_ts_ms") or snapshot.get("ts_ms")
+        try:
+            snapshot_ts_ms = int(
+                snapshot_ts_ms) if snapshot_ts_ms is not None else None
+        except (TypeError, ValueError):
+            snapshot_ts_ms = None
+
+        flags["snapshot_missing"] = not bool(snapshot)
+        flags["has_nan"] = self._snapshot_has_nan(snapshot)
+        flags["is_stale"] = snapshot_ts_ms is None or snapshot_ts_ms < int(
+            decision_basis_ts)
+        return snapshot, flags
+
+    def _emit_shadow_neocortex_decision_logged(
+        self,
+        *,
+        request: ControlDecisionRequest,
+        decision_ts_ms: int,
+        response: ControlDecisionResponse,
+        symbol: str,
+        side: str,
+        qty: decimal.Decimal,
+        reduce_only: bool,
+        rid: str,
+        strategy_id: str,
+        proposed_action: str,
+        decision_basis_ts: int,
+        sg: "SafetyGateResult",
+        causal_state_snapshot: Optional[dict[str, Any]] = None,
+        data_quality_flags: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if self._shadow_emit is None:
+            return
+        if getattr(response, "shadow_logged", False):
+            return
+
+        if causal_state_snapshot is None or data_quality_flags is None:
+            snapshot, flags = self._resolve_causal_state_snapshot(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                reduce_only=reduce_only,
+                rid=rid,
+                strategy_id=strategy_id,
+                proposed_action=proposed_action,
+                decision_ts_ms=decision_ts_ms,
+                decision_basis_ts=decision_basis_ts,
+                sg=sg,
+            )
+        else:
+            snapshot = dict(causal_state_snapshot)
+            flags = dict(data_quality_flags)
+        action = response.model_action or response.action
+        payload = {
+            "decision_id": request.decision_id,
+            "rid": request.rid,
+            "symbol": symbol,
+            "decision_ts_ms": int(decision_ts_ms),
+            "decision_basis_ts": int(decision_basis_ts),
+            "action": action.value,
+            "causal_state_snapshot": snapshot,
+            "fallback_reason": response.fallback_reason,
+            "data_quality_flags": flags,
+        }
+        try:
+            self._shadow_emit(
+                "SHADOW:NEOCORTEX_DECISION_LOGGED",
+                payload,
+                "neocortex_decision_logged",
+            )
+        except Exception:
+            self.logger.warning(
+                "[%s] Failed to emit SHADOW:NEOCORTEX_DECISION_LOGGED rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
+
+    async def _request_authority(
+        self,
+        *,
+        request: ControlDecisionRequest,
+        decision_ts_ms: int,
+    ) -> tuple[ControlDecisionRequest, int, ControlDecisionResponse]:
+        timeout_ms = max(1, request.deadline_ms - decision_ts_ms)
+        response = await self._authority_bridge.request_authority(
+            request,
+            timeout_ms=timeout_ms,
+        )
+        return request, decision_ts_ms, response
+
+    def _request_authority_sync(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        proposed_action: str,
+        decision_basis_ts: int,
+        causal_state_snapshot: Optional[dict[str, Any]] = None,
+    ) -> tuple[ControlDecisionRequest, int, ControlDecisionResponse]:
+        request, decision_ts_ms = self._build_control_decision_request(
+            symbol=symbol,
+            rid=rid,
+            proposed_action=proposed_action,
+            decision_basis_ts=decision_basis_ts,
+            causal_state_snapshot=causal_state_snapshot,
+        )
+        if self._authority_bridge is None:
+            return (
+                request,
+                decision_ts_ms,
+                self._fallback_control_decision_response(
+                    request=request,
+                    fallback_reason="AI_OFFLINE",
+                ),
+            )
+        try:
+            return self._run_coroutine_sync(
+                self._request_authority(
+                    request=request,
+                    decision_ts_ms=decision_ts_ms,
+                )
+            )
+        except Exception as exc:
+            self.logger.error(
+                "[%s] Neocortex authority bridge failed rid=%s: %s",
+                symbol,
+                rid,
+                exc,
+                exc_info=True,
+            )
+            return (
+                request,
+                decision_ts_ms,
+                self._fallback_control_decision_response(
+                    request=request,
+                    fallback_reason="TIMEOUT_OR_ERROR",
+                ),
+            )
+
+    def _emit_neocortex_veto(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        why_chain: list,
+        proposed_action: str,
+        decision_basis_ts: int,
+        response: ControlDecisionResponse,
+    ) -> None:
+        reason_code = "NEOCORTEX_VETO"
+        ts_ms = self._clock.now_ms()
+        self.logger.warning(
+            "[%s] NEOCORTEX_VETO rid=%s proposed_action=%s result=%s",
+            symbol,
+            rid,
+            proposed_action,
+            response.apply_result or "BLOCK",
+        )
+
+        try:
+            blocked_payload = write_decision_blocked(
+                symbol=symbol,
+                reason_code=reason_code,
+                reason="Neocortex vetoed the proposed trade",
+                path="decision_making.intent.builder:neocortex_authority",
+                why="neocortex veto",
+                stage="intent_builder",
+                src="decision_making",
+                ts_ms=ts_ms,
+                rid=str(rid),
+                why_chain=why_chain,
+                details={
+                    "decision_id": response.decision_id,
+                    "proposed_action": proposed_action,
+                    "decision_basis_ts": int(decision_basis_ts),
+                    "apply_result": response.apply_result,
+                    "fallback_reason": response.fallback_reason,
+                    "ttl_ms": int(response.ttl_ms),
+                },
+            )
+            payload_obj = DecisionBlockedPayload.model_validate(
+                blocked_payload)
+            self._fsm.emit(
+                "EVT:DECISION_BLOCKED",
+                payload=payload_obj.model_dump(),
+                why=f"decision_blocked:{reason_code}",
+                data_ref=why_chain,
+            )
+            inc_decision_blocked(stage="intent_builder",
+                                 reason_code=reason_code)
+        except Exception:
+            self.logger.error(
+                "[%s] Failed to emit DECISION_BLOCKED for Neocortex veto rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
+        finally:
+            self._record_blocked(symbol)
 
     def _cancel_entry_reservation(self, order_index: Any, rid: str) -> None:
         """Release a pending ENTRY_INTENT placeholder after a pre-emit failure."""
@@ -162,6 +524,7 @@ class IntentBuilder:
         risk_score: Optional[float],
         tpsl_owner_ctx: Optional[dict] = None,
         strategy_trace: Optional[dict] = None,
+        authority_context: Optional[dict[str, Any]] = None,
         normalize_mode: str = "signed_v2",
         sg: "SafetyGateResult",
     ) -> None:
@@ -293,15 +656,17 @@ class IntentBuilder:
             tpsl_owner_ctx=tpsl_owner_ctx,
         )
         regime_provenance = getattr(sg, "regime_provenance", None)
-        kelly_frac = resolve_kelly_fraction(
-            config=self.config,
-            strategy_id=str(strategy_id),
-        )
+        try:
+            kelly_metadata = resolve_kelly_metadata(
+                config=self.config,
+                strategy_id=str(strategy_id),
+            )
+        except ValueError as e:
+            self.logger.error(f"[{symbol}] Kelly metadata config block: {e}")
+            self._record_blocked(symbol)
+            _release_entry_reservation()
+            return
 
-        # These schema-required fields are still produced in their current
-        # compatibility form here. The builder does not have a proven local
-        # Kelly calculator, so this path only preserves the existing runtime
-        # values instead of introducing new sizing math.
         # ── Payload assembly ───────────────────────────────────
         trade_intent = build_trade_intent_payload(
             symbol=symbol,
@@ -319,7 +684,10 @@ class IntentBuilder:
             risk_score=risk_score,
             trade_cvar95_max_bps=risk_budgets.trade_cvar95_max_bps,
             session_cvar95_max_bps=risk_budgets.session_cvar95_max_bps,
-            kelly_fraction=kelly_frac,
+            p=kelly_metadata.p,
+            payoff_ratio_r=kelly_metadata.payoff_ratio_r,
+            kelly_fraction=kelly_metadata.kelly_fraction,
+            kelly_provenance=kelly_metadata.provenance,
             valid_for_ms=valid_for_ms,
             why_chain=why_chain,
             stop_price=tpsl_payload.stop_price,
@@ -331,6 +699,7 @@ class IntentBuilder:
             regime_epoch_ref=self._get_regime_epoch_ref(symbol),
             tpsl_owner_ctx=tpsl_payload.owner_ctx,
             strategy_trace=strategy_trace,
+            authority_context=authority_context,
         )
 
         # ── Arbitration pre-check ──────────────────────────────
@@ -342,6 +711,65 @@ class IntentBuilder:
             self._record_blocked(symbol)
             _release_entry_reservation()
             return
+
+        if authority_context is None and self._authority_bridge is not None:
+            proposed_action = self._proposed_action(
+                side=side, reduce_only=reduce_only)
+            decision_basis_ts_value = int(
+                decision_ts_ms or trace_ts_ms or self._clock.now_ms())
+            causal_snapshot, causal_flags = self._resolve_causal_state_snapshot(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                reduce_only=reduce_only,
+                rid=str(rid),
+                strategy_id=str(strategy_id),
+                proposed_action=proposed_action,
+                decision_ts_ms=self._clock.now_ms(),
+                decision_basis_ts=decision_basis_ts_value,
+                sg=sg,
+            )
+            decision_request, authority_decision_ts_ms, authority_response = self._request_authority_sync(
+                symbol=symbol,
+                rid=str(rid),
+                proposed_action=proposed_action,
+                decision_basis_ts=decision_basis_ts_value,
+                causal_state_snapshot=causal_snapshot,
+            )
+            self._emit_shadow_neocortex_decision_logged(
+                request=decision_request,
+                decision_ts_ms=authority_decision_ts_ms,
+                response=authority_response,
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                reduce_only=reduce_only,
+                rid=str(rid),
+                strategy_id=str(strategy_id),
+                proposed_action=proposed_action,
+                decision_basis_ts=decision_basis_ts_value,
+                sg=sg,
+                causal_state_snapshot=causal_snapshot,
+                data_quality_flags=causal_flags,
+            )
+            if authority_response.action == ControlDecisionAction.BLOCK:
+                self._emit_neocortex_veto(
+                    symbol=symbol,
+                    rid=str(rid),
+                    why_chain=why_chain,
+                    proposed_action=proposed_action,
+                    decision_basis_ts=decision_basis_ts_value,
+                    response=authority_response,
+                )
+                _release_entry_reservation()
+                return
+            if authority_response.action == ControlDecisionAction.FALLBACK:
+                self.logger.warning(
+                    "[%s] Neocortex authority fallback rid=%s reason=%s",
+                    symbol,
+                    rid,
+                    authority_response.fallback_reason,
+                )
         try:
             emit_regime_decision_audit(
                 logger=self.logger,
@@ -361,6 +789,7 @@ class IntentBuilder:
         # ── Forensic trace ─────────────────────────────────────
         trace_payload = build_decision_trace_payload(
             symbol=symbol,
+            strategy_id=str(strategy_id),
             trace_ts_ms=trace_ts_ms,
             intent_side=intent_side,
             sg=sg,
@@ -485,6 +914,7 @@ class IntentBuilder:
                 rid=rid,
                 lifecycle_id=trade_intent["idempotent_key"],
                 symbol=symbol,
+                strategy_id=str(strategy_id),
                 side=side,
                 qty=qty,
                 price=price,

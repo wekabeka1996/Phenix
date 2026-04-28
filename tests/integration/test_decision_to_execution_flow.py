@@ -4,6 +4,8 @@ Integration test for Decision→Execution bridge (Part EXECUTE-T03).
 Tests the end-to-end flow from TRADE_INTENT_PROPOSED to CMD:OPEN.
 """
 
+from unittest.mock import MagicMock
+import pytest
 import sys
 from pathlib import Path
 
@@ -11,9 +13,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "vfoundation" / "vfoundation"))
-
-import pytest
-from unittest.mock import MagicMock
 
 
 # Simple Message class for testing (same as in other integration tests)
@@ -137,9 +136,11 @@ def test_full_flow_from_decision_to_execution_command(full_config):
         order_details = event.pld.get("order", {})
 
         command_payload = {
-            "symbol": event.pld.get("instrument"),  # Map 'instrument' to 'symbol'
+            # Map 'instrument' to 'symbol'
+            "symbol": event.pld.get("instrument"),
             "side": event.pld.get("side"),
-            "qty": order_details.get("qty"),  # Get qty from order.qty (as string)
+            # Get qty from order.qty (as string)
+            "qty": order_details.get("qty"),
             "price": order_details.get(
                 "price"
             ),  # Get price from order.price (as string)
@@ -196,12 +197,14 @@ def test_full_flow_from_decision_to_execution_command(full_config):
 
     fsm_core.listen("TRADE_INTENT_PROPOSED", on_trade_intent_proposed)
 
-    # 3. Act: Simulate TRADE_INTENT_PROPOSED event from DecisionMaking
-    # This payload structure matches the output from decision_making.py lines 340-382
+    # 3. Act: Simulate TRADE_INTENT_PROPOSED event from an older bridge-era fixture.
+    # Kelly-related values below are synthetic payload-shape placeholders, not
+    # assertions about current Aurora Kelly provenance truth.
     trade_intent_payload = {
         "instrument": "ETHUSDT",
         "side": "buy",
-        "idempotent_key": "a1b2c3d4e5f678901234567890123456",  # Mock idempotent key (32 chars)
+        # Mock idempotent key (32 chars)
+        "idempotent_key": "a1b2c3d4e5f678901234567890123456",
         "p": "0.9",  # High probability (calibrated)
         "payoff_ratio_r": "2.0",
         "tca_budget": {
@@ -250,7 +253,8 @@ def test_full_flow_from_decision_to_execution_command(full_config):
     execution_domain.handle.assert_called_once()
 
     called_command = execution_domain.handle.call_args[0][0]
-    assert isinstance(called_command, Message), "Command should be a Message instance"
+    assert isinstance(
+        called_command, Message), "Command should be a Message instance"
     assert called_command.op == "CMD", f"Expected op='CMD', got '{called_command.op}'"
     assert called_command.verb == "OPEN", (
         f"Expected verb='OPEN', got '{called_command.verb}'"

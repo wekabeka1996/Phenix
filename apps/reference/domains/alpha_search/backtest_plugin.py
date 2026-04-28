@@ -38,6 +38,10 @@ from .judge.experts.expert_output_bridge import (
 )
 from .judge.chamber import ChamberAggregator
 from .judge.envelope import assemble_evidence_envelope
+from .judge.shadow_entry_plan import (
+    derive_shadow_entry_plans,
+    write_jsonl_shadow_entry_plan_log,
+)
 from .judge.verdict import synthesize_verdict
 
 LOG = logging.getLogger(__name__)
@@ -605,6 +609,9 @@ class AlphaSearchBacktestPlugin:
         # Cache hit!
         self._cache_hits += 1
         features = cache_entry.features
+        current_price = cache_entry.price or self._get_price_from_features(
+            features
+        )
 
         # Phase 3: Build solicited expert roster and output collection
         solicited_expert_ids = []
@@ -683,11 +690,6 @@ class AlphaSearchBacktestPlugin:
                         provider_id, symbol, tf_sec, bar_close_ts)
                 continue
 
-            # Get current price for virtual trader
-            current_price = cache_entry.price or self._get_price_from_features(
-                normalized_features
-            )
-
             # Calculate score
             try:
                 score = model.calculate_alpha(
@@ -725,6 +727,7 @@ class AlphaSearchBacktestPlugin:
                 solicited_expert_ids=solicited_expert_ids,
                 judge_expert_outputs=judge_expert_outputs,
                 features=cache_entry.features if cache_entry else {},
+                current_price=current_price,
             )
 
     def _normalize_features_for_provider(
@@ -1018,7 +1021,8 @@ class AlphaSearchBacktestPlugin:
         # Resolve expert_version from judge expert config
         expert_type = cfg.judge_expert.expert_type
         expert_version = "1.0.0"
-        signal_threshold = self._resolve_judge_expert_signal_threshold(expert_type)
+        signal_threshold = self._resolve_judge_expert_signal_threshold(
+            expert_type)
         if judge_cfg and judge_cfg.experts:
             if expert_type == "signal_weights":
                 expert_version = judge_cfg.experts.signal_weights.expert_version
@@ -1102,6 +1106,7 @@ class AlphaSearchBacktestPlugin:
         solicited_expert_ids: list,
         judge_expert_outputs: list,
         features: Optional[Dict[str, Any]] = None,
+        current_price: float = 0.0,
     ) -> None:
         """Phase 3+4: Run chamber aggregation and verdict synthesis.
 
@@ -1158,6 +1163,7 @@ class AlphaSearchBacktestPlugin:
                     judge_cfg=judge_cfg,
                     bar_close_ts=bar_close_ts,
                     features=features,
+                    current_price=current_price,
                     verdict_event="EVT:JUDGE_ENTRY_VERDICT_V1",
                 )
 
@@ -1194,6 +1200,7 @@ class AlphaSearchBacktestPlugin:
                     judge_cfg=judge_cfg,
                     bar_close_ts=bar_close_ts,
                     features=features,
+                    current_price=current_price,
                     verdict_event="EVT:JUDGE_LIFECYCLE_VERDICT_V1",
                 )
 
@@ -1203,6 +1210,7 @@ class AlphaSearchBacktestPlugin:
         judge_cfg,
         bar_close_ts: int,
         features: Optional[Dict[str, Any]],
+        current_price: float,
         verdict_event: str,
     ) -> None:
         """Phase 4: Assemble evidence envelope and synthesize verdict.
@@ -1278,6 +1286,35 @@ class AlphaSearchBacktestPlugin:
                     )
                 except Exception:
                     LOG.exception("[%s] Failed to write verdict log", symbol)
+
+            shadow_plan_cfg = getattr(judge_cfg.verdict, "shadow_plan", None)
+            if (
+                chamber_result.verdict_scope == "ENTRY"
+                and shadow_plan_cfg is not None
+                and shadow_plan_cfg.enabled
+            ):
+                plans = derive_shadow_entry_plans(
+                    verdict,
+                    price_ref=current_price,
+                    shadow_plan_config=shadow_plan_cfg,
+                )
+                for plan in plans:
+                    self.event_bus.emit(
+                        event_name="EVT:JUDGE_SHADOW_ENTRY_PLAN_V1",
+                        payload=plan.model_dump(),
+                        why=f"judge_shadow_plan_{plan.confidence_tier}_{symbol}",
+                    )
+                    if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                        try:
+                            write_jsonl_shadow_entry_plan_log(
+                                plan,
+                                log_dir=judge_cfg.shadow_log.log_dir,
+                            )
+                        except Exception:
+                            LOG.exception(
+                                "[%s] Failed to write shadow entry plan log",
+                                symbol,
+                            )
 
             LOG.debug(
                 "[%s] %s verdict: %s conf=%.4f dissent=%s (shadow)",

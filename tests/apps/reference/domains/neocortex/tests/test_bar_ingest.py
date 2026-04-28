@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from apps.reference.domains.neocortex.config_models import NeocortexConfig
+from apps.reference.domains.neocortex.config_models import IngestConfig
 from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
 from apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser import parse_feature_log_line
 
@@ -27,6 +27,7 @@ def test_bar_feature_log_nested_json_is_flattened_and_parsed(tmp_path: Path) -> 
     system_data = {
         "data_dir": str(tmp_path / "data"),
         "checkpoint_dir": str(tmp_path / "data" / "checkpoints"),
+        "run_mode": "backtest",
         "brain_workers": 1,
         "queue_maxsize": 1000,
         "log_level": "INFO",
@@ -34,8 +35,8 @@ def test_bar_feature_log_nested_json_is_flattened_and_parsed(tmp_path: Path) -> 
         "rng_seed": 42,
     }
 
-    cfg = NeocortexConfig(system=system_data, ingest=ingest_data, neuro=neuro_data)
-    parser = FeatureParser(cfg.ingest)
+    ingest_cfg = IngestConfig.model_validate(ingest_data)
+    parser = FeatureParser(ingest_cfg)
 
     nested_features = {
         "price": "90450.0",
@@ -73,11 +74,11 @@ def test_bar_feature_log_nested_json_is_flattened_and_parsed(tmp_path: Path) -> 
     assert entry.features["volatility_atr_14"] == 0.0
     assert entry.features["liquidity_obi_close"] == 0.77
 
-    obs = parser.parse({"timestamp": entry.timestamp, "symbol": entry.symbol, "features": entry.features})
-    assert obs.features_vector.shape == (len(cfg.ingest.feature_list),)
+    obs = parser.parse({"timestamp": entry.timestamp,
+                       "symbol": entry.symbol, "features": entry.features})
+    assert obs.features_vector.shape == (len(ingest_cfg.feature_list),)
 
     idx_atr = parser.feature_indices["volatility_atr_14"]
     idx_liq = parser.feature_indices["liquidity_obi_close"]
     assert float(obs.features_vector[idx_atr]) == 0.0
     assert float(obs.features_vector[idx_liq]) == pytest.approx(0.77, abs=1e-6)
-

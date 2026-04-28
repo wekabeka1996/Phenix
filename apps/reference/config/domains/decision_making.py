@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.reference.config.shared.atoms import (
     BarGatingConfig,
@@ -22,6 +22,284 @@ from apps.reference.config.shared.enums import (
     ExecutionGateName,
     OperationalMode,
 )
+
+
+_REGIME_CONFIDENCE_GATE_KEYS = frozenset({
+    "DEFAULT",
+    "TREND_UP",
+    "TREND_DOWN",
+    "HIGH_VOLATILITY",
+    "LOW_VOLATILITY",
+    "MEAN_REVERSION",
+    "UNCERTAIN",
+})
+
+_LOW_VOL_COST_FLOOR_RUNTIME_MODES = frozenset(
+    {"testnet", "hybrid_live_data_testnet_exec", "live", "production"}
+)
+
+_LOW_VOL_DIRECTION_CONFIDENCE_SOURCES = frozenset(
+    {"strategy_confidence", "signal_score", "final_score", "judge_confidence"}
+)
+
+
+def _validate_regime_confidence_threshold_mapping_shape(value, *, field_name: str):
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} must be a mapping')
+    for raw_key, raw_threshold in value.items():
+        if not isinstance(raw_key, str):
+            raise ValueError(f'{field_name} keys must be strings')
+        if raw_threshold is None or isinstance(raw_threshold, bool):
+            raise ValueError(
+                f'{field_name} values must be numeric thresholds in [0.0, 1.0]'
+            )
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'{field_name} values must be numeric thresholds in [0.0, 1.0]'
+            ) from exc
+        if threshold < 0.0 or threshold > 1.0:
+            raise ValueError(f'{field_name} values must be in [0.0, 1.0]')
+    return value
+
+
+def _normalize_regime_confidence_threshold_mapping(mapping, *, field_name: str) -> Dict[str, float]:
+    if not mapping:
+        raise ValueError(f'{field_name} requires DEFAULT when provided')
+    normalized: Dict[str, float] = {}
+    for raw_key, threshold in mapping.items():
+        key = str(raw_key)
+        canonical = key.strip()
+        if key != canonical or canonical != canonical.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase labels')
+        if canonical not in _REGIME_CONFIDENCE_GATE_KEYS:
+            allowed = ', '.join(sorted(_REGIME_CONFIDENCE_GATE_KEYS))
+            raise ValueError(
+                f"unsupported {field_name} key '{raw_key}'; allowed: {allowed}"
+            )
+        normalized[canonical] = float(threshold)
+    if 'DEFAULT' not in normalized:
+        raise ValueError(f'{field_name} requires DEFAULT when provided')
+    return normalized
+
+
+def _validate_symbol_regime_confidence_threshold_mapping_shape(value, *, field_name: str):
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} must be a mapping')
+    for raw_symbol, raw_mapping in value.items():
+        if not isinstance(raw_symbol, str):
+            raise ValueError(f'{field_name} keys must be strings')
+        symbol = raw_symbol.strip()
+        if not symbol or raw_symbol != symbol or symbol != symbol.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase symbols')
+        _validate_regime_confidence_threshold_mapping_shape(
+            raw_mapping,
+            field_name=f'{field_name}.{symbol}',
+        )
+    return value
+
+
+def _normalize_symbol_regime_confidence_threshold_mapping(mapping, *, field_name: str) -> Dict[str, Dict[str, float]]:
+    if not mapping:
+        raise ValueError(f'{field_name} must not be empty when provided')
+    normalized: Dict[str, Dict[str, float]] = {}
+    for raw_symbol, raw_mapping in mapping.items():
+        symbol = str(raw_symbol)
+        canonical = symbol.strip()
+        if symbol != canonical or canonical != canonical.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase symbols')
+        normalized[canonical] = _normalize_regime_confidence_threshold_mapping(
+            raw_mapping,
+            field_name=f'{field_name}.{canonical}',
+        )
+    return normalized
+
+
+def _normalize_low_vol_gate_threshold_mapping(mapping, *, field_name: str) -> Dict[str, float]:
+    normalized = _normalize_regime_confidence_threshold_mapping(
+        mapping,
+        field_name=field_name,
+    )
+    if 'LOW_VOLATILITY' not in normalized:
+        raise ValueError(
+            f'{field_name} requires explicit LOW_VOLATILITY threshold')
+    return normalized
+
+
+def _validate_low_vol_strategy_symbol_threshold_overrides_shape(value, *, field_name: str):
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not value:
+        raise ValueError(
+            f'{field_name} must be a non-empty mapping when provided')
+    for raw_strategy_id, symbol_map in value.items():
+        if not isinstance(raw_strategy_id, str):
+            raise ValueError(f'{field_name} strategy keys must be strings')
+        strategy_id = raw_strategy_id.strip()
+        if not strategy_id:
+            raise ValueError(
+                f'{field_name} strategy keys must be non-empty strings')
+        if raw_strategy_id != strategy_id:
+            raise ValueError(
+                f'{field_name} strategy keys must not contain surrounding whitespace')
+        if not isinstance(symbol_map, dict) or not symbol_map:
+            raise ValueError(
+                f'{field_name}.{strategy_id} must be a non-empty symbol mapping')
+        for raw_symbol, thresholds in symbol_map.items():
+            if not isinstance(raw_symbol, str):
+                raise ValueError(
+                    f'{field_name}.{strategy_id} symbol keys must be strings')
+            symbol = raw_symbol.strip()
+            if not symbol:
+                raise ValueError(
+                    f'{field_name}.{strategy_id} symbol keys must be non-empty strings')
+            if raw_symbol != symbol:
+                raise ValueError(
+                    f'{field_name}.{strategy_id} symbol keys must not contain surrounding whitespace')
+            _validate_regime_confidence_threshold_mapping_shape(
+                thresholds,
+                field_name=f'{field_name}.{strategy_id}.{symbol}',
+            )
+    return value
+
+
+def _normalize_low_vol_strategy_symbol_threshold_overrides(
+    value,
+    *,
+    field_name: str,
+) -> Dict[str, Dict[str, Dict[str, float]]] | None:
+    if value is None:
+        return None
+    normalized: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for raw_strategy_id, symbol_map in value.items():
+        strategy_id = str(raw_strategy_id).strip()
+        normalized_symbol_map: Dict[str, Dict[str, float]] = {}
+        for raw_symbol, thresholds in symbol_map.items():
+            symbol = str(raw_symbol).strip().upper()
+            if raw_symbol != symbol:
+                raise ValueError(
+                    f'{field_name}.{strategy_id} symbol keys must be canonical uppercase labels')
+            normalized_symbol_map[symbol] = _normalize_low_vol_gate_threshold_mapping(
+                thresholds,
+                field_name=f'{field_name}.{strategy_id}.{symbol}',
+            )
+        normalized[strategy_id] = normalized_symbol_map
+    return normalized
+
+
+def _validate_low_vol_runtime_modes(value, *, field_name: str):
+    if not isinstance(value, list) or not value:
+        raise ValueError(f'{field_name} must be a non-empty list')
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for raw_mode in value:
+        if not isinstance(raw_mode, str):
+            raise ValueError(f'{field_name} entries must be strings')
+        mode = raw_mode.strip()
+        if raw_mode != mode:
+            raise ValueError(
+                f'{field_name} entries must not contain surrounding whitespace')
+        if mode not in _LOW_VOL_COST_FLOOR_RUNTIME_MODES:
+            allowed = ', '.join(sorted(_LOW_VOL_COST_FLOOR_RUNTIME_MODES))
+            raise ValueError(
+                f"unsupported {field_name} mode '{raw_mode}'; allowed: {allowed}"
+            )
+        if mode in seen:
+            raise ValueError(f'{field_name} entries must be unique')
+        seen.add(mode)
+        normalized.append(mode)
+    return normalized
+
+
+def _validate_low_vol_direction_sources(value, *, field_name: str):
+    if not isinstance(value, list) or not value:
+        raise ValueError(f'{field_name} must be a non-empty list')
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for raw_source in value:
+        if not isinstance(raw_source, str):
+            raise ValueError(f'{field_name} entries must be strings')
+        source = raw_source.strip()
+        if raw_source != source:
+            raise ValueError(
+                f'{field_name} entries must not contain surrounding whitespace')
+        if source not in _LOW_VOL_DIRECTION_CONFIDENCE_SOURCES:
+            allowed = ', '.join(sorted(_LOW_VOL_DIRECTION_CONFIDENCE_SOURCES))
+            raise ValueError(
+                f"unsupported {field_name} source '{raw_source}'; allowed: {allowed}"
+            )
+        if source in seen:
+            raise ValueError(f'{field_name} entries must be unique')
+        seen.add(source)
+        normalized.append(source)
+    return normalized
+
+
+class RegimeConfidenceGateConfig(BaseModel):
+    """Strategy-local regime-confidence admission threshold overrides."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    min_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-regime regime_confidence thresholds. '
+            'When provided, DEFAULT is required and strategy values override domain defaults.'
+        ),
+    )
+    min_by_symbol: Optional[Dict[str, Dict[str, float]]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-symbol regime_confidence thresholds. '
+            'When provided, each symbol mapping requires DEFAULT and overrides strategy/domain defaults for that symbol.'
+        ),
+    )
+
+    @field_validator('min_by_regime', mode='before')
+    @classmethod
+    def validate_min_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.min_by_regime',
+        )
+
+    @field_validator('min_by_symbol', mode='before')
+    @classmethod
+    def validate_min_by_symbol_shape(cls, value):
+        return _validate_symbol_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.min_by_symbol',
+        )
+
+    @model_validator(mode='after')
+    def validate_threshold_contract(self) -> 'RegimeConfidenceGateConfig':
+        mapping = self.min_by_regime
+        if mapping is None:
+            normalized_mapping = None
+        else:
+            normalized_mapping = _normalize_regime_confidence_threshold_mapping(
+                mapping,
+                field_name='safety_gates.regime_confidence.min_by_regime',
+            )
+        symbol_mapping = self.min_by_symbol
+        if symbol_mapping is None:
+            normalized_symbol_mapping = None
+        else:
+            normalized_symbol_mapping = _normalize_symbol_regime_confidence_threshold_mapping(
+                symbol_mapping,
+                field_name='safety_gates.regime_confidence.min_by_symbol',
+            )
+        self.min_by_regime = normalized_mapping
+        self.min_by_symbol = normalized_symbol_mapping
+        return self
 
 
 class SafetyGatesConfig(BaseModel):
@@ -55,6 +333,13 @@ class SafetyGatesConfig(BaseModel):
         ..., ge=0.0,
         le=1.0,
         description="Multiplicative factor applied to margin_pct_mult when STRESS and policy=attenuate",
+    )
+    regime_confidence: Optional[RegimeConfidenceGateConfig] = Field(
+        default=None,
+        description=(
+            "Optional strategy-local regime-confidence admission threshold overrides. "
+            "Absent block means the domain-level directional_sanity thresholds apply."
+        ),
     )
 
 
@@ -472,6 +757,13 @@ class DirectionalSanityConfig(BaseModel):
         description='Minimum regime_confidence required to open position (0.0 = disabled). '
                     'Separate from min_confidence which blends regime+trend. FIX-CONF-GATE-01.'
     )
+    min_regime_confidence_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description=(
+            'Optional per-regime regime_confidence admission thresholds. '
+            'When provided, DEFAULT is required and runtime regime-specific keys override it.'
+        ),
+    )
     hard_veto_consecutive_bars: int = Field(
         ..., ge=1,
         le=3,
@@ -483,6 +775,25 @@ class DirectionalSanityConfig(BaseModel):
         le=3,
         description='Number of consecutive deltas required to confirm trend (1-3). Use 1 for bar-based backtest, 2+ for live tick-based.'
     )
+
+    @field_validator('min_regime_confidence_by_regime', mode='before')
+    @classmethod
+    def validate_min_regime_confidence_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='min_regime_confidence_by_regime',
+        )
+
+    @model_validator(mode='after')
+    def validate_min_regime_confidence_by_regime_contract(self) -> 'DirectionalSanityConfig':
+        mapping = self.min_regime_confidence_by_regime
+        if mapping is None:
+            return self
+        self.min_regime_confidence_by_regime = _normalize_regime_confidence_threshold_mapping(
+            mapping,
+            field_name='min_regime_confidence_by_regime',
+        )
+        return self
 
 
 class PriceMotionSanityConfig(BaseModel):
@@ -745,6 +1056,200 @@ class RegimeLossEmbargoConfig(BaseModel):
     )
 
 
+class LowVolCostFloorFeeConfig(BaseModel):
+    """Explicit fee assumptions for LOW_VOL cost-floor evaluation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    open_fee_bps: float = Field(..., gt=0.0)
+    close_fee_bps: float = Field(..., gt=0.0)
+    fee_source: Literal["explicit_config"] = Field(...)
+
+
+class LowVolCostFloorSlippageConfig(BaseModel):
+    """Explicit slippage assumptions for LOW_VOL cost-floor evaluation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    buffer_bps: float = Field(..., ge=0.0)
+    source: Literal["explicit_config"] = Field(...)
+
+
+class LowVolCostFloorThresholdsConfig(BaseModel):
+    """Threshold contract for LOW_VOL fee-adjusted profitability gating."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    target_net_fee_multiple: float = Field(..., gt=0.0)
+    min_tp_fee_coverage: float = Field(..., gt=0.0)
+    min_rr: float = Field(..., gt=0.0)
+    min_regime_confidence_by_regime: Dict[str, float] = Field(...)
+    min_direction_confidence_by_regime: Dict[str, float] = Field(...)
+    min_regime_confidence_overrides_by_strategy_symbol: Optional[
+        Dict[str, Dict[str, Dict[str, float]]]
+    ] = Field(default=None)
+    min_direction_confidence_overrides_by_strategy_symbol: Optional[
+        Dict[str, Dict[str, Dict[str, float]]]
+    ] = Field(default=None)
+
+    @field_validator('min_regime_confidence_by_regime', mode='before')
+    @classmethod
+    def validate_min_regime_confidence_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime',
+        )
+
+    @field_validator('min_direction_confidence_by_regime', mode='before')
+    @classmethod
+    def validate_min_direction_confidence_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime',
+        )
+
+    @field_validator('min_regime_confidence_overrides_by_strategy_symbol', mode='before')
+    @classmethod
+    def validate_min_regime_confidence_overrides_by_strategy_symbol_shape(cls, value):
+        return _validate_low_vol_strategy_symbol_threshold_overrides_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol',
+        )
+
+    @field_validator('min_direction_confidence_overrides_by_strategy_symbol', mode='before')
+    @classmethod
+    def validate_min_direction_confidence_overrides_by_strategy_symbol_shape(cls, value):
+        return _validate_low_vol_strategy_symbol_threshold_overrides_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol',
+        )
+
+    @model_validator(mode='after')
+    def validate_threshold_maps(self) -> 'LowVolCostFloorThresholdsConfig':
+        self.min_regime_confidence_by_regime = _normalize_low_vol_gate_threshold_mapping(
+            self.min_regime_confidence_by_regime,
+            field_name='low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime',
+        )
+        self.min_direction_confidence_by_regime = _normalize_low_vol_gate_threshold_mapping(
+            self.min_direction_confidence_by_regime,
+            field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime',
+        )
+        self.min_regime_confidence_overrides_by_strategy_symbol = _normalize_low_vol_strategy_symbol_threshold_overrides(
+            self.min_regime_confidence_overrides_by_strategy_symbol,
+            field_name='low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol',
+        )
+        self.min_direction_confidence_overrides_by_strategy_symbol = _normalize_low_vol_strategy_symbol_threshold_overrides(
+            self.min_direction_confidence_overrides_by_strategy_symbol,
+            field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol',
+        )
+        return self
+
+
+class LowVolDirectionConfidenceConfig(BaseModel):
+    """Direction-confidence sourcing contract for LOW_VOL gating."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    required: bool = Field(...)
+    allowed_sources: List[Literal['strategy_confidence',
+                                  'signal_score', 'final_score', 'judge_confidence']] = Field(...)
+    missing_policy: Literal['fail_closed',
+                            'warn_and_allow', 'disabled'] = Field(...)
+
+    @field_validator('allowed_sources', mode='before')
+    @classmethod
+    def validate_allowed_sources(cls, value):
+        return _validate_low_vol_direction_sources(
+            value,
+            field_name='low_vol_cost_floor_gate.direction_confidence.allowed_sources',
+        )
+
+
+class LowVolGeometryConfig(BaseModel):
+    """TP/SL geometry contract for LOW_VOL gating."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    require_tpsl: bool = Field(...)
+    missing_policy: Literal['fail_closed',
+                            'warn_and_allow', 'disabled'] = Field(...)
+
+
+class LowVolCostFloorGateConfig(BaseModel):
+    """Decision-making owned LOW_VOLATILITY cost-floor gate contract."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    enforce_in_modes: List[Literal['testnet',
+                                   'hybrid_live_data_testnet_exec', 'live', 'production']] = Field(...)
+    observe_only_in_modes: List[Literal['testnet',
+                                        'hybrid_live_data_testnet_exec', 'live', 'production']] = Field(...)
+    regimes: List[str] = Field(...)
+    fee: LowVolCostFloorFeeConfig = Field(...)
+    slippage: LowVolCostFloorSlippageConfig = Field(...)
+    thresholds: LowVolCostFloorThresholdsConfig = Field(...)
+    direction_confidence: LowVolDirectionConfidenceConfig = Field(...)
+    geometry: LowVolGeometryConfig = Field(...)
+
+    @field_validator('enforce_in_modes', mode='before')
+    @classmethod
+    def validate_enforce_in_modes(cls, value):
+        return _validate_low_vol_runtime_modes(
+            value,
+            field_name='low_vol_cost_floor_gate.enforce_in_modes',
+        )
+
+    @field_validator('observe_only_in_modes', mode='before')
+    @classmethod
+    def validate_observe_only_in_modes(cls, value):
+        return _validate_low_vol_runtime_modes(
+            value,
+            field_name='low_vol_cost_floor_gate.observe_only_in_modes',
+        )
+
+    @field_validator('regimes', mode='before')
+    @classmethod
+    def validate_regimes(cls, value):
+        if not isinstance(value, list) or not value:
+            raise ValueError(
+                'low_vol_cost_floor_gate.regimes must be a non-empty list')
+        normalized: List[str] = []
+        seen: set[str] = set()
+        for raw_regime in value:
+            if not isinstance(raw_regime, str):
+                raise ValueError(
+                    'low_vol_cost_floor_gate.regimes entries must be strings')
+            regime = raw_regime.strip()
+            if raw_regime != regime or regime != regime.upper():
+                raise ValueError(
+                    'low_vol_cost_floor_gate.regimes entries must be canonical uppercase labels')
+            if regime not in _REGIME_CONFIDENCE_GATE_KEYS:
+                allowed = ', '.join(sorted(_REGIME_CONFIDENCE_GATE_KEYS))
+                raise ValueError(
+                    f"unsupported low_vol_cost_floor_gate.regimes value '{raw_regime}'; allowed: {allowed}"
+                )
+            if regime in seen:
+                raise ValueError(
+                    'low_vol_cost_floor_gate.regimes entries must be unique')
+            seen.add(regime)
+            normalized.append(regime)
+        if 'LOW_VOLATILITY' not in normalized:
+            raise ValueError(
+                'low_vol_cost_floor_gate.regimes must include LOW_VOLATILITY')
+        return normalized
+
+    @model_validator(mode='after')
+    def validate_mode_sets(self) -> 'LowVolCostFloorGateConfig':
+        overlap = set(self.enforce_in_modes) & set(self.observe_only_in_modes)
+        if overlap:
+            raise ValueError(
+                'low_vol_cost_floor_gate enforce/observe mode sets must not overlap: '
+                + ', '.join(sorted(overlap))
+            )
+        return self
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
 
@@ -762,6 +1267,10 @@ class DecisionMakingDomainConfig(BaseModel):
     risk_gate: RiskGateConfig = Field(...)
     arming: ArmingConfig = Field(...)
     directional_sanity: DirectionalSanityConfig = Field(...)
+    low_vol_cost_floor_gate: LowVolCostFloorGateConfig = Field(
+        ...,
+        description='LVC-2: LOW_VOLATILITY fee-adjusted entry gate with explicit mode scoping.',
+    )
     price_motion_sanity: PriceMotionSanityConfig = Field(...)
     flip: GlobalFlipKillswitchConfig = Field(
         ...,
@@ -770,6 +1279,10 @@ class DecisionMakingDomainConfig(BaseModel):
     regime_loss_embargo: RegimeLossEmbargoConfig = Field(
         ...,
         description="Decision-making-owned stable regime epoch loss embargo.",
+    )
+    neocortex_enforcement_mode: Literal["shadow", "enforce"] = Field(
+        ...,
+        description="Neocortex authority mode: shadow records model decisions while returning ALLOW; enforce returns model BLOCK/ALLOW.",
     )
     fail_closed_on_degraded_context: bool = Field(
         ..., description=(

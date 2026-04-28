@@ -84,7 +84,9 @@ def test_fail_closed_err_open_is_written_to_wal_sync():
     cfg = _make_cfg()
 
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian"):
-        fsm = ExecPosFSM(config=cfg, fsm=MagicMock(), shadow_mode=True)
+        mock_host = MagicMock()
+        mock_host.order_index.get_in_flight_entry.return_value = None
+        fsm = ExecPosFSM(config=cfg, fsm=mock_host, shadow_mode=True)
 
     # Force equity missing -> EQUITY_UNKNOWN
     fsm._latest_portfolio_state = {}

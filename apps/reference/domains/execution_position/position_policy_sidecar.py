@@ -305,6 +305,7 @@ class PositionPolicySidecar:
             "feature_ref": {},
             "regime_ref": {},
             "freshness_snapshot": {},
+            "sidecar_config_snapshot": self._sidecar_config_snapshot(),
         }
         self._publish("EVT:POSITION_POLICY_SIDECAR_MODE_ACTIVE", payload)
 
@@ -463,6 +464,7 @@ class PositionPolicySidecar:
         # R7A: Peak giveback evaluation
         # We allow peak giveback to trigger even if profitable_guard is active,
         # but NOT if other critical suppressions are active (e.g. stale data, close-in-progress).
+        giveback_trigger: Optional[Dict[str, Any]] = None
         if suppression is None or suppression.get("reason_code") == "profitable_guard":
             giveback_trigger = self._evaluate_peak_giveback(
                 symbol=symbol,
@@ -470,6 +472,18 @@ class PositionPolicySidecar:
                 position_snapshot=base_payload["position_snapshot"],
             )
             if giveback_trigger:
+                base_payload["peak_giveback_snapshot"] = self._peak_giveback_snapshot(
+                    state=state,
+                    position_snapshot=base_payload["position_snapshot"],
+                    freshness_snapshot=base_payload["freshness_snapshot"],
+                    suppression=suppression,
+                    giveback_result=giveback_trigger,
+                )
+                base_payload["reason_codes"] = self._merged_reason_codes(
+                    base_payload.get("reason_codes", []),
+                    base_payload["peak_giveback_snapshot"].get(
+                        "reason_codes", []),
+                )
                 self._handle_peak_giveback_trigger(
                     symbol=symbol,
                     state=state,
@@ -479,11 +493,25 @@ class PositionPolicySidecar:
                 )
                 return
 
+        base_payload["peak_giveback_snapshot"] = self._peak_giveback_snapshot(
+            state=state,
+            position_snapshot=base_payload["position_snapshot"],
+            freshness_snapshot=base_payload["freshness_snapshot"],
+            suppression=suppression,
+            giveback_result=giveback_trigger,
+        )
+        base_payload["reason_codes"] = self._merged_reason_codes(
+            base_payload.get("reason_codes", []),
+            base_payload["peak_giveback_snapshot"].get("reason_codes", []),
+        )
+
         if suppression is not None:
             payload = dict(base_payload)
             payload["event_type"] = "POSITION_POLICY_SIDECAR_SUPPRESSED"
-            payload["reason_codes"] = [
-                f"trigger:{trigger_event.lower()}", suppression["reason_code"]]
+            payload["reason_codes"] = self._merged_reason_codes(
+                payload.get("reason_codes", []),
+                [suppression["reason_code"]],
+            )
             payload["suppression_reason"] = suppression["suppression_reason"]
             payload["incumbent_owner"] = suppression.get("incumbent_owner")
             payload["score_snapshot"] = suppression.get("score_snapshot", {})
@@ -497,15 +525,19 @@ class PositionPolicySidecar:
 
         scores_payload = dict(base_payload)
         scores_payload["event_type"] = "POSITION_POLICY_SIDECAR_SCORES"
-        scores_payload["reason_codes"] = [
-            f"trigger:{trigger_event.lower()}", "scores_computed"]
+        scores_payload["reason_codes"] = self._merged_reason_codes(
+            scores_payload.get("reason_codes", []),
+            ["scores_computed"],
+        )
         scores_payload["score_snapshot"] = score_snapshot
         self._publish("EVT:POSITION_POLICY_SIDECAR_SCORES", scores_payload)
 
         evaluated_payload = dict(base_payload)
         evaluated_payload["event_type"] = "POSITION_POLICY_SIDECAR_EVALUATED"
-        evaluated_payload["reason_codes"] = [
-            f"trigger:{trigger_event.lower()}", "evaluation_completed"]
+        evaluated_payload["reason_codes"] = self._merged_reason_codes(
+            evaluated_payload.get("reason_codes", []),
+            ["evaluation_completed"],
+        )
         evaluated_payload["score_snapshot"] = score_snapshot
         self._publish("EVT:POSITION_POLICY_SIDECAR_EVALUATED",
                       evaluated_payload)
@@ -525,10 +557,10 @@ class PositionPolicySidecar:
             state.recommendation_dedup_suppressed_count += 1
             dedup_payload = dict(base_payload)
             dedup_payload["event_type"] = "POSITION_POLICY_SIDECAR_SUPPRESSED"
-            dedup_payload["reason_codes"] = [
-                f"trigger:{trigger_event.lower()}",
-                "recommendation_duplicate_same_state",
-            ]
+            dedup_payload["reason_codes"] = self._merged_reason_codes(
+                dedup_payload.get("reason_codes", []),
+                ["recommendation_duplicate_same_state"],
+            )
             dedup_payload["suppression_reason"] = "recommendation_duplicate_same_state"
             dedup_payload["score_snapshot"] = score_snapshot
             dedup_payload["dedup_detail"] = {
@@ -547,10 +579,11 @@ class PositionPolicySidecar:
 
         recommended_payload = dict(base_payload)
         recommended_payload["event_type"] = "POSITION_POLICY_SIDECAR_RECOMMENDED"
-        recommended_payload["reason_codes"] = [
-            f"trigger:{trigger_event.lower()}",
-            "recommend_soft_close_threshold_met",
-        ]
+        recommended_payload["reason_codes"] = self._merged_reason_codes(
+            recommended_payload.get("reason_codes", []),
+            ["recommend_soft_close_threshold_met"],
+        )
+        recommended_payload["policy_source"] = "position_policy_sidecar"
         recommended_payload["score_snapshot"] = score_snapshot
         self._publish("EVT:POSITION_POLICY_SIDECAR_RECOMMENDED",
                       recommended_payload)
@@ -564,12 +597,15 @@ class PositionPolicySidecar:
                 allowed_action_scope=self._allowed_action_scope(),
                 reason_codes=tuple(recommended_payload["reason_codes"]),
                 score_snapshot=dict(score_snapshot),
-                position_snapshot=dict(recommended_payload["position_snapshot"]),
+                position_snapshot=dict(
+                    recommended_payload["position_snapshot"]),
                 feature_ref=dict(recommended_payload["feature_ref"]),
                 regime_ref=dict(recommended_payload["regime_ref"]),
-                freshness_snapshot=dict(recommended_payload["freshness_snapshot"]),
+                freshness_snapshot=dict(
+                    recommended_payload["freshness_snapshot"]),
                 fill_correlation=dict(recommended_payload["fill_correlation"]),
-                portfolio_correlation=dict(recommended_payload["portfolio_correlation"]),
+                portfolio_correlation=dict(
+                    recommended_payload["portfolio_correlation"]),
             )
             request_payload = dict(recommended_payload)
             request_payload.update(close_request.to_payload())
@@ -639,16 +675,19 @@ class PositionPolicySidecar:
         # 1. Log recommendation
         recommended_payload = dict(base_payload)
         recommended_payload["event_type"] = "POSITION_POLICY_SIDECAR_RECOMMENDED"
-        recommended_payload["reason_codes"] = [
-            f"trigger:{trigger_event.lower()}",
-            "peak_giveback_threshold_met",
-        ]
+        recommended_payload["reason_codes"] = self._merged_reason_codes(
+            recommended_payload.get("reason_codes", []),
+            ["peak_giveback_threshold_met"],
+        )
+        recommended_payload["policy_source"] = "position_policy_sidecar:peak_giveback"
         recommended_payload["peak_giveback_detail"] = giveback_result
         # Synthetic score for traceability
         recommended_payload["score_snapshot"] = {
             "soft_close_pressure": 1.0,
             "peak_edge_usd": giveback_result["peak_edge_usd"],
+            "current_edge_usd": giveback_result["current_edge_usd"],
             "giveback_pct": giveback_result["giveback_pct"],
+            "giveback_trigger_pct": giveback_result["threshold_pct"],
         }
         self._publish("EVT:POSITION_POLICY_SIDECAR_RECOMMENDED",
                       recommended_payload)
@@ -670,7 +709,8 @@ class PositionPolicySidecar:
                 regime_ref=dict(base_payload["regime_ref"]),
                 freshness_snapshot=dict(base_payload["freshness_snapshot"]),
                 fill_correlation=dict(base_payload["fill_correlation"]),
-                portfolio_correlation=dict(base_payload["portfolio_correlation"]),
+                portfolio_correlation=dict(
+                    base_payload["portfolio_correlation"]),
             )
             request_payload = dict(recommended_payload)
             request_payload.update(close_request.to_payload())
@@ -1084,6 +1124,183 @@ class PositionPolicySidecar:
 
         side_sign = 1.0 if side == "BUY" else -1.0
         return side_sign * ((mark_price - entry_price) / entry_price) * 100.0
+
+    def _sidecar_config_snapshot(self) -> Dict[str, Any]:
+        source_config_path = self._config_source_path()
+        return {
+            "mode": self.mode.value,
+            "peak_giveback_close": {
+                "enabled": self.config.peak_giveback_close.enabled,
+                "edge_arm_usd": float(self.config.peak_giveback_close.edge_arm_usd),
+                "giveback_trigger_pct": float(self.config.peak_giveback_close.giveback_trigger_pct),
+            },
+            "freshness": {
+                "portfolio_max_age_ms": self.config.freshness.portfolio_max_age_ms,
+                "features_max_age_ms": self.config.freshness.features_max_age_ms,
+                "regime_max_age_ms": self.config.freshness.regime_max_age_ms,
+                "order_state_max_age_ms": self.config.freshness.order_state_max_age_ms,
+            },
+            "source_config_path": source_config_path,
+        }
+
+    def _config_source_path(self) -> Optional[str]:
+        for attr in (
+            "source_config_path",
+            "config_source_path",
+            "_source_config_path",
+            "__config_source_path__",
+        ):
+            value = _coerce_str(getattr(self.config, attr, None))
+            if value is not None:
+                return value
+        return None
+
+    def _peak_giveback_snapshot(
+        self,
+        *,
+        state: _SymbolState,
+        position_snapshot: Dict[str, Any],
+        freshness_snapshot: Dict[str, Any],
+        suppression: Optional[Dict[str, Any]],
+        giveback_result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        cfg = self.config.peak_giveback_close
+        null_reasons: Dict[str, str] = {}
+
+        mark_price = _coerce_float(position_snapshot.get("mark_price"))
+        if mark_price is None:
+            null_reasons["mark_price"] = "missing_mark_price"
+
+        entry_price = _coerce_float(position_snapshot.get("entry_price"))
+        if entry_price is None:
+            entry_price = _coerce_float(
+                position_snapshot.get("portfolio_entry_price"))
+        if entry_price is None:
+            null_reasons["entry_price"] = "missing_entry_price"
+
+        position_qty = _coerce_float(position_snapshot.get("position_qty"))
+        if position_qty is None:
+            portfolio_position_amt = _coerce_float(
+                position_snapshot.get("portfolio_position_amt")
+            )
+            if portfolio_position_amt is not None:
+                position_qty = abs(portfolio_position_amt)
+        if position_qty is None:
+            null_reasons["position_qty"] = "missing_position_qty"
+
+        side = _coerce_str(position_snapshot.get("side"))
+        if side is None:
+            null_reasons["side"] = "missing_position_side"
+
+        unrealized_pnl_usdt = _coerce_float(
+            position_snapshot.get("unrealized_pnl_usdt"))
+        if unrealized_pnl_usdt is None:
+            null_reasons["unrealized_pnl_usdt"] = "missing_unrealized_pnl_usdt"
+
+        unrealized_pnl_pct = _coerce_float(
+            position_snapshot.get("unrealized_pnl_pct"))
+        if unrealized_pnl_pct is None:
+            null_reasons["unrealized_pnl_pct"] = "missing_unrealized_pnl_pct"
+
+        current_edge_usd = unrealized_pnl_usdt
+        if current_edge_usd is None:
+            null_reasons["current_edge_usd"] = "missing_unrealized_pnl_usdt"
+
+        peak_edge_usd = float(state.peak_edge_usd)
+        giveback_pct: Optional[float] = None
+        if giveback_result is not None:
+            giveback_pct = float(giveback_result["giveback_pct"])
+        elif current_edge_usd is not None and peak_edge_usd > 0.0:
+            giveback_pct = (
+                (peak_edge_usd - current_edge_usd) / peak_edge_usd) * 100.0
+        elif current_edge_usd is None:
+            null_reasons["giveback_pct"] = "missing_current_edge_usd"
+        else:
+            null_reasons["giveback_pct"] = "peak_edge_not_positive"
+
+        suppression_reason_code = suppression.get(
+            "reason_code") if suppression is not None else None
+        stale_reason_codes = {
+            "portfolio_stale",
+            "features_stale",
+            "regime_stale",
+            "portfolio_missing",
+        }
+
+        if not cfg.enabled:
+            peak_giveback_state = "peak_giveback_disabled"
+            peak_reason_codes = [peak_giveback_state]
+        elif suppression_reason_code == "close_in_progress":
+            peak_giveback_state = "peak_giveback_suppressed_close_in_progress"
+            peak_reason_codes = [peak_giveback_state]
+        elif suppression_reason_code in stale_reason_codes or (
+            suppression_reason_code is None
+            and (
+                freshness_snapshot.get("portfolio_fresh") is False
+                or freshness_snapshot.get("features_fresh") is False
+                or freshness_snapshot.get("regime_fresh") is False
+            )
+        ):
+            peak_giveback_state = "peak_giveback_suppressed_stale_inputs"
+            peak_reason_codes = [peak_giveback_state]
+        elif suppression_reason_code not in (None, "profitable_guard"):
+            peak_giveback_state = "peak_giveback_not_ready"
+            peak_reason_codes = [peak_giveback_state]
+        elif giveback_result is not None:
+            peak_giveback_state = "peak_giveback_threshold_met"
+            peak_reason_codes = ["peak_giveback_armed", peak_giveback_state]
+        elif unrealized_pnl_usdt is None:
+            peak_giveback_state = "peak_giveback_unavailable_economics_missing"
+            peak_reason_codes = [peak_giveback_state]
+        elif state.is_armed:
+            peak_giveback_state = "peak_giveback_below_trigger"
+            peak_reason_codes = ["peak_giveback_armed", peak_giveback_state]
+        else:
+            peak_giveback_state = "peak_giveback_not_armed_below_edge"
+            peak_reason_codes = [peak_giveback_state]
+
+        threshold_crossed: Optional[bool]
+        if giveback_result is not None:
+            threshold_crossed = True
+        elif giveback_pct is not None and cfg.enabled and state.is_armed:
+            threshold_crossed = giveback_pct >= cfg.giveback_trigger_pct
+        elif cfg.enabled and unrealized_pnl_usdt is not None and not state.is_armed:
+            threshold_crossed = False
+        else:
+            threshold_crossed = None
+            null_reasons["threshold_crossed"] = "threshold_not_evaluable"
+
+        return {
+            "policy_enabled": cfg.enabled,
+            "mark_price": mark_price,
+            "entry_price": entry_price,
+            "position_qty": position_qty,
+            "side": side,
+            "unrealized_pnl_usdt": unrealized_pnl_usdt,
+            "unrealized_pnl_pct": unrealized_pnl_pct,
+            "peak_edge_usd": peak_edge_usd,
+            "current_edge_usd": current_edge_usd,
+            "giveback_pct": giveback_pct,
+            "is_armed": bool(state.is_armed),
+            "arm_threshold_usd": float(cfg.edge_arm_usd),
+            "giveback_trigger_pct": float(cfg.giveback_trigger_pct),
+            "threshold_crossed": threshold_crossed,
+            "peak_giveback_state": peak_giveback_state,
+            "reason_codes": peak_reason_codes,
+            "null_reasons": null_reasons,
+        }
+
+    def _merged_reason_codes(self, *groups: Iterable[str]) -> list[str]:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for group in groups:
+            for reason_code in group:
+                reason = str(reason_code or "").strip()
+                if not reason or reason in seen:
+                    continue
+                merged.append(reason)
+                seen.add(reason)
+        return merged
 
     def _freshness_snapshot(self, state: _SymbolState) -> Dict[str, Any]:
         now_ms = get_clock().now_ms()

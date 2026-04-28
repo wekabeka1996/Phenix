@@ -1,9 +1,13 @@
 import decimal
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.intent.builder_validators import (
     normalize_trade_inputs,
+    resolve_kelly_metadata,
     resolve_risk_budgets,
     resolve_tca_preferences,
     sanitize_tpsl_payload,
@@ -27,6 +31,34 @@ def _safe_decimal(value, default=None):
         return decimal.Decimal(str(value))
     except Exception:
         return default
+
+
+def _make_config(
+    *,
+    base_probability: str = "0.5",
+    payoff_ratio_r: str = "1.5",
+    kelly_cap: str = "0.25",
+    p_min: str = "0.45",
+    p_max: str = "0.65",
+    kelly_alpha: str = "0.8",
+    uplift_factor: str = "0.2",
+    legacy_fraction: str | None = None,
+):
+    kelly_kwargs = {
+        "base_probability": base_probability,
+        "kelly_cap": kelly_cap,
+        "kelly_alpha": kelly_alpha,
+        "payoff_ratio_r": payoff_ratio_r,
+        "p_min": p_min,
+        "p_max": p_max,
+        "uplift_factor": uplift_factor,
+    }
+    if legacy_fraction is not None:
+        kelly_kwargs["fraction"] = legacy_fraction
+    strategy_cfg = SimpleNamespace(
+        decision=SimpleNamespace(kelly=SimpleNamespace(**kelly_kwargs))
+    )
+    return SimpleNamespace(strategies=SimpleNamespace(aurora=strategy_cfg))
 
 
 def test_normalize_trade_inputs_uses_decimal_string_coercion() -> None:
@@ -105,3 +137,52 @@ def test_sanitize_tpsl_payload_drops_unparseable_values() -> None:
     assert sanitized.stop_price is None
     assert sanitized.target_price is None
     assert sanitized.owner_ctx is None
+
+
+def test_resolve_kelly_metadata_uses_ssot_fields_and_ignores_legacy_fraction() -> None:
+    resolved = resolve_kelly_metadata(
+        config=_make_config(legacy_fraction="0.99"),
+        strategy_id="aurora",
+    )
+
+    expected_fraction = str(
+        decimal.Decimal("0.5")
+        - ((decimal.Decimal("1") - decimal.Decimal("0.5")) / decimal.Decimal("1.5"))
+    )
+    assert resolved.p == "0.5"
+    assert resolved.payoff_ratio_r == "1.5"
+    assert resolved.kelly_fraction == expected_fraction
+    assert resolved.provenance["kelly_fraction"][
+        "formula"] == "p - (1 - p) / payoff_ratio_r"
+    assert resolved.provenance["unapplied_config_fields"]["kelly_alpha"]["reason"] == "boundary_semantics_not_proven"
+
+
+def test_resolve_kelly_metadata_clamps_probability_to_p_bounds() -> None:
+    resolved = resolve_kelly_metadata(
+        config=_make_config(base_probability="0.9"),
+        strategy_id="aurora",
+    )
+
+    assert resolved.p == "0.65"
+    assert resolved.kelly_fraction == "0.25"
+
+
+def test_resolve_kelly_metadata_raises_for_missing_kelly_config() -> None:
+    config = SimpleNamespace(
+        strategies=SimpleNamespace(
+            aurora=SimpleNamespace(decision=SimpleNamespace()))
+    )
+
+    with pytest.raises(ValueError, match="Missing decision.kelly config"):
+        resolve_kelly_metadata(config=config, strategy_id="aurora")
+
+
+def test_loaded_real_aurora_config_has_no_kelly_fraction_field() -> None:
+    config_dir = Path(__file__).resolve().parents[3] / "config" / "aurora"
+    cfg = ConfigLoader(config_dir=config_dir).load_config()
+
+    kelly_cfg = cfg.strategies.aurora.decision.kelly
+    assert not hasattr(kelly_cfg, "fraction")
+    assert "fraction" not in getattr(kelly_cfg.__class__, "model_fields", {})
+    assert hasattr(kelly_cfg, "base_probability")
+    assert hasattr(kelly_cfg, "payoff_ratio_r")

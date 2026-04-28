@@ -8,23 +8,6 @@ Tests:
 - FeatureRingBuffer settlement logic
 """
 
-import sys
-import os
-import pytest
-import numpy as np
-
-sys.path.insert(0, os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")))
-
-from apps.reference.domains.neocortex.logic.reward.feature_buffer import (
-    FeatureRingBuffer,
-    SettledEpisode,
-)
-from apps.reference.domains.neocortex.logic.reward.reward_calculator import (
-    RegimeRewardCalculator,
-    REWARD_MATRIX,
-    NUM_ACTIONS,
-)
 from apps.reference.domains.neocortex.logic.reward.regime_labeler import (
     RegimeLabeler,
     TREND_UP,
@@ -34,6 +17,22 @@ from apps.reference.domains.neocortex.logic.reward.regime_labeler import (
     EXHAUSTION,
     REGIME_NAMES,
 )
+from apps.reference.domains.neocortex.logic.reward.reward_calculator import (
+    RegimeRewardCalculator,
+    REWARD_MATRIX,
+    NUM_ACTIONS,
+)
+from apps.reference.domains.neocortex.logic.reward.feature_buffer import (
+    FeatureRingBuffer,
+    SettledEpisode,
+)
+import sys
+import os
+import pytest
+import numpy as np
+
+sys.path.insert(0, os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")))
 
 
 # =============================================================================
@@ -180,20 +179,20 @@ class TestRegimeLabeler:
         features_t_h = _make_features(
             delta_price=0.05,
             ema_bias=0.502,
-            volatility_state=0.05,  # collapsed (< 0.1), and vol_state_future < high_vol_threshold
+            # collapsed (< 0.1), and vol_state_future < high_vol_threshold
+            volatility_state=0.05,
         )
         assert labeler.compute_realized_regime(
             features_t, features_t_h) == EXHAUSTION
 
-    def test_none_features_treated_as_zero(self, labeler):
-        """None values in features should be treated as 0.0 / 0.5 defaults."""
+    def test_none_features_rejected(self, labeler):
+        """None values are rejected instead of becoming synthetic label truth."""
         features_t = {"price": None, "delta_price": None,
                       "ema_bias": None, "volatility_state": None}
         features_t_h = {"price": None, "delta_price": None,
                         "ema_bias": None, "volatility_state": None}
-        # price=0 -> delta_pct=0, ema_centered=0, vol_state=0 -> MR
-        result = labeler.compute_realized_regime(features_t, features_t_h)
-        assert result == MEAN_REVERSION
+        with pytest.raises(ValueError, match="required feature"):
+            labeler.compute_realized_regime(features_t, features_t_h)
 
     def test_all_five_regimes_reachable(self, labeler):
         """Verify all 5 regimes are reachable with appropriate features."""
@@ -211,12 +210,14 @@ class TestRegimeLabeler:
         # TREND_UP
         results.add(labeler.compute_realized_regime(
             _make_features(price=100.0),
-            _make_features(delta_price=0.05, ema_bias=0.502, volatility_state=0.3),
+            _make_features(delta_price=0.05, ema_bias=0.502,
+                           volatility_state=0.3),
         ))
         # TREND_DOWN
         results.add(labeler.compute_realized_regime(
             _make_features(price=100.0),
-            _make_features(delta_price=-0.05, ema_bias=0.498, volatility_state=0.3),
+            _make_features(delta_price=-0.05, ema_bias=0.498,
+                           volatility_state=0.3),
         ))
         # MEAN_REVERSION
         results.add(labeler.compute_realized_regime(
@@ -272,6 +273,7 @@ class TestRegimeRewardCalculator:
             reward_correct=1.0,
             reward_wrong=-0.5,
             reward_matrix_enabled=True,
+            reward_matrix=REWARD_MATRIX,
         )
         # Diagonal (correct)
         assert calc.compute_reward(TREND_UP, TREND_UP) == pytest.approx(1.0)
@@ -456,6 +458,7 @@ class TestOracleConfig:
             "reward_correct": 1.0,
             "reward_wrong": -0.5,
             "reward_matrix_enabled": False,
+            "reward_matrix": None,
             "class_weights": {
                 "PREDICT_TREND_UP": 1.5,
                 "PREDICT_TREND_DOWN": 1.5,
@@ -499,10 +502,18 @@ class TestOracleConfig:
             state_dim=16,
             action_dim=5,
             hidden_dims=[256, 128],
+            objective_split_enforced=True,
+            policy_training_mode="disabled",
             learning_rate=0.0003,
             gamma=0.99,
             gae_lambda=0.95,
             clip_epsilon=0.2,
+            entropy_coef=0.01,
+            max_grad_norm=0.5,
+            numerical_safety={
+                "gradient_clip_threshold": 1.0,
+                "on_invalid": "sanitize",
+            },
             rollout_length=2048,
             num_epochs=10,
             minibatch_size=64,
@@ -511,18 +522,27 @@ class TestOracleConfig:
         assert cfg.reward_mode == "regime_oracle"
         assert cfg.action_dim == 5
 
-    def test_ppo_config_default_reward_mode(self):
-        """PPOConfig defaults to pnl reward mode."""
+    def test_ppo_config_accepts_explicit_pnl_reward_mode(self):
+        """PPOConfig accepts explicit pnl reward mode."""
         from apps.reference.domains.neocortex.config_models import PPOConfig
 
         cfg = PPOConfig(
             state_dim=16,
             action_dim=3,
             hidden_dims=[256, 128],
+            reward_mode="pnl",
+            objective_split_enforced=True,
+            policy_training_mode="disabled",
             learning_rate=0.0003,
             gamma=0.99,
             gae_lambda=0.95,
             clip_epsilon=0.2,
+            entropy_coef=0.01,
+            max_grad_norm=0.5,
+            numerical_safety={
+                "gradient_clip_threshold": 1.0,
+                "on_invalid": "sanitize",
+            },
             rollout_length=2048,
             num_epochs=10,
             minibatch_size=64,
@@ -570,7 +590,8 @@ class TestOraclePipeline:
             _make_features(price=100.0, volatility_state=0.1),  # t=0
             _make_features(price=100.0, volatility_state=0.2),  # t=1
             _make_features(price=100.0, volatility_state=0.3),  # t=2
-            _make_features(price=100.0, volatility_state=0.9),  # t=3 (vol spike)
+            # t=3 (vol spike)
+            _make_features(price=100.0, volatility_state=0.9),
         ]
 
         settled = None

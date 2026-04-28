@@ -1,0 +1,639 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from typing import Any, Mapping
+
+
+_SIGNED_DIRECTION_CONFIDENCE_SOURCES = frozenset(
+    {"signal_score", "final_score"})
+_DIRECTION_CONFIDENCE_FAILURE_REASONS = frozenset(
+    {
+        "direction_confidence_missing",
+        "missing_direction_confidence_source",
+        "unsupported_direction_confidence_source",
+        "non_side_aware_direction_confidence",
+        "invalid_direction_confidence_value",
+        "direction_confidence_below_threshold",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LowVolCostFloorEvaluation:
+    active: bool
+    gate_mode: str
+    block: bool
+    threshold_failed: bool
+    reason: str
+    details: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class DirectionConfidenceResolution:
+    value: float | None
+    source: str
+    is_present: bool
+    is_supported_source: bool
+    is_side_aware: bool
+    side_scope: str | None
+    failure_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedLowVolThreshold:
+    value: float
+    source: str
+    strategy_id: str | None
+    symbol: str | None
+    regime_key: str
+
+
+def _coerce_decimal(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not decimal_value.is_finite():
+        return None
+    return decimal_value
+
+
+def _to_optional_float(value: Decimal | None) -> float | None:
+    return None if value is None else float(value)
+
+
+def _resolve_regime_threshold(mapping: Mapping[str, float], regime: str | None) -> float:
+    if regime is not None and regime in mapping:
+        return float(mapping[regime])
+    return float(mapping["DEFAULT"])
+
+
+def _resolve_low_vol_threshold(
+    *,
+    mapping: Mapping[str, float],
+    overrides_by_strategy_symbol: Mapping[str, Mapping[str, Mapping[str, float]]] | None,
+    strategy_id: str | None,
+    symbol: str | None,
+    regime: str | None,
+) -> ResolvedLowVolThreshold:
+    normalized_strategy_id = str(
+        strategy_id).strip() if strategy_id is not None else ""
+    normalized_symbol = str(symbol).strip(
+    ).upper() if symbol is not None else ""
+    if (
+        overrides_by_strategy_symbol
+        and normalized_strategy_id
+        and normalized_symbol
+    ):
+        strategy_overrides = overrides_by_strategy_symbol.get(
+            normalized_strategy_id)
+        if strategy_overrides is not None:
+            symbol_mapping = strategy_overrides.get(normalized_symbol)
+            if symbol_mapping is not None:
+                regime_key = regime if regime is not None and regime in symbol_mapping else "DEFAULT"
+                return ResolvedLowVolThreshold(
+                    value=_resolve_regime_threshold(symbol_mapping, regime),
+                    source="strategy_symbol_override",
+                    strategy_id=normalized_strategy_id,
+                    symbol=normalized_symbol,
+                    regime_key=regime_key,
+                )
+    regime_key = regime if regime is not None and regime in mapping else "DEFAULT"
+    return ResolvedLowVolThreshold(
+        value=_resolve_regime_threshold(mapping, regime),
+        source="global_regime",
+        strategy_id=None,
+        symbol=None,
+        regime_key=regime_key,
+    )
+
+
+def _resolve_gate_mode(*, enabled: bool, trading_mode: str, enforce_in_modes: list[str], observe_only_in_modes: list[str]) -> str:
+    if not enabled:
+        return "disabled"
+    if trading_mode in enforce_in_modes:
+        return "enforced"
+    if trading_mode in observe_only_in_modes:
+        return "observe_only"
+    return "disabled"
+
+
+def _normalize_side_scope(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if text in {"BUY", "LONG", "1", "+1"}:
+        return "BUY"
+    if text in {"SELL", "SHORT", "-1"}:
+        return "SELL"
+    return None
+
+
+def _resolve_source_value(*, trace: Mapping[str, Any], source: str) -> Any:
+    raw_value = trace.get(source)
+    objective = trace.get("objective")
+    if raw_value is None and source == "final_score" and isinstance(objective, Mapping):
+        raw_value = objective.get("final_score", objective.get("score"))
+    if raw_value is None and source == "judge_confidence" and isinstance(objective, Mapping):
+        raw_value = objective.get("judge_confidence")
+    return raw_value
+
+
+def _resolve_source_side_scope(*, trace: Mapping[str, Any], source: str) -> str | None:
+    objective = trace.get("objective")
+    candidates: list[Any] = [
+        trace.get(f"{source}_side_scope"),
+        trace.get(f"{source}_side"),
+    ]
+    if source == "final_score" and isinstance(objective, Mapping):
+        candidates.extend(
+            [
+                objective.get("final_score_side_scope"),
+                objective.get("side"),
+            ]
+        )
+    if source == "judge_confidence" and isinstance(objective, Mapping):
+        candidates.extend(
+            [
+                objective.get("judge_confidence_side_scope"),
+                objective.get("judge_confidence_side"),
+            ]
+        )
+    for candidate in candidates:
+        side_scope = _normalize_side_scope(candidate)
+        if side_scope is not None:
+            return side_scope
+    return None
+
+
+def _resolve_signed_direction_confidence(
+    *,
+    raw_value: Any,
+    source: str,
+    proposed_side: str,
+) -> DirectionConfidenceResolution:
+    numeric = _coerce_decimal(raw_value)
+    if numeric is None:
+        return DirectionConfidenceResolution(
+            value=None,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=True,
+            side_scope=None,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    signed_value = float(numeric)
+    magnitude = abs(signed_value)
+    if signed_value == 0.0 or magnitude > 1.0:
+        return DirectionConfidenceResolution(
+            value=None,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=True,
+            side_scope=None,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    side_scope = "BUY" if signed_value > 0 else "SELL"
+    if side_scope != proposed_side:
+        return DirectionConfidenceResolution(
+            value=magnitude,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=True,
+            side_scope=side_scope,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    return DirectionConfidenceResolution(
+        value=magnitude,
+        source=source,
+        is_present=True,
+        is_supported_source=True,
+        is_side_aware=True,
+        side_scope=side_scope,
+        failure_reason=None,
+    )
+
+
+def _resolve_unsigned_direction_confidence(
+    *,
+    raw_value: Any,
+    source: str,
+    proposed_side: str,
+    raw_side_scope: Any,
+) -> DirectionConfidenceResolution:
+    side_scope = _normalize_side_scope(raw_side_scope)
+    numeric = _coerce_decimal(raw_value)
+    if numeric is None:
+        return DirectionConfidenceResolution(
+            value=None,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=side_scope is not None,
+            side_scope=side_scope,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    value = float(numeric)
+    if value < 0.0 or value > 1.0:
+        return DirectionConfidenceResolution(
+            value=None,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=side_scope is not None,
+            side_scope=side_scope,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    if side_scope is None:
+        return DirectionConfidenceResolution(
+            value=value,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=False,
+            side_scope=None,
+            failure_reason="non_side_aware_direction_confidence",
+        )
+    if side_scope != proposed_side:
+        return DirectionConfidenceResolution(
+            value=value,
+            source=source,
+            is_present=True,
+            is_supported_source=True,
+            is_side_aware=True,
+            side_scope=side_scope,
+            failure_reason="invalid_direction_confidence_value",
+        )
+    return DirectionConfidenceResolution(
+        value=value,
+        source=source,
+        is_present=True,
+        is_supported_source=True,
+        is_side_aware=True,
+        side_scope=side_scope,
+        failure_reason=None,
+    )
+
+
+def _resolve_direction_confidence(
+    *,
+    strategy_trace: Mapping[str, Any] | None,
+    allowed_sources: list[str],
+    side: str,
+    signal_score: float | None,
+) -> DirectionConfidenceResolution:
+    trace = strategy_trace if isinstance(strategy_trace, Mapping) else {}
+    proposed_side = _normalize_side_scope(side)
+    if proposed_side is None:
+        return DirectionConfidenceResolution(
+            value=None,
+            source="unavailable",
+            is_present=False,
+            is_supported_source=False,
+            is_side_aware=False,
+            side_scope=None,
+            failure_reason="invalid_direction_confidence_value",
+        )
+
+    explicit_source = trace.get("direction_confidence_source")
+    explicit_value = trace.get("direction_confidence")
+    explicit_side_scope = trace.get("direction_confidence_side_scope")
+    explicit_requested = (
+        explicit_source is not None
+        or explicit_value is not None
+        or explicit_side_scope is not None
+    )
+    if explicit_requested:
+        source_name = str(explicit_source).strip(
+        ) if explicit_source is not None else "unavailable"
+        if explicit_source is None:
+            return DirectionConfidenceResolution(
+                value=None,
+                source="unavailable",
+                is_present=explicit_value is not None,
+                is_supported_source=False,
+                is_side_aware=False,
+                side_scope=_normalize_side_scope(explicit_side_scope),
+                failure_reason="missing_direction_confidence_source",
+            )
+        if source_name not in set(allowed_sources):
+            return DirectionConfidenceResolution(
+                value=None,
+                source=source_name,
+                is_present=explicit_value is not None,
+                is_supported_source=False,
+                is_side_aware=False,
+                side_scope=_normalize_side_scope(explicit_side_scope),
+                failure_reason="unsupported_direction_confidence_source",
+            )
+        if explicit_value is None:
+            return DirectionConfidenceResolution(
+                value=None,
+                source=source_name,
+                is_present=False,
+                is_supported_source=True,
+                is_side_aware=False,
+                side_scope=_normalize_side_scope(explicit_side_scope),
+                failure_reason="direction_confidence_missing",
+            )
+        if source_name in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
+            return _resolve_signed_direction_confidence(
+                raw_value=explicit_value,
+                source=source_name,
+                proposed_side=proposed_side,
+            )
+        return _resolve_unsigned_direction_confidence(
+            raw_value=explicit_value,
+            source=source_name,
+            proposed_side=proposed_side,
+            raw_side_scope=explicit_side_scope,
+        )
+
+    for source in allowed_sources:
+        if source == "signal_score" and signal_score is not None:
+            return _resolve_signed_direction_confidence(
+                raw_value=signal_score,
+                source=source,
+                proposed_side=proposed_side,
+            )
+        raw_value = _resolve_source_value(trace=trace, source=source)
+        if raw_value is None:
+            continue
+        if source in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
+            return _resolve_signed_direction_confidence(
+                raw_value=raw_value,
+                source=source,
+                proposed_side=proposed_side,
+            )
+        return _resolve_unsigned_direction_confidence(
+            raw_value=raw_value,
+            source=source,
+            proposed_side=proposed_side,
+            raw_side_scope=_resolve_source_side_scope(
+                trace=trace, source=source),
+        )
+    return DirectionConfidenceResolution(
+        value=None,
+        source="unavailable",
+        is_present=False,
+        is_supported_source=False,
+        is_side_aware=False,
+        side_scope=None,
+        failure_reason="direction_confidence_missing",
+    )
+
+
+def _resolve_direction_confidence_reason(
+    *,
+    direction_failure_reason: str | None,
+    violations: list[str],
+) -> tuple[str | None, str | None]:
+    if direction_failure_reason in _DIRECTION_CONFIDENCE_FAILURE_REASONS:
+        return "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED", direction_failure_reason
+    if "direction_confidence_below_threshold" in violations:
+        return (
+            "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED",
+            "direction_confidence_below_threshold",
+        )
+    return None, None
+
+
+def _compute_tp_sl_bps(*, side: str, entry_price: Decimal, target_price: Decimal, stop_price: Decimal) -> tuple[Decimal | None, Decimal | None]:
+    if entry_price <= 0:
+        return None, None
+    scale = Decimal("10000")
+    if str(side).upper() == "BUY":
+        actual_tp = (target_price - entry_price) / entry_price * scale
+        actual_sl = (entry_price - stop_price) / entry_price * scale
+    else:
+        actual_tp = (entry_price - target_price) / entry_price * scale
+        actual_sl = (stop_price - entry_price) / entry_price * scale
+    return actual_tp, actual_sl
+
+
+def evaluate_low_vol_cost_floor_gate(
+    *,
+    gate_cfg: Any,
+    trading_mode: str,
+    regime: str | None,
+    regime_confidence: float | None,
+    strategy_id: str | None = None,
+    symbol: str | None = None,
+    side: str,
+    entry_price: Any,
+    target_price: Any,
+    stop_price: Any,
+    strategy_trace: Mapping[str, Any] | None,
+    signal_score: float | None,
+    reduce_only: bool = False,
+) -> LowVolCostFloorEvaluation:
+    gate_mode = _resolve_gate_mode(
+        enabled=bool(gate_cfg.enabled),
+        trading_mode=str(trading_mode),
+        enforce_in_modes=list(gate_cfg.enforce_in_modes),
+        observe_only_in_modes=list(gate_cfg.observe_only_in_modes),
+    )
+    active = (
+        not reduce_only
+        and regime is not None
+        and regime in set(gate_cfg.regimes)
+        and gate_mode != "disabled"
+    )
+    if not active:
+        return LowVolCostFloorEvaluation(
+            active=False,
+            gate_mode=gate_mode,
+            block=False,
+            threshold_failed=False,
+            reason="LOW_VOL_COST_FLOOR_DISABLED",
+            details={
+                "trading_mode": str(trading_mode),
+                "gate_mode": gate_mode,
+                "regime": regime,
+                "threshold_failed": False,
+                "violations": [],
+                "warnings": [],
+            },
+        )
+
+    entry_decimal = _coerce_decimal(entry_price)
+    target_decimal = _coerce_decimal(target_price)
+    stop_decimal = _coerce_decimal(stop_price)
+
+    round_trip_fee_bps = Decimal(
+        str(gate_cfg.fee.open_fee_bps)) + Decimal(str(gate_cfg.fee.close_fee_bps))
+    slippage_buffer_bps = Decimal(str(gate_cfg.slippage.buffer_bps))
+    target_net_fee_multiple = Decimal(
+        str(gate_cfg.thresholds.target_net_fee_multiple))
+    required_gross_tp_bps = round_trip_fee_bps * \
+        (Decimal("1") + target_net_fee_multiple) + slippage_buffer_bps
+
+    resolved_regime_threshold = _resolve_low_vol_threshold(
+        mapping=gate_cfg.thresholds.min_regime_confidence_by_regime,
+        overrides_by_strategy_symbol=getattr(
+            gate_cfg.thresholds,
+            "min_regime_confidence_overrides_by_strategy_symbol",
+            None,
+        ),
+        strategy_id=strategy_id,
+        symbol=symbol,
+        regime=regime,
+    )
+    resolved_min_regime_confidence = resolved_regime_threshold.value
+    resolved_direction_threshold = _resolve_low_vol_threshold(
+        mapping=gate_cfg.thresholds.min_direction_confidence_by_regime,
+        overrides_by_strategy_symbol=getattr(
+            gate_cfg.thresholds,
+            "min_direction_confidence_overrides_by_strategy_symbol",
+            None,
+        ),
+        strategy_id=strategy_id,
+        symbol=symbol,
+        regime=regime,
+    )
+    resolved_min_direction_confidence = resolved_direction_threshold.value
+    direction_resolution = _resolve_direction_confidence(
+        strategy_trace=strategy_trace,
+        allowed_sources=list(gate_cfg.direction_confidence.allowed_sources),
+        side=side,
+        signal_score=signal_score,
+    )
+    direction_confidence = direction_resolution.value
+    direction_confidence_source = direction_resolution.source
+
+    actual_tp_bps: Decimal | None = None
+    actual_sl_bps: Decimal | None = None
+    tp_fee_coverage_ratio: Decimal | None = None
+    rr_ratio: Decimal | None = None
+    expected_net_if_tp_bps: Decimal | None = None
+    expected_net_if_sl_bps: Decimal | None = None
+    violations: list[str] = []
+    warnings: list[str] = []
+
+    geometry_missing = entry_decimal is None or target_decimal is None or stop_decimal is None
+    if geometry_missing:
+        geometry_policy = str(gate_cfg.geometry.missing_policy)
+        if bool(gate_cfg.geometry.require_tpsl):
+            if geometry_policy == "fail_closed":
+                violations.append("geometry_missing")
+            elif geometry_policy == "warn_and_allow":
+                warnings.append(
+                    "LOW_VOL_COST_FLOOR_UNSCORABLE:geometry_missing")
+        elif geometry_policy == "warn_and_allow":
+            warnings.append("LOW_VOL_COST_FLOOR_UNSCORABLE:geometry_missing")
+    else:
+        actual_tp_bps, actual_sl_bps = _compute_tp_sl_bps(
+            side=side,
+            entry_price=entry_decimal,
+            target_price=target_decimal,
+            stop_price=stop_decimal,
+        )
+        if actual_tp_bps is None or actual_sl_bps is None or actual_tp_bps <= 0 or actual_sl_bps <= 0:
+            geometry_policy = str(gate_cfg.geometry.missing_policy)
+            if geometry_policy == "fail_closed":
+                violations.append("geometry_invalid")
+            elif geometry_policy == "warn_and_allow":
+                warnings.append(
+                    "LOW_VOL_COST_FLOOR_UNSCORABLE:geometry_invalid")
+        else:
+            tp_fee_coverage_ratio = actual_tp_bps / \
+                round_trip_fee_bps if round_trip_fee_bps > 0 else None
+            rr_ratio = actual_tp_bps / actual_sl_bps if actual_sl_bps > 0 else None
+            expected_net_if_tp_bps = actual_tp_bps - \
+                round_trip_fee_bps - slippage_buffer_bps
+            expected_net_if_sl_bps = - \
+                (actual_sl_bps + round_trip_fee_bps + slippage_buffer_bps)
+            if regime_confidence is None or float(regime_confidence) < resolved_min_regime_confidence:
+                violations.append("regime_confidence_below_threshold")
+            if direction_resolution.failure_reason is not None:
+                direction_policy = str(
+                    gate_cfg.direction_confidence.missing_policy)
+                if bool(gate_cfg.direction_confidence.required):
+                    if direction_policy == "fail_closed":
+                        violations.append(direction_resolution.failure_reason)
+                    elif direction_policy == "warn_and_allow":
+                        warnings.append(
+                            f"LOW_VOL_COST_FLOOR_UNSCORABLE:{direction_resolution.failure_reason}")
+                elif direction_policy == "warn_and_allow":
+                    warnings.append(
+                        f"LOW_VOL_COST_FLOOR_UNSCORABLE:{direction_resolution.failure_reason}")
+            elif float(direction_confidence) < resolved_min_direction_confidence:
+                violations.append("direction_confidence_below_threshold")
+            if actual_tp_bps < required_gross_tp_bps:
+                violations.append("actual_tp_bps_below_required_gross_tp")
+            if tp_fee_coverage_ratio is not None and tp_fee_coverage_ratio < Decimal(str(gate_cfg.thresholds.min_tp_fee_coverage)):
+                violations.append("tp_fee_coverage_below_min")
+            if rr_ratio is not None and rr_ratio < Decimal(str(gate_cfg.thresholds.min_rr)):
+                violations.append("rr_ratio_below_min")
+
+    threshold_failed = bool(violations)
+    block = threshold_failed and gate_mode == "enforced"
+    gate_reason = "LOW_VOL_COST_FLOOR_BLOCKED" if block else (
+        "LOW_VOL_COST_FLOOR_OBSERVED" if gate_mode == "observe_only" else "LOW_VOL_COST_FLOOR_PASS"
+    )
+    direction_confidence_reason, direction_confidence_failure_reason = _resolve_direction_confidence_reason(
+        direction_failure_reason=direction_resolution.failure_reason,
+        violations=violations,
+    )
+    reason = direction_confidence_reason or gate_reason
+    return LowVolCostFloorEvaluation(
+        active=True,
+        gate_mode=gate_mode,
+        block=block,
+        threshold_failed=threshold_failed,
+        reason=gate_reason,
+        details={
+            "reason": reason,
+            "gate_reason": gate_reason,
+            "regime": regime,
+            "regime_confidence": regime_confidence,
+            "resolved_min_regime_confidence": resolved_min_regime_confidence,
+            "resolved_min_regime_confidence_source": resolved_regime_threshold.source,
+            "resolved_min_regime_confidence_strategy_id": resolved_regime_threshold.strategy_id,
+            "resolved_min_regime_confidence_symbol": resolved_regime_threshold.symbol,
+            "resolved_min_regime_confidence_regime_key": resolved_regime_threshold.regime_key,
+            "side": _normalize_side_scope(side),
+            "direction_confidence": direction_confidence,
+            "direction_confidence_source": direction_confidence_source,
+            "direction_confidence_side_scope": direction_resolution.side_scope,
+            "direction_confidence_is_side_aware": direction_resolution.is_side_aware,
+            "direction_confidence_supported_source": direction_resolution.is_supported_source,
+            "direction_confidence_required": bool(gate_cfg.direction_confidence.required),
+            "direction_confidence_missing_policy": str(gate_cfg.direction_confidence.missing_policy),
+            "direction_confidence_failure_reason": direction_confidence_failure_reason,
+            "direction_confidence_reason": direction_confidence_reason,
+            "resolved_min_direction_confidence": resolved_min_direction_confidence,
+            "resolved_min_direction_confidence_source": resolved_direction_threshold.source,
+            "resolved_min_direction_confidence_strategy_id": resolved_direction_threshold.strategy_id,
+            "resolved_min_direction_confidence_symbol": resolved_direction_threshold.symbol,
+            "resolved_min_direction_confidence_regime_key": resolved_direction_threshold.regime_key,
+            "entry_price": _to_optional_float(entry_decimal),
+            "target_price": _to_optional_float(target_decimal),
+            "stop_price": _to_optional_float(stop_decimal),
+            "actual_tp_bps": _to_optional_float(actual_tp_bps),
+            "actual_sl_bps": _to_optional_float(actual_sl_bps),
+            "round_trip_fee_bps": float(round_trip_fee_bps),
+            "required_gross_tp_bps": float(required_gross_tp_bps),
+            "target_net_fee_multiple": float(target_net_fee_multiple),
+            "tp_fee_coverage_ratio": _to_optional_float(tp_fee_coverage_ratio),
+            "rr_ratio": _to_optional_float(rr_ratio),
+            "expected_net_if_tp_bps": _to_optional_float(expected_net_if_tp_bps),
+            "expected_net_if_sl_bps": _to_optional_float(expected_net_if_sl_bps),
+            "trading_mode": str(trading_mode),
+            "strategy_id": str(strategy_id) if strategy_id is not None else None,
+            "symbol": str(symbol).upper() if symbol is not None else None,
+            "gate_mode": gate_mode,
+            "would_block": threshold_failed and gate_mode == "observe_only",
+            "would_block_direction_confidence": gate_mode == "observe_only"
+            and direction_confidence_reason is not None,
+            "threshold_failed": threshold_failed,
+            "violations": list(violations),
+            "warnings": list(warnings),
+        },
+    )

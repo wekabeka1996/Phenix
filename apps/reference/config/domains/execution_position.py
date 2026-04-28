@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from apps.reference.contracts.runtime_regime_layers import normalize_structural_regime_label
 
@@ -81,7 +81,8 @@ class InflightReconcileConfig(BaseModel):
     reconcile_interval_sec: int = Field(
         ..., description="Interval between reconcile attempts (seconds)"
     )
-    verbose_logging: bool = Field(..., description="Log reconciliation details")
+    verbose_logging: bool = Field(...,
+                                  description="Log reconciliation details")
 
 
 class EventDedupConfig(BaseModel):
@@ -394,6 +395,53 @@ class GuardianConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
+    @staticmethod
+    def _coerce_tidy_bool(field_name: str, value: Any) -> bool:
+        try:
+            return TypeAdapter(bool).validate_python(value)
+        except Exception as exc:
+            raise ValueError(f"{field_name} must be boolean") from exc
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_tidy_monitoring_compat(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+
+        has_legacy = "emit_tidy_event" in values
+        has_monitoring = "emit_tidy_monitoring_event" in values
+        if not has_legacy and not has_monitoring:
+            return values
+
+        updated = dict(values)
+        legacy_value = None
+        monitoring_value = None
+
+        if has_legacy:
+            legacy_value = cls._coerce_tidy_bool(
+                "guardian.emit_tidy_event",
+                values["emit_tidy_event"],
+            )
+            updated["emit_tidy_event"] = legacy_value
+
+        if has_monitoring:
+            monitoring_value = cls._coerce_tidy_bool(
+                "guardian.emit_tidy_monitoring_event",
+                values["emit_tidy_monitoring_event"],
+            )
+            updated["emit_tidy_monitoring_event"] = monitoring_value
+
+        if has_legacy and has_monitoring and legacy_value != monitoring_value:
+            raise ValueError(
+                "guardian.emit_tidy_event and guardian.emit_tidy_monitoring_event differ; "
+                "keep the deprecated compatibility field equal to the monitoring-only field"
+            )
+
+        resolved_value = monitoring_value if has_monitoring else legacy_value
+        updated.setdefault("emit_tidy_event", resolved_value)
+        updated.setdefault("emit_tidy_monitoring_event", resolved_value)
+        return updated
+
     poll_interval_ms: int = Field(
         ...,
         ge=100,
@@ -404,7 +452,18 @@ class GuardianConfig(BaseModel):
         ..., description="Use unified guardian mode (single reconcile loop for all symbols).",
     )
     emit_tidy_event: bool = Field(
-        ..., description="Emit EVT:SYMBOL_TIDY after successful orphan cleanup.",
+        ...,
+        description=(
+            "Deprecated compatibility alias for emit_tidy_monitoring_event. "
+            "Does not control EVT:SYMBOL_TIDY or entry-gate readiness."
+        ),
+    )
+    emit_tidy_monitoring_event: bool = Field(
+        ...,
+        description=(
+            "Emit monitoring EVT:EXECUTION_TIDY_PERFORMED after tidy operations. "
+            "Does not control EVT:SYMBOL_TIDY or entry-gate readiness."
+        ),
     )
     cleanup_ttl_ms: int = Field(
         ..., ge=1000,
@@ -647,7 +706,6 @@ class PositionPolicySidecarConfig(BaseModel):
     logging: PositionPolicySidecarLoggingConfig = Field(...)
     allowed_actions: PositionPolicySidecarAllowedActionsConfig = Field(...)
     peak_giveback_close: PositionPolicySidecarPeakGivebackConfig = Field(...)
-
 
     @model_validator(mode="after")
     def _validate_bounded_action_scope(self) -> "PositionPolicySidecarConfig":

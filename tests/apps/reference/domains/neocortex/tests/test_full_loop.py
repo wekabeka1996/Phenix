@@ -38,6 +38,8 @@ def full_config(temp_checkpoint_dir):
         system=SystemConfig(
             data_dir=str(temp_checkpoint_dir / "data"),
             checkpoint_dir=str(temp_checkpoint_dir / "checkpoints"),
+            run_mode="backtest",
+            rng_seed=42,
             brain_workers=1,
             queue_maxsize=100,
             log_level="DEBUG",
@@ -47,9 +49,13 @@ def full_config(temp_checkpoint_dir):
             feature_list=["rsi", "obi", "vol"],
             normalization_method="zscore",
             normalization_window=100,
+            normalization_scope="per_symbol",
             buffer_size=1000,
             min_samples_before_ready=3,
-            nan_strategy="zero"
+            nan_strategy="zero",
+            price_feature_mode="raw",
+            delta_price_mode="raw",
+            feature_clip_abs={}
         ),
         neuro=NeuroConfig(
             vae=VAEConfig(
@@ -58,6 +64,7 @@ def full_config(temp_checkpoint_dir):
                 latent_dim=4,
                 learning_rate=0.001,
                 beta=1.0,
+                free_bits_per_dim=0.0,
                 batch_size=2,  # Small for testing
                 use_mean=True
             ),
@@ -72,16 +79,69 @@ def full_config(temp_checkpoint_dir):
                 state_dim=8,
                 action_dim=3,
                 hidden_dims=[16],
+                reward_mode="pnl",
+                objective_split_enforced=True,
+                policy_training_mode="disabled",
                 learning_rate=0.001,
                 gamma=0.99,
                 gae_lambda=0.95,
                 clip_epsilon=0.2,
+                entropy_coef=0.01,
+                max_grad_norm=0.5,
+                numerical_safety={
+                    "gradient_clip_threshold": 1.0,
+                    "on_invalid": "sanitize",
+                },
                 rollout_length=10,
                 num_epochs=1,
                 minibatch_size=2
             ),
+            sequence={
+                "inference_mode": "stateless_per_event",
+                "representation_training_mode": "independent_rows",
+                "reset_on_replay_start": True,
+                "reset_on_symbol_switch": True,
+                "reset_on_objective_family_switch": True,
+                "reset_on_episode_boundary": True,
+            },
+            dataset={
+                "manifest_version": 1,
+                "split": {
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                },
+            },
+            evaluation={
+                "report_version": 1,
+                "calibration_bins": 5,
+                "confidence_bucket_edges": [0.25, 0.5, 0.75, 0.9],
+                "missing_confidence_policy": "not_available",
+                "advisory_status": "forbidden",
+            },
+            performance={
+                "operating_mode": "offline_replay",
+                "shadow_intent_emit_policy": "decimate_observational",
+                "shadow_intent_decimation_stride": 10,
+                "shadow_jsonl_write_policy": "buffered",
+                "telemetry_write_policy": "buffered",
+                "non_critical_queue_limit": 2048,
+                "shadow_log_flush_threshold": 64,
+                "telemetry_flush_threshold": 64,
+                "flush_interval_ms": 1000,
+                "non_critical_overflow_policy": "drop_oldest",
+            },
+            shadow_gates={
+                "gate_set_version": 1,
+                "startup_enforcement": "strict",
+                "allow_advisory_influence": False,
+                "allow_live_authority": False,
+                "allow_policy_training_reenable": False,
+                "require_domain_manifest_contracts": True,
+            },
             checkpoint_every_n_steps=2,  # Checkpoint frequently for testing
-            keep_last_n_checkpoints=1
+            keep_last_n_checkpoints=1,
+            dream_episode_threshold=1,
         )
     )
 
@@ -105,32 +165,34 @@ def run_async(coro):
 
 def test_shadow_intent_emission(full_config):
     """Test that shadow intents are emitted correctly."""
-    
+
     # Track emitted events
     emitted_events = []
-    
+
     def mock_emitter(event_type, payload):
         emitted_events.append((event_type, payload))
-    
+
     # Create mock bridge
     mock_bridge = MagicMock()
     mock_bridge.start = AsyncMock(return_value=True)
-    mock_bridge.encode_async = AsyncMock(return_value=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32))
+    mock_bridge.encode_async = AsyncMock(
+        return_value=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32))
     mock_bridge.act_async = AsyncMock(return_value={
         "action": 0,
         "action_name": "LONG",
         "value": 0.5,
         "confidence": 0.8
     })
-    mock_bridge.train_async = AsyncMock(return_value={"vae_loss": 0.1, "wm_loss": 0.05})
+    mock_bridge.train_async = AsyncMock(
+        return_value={"vae_loss": 0.1, "wm_loss": 0.05})
     mock_bridge.save_async = AsyncMock(return_value=True)
     mock_bridge.load_async = AsyncMock(return_value=False)
     mock_bridge.shutdown = MagicMock()
-    
+
     parser = FeatureParser(full_config.ingest)
     amygdala = ValuationEngine()
     buffer = EpisodicBuffer(full_config.ingest.buffer_size)
-    
+
     adapter = NeocortexAdapter(
         config=full_config,
         parser=parser,
@@ -139,11 +201,11 @@ def test_shadow_intent_emission(full_config):
         brain_bridge=mock_bridge,
         event_emitter=mock_emitter
     )
-    
+
     async def run_test():
         await adapter.start()
         base_ts = 1_700_000_000.0
-        
+
         # Send features
         for i in range(5):
             await adapter.handle_features({
@@ -151,19 +213,19 @@ def test_shadow_intent_emission(full_config):
                 "symbol": "BTCUSDT",
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
-        
+
         # Allow async tasks to complete
         await asyncio.sleep(0.1)
         await adapter.shutdown_async()
-        
+
         return len(emitted_events), adapter._shadow_intents_emitted
-    
+
     event_count, intent_count = run_async(run_test())
-    
+
     # Verify shadow intents were emitted
     assert event_count >= 1, "At least one shadow intent should be emitted"
     assert intent_count >= 1, "Adapter should track emitted intents"
-    
+
     # Verify event structure
     if emitted_events:
         event_types = [evt for evt, _ in emitted_events]
@@ -179,25 +241,28 @@ def test_shadow_intent_emission(full_config):
 
 def test_training_triggers_checkpoint(full_config):
     """Test that checkpoints are saved after training."""
-    
+
     # Track saves
     save_calls = []
-    
+
     mock_bridge = MagicMock()
     mock_bridge.start = AsyncMock(return_value=True)
-    mock_bridge.encode_async = AsyncMock(return_value=np.zeros(4, dtype=np.float32))
+    mock_bridge.encode_async = AsyncMock(
+        return_value=np.zeros(4, dtype=np.float32))
     mock_bridge.act_async = AsyncMock(return_value={
         "action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0
     })
-    mock_bridge.train_async = AsyncMock(return_value={"vae_loss": 0.1, "wm_loss": 0.05})
-    mock_bridge.save_async = AsyncMock(side_effect=lambda p: save_calls.append(p) or True)
+    mock_bridge.train_async = AsyncMock(
+        return_value={"vae_loss": 0.1, "wm_loss": 0.05})
+    mock_bridge.save_async = AsyncMock(
+        side_effect=lambda p: save_calls.append(p) or True)
     mock_bridge.load_async = AsyncMock(return_value=False)
     mock_bridge.shutdown = MagicMock()
-    
+
     parser = FeatureParser(full_config.ingest)
     amygdala = ValuationEngine()
     buffer = EpisodicBuffer(full_config.ingest.buffer_size)
-    
+
     adapter = NeocortexAdapter(
         config=full_config,
         parser=parser,
@@ -205,11 +270,11 @@ def test_training_triggers_checkpoint(full_config):
         buffer=buffer,
         brain_bridge=mock_bridge
     )
-    
+
     async def run_test():
         await adapter.start()
         base_ts = 1_700_000_100.0
-        
+
         # Send enough features to trigger multiple training steps
         # batch_size=2, checkpoint_every=2
         for i in range(10):
@@ -219,16 +284,16 @@ def test_training_triggers_checkpoint(full_config):
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
             await asyncio.sleep(0.01)  # Give training time to complete
-        
+
         await asyncio.sleep(0.2)  # Allow training tasks to complete
-        
+
         return adapter._total_train_steps, len(save_calls)
-    
+
     train_steps, checkpoint_count = run_async(run_test())
-    
+
     # With batch_size=2, min_samples=3, and 10 events, we should get several training steps
     assert train_steps >= 1, f"Expected training steps, got {train_steps}"
-    
+
     # With checkpoint_every=2, after enough steps we should have checkpoints
     # Note: checkpoints are async, might not all complete
     assert mock_bridge.save_async.called or checkpoint_count >= 0, "Save should be called"
@@ -236,11 +301,11 @@ def test_training_triggers_checkpoint(full_config):
 
 def test_adapter_stats(full_config):
     """Test adapter statistics tracking."""
-    
+
     parser = FeatureParser(full_config.ingest)
     amygdala = ValuationEngine()
     buffer = EpisodicBuffer(full_config.ingest.buffer_size)
-    
+
     adapter = NeocortexAdapter(
         config=full_config,
         parser=parser,
@@ -248,7 +313,7 @@ def test_adapter_stats(full_config):
         buffer=buffer,
         brain_bridge=None
     )
-    
+
     async def run_test():
         base_ts = 1_700_000_200.0
         for i in range(5):
@@ -258,9 +323,9 @@ def test_adapter_stats(full_config):
                 "features": {"rsi": "50", "obi": "0.1", "vol": "0.5"}
             })
         return adapter.stats
-    
+
     stats = run_async(run_test())
-    
+
     assert stats["buffer_size"] == 5
     assert stats["total_train_steps"] == 0  # No bridge, no training
     assert stats["shadow_intents_emitted"] == 0  # No bridge, no intents
@@ -303,13 +368,15 @@ def test_reward_missing_episode_emits_alert_and_routes_to_execution_quality(full
     stats = run_async(run_test())
     assert stats["waiting_for_reward_source"] is False
     assert stats["execution_quality_buffered"] == 1
-    alert_payloads = [payload for event, payload in emitted_events if event == "EVT:NEOCORTEX_ALERT"]
-    assert any(payload.get("code") == "NO_STRUCTURED_REWARD_RECEIVED" for payload in alert_payloads)
+    alert_payloads = [payload for event,
+                      payload in emitted_events if event == "EVT:NEOCORTEX_ALERT"]
+    assert any(payload.get("code") ==
+               "NO_STRUCTURED_REWARD_RECEIVED" for payload in alert_payloads)
 
 
 def test_action_result_structure():
     """Test the expected structure of action results."""
-    
+
     # This tests the expected format without needing full PPO
     action_result = {
         "action": 0,
@@ -317,19 +384,18 @@ def test_action_result_structure():
         "value": 0.5,
         "confidence": 0.8
     }
-    
+
     # Verify all required fields
     assert "action" in action_result
     assert "action_name" in action_result
     assert "value" in action_result
     assert "confidence" in action_result
-    
+
     # Verify types
     assert isinstance(action_result["action"], int)
     assert isinstance(action_result["action_name"], str)
     assert isinstance(action_result["value"], float)
     assert isinstance(action_result["confidence"], float)
-    
+
     # Verify action names
     assert action_result["action_name"] in ["LONG", "SHORT", "FLAT"]
-

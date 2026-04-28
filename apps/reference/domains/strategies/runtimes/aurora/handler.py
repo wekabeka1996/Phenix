@@ -612,6 +612,7 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         # operator-facing fields and existing tests receive the raw form.
         state.regime_raw_confidence = evt.raw.get("raw_confidence")
         state.regime_last_update_ts_ms = evt.last_update_ts_ms
+        state.last_regime_heartbeat_ms = evt.last_update_ts_ms
         state.regime_cache_write_ts_ms = int(self.wall_time_fn() * 1000)
 
         # Provenance helpers need the full raw payload (dict-like access).

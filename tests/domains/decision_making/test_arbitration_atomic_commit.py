@@ -7,6 +7,30 @@ from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 from vfoundation.core.protocol import Message
 from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
 
+
+def _make_builder_config():
+    kelly_cfg = SimpleNamespace(
+        base_probability="0.5",
+        kelly_cap="0.25",
+        kelly_alpha="0.8",
+        payoff_ratio_r="1.5",
+        p_min="0.45",
+        p_max="0.65",
+        uplift_factor="0.2",
+    )
+    strategy_cfg = SimpleNamespace(
+        execution=SimpleNamespace(entry_order_type="LIMIT", entry_tif="GTC"),
+        decision=SimpleNamespace(kelly=kelly_cfg),
+    )
+    return SimpleNamespace(
+        strategies=SimpleNamespace(
+            aurora=strategy_cfg,
+            strat_A=strategy_cfg,
+            strat_B=strategy_cfg,
+        )
+    )
+
+
 class TestArbitrationAtomicCommit:
     """TDD regression testing for DM-ARBITRATION-ATOMIC-COMMIT-PACK-R1.
     Ensure atomic arbitration check vs commit semantics, explicitly testing WAL and FSM fallbacks.
@@ -16,17 +40,17 @@ class TestArbitrationAtomicCommit:
     def environment(self):
         arb_signal_buffer = {}
         arb_window_winner = {}
-        
+
         config = MagicMock()
         config.strategies = MagicMock()
-        
+
         strategies_registry = MagicMock()
         strategies_registry.assignments = {"BTCUSDT": ["strat_A", "strat_B"]}
         strategies_registry.arbitration.mode = "priority"
         strategies_registry.arbitration.priority = {"strat_A": 1, "strat_B": 2}
         strategies_registry.arbitration.window_ms = 1000
         strategies_registry.arbitration.logging.rejected_why_prefix = "dropped"
-        
+
         resolver = DMConfigResolver(
             config=config,
             strategies_registry=strategies_registry,
@@ -35,7 +59,7 @@ class TestArbitrationAtomicCommit:
             flip_global_enabled=False,
             logger=MagicMock()
         )
-        
+
         dm_mock = MagicMock()
         dm_mock._clock.now_ms.return_value = 1700000000000
         dm_mock.symbol_states = {"BTCUSDT": {
@@ -77,20 +101,21 @@ class TestArbitrationAtomicCommit:
         dm_mock.features_ttl_sec = 30
         dm_mock._per_symbol_regimes = {}
         dm_mock._system_stress_states = {}
-        
+
         dm_mock._check_strategy_arbitration = resolver.check_strategy_arbitration
         dm_mock._handle_flip_orchestration.return_value = None
         dm_mock._qos_enabled_for_strategy.return_value = False
-        dm_mock._calculate_position_size.return_value = (Decimal("1.0"), "ok", None, None)
+        dm_mock._calculate_position_size.return_value = (
+            Decimal("1.0"), "ok", None, None)
         dm_mock._precheck_exposure_cache.return_value = True
         dm_mock._warmup_gate_before_trade_intent.return_value = False
         dm_mock._degraded_context_gate_should_defer.return_value = False
         dm_mock._get_aurora_instrument_cfg.return_value = None
-        
+
         gw = StrategyGateway(dm_mock)
         gw._reject = MagicMock()
         gw._defer = MagicMock()
-        
+
         return gw, dm_mock, arb_signal_buffer, arb_window_winner, resolver
 
     def _make_msg(self, strategy_id="strat_A", ts_ms=1700000000000):
@@ -112,23 +137,27 @@ class TestArbitrationAtomicCommit:
                 "price_ctx": {"entry_price": 50000},
                 "trace": {
                     "dir_score": 1, "thr_buy": 0.5, "thr_sell": 0.5,
-                    "w_raw": {"d1": 1, "h1": 1, "m30": 1, "m15": 1}, 
-                    "w_norm": {"d1": 1, "h1": 1, "m30": 1, "m15": 1}, 
+                    "w_raw": {"d1": 1, "h1": 1, "m30": 1, "m15": 1},
+                    "w_norm": {"d1": 1, "h1": 1, "m30": 1, "m15": 1},
                     "qty_base": 1, "qty_new": 1, "conf_ratio": 1
                 }
             }
         )
 
     def _make_intent_builder(self, resolver):
-        tca_mock = {"max_slippage_bps": 10, "max_latency_ms": 100, "maker_preference": False}
+        tca_mock = {"max_slippage_bps": 10,
+                    "max_latency_ms": 100, "maker_preference": False}
         risk_mock = {"trade_cvar95_max_bps": 50, "session_cvar95_max_bps": 100}
+        clock = MagicMock()
+        clock.now_ms.return_value = 1700000000000
+        clock.now_sec.return_value = 1700000000
 
         return IntentBuilder(
             logger=MagicMock(),
             fsm=MagicMock(),
             check_strategy_arbitration_fn=resolver.check_strategy_arbitration,
-            clock=MagicMock(),
-            config=MagicMock(),
+            clock=clock,
+            config=_make_builder_config(),
             tca_prefs=tca_mock,
             risk_budgets=risk_mock,
             safe_decimal_fn=lambda x, default: Decimal(x) if x else default,
@@ -167,25 +196,27 @@ class TestArbitrationAtomicCommit:
         """
         mock_resolve.return_value = (None, None, None)
         gw, dm, arb_signal_buffer, arb_window_winner, resolver = environment
-        
-        dm._calculate_position_size.side_effect = Exception("Forced Downstream Failure")
-        
+
+        dm._calculate_position_size.side_effect = Exception(
+            "Forced Downstream Failure")
+
         msg_A = self._make_msg(strategy_id="strat_A", ts_ms=1700000000000)
         gw.process_signal(msg_A)
-        
+
         # Verify A aborted on exception at Pre-Check phase
         gw._reject.assert_called_once()
         assert "BTCUSDT" not in arb_signal_buffer
         assert "BTCUSDT" not in arb_window_winner
-        
+
         dm._calculate_position_size.side_effect = None
-        dm._calculate_position_size.return_value = (Decimal("1.0"), "ok", None, None)
+        dm._calculate_position_size.return_value = (
+            Decimal("1.0"), "ok", None, None)
         gw._reject.reset_mock()
-        
+
         # Verify B passes cleanly
         msg_B = self._make_msg(strategy_id="strat_B", ts_ms=1700000000000)
         gw.process_signal(msg_B)
-        
+
         gw._reject.assert_not_called()
         dm._propose_trade_intent.assert_called_once()
 
@@ -207,7 +238,7 @@ class TestArbitrationAtomicCommit:
             entry_plan_trace=None, tf_sec=None, max_slippage_bps=None,
             max_latency_ms=None, risk_score=None, strategy_trace=None, sg=self.MockSG("strat_A"),
         )
-        
+
         assert "BTCUSDT" in arb_signal_buffer
         assert arb_signal_buffer["BTCUSDT"][1] == "strat_A"
 
@@ -221,10 +252,10 @@ class TestArbitrationAtomicCommit:
         _, dm, arb_signal_buffer, arb_window_winner, resolver = environment
         mock_resolve_policy.return_value = ("LIMIT", "GTC", 10000)
         builder = self._make_intent_builder(resolver)
-        
+
         # Simulate WAL failure
         mock_wal.side_effect = Exception("WAL append failed timeout lock")
-        
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="123", reduce_only=False, strategy_id="strat_A",
@@ -233,9 +264,10 @@ class TestArbitrationAtomicCommit:
             max_latency_ms=None, risk_score=None, strategy_trace=None, sg=self.MockSG("strat_A"),
         )
         # Because WAL failed, the fsm.emit for intent wasn't reached and the commit wasn't reached
-        emit_calls = [c for c in builder._fsm.emit.call_args_list if c.args[0] == "EVT:TRADE_INTENT_PROPOSED"]
+        emit_calls = [c for c in builder._fsm.emit.call_args_list if c.args[0]
+                      == "EVT:TRADE_INTENT_PROPOSED"]
         assert len(emit_calls) == 0
-        
+
         # Window must remain cleanly OPEN
         assert "BTCUSDT" not in arb_signal_buffer
         assert "BTCUSDT" not in arb_window_winner
@@ -244,7 +276,7 @@ class TestArbitrationAtomicCommit:
         builder._fsm.emit.reset_mock()
         mock_wal.side_effect = None
         mock_wal.return_value = "success-id"
-        
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="456", reduce_only=False, strategy_id="strat_B",
@@ -267,12 +299,12 @@ class TestArbitrationAtomicCommit:
         mock_resolve_policy.return_value = ("LIMIT", "GTC", 10000)
         mock_wal.return_value = "id"
         builder = self._make_intent_builder(resolver)
-        
+
         # FSM explicitly fails for TRACE
         def broken_emit(evt_name, **kwargs):
             raise Exception("Broker FSM emitted failed")
         builder._fsm.emit.side_effect = broken_emit
-        
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="123", reduce_only=False, strategy_id="strat_A",
@@ -280,14 +312,14 @@ class TestArbitrationAtomicCommit:
             entry_plan_trace=None, tf_sec=None, max_slippage_bps=None,
             max_latency_ms=None, risk_score=None, strategy_trace=None, sg=self.MockSG("strat_A"),
         )
-        
+
         # Window must remain cleanly OPEN because it failed before final commit
         assert "BTCUSDT" not in arb_signal_buffer
         assert "BTCUSDT" not in arb_window_winner
-        
+
         # Strategy B comes along, FSM succeeds
         builder._fsm.emit.side_effect = None
-        
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="456", reduce_only=False, strategy_id="strat_B",
@@ -306,15 +338,15 @@ class TestArbitrationAtomicCommit:
         """
         mock_resolve.return_value = (None, None, None)
         gw, dm, arb_signal_buffer, arb_window_winner, resolver = environment
-        
+
         dm._qos_enabled_for_strategy.return_value = True
         dm._qos_allow.return_value = (False, "rate_limited")
         dm.qos_enforce = True
         dm.qos_mode = "enforce"
-        
+
         msg_A = self._make_msg(strategy_id="strat_A", ts_ms=1700000000000)
         gw.process_signal(msg_A)
-        
+
         gw._reject.assert_called_once()
         assert gw._reject.call_args.kwargs["reason_code"] == "QOS_RATE_LIMIT"
         assert "BTCUSDT" not in arb_signal_buffer
@@ -330,7 +362,7 @@ class TestArbitrationAtomicCommit:
         mock_wal.return_value = "id"
         builder = self._make_intent_builder(resolver)
         builder._record_blocked = MagicMock()
-            
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="123", reduce_only=False, strategy_id="strat_A",
@@ -340,7 +372,7 @@ class TestArbitrationAtomicCommit:
         )
         assert builder._fsm.emit.call_count > 0
         builder._fsm.emit.reset_mock()
-            
+
         builder.build_and_emit(
             symbol="BTCUSDT", side="BUY", qty=Decimal("1.0"), price=Decimal("50000"),
             why_chain=[], rid="456", reduce_only=False, strategy_id="strat_B",

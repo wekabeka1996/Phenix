@@ -117,11 +117,18 @@ from apps.reference.config.domains.decision_making import (
     FlipOrchestrationConfig,
     GlobalFlipKillswitchConfig,
     HoldingPeriodConfig,
+    LowVolCostFloorFeeConfig,
+    LowVolCostFloorGateConfig,
+    LowVolCostFloorSlippageConfig,
+    LowVolCostFloorThresholdsConfig,
+    LowVolDirectionConfidenceConfig,
+    LowVolGeometryConfig,
     MemoryShieldConfig,
     MoneyManagementConfig,
     PriceMotionSanityConfig,
     QuadraticRolloutConfig,
     ReadinessRegistryConfig,
+    RegimeConfidenceGateConfig,
     RegimeLossEmbargoConfig,
     RegimeShiftInceptionConfig,
     RegimeSmoothingConfig,
@@ -436,7 +443,8 @@ class VolatilityRegimeModelConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(..., description='Enable volatility regime detection')
+    enabled: bool = Field(...,
+                          description='Enable volatility regime detection')
     atr_period: int = Field(..., ge=1, description='ATR calculation period')
     atr_sma_length: int = Field(
         ..., ge=10, description='ATR SMA length for baseline')
@@ -636,7 +644,8 @@ class SystemStressConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(..., description='Master enable (off by default in YAML)')
+    enabled: bool = Field(...,
+                          description='Master enable (off by default in YAML)')
     sources_enabled: List[Literal["price", "orderbook"]] = Field(
         ..., min_length=1,
         description='Data sources required. "price" = OHLCV only. "orderbook" = L2 required.'
@@ -1169,7 +1178,7 @@ class AuroraConfig(BaseModel):
     # REG-FIX-01: BAR-ONLY SSOT - these fields are REQUIRED (no silent defaults)
     basis_tf_sec: int = Field(
         ..., description='Bar-only regime updates: only process FEATURES_CALCULATED with matching tf_sec. '
-                    'REQUIRED - missing value fails config load (fail-closed).'
+        'REQUIRED - missing value fails config load (fail-closed).'
     )
     uncertain_cutoff: float = Field(
         ..., ge=0.0, le=1.0,

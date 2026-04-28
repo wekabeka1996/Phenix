@@ -472,6 +472,11 @@
         "default_factory": null,
         "required": true
       },
+      "neocortex_enforcement_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
       "risk_gate": {
         "default": "'<required>'",
         "default_factory": null,
@@ -539,6 +544,11 @@
       },
       "min_regime_confidence": {
         "default": "0.0",
+        "default_factory": null,
+        "required": false
+      },
+      "min_regime_confidence_by_regime": {
+        "default": "None",
         "default_factory": null,
         "required": false
       }
@@ -884,6 +894,16 @@
       }
     }
   },
+  "RegimeConfidenceGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "min_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
   "RegimeLossEmbargoConfig": {
     "extra": "forbid",
     "fields": {
@@ -1006,6 +1026,11 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "regime_confidence": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       },
       "stress_attenuation_factor": {
         "default": "0.5",

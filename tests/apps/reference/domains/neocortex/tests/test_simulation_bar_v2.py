@@ -85,6 +85,8 @@ def sim_config(temp_workspace) -> NeocortexConfig:
         system=SystemConfig(
             data_dir=str(temp_workspace / "data"),
             checkpoint_dir=str(temp_workspace / "data" / "checkpoints"),
+            run_mode="backtest",
+            rng_seed=42,
             brain_workers=1,
             queue_maxsize=500,
             log_level="INFO",
@@ -94,9 +96,13 @@ def sim_config(temp_workspace) -> NeocortexConfig:
             feature_list=FEATURE_NAMES,
             normalization_method="zscore",
             normalization_window=100,
+            normalization_scope="per_symbol",
             buffer_size=1000,
             min_samples_before_ready=50,
-            nan_strategy="zero"
+            nan_strategy="zero",
+            price_feature_mode="log",
+            delta_price_mode="pct",
+            feature_clip_abs={}
         ),
         neuro=NeuroConfig(
             vae=VAEConfig(
@@ -105,6 +111,7 @@ def sim_config(temp_workspace) -> NeocortexConfig:
                 latent_dim=16,
                 learning_rate=0.001,
                 beta=1.0,
+                free_bits_per_dim=0.0,
                 batch_size=32,
                 use_mean=True
             ),
@@ -119,25 +126,85 @@ def sim_config(temp_workspace) -> NeocortexConfig:
                 state_dim=32,  # latent_dim(16) + context
                 action_dim=3,  # LONG, SHORT, FLAT
                 hidden_dims=[64, 32],
+                reward_mode="pnl",
+                objective_split_enforced=True,
+                policy_training_mode="disabled",
                 learning_rate=0.0003,
                 gamma=0.99,
                 gae_lambda=0.95,
                 clip_epsilon=0.2,
+                entropy_coef=0.01,
+                max_grad_norm=0.5,
+                numerical_safety={
+                    "gradient_clip_threshold": 1.0,
+                    "on_invalid": "sanitize",
+                },
                 rollout_length=64,
                 num_epochs=2,
                 minibatch_size=16
             ),
+            sequence={
+                "inference_mode": "stateless_per_event",
+                "representation_training_mode": "independent_rows",
+                "reset_on_replay_start": True,
+                "reset_on_symbol_switch": True,
+                "reset_on_objective_family_switch": True,
+                "reset_on_episode_boundary": True,
+            },
+            dataset={
+                "manifest_version": 1,
+                "split": {
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                },
+            },
+            evaluation={
+                "report_version": 1,
+                "calibration_bins": 5,
+                "confidence_bucket_edges": [0.25, 0.5, 0.75, 0.9],
+                "missing_confidence_policy": "not_available",
+                "advisory_status": "forbidden",
+            },
+            performance={
+                "operating_mode": "offline_replay",
+                "shadow_intent_emit_policy": "decimate_observational",
+                "shadow_intent_decimation_stride": 10,
+                "shadow_jsonl_write_policy": "buffered",
+                "telemetry_write_policy": "buffered",
+                "non_critical_queue_limit": 2048,
+                "shadow_log_flush_threshold": 64,
+                "telemetry_flush_threshold": 64,
+                "flush_interval_ms": 1000,
+                "non_critical_overflow_policy": "drop_oldest",
+            },
+            shadow_gates={
+                "gate_set_version": 1,
+                "startup_enforcement": "strict",
+                "allow_advisory_influence": False,
+                "allow_live_authority": False,
+                "allow_policy_training_reenable": False,
+                "require_domain_manifest_contracts": True,
+            },
             checkpoint_every_n_steps=50,  # Save every 50 steps
-            keep_last_n_checkpoints=5
+            keep_last_n_checkpoints=5,
+            dream_episode_threshold=1,
         ),
         replay=ReplayConfig(
             enabled=True,
+            wal_dir=temp_workspace / "ops" / "wal",
+            filter_verb="FEATURES_CALCULATED",
             features_dir=temp_workspace / "logs" / "features",
             orders_file=temp_workspace / "logs" / "order_log_v1.jsonl",
             core_log=temp_workspace / "logs" / "aurora_core.log",
             symbols=["BTCUSDT", "ETHUSDT"],
             batch_size=50,
-            poll_interval=0.01
+            poll_interval=0.01,
+            max_feature_lines_total_per_cycle=1000,
+            max_feature_lines_per_symbol_per_cycle=200,
+            max_order_lines_per_cycle=500,
+            max_core_lines_per_cycle=500,
+            feature_missing_timestamp_policy="fail_closed"
         )
     )
 

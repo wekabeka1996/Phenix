@@ -9,6 +9,7 @@ import decimal
 import logging
 from collections import defaultdict
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 from apps.reference.core.time.clock import Clock, LiveClock
@@ -29,6 +30,7 @@ from apps.reference.domains.decision_making.primitives.position_queries import P
 from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
 from apps.reference.domains.decision_making.intent.emitter import IntentEmitter
 from apps.reference.domains.decision_making.intent.flip import FlipOrchestrator
+from apps.reference.domains.decision_making.gates.low_vol_cost_floor import evaluate_low_vol_cost_floor_gate
 from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 from apps.reference.domains.decision_making.core.config_spec import DMConfigSpec
@@ -37,6 +39,8 @@ from apps.reference.domains.decision_making.core.event_handlers import DMEventHa
 from apps.reference.domains.decision_making.observability.log_adapter import DecisionLog
 from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from apps.reference.domains.decision_making.gates.regime_loss_embargo import RegimeLossEmbargo
+from apps.reference.domains.neocortex.config_models import load_config as load_neocortex_config
+from apps.reference.domains.neocortex.transport.authority_bridge import NeocortexAuthorityBridge
 
 try:
     from apps.reference.telemetry.alerts import AlertManager as _AlertManager
@@ -188,6 +192,29 @@ class DecisionMaking:
             clock=self._clock,
             logger=self.logger,
         )
+        shadow_cfg = getattr(
+            getattr(self.config, "domains", None), "shadow_telemetry", None)
+        shadow_enabled = bool(getattr(shadow_cfg, "enabled", False))
+        neocortex_config_dir = Path(__file__).resolve(
+        ).parents[2] / "neocortex" / "config"
+        self._neocortex_config = None
+        neocortex_config_error: Exception | None = None
+        try:
+            self._neocortex_config = load_neocortex_config(
+                neocortex_config_dir)
+        except Exception as exc:
+            neocortex_config_error = exc
+            self.logger.warning(
+                "Neocortex Phase 5 config load failed; authority seam will fail closed",
+                exc_info=exc,
+            )
+        self._neocortex_authority_bridge = NeocortexAuthorityBridge(
+            config=self._neocortex_config,
+            config_error=neocortex_config_error,
+            shadow_emit_fn=(
+                self._emit_shadow_neocortex_decision_logged if shadow_enabled else None),
+            logger=self.logger.getChild("neocortex_authority_phase5"),
+        )
         self._builder = IntentBuilder(
             fsm=self.fsm, clock=self._clock, config=self.config,
             tca_prefs=self._tca_prefs, risk_budgets=self._risk_budgets,
@@ -199,6 +226,11 @@ class DecisionMaking:
             record_accepted_fn=self._record_accepted_intent,
             emit_deferred_fn=self._emit_intent_deferred_v1,
             get_side_bias_params_fn=self._get_side_bias_params,
+            authority_bridge=None,
+            shadow_emit_fn=(
+                self._emit_shadow_neocortex_decision_logged if shadow_enabled else None),
+            causal_state_snapshot_fn=(
+                self._build_shadow_causal_state_snapshot if shadow_enabled else None),
             get_regime_epoch_ref_fn=self._regime_loss_embargo.get_current_epoch_ref,
             side_intent_window=self._side_intent_window, logger=self.logger)
         self._evt = DMEventHandlers(
@@ -241,6 +273,94 @@ class DecisionMaking:
         except (decimal.InvalidOperation, TypeError, ValueError):
             return default
         return d if d.is_finite() else default
+
+    def _emit_shadow_neocortex_decision_logged(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+        why: str,
+    ) -> None:
+        self.fsm.emit(event_name, payload=payload, why=why)
+
+    def _build_shadow_causal_state_snapshot(self, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        symbol = str(kwargs.get("symbol") or "").upper()
+        symbol_state = self.symbol_states.get(symbol) if isinstance(
+            self.symbol_states, dict) else None
+        feature_state = dict(symbol_state.get("features") or {}) if isinstance(
+            symbol_state, dict) and isinstance(symbol_state.get("features"), dict) else {}
+
+        regime_state_raw = self._per_symbol_regimes.get(symbol) if isinstance(
+            getattr(self, "_per_symbol_regimes", None), dict) else None
+        if isinstance(regime_state_raw, dict):
+            regime_state = dict(regime_state_raw)
+        elif hasattr(regime_state_raw, "model_dump"):
+            regime_state = regime_state_raw.model_dump()
+        else:
+            regime_state = regime_state_raw
+
+        latest_portfolio = self.latest_portfolio
+        portfolio_position = None
+        portfolio_ts_ms = None
+        if isinstance(latest_portfolio, dict):
+            portfolio_ts_ms = latest_portfolio.get(
+                "ts_ms") or latest_portfolio.get("timestamp")
+            positions = latest_portfolio.get("positions")
+            if isinstance(positions, list):
+                for position in positions:
+                    if isinstance(position, dict) and str(position.get("symbol") or "").upper() == symbol:
+                        portfolio_position = dict(position)
+                        break
+
+        raw_features = feature_state.get("features") if isinstance(
+            feature_state.get("features"), dict) else feature_state or None
+        feature_ts_ms = feature_state.get("ts") or feature_state.get("ts_ms")
+        sg = kwargs.get("sg")
+        regime_label = getattr(sg, "regime", None) if sg is not None else None
+        regime_confidence = getattr(
+            sg, "regime_confidence", None) if sg is not None else None
+        signal_score = getattr(
+            sg, "signal_score", None) if sg is not None else None
+
+        if not feature_state and regime_state is None and portfolio_position is None:
+            return {}, {
+                "snapshot_missing": True,
+                "supports_counterfactual_join": False,
+                "is_projection": True,
+            }
+
+        snapshot = {
+            "snapshot_contract": "decision_making_projection_v1",
+            "symbol": symbol,
+            "tick_ts_ms": feature_ts_ms or kwargs.get("decision_basis_ts") or kwargs.get("decision_ts_ms"),
+            "feature_event_ts_ms": feature_ts_ms,
+            "portfolio_event_ts_ms": portfolio_ts_ms,
+            "trigger_event_type": "EVT:AUTHORITY_DECISION",
+            "observation": {
+                "features": raw_features,
+                "feature_state": feature_state or None,
+            },
+            "intent": {
+                "rid": kwargs.get("rid"),
+                "strategy_id": kwargs.get("strategy_id"),
+                "side": str(kwargs.get("side") or "").upper() or None,
+                "quantity": None if kwargs.get("qty") is None else str(kwargs.get("qty")),
+                "reduce_only": bool(kwargs.get("reduce_only", False)),
+                "proposed_action": kwargs.get("proposed_action"),
+            },
+            "regime_state": regime_state,
+            "portfolio_position": portfolio_position,
+            "safety_gate": {
+                "regime": regime_label,
+                "regime_confidence": regime_confidence,
+                "signal_score": signal_score,
+                "intent_side": getattr(sg, "intent_side", None) if sg is not None else None,
+            },
+        }
+        return snapshot, {
+            "snapshot_missing": False,
+            "supports_counterfactual_join": False,
+            "is_projection": True,
+        }
 
     @property
     def strategies_registry(self) -> Any:
@@ -305,6 +425,9 @@ class DecisionMaking:
     def _on_strategy_signal_gateway(self, event: Message) -> None:
         self._gateway.process_signal(event)
 
+    def _build_pre_authority_snapshot(self, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        return self._build_shadow_causal_state_snapshot(**kwargs)
+
     def _propose_trade_intent(
         self, symbol, side, qty, price, why_chain, rid,
         reduce_only=False, strategy_id="aurora", decision_ts_ms=None,
@@ -312,6 +435,7 @@ class DecisionMaking:
         tf_sec=None, max_slippage_bps=None, max_latency_ms=None, risk_score=None,
         tpsl_owner_ctx=None,
         strategy_trace=None,
+        authority_context=None,
         safety_gate_result=None,
     ):
         """Run safety-gate glue and forward allowed intents to IntentBuilder.
@@ -353,6 +477,89 @@ class DecisionMaking:
                 strategy_id=strategy_id,
             )
             return
+        if str(getattr(sg, "regime", "") or "") == "LOW_VOLATILITY" and not reduce_only:
+            try:
+                gate_cfg = self.config.domains.decision_making.low_vol_cost_floor_gate
+            except AttributeError:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.CONFIG_CONTRACT_MISSING,
+                    reason="DECISION",
+                    context="low_vol_cost_floor_gate config missing",
+                    why_chain=why_chain,
+                    details={
+                        "path": "domains.decision_making.low_vol_cost_floor_gate"},
+                )
+                self._record_blocked_intent(symbol)
+                return
+            trading_mode = getattr(self.config, "trading_mode", None)
+            if not isinstance(trading_mode, str) or not trading_mode.strip():
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.CONFIG_CONTRACT_INVALID,
+                    reason="DECISION",
+                    context="low_vol_cost_floor_gate trading_mode invalid",
+                    why_chain=why_chain,
+                    details={"path": "trading_mode",
+                             "value": str(trading_mode)},
+                )
+                self._record_blocked_intent(symbol)
+                return
+            low_vol_evaluation = evaluate_low_vol_cost_floor_gate(
+                gate_cfg=gate_cfg,
+                trading_mode=trading_mode.strip(),
+                regime=getattr(sg, "regime", None),
+                regime_confidence=getattr(sg, "regime_confidence", None),
+                strategy_id=str(strategy_id),
+                symbol=str(symbol),
+                side=side,
+                entry_price=price,
+                target_price=target_price,
+                stop_price=stop_price,
+                strategy_trace=strategy_trace if isinstance(
+                    strategy_trace, dict) else None,
+                signal_score=getattr(sg, "signal_score", None),
+                reduce_only=reduce_only,
+            )
+            if low_vol_evaluation.active:
+                sg.low_vol_cost_floor_details = dict(
+                    low_vol_evaluation.details)
+                merged_strategy_trace = dict(strategy_trace) if isinstance(
+                    strategy_trace, dict) else {}
+                merged_strategy_trace["low_vol_cost_floor"] = dict(
+                    low_vol_evaluation.details)
+                strategy_trace = merged_strategy_trace
+                if low_vol_evaluation.block:
+                    sg.outcome = "DENY"
+                    sg.deny_family = "LOW_VOL_COST_FLOOR"
+                    sg.deny_reason = NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
+                    sg.why_short = "low_vol_cost_floor_blocked"
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=str(side),
+                        rid=str(rid),
+                        reason_code=NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED,
+                        reason="DECISION",
+                        context="LOW_VOL_COST_FLOOR_BLOCKED",
+                        why_chain=why_chain,
+                        details=dict(low_vol_evaluation.details),
+                    )
+                    self._handle_safety_deny(
+                        symbol,
+                        side,
+                        rid,
+                        why_chain,
+                        sg,
+                        strategy_id=strategy_id,
+                    )
+                    return
         # After this point the builder owns payload assembly, arbitration, QoS,
         # and intent emission side effects.
         self._builder.build_and_emit(
@@ -364,15 +571,25 @@ class DecisionMaking:
             max_latency_ms=max_latency_ms, risk_score=risk_score,
             tpsl_owner_ctx=tpsl_owner_ctx,
             strategy_trace=strategy_trace,
+            authority_context=authority_context,
             normalize_mode=self.normalize_signals_mode, sg=sg)
 
     def _handle_safety_deny(self, symbol, side, rid, why_chain, sg, *, strategy_id: str) -> None:
         """Emit best-effort observability for a safety-gate denial."""
         def _g(a, d=None): return getattr(sg, a, d)  # noqa: E731
+        deny_family = str(_g("deny_family", "SAFETY_GATES") or "SAFETY_GATES")
         trace = {
             "symbol": symbol, "ts": _g("trace_ts_ms"), "intent_side": _g("intent_side"),
+            "strategy_id": str(strategy_id),
             "signal_score": _g("signal_score"), "regime": _g("regime"),
-            "regime_confidence": _g("regime_confidence"), "trend_dir": _g("trend_dir"),
+            "regime_confidence": _g("regime_confidence"),
+            "min_regime_confidence": _g("min_regime_confidence"),
+            "resolved_min_regime_confidence": _g("resolved_min_regime_confidence"),
+            "resolved_min_regime_confidence_source": _g("resolved_min_regime_confidence_source"),
+            "resolved_min_regime_confidence_strategy_id": _g("resolved_min_regime_confidence_strategy_id"),
+            "resolved_min_regime_confidence_regime_key": _g("resolved_min_regime_confidence_regime_key"),
+            "regime_confidence_gate_verdict": _g("regime_confidence_gate_verdict"),
+            "trend_dir": _g("trend_dir"),
             "trend_run_length": _g("trend_run_length"), "delta_price": _g("delta_price"), "pm_norm_10s": _g("pm_norm_10s"),
             "pm_norm_60s": _g("pm_norm_60s"), "pm_norm_300s": _g("pm_norm_300s"),
             "vol_pct_10s": _g("vol_pct_10s"), "vol_pct_60s": _g("vol_pct_60s"),
@@ -382,6 +599,9 @@ class DecisionMaking:
         }
         if isinstance(_g("regime_provenance"), dict):
             trace["regime_provenance"] = _g("regime_provenance")
+        if isinstance(_g("low_vol_cost_floor_details"), dict):
+            trace["low_vol_cost_floor"] = dict(
+                _g("low_vol_cost_floor_details"))
         # Observability is best-effort here: a failed trace emit must not turn a
         # denied decision into a runtime exception.
         try:
@@ -397,21 +617,28 @@ class DecisionMaking:
         try:
             order_logger.write({
                 "rid": rid, "event_type": "DECISION_INTENT_REJECTED", "symbol": symbol, "side": side_u,
+                "strategy_id": str(strategy_id),
                 "origin_class": "decision_alias",
                 "nrr_code": str(sg.deny_reason) if sg.deny_reason else None,
                 "regime": _g("regime"),
                 "regime_confidence": _g("regime_confidence"),
                 "regime_provenance": _g("regime_provenance") if isinstance(_g("regime_provenance"), dict) else None,
-                "why": f"SAFETY_GATES:{_g('why_short', '')}", "source_fsm": "DecisionMaking",
+                "why": f"{deny_family}:{_g('why_short', '')}", "source_fsm": "DecisionMaking",
                 "metadata": {
-                    "reject_reason": "SAFETY_GATES_DENY",
+                    "reject_reason": f"{deny_family}_DENY",
                     "deny_reason": sg.deny_reason,
                     "canonical_event_family": "TRADE_INTENT_REJECTED",
                     "alias_of": "TRADE_INTENT_REJECTED",
                     "min_regime_confidence": _g("min_regime_confidence"),
+                    "resolved_min_regime_confidence": _g("resolved_min_regime_confidence"),
+                    "resolved_min_regime_confidence_source": _g("resolved_min_regime_confidence_source"),
+                    "resolved_min_regime_confidence_strategy_id": _g("resolved_min_regime_confidence_strategy_id"),
+                    "resolved_min_regime_confidence_regime_key": _g("resolved_min_regime_confidence_regime_key"),
+                    "regime_confidence_gate_verdict": _g("regime_confidence_gate_verdict"),
                     "threshold_applied": _g("threshold_applied"),
                     "threshold_verdict": _g("threshold_verdict"),
                     "threshold_reason": _g("threshold_reason"),
+                    "low_vol_cost_floor": dict(_g("low_vol_cost_floor_details")) if isinstance(_g("low_vol_cost_floor_details"), dict) else None,
                 },
             })
         except Exception:
@@ -654,4 +881,3 @@ class DecisionMaking:
         if now - self._last_status_ts >= 60:
             self._domain_bridge.emit_status()
             self._last_status_ts = now
-

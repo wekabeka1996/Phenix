@@ -36,7 +36,8 @@ CONFIG_MATRIX = [
     [2.0, -1.5, -0.5, -1.0, -0.5],   # Predicted TREND_UP
     [-1.5,  2.0, -0.5, -1.0, -0.5],    # Predicted TREND_DOWN
     [-0.8, -0.8,  0.2, -1.5, -0.5],    # Predicted MR (low reward: 0.2)
-    [-0.5, -0.5, -1.0,  3.0,  0.3],    # Predicted HIGH_VOLATILITY (miss-MR: -1.0)
+    # Predicted HIGH_VOLATILITY (miss-MR: -1.0)
+    [-0.5, -0.5, -1.0,  3.0,  0.3],
     [-0.5, -0.5, -1.0,  0.3,  2.5],    # Predicted EXHAUSTION (miss-MR: -1.0)
 ]
 
@@ -257,15 +258,14 @@ class TestConfigMatrixOverride:
         assert calc.compute_reward(0, 0) == 10.0
         assert calc.compute_reward(0, 1) == 0.0
 
-    def test_none_matrix_falls_back_to_default(self):
-        """When no matrix is provided, hardcoded REWARD_MATRIX is used."""
-        calc = RegimeRewardCalculator(
-            reward_correct=1.0, reward_wrong=-0.5,
-            reward_matrix_enabled=True,
-            reward_matrix=None,
-        )
-        # Check against the hardcoded REWARD_MATRIX constant
-        assert calc.compute_reward(0, 0) == REWARD_MATRIX[0][0]
+    def test_none_matrix_rejected(self):
+        """Formula B requires an explicit matrix from config or artifact."""
+        with pytest.raises(ValueError, match="reward_matrix is required"):
+            RegimeRewardCalculator(
+                reward_correct=1.0, reward_wrong=-0.5,
+                reward_matrix_enabled=True,
+                reward_matrix=None,
+            )
 
     def test_formula_a_ignores_matrix(self):
         """When formula B is disabled, matrix is ignored even if provided."""
@@ -298,8 +298,8 @@ class TestFromConfig:
         assert calc.compute_reward(MEAN_REVERSION, MEAN_REVERSION) == 0.2
         assert calc.compute_reward(MEAN_REVERSION, HIGH_VOLATILITY) == -1.5
 
-    def test_from_config_without_matrix_attr(self):
-        """Legacy config without reward_matrix field falls back gracefully."""
+    def test_from_config_without_matrix_attr_rejected(self):
+        """Formula B rejects legacy configs without an explicit reward matrix."""
 
         class LegacyConfig:
             reward_correct = 1.0
@@ -307,9 +307,8 @@ class TestFromConfig:
             reward_matrix_enabled = True
             class_weights = {}
 
-        calc = RegimeRewardCalculator.from_config(LegacyConfig())
-        # Falls back to hardcoded REWARD_MATRIX
-        assert calc.compute_reward(0, 0) == REWARD_MATRIX[0][0]
+        with pytest.raises(ValueError, match="reward_matrix is required"):
+            RegimeRewardCalculator.from_config(LegacyConfig())
 
 
 class TestMatrixShape:

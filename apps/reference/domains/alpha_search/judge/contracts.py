@@ -63,6 +63,17 @@ def _expected_scope_cycle_key(values: dict[str, Any]) -> Optional[str]:
     )
 
 
+def _expected_shadow_entry_plan_cycle_key(
+    values: dict[str, Any],
+) -> Optional[str]:
+    symbol = values.get("symbol")
+    tf_sec = _maybe_int(values.get("tf_sec"))
+    ts_ms = _maybe_int(values.get("ts_ms"))
+    if symbol is None or tf_sec is None or ts_ms is None:
+        return None
+    return build_cycle_key("ENTRY", str(symbol), tf_sec, ts_ms)
+
+
 def _ensure_cycle_key(
     values: Any,
     *,
@@ -405,4 +416,116 @@ class JudgeVerdict(BaseModel):
             raise ValueError(
                 f"authority_mode='{self.authority_mode}' requires applied=False"
             )
+        return self
+
+
+class ShadowEntryPlan(BaseModel):
+    """Shadow-only LIMIT plan telemetry derived from an entry verdict."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    plan_id: str = Field(..., min_length=1)
+    source_verdict_id: str = Field(..., min_length=1)
+    source_envelope_id: str = Field(..., min_length=1)
+    symbol: str = Field(..., min_length=1)
+    tf_sec: int = Field(..., gt=0)
+    ts_ms: int = Field(..., gt=0)
+    cycle_key: Optional[str] = Field(default=None, min_length=1)
+    authority_mode: CortexMode
+    applied: bool
+    shadow_only: bool
+    final_entry_verdict: EntryVerdict
+    suppressed: bool
+    suppression_reason: Optional[str] = None
+    entry_side: Optional[Literal["BUY", "SELL"]] = None
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence_tier: str = Field(..., min_length=1)
+    tier_min_confidence: float = Field(..., ge=0.0, le=1.0)
+    actionable: bool
+    entry_price_ref: Optional[float] = Field(default=None, gt=0.0)
+    limit_offset_bps: Optional[int] = Field(default=None, ge=0)
+    limit_price: Optional[float] = Field(default=None, gt=0.0)
+    tp_price: Optional[float] = Field(default=None, gt=0.0)
+    sl_price: Optional[float] = Field(default=None, gt=0.0)
+    tp_offset_pct: Optional[float] = Field(default=None, gt=0.0)
+    sl_offset_pct: Optional[float] = Field(default=None, gt=0.0)
+    risk_reward: Optional[float] = Field(default=None, gt=0.0)
+    entry_order_type: Literal["HYPOTHETICAL_LIMIT"] = "HYPOTHETICAL_LIMIT"
+    plan_reason_codes: List[str] = Field(..., min_length=1)
+    strategy_id: str = Field(..., min_length=1)
+    schema_version: Literal["1"] = "1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_cycle_key(cls, values: Any) -> Any:
+        return _ensure_cycle_key(
+            values,
+            expected=_expected_shadow_entry_plan_cycle_key(values)
+            if isinstance(values, dict)
+            else None,
+            model_name="ShadowEntryPlan",
+        )
+
+    @model_validator(mode="after")
+    def validate_shadow_posture(self) -> ShadowEntryPlan:
+        if self.authority_mode != "shadow":
+            raise ValueError("ShadowEntryPlan.authority_mode must be 'shadow'")
+        if self.applied:
+            raise ValueError("ShadowEntryPlan.applied must be False")
+        if not self.shadow_only:
+            raise ValueError("ShadowEntryPlan.shadow_only must be True")
+        return self
+
+    @model_validator(mode="after")
+    def validate_verdict_semantics(self) -> ShadowEntryPlan:
+        non_directional = {"NO_ENTRY", "SUPPRESS", "UNKNOWN"}
+        expected_side = {
+            "OPEN_LONG": "BUY",
+            "OPEN_SHORT": "SELL",
+        }.get(self.final_entry_verdict)
+
+        if self.final_entry_verdict in non_directional:
+            if not self.suppressed:
+                raise ValueError(
+                    "Non-directional final_entry_verdict requires suppressed=True"
+                )
+            if self.entry_side is not None:
+                raise ValueError(
+                    "Suppressed/non-directional ShadowEntryPlan requires entry_side=None"
+                )
+        else:
+            if self.suppressed:
+                raise ValueError(
+                    "Directional final_entry_verdict must not be marked suppressed"
+                )
+            if self.entry_side != expected_side:
+                raise ValueError(
+                    "Directional final_entry_verdict requires matching entry_side"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_price_constraints(self) -> ShadowEntryPlan:
+        derived_prices = (self.limit_price, self.tp_price, self.sl_price)
+        if self.suppressed:
+            if self.entry_price_ref is not None or any(
+                value is not None for value in derived_prices
+            ):
+                raise ValueError(
+                    "Suppressed ShadowEntryPlan requires entry_price_ref/price fields to be null"
+                )
+            return self
+
+        if self.entry_price_ref is None and any(
+            value is not None for value in derived_prices
+        ):
+            raise ValueError(
+                "Derived prices require entry_price_ref to be set"
+            )
+
+        if self.actionable and self.entry_price_ref is None:
+            raise ValueError(
+                "Actionable ShadowEntryPlan requires entry_price_ref to be set"
+            )
+
         return self

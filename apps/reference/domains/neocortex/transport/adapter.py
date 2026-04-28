@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 Neocortex Transport Adapter
 
@@ -6,14 +7,17 @@ Acting as the 'Senses' input port.
 
 Phase 4: Added Shadow Intent emission and checkpointing.
 """
+__quarantined__ = True
 
 import asyncio
 import hashlib
 import inspect
 import json
 import logging
+import threading
 import time
 from collections import Counter, deque
+from contextlib import nullcontext
 from dataclasses import asdict, is_dataclass
 from typing import Dict, Any, Optional, Callable, List, Awaitable
 from pathlib import Path
@@ -147,10 +151,12 @@ class NeocortexAdapter:
             getattr(config.neuro.ppo, "policy_training_mode", "disabled")
         ).lower()
         self._sequence_inference_mode = str(
-            getattr(config.neuro.sequence, "inference_mode", "stateless_per_event")
+            getattr(config.neuro.sequence,
+                    "inference_mode", "stateless_per_event")
         ).lower()
         self._representation_training_mode = str(
-            getattr(config.neuro.sequence, "representation_training_mode", "independent_rows")
+            getattr(config.neuro.sequence,
+                    "representation_training_mode", "independent_rows")
         ).lower()
         self._reset_sequence_on_replay_start = bool(
             getattr(config.neuro.sequence, "reset_on_replay_start", True)
@@ -206,6 +212,7 @@ class NeocortexAdapter:
             getattr(performance_cfg, "non_critical_overflow_policy", "drop_oldest")
         ).lower()
         self._shadow_intent_log_buffer: List[str] = []
+        self._shadow_intent_io_lock = threading.RLock()
         self._shadow_intents_generated = 0
         self._shadow_intents_decimated = 0
         self._shadow_intent_log_rows_buffered = 0
@@ -347,7 +354,8 @@ class NeocortexAdapter:
             def _recurse(prefix: list[str], obj: Any) -> None:
                 if isinstance(obj, dict):
                     for k, v in obj.items():
-                        parts = str(k).split(".") if isinstance(k, str) and "." in k else [str(k)]
+                        parts = str(k).split(".") if isinstance(
+                            k, str) and "." in k else [str(k)]
                         _recurse(prefix + [p for p in parts if p], v)
                     return
                 key = "_".join([p for p in prefix if p])
@@ -359,13 +367,15 @@ class NeocortexAdapter:
 
         raw_map: Dict[str, float] = {}
         for name in self.config.ingest.feature_list:
-            value = flat_features.get(name, 0.0)
+            if name not in flat_features:
+                continue
+            value = flat_features[name]
             try:
                 f_value = float(value)
             except (TypeError, ValueError):
-                f_value = 0.0
+                continue
             if not np.isfinite(f_value):
-                f_value = 0.0
+                continue
             raw_map[name] = f_value
         return raw_map
 
@@ -523,7 +533,8 @@ class NeocortexAdapter:
                     or f"features:{symbol}:{normalized_payload['event_ts_ms']}"
                 ),
                 source_event_type=str(
-                    normalized_payload.get("event_type") or "EVT:FEATURES_CALCULATED"
+                    normalized_payload.get(
+                        "event_type") or "EVT:FEATURES_CALCULATED"
                 ),
             )
 
@@ -566,7 +577,8 @@ class NeocortexAdapter:
 
     def _register_objective_rejection(self, reason: str, sample: Optional[Dict[str, Any]] = None) -> None:
         self._objective_rejections += 1
-        logger.warning("Objective sample rejected: reason=%s sample=%s", reason, sample or {})
+        logger.warning(
+            "Objective sample rejected: reason=%s sample=%s", reason, sample or {})
 
     def _validate_sample_family(
         self,
@@ -576,10 +588,12 @@ class NeocortexAdapter:
     ) -> bool:
         family = self._coerce_objective_family(sample)
         if family is None:
-            self._register_objective_rejection("missing_objective_family", sample)
+            self._register_objective_rejection(
+                "missing_objective_family", sample)
             return False
         if family not in OBJECTIVE_FAMILY_ALLOWED:
-            self._register_objective_rejection("unknown_objective_family", sample)
+            self._register_objective_rejection(
+                "unknown_objective_family", sample)
             return False
         if family != expected_family:
             self._register_objective_rejection(
@@ -595,7 +609,8 @@ class NeocortexAdapter:
         sample["objective_route"] = "execution_quality_buffer"
         sample["policy_eligible"] = False
         sample["unresolved_lifecycle"] = bool(
-            sample.get("unresolved_lifecycle") or sample.get("unresolved_reason")
+            sample.get("unresolved_lifecycle") or sample.get(
+                "unresolved_reason")
         )
         return sample
 
@@ -640,7 +655,8 @@ class NeocortexAdapter:
         evaluated,
     ) -> Dict[str, Any]:
         routed = dict(sample)
-        routed["dataset_provenance"] = evaluated.provenance.model_dump(mode="python")
+        routed["dataset_provenance"] = evaluated.provenance.model_dump(
+            mode="python")
         routed["eligibility_status"] = evaluated.eligibility_status
         routed["is_trainable"] = evaluated.is_trainable
         return routed
@@ -663,54 +679,63 @@ class NeocortexAdapter:
         return ((self._shadow_intents_generated - 1) % stride) == 0
 
     def _enqueue_shadow_intent_log(self, shadow_intent: Dict[str, Any]) -> None:
-        line = json.dumps(shadow_intent, ensure_ascii=True) + "\n"
-        if self._shadow_jsonl_write_policy == "immediate":
-            self._rotate_shadow_intent_log_if_needed()
-            with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
-                shadow_log.write(line)
-                shadow_log.flush()
-            self._shadow_intent_log_flushes += 1
-            return
-
-        if len(self._shadow_intent_log_buffer) >= self._non_critical_queue_limit:
-            self._shadow_intent_log_rows_dropped += 1
-            self._register_non_critical_overload("shadow_intent_log_buffer_full")
-            if self._non_critical_overflow_policy == "drop_oldest":
-                self._shadow_intent_log_buffer.pop(0)
-            else:
+        with self._shadow_log_context():
+            line = json.dumps(shadow_intent, ensure_ascii=True) + "\n"
+            if self._shadow_jsonl_write_policy == "immediate":
+                self._rotate_shadow_intent_log_if_needed()
+                with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
+                    shadow_log.write(line)
+                    shadow_log.flush()
+                self._shadow_intent_log_flushes += 1
                 return
 
-        self._shadow_intent_log_buffer.append(line)
-        self._shadow_intent_log_rows_buffered += 1
-        self._flush_shadow_intent_buffer(force=False)
+            if len(self._shadow_intent_log_buffer) >= self._non_critical_queue_limit:
+                self._shadow_intent_log_rows_dropped += 1
+                self._register_non_critical_overload(
+                    "shadow_intent_log_buffer_full")
+                if self._non_critical_overflow_policy == "drop_oldest":
+                    self._shadow_intent_log_buffer.pop(0)
+                else:
+                    return
+
+            self._shadow_intent_log_buffer.append(line)
+            self._shadow_intent_log_rows_buffered += 1
+            self._flush_shadow_intent_buffer(force=False)
+
+    def _shadow_log_context(self):
+        return getattr(self, "_shadow_intent_io_lock", None) or nullcontext()
 
     def _flush_shadow_intent_buffer(self, *, force: bool) -> None:
-        if not self._shadow_intent_log_buffer:
-            return
+        with self._shadow_log_context():
+            if not self._shadow_intent_log_buffer:
+                return
 
-        now_ms = int(time.time() * 1000.0)
-        should_flush = force
-        if self._shadow_jsonl_write_policy == "immediate":
-            should_flush = True
-        elif len(self._shadow_intent_log_buffer) >= self._shadow_log_flush_threshold:
-            should_flush = True
-        elif now_ms - self._last_non_critical_flush_ts_ms >= self._flush_interval_ms:
-            should_flush = True
+            now_ms = int(time.time() * 1000.0)
+            should_flush = force
+            if self._shadow_jsonl_write_policy == "immediate":
+                should_flush = True
+            elif len(self._shadow_intent_log_buffer) >= self._shadow_log_flush_threshold:
+                should_flush = True
+            elif now_ms - self._last_non_critical_flush_ts_ms >= self._flush_interval_ms:
+                should_flush = True
 
-        if not should_flush:
-            return
+            if not should_flush:
+                return
 
-        self._rotate_shadow_intent_log_if_needed()
-        with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
-            shadow_log.writelines(self._shadow_intent_log_buffer)
-            shadow_log.flush()
-        self._shadow_intent_log_flushes += 1
-        self._shadow_intent_log_buffer.clear()
-        self._last_non_critical_flush_ts_ms = now_ms
+            self._rotate_shadow_intent_log_if_needed()
+            with open(self._shadow_intent_log_path, "a", encoding="utf-8") as shadow_log:
+                shadow_log.writelines(self._shadow_intent_log_buffer)
+                shadow_log.flush()
+            self._shadow_intent_log_flushes += 1
+            self._shadow_intent_log_buffer.clear()
+            self._last_non_critical_flush_ts_ms = now_ms
 
     def _flush_non_critical_outputs(self, *, force: bool) -> None:
         self._flush_shadow_intent_buffer(force=force)
         self.telemetry.flush()
+
+    async def _run_non_critical_io(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     def _validate_batch_family(
         self,
@@ -720,7 +745,8 @@ class NeocortexAdapter:
     ) -> bool:
         if not samples:
             return False
-        families = {self._coerce_objective_family(sample) for sample in samples}
+        families = {self._coerce_objective_family(
+            sample) for sample in samples}
         if None in families or len(families) != 1 or expected_family not in families:
             self._register_objective_rejection(
                 "mixed_or_invalid_batch_family",
@@ -851,12 +877,14 @@ class NeocortexAdapter:
                 )
                 self._execution_quality_samples.append(routed_sample)
                 if not bool(routed_sample.get("reward_missing", False)):
-                    self.telemetry.log_episode(
+                    await self._run_non_critical_io(
+                        self.telemetry.log_episode,
                         reward=float(routed_sample.get("reward", 0.0)),
                         pnl=routed_sample.get("pnl"),
                     )
 
-            self.telemetry.log_buffer_stats(
+            await self._run_non_critical_io(
+                self.telemetry.log_buffer_stats,
                 buffer_size=len(self.buffer),
                 episodes_collected=len(self._execution_quality_samples),
                 episodes_processed=0,
@@ -884,7 +912,8 @@ class NeocortexAdapter:
             self._policy_samples.clear()
 
             if not episodes_to_process:
-                logger.info("train_ppo_now: no policy samples buffered; skipping")
+                logger.info(
+                    "train_ppo_now: no policy samples buffered; skipping")
                 return
 
             logger.info("train_ppo_now: forcing PPO train on %d policy samples", len(
@@ -928,13 +957,14 @@ class NeocortexAdapter:
                 "policy_eligible": getattr(episode, "policy_eligible", None),
             }
 
-        reward = raw.get("reward", 0.0)
+        reward = raw.get("reward")
         episode_reward = raw.get("episode_reward")
         if episode_reward is not None and is_dataclass(episode_reward):
             episode_reward = asdict(episode_reward)
         reward_complete = raw.get("reward_complete")
         if reward_complete is None and isinstance(episode_reward, dict):
-            reward_complete = bool(episode_reward.get("reward_complete", False))
+            reward_complete = bool(
+                episode_reward.get("reward_complete", False))
         if reward_complete is None:
             reward_complete = reward is not None and episode_reward is None
         reward_missing = reward is None or not bool(reward_complete)
@@ -952,7 +982,7 @@ class NeocortexAdapter:
                     "timestamp": raw.get("timestamp"),
                 },
             )
-            reward = 0.0
+            reward = None
 
         features = raw.get("features") or {}
         features_vector = [
@@ -980,7 +1010,7 @@ class NeocortexAdapter:
             "unresolved_reason": raw.get("unresolved_reason"),
             "side": raw.get("side") or "FLAT",
             "entry_price": raw.get("entry_price"),
-            "reward": float(reward),
+            "reward": float(reward) if reward is not None else None,
             "reward_complete": bool(reward_complete),
             "episode_reward": episode_reward,
             "reward_missing": reward_missing,
@@ -1032,7 +1062,8 @@ class NeocortexAdapter:
         try:
             await self._trigger_regime_supervision_training(samples_to_process)
         except Exception as e:
-            logger.error(f"Regime supervision sequence failed: {e}", exc_info=True)
+            logger.error(
+                f"Regime supervision sequence failed: {e}", exc_info=True)
         finally:
             self._dream_in_progress = False
 
@@ -1046,13 +1077,15 @@ class NeocortexAdapter:
 
     async def _trigger_regime_supervision_training(self, samples_to_process: List[Dict[str, Any]]) -> None:
         if self.brain_bridge is None:
-            logger.warning("Regime supervision training skipped: BrainBridge not available")
+            logger.warning(
+                "Regime supervision training skipped: BrainBridge not available")
             return
         if not self._validate_batch_family(
             samples_to_process,
             expected_family=OBJECTIVE_FAMILY_REGIME_SUPERVISION,
         ):
-            logger.warning("Regime supervision batch rejected before bridge submit")
+            logger.warning(
+                "Regime supervision batch rejected before bridge submit")
             return
 
         logger.info(
@@ -1061,13 +1094,15 @@ class NeocortexAdapter:
         )
         result = await self.brain_bridge.train_regime_supervision_async(samples_to_process)
         if not result:
-            logger.warning("Regime supervision returned empty result; skipping")
+            logger.warning(
+                "Regime supervision returned empty result; skipping")
             return
         if "error" in result:
             logger.warning("Regime supervision error: %s", result.get("error"))
             return
 
-        self.telemetry.log_buffer_stats(
+        await self._run_non_critical_io(
+            self.telemetry.log_buffer_stats,
             buffer_size=len(self.buffer),
             episodes_collected=len(self._regime_supervision_samples),
             episodes_processed=int(result.get("episodes_processed", 0)),
@@ -1147,7 +1182,8 @@ class NeocortexAdapter:
                 "ppo_entropy": ppo_entropy,
             }
             if any(v is not None for v in available_metrics.values()):
-                self.telemetry.log_training(
+                await self._run_non_critical_io(
+                    self.telemetry.log_training,
                     ppo_loss_pi=ppo_loss_pi,
                     ppo_loss_v=ppo_loss_v,
                     ppo_entropy=ppo_entropy,
@@ -1159,7 +1195,8 @@ class NeocortexAdapter:
                     sorted(result.keys()),
                 )
 
-            self.telemetry.log_buffer_stats(
+            await self._run_non_critical_io(
+                self.telemetry.log_buffer_stats,
                 buffer_size=len(self.buffer),
                 episodes_collected=len(self._policy_samples),
                 episodes_processed=episodes_processed,
@@ -1256,17 +1293,21 @@ class NeocortexAdapter:
 
                 # Persist to JSONL file
                 try:
-                    self._enqueue_shadow_intent_log(shadow_intent)
+                    await self._run_non_critical_io(
+                        self._enqueue_shadow_intent_log,
+                        shadow_intent,
+                    )
                 except Exception as log_err:
                     logger.warning(
                         f"Failed to queue shadow intent JSONL write: {log_err}")
 
                 # Log to telemetry CSV
-                self.telemetry.log_shadow_intent(
+                await self._run_non_critical_io(
+                    self.telemetry.log_shadow_intent,
                     action=action_result["action"],
                     action_name=action_result["action_name"],
                     confidence=action_result["confidence"],
-                    value=action_result["value"]
+                    value=action_result["value"],
                 )
 
                 # Log shadow intent
@@ -1301,7 +1342,8 @@ class NeocortexAdapter:
         feature_names = self.config.ingest.feature_list
         features_dict = dict(raw_features_for_labeler or {})
         if not features_dict:
-            logger.debug("Oracle settlement: raw feature map is empty for %s", symbol)
+            logger.debug(
+                "Oracle settlement: raw feature map is empty for %s", symbol)
 
         settled = self._oracle_ring_buffer.push_and_settle(
             symbol=symbol,
@@ -1322,9 +1364,23 @@ class NeocortexAdapter:
             return
 
         # Compute realized regime from feature pair (t, t+H)
-        realized_regime = self._oracle_labeler.compute_realized_regime(
-            settled.features_t, settled.features_t_plus_h
-        )
+        try:
+            realized_regime = self._oracle_labeler.compute_realized_regime(
+                settled.features_t, settled.features_t_plus_h
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Oracle settlement skipped because realized-regime features are incomplete: symbol=%s error=%s",
+                symbol,
+                exc,
+            )
+            self._emit_alert(
+                severity="WARN",
+                code="ORACLE_LABEL_FEATURES_INCOMPLETE",
+                message="Regime oracle settlement skipped; no synthetic regime label emitted",
+                details={"symbol": symbol, "error": str(exc)},
+            )
+            return
 
         # Compute reward
         reward = self._oracle_reward_calc.compute_reward(
@@ -1335,7 +1391,8 @@ class NeocortexAdapter:
         self._oracle_settlements += 1
 
         # Log to telemetry
-        self.telemetry.log_oracle_prediction(
+        await self._run_non_critical_io(
+            self.telemetry.log_oracle_prediction,
             predicted_regime=settled.predicted_action,
             realized_regime=realized_regime,
             oracle_reward=reward,
@@ -1356,8 +1413,25 @@ class NeocortexAdapter:
             model_features = settled.model_features_t.astype(
                 np.float32, copy=False).tolist()
         else:
+            missing_model_features = [
+                name for name in feature_names if name not in settled.features_t
+            ]
+            if missing_model_features:
+                logger.warning(
+                    "Oracle settlement skipped because model features are incomplete: symbol=%s missing=%s",
+                    symbol,
+                    missing_model_features,
+                )
+                self._emit_alert(
+                    severity="WARN",
+                    code="ORACLE_MODEL_FEATURES_INCOMPLETE",
+                    message="Regime oracle settlement skipped; no synthetic model feature vector emitted",
+                    details={"symbol": symbol,
+                             "missing_features": missing_model_features},
+                )
+                return
             model_features = [
-                float(settled.features_t.get(name, 0.0))
+                float(settled.features_t[name])
                 for name in feature_names
             ]
 
@@ -1383,7 +1457,8 @@ class NeocortexAdapter:
                     evaluated=evaluated,
                 )
             )
-        self.telemetry.log_buffer_stats(
+        await self._run_non_critical_io(
+            self.telemetry.log_buffer_stats,
             buffer_size=len(self.buffer),
             episodes_collected=len(self._regime_supervision_samples),
             episodes_processed=0,
@@ -1456,12 +1531,13 @@ class NeocortexAdapter:
                 )
 
                 # Log to telemetry CSV
-                self.telemetry.log_training(
+                await self._run_non_critical_io(
+                    self.telemetry.log_training,
                     vae_loss=losses.get('vae_loss'),
                     vae_mse=losses.get('vae_mse'),
                     vae_kld=losses.get('vae_kld'),
                     wm_loss=losses.get('wm_loss'),
-                    train_step=self._total_train_steps
+                    train_step=self._total_train_steps,
                 )
 
             # Check if checkpoint needed
@@ -1615,7 +1691,8 @@ class NeocortexAdapter:
                     getattr(
                         self,
                         "_reset_sequence_on_replay_start",
-                        getattr(self.config.neuro.sequence, "reset_on_replay_start", True),
+                        getattr(self.config.neuro.sequence,
+                                "reset_on_replay_start", True),
                     )
                 )
                 if (
@@ -1630,7 +1707,8 @@ class NeocortexAdapter:
                         if inspect.isawaitable(reset_call)
                         else reset_call
                     )
-                    logger.info("Sequence state reset at adapter start: %s", reset_result)
+                    logger.info(
+                        "Sequence state reset at adapter start: %s", reset_result)
 
     async def shutdown_async(self):
         """
@@ -1663,7 +1741,8 @@ class NeocortexAdapter:
                 await self._trigger_regime_supervision_training(list(self._regime_supervision_samples))
                 self._regime_supervision_samples.clear()
             except Exception as e:
-                logger.warning(f"Final regime supervision training failed: {e}")
+                logger.warning(
+                    f"Final regime supervision training failed: {e}")
 
         # 3. Flush remaining policy samples only when explicitly enabled
         if (
@@ -1696,7 +1775,7 @@ class NeocortexAdapter:
                 logger.error(f"Final checkpoint save failed: {e}")
 
         # 5. Flush non-critical observational buffers
-        self._flush_non_critical_outputs(force=True)
+        await self._run_non_critical_io(self._flush_non_critical_outputs, force=True)
 
         # 6. Save normalizer state
         self._save_normalizer_state()
@@ -1745,7 +1824,9 @@ class NeocortexAdapter:
         telemetry_stats = {}
         try:
             telemetry_stats = dict(getattr(self.telemetry, "stats", {}) or {})
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to read telemetry stats: %s",
+                           exc, exc_info=True)
             telemetry_stats = {}
         base = {
             "total_train_steps": self._total_train_steps,

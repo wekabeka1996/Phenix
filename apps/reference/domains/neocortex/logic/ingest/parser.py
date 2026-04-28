@@ -14,6 +14,14 @@ import math
 import numpy as np
 
 from apps.reference.domains.neocortex.config_models import IngestConfig
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    record_failure_outcome,
+)
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+    coerce_causal_time_provenance,
+)
 from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 
 logger = logging.getLogger(__name__)
@@ -25,6 +33,79 @@ _DEFAULT_CLIP_ABS = {
     "macro_resid": 5.0,
     "volume_zscore": 10.0,
 }
+
+_TIME_FIELD_PRIORITY = (
+    "event_ts_ms",
+    "timestamp_ms",
+    "timestamp",
+    "ts",
+)
+
+_PROVENANCE_FIELD_PRIORITY = (
+    "time_provenance",
+    "causal_time_provenance",
+    "event_time_provenance",
+    "time_source",
+    "event_time_source",
+)
+
+
+def _normalize_epoch_to_ms(value: object | None) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(numeric) or numeric <= 0.0:
+        return None
+    if numeric >= 1e11:
+        return int(round(numeric))
+    if numeric >= 1e9:
+        return int(round(numeric * 1000.0))
+    return None
+
+
+def _infer_payload_time_provenance(
+    payload: Dict[str, Any],
+    *,
+    source_key: str,
+) -> CausalTimeProvenance:
+    # Phase 1 I3: If ANY provenance key is explicitly present in the payload,
+    # respect its value — even if it resolves to UNKNOWN (non-causal).
+    # Only fall back to AURORA_EVENT when NO provenance field is present at all.
+    for key in _PROVENANCE_FIELD_PRIORITY:
+        if key in payload:
+            return coerce_causal_time_provenance(payload[key])
+
+    # No provenance field present at all: apply structural fallback.
+    event_type = str(
+        payload.get("event_type") or payload.get("event_name") or ""
+    ).strip().upper()
+    if event_type in {"BAR_CLOSED", "EVT:BAR_CLOSED"}:
+        return CausalTimeProvenance.BAR_END
+    if source_key in _TIME_FIELD_PRIORITY:
+        return CausalTimeProvenance.AURORA_EVENT
+    return CausalTimeProvenance.UNKNOWN
+
+
+def _extract_payload_timestamp_contract(
+    payload: Dict[str, Any],
+) -> tuple[float, int, CausalTimeProvenance]:
+    for key in _TIME_FIELD_PRIORITY:
+        if key not in payload:
+            continue
+        raw_value = payload.get(key)
+        event_ts_ms = _normalize_epoch_to_ms(raw_value)
+        if event_ts_ms is None:
+            continue
+        raw_timestamp = float(str(raw_value))
+        return (
+            raw_timestamp,
+            event_ts_ms,
+            _infer_payload_time_provenance(payload, source_key=key),
+        )
+    raise ValueError("Payload missing timestamp")
 
 
 def _flatten_features(features: Dict[str, Any]) -> Dict[str, Any]:
@@ -91,13 +172,22 @@ class FeatureParser:
         Raises:
             ValueError: If critical fields (ts) are missing.
         """
-        # 1) Timestamp
-        ts = payload.get("timestamp")
-        if ts is None:
-            ts = payload.get("ts")
-        if ts is None:
-            raise ValueError("Payload missing timestamp")
-        ts = float(ts)
+        # 1) Timestamp + provenance
+        try:
+            ts, event_ts_ms, time_provenance = _extract_payload_timestamp_contract(
+                payload
+            )
+        except ValueError as error:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.ingest.parser.FeatureParser.parse",
+                detail=type(error).__name__,
+                message=str(error),
+                recoverable=True,
+                fallback_applied=False,
+            )
+            raise
 
         # 2) Feature map extraction (root or payload['features'])
         features_dict = payload.get("features")
@@ -140,7 +230,7 @@ class FeatureParser:
         self._apply_representation_transforms(values)
 
         # 6) Finite + clip sanitization.
-        vector = np.zeros(self._feature_count, dtype=np.float32)
+        vector: np.ndarray = np.zeros(self._feature_count, dtype=np.float32)
         for i, name in enumerate(self.config.feature_list):
             val = self._sanitize_finite(values.get(name, 0.0))
             val = self._clip_value(name, val)
@@ -152,6 +242,8 @@ class FeatureParser:
             volatility=volatility,
             obi=obi,
             features_vector=vector,
+            event_ts_ms=event_ts_ms,
+            time_provenance=time_provenance,
         )
 
     def _parse_feature_value(self, raw_val: Any) -> float:

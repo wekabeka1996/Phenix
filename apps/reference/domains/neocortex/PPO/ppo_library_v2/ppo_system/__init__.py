@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 # path: ppo_library/ppo_system/__init__.py
 """
 ppo_system: Універсальна, надійна та конфігурована реалізація PPO-агента як бібліотека.
@@ -9,6 +10,7 @@ ppo_system: Універсальна, надійна та конфігурова
 - PPOConfig: Об'єкт для конфігурації агента.
 - SafetyConfig: Об'єкт для конфігурації чисельної безпеки.
 """
+__quarantined__ = True
 
 __version__ = "1.0.0"
 

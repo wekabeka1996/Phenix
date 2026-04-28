@@ -38,12 +38,24 @@ class FakeBus:
 def fsm_config():
     """Mock configuration to satisfy FSM requirements"""
     cfg = MagicMock()
+    cfg.execution = None
+    cfg.trading = MagicMock()
+    cfg.trading.execution = MagicMock()
     # Mock defaults for accessors
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
+    # Match canonical repo config: OrderGuardian owns cleanup in these harnesses.
+    cfg.trading.execution.fsm_periodic_cleanup_enabled = False
     cfg.trading.execution.anti_race_close_ms = 800
     cfg.trading.execution.cooldown_after_close_ms = 10_000
     cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
+    cfg.domains.execution_position.guardian = MagicMock()
+    cfg.domains.execution_position.guardian.unified = True
+    cfg.domains.execution_position.guardian.emit_tidy_event = True
+    cfg.domains.execution_position.guardian.emit_tidy_monitoring_event = True
+    cfg.domains.execution_position.guardian.poll_interval_ms = 500
+    cfg.domains.execution_position.guardian.cleanup_ttl_ms = 6000
+    cfg.domains.execution_position.guardian.symbol_cooldown_ms = 4000
 
     # Event deduplication config
     event_dedup = MagicMock()

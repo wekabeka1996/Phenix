@@ -11,6 +11,10 @@ from collections import Counter
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from apps.reference.domains.neocortex.config_models import DatasetConfig
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    record_failure_outcome,
+)
 from apps.reference.domains.neocortex.logic.datasets.contracts import (
     DatasetEvaluatedSample,
     DatasetManifest,
@@ -47,6 +51,28 @@ class DatasetPolicyEngine:
         ).strip().lower()
         self.sequence_inference_mode = str(sequence_inference_mode).strip().lower()
 
+    def _record_failure(
+        self,
+        taxonomy: FailureOutcomeTaxonomy,
+        reason_code: str,
+        *,
+        source: str,
+        detail: object | None = None,
+        message: str | None = None,
+    ) -> None:
+        record_failure_outcome(
+            taxonomy,
+            reason_code,
+            source=source,
+            detail=detail,
+            message=message,
+            recoverable=taxonomy not in {
+                FailureOutcomeTaxonomy.BLOCK,
+                FailureOutcomeTaxonomy.FATAL_STARTUP,
+            },
+            fallback_applied=taxonomy == FailureOutcomeTaxonomy.FALLBACK,
+        )
+
     def evaluate_sample(
         self,
         sample: Mapping[str, Any],
@@ -69,10 +95,24 @@ class DatasetPolicyEngine:
 
         if not source_type or not source_ref or not source_event_type:
             exclusion_reasons.append("missing_source_provenance")
+            self._record_failure(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.dataset_hygiene.evaluate_sample",
+                detail=family,
+                message="missing source provenance",
+            )
 
         event_ts_ms = self._extract_event_ts_ms(sample_dict)
         if event_ts_ms is None:
             exclusion_reasons.append("missing_event_ts_ms")
+            self._record_failure(
+                FailureOutcomeTaxonomy.SKIP_ROW,
+                "MISSING_REQUIRED_STATE",
+                source="neocortex.dataset_hygiene.evaluate_sample",
+                detail=family,
+                message="missing event timestamp",
+            )
             event_ts_ms = 0
 
         if self._contains_magicmock(sample_dict):
@@ -82,6 +122,14 @@ class DatasetPolicyEngine:
             quarantine_reasons.append("contaminated_identifier")
 
         legacy_non_causal = self._is_legacy_non_causal(sample_dict)
+        if legacy_non_causal:
+            self._record_failure(
+                FailureOutcomeTaxonomy.LEGACY_DIAGNOSTIC_ONLY,
+                "NON_CAUSAL_TIME",
+                source="neocortex.dataset_hygiene.evaluate_sample",
+                detail=family,
+                message="legacy non-causal sample",
+            )
 
         status = "rejected"
         if not quarantine_reasons:
@@ -157,8 +205,8 @@ class DatasetPolicyEngine:
         sample_counts = Counter(
             item.eligibility_status for item in evaluated
         )
-        exclusion_reason_counts = Counter()
-        quarantine_reason_counts = Counter()
+        exclusion_reason_counts: Counter[str] = Counter()
+        quarantine_reason_counts: Counter[str] = Counter()
         reward_complete_stats = Counter({"complete": 0, "incomplete": 0, "missing": 0})
         symbols = set()
         source_inventory = set()
@@ -246,6 +294,13 @@ class DatasetPolicyEngine:
         if family == "representation":
             if not self._has_representation_payload(sample):
                 exclusion_reasons.append("missing_representation_payload")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "MISSING_REQUIRED_STATE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="missing representation payload",
+                )
                 return "rejected", exclusion_reasons, quarantine_reasons
             sequence_mode = self._extract_sequence_contract_mode(family, sample)
             if sequence_mode != self.representation_training_mode:
@@ -261,6 +316,13 @@ class DatasetPolicyEngine:
                 exclusion_reasons.append("legacy_non_causal_not_allowed")
             if sample.get("predicted_regime") is None or sample.get("realized_regime") is None:
                 exclusion_reasons.append("missing_regime_target")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "MISSING_REQUIRED_STATE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="missing regime supervision target",
+                )
             if exclusion_reasons:
                 return "rejected", exclusion_reasons, quarantine_reasons
             return "trainable", exclusion_reasons, quarantine_reasons
@@ -270,11 +332,32 @@ class DatasetPolicyEngine:
                 exclusion_reasons.append("legacy_non_causal_not_allowed")
             if not sample.get("trade_id") and not sample.get("lifecycle_id"):
                 exclusion_reasons.append("missing_lifecycle_identity")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "MISSING_REQUIRED_STATE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="missing lifecycle identity",
+                )
             if sample.get("unresolved_lifecycle") or sample.get("unresolved_close"):
                 quarantine_reasons.append("unresolved_lifecycle")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "UNJOINABLE_LIFECYCLE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="unjoinable lifecycle",
+                )
                 return "quarantined", exclusion_reasons, quarantine_reasons
             if sample.get("reward_complete") is False or sample.get("reward_missing") is True:
                 exclusion_reasons.append("reward_incomplete")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "LOW_SUPPORT",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="reward incomplete",
+                )
                 return "diagnostics_only", exclusion_reasons, quarantine_reasons
             if exclusion_reasons:
                 return "rejected", exclusion_reasons, quarantine_reasons
@@ -283,10 +366,31 @@ class DatasetPolicyEngine:
         if family == "policy":
             if not sample.get("trade_id") and not sample.get("lifecycle_id"):
                 exclusion_reasons.append("missing_lifecycle_identity")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "MISSING_REQUIRED_STATE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="missing lifecycle identity",
+                )
             if sample.get("reward_complete") is not True or sample.get("reward_missing") is True:
                 exclusion_reasons.append("reward_incomplete")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "LOW_SUPPORT",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="reward incomplete",
+                )
             if sample.get("unresolved_lifecycle") or sample.get("unresolved_close"):
                 exclusion_reasons.append("unresolved_lifecycle")
+                self._record_failure(
+                    FailureOutcomeTaxonomy.SKIP_ROW,
+                    "UNJOINABLE_LIFECYCLE",
+                    source="neocortex.dataset_hygiene._evaluate_family_rules",
+                    detail=family,
+                    message="unjoinable lifecycle",
+                )
             if legacy_non_causal:
                 exclusion_reasons.append("legacy_non_causal_not_allowed")
             sequence_mode = self._extract_sequence_contract_mode(family, sample)

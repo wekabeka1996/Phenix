@@ -1,3 +1,4 @@
+# QUARANTINED: legacy_runtime
 """
 Brain Core
 
@@ -6,6 +7,7 @@ Unifies VAE (Representation), World Model (Dynamics), and PPO (Decision).
 
 Phase 4: Added checkpointing and PPO integration.
 """
+__quarantined__ = True
 
 from apps.reference.domains.neocortex.logic.brain.world_model import WorldModel
 from apps.reference.domains.neocortex.logic.brain.vae import VariationalAutoencoder
@@ -207,8 +209,10 @@ class BrainCore:
                 gamma=ppo_cfg.gamma,
                 gae_lambda=ppo_cfg.gae_lambda,
                 clip_range=ppo_cfg.clip_epsilon,
-                entropy_coef=_safe_float(getattr(ppo_cfg, "entropy_coef", 0.01), 0.01),
-                max_grad_norm=_safe_float(getattr(ppo_cfg, "max_grad_norm", 0.5), 0.5),
+                entropy_coef=_safe_float(
+                    getattr(ppo_cfg, "entropy_coef", 0.01), 0.01),
+                max_grad_norm=_safe_float(
+                    getattr(ppo_cfg, "max_grad_norm", 0.5), 0.5),
                 hidden_size=ppo_cfg.hidden_dims[0] if ppo_cfg.hidden_dims else 64,
                 epochs=ppo_cfg.num_epochs,
                 batch_size=ppo_cfg.minibatch_size,
@@ -245,7 +249,8 @@ class BrainCore:
             if entropy_schedule_cfg is not None:
                 start = getattr(entropy_schedule_cfg, "start", None)
                 end = getattr(entropy_schedule_cfg, "end", None)
-                total_steps = getattr(entropy_schedule_cfg, "total_steps", None)
+                total_steps = getattr(
+                    entropy_schedule_cfg, "total_steps", None)
 
                 if _is_numeric(start) and _is_numeric(end) and _is_numeric(total_steps):
                     self.ppo_agent.entropy_scheduler = EntropyScheduler(
@@ -326,7 +331,8 @@ class BrainCore:
 
     def _representation_training_mode(self) -> str:
         seq_cfg = getattr(self.config, "sequence", None)
-        raw = getattr(seq_cfg, "representation_training_mode", "independent_rows")
+        raw = getattr(seq_cfg, "representation_training_mode",
+                      "independent_rows")
         return str(raw).strip().lower() or "independent_rows"
 
     @staticmethod
@@ -444,7 +450,8 @@ class BrainCore:
         vae_losses = self.vae.loss_function(
             recon_x, batch_obs, mu, logvar,
             beta=self.config.vae.beta,
-            free_bits_per_dim=float(getattr(self.config.vae, "free_bits_per_dim", 0.0)),
+            free_bits_per_dim=float(
+                getattr(self.config.vae, "free_bits_per_dim", 0.0)),
             regime_logits=regime_logits,
             regime_targets=regime_targets,
             aux_alpha=aux_alpha,
@@ -503,8 +510,10 @@ class BrainCore:
         if not samples_obs:
             return {"samples": 0.0, "loss": 0.0, "ce": 0.0}
 
-        x = torch.as_tensor(np.stack(samples_obs), dtype=torch.float32, device=self.device)
-        y = torch.as_tensor(np.asarray(samples_y), dtype=torch.long, device=self.device)
+        x = torch.as_tensor(np.stack(samples_obs),
+                            dtype=torch.float32, device=self.device)
+        y = torch.as_tensor(np.asarray(samples_y),
+                            dtype=torch.long, device=self.device)
 
         self.vae_opt.zero_grad()
         recon_x, mu, logvar = self.vae(x)
@@ -523,7 +532,8 @@ class BrainCore:
             mu,
             logvar,
             beta=self.config.vae.beta,
-            free_bits_per_dim=float(getattr(self.config.vae, "free_bits_per_dim", 0.0)),
+            free_bits_per_dim=float(
+                getattr(self.config.vae, "free_bits_per_dim", 0.0)),
             regime_logits=logits,
             regime_targets=y,
             aux_alpha=aux_alpha,
@@ -543,9 +553,8 @@ class BrainCore:
     def encode(self, obs: np.ndarray) -> np.ndarray:
         """Encode numpy observation to numpy latent vector."""
         if not self._torch_available:
-            latent_dim = getattr(
-                getattr(self.config, "vae", None), "latent_dim", 1)
-            return np.zeros(int(latent_dim), dtype=np.float32)
+            raise RuntimeError(
+                "BrainCore encode unavailable because PyTorch is not installed")
 
         with torch.no_grad():
             self.vae.eval()
@@ -580,16 +589,11 @@ class BrainCore:
             dict with 'action', 'value', 'confidence' (log_prob)
         """
         sequence_mode = self._inference_sequence_mode()
-        _FLAT_FALLBACK = {
-            "action": 2,
-            "action_name": "MEAN_REVERSION" if self.config.ppo.action_dim == 5 else "FLAT",
-            "value": 0.0,
-            "confidence": 0.0,
-            "sequence_inference_mode": sequence_mode,
-        }
 
         if self.ppo_agent is None or self._model_corrupted:
-            return {**_FLAT_FALLBACK, "corrupted": self._model_corrupted}
+            raise RuntimeError(
+                f"BrainCore PPO unavailable or corrupted; corrupted={self._model_corrupted}"
+            )
 
         try:
             # Ensure z is float32
@@ -604,11 +608,9 @@ class BrainCore:
                     "Unsupported inference sequence mode on current branch: %s",
                     sequence_mode,
                 )
-                return {
-                    **_FLAT_FALLBACK,
-                    "corrupted": self._model_corrupted,
-                    "error": f"unsupported_sequence_inference_mode:{sequence_mode}",
-                }
+                raise RuntimeError(
+                    f"unsupported_sequence_inference_mode:{sequence_mode}"
+                )
 
             reset_result = self.reset_sequence_state(reason="inference_event")
             if reset_result.get("status") == "unavailable":
@@ -637,9 +639,15 @@ class BrainCore:
                     try:
                         self.ppo_agent.reset_hidden(
                             np.array([True], dtype=bool))
-                    except Exception:
-                        pass
-                return {**_FLAT_FALLBACK, "corrupted": self._model_corrupted}
+                    except Exception as reset_exc:
+                        logger.warning(
+                            "PPO hidden reset failed after non-finite output: %s",
+                            reset_exc,
+                            exc_info=True,
+                        )
+                raise RuntimeError(
+                    "BrainCore PPO produced non-finite action/value/logp; no synthetic action emitted"
+                )
 
             # Map action index to name (dynamic based on action_dim)
             action_dim = self.config.ppo.action_dim
@@ -666,7 +674,7 @@ class BrainCore:
 
         except Exception as e:
             self._warn_nonfinite_action(f"exception:{type(e).__name__}")
-            return {**_FLAT_FALLBACK, "corrupted": self._model_corrupted}
+            raise RuntimeError("BrainCore PPO action inference failed") from e
 
     def train_regime_supervision(self, samples: list[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -722,7 +730,18 @@ class BrainCore:
 
         import torch
 
-        action_map = {"LONG": 0, "SHORT": 1, "FLAT": 2, "BUY": 0, "SELL": 1}
+        action_dim = int(self.config.ppo.action_dim)
+        if action_dim == 5:
+            action_map = {
+                "TREND_UP": 0,
+                "TREND_DOWN": 1,
+                "MEAN_REVERSION": 2,
+                "HIGH_VOLATILITY": 3,
+                "EXHAUSTION": 4,
+            }
+        else:
+            action_map = {"LONG": 0, "SHORT": 1,
+                          "FLAT": 2, "BUY": 0, "SELL": 1}
         device = self.ppo_agent.device
 
         episodes_processed = 0
@@ -740,18 +759,50 @@ class BrainCore:
             obs_np = np.asarray(features_vector, dtype=np.float32)
             z = self.encode(obs_np).astype(np.float32)
 
-            if "action" in ep and isinstance(ep.get("action"), int):
-                action_idx = ep["action"]
+            raw_action = ep.get("action")
+            if (
+                "action" in ep
+                and isinstance(raw_action, int)
+                and not isinstance(raw_action, bool)
+            ):
+                action_idx = raw_action
             else:
-                side = str(
-                    ep.get("policy_action_name")
-                    or ep.get("side")
-                    or "FLAT"
-                ).upper()
-                action_idx = action_map.get(side, 2)
+                side_value = ep.get("policy_action_name") or ep.get("side")
+                if not isinstance(side_value, str):
+                    logger.warning(
+                        "Policy sample skipped: missing action/policy_action_name/side"
+                    )
+                    episodes_skipped += 1
+                    continue
+                action_idx = action_map.get(side_value.upper())
+                if action_idx is None:
+                    logger.warning(
+                        "Policy sample skipped: invalid policy action %r",
+                        side_value,
+                    )
+                    episodes_skipped += 1
+                    continue
 
-            reward = ep.get("reward", 0.0)
-            reward_f = 0.0 if reward is None else float(reward)
+            if not 0 <= int(action_idx) < action_dim:
+                logger.warning(
+                    "Policy sample skipped: action index out of range %r for action_dim=%d",
+                    action_idx,
+                    action_dim,
+                )
+                episodes_skipped += 1
+                continue
+
+            reward = ep.get("reward")
+            if reward is None or isinstance(reward, bool):
+                logger.warning("Policy sample skipped: missing reward")
+                episodes_skipped += 1
+                continue
+            reward_f = float(reward)
+            if not np.isfinite(reward_f):
+                logger.warning(
+                    "Policy sample skipped: non-finite reward %r", reward)
+                episodes_skipped += 1
+                continue
 
             with torch.no_grad():
                 obs_t = torch.as_tensor(
@@ -795,7 +846,8 @@ class BrainCore:
 
         current_coef = None
         if self.ppo_agent.entropy_scheduler:
-            current_coef = self.ppo_agent.entropy_scheduler.value(self.train_steps)
+            current_coef = self.ppo_agent.entropy_scheduler.value(
+                self.train_steps)
             self.ppo_agent.agent_cfg.entropy_coef = current_coef
 
         metrics = self.ppo_agent.update()
@@ -851,32 +903,39 @@ class BrainCore:
                             getattr(self.config.vae, "free_bits_per_dim", 0.0)
                         ),
                         "regime_aux_enabled": bool(
-                            getattr(self.config.vae.regime_aux, "enabled", False)
+                            getattr(self.config.vae.regime_aux,
+                                    "enabled", False)
                         ),
                         "regime_aux_alpha": float(
                             getattr(self.config.vae.regime_aux, "alpha", 0.0)
                         ),
                         "regime_aux_ema_decay": float(
-                            getattr(self.config.vae.regime_aux, "ema_decay", 0.99)
+                            getattr(self.config.vae.regime_aux,
+                                    "ema_decay", 0.99)
                         ),
                         "regime_aux_alpha_schedule": {
                             "start": float(
                                 getattr(
-                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    getattr(self.config.vae.regime_aux,
+                                            "alpha_schedule", None),
                                     "start",
-                                    getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                    getattr(self.config.vae.regime_aux,
+                                            "alpha", 0.0),
                                 )
                             ),
                             "end": float(
                                 getattr(
-                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    getattr(self.config.vae.regime_aux,
+                                            "alpha_schedule", None),
                                     "end",
-                                    getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                    getattr(self.config.vae.regime_aux,
+                                            "alpha", 0.0),
                                 )
                             ),
                             "steps": int(
                                 getattr(
-                                    getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                    getattr(self.config.vae.regime_aux,
+                                            "alpha_schedule", None),
                                     "steps",
                                     1,
                                 )
@@ -978,21 +1037,26 @@ class BrainCore:
                     "regime_aux_alpha_schedule": {
                         "start": float(
                             getattr(
-                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                getattr(self.config.vae.regime_aux,
+                                        "alpha_schedule", None),
                                 "start",
-                                getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                getattr(self.config.vae.regime_aux,
+                                        "alpha", 0.0),
                             )
                         ),
                         "end": float(
                             getattr(
-                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                getattr(self.config.vae.regime_aux,
+                                        "alpha_schedule", None),
                                 "end",
-                                getattr(self.config.vae.regime_aux, "alpha", 0.0),
+                                getattr(self.config.vae.regime_aux,
+                                        "alpha", 0.0),
                             )
                         ),
                         "steps": int(
                             getattr(
-                                getattr(self.config.vae.regime_aux, "alpha_schedule", None),
+                                getattr(self.config.vae.regime_aux,
+                                        "alpha_schedule", None),
                                 "steps",
                                 1,
                             )

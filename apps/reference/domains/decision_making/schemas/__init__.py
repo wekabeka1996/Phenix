@@ -13,3 +13,8 @@ warnings.warn(
 
 from apps.reference.domains.decision_making.contracts.schemas import *  # noqa: F401,F403
 from apps.reference.domains.decision_making.contracts.schemas import PortfolioStatePayload  # noqa: F401
+from apps.reference.domains.decision_making.schemas.control_decision import (  # noqa: F401
+    ControlDecisionAction,
+    ControlDecisionRequest,
+    ControlDecisionResponse,
+)

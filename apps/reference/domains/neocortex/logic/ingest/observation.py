@@ -8,11 +8,16 @@ from dataclasses import dataclass
 from typing import Optional, Any
 import numpy as np
 
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+)
+
 # Conditional Torch Import (for future integration)
 try:
     import torch
     HAS_TORCH = True
 except ImportError:
+    torch = None
     HAS_TORCH = False
 
 
@@ -20,14 +25,14 @@ except ImportError:
 class MarketObservation:
     """
     Immutable snapshot of market state at a specific timestamp.
-    
+
     Fields:
         ts (float): Unix timestamp
         mid_price (float): Current mid price (reference only, usually normalized out)
         volatility (float): Current volatility metric (e.g. BB Width or ATR)
         obi (float): Order Book Imbalance (-1.0 to 1.0)
         features_vector (np.ndarray): Normalized feature vector [float32]
-        
+
     Note:
         - mid_price is kept for PnL calculation / reference
         - features_vector is the actual input to the Neural Network
@@ -37,8 +42,10 @@ class MarketObservation:
     volatility: float
     obi: float
     features_vector: np.ndarray
+    event_ts_ms: Optional[int] = None
+    time_provenance: CausalTimeProvenance = CausalTimeProvenance.UNKNOWN
     normalized: bool = False
-    
+
     def __post_init__(self):
         """Validation to ensure types are ML-ready."""
         if self.features_vector.dtype != np.float32:
@@ -47,20 +54,20 @@ class MarketObservation:
             raise ValueError(
                 f"features_vector must be float32, got {self.features_vector.dtype}"
             )
-            
+
     def to_tensor(self, device: str = "cpu") -> Any:
         """
         Convert feature vector to PyTorch tensor.
-        
+
         Args:
             device: 'cpu' or 'cuda' feature device
-            
+
         Returns:
             torch.Tensor: Shape (1, D) ready for model input
         """
         if not HAS_TORCH:
             raise ImportError("PyTorch not installed")
-            
+
         # Convert numpy array to tensor
         # Unsqueeze(0) to add batch dimension -> (1, features)
         t = torch.from_numpy(self.features_vector).to(device)

@@ -515,7 +515,7 @@ registry:
   verb: OBJECTIVE_REALIZED_V1
   owner: objective_engine
   status: active
-  schema: null
+  schema: apps/reference/domains/objective_engine/schemas/objective_realized_v1.json
   since: '2026-03-14'
 - op: EVT
   verb: QUADRATIC_DECISION_TRACE
@@ -694,6 +694,13 @@ registry:
   schema: apps/reference/domains/alpha_search/judge/schemas/expert_output_v1.json
   since: '2026-04-14'
   note: "Phase 2 shadow emission — expert output logged and emitted, never applied"
+- op: EVT
+  verb: JUDGE_SHADOW_ENTRY_PLAN_V1
+  owner: alpha_search
+  status: experimental
+  schema: apps/reference/domains/alpha_search/judge/schemas/shadow_entry_plan_v1.json
+  since: '2026-04-25'
+  note: "J6-S3 shadow LIMIT plan ladder telemetry — hypothetical order shape, never executed"
 policies:
   wildcard:
     UPD: true

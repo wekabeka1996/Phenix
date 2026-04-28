@@ -1,4 +1,6 @@
+# QUARANTINED: legacy_runtime
 # path: ppo_library/ppo_system/agent.py
+__quarantined__ = True
 from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 import numpy as np
@@ -13,6 +15,7 @@ from .models.actor_critic_lstm import ActorCriticLSTM
 from .utils.safety import NumericalSafetyManager
 from .utils.seed import set_global_seed
 
+
 class PPOAgent:
     """
     Головний клас-фасад для PPO-агента.
@@ -21,6 +24,7 @@ class PPOAgent:
     - Надає простий API: act(), store(), update().
     - Керує станом LSTM для векторизованих середовищ.
     """
+
     def __init__(
         self,
         agent_config: AgentConfig,
@@ -71,16 +75,21 @@ class PPOAgent:
             is_continuous=self.is_continuous,
         )
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.agent_cfg.learning_rate, eps=1e-8)
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(), lr=self.agent_cfg.learning_rate, eps=1e-8)
 
-        self.safety = NumericalSafetyManager(self.agent_cfg.numerical_safety) if self.agent_cfg.numerical_safety else None
+        self.safety = NumericalSafetyManager(
+            self.agent_cfg.numerical_safety) if self.agent_cfg.numerical_safety else None
         self.updater = PolicyUpdater(config=self.agent_cfg, safety=self.safety)
 
         # --- Контролери (опціональні) ---
-        self.kl_controller = AdaptiveKLController(target_kl=self.agent_cfg.target_kl) if self.agent_cfg.target_kl else None
-        self.entropy_scheduler: Optional[EntropyScheduler] = None # Можна додати логіку ініціалізації
+        self.kl_controller = AdaptiveKLController(
+            target_kl=self.agent_cfg.target_kl) if self.agent_cfg.target_kl else None
+        # Можна додати логіку ініціалізації
+        self.entropy_scheduler: Optional[EntropyScheduler] = None
         self.fallback_controller = PPOFallbackController()
-        self.fallback_controller.attach(base_lr=self.agent_cfg.learning_rate, base_clip=self.agent_cfg.clip_range)
+        self.fallback_controller.attach(
+            base_lr=self.agent_cfg.learning_rate, base_clip=self.agent_cfg.clip_range)
 
         # --- Стан LSTM ---
         self._hidden = self.model.init_hidden(self.num_envs, self.device)
@@ -114,10 +123,11 @@ class PPOAgent:
         dist, value, self._hidden = self.model(x, self._hidden)
 
         if deterministic:
-            if hasattr(dist, "base_dist"): # Squashed Gaussian
+            if hasattr(dist, "base_dist"):  # Squashed Gaussian
                 action = dist.base_dist.mean
-            else: # Gaussian or Categorical
-                action = dist.mean if self.is_continuous else torch.argmax(dist.logits, dim=-1)
+            else:  # Gaussian or Categorical
+                action = dist.mean if self.is_continuous else torch.argmax(
+                    dist.logits, dim=-1)
         else:
             action = dist.sample()
 
@@ -144,14 +154,15 @@ class PPOAgent:
             x = x.unsqueeze(0)
 
         self._ensure_hidden_shape(x.shape[0])
-        _, value, _ = self.model(x, self._hidden) # _hidden не оновлюється
+        _, value, _ = self.model(x, self._hidden)  # _hidden не оновлюється
 
         value_np = value.squeeze(-1).cpu().numpy()
         return value_np if is_batched else value_np[0]
 
     def reset_hidden(self, done_mask: np.ndarray | torch.Tensor):
         """Обнуляє прихований стан для середовищ, які завершили епізод."""
-        dm = torch.as_tensor(done_mask, dtype=torch.bool, device=self.device).flatten()
+        dm = torch.as_tensor(done_mask, dtype=torch.bool,
+                             device=self.device).flatten()
         h, c = self._hidden
         h[:, dm, :] = 0.0
         c[:, dm, :] = 0.0

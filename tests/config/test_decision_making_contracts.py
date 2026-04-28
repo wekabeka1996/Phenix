@@ -19,6 +19,26 @@ ARTIFACT = (
     / "decision_making_contract.generated.json"
 )
 
+EXPECTED_REGIME_CONFIDENCE_POLICY = {
+    "DEFAULT": 0.45,
+    "LOW_VOLATILITY": 0.45,
+    "HIGH_VOLATILITY": 0.45,
+    "MEAN_REVERSION": 0.45,
+    "UNCERTAIN": 0.45,
+    "TREND_UP": 0.65,
+    "TREND_DOWN": 0.65,
+}
+
+EXPECTED_XRP_REGIME_CONFIDENCE_POLICY = {
+    "DEFAULT": 0.675,
+    "LOW_VOLATILITY": 0.675,
+    "HIGH_VOLATILITY": 0.675,
+    "MEAN_REVERSION": 0.675,
+    "UNCERTAIN": 0.675,
+    "TREND_UP": 0.975,
+    "TREND_DOWN": 0.975,
+}
+
 
 @pytest.fixture(scope="module")
 def frozen_manifest() -> dict[str, Any]:
@@ -96,8 +116,51 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert dm_domain.flip.enabled is False
     assert dm_domain.risk_skew.max_skew_sec == 5
     assert dm_domain.arming.require_regime_warmup is True
-    assert dm_domain.directional_sanity.min_regime_confidence == 0.42
+    assert dm_domain.directional_sanity.min_regime_confidence == 0.45
+    assert dm_domain.directional_sanity.min_regime_confidence_by_regime is None
+    assert dm_domain.low_vol_cost_floor_gate.enabled is True
+    assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
+        "testnet",
+        "hybrid_live_data_testnet_exec",
+    ]
+    assert dm_domain.low_vol_cost_floor_gate.observe_only_in_modes == [
+        "live",
+        "production",
+    ]
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime == {
+        "DEFAULT": 0.45,
+        "LOW_VOLATILITY": 0.65,
+    }
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol == {
+        "aurora": {
+            "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+        },
+        "md_amr": {
+            "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+        },
+    }
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime == {
+        "DEFAULT": 0.55,
+        "LOW_VOLATILITY": 0.62,
+    }
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
+        "aurora": {
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+        },
+        "md_amr": {
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+        },
+    }
+    assert dm_domain.low_vol_cost_floor_gate.direction_confidence.required is True
+    assert dm_domain.low_vol_cost_floor_gate.direction_confidence.missing_policy == "fail_closed"
+    assert dm_domain.low_vol_cost_floor_gate.direction_confidence.allowed_sources == [
+        "strategy_confidence",
+        "signal_score",
+        "final_score",
+        "judge_confidence",
+    ]
     assert dm_domain.price_motion_sanity.pm_norm_clip_abs == 10.0
+    assert dm_domain.neocortex_enforcement_mode == "shadow"
     assert set(dm_domain.degraded_context_contracts_by_strategy) == {
         "aurora",
         "mean_reversion",
@@ -115,6 +178,22 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert aurora.safety_gates.enabled is True
     assert aurora.safety_gates.system_stress_policy == "attenuate"
     assert aurora.safety_gates.stress_attenuation_factor == 0.5
+    assert aurora.safety_gates.regime_confidence is not None
+    assert aurora.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
+    assert aurora.safety_gates.regime_confidence.min_by_symbol == {
+        "XRPUSDT": EXPECTED_XRP_REGIME_CONFIDENCE_POLICY,
+    }
+    assert cfg.strategies.md_amr.safety_gates.regime_confidence is not None
+    assert cfg.strategies.md_amr.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
+    assert cfg.strategies.md_amr.safety_gates.regime_confidence.min_by_symbol == {
+        "XRPUSDT": EXPECTED_XRP_REGIME_CONFIDENCE_POLICY,
+    }
+    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence is not None
+    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
+    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence.min_by_symbol is None
+    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence is not None
+    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
+    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence.min_by_symbol is None
 
     decision = aurora.decision
     assert decision.testnet is not None
@@ -147,6 +226,311 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert cfg.instruments["SOLUSDT"].flip.hysteresis_mult == 1.3
     assert cfg.instruments["BTCUSDT"].flip.enabled is True
     assert cfg.instruments["BTCUSDT"].flip.hysteresis_mult == 3.0
+
+
+def test_directional_sanity_accepts_optional_per_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.DirectionalSanityConfig(
+        enabled=True,
+        min_abs_delta_price=0.0,
+        min_confidence=0.0,
+        min_regime_confidence=0.45,
+        min_regime_confidence_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.52},
+        hard_veto_consecutive_bars=2,
+        consecutive_bars=1,
+    )
+
+    assert cfg.min_regime_confidence_by_regime == {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.52,
+    }
+
+
+def test_safety_gates_accepts_optional_strategy_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "min_by_regime": {
+                "DEFAULT": 0.45,
+                "TREND_UP": 0.65,
+                "TREND_DOWN": 0.65,
+            }
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.min_by_regime == {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.65,
+        "TREND_DOWN": 0.65,
+    }
+
+
+def test_safety_gates_accepts_optional_strategy_symbol_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "min_by_regime": {
+                "DEFAULT": 0.45,
+                "TREND_UP": 0.65,
+            },
+            "min_by_symbol": {
+                "XRPUSDT": {
+                    "DEFAULT": 0.675,
+                    "TREND_UP": 0.975,
+                },
+                "BTCUSDT": {
+                    "DEFAULT": 0.55,
+                    "TREND_UP": 0.70,
+                },
+            },
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.min_by_symbol == {
+        "XRPUSDT": {
+            "DEFAULT": 0.675,
+            "TREND_UP": 0.975,
+        },
+        "BTCUSDT": {
+            "DEFAULT": 0.55,
+            "TREND_UP": 0.70,
+        },
+    }
+
+
+def test_safety_gates_rejects_symbol_thresholds_without_default() -> None:
+    with pytest.raises(ValidationError, match="DEFAULT"):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={
+                "min_by_symbol": {
+                    "XRPUSDT": {
+                        "TREND_UP": 0.975,
+                    }
+                }
+            },
+        )
+
+
+def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
+    cfg = domain_dm.LowVolCostFloorGateConfig(
+        enabled=True,
+        enforce_in_modes=["testnet", "hybrid_live_data_testnet_exec"],
+        observe_only_in_modes=["live", "production"],
+        regimes=["LOW_VOLATILITY"],
+        fee={"open_fee_bps": 4.0, "close_fee_bps": 4.0,
+             "fee_source": "explicit_config"},
+        slippage={"buffer_bps": 2.0, "source": "explicit_config"},
+        thresholds={
+            "target_net_fee_multiple": 2.0,
+            "min_tp_fee_coverage": 3.0,
+            "min_rr": 1.2,
+            "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
+            "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+            "min_regime_confidence_overrides_by_strategy_symbol": {
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                },
+            },
+            "min_direction_confidence_overrides_by_strategy_symbol": {
+                "aurora": {
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                },
+            },
+        },
+        direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence", "signal_score"],
+            "missing_policy": "fail_closed",
+        },
+        geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
+    )
+
+    assert cfg.regimes == ["LOW_VOLATILITY"]
+    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.65
+    assert cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
+        "aurora": {
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+        },
+    }
+
+
+def test_low_vol_cost_floor_gate_rejects_missing_low_volatility_threshold() -> None:
+    with pytest.raises(ValidationError, match="LOW_VOLATILITY"):
+        domain_dm.LowVolCostFloorGateConfig(
+            enabled=True,
+            enforce_in_modes=["testnet"],
+            observe_only_in_modes=["live"],
+            regimes=["LOW_VOLATILITY"],
+            fee={"open_fee_bps": 4.0, "close_fee_bps": 4.0,
+                 "fee_source": "explicit_config"},
+            slippage={"buffer_bps": 2.0, "source": "explicit_config"},
+            thresholds={
+                "target_net_fee_multiple": 2.0,
+                "min_tp_fee_coverage": 3.0,
+                "min_rr": 1.2,
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55},
+            },
+            direction_confidence={
+                "required": True,
+                "allowed_sources": ["signal_score"],
+                "missing_policy": "fail_closed",
+            },
+            geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
+        )
+
+
+def test_low_vol_cost_floor_gate_rejects_invalid_direction_confidence_missing_policy() -> None:
+    with pytest.raises(ValidationError, match="Input should be"):
+        domain_dm.LowVolCostFloorGateConfig(
+            enabled=True,
+            enforce_in_modes=["testnet"],
+            observe_only_in_modes=["live"],
+            regimes=["LOW_VOLATILITY"],
+            fee={"open_fee_bps": 4.0, "close_fee_bps": 4.0,
+                 "fee_source": "explicit_config"},
+            slippage={"buffer_bps": 2.0, "source": "explicit_config"},
+            thresholds={
+                "target_net_fee_multiple": 2.0,
+                "min_tp_fee_coverage": 3.0,
+                "min_rr": 1.2,
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+            },
+            direction_confidence={
+                "required": True,
+                "allowed_sources": ["signal_score"],
+                "missing_policy": "hard_fail",
+            },
+            geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
+        )
+
+
+def test_low_vol_cost_floor_gate_rejects_noncanonical_strategy_symbol_threshold_override() -> None:
+    with pytest.raises(ValidationError, match="canonical uppercase"):
+        domain_dm.LowVolCostFloorGateConfig(
+            enabled=True,
+            enforce_in_modes=["testnet"],
+            observe_only_in_modes=["live"],
+            regimes=["LOW_VOLATILITY"],
+            fee={"open_fee_bps": 4.0, "close_fee_bps": 4.0,
+                 "fee_source": "explicit_config"},
+            slippage={"buffer_bps": 2.0, "source": "explicit_config"},
+            thresholds={
+                "target_net_fee_multiple": 2.0,
+                "min_tp_fee_coverage": 3.0,
+                "min_rr": 1.2,
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+                "min_direction_confidence_overrides_by_strategy_symbol": {
+                    "aurora": {
+                        "xrpusdt": {"DEFAULT": 0.825, "LOW_VOLATILITY": 0.93},
+                    },
+                },
+            },
+            direction_confidence={
+                "required": True,
+                "allowed_sources": ["signal_score"],
+                "missing_policy": "fail_closed",
+            },
+            geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("min_by_regime", "message"),
+    [
+        ({"TREND_UP": 0.65}, "DEFAULT"),
+        ({"DEFAULT": 0.45, "trend_up": 0.65}, "canonical uppercase"),
+        ({"DEFAULT": 0.45, "SIDEWAYS": 0.65}, "unsupported"),
+        ({"DEFAULT": -0.01}, "\[0.0, 1.0\]"),
+        ({"DEFAULT": 1.01}, "\[0.0, 1.0\]"),
+    ],
+)
+def test_safety_gates_rejects_invalid_strategy_regime_confidence_thresholds(
+    min_by_regime: dict[str, float],
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={"min_by_regime": min_by_regime},
+        )
+
+
+@pytest.mark.parametrize(
+    ("strategy_file", "strategy_key", "attribute_name"),
+    [
+        ("aurora.yaml", "aurora", "aurora"),
+        ("md_amr.yaml", "md_amr", "md_amr"),
+        ("mean_reversion.yaml", "mean_reversion", "mean_reversion"),
+        ("llm_microstructure.yaml", "llm_microstructure", "llm_microstructure"),
+    ],
+)
+def test_strategy_profiles_parse_optional_regime_confidence_override_block(
+    tmp_path: Path,
+    strategy_file: str,
+    strategy_key: str,
+    attribute_name: str,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    strategy_path = cfg_dir / "strategies" / strategy_file
+    strategy = yaml.safe_load(strategy_path.read_text(encoding="utf-8"))
+    strategy[strategy_key]["safety_gates"]["regime_confidence"] = {
+        "min_by_regime": {"DEFAULT": 0.45, "TREND_UP": 0.65}
+    }
+    strategy_path.write_text(
+        yaml.safe_dump(strategy, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    loaded = ConfigLoader(config_dir=cfg_dir).load_config()
+    strategy_cfg = getattr(loaded.strategies, attribute_name)
+
+    assert strategy_cfg.safety_gates.regime_confidence is not None
+    assert strategy_cfg.safety_gates.regime_confidence.min_by_regime == {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.65,
+    }
+
+
+def test_directional_sanity_rejects_per_regime_thresholds_without_default() -> None:
+    with pytest.raises(ValidationError, match="DEFAULT"):
+        domain_dm.DirectionalSanityConfig(
+            enabled=True,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            min_regime_confidence=0.45,
+            min_regime_confidence_by_regime={"TREND_UP": 0.52},
+            hard_veto_consecutive_bars=2,
+            consecutive_bars=1,
+        )
+
+
+def test_directional_sanity_rejects_noncanonical_per_regime_threshold_keys() -> None:
+    with pytest.raises(ValidationError, match="canonical uppercase"):
+        domain_dm.DirectionalSanityConfig(
+            enabled=True,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            min_regime_confidence=0.45,
+            min_regime_confidence_by_regime={
+                "DEFAULT": 0.45, "trend_up": 0.52},
+            hard_veto_consecutive_bars=2,
+            consecutive_bars=1,
+        )
 
 
 def test_decision_making_yaml_contract_fails_closed_on_forbidden_extra_field(
@@ -191,6 +575,49 @@ def test_decision_making_yaml_contract_fails_closed_on_invalid_decision_geometry
     message = str(exc_info.value)
     assert "admission_power" in message
     assert "soft_power" in message
+
+
+def test_decision_making_yaml_contract_fails_closed_on_invalid_low_vol_cost_floor_modes(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["decision_making"]["low_vol_cost_floor_gate"]["observe_only_in_modes"] = [
+        "live",
+        "testnet",
+    ]
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "must not overlap" in str(exc_info.value)
+
+
+def test_decision_making_yaml_contract_fails_closed_on_missing_low_vol_threshold(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    del domains["decision_making"]["low_vol_cost_floor_gate"]["thresholds"]["min_regime_confidence_by_regime"]["LOW_VOLATILITY"]
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "LOW_VOLATILITY" in str(exc_info.value)
 
 
 def test_decision_making_yaml_contract_fails_closed_on_missing_flip_hysteresis(

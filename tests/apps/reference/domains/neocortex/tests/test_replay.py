@@ -46,10 +46,10 @@ def temp_wal_dir(sample_wal_content):
         # Create two WAL files
         file1 = Path(tmpdir) / "wal_001.jsonl"
         file2 = Path(tmpdir) / "wal_002.jsonl"
-        
+
         file1.write_text(sample_wal_content)
         file2.write_text(sample_wal_content)
-        
+
         yield Path(tmpdir)
 
 
@@ -71,29 +71,37 @@ def run_async(coro):
 
 def test_replayer_filters_events(temp_wal_file):
     """Test that replayer filters events by verb."""
-    
+
     handled_events = []
-    
+
     async def mock_handler(event):
         handled_events.append(event)
-    
+
     config = ReplayConfig(
         enabled=True,
+        wal_dir=str(temp_wal_file.parent),
         wal_glob=str(temp_wal_file),
         batch_size=10,
+        poll_interval=0.1,
+        max_feature_lines_total_per_cycle=1000,
+        max_feature_lines_per_symbol_per_cycle=200,
+        max_order_lines_per_cycle=500,
+        max_core_lines_per_cycle=500,
+        feature_missing_timestamp_policy="fail_closed",
         filter_verb="FEATURES_CALCULATED"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=mock_handler,
         base_path=Path("/")  # Absolute path in glob
     )
-    
+
     run_async(replayer.run())
-    
+
     # Should have 4 FEATURES_CALCULATED events (not TRADE_INTENT or POSITION_CLOSED)
-    assert len(handled_events) == 4, f"Expected 4 events, got {len(handled_events)}"
+    assert len(
+        handled_events) == 4, f"Expected 4 events, got {len(handled_events)}"
     assert replayer.stats["events_replayed"] == 4
     assert replayer.stats["events_filtered"] == 2  # TRADE + POSITION
     assert replayer.stats["completed"] is True
@@ -101,27 +109,34 @@ def test_replayer_filters_events(temp_wal_file):
 
 def test_replayer_processes_multiple_files(temp_wal_dir):
     """Test that replayer processes all files in directory."""
-    
+
     handled_count = [0]
-    
+
     async def mock_handler(event):
         handled_count[0] += 1
-    
+
     config = ReplayConfig(
         enabled=True,
+        wal_dir=str(temp_wal_dir),
         wal_glob=str(temp_wal_dir / "*.jsonl"),
         batch_size=10,
+        poll_interval=0.1,
+        max_feature_lines_total_per_cycle=1000,
+        max_feature_lines_per_symbol_per_cycle=200,
+        max_order_lines_per_cycle=500,
+        max_core_lines_per_cycle=500,
+        feature_missing_timestamp_policy="fail_closed",
         filter_verb="FEATURES_CALCULATED"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=mock_handler,
         base_path=Path("/")
     )
-    
+
     run_async(replayer.run())
-    
+
     # 4 events per file * 2 files = 8
     assert handled_count[0] == 8
     assert replayer.stats["files_processed"] == 2
@@ -129,64 +144,80 @@ def test_replayer_processes_multiple_files(temp_wal_dir):
 
 def test_replayer_disabled():
     """Test that disabled replayer does nothing."""
-    
+
     handled_events = []
-    
+
     async def mock_handler(event):
         handled_events.append(event)
-    
+
     config = ReplayConfig(
         enabled=False,
         wal_glob="*.jsonl"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=mock_handler
     )
-    
+
     run_async(replayer.run())
-    
+
     assert len(handled_events) == 0
     assert replayer.stats["completed"] is False  # Didn't really run
 
 
 def test_replayer_no_files_found():
     """Test graceful handling when no WAL files match pattern."""
-    
+
     config = ReplayConfig(
         enabled=True,
         wal_glob="/nonexistent/path/*.jsonl",
-        batch_size=10
+        wal_dir="/nonexistent/path",
+        batch_size=10,
+        poll_interval=0.1,
+        max_feature_lines_total_per_cycle=1000,
+        max_feature_lines_per_symbol_per_cycle=200,
+        max_order_lines_per_cycle=500,
+        max_core_lines_per_cycle=500,
+        feature_missing_timestamp_policy="fail_closed",
+        filter_verb="FEATURES_CALCULATED"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=AsyncMock()
     )
-    
+
     # Should not crash
     run_async(replayer.run())
-    
+
     assert replayer.stats["files_processed"] == 0
     assert replayer.stats["completed"] is True
 
 
 def test_replayer_stop():
     """Test that stop() sets the running flag."""
-    
+
     config = ReplayConfig(
         enabled=True,
         wal_glob="/tmp/fake/*.jsonl",
-        batch_size=5
+        wal_dir="/tmp/fake",
+        batch_size=5,
+        poll_interval=0.1,
+        max_feature_lines_total_per_cycle=1000,
+        max_feature_lines_per_symbol_per_cycle=200,
+        max_order_lines_per_cycle=500,
+        max_core_lines_per_cycle=500,
+        feature_missing_timestamp_policy="fail_closed",
+        filter_verb="FEATURES_CALCULATED"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=AsyncMock(),
         base_path=Path("/")
     )
-    
+
     # Verify stop() sets the flag
     assert replayer.stats["running"] is False
     replayer._running = True
@@ -196,22 +227,30 @@ def test_replayer_stop():
 
 def test_replayer_stats():
     """Test stats property."""
-    
+
     config = ReplayConfig(
         enabled=True,
-        wal_glob="*.jsonl"
+        wal_dir=".",
+        wal_glob="*.jsonl",
+        batch_size=10,
+        poll_interval=0.1,
+        max_feature_lines_total_per_cycle=1000,
+        max_feature_lines_per_symbol_per_cycle=200,
+        max_order_lines_per_cycle=500,
+        max_core_lines_per_cycle=500,
+        feature_missing_timestamp_policy="fail_closed",
+        filter_verb="FEATURES_CALCULATED"
     )
-    
+
     replayer = WALReplayer(
         config=config,
         handler=AsyncMock()
     )
-    
+
     stats = replayer.stats
-    
+
     assert "files_processed" in stats
     assert "events_replayed" in stats
     assert "events_filtered" in stats
     assert "running" in stats
     assert "completed" in stats
-

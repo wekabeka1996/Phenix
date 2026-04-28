@@ -10,6 +10,9 @@ the newest entry (time t+H) to produce a settled episode for reward computation.
 
 from __future__ import annotations
 
+# QUARANTINED: legacy_runtime
+__quarantined__ = True
+
 import logging
 from collections import deque
 from typing import Any, Dict, NamedTuple, Optional

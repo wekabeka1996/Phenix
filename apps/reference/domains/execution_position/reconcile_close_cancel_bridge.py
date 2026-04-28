@@ -19,10 +19,13 @@ Out of scope:
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.reference.domains.execution_position.cancel_bridge_utils import (
+    build_trace_ref,
+    clean_required_str,
+)
 from vfoundation.core.protocol import Message, truncate_why
 
 
@@ -36,15 +39,6 @@ _RECONCILE_CLOSE_CANCEL_TRACE_REF_PREFIX = (
 
 class ReconcileCloseCancelBridgeError(ValueError):
     """Fail-closed error for second-pass reconcile cancel normalization."""
-
-
-def _clean_required_str(value: Any, *, field_name: str) -> str:
-    cleaned = str(value or "").strip()
-    if not cleaned:
-        raise ReconcileCloseCancelBridgeError(
-            f"reconcile close cancel missing required field: {field_name}"
-        )
-    return cleaned
 
 
 class ReconcileCloseCancelRequest(BaseModel):
@@ -67,13 +61,26 @@ class ReconcileCloseCancelRequest(BaseModel):
         close_rid: Any,
     ) -> "ReconcileCloseCancelRequest":
         try:
-            symbol_clean = _clean_required_str(symbol, field_name="symbol").upper()
-            order_id_clean = _clean_required_str(order_id, field_name="order_id")
-            order_type_clean = _clean_required_str(
+            symbol_clean = clean_required_str(
+                symbol,
+                field_name="symbol",
+                message_prefix="reconcile close cancel",
+                error_type=ReconcileCloseCancelBridgeError,
+            ).upper()
+            order_id_clean = clean_required_str(
+                order_id,
+                field_name="order_id",
+                message_prefix="reconcile close cancel",
+                error_type=ReconcileCloseCancelBridgeError,
+            )
+            order_type_clean = clean_required_str(
                 order_type,
                 field_name="order_type",
+                message_prefix="reconcile close cancel",
+                error_type=ReconcileCloseCancelBridgeError,
             ).upper()
-            close_rid_clean = str(close_rid).strip() if close_rid is not None else None
+            close_rid_clean = str(close_rid).strip(
+            ) if close_rid is not None else None
             if close_rid_clean == "":
                 close_rid_clean = None
             return cls(
@@ -112,7 +119,10 @@ def build_reconcile_close_cancel_trace_ref(
     }
     if reason is not None:
         params["reason"] = reason[:80]
-    return f"{_RECONCILE_CLOSE_CANCEL_TRACE_REF_PREFIX}{urlencode(params)}"
+    return build_trace_ref(
+        prefix=_RECONCILE_CLOSE_CANCEL_TRACE_REF_PREFIX,
+        params=params,
+    )
 
 
 def adapt_reconcile_close_to_dec_cancel(

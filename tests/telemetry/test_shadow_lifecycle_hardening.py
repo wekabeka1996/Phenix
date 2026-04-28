@@ -68,7 +68,7 @@ def test_manage_flow_decision_is_shadow_recorded(tmp_path):
         pld={"symbol": "BTCUSDT", "last_price": "49900"},
     )
 
-    with patch.object(manage, "_get_max_hold_sec", return_value=0):
+    with patch.object(manage, "_get_max_hold_sec", return_value=1):
         result = manage.handle(message)
 
     assert result is not None
@@ -83,7 +83,7 @@ def test_manage_flow_decision_is_shadow_recorded(tmp_path):
     assert records[0]["local_state_before"]["state"] == "TRACKING"
     assert records[0]["local_state_after"]["state"] == "TRACKING"
     assert records[0]["payload_fragment"]["reason"] == "MAX_HOLD_TIME_EXCEEDED"
-    assert records[0]["payload_fragment"]["max_hold_sec"] == 0
+    assert records[0]["payload_fragment"]["max_hold_sec"] == 1
     assert records[0]["payload_fragment"]["reduce_only"] is True
 
 

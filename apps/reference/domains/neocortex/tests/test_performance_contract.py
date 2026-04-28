@@ -35,6 +35,13 @@ def test_live_shadow_mode_rejects_shadow_decimation():
             operating_mode="live_shadow",
             shadow_intent_emit_policy="decimate_observational",
             shadow_intent_decimation_stride=2,
+            shadow_jsonl_write_policy="buffered",
+            telemetry_write_policy="buffered",
+            non_critical_queue_limit=2048,
+            shadow_log_flush_threshold=64,
+            telemetry_flush_threshold=64,
+            flush_interval_ms=1000,
+            non_critical_overflow_policy="drop_oldest",
         )
 
 
@@ -48,10 +55,12 @@ def test_buffered_telemetry_flush_threshold_preserves_order(tmp_path: Path):
         overflow_policy="drop_oldest",
     )
 
-    logger.log_shadow_intent(action=0, action_name="BUY", confidence=0.1, value=1.0)
+    logger.log_shadow_intent(
+        action=0, action_name="BUY", confidence=0.1, value=1.0)
     assert _read_rows(logger.filepath) == []
 
-    logger.log_shadow_intent(action=1, action_name="SELL", confidence=0.2, value=2.0)
+    logger.log_shadow_intent(
+        action=1, action_name="SELL", confidence=0.2, value=2.0)
     rows = _read_rows(logger.filepath)
 
     assert [row["shadow_action_name"] for row in rows] == ["BUY", "SELL"]
@@ -69,8 +78,10 @@ def test_buffered_telemetry_overload_uses_explicit_drop_policy(tmp_path: Path):
         overflow_policy="drop_oldest",
     )
 
-    logger.log_shadow_intent(action=0, action_name="BUY", confidence=0.1, value=1.0)
-    logger.log_shadow_intent(action=1, action_name="SELL", confidence=0.2, value=2.0)
+    logger.log_shadow_intent(
+        action=0, action_name="BUY", confidence=0.1, value=1.0)
+    logger.log_shadow_intent(
+        action=1, action_name="SELL", confidence=0.2, value=2.0)
     logger.flush()
 
     rows = _read_rows(logger.filepath)

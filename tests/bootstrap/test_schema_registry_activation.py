@@ -34,8 +34,8 @@ def _trade_intent_payload() -> dict:
     return {
         "instrument": "BTCUSDT",
         "side": "BUY",
-        "p": "0.75",
-        "payoff_ratio_r": "2.0",
+        "p": "0.5",
+        "payoff_ratio_r": "1.5",
         "tca_budget": {
             "max_slippage_bps": "10",
             "max_latency_ms": 100,
@@ -46,7 +46,7 @@ def _trade_intent_payload() -> dict:
             "session_cvar95_max_bps": "100",
         },
         "size": {
-            "kelly_fraction": "0.10",
+            "kelly_fraction": "0.1666666666666666666666666667",
             "notional_cap_usd": "5000.0",
         },
         "order": {
@@ -62,6 +62,13 @@ def _trade_intent_payload() -> dict:
         "trace": {
             "objective": {"score": 0.42, "winner": "aurora"},
             "model": "aurora",
+            "kelly_provenance": {
+                "source_path": "config.strategies.aurora.decision.kelly",
+                "kelly_fraction": {
+                    "formula": "p - (1 - p) / payoff_ratio_r",
+                    "value": "0.1666666666666666666666666667",
+                },
+            },
         },
     }
 
@@ -278,6 +285,7 @@ def test_fsm_emit_validates_trade_intent_proposed_with_trace() -> None:
     assert observed
     assert observed[0]["trace"]["objective"]["score"] == 0.42
     assert observed[0]["trace"]["model"] == "aurora"
+    assert observed[0]["trace"]["kelly_provenance"]["source_path"] == "config.strategies.aurora.decision.kelly"
 
 
 def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_top_level_field() -> None:
@@ -369,4 +377,5 @@ def test_fsm_emit_rejects_position_closed_without_entry_regime_epoch_ref_field()
     }
 
     with pytest.raises(InvalidMessagePayloadError, match="entry_regime_epoch_ref"):
-        fsm.emit("EVT:POSITION_CLOSED", payload=payload, why="close_contract_missing_epoch")
+        fsm.emit("EVT:POSITION_CLOSED", payload=payload,
+                 why="close_contract_missing_epoch")

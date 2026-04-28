@@ -25,8 +25,13 @@ Feature normalization notes (logs/features/*.log):
 
 from __future__ import annotations
 
+# QUARANTINED: legacy_runtime
+__quarantined__ = True
+
 import logging
-from typing import Dict
+import math
+from numbers import Real
+from typing import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,30 @@ REQUIRED_FEATURES = frozenset({
     "volatility_state",
     "price",
 })
+
+
+def _required_finite_float(features: Mapping[str, object], key: str, snapshot_name: str) -> float:
+    if key not in features:
+        raise ValueError(f"{snapshot_name} missing required feature: {key}")
+    value = features[key]
+    if value is None or isinstance(value, bool):
+        raise ValueError(
+            f"{snapshot_name} required feature {key} must be a finite number, got {value!r}"
+        )
+    try:
+        if isinstance(value, Real):
+            numeric = float(value)
+        else:
+            numeric = float(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{snapshot_name} required feature {key} must be a finite number, got {value!r}"
+        ) from exc
+    if not math.isfinite(numeric):
+        raise ValueError(
+            f"{snapshot_name} required feature {key} must be finite, got {value!r}"
+        )
+    return numeric
 
 
 class RegimeLabeler:
@@ -96,8 +125,8 @@ class RegimeLabeler:
 
     def compute_realized_regime(
         self,
-        features_t: Dict[str, float],
-        features_t_plus_h: Dict[str, float],
+        features_t: Mapping[str, object],
+        features_t_plus_h: Mapping[str, object],
     ) -> int:
         """Determine what regime actually materialized H bars after time t.
 
@@ -111,29 +140,29 @@ class RegimeLabeler:
             Integer regime label (0-4).
         """
         # --- Extract and normalize features ---
-        price_now = float(features_t.get("price", 0.0) or 0.0)
+        price_now = _required_finite_float(features_t, "price", "features_t")
+        if abs(price_now) <= 1e-12:
+            raise ValueError(
+                "features_t required feature price must be non-zero")
 
-        delta_price_future = float(
-            features_t_plus_h.get("delta_price", 0.0) or 0.0)
+        delta_price_future = _required_finite_float(
+            features_t_plus_h, "delta_price", "features_t_plus_h")
 
         # Normalize delta_price by price to get percentage change
         # This makes thresholds symbol-agnostic (works for BTC at $70k and DOGE at $0.15)
-        if abs(price_now) > 1e-12:
-            delta_pct = delta_price_future / price_now
-        else:
-            delta_pct = 0.0
+        delta_pct = delta_price_future / price_now
 
         # Re-center ema_bias from [0,1]@0.5 to [-0.5,+0.5]@0
-        ema_bias_future = float(
-            features_t_plus_h.get("ema_bias", 0.5) or 0.5)
+        ema_bias_future = _required_finite_float(
+            features_t_plus_h, "ema_bias", "features_t_plus_h")
         ema_centered = ema_bias_future - 0.5
 
         # Volatility state: [0,1] where 0=calm, 1=high vol
         # Replaces volatility_atr_pct which doesn't exist in feature logs
-        vol_state_now = float(
-            features_t.get("volatility_state", 0.0) or 0.0)
-        vol_state_future = float(
-            features_t_plus_h.get("volatility_state", 0.0) or 0.0)
+        vol_state_now = _required_finite_float(
+            features_t, "volatility_state", "features_t")
+        vol_state_future = _required_finite_float(
+            features_t_plus_h, "volatility_state", "features_t_plus_h")
 
         # --- Classification cascade (priority order) ---
 

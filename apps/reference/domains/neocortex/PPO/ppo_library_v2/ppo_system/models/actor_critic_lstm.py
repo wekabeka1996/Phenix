@@ -1,5 +1,7 @@
+# QUARANTINED: legacy_runtime
 # path: ppo_library/ppo_system/models/actor_critic_lstm.py
 from __future__ import annotations
+__quarantined__ = True
 import math
 from typing import Tuple, Union, Optional
 import torch

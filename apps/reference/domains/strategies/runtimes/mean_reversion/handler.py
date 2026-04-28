@@ -1962,17 +1962,6 @@ class MeanReversionHandler:
                     if not veto_allowed:
                         self.logger.info(
                             f"[{symbol}] MR Signal BLOCKED by Microstructure Veto: {veto_reason}")
-                        write_trade_intent_rejected(
-                            symbol=str(symbol),
-                            tf_sec=int(tf_sec) if tf_sec is not None else None,
-                            bar_close_ts=int(
-                                bar_close_ts) if bar_close_ts else None,
-                            reason_code=NormalizedRejectReasons.MICROSTRUCTURE_VETO,
-                            stage="STRATEGY",
-                            why=f"Microstructure veto blocked MR signal: {veto_reason}",
-                            src="mean_reversion",
-                            ts_ms=int(bar_close_ts) if bar_close_ts else None,
-                        )
                         self._emit_strategy_blocked(
                             symbol=symbol,
                             reason_code=veto_reason,
@@ -1997,17 +1986,6 @@ class MeanReversionHandler:
                     else:
                         self.logger.info(
                             f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
-                        write_trade_intent_rejected(
-                            symbol=str(symbol),
-                            tf_sec=int(tf_sec) if tf_sec is not None else None,
-                            bar_close_ts=int(
-                                bar_close_ts) if bar_close_ts else None,
-                            reason_code=NormalizedRejectReasons.LIQUIDITY_LOW,
-                            stage="STRATEGY",
-                            why="Liquidity gate blocked MR signal",
-                            src="mean_reversion",
-                            ts_ms=int(bar_close_ts) if bar_close_ts else None,
-                        )
                         self._emit_strategy_blocked(
                             symbol=symbol,
                             reason_code="LIQUIDITY_GATE",

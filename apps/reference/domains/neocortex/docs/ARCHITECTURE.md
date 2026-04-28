@@ -129,7 +129,7 @@ stateDiagram-v2
 
 ### 4.1. Ingestor
 
-Вхід: `ops/wal/*.jsonl` (або копія).  
+Вхід: `ops/wal/*.jsonl` (або копія).
 Вихід: `EventEnvelope` (нормалізований контракт) + offset state.
 
 Обовʼязково:
@@ -143,6 +143,13 @@ stateDiagram-v2
 - `episodes` (rid + lifecycle)
 - `alerts` (інваріанти/аномалії)
 - `shadow_intents` (R2)
+
+### 4.2.a. Training provenance boundary
+
+Для ML/RL dataset builder, який читає `EVT:TRADE_INTENT_PROPOSED` з WAL:
+- pre-cutover поля `p`, `payoff_ratio_r` і `size.kelly_fraction` вважаються **untrusted**, бо до прийнятого Kelly provenance repair вони могли бути synthetic boundary metadata;
+- точну cutover boundary треба записувати в Kelly acceptance re-audit report і дублювати в ingest/reporting surface перед увімкненням цих полів у train/eval dataset;
+- якщо cutover boundary не зафіксована, dataset builder має маскувати ці Kelly поля або явно позначати їх як `provenance_untrusted_pre_cutover`.
 
 ### 4.3. Invariant Engine
 

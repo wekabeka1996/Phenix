@@ -1,3 +1,5 @@
+# QUARANTINED: legacy_runtime
+__quarantined__ = True
 """
 Causal Transition Graph (Hippocampus)
 
@@ -32,7 +34,7 @@ import sqlite3
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -183,7 +185,7 @@ class CausalGraph:
         closest_id = None
         
         for node_id, centroid in self._node_cache.items():
-            dist = np.linalg.norm(z - centroid)
+            dist = float(np.linalg.norm(z - centroid))
             if dist < min_dist:
                 min_dist = dist
                 closest_id = node_id
@@ -237,6 +239,8 @@ class CausalGraph:
                 (z_blob, value, timestamp)
             )
             node_id = cursor.lastrowid
+            if node_id is None:
+                raise RuntimeError("Failed to create graph node")
             conn.commit()
         
         # Update cache
@@ -263,11 +267,11 @@ class CausalGraph:
             
             old_z = np.frombuffer(row["z_centroid"], dtype=np.float32)
             n = row["visit_count"]
-            old_value = row["avg_value"]
+            old_value = float(row["avg_value"])
             
             # Incremental averaging
             new_z = (old_z * n + z) / (n + 1)
-            new_value = (old_value * n + value) / (n + 1)
+            new_value = float((old_value * n + value) / (n + 1))
             
             conn.execute(
                 """
@@ -406,7 +410,7 @@ class CausalGraph:
                 for row in cursor
             ]
     
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, int | str]:
         """Get graph statistics."""
         with self._get_conn() as conn:
             node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]

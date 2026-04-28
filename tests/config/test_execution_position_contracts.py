@@ -88,6 +88,19 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
     )
 
 
+def _load_execution_position_with_guardian_mutation(
+    tmp_path: Path,
+    mutator,
+) -> cm.ExecutionPositionDomainConfig:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    guardian = domains["execution_position"]["guardian"]
+    mutator(guardian)
+    _write_yaml(domains_path, domains)
+    return ConfigLoader(config_dir=cfg_dir).load_config().domains.execution_position
+
+
 def test_execution_position_facade_reexports_are_exact_identity(
     frozen_manifest: dict[str, Any],
 ) -> None:
@@ -204,6 +217,7 @@ def test_current_aurora_config_loads_execution_position_contract() -> None:
     assert ep.guardian.poll_interval_ms == 500
     assert ep.guardian.unified is True
     assert ep.guardian.emit_tidy_event is True
+    assert ep.guardian.emit_tidy_monitoring_event is True
     assert ep.guardian.cleanup_ttl_ms == 6000
     assert ep.guardian.symbol_cooldown_ms == 4000
     assert ep.intent_boundary_audit.enabled is True
@@ -250,6 +264,65 @@ def test_current_aurora_config_loads_execution_position_contract() -> None:
     assert ep.position_policy_sidecar.allowed_actions.partial_reduce is False
     assert ep.position_policy_sidecar.allowed_actions.bracket_mutation is False
     assert ep.position_policy_sidecar.allowed_actions.exact_targeting is False
+
+
+def test_guardian_legacy_emit_tidy_event_only_maps_to_monitoring_flag(
+    tmp_path: Path,
+) -> None:
+    def _mutate(guardian: dict[str, Any]) -> None:
+        guardian.pop("emit_tidy_monitoring_event", None)
+        guardian["emit_tidy_event"] = False
+
+    ep = _load_execution_position_with_guardian_mutation(tmp_path, _mutate)
+
+    assert ep.guardian.emit_tidy_event is False
+    assert ep.guardian.emit_tidy_monitoring_event is False
+
+
+def test_guardian_new_emit_tidy_monitoring_event_only_loads(
+    tmp_path: Path,
+) -> None:
+    def _mutate(guardian: dict[str, Any]) -> None:
+        guardian.pop("emit_tidy_event", None)
+        guardian["emit_tidy_monitoring_event"] = False
+
+    ep = _load_execution_position_with_guardian_mutation(tmp_path, _mutate)
+
+    assert ep.guardian.emit_tidy_event is False
+    assert ep.guardian.emit_tidy_monitoring_event is False
+
+
+def test_guardian_legacy_and_monitoring_flags_equal_load(
+    tmp_path: Path,
+) -> None:
+    def _mutate(guardian: dict[str, Any]) -> None:
+        guardian["emit_tidy_event"] = False
+        guardian["emit_tidy_monitoring_event"] = False
+
+    ep = _load_execution_position_with_guardian_mutation(tmp_path, _mutate)
+
+    assert ep.guardian.emit_tidy_event is False
+    assert ep.guardian.emit_tidy_monitoring_event is False
+
+
+def test_guardian_legacy_and_monitoring_flags_differ_fail_fast(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    guardian = domains["execution_position"]["guardian"]
+    guardian["emit_tidy_event"] = False
+    guardian["emit_tidy_monitoring_event"] = True
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "emit_tidy_event" in message
+    assert "emit_tidy_monitoring_event" in message
+    assert "differ" in message
 
 
 def test_execution_position_yaml_contract_fails_closed_on_forbidden_extra_field(

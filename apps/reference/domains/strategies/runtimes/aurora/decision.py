@@ -1624,7 +1624,7 @@ class AuroraDecisionMixin:
                         reason_code="QUANTIZER_REJECT",
                         reason=q_pos.reject_reason,
                         context="aurora_handler:quantizer",
-                        details={"exposure": result.score,
+                        details={"exposure": float(result.score),
                                  "price": str(entry_price)},
                         why_chain=result.why_chain +
                         [f"QUANTIZER:{q_pos.reject_reason}"],

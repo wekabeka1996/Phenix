@@ -18,10 +18,13 @@ Out of scope:
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.reference.domains.execution_position.cancel_bridge_utils import (
+    build_trace_ref,
+    clean_required_str,
+)
 from vfoundation.core.protocol import Message, truncate_why
 
 
@@ -35,15 +38,6 @@ _TRACKED_CLOSE_TEARDOWN_CANCEL_TRACE_REF_PREFIX = (
 
 class TrackedCloseTeardownCancelBridgeError(ValueError):
     """Fail-closed error for tracked local bracket teardown normalization."""
-
-
-def _clean_required_str(value: Any, *, field_name: str) -> str:
-    cleaned = str(value or "").strip()
-    if not cleaned:
-        raise TrackedCloseTeardownCancelBridgeError(
-            f"tracked close teardown missing required field: {field_name}"
-        )
-    return cleaned
 
 
 class TrackedCloseTeardownCancelRequest(BaseModel):
@@ -66,13 +60,26 @@ class TrackedCloseTeardownCancelRequest(BaseModel):
         close_rid: Any,
     ) -> "TrackedCloseTeardownCancelRequest":
         try:
-            normalized_symbol = _clean_required_str(symbol, field_name="symbol").upper()
-            normalized_order_id = _clean_required_str(order_id, field_name="order_id")
-            normalized_bracket_type = _clean_required_str(
+            normalized_symbol = clean_required_str(
+                symbol,
+                field_name="symbol",
+                message_prefix="tracked close teardown",
+                error_type=TrackedCloseTeardownCancelBridgeError,
+            ).upper()
+            normalized_order_id = clean_required_str(
+                order_id,
+                field_name="order_id",
+                message_prefix="tracked close teardown",
+                error_type=TrackedCloseTeardownCancelBridgeError,
+            )
+            normalized_bracket_type = clean_required_str(
                 bracket_type,
                 field_name="bracket_type",
+                message_prefix="tracked close teardown",
+                error_type=TrackedCloseTeardownCancelBridgeError,
             ).upper()
-            close_rid_clean = str(close_rid).strip() if close_rid is not None else None
+            close_rid_clean = str(close_rid).strip(
+            ) if close_rid is not None else None
             if close_rid_clean == "":
                 close_rid_clean = None
             return cls(
@@ -113,7 +120,10 @@ def build_tracked_close_teardown_cancel_trace_ref(
     }
     if reason is not None:
         params["reason"] = reason[:80]
-    return f"{_TRACKED_CLOSE_TEARDOWN_CANCEL_TRACE_REF_PREFIX}{urlencode(params)}"
+    return build_trace_ref(
+        prefix=_TRACKED_CLOSE_TEARDOWN_CANCEL_TRACE_REF_PREFIX,
+        params=params,
+    )
 
 
 def adapt_tracked_close_teardown_to_dec_cancel(
