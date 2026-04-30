@@ -1355,6 +1355,16 @@ class CloseExecutor:
             requested_qty=None,
         )
         if submission is None:
+            # DEF-E07: _closing_position was set at the top of this flow. Failing to
+            # clear it here would leave the position permanently stuck in "closing" state,
+            # blocking all future manage/open flows for this symbol.
+            if manage:
+                manage._closing_position = False
+                manage._closing_position_ts = 0.0
+                LOG.warning(
+                    "DEF-E07: cleared _closing_position for %s after build_close_submission returned None",
+                    symbol,
+                )
             return
         close_side = submission.side
         close_qty = submission.quantity

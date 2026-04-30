@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +17,7 @@ from apps.reference.domains.execution_position.order_index import OrderIndex
 from apps.reference.domains.execution_position.restore_artifact import (
     TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
 )
+from vfoundation.dr import wal as vwal
 
 
 class _DummyFSMCore:
@@ -52,6 +54,43 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
         )
     )
     fsm._startup_truth_orchestrator._startup_truth_artifact_writer = fsm._startup_truth_orchestrator._create_startup_truth_artifact_writer()
+
+    wal_dir = tmp_path / "wal"
+    vwal.set_wal_dir(wal_dir)
+    wal_dir.mkdir(parents=True, exist_ok=True)
+    wal_path = wal_dir / f"{date.today().isoformat()}.jsonl"
+    wal_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "rid": "r1",
+                        "op": "EVT",
+                        "verb": "ORDER_PLACED",
+                        "ts": 1,
+                        "symbol": symbol,
+                        "order_id": "oid-1",
+                        "client_order_id": "cid-1",
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "rid": "r2",
+                        "op": "EVT",
+                        "verb": "ORDER_STATE_CHANGED",
+                        "ts": 2,
+                        "symbol": symbol,
+                        "order_id": "oid-2",
+                        "status": "FILLED",
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     manage_flow = MagicMock()
     manage_flow.state = ManageState.FLAT
@@ -188,6 +227,16 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
         "write_attempted": True,
         "write_succeeded": True,
     }
+    assert startup_row["bounded_replay_summary"]["boundary_name"] == "W5"
+    assert startup_row["bounded_replay_summary"]["source_kind"] == "canonical_wal"
+    assert startup_row["bounded_replay_summary"]["scan_state"] == "completed"
+    assert startup_row["bounded_replay_summary"]["symbols_considered"] == [
+        symbol]
+    assert startup_row["bounded_replay_summary"]["records_seen"] == 1
+    assert startup_row["bounded_replay_summary"]["records_accepted"] == 1
+    assert startup_row["bounded_replay_summary"]["records_ignored_by_boundary"] == 1
+    assert startup_row["bounded_replay_summary"]["restore_boundary_separation"] == "report_only"
+    assert startup_row["bounded_replay_summary"]["authoritative_mutation_attempted"] is False
     assert startup_row["execution_truth_cache"]["truth_class"] == "cache_only"
     assert startup_row["execution_truth_cache"]["authoritative"] is False
 

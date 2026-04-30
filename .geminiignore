@@ -1,9 +1,1 @@
-.venv/
-#logs/
-__pycache__/
-node_modules/
-.DS_Store
-*.zip
-*.csv
-node_modules/*
-node_modules
+# Temporary empty

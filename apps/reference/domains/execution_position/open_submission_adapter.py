@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Literal, Optional, Tuple
 from urllib.parse import urlencode
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 OPEN_SUBMISSION_CONTRACT = "open_submission_v1"
@@ -18,6 +18,27 @@ class OpenSubmissionAdapterError(ValueError):
     """Fail-closed error for bounded open submission normalization."""
 
 
+def _validate_submission_decimal_str(value: Any, field_name: str, *, allow_zero: bool) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError(f"{field_name} must be a non-empty decimal string")
+    try:
+        decimal_value = Decimal(raw)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{field_name}: {raw!r} is not a valid decimal number"
+        ) from exc
+
+    if not decimal_value.is_finite():
+        raise ValueError(f"{field_name}: {raw!r} must be finite")
+    if allow_zero:
+        if decimal_value < 0:
+            raise ValueError(f"{field_name}: {raw!r} must be non-negative")
+    elif decimal_value <= 0:
+        raise ValueError(f"{field_name}: {raw!r} must be positive")
+    return raw
+
+
 class OpenSubmissionPayload(BaseModel):
     """Typed bridge payload for adapter-bound open submission."""
 
@@ -25,13 +46,25 @@ class OpenSubmissionPayload(BaseModel):
 
     symbol: str = Field(..., min_length=1)
     side: Literal["BUY", "SELL"]
-    quantity: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$")
+    quantity: str = Field(...)
     order_type: Literal["MARKET", "LIMIT"]
     client_order_id: str = Field(..., min_length=1)
-    price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    price: Optional[str] = Field(default=None)
     time_in_force: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
         default=None,
     )
+
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value: Any) -> str:
+        return _validate_submission_decimal_str(value, "quantity", allow_zero=False)
+
+    @field_validator("price")
+    @classmethod
+    def _validate_price(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return _validate_submission_decimal_str(value, "price", allow_zero=True)
 
     @model_validator(mode="after")
     def _cross_field_contract(self) -> "OpenSubmissionPayload":
@@ -88,7 +121,18 @@ class OpenSubmissionPayload(BaseModel):
         the client_order_id before invoking ``from_dec_open``. The mapping
         ``idempotent_key -> client_order_id`` is now a submit-boundary rule
         owned by the typed bridge.
+
+        DEF-E10: idempotent_key must be provided. Missing key rejects before
+        any adapter call — no fallback to timestamp-based identity.
         """
+        # DEF-E10: Fail closed on missing idempotency key
+        if not idempotent_key:
+            raise OpenSubmissionAdapterError(
+                "open_submission: idempotent_key is required for order submission — "
+                "no fallback to timestamp-based client_order_id is permitted. "
+                "Ensure the trade intent payload includes a stable idempotent_key."
+            )
+
         # Import locally to avoid an import cycle with utils at module load.
         from apps.reference.domains.execution_position.utils import (
             generate_client_order_id,
@@ -99,11 +143,10 @@ class OpenSubmissionPayload(BaseModel):
         except Exception as exc:
             raise OpenSubmissionAdapterError(str(exc)) from exc
 
-        key = str(idempotent_key) if idempotent_key else None
         client_order_id = generate_client_order_id(
             "ENTRY",
             symbol,
-            idempotent_key=key,
+            idempotent_key=idempotent_key,
         )
         return cls.from_dec_open(
             payload=payload,

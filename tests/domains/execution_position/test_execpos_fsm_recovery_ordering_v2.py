@@ -11,16 +11,24 @@ from apps.reference.domains.execution_position.order_index import OrderIndex
 @pytest.fixture
 def fsm_config():
     cfg = MagicMock()
+    cfg.execution = None
     # Mock symbols and instruments
     cfg.strategies.aurora.assets = {
         "BTCUSDT": MagicMock(symbol="BTCUSDT", tick_size=0.1, step_size=0.001)
     }
     cfg.strategies.aurora.decision.bar_gating = None
     cfg.trading = MagicMock()
+    cfg.trading.mode = "testnet"
+    cfg.get_domain_mode.return_value = "testnet"
     cfg.trading.execution = MagicMock()
+    cfg.trading.execution.watchdog.ack_ttl_ms = 5000
+    cfg.trading.execution.watchdog.fill_ttl_ms = 5000
+    cfg.trading.execution.watchdog.check_interval_ms = 1000
+    cfg.trading.execution.watchdog.rps_limit = 10
     cfg.trading.execution.fsm_periodic_cleanup_enabled = False
     cfg.trading.execution.order_guardian = {"unified": True}
     cfg.trading.execution.anti_race_close_ms = 800  # SSOT: fail-closed
+    cfg.trading.execution.cooldown_after_close_ms = 10000
 
     # Event deduplication config - SSOT: fail-closed
     event_dedup = MagicMock()
@@ -123,7 +131,9 @@ async def test_fsm_fill_before_ack_out_of_order(exec_pos_fsm):
 
     # Process FILL first
     exec_pos_fsm._on_order_fill(fill_msg)
-    assert "fill_ord_1_BTCUSDT" in exec_pos_fsm._processed_events
+    # DEF-E18: key now includes cumQty+updateTime suffix when no tradeId present
+    assert any(k.startswith("fill_ord_1_BTCUSDT")
+               for k in exec_pos_fsm._processed_events)
 
     # Process ACK later
     exec_pos_fsm._on_order_ack(ack_msg)
@@ -160,7 +170,9 @@ def test_fsm_duplicate_fill_ignored(exec_pos_fsm):
     )
 
     exec_pos_fsm._on_order_fill(fill_msg)
-    assert "fill_ord_fill_dup_BTCUSDT" in exec_pos_fsm._processed_events
+    # DEF-E18: key now includes cumQty+updateTime suffix when no tradeId present
+    assert any(k.startswith("fill_ord_fill_dup_BTCUSDT")
+               for k in exec_pos_fsm._processed_events)
 
     # Reset exposure_guard mock
     exec_pos_fsm.exposure_guard.get_exposure_summary.reset_mock()
@@ -774,8 +786,9 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
         verb="OPEN",
         src="s",
         dst="d",
-        pld={"symbol": symbol, "side": "BUY", "qty": "0.1",
-             "order_type": "MARKET", "tif": None},
+           pld={"symbol": symbol, "side": "BUY", "qty": "0.1",
+                "order_type": "MARKET", "tif": None,
+                "idempotent_key": "open_backoff_btcusdt_1"},
         rid="open_1",
     )
 

@@ -619,6 +619,9 @@ class AlphaSearchBacktestPlugin:
             features["regime_confidence"] = regime_snapshot.get("confidence")
             features["regime_ts_ms"] = regime_snapshot.get("ts_ms") or regime_snapshot.get("ts")
             features["regime_source"] = regime_snapshot.get("source_model")
+            
+            if features["regime_confidence"] is None:
+                features["regime_missing_reason"] = "REGIME_CONFIDENCE_MISSING"
         else:
             features["regime_missing_reason"] = "REGIME_CONTEXT_MISSING"
 

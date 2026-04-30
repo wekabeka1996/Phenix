@@ -44,44 +44,75 @@ class AdapterInitMixin:
 
         Mode resolution prefers the execution_position domain override when the
         config exposes ``get_domain_mode()``; otherwise it falls back to the
-        legacy global trading mode. Missing API credentials do not raise here:
-        the mixin flips the FSM into ``shadow_mode`` and leaves execution
-        simulated rather than half-configured.
+        legacy global trading mode only when that mode is explicitly present.
+        Live and hybrid execution modes fail closed on missing credentials.
         """
         from apps.reference.adapters.binance_adapter import BinanceAdapter
 
+        allowed_modes = {
+            "live",
+            "production",
+            "testnet",
+            "hybrid_live_data_testnet_exec",
+            "backtest",
+        }
+
+        def _normalize_mode(candidate) -> str | None:
+            if candidate is None:
+                return None
+            if not isinstance(candidate, str):
+                return None
+            normalized = candidate.strip().lower()
+            return normalized or None
+
         # Prefer the domain-specific execution mode when available so
         # execution_position can diverge from any legacy global trading mode.
-        mode = "testnet"  # Default fallback
+        mode = None
 
         # Fall back to the global trading mode only when the newer domain-level
         # resolver is absent or raises.
         if hasattr(self.config, "get_domain_mode"):
             try:
-                mode = self.config.get_domain_mode("execution_position")
+                mode = _normalize_mode(
+                    self.config.get_domain_mode("execution_position")
+                )
                 LOG.info(f"ExecPosFSM using domain-specific mode: {mode}")
             except Exception as e:
-                LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                try:
-                    if self.config.trading:
-                        mode = self.config.trading.mode
-                except AttributeError:
-                    mode = "testnet"
-        else:
-            # Fallback to global mode
+                LOG.warning(
+                    f"Could not get domain mode, checking explicit global mode: {e}")
+
+        if mode is None:
             try:
-                if self.config.trading:
-                    mode = self.config.trading.mode
+                trading_cfg = getattr(self.config, "trading", None)
+                if trading_cfg is not None:
+                    mode = _normalize_mode(getattr(trading_cfg, "mode", None))
             except AttributeError:
-                mode = "testnet"
-            LOG.info(f"ExecPosFSM using global trading_mode: {mode}")
+                mode = None
+
+        if mode is None:
+            raise ValueError(
+                "execution_position trading mode must be explicitly configured; "
+                "silent fallback to testnet is not permitted"
+            )
+        if mode not in allowed_modes:
+            raise ValueError(
+                f"Unsupported execution_position trading mode: {mode}"
+            )
+
+        LOG.info(f"ExecPosFSM using resolved trading mode: {mode}")
 
         LOG.info(f"EXECUTION POSITION FSM MODE: {mode.upper()}")
+
+        if mode == "backtest":
+            LOG.info(
+                "ExecPosFSM adapter initialization skipped in explicit BACKTEST mode.")
+            self.shadow_mode = True
+            return
 
         api_config = self.config.binance_api
 
         # Safe extraction of env config
-        if mode == "live":
+        if mode in {"live", "production"}:
             env_config = api_config.live
             LOG.info("ExecPosFSM adapter is configured for LIVE execution.")
         else:  # 'testnet' or 'hybrid_live_data_testnet_exec'
@@ -102,9 +133,14 @@ class AdapterInitMixin:
             rest_url = None
 
         if not all([api_key, api_secret, rest_url]):
+            if mode in {"live", "production", "hybrid_live_data_testnet_exec"}:
+                raise ValueError(
+                    f"API configuration for execution in '{mode}' mode is incomplete. "
+                    "Explicit live/hybrid execution must fail closed when credentials are missing."
+                )
             LOG.error(
                 f"API configuration for execution in '{mode}' mode is incomplete. "
-                "Execution will be simulated."
+                "Execution will be simulated because explicit TESTNET mode allows shadow fallback."
             )
             LOG.debug(f"  - API Key present: {bool(api_key)}")
             LOG.debug(f"  - API Secret present: {bool(api_secret)}")

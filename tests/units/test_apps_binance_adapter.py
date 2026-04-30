@@ -390,3 +390,41 @@ async def test_idempotency_ledger(adapter):
 
     # Non-existent
     assert await adapter.check_clientorderid_reuse("BTCUSDT", "cid_999") is None
+
+
+@pytest.mark.asyncio
+async def test_place_market_reduce_only_reuses_ledger_on_duplicate_client_order_id(adapter):
+    adapter.quantize_quantity = AsyncMock(return_value="0.123")
+    adapter._request = AsyncMock(
+        side_effect=BinanceAPIError(-4116, "Duplicate ClientOrderId")
+    )
+    adapter.check_clientorderid_reuse = AsyncMock(return_value="98765")
+    adapter.get_order = AsyncMock(
+        return_value={"orderId": "98765", "symbol": "BTCUSDT"})
+    adapter.register_clientorderid = AsyncMock()
+
+    response = await adapter.place_market_reduce_only(
+        "BTCUSDT",
+        "SELL",
+        "0.123",
+        new_client_order_id="cid_dup",
+    )
+
+    assert response["orderId"] == "98765"
+    adapter.quantize_quantity.assert_awaited_once_with("BTCUSDT", "0.123")
+    adapter._request.assert_awaited_once_with(
+        "POST",
+        "/fapi/v1/order",
+        {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "type": "MARKET",
+            "quantity": "0.123",
+            "reduceOnly": "true",
+            "newClientOrderId": "cid_dup",
+        },
+    )
+    adapter.check_clientorderid_reuse.assert_awaited_once_with(
+        "BTCUSDT", "cid_dup")
+    adapter.get_order.assert_awaited_once_with("BTCUSDT", 98765)
+    adapter.register_clientorderid.assert_not_awaited()

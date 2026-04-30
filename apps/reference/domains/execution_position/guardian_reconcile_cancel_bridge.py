@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.reference.domains.execution_position.cancel_bridge_utils import (
     build_trace_ref,
     clean_required_str,
+    clean_optional_str,
 )
 from vfoundation.core.protocol import Message, truncate_why
 
@@ -83,9 +84,12 @@ class GuardianReconcileCancelRequest(BaseModel):
                 message_prefix="guardian reconcile cancel",
                 error_type=GuardianReconcileCancelBridgeError,
             ).upper()
-            rid_clean = str(rid).strip() if rid is not None else None
-            if rid_clean == "":
-                rid_clean = None
+            rid_clean = clean_optional_str(
+                rid,
+                field_name="rid",
+                message_prefix="guardian reconcile cancel",
+                error_type=GuardianReconcileCancelBridgeError,
+            )
             return cls(
                 symbol=symbol_clean,
                 order_id=order_id_clean,

@@ -50,11 +50,28 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 def _make_execpos_config(path: Path):
     cfg = MagicMock()
+    cfg.execution = None
+    cfg.trading = MagicMock()
+    cfg.trading.execution = MagicMock()
+    cfg.domains = MagicMock()
+    cfg.domains.execution_position = MagicMock()
+    cfg.binance_api = MagicMock()
+    cfg.strategies = MagicMock()
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
+    cfg.trading.execution.watchdog.check_interval_ms = 1000
+    cfg.trading.execution.watchdog.rps_limit = 10
     cfg.trading.execution.anti_race_close_ms = 800
     cfg.trading.execution.cooldown_after_close_ms = 10_000
+    cfg.trading.execution.fsm_periodic_cleanup_enabled = False
     cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
+    guardian = cfg.domains.execution_position.guardian
+    guardian.unified = True
+    guardian.emit_tidy_event = True
+    guardian.emit_tidy_monitoring_event = True
+    guardian.poll_interval_ms = 500
+    guardian.cleanup_ttl_ms = 6000
+    guardian.symbol_cooldown_ms = 4000
 
     event_dedup = MagicMock()
     event_dedup.max_size = 100000
@@ -127,7 +144,8 @@ def _make_execpos_config(path: Path):
     fb.risk_reduction_pct = "0.5"
     fb.backoff_ms = [200, 500, 1000]
 
-    cfg.trading.execution.exposure.leverage_defaults = {"__default__": 20, "BTCUSDT": 20}
+    cfg.trading.execution.exposure.leverage_defaults = {
+        "__default__": 20, "BTCUSDT": 20}
     cfg.trading.execution.exposure.count_pending_orders = True
     cfg.trading.execution.exposure.exclude_reduce_only = True
     cfg.trading.risk = {
@@ -180,7 +198,8 @@ def test_shared_trade_executed_dedupe_suppresses_cross_origin_duplicate_before_c
     config = ConfigLoader().load_config()
     config.observability.shadow_journal.enabled = True
     config.observability.shadow_journal.path = str(path)
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     config.domains.execution_position.event_dedup.warm_state.storage_path = str(
         tmp_path / "warm_state.json"
     )
@@ -190,23 +209,29 @@ def test_shared_trade_executed_dedupe_suppresses_cross_origin_duplicate_before_c
     attach_execution_truth_hardening(fsm, config)
 
     seen = []
-    fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
+    fsm.listen("EVT:TRADE_EXECUTED",
+               lambda msg: seen.append(msg.pld["orderId"]))
 
     payload = _trade_executed_payload(
         "12345",
         client_order_id="ENTRY-BTCUSDT-1",
     )
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
-    fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="polling_fill", rid="rid-1")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+             why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+             why="polling_fill", rid="rid-1")
 
     assert seen == ["12345"]
 
     records = _read_jsonl(path)
-    assert len([r for r in records if r["event_name"] == "EVT:TRADE_EXECUTED"]) == 2
-    suppressed = [r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]
+    assert len([r for r in records if r["event_name"]
+               == "EVT:TRADE_EXECUTED"]) == 2
+    suppressed = [r for r in records if r["event_name"]
+                  == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]
     assert len(suppressed) == 1
-    assert any(r["suspected_duplicate"] is True for r in records if r["event_name"] == "EVT:TRADE_EXECUTED")
+    assert any(r["suspected_duplicate"]
+               is True for r in records if r["event_name"] == "EVT:TRADE_EXECUTED")
 
 
 def test_shared_trade_executed_dedupe_allows_distinct_orders(tmp_path):
@@ -214,7 +239,8 @@ def test_shared_trade_executed_dedupe_allows_distinct_orders(tmp_path):
     config = ConfigLoader().load_config()
     config.observability.shadow_journal.enabled = True
     config.observability.shadow_journal.path = str(path)
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     config.domains.execution_position.event_dedup.warm_state.storage_path = str(
         tmp_path / "warm_state.json"
     )
@@ -224,7 +250,8 @@ def test_shared_trade_executed_dedupe_allows_distinct_orders(tmp_path):
     attach_execution_truth_hardening(fsm, config)
 
     seen = []
-    fsm.listen("EVT:TRADE_EXECUTED", lambda msg: seen.append(msg.pld["orderId"]))
+    fsm.listen("EVT:TRADE_EXECUTED",
+               lambda msg: seen.append(msg.pld["orderId"]))
 
     payload_a = _trade_executed_payload(
         "12345",
@@ -237,12 +264,15 @@ def test_shared_trade_executed_dedupe_allows_distinct_orders(tmp_path):
         price="50010",
     )
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=payload_a, why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
-    fsm.emit("EVT:TRADE_EXECUTED", payload=payload_b, why="polling_fill", rid="rid-2")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=payload_a,
+             why="WS_ORDER_UPDATE_FILLED", rid="rid-1")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=payload_b,
+             why="polling_fill", rid="rid-2")
 
     assert seen == ["12345", "12346"]
     records = _read_jsonl(path)
-    assert not [r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]
+    assert not [r for r in records if r["event_name"]
+                == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]
 
 
 def test_position_tracking_only_applies_duplicate_fill_once(tmp_path):
@@ -250,7 +280,8 @@ def test_position_tracking_only_applies_duplicate_fill_once(tmp_path):
     config = ConfigLoader().load_config()
     config.observability.shadow_journal.enabled = True
     config.observability.shadow_journal.path = str(path)
-    config.observability.shadow_journal.critical_events = list(DEFAULT_CRITICAL_EVENTS)
+    config.observability.shadow_journal.critical_events = list(
+        DEFAULT_CRITICAL_EVENTS)
     config.domains.execution_position.event_dedup.warm_state.storage_path = str(
         tmp_path / "warm_state.json"
     )
@@ -273,12 +304,15 @@ def test_position_tracking_only_applies_duplicate_fill_once(tmp_path):
     }
 
     with patch("apps.reference.domains.position_tracking.position_tracking.wal.append", return_value="wal-ok"):
-        fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="WS_ORDER_UPDATE_FILLED", rid="rid-pt-1")
-        fsm.emit("EVT:TRADE_EXECUTED", payload=payload, why="polling_fill", rid="rid-pt-1")
+        fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+                 why="WS_ORDER_UPDATE_FILLED", rid="rid-pt-1")
+        fsm.emit("EVT:TRADE_EXECUTED", payload=payload,
+                 why="polling_fill", rid="rid-pt-1")
 
     assert tracker._positions["BTCUSDT"]["quantity"] == Decimal("0.01")
     records = _read_jsonl(path)
-    assert len([r for r in records if r["event_name"] == "HARDENING:TRADE_EXECUTED_SUPPRESSED"]) == 1
+    assert len([r for r in records if r["event_name"] ==
+               "HARDENING:TRADE_EXECUTED_SUPPRESSED"]) == 1
 
 
 def test_execpos_cmd_close_guard_suppresses_repeated_close_and_allows_after_state_change(tmp_path):
@@ -316,6 +350,7 @@ def test_execpos_cmd_close_guard_suppresses_repeated_close_and_allows_after_stat
     assert third is not None and third.op == "DEC" and third.verb == "CLOSE"
 
     records = _read_jsonl(path)
-    suppressed = [r for r in records if r["event_name"] == "HARDENING:CMD_CLOSE_SUPPRESSED"]
+    suppressed = [r for r in records if r["event_name"]
+                  == "HARDENING:CMD_CLOSE_SUPPRESSED"]
     assert len(suppressed) == 1
     assert "duplicate_cmd_close_same_effective_state" in suppressed[0]["notes"]

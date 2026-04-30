@@ -103,6 +103,7 @@ def fsm_instance(mock_config):
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
     # Create minimal mocks for required domain configs
+    mock_config.execution = None
     mock_config.domains = MagicMock()
     mock_config.domains.execution_position = MagicMock()
     mock_config.domains.execution_position.metrics_collector = MagicMock()
@@ -113,6 +114,7 @@ def fsm_instance(mock_config):
     mock_config.domains.execution_position.guardian = MagicMock()
     mock_config.domains.execution_position.guardian.unified = True
     mock_config.domains.execution_position.guardian.emit_tidy_event = True
+    mock_config.domains.execution_position.guardian.emit_tidy_monitoring_event = True
     mock_config.domains.execution_position.guardian.poll_interval_ms = 500
     mock_config.domains.execution_position.guardian.cleanup_ttl_ms = 60000
     mock_config.domains.execution_position.guardian.symbol_cooldown_ms = 1000
@@ -129,8 +131,10 @@ def fsm_instance(mock_config):
     mock_config.domains.execution_position.exposure_guard.post_fill_hold_ttl_sec = 5
     mock_config.domains.execution_position.exposure_guard.stale_ttl_sec = 120
     mock_config.trading = MagicMock()
+    mock_config.trading.mode = "testnet"
     mock_config.trading.execution = MagicMock()
     mock_config.trading.execution.cooldown_after_close_ms = 1000
+    mock_config.trading.execution.fsm_periodic_cleanup_enabled = False
     mock_config.trading.execution.watchdog = MagicMock()
     mock_config.trading.execution.watchdog.ack_ttl_ms = 5000
     mock_config.trading.execution.watchdog.fill_ttl_ms = 30000

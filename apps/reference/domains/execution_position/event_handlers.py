@@ -546,13 +546,31 @@ class EPEventHandlers:
                 f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
             return
 
-        self._fsm._pending_entry_meta.pop(str(order_id), None)
+        # DEF-E17: Do NOT pop pending_entry_meta while status is PARTIALLY_FILLED.
+        # Popping on partial fill discards the pending metadata (idempotent_key, rid, etc.)
+        # needed to process subsequent fill events for the same order.
+        # Clear only on terminal statuses: FILLED, CANCELLED, REJECTED, EXPIRED.
+        _early_fill_status = str(payload.get("status") or "").upper()
+        if _early_fill_status != "PARTIALLY_FILLED":
+            self._fsm._pending_entry_meta.pop(str(order_id), None)
 
         # FILL-PIPELINE-FIX-AUDIT: include trade_id in dedup key so multiple
         # partial fills (each with unique Binance trade_id "t") are not suppressed.
+        # DEF-E18: If tradeId is missing, use cumulative_qty+update_time as fallback
+        # so distinct partial fills are NOT collapsed into a single dedup key.
         _trade_id = str(payload.get("tradeId")
                         or payload.get("trade_id") or "")
-        event_key = f"fill_{order_id}_{_trade_id}_{symbol}" if _trade_id else f"fill_{order_id}_{symbol}"
+        if _trade_id:
+            event_key = f"fill_{order_id}_{_trade_id}_{symbol}"
+        else:
+            # DEF-E18 fallback: derive dedup key from cumulative qty + update time
+            # so repeated delivery of the same partial fill is deduplicated, but
+            # distinct partial fills (different cumQty) produce different keys.
+            _cum_qty = str(payload.get("cumQty") or payload.get(
+                "executedQty") or payload.get("quantity") or "")
+            _update_time = str(payload.get("updateTime")
+                               or payload.get("transactTime") or "")
+            event_key = f"fill_{order_id}_{symbol}_{_cum_qty}_{_update_time}"
         if not self._fsm._mark_processed_event(event_key):
             LOG.debug(
                 f"[FILL] Skipping duplicate FILL for {symbol} order {order_id}")

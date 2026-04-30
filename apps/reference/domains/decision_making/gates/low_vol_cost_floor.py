@@ -417,6 +417,372 @@ def _compute_tp_sl_bps(*, side: str, entry_price: Decimal, target_price: Decimal
     return actual_tp, actual_sl
 
 
+def _mapping_get_path(mapping: Mapping[str, Any] | None, path: tuple[str, ...]) -> Any:
+    current: Any = mapping
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _first_present_mapping_value(mapping: Mapping[str, Any] | None, *paths: tuple[str, ...]) -> Any:
+    for path in paths:
+        value = _mapping_get_path(mapping, path)
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_observation_float(mapping: Mapping[str, Any] | None, *paths: tuple[str, ...]) -> float | None:
+    return _to_optional_float(
+        _coerce_decimal(_first_present_mapping_value(mapping, *paths))
+    )
+
+
+def _build_low_vol_observation_blocks(
+    *,
+    strategy_trace: Mapping[str, Any] | None,
+    gate_cfg: Any,
+    regime: str | None,
+    regime_confidence: float | None,
+    side: str,
+    signal_score: float | None,
+    strategy_id: str | None,
+    symbol: str | None,
+    trading_mode: str,
+    gate_mode: str,
+    direction_resolution: DirectionConfidenceResolution,
+    resolved_regime_threshold: ResolvedLowVolThreshold,
+    resolved_direction_threshold: ResolvedLowVolThreshold,
+    entry_decimal: Decimal | None,
+    target_decimal: Decimal | None,
+    stop_decimal: Decimal | None,
+    geometry_missing: bool,
+    actual_tp_bps: Decimal | None,
+    actual_sl_bps: Decimal | None,
+    round_trip_fee_bps: Decimal,
+    slippage_buffer_bps: Decimal,
+    required_gross_tp_bps: Decimal,
+    target_net_fee_multiple: Decimal,
+    tp_fee_coverage_ratio: Decimal | None,
+    rr_ratio: Decimal | None,
+    expected_net_if_tp_bps: Decimal | None,
+    expected_net_if_sl_bps: Decimal | None,
+    threshold_failed: bool,
+    violations: list[str],
+    warnings: list[str],
+) -> dict[str, Any]:
+    trace = strategy_trace if isinstance(strategy_trace, Mapping) else {}
+    objective = _mapping_get_path(trace, ("objective",))
+    objective_present = isinstance(objective, Mapping)
+
+    final_score = _extract_observation_float(
+        trace,
+        ("final_score",),
+        ("objective", "final_score"),
+    )
+    objective_score = _extract_observation_float(
+        trace,
+        ("score",),
+        ("objective", "score"),
+    )
+    score_threshold = _extract_observation_float(
+        trace,
+        ("threshold",),
+        ("active_threshold",),
+        ("objective", "threshold"),
+        ("objective", "active_threshold"),
+        ("objective", "structure", "threshold"),
+        ("objective", "structure", "active_threshold"),
+    )
+    score_margin = _extract_observation_float(
+        trace,
+        ("score_margin",),
+        ("objective", "score_margin"),
+        ("objective", "threshold_margin"),
+        ("objective", "structure", "threshold_margin"),
+    )
+    judge_confidence = _extract_observation_float(
+        trace,
+        ("judge_confidence",),
+        ("objective", "judge_confidence"),
+    )
+    strategy_confidence = _extract_observation_float(
+        trace,
+        ("strategy_confidence",),
+        ("objective", "strategy_confidence"),
+    )
+    model_confidence = _extract_observation_float(
+        trace,
+        ("confidence",),
+        ("model_confidence",),
+        ("objective", "confidence"),
+        ("objective", "model_confidence"),
+    )
+
+    pm_norm_10s = _extract_observation_float(
+        trace,
+        ("pm_norm_10s",),
+        ("price_motion", "pm_norm_10s"),
+        ("objective", "pm_norm_10s"),
+    )
+    pm_norm_60s = _extract_observation_float(
+        trace,
+        ("pm_norm_60s",),
+        ("price_motion", "pm_norm_60s"),
+        ("objective", "pm_norm_60s"),
+    )
+    pm_norm_300s = _extract_observation_float(
+        trace,
+        ("pm_norm_300s",),
+        ("price_motion", "pm_norm_300s"),
+        ("objective", "pm_norm_300s"),
+    )
+    vol_pct_10s = _extract_observation_float(
+        trace,
+        ("vol_pct_10s",),
+        ("price_motion", "vol_pct_10s"),
+        ("objective", "vol_pct_10s"),
+    )
+    vol_pct_60s = _extract_observation_float(
+        trace,
+        ("vol_pct_60s",),
+        ("price_motion", "vol_pct_60s"),
+        ("objective", "vol_pct_60s"),
+    )
+    vol_pct_300s = _extract_observation_float(
+        trace,
+        ("vol_pct_300s",),
+        ("price_motion", "vol_pct_300s"),
+        ("objective", "vol_pct_300s"),
+    )
+    ret_60s = _extract_observation_float(
+        trace,
+        ("ret_60s",),
+        ("analysis_payload", "ret_60s"),
+        ("features", "ret_60s"),
+        ("objective", "ret_60s"),
+    )
+    ret_300s = _extract_observation_float(
+        trace,
+        ("ret_300s",),
+        ("analysis_payload", "ret_300s"),
+        ("features", "ret_300s"),
+        ("objective", "ret_300s"),
+    )
+    spread_bps = _extract_observation_float(
+        trace,
+        ("spread_bps",),
+        ("market", "spread_bps"),
+        ("objective", "spread_bps"),
+        ("objective", "market", "spread_bps"),
+    )
+    liquidity_kappa = _extract_observation_float(
+        trace,
+        ("liquidity_kappa",),
+        ("market", "liquidity_kappa"),
+        ("objective", "liquidity_kappa"),
+        ("objective", "market", "liquidity_kappa"),
+    )
+    absorption = _extract_observation_float(
+        trace,
+        ("absorption",),
+        ("market", "absorption"),
+        ("objective", "absorption"),
+        ("objective", "market", "absorption"),
+    )
+
+    direction_confidence = direction_resolution.value
+    geometry_valid = bool(
+        actual_tp_bps is not None
+        and actual_sl_bps is not None
+        and actual_tp_bps > 0
+        and actual_sl_bps > 0
+    )
+    regime_passed = regime_confidence is not None and float(
+        regime_confidence) >= resolved_regime_threshold.value
+    direction_passed = (
+        direction_resolution.failure_reason is None
+        and direction_confidence is not None
+        and float(direction_confidence) >= resolved_direction_threshold.value
+    )
+    tp_meets_required_gross = actual_tp_bps is not None and actual_tp_bps >= required_gross_tp_bps
+    tp_fee_coverage_passed = (
+        tp_fee_coverage_ratio is not None
+        and tp_fee_coverage_ratio >= Decimal(str(gate_cfg.thresholds.min_tp_fee_coverage))
+    )
+    rr_passed = rr_ratio is not None and rr_ratio >= Decimal(
+        str(gate_cfg.thresholds.min_rr))
+
+    score_context = {
+        "signal_score": signal_score,
+        "final_score": final_score,
+        "objective_score": objective_score,
+        "score_threshold": score_threshold,
+        "score_margin": score_margin,
+        "judge_confidence": judge_confidence,
+        "strategy_confidence": strategy_confidence,
+        "model_confidence": model_confidence,
+        "missing": {
+            "signal_score": signal_score is None,
+            "final_score": final_score is None,
+            "objective_score": objective_score is None,
+            "score_threshold": score_threshold is None,
+            "score_margin": score_margin is None,
+            "judge_confidence": judge_confidence is None,
+            "strategy_confidence": strategy_confidence is None,
+            "model_confidence": model_confidence is None,
+        },
+    }
+    price_motion_context = {
+        "pm_norm_10s": pm_norm_10s,
+        "pm_norm_60s": pm_norm_60s,
+        "pm_norm_300s": pm_norm_300s,
+        "vol_pct_10s": vol_pct_10s,
+        "vol_pct_60s": vol_pct_60s,
+        "vol_pct_300s": vol_pct_300s,
+        "ret_60s": ret_60s,
+        "ret_300s": ret_300s,
+        "missing": {
+            "pm_norm_10s": pm_norm_10s is None,
+            "pm_norm_60s": pm_norm_60s is None,
+            "pm_norm_300s": pm_norm_300s is None,
+            "vol_pct_10s": vol_pct_10s is None,
+            "vol_pct_60s": vol_pct_60s is None,
+            "vol_pct_300s": vol_pct_300s is None,
+            "ret_60s": ret_60s is None,
+            "ret_300s": ret_300s is None,
+        },
+    }
+    liquidity_context = {
+        "spread_bps": spread_bps,
+        "liquidity_kappa": liquidity_kappa,
+        "absorption": absorption,
+        "missing": {
+            "spread_bps": spread_bps is None,
+            "liquidity_kappa": liquidity_kappa is None,
+            "absorption": absorption is None,
+        },
+    }
+    thresholds = {
+        "min_regime_confidence": resolved_regime_threshold.value,
+        "min_direction_confidence": resolved_direction_threshold.value,
+        "required_gross_tp_bps": float(required_gross_tp_bps),
+        "min_tp_fee_coverage": float(gate_cfg.thresholds.min_tp_fee_coverage),
+        "min_rr": float(gate_cfg.thresholds.min_rr),
+        "round_trip_fee_bps": float(round_trip_fee_bps),
+        "slippage_buffer_bps": float(slippage_buffer_bps),
+        "target_net_fee_multiple": float(target_net_fee_multiple),
+    }
+    subcondition_verdicts = {
+        "regime_confidence_passed": regime_passed,
+        "direction_confidence_passed": direction_passed,
+        "geometry_available": not geometry_missing,
+        "geometry_valid": geometry_valid,
+        "actual_tp_meets_required_gross_tp": tp_meets_required_gross,
+        "tp_fee_coverage_passed": tp_fee_coverage_passed,
+        "rr_passed": rr_passed,
+        "threshold_failed": threshold_failed,
+    }
+    provenance_context = {
+        "evaluated": True,
+        "evaluation_stage": "post_safety_gate",
+        "strategy_trace_present": bool(trace),
+        "objective_present": objective_present,
+        "strategy_id": str(strategy_id) if strategy_id is not None else None,
+        "symbol": str(symbol).upper() if symbol is not None else None,
+        "trading_mode": str(trading_mode),
+        "gate_mode": gate_mode,
+        "regime": regime,
+        "side": _normalize_side_scope(side),
+        "direction_confidence_allowed_sources": list(gate_cfg.direction_confidence.allowed_sources),
+        "resolved_regime_threshold": {
+            "value": resolved_regime_threshold.value,
+            "source": resolved_regime_threshold.source,
+            "strategy_id": resolved_regime_threshold.strategy_id,
+            "symbol": resolved_regime_threshold.symbol,
+            "regime_key": resolved_regime_threshold.regime_key,
+        },
+        "resolved_direction_threshold": {
+            "value": resolved_direction_threshold.value,
+            "source": resolved_direction_threshold.source,
+            "strategy_id": resolved_direction_threshold.strategy_id,
+            "symbol": resolved_direction_threshold.symbol,
+            "regime_key": resolved_direction_threshold.regime_key,
+        },
+    }
+    missing_inputs = {
+        "entry_price": entry_decimal is None,
+        "target_price": target_decimal is None,
+        "stop_price": stop_decimal is None,
+        "regime_confidence": regime_confidence is None,
+        "direction_confidence": direction_confidence is None,
+        "signal_score": signal_score is None,
+        "pm_norm_60s": price_motion_context["missing"]["pm_norm_60s"],
+        "pm_norm_300s": price_motion_context["missing"]["pm_norm_300s"],
+        "ret_60s": price_motion_context["missing"]["ret_60s"],
+        "ret_300s": price_motion_context["missing"]["ret_300s"],
+        "vol_pct_300s": price_motion_context["missing"]["vol_pct_300s"],
+        "spread_bps": liquidity_context["missing"]["spread_bps"],
+        "liquidity_kappa": liquidity_context["missing"]["liquidity_kappa"],
+        "absorption": liquidity_context["missing"]["absorption"],
+        "final_score": score_context["missing"]["final_score"],
+        "objective_score": score_context["missing"]["objective_score"],
+        "score_threshold": score_context["missing"]["score_threshold"],
+        "score_margin": score_context["missing"]["score_margin"],
+        "judge_confidence": score_context["missing"]["judge_confidence"],
+        "strategy_confidence": score_context["missing"]["strategy_confidence"],
+        "model_confidence": score_context["missing"]["model_confidence"],
+    }
+
+    return {
+        "evaluated": True,
+        "evaluation_stage": "post_safety_gate",
+        "geometry_available": not geometry_missing,
+        "geometry_valid": geometry_valid,
+        "missing_inputs": missing_inputs,
+        "score_context": score_context,
+        "price_motion_context": price_motion_context,
+        "liquidity_context": liquidity_context,
+        "thresholds": thresholds,
+        "subcondition_verdicts": subcondition_verdicts,
+        "provenance_context": provenance_context,
+        "economics_context": {
+            "entry_price": _to_optional_float(entry_decimal),
+            "target_price": _to_optional_float(target_decimal),
+            "stop_price": _to_optional_float(stop_decimal),
+            "actual_tp_bps": _to_optional_float(actual_tp_bps),
+            "actual_sl_bps": _to_optional_float(actual_sl_bps),
+            "expected_net_if_tp_bps": _to_optional_float(expected_net_if_tp_bps),
+            "expected_net_if_sl_bps": _to_optional_float(expected_net_if_sl_bps),
+            "tp_fee_coverage_ratio": _to_optional_float(tp_fee_coverage_ratio),
+            "rr_ratio": _to_optional_float(rr_ratio),
+            "required_gross_tp_bps": float(required_gross_tp_bps),
+            "round_trip_fee_bps": float(round_trip_fee_bps),
+            "slippage_buffer_bps": float(slippage_buffer_bps),
+        },
+        "direction_confidence_context": {
+            "value": direction_confidence,
+            "source": direction_resolution.source,
+            "side_scope": direction_resolution.side_scope,
+            "present": direction_resolution.is_present,
+            "supported_source": direction_resolution.is_supported_source,
+            "is_side_aware": direction_resolution.is_side_aware,
+            "failure_reason": direction_resolution.failure_reason,
+            "required": bool(gate_cfg.direction_confidence.required),
+            "missing_policy": str(gate_cfg.direction_confidence.missing_policy),
+            "threshold": resolved_direction_threshold.value,
+            "passed": direction_passed,
+        },
+        "observation_summary": {
+            "threshold_failed": threshold_failed,
+            "violations": list(violations),
+            "warnings": list(warnings),
+        },
+    }
+
+
 def evaluate_low_vol_cost_floor_gate(
     *,
     gate_cfg: Any,
@@ -582,6 +948,38 @@ def evaluate_low_vol_cost_floor_gate(
         violations=violations,
     )
     reason = direction_confidence_reason or gate_reason
+    observation_blocks = _build_low_vol_observation_blocks(
+        strategy_trace=strategy_trace,
+        gate_cfg=gate_cfg,
+        regime=regime,
+        regime_confidence=regime_confidence,
+        side=side,
+        signal_score=signal_score,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        trading_mode=str(trading_mode),
+        gate_mode=gate_mode,
+        direction_resolution=direction_resolution,
+        resolved_regime_threshold=resolved_regime_threshold,
+        resolved_direction_threshold=resolved_direction_threshold,
+        entry_decimal=entry_decimal,
+        target_decimal=target_decimal,
+        stop_decimal=stop_decimal,
+        geometry_missing=geometry_missing,
+        actual_tp_bps=actual_tp_bps,
+        actual_sl_bps=actual_sl_bps,
+        round_trip_fee_bps=round_trip_fee_bps,
+        slippage_buffer_bps=slippage_buffer_bps,
+        required_gross_tp_bps=required_gross_tp_bps,
+        target_net_fee_multiple=target_net_fee_multiple,
+        tp_fee_coverage_ratio=tp_fee_coverage_ratio,
+        rr_ratio=rr_ratio,
+        expected_net_if_tp_bps=expected_net_if_tp_bps,
+        expected_net_if_sl_bps=expected_net_if_sl_bps,
+        threshold_failed=threshold_failed,
+        violations=violations,
+        warnings=warnings,
+    )
     return LowVolCostFloorEvaluation(
         active=True,
         gate_mode=gate_mode,
@@ -635,5 +1033,6 @@ def evaluate_low_vol_cost_floor_gate(
             "threshold_failed": threshold_failed,
             "violations": list(violations),
             "warnings": list(warnings),
+            **observation_blocks,
         },
     )

@@ -6,16 +6,10 @@
 Центральний контракт стану активів.
 
 **Payload Схема:**
-- `equity`: string (Decimal) — повний капітал акаунту.
-- `equity_free_usdt`: string (Decimal) — вільний капітал для нових позицій.
-- `realized_pnl`: string (Decimal) — накопичений прибуток/збиток.
-- `unrealized_pnl`: string (Decimal) — плаваючий прибуток/збиток.
-- `positions`: list[dict] — список активних позицій (`symbol`, `net_position`, `avg_entry_price`).
-- `open_positions_usd`: string (Decimal) — сумарний номінал усіх позицій.
-- `open_positions_margin_usd`: string (Decimal) — сумарна задіяна маржа.
 
 ## Вхідні події (Consumed)
 
+**Примітка:** `markPrice`, `unRealizedProfit` та похідний `unrealizedPnlPct` зберігаються, якщо authoritative position update / positionRisk payload їх надає; якщо source їх не містить, ці поля можуть бути `null`.
 ### 1. EVT:TRADE_EXECUTED
 - `symbol`, `side` (buy/sell), `price`, `quantity`, `fees`.
 - Використовується для інкрементального оновлення стану.

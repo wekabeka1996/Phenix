@@ -27,6 +27,7 @@ from apps.reference.domains.execution_position.close_submission_adapter import (
     build_close_submission_trace_ref,
 )
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
+from apps.reference.adapters.binance_adapter import BinanceAPIError
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +690,48 @@ class TestCloseExecutorFailClosed:
         assert boundary_rows[1]["metadata"]["outcome"] == "rejected"
         assert boundary_rows[1]["metadata"]["exception_class"] == "RuntimeError"
         assert boundary_rows[1]["metadata"]["exception_message"] == "adapter boom"
+        assert list(boundary_rows[1].get("data_ref")
+                    or []) == list(decision.data_ref)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_client_order_id_adapter_error_still_escapes_seam(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.05)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            idempotent_key="DUP-1",
+            data_ref=[
+                "obs://execution_position/close_producer_bridge?contract=close_producer_bridge_v1&status=success",
+            ],
+        )
+        records: list[dict[str, Any]] = []
+        expected_error = BinanceAPIError(
+            code=-4116,
+            msg="Duplicate ClientOrderId",
+        )
+
+        async def _raise_place(*args, **kwargs):
+            raise expected_error
+
+        place_close.side_effect = _raise_place
+
+        with patch(
+            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            side_effect=lambda entry: records.append(dict(entry)),
+        ):
+            with pytest.raises(BinanceAPIError) as exc_info:
+                await executor.execute_close(decision)
+
+        assert exc_info.value is expected_error
+        boundary_rows = _close_boundary_rows(records)
+        assert [row["event_type"] for row in boundary_rows] == [
+            "ORDER_INTENT",
+            "ORDER_REJECTED",
+        ]
+        assert boundary_rows[1]["metadata"]["trace_kind"] == "CLOSE_SUBMIT_OUTCOME"
+        assert boundary_rows[1]["metadata"]["outcome"] == "rejected"
+        assert boundary_rows[1]["metadata"]["exception_class"] == "BinanceAPIError"
+        assert boundary_rows[1]["metadata"]["exchange_code"] == -4116
         assert list(boundary_rows[1].get("data_ref")
                     or []) == list(decision.data_ref)
 

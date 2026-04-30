@@ -172,9 +172,10 @@ def test_check_exposure_fail_closed_is_flip(mock_wal, exposure_manager, fsm):
                   "symbol": "BTCUSDT", "qty": 0.5, "price_ref": 50000, "side": "BUY"})
     exposure_manager.check_exposure_fail_closed(msg)
 
-    # Assert can_open called with is_flip=True
+    # Assert can_open called with is_flip=True and flip_fraction (DEF-E06: size-aware flip)
+    # qty=0.5 against net_position=1.0 → flip_fraction = min(0.5,1.0)/1.0 = 0.5
     fsm.exposure_guard.can_open.assert_called_with("BTCUSDT", Decimal(
-        "25000.0"), fsm._latest_portfolio_state, is_flip=True)
+        "25000.0"), fsm._latest_portfolio_state, is_flip=True, flip_fraction=Decimal('0.5'))
 
 
 @patch("vfoundation.dr.wal.append")

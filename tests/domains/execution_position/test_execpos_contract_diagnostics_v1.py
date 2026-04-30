@@ -43,13 +43,24 @@ def fsm_config():
     cfg = MagicMock()
     cfg.execution = None
     cfg.trading = MagicMock()
+    cfg.trading.mode = "testnet"
+    cfg.get_domain_mode.return_value = "testnet"
     cfg.trading.execution = MagicMock()
     # Mock defaults for accessors
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
+    cfg.trading.execution.watchdog.check_interval_ms = 1000
+    cfg.trading.execution.watchdog.rps_limit = 10
     # Match canonical repo config: this shadow-mode diagnostics harness should not own FSM cleanup.
     cfg.trading.execution.fsm_periodic_cleanup_enabled = False
     cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
+    guardian = cfg.domains.execution_position.guardian
+    guardian.unified = True
+    guardian.emit_tidy_event = True
+    guardian.emit_tidy_monitoring_event = True
+    guardian.poll_interval_ms = 500
+    guardian.cleanup_ttl_ms = 6000
+    guardian.symbol_cooldown_ms = 4000
 
     # Mock instrument specs for BTCUSDT
     btc_spec = MagicMock()
@@ -102,6 +113,13 @@ def fsm_config():
     storage_mock = MagicMock()
     storage_mock.order_history_db = ":memory:"
     cfg.ops.storage = storage_mock
+
+    cfg.binance_api.testnet.api_key = ""
+    cfg.binance_api.testnet.api_secret = ""
+    cfg.binance_api.testnet.rest_url = ""
+    cfg.binance_api.live.api_key = ""
+    cfg.binance_api.live.api_secret = ""
+    cfg.binance_api.live.rest_url = ""
 
     return cfg
 

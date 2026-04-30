@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/common/base_order_identity_v1.json",
+  "title": "Execution Position base order identity",
+  "description": "Additive Phase 8A shared schema skeleton for canonical order identity fragments.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "symbol"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "orderId": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exchange_order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clientOrderId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "client_order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_identity_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "identity_quality": {
+      "type": "string",
+      "enum": [
+        "order_identity_exact",
+        "order_identity_degraded",
+        "order_identity_weak"
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "orderId"
+      ]
+    },
+    {
+      "required": [
+        "order_id"
+      ]
+    },
+    {
+      "required": [
+        "exchange_order_id"
+      ]
+    },
+    {
+      "required": [
+        "clientOrderId"
+      ]
+    },
+    {
+      "required": [
+        "client_order_id"
+      ]
+    },
+    {
+      "required": [
+        "rid"
+      ]
+    }
+  ]
+}

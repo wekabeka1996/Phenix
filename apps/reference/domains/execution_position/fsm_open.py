@@ -41,6 +41,27 @@ from typing import Literal
 from pydantic import model_validator
 
 
+def _validate_cmd_decimal_str(value: Any, field_name: str, *, allow_zero: bool) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError(f"{field_name} must be a non-empty decimal string")
+    try:
+        decimal_value = Decimal(raw)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{field_name}: {raw!r} is not a valid decimal number"
+        ) from exc
+
+    if not decimal_value.is_finite():
+        raise ValueError(f"{field_name}: {raw!r} must be finite")
+    if allow_zero:
+        if decimal_value < 0:
+            raise ValueError(f"{field_name}: {raw!r} must be non-negative")
+    elif decimal_value <= 0:
+        raise ValueError(f"{field_name}: {raw!r} must be positive")
+    return raw
+
+
 class DetectorEventProvenancePayload(BaseModel):
     """Detector-side regime provenance carried additively into execution."""
 
@@ -113,15 +134,14 @@ class CmdOpenPayload(BaseModel):
     symbol: str = Field(..., min_length=1,
                         description="Trading symbol (e.g., BTCUSDT)")
     side: Literal["BUY", "SELL"] = Field(..., description="Order side")
-    qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$",
-                     description="Order quantity (string-encoded)")
+    qty: str = Field(..., description="Order quantity (string-encoded)")
     # ORDER-POLICY-01: REQUIRED. No silent defaults.
     order_type: Literal["MARKET",
                         "LIMIT"] = Field(..., description="Order type. REQUIRED.")
 
     # Optional fields
     price: Optional[str] = Field(
-        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
+        default=None, description="Limit price")
     price_ref: Optional[str] = Field(
         default=None, description="Reference price for checks")
     tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
@@ -164,6 +184,18 @@ class CmdOpenPayload(BaseModel):
         default=None,
         description="Optional structured metadata (e.g., strategy/tca/risk context).",
     )
+
+    @field_validator("qty")
+    @classmethod
+    def _validate_qty(cls, value: Any) -> str:
+        return _validate_cmd_decimal_str(value, "qty", allow_zero=False)
+
+    @field_validator("price", "price_ref", "stop_price", "target_price", "sl_pct")
+    @classmethod
+    def _validate_optional_decimal_fields(cls, value: Any, info) -> Optional[str]:
+        if value is None:
+            return None
+        return _validate_cmd_decimal_str(value, info.field_name, allow_zero=True)
 
     @field_validator('tif', mode='before')
     @classmethod
@@ -218,7 +250,8 @@ class OpenFlowFSM:
         metrics_collector: Optional[MetricsCollector] = None,
         leverage_service: Optional[Any] = None,
         is_live_execution: bool = False,
-        pre_open_guard: Optional[Callable[[Message], Optional[Message]]] = None,
+        pre_open_guard: Optional[Callable[[
+            Message], Optional[Message]]] = None,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
@@ -312,12 +345,25 @@ class OpenFlowFSM:
 
         CFG-INSTRUMENTS-STEP-03-EXECUTION-PRECISION:
         Uses canonical config.instruments (SSOT from config/aurora/instruments.yaml).
+
+        DEF-E05: Fail-closed — raises KeyError if symbol not in config.instruments.
+        Generic constants (MIN_ORDER_QTY, MIN_NOTIONAL, etc.) must not be used as
+        active execution fallback; they exist for tests only.
         """
         # CANONICAL: config.instruments only
         instruments = self.config.instruments or {}
         specs = instruments.get(symbol)
 
-        # Default values (fallback for non-trading symbols or missing config)
+        # DEF-E05: Fail-closed — missing instrument config must never silently use
+        # generic fallback constants. These constants are for test/dev only.
+        if not specs:
+            raise KeyError(
+                f"DEF-E05: Instrument config missing for symbol={symbol!r}. "
+                "Execution cannot proceed without canonical tick_size/step_size/min_qty/min_notional. "
+                "Add the symbol to config/aurora/instruments.yaml."
+            )
+
+        # Default values are now unreachable for production paths (specs is always truthy here)
         min_qty = MIN_ORDER_QTY
         step_size = QTY_STEP
         tick_size = PRICE_STEP
@@ -669,10 +715,6 @@ class OpenFlowFSM:
                 self._metrics["fsm_open_decisions_total"] += 1
 
                 return dec
-
-            except (InvalidOperation, ValueError) as e:
-                self._metrics["fsm_guard_rejects_total"] += 1
-                self.state = OpenState.ERROR
                 self.logger.error(
                     f"GUARD_REJECT: Invalid instrument specs for {symbol} - {e}, rid={msg.rid}"
                 )

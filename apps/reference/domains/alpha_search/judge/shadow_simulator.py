@@ -70,10 +70,17 @@ class ShadowPlanSimulator:
             return pd.DataFrame()
         
         try:
-            df = pd.read_csv(csv_path)
+            df = pd.read_csv(csv_path, on_bad_lines='skip')
             if "timestamp" not in df.columns:
                 LOG.error(f"CSV missing 'timestamp' column: {csv_path}")
                 return pd.DataFrame()
+                
+            for col in ["open", "high", "low", "close"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                    
+            df = df.dropna(subset=["timestamp", "open", "high", "low", "close"])
+                    
             return df.sort_values("timestamp")
         except Exception as e:
             LOG.error(f"Error reading CSV {csv_path}: {e}")

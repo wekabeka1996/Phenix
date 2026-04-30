@@ -197,7 +197,12 @@ class TestProcessSnapshot:
             "ta_features": False,
         }
         assert emitted[1][1]["is_warm"] is False
-        assert emitted[2][1]["regime"] == "TREND_UP"
+        assert emitted[2][1]["regime"] == {
+            "regime": "TREND_UP",
+            "confidence": None,
+            "ts_ms": snapshot.ts_ms,
+            "source_model": "alpha_input_v1",
+        }
         assert results == [
             {
                 "scenario_id": "S_PIPE",

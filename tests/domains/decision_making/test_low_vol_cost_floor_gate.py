@@ -369,11 +369,65 @@ def test_metadata_includes_required_economic_fields() -> None:
         "rr_ratio",
         "trading_mode",
         "gate_mode",
+        "evaluated",
+        "evaluation_stage",
+        "missing_inputs",
+        "score_context",
+        "price_motion_context",
+        "liquidity_context",
+        "thresholds",
+        "subcondition_verdicts",
+        "provenance_context",
+        "economics_context",
+        "direction_confidence_context",
+        "observation_summary",
     }
 
     assert expected_keys.issubset(evaluation.details.keys())
     assert evaluation.details["direction_confidence_source"] == "final_score"
     assert evaluation.details["direction_confidence_side_scope"] == "SELL"
+    assert evaluation.details["evaluated"] is True
+    assert evaluation.details["price_motion_context"]["missing"]["pm_norm_60s"] is True
+    assert evaluation.details["score_context"]["final_score"] == -0.8
+    assert evaluation.details["direction_confidence_context"]["passed"] is True
+    assert evaluation.details["subcondition_verdicts"]["rr_passed"] is True
+
+
+def test_observability_details_capture_explicit_missing_flags() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "strategy_confidence": 0.77,
+            "direction_confidence": 0.77,
+            "direction_confidence_source": "strategy_confidence",
+            "direction_confidence_side_scope": "BUY",
+            "ret_60s": 0.012,
+            "objective": {
+                "score": 0.81,
+                "threshold": 0.54,
+                "threshold_margin": 0.27,
+            },
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.details["score_context"]["objective_score"] == 0.81
+    assert evaluation.details["score_context"]["score_threshold"] == 0.54
+    assert evaluation.details["score_context"]["score_margin"] == 0.27
+    assert evaluation.details["price_motion_context"]["ret_60s"] == 0.012
+    assert evaluation.details["price_motion_context"]["missing"]["ret_300s"] is True
+    assert evaluation.details["liquidity_context"]["missing"]["spread_bps"] is True
+    assert evaluation.details["missing_inputs"]["signal_score"] is True
+    assert evaluation.details["provenance_context"]["strategy_trace_present"] is True
+    assert evaluation.details["observation_summary"]["threshold_failed"] is False
 
 
 def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() -> None:
@@ -815,6 +869,9 @@ def test_sell_side_resolves_signed_final_score_confidence() -> None:
 def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     dm = _make_dm(trading_mode="testnet")
     sg = _allow_sg()
+    sg.pm_norm_60s = 0.21
+    sg.pm_norm_300s = 0.34
+    sg.vol_pct_300s = 0.004
 
     with patch(
         "apps.reference.domains.decision_making.core.facade.order_logger.write"
@@ -851,15 +908,81 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     assert len(decision_trace_calls) == 1
     assert decision_trace_calls[0]["deny_reason"] == NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
     assert decision_trace_calls[0]["low_vol_cost_floor"]["gate_mode"] == "enforced"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["rid"] == "rid-low-vol-block-1"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "DENY"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.21
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_300s"] == 0.34
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.004
 
     metadata = mock_order_write.call_args.args[0]["metadata"]
     assert metadata["reject_reason"] == "LOW_VOL_COST_FLOOR_DENY"
     assert metadata["low_vol_cost_floor"]["threshold_failed"] is True
+    assert metadata["low_vol_cost_floor"]["persistence_context"]["order_logger_event"] == "DECISION_INTENT_REJECTED"
+
+
+def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metadata() -> None:
+    dm = _make_dm(trading_mode="testnet")
+    sg = _allow_sg()
+    sg.outcome = "DENY"
+    sg.deny_reason = "NRR-026"
+    sg.why_short = "trend confirmation failed"
+
+    with patch(
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
+    ) as mock_order_write, patch(
+        "apps.reference.domains.decision_making.core.facade.emit_regime_decision_audit"
+    ):
+        dm._propose_trade_intent(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=1,
+            price=100.0,
+            why_chain=["signal_score=0.9"],
+            rid="rid-prior-gate-low-vol-1",
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=1_700_000_000_999,
+            stop_price=99.75,
+            target_price=100.30,
+            strategy_trace=None,
+            safety_gate_result=sg,
+        )
+
+    dm._builder.build_and_emit.assert_not_called()
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+
+    decision_trace_calls = [
+        call.kwargs["payload"]
+        for call in dm.fsm.emit.call_args_list
+        if call.args and call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    ]
+    assert len(decision_trace_calls) == 1
+    assert decision_trace_calls[0]["deny_reason"] == "NRR-026"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["evaluation_stage"] == "prior_safety_gate"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["evaluated"] is False
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["geometry_available"] is True
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["entry_price"] == 100.0
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["target_price"] == 100.3
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["stop_price"] == 99.75
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["actual_tp_bps"] == 30.0
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["actual_sl_bps"] == 25.0
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "DENY"
+
+    metadata = mock_order_write.call_args.args[0]["metadata"]
+    assert metadata["reject_reason"] == "SAFETY_GATES_DENY"
+    assert metadata["low_vol_cost_floor"]["evaluation_stage"] == "prior_safety_gate"
+    assert metadata["low_vol_cost_floor"]["evaluated"] is False
+    assert metadata["low_vol_cost_floor"]["geometry_available"] is True
+    assert metadata["low_vol_cost_floor"]["actual_tp_bps"] == 30.0
+    assert metadata["low_vol_cost_floor"]["actual_sl_bps"] == 25.0
+    assert metadata["low_vol_cost_floor"]["persistence_context"]["rid"] == "rid-prior-gate-low-vol-1"
 
 
 def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
     dm = _make_dm(trading_mode="live")
     sg = _allow_sg()
+    sg.pm_norm_60s = 0.11
+    sg.vol_pct_300s = 0.002
 
     dm._propose_trade_intent(
         symbol="BTCUSDT",
@@ -883,7 +1006,11 @@ def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["gate_mode"] == "observe_only"
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["threshold_failed"] is True
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["would_block"] is True
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "ALLOW"
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.11
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.002
     assert kwargs["sg"].low_vol_cost_floor_details["gate_mode"] == "observe_only"
+    assert kwargs["sg"].low_vol_cost_floor_details["persistence_context"]["order_logger_event"] == "ORDER_INTENT"
 
 
 def test_propose_trade_intent_reject_metadata_includes_direction_confidence_details() -> None:

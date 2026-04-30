@@ -48,7 +48,8 @@ class BracketManager:
         live_position_proven: bool = False,
         remediation_action_override: Optional[str] = None,
     ) -> None:
-        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        handler = getattr(
+            self._fsm, "_handle_bracket_protection_missing", None)
         if callable(handler):
             await handler(
                 symbol=symbol,
@@ -248,12 +249,54 @@ class BracketManager:
                     else:
                         raise
 
-            sl_resp, tp_resp = await asyncio.gather(
-                place_sl_async(), place_tp_async(), return_exceptions=False)
+            # DEF-E01: Use return_exceptions=True so each side is classified
+            # independently. With return_exceptions=False, if SL succeeds but TP
+            # fails the exception propagates immediately — the fallback below then
+            # retries BOTH sides, creating a duplicate SL on exchange.
+            _gather_results = await asyncio.gather(
+                place_sl_async(), place_tp_async(), return_exceptions=True)
+            sl_result, tp_result = _gather_results[0], _gather_results[1]
+
+            sl_ok = not isinstance(sl_result, BaseException)
+            tp_ok = not isinstance(tp_result, BaseException)
+
+            if sl_ok and tp_ok:
+                # Happy path: both sides placed
+                sl_resp = sl_result
+                tp_resp = tp_result
+            elif sl_ok and not tp_ok:
+                # DEF-E01: SL placed, TP failed — only retry TP, not SL
+                LOG.warning(
+                    "DEF-E01: bracket partial: SL placed, TP failed (%s). Retrying TP only.",
+                    tp_result,
+                )
+                sl_resp = sl_result
+                try:
+                    tp_resp = await place_tp_async()
+                except Exception as tp_retry_err:
+                    LOG.error(
+                        "DEF-E01: TP retry failed after partial success: %s", tp_retry_err)
+                    raise tp_retry_err from tp_result
+            elif not sl_ok and tp_ok:
+                # DEF-E01: TP placed, SL failed — only retry SL (protective order missing!)
+                LOG.warning(
+                    "DEF-E01: bracket partial: TP placed, SL failed (%s). Retrying SL only.",
+                    sl_result,
+                )
+                tp_resp = tp_result
+                try:
+                    sl_resp = await place_sl_async()
+                except Exception as sl_retry_err:
+                    LOG.error(
+                        "DEF-E01: SL retry failed after partial success: %s", sl_retry_err)
+                    raise sl_retry_err from sl_result
+            else:
+                # Both failed — raise SL error (primary protective order)
+                raise sl_result  # type: ignore[misc]
         except Exception as e:
             LOG.error(f"Error placing brackets in parallel: {e}")
-            # Fall back to the older sequential behavior to salvage bracket
-            # placement when one side of the parallel path fails unexpectedly.
+            # Fallback: only reached when both sides or a non-gather exception fails
+            # — NOT used for single-side partial failures (handled above by DEF-E01).
             try:
                 sl_resp = await self._fsm.adapter.place_stop_market_close_position(
                     symbol, sl_side, str(sl), new_client_order_id=sl_id)

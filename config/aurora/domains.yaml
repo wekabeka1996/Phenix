@@ -389,7 +389,7 @@ position_tracking:
     flat_position_threshold: 1.0e-12
     decimal_places: 2
   positions_stale_ttl_sec: 15
-  enable_market_tick_subscription: false
+  enable_market_tick_subscription: true
 execution_position:
   fallback:
     policy: fail_closed

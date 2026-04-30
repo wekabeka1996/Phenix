@@ -9,6 +9,7 @@ It only owns execution-side normalization of the open-intake seam.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -52,18 +53,79 @@ def _resolve_optional_price(payload: Mapping[str, Any], key: str) -> Optional[st
     return None
 
 
+def _validate_positive_decimal_str(value: Any, field_name: str) -> str:
+    """
+    DEF-E04: Decimal parser for numeric string fields.
+
+    Accepts standard decimal and scientific notation (e.g. "1E-7", "0.001").
+    Rejects: NaN, Infinity, negative, zero, empty string, non-numeric.
+    """
+    if value is None:
+        raise ValueError(f"{field_name}: value is None")
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError(f"{field_name}: empty string is not a valid quantity")
+    try:
+        d = Decimal(raw)
+    except InvalidOperation:
+        raise ValueError(
+            f"{field_name}: {raw!r} is not a valid decimal number")
+    if not d.is_finite():
+        raise ValueError(
+            f"{field_name}: {raw!r} is not finite (NaN or Infinity not allowed)")
+    if d <= 0:
+        raise ValueError(f"{field_name}: {raw!r} must be positive")
+    return raw
+
+
+def _validate_nonneg_decimal_str(value: Any, field_name: str) -> Optional[str]:
+    """Decimal parser for price fields — allows zero, rejects negative/NaN/Inf."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        d = Decimal(raw)
+    except InvalidOperation:
+        raise ValueError(
+            f"{field_name}: {raw!r} is not a valid decimal number")
+    if not d.is_finite():
+        raise ValueError(
+            f"{field_name}: {raw!r} is not finite (NaN or Infinity not allowed)")
+    if d < 0:
+        raise ValueError(f"{field_name}: {raw!r} must not be negative")
+    return raw
+
+
 class TradeIntentOpenOrder(BaseModel):
-    """Subset of TRADE_INTENT_PROPOSED.order used by execution open intake."""
+    """Subset of TRADE_INTENT_PROPOSED.order used by execution open intake.
 
-    model_config = ConfigDict(extra="ignore")
+    DEF-E03: extra="forbid" — unknown fields in the order block are rejected.
+    DEF-E04: Decimal-based validators replace brittle regex patterns.
+    """
 
-    qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$")
+    # DEF-E03: was extra="ignore" — changed to fail-closed on unknown fields
+    model_config = ConfigDict(extra="forbid")
+
+    qty: str
     reduce_only: bool = False
     order_type: str
-    price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    price: Optional[str] = None
     tif: Optional[str] = None
-    price_ref: Optional[str] = Field(
-        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    price_ref: Optional[str] = None
+
+    @field_validator("qty", mode="before")
+    @classmethod
+    def _validate_qty(cls, value: Any) -> str:
+        # DEF-E04: Decimal parser — accepts scientific notation, rejects NaN/Inf/negative/zero
+        return _validate_positive_decimal_str(value, "qty")
+
+    @field_validator("price", "price_ref", mode="before")
+    @classmethod
+    def _validate_price_fields(cls, value: Any) -> Optional[str]:
+        # DEF-E04: price fields allow None (optional) but must be non-negative if present
+        return _validate_nonneg_decimal_str(value, "price/price_ref")
 
     @field_validator("order_type", mode="before")
     @classmethod
@@ -81,9 +143,14 @@ class TradeIntentOpenOrder(BaseModel):
 
 
 class TradeIntentOpenIntake(BaseModel):
-    """Execution-side typed bridge for normal open-intent intake."""
+    """Execution-side typed bridge for normal open-intent intake.
 
-    model_config = ConfigDict(extra="ignore")
+    DEF-E03: extra="forbid" — unknown fields in the intake payload are rejected.
+    Unknown money-impacting fields must not be silently dropped.
+    """
+
+    # DEF-E03: was extra="ignore" — changed to fail-closed on unknown fields
+    model_config = ConfigDict(extra="forbid")
 
     rid: Optional[str] = None
     symbol: str = Field(..., min_length=1)
@@ -92,10 +159,8 @@ class TradeIntentOpenIntake(BaseModel):
     order: TradeIntentOpenOrder
     valid_for_ms: Optional[int] = Field(default=None, ge=1000)
     idempotent_key: Optional[str] = None
-    stop_price: Optional[str] = Field(
-        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
-    target_price: Optional[str] = Field(
-        default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    stop_price: Optional[str] = None
+    target_price: Optional[str] = None
     regime_epoch_ref: Optional[str] = None
     regime: Optional[str] = None
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -103,6 +168,12 @@ class TradeIntentOpenIntake(BaseModel):
     tca_budget: Optional[Dict[str, Any]] = None
     risk_context: Optional[Dict[str, Any]] = None
     trace: Optional[Dict[str, Any]] = None
+
+    @field_validator("stop_price", "target_price", mode="before")
+    @classmethod
+    def _validate_stop_target_price(cls, value: Any) -> Optional[str]:
+        # DEF-E04: Decimal parser for price fields on intake
+        return _validate_nonneg_decimal_str(value, "stop_price/target_price")
 
     @field_validator("symbol", mode="before")
     @classmethod

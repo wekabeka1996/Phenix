@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from decimal import Decimal
+from unittest.mock import MagicMock
+
 import pytest
 
+from apps.reference.domains.execution_position.cancel_bridge_utils import (
+    clean_optional_str,
+    clean_required_str,
+)
 from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
     GuardianBackgroundOrphanCancelBridgeError,
     GuardianBackgroundOrphanCancelRequest,
@@ -178,6 +185,165 @@ def test_bridge_request_idempotent_key_and_why_are_unchanged(
 ) -> None:
     assert bridge_request.idempotent_key() == expected_idempotent_key
     assert bridge_request.why() == expected_why
+
+
+def test_clean_required_str_accepts_real_strings_and_strips_whitespace() -> None:
+    assert clean_required_str(
+        "  BTCUSDT  ",
+        field_name="symbol",
+        message_prefix="guardian reconcile cancel",
+        error_type=GuardianReconcileCancelBridgeError,
+    ) == "BTCUSDT"
+
+
+def test_clean_optional_str_accepts_none_blank_and_real_strings() -> None:
+    assert clean_optional_str(
+        None,
+        field_name="rid",
+        message_prefix="guardian reconcile cancel",
+        error_type=GuardianReconcileCancelBridgeError,
+    ) is None
+    assert clean_optional_str(
+        "   ",
+        field_name="rid",
+        message_prefix="guardian reconcile cancel",
+        error_type=GuardianReconcileCancelBridgeError,
+    ) is None
+    assert clean_optional_str(
+        "  rid-1  ",
+        field_name="rid",
+        message_prefix="guardian reconcile cancel",
+        error_type=GuardianReconcileCancelBridgeError,
+    ) == "rid-1"
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_clean_required_str_rejects_blank_strings(value: str) -> None:
+    with pytest.raises(
+        GuardianReconcileCancelBridgeError,
+        match="guardian reconcile cancel missing required field: symbol",
+    ):
+        clean_required_str(
+            value,
+            field_name="symbol",
+            message_prefix="guardian reconcile cancel",
+            error_type=GuardianReconcileCancelBridgeError,
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, 1, 1.5, Decimal("2"), True, [], {}, object(),
+     MagicMock(name="value")],
+)
+def test_clean_required_str_rejects_non_string_values(value: object) -> None:
+    with pytest.raises(
+        GuardianReconcileCancelBridgeError,
+        match="guardian reconcile cancel missing required field: symbol",
+    ):
+        clean_required_str(
+            value,
+            field_name="symbol",
+            message_prefix="guardian reconcile cancel",
+            error_type=GuardianReconcileCancelBridgeError,
+        )
+
+
+@pytest.mark.parametrize(
+    ("factory", "kwargs", "error_type", "message_fragment"),
+    [
+        (
+            GuardianReconcileCancelRequest.from_orphan_record,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "tp-1",
+                "order_type": "TAKE_PROFIT_MARKET",
+                "rid": object(),
+            },
+            GuardianReconcileCancelBridgeError,
+            "guardian reconcile cancel missing required field: rid",
+        ),
+        (
+            TrackedCloseTeardownCancelRequest.from_runtime,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "sl-1",
+                "bracket_type": "SL",
+                "close_rid": object(),
+            },
+            TrackedCloseTeardownCancelBridgeError,
+            "tracked close teardown missing required field: close_rid",
+        ),
+        (
+            ReconcileCloseCancelRequest.from_open_order,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "ord-1",
+                "order_type": "LIMIT",
+                "close_rid": object(),
+            },
+            ReconcileCloseCancelBridgeError,
+            "reconcile close cancel missing required field: close_rid",
+        ),
+    ],
+)
+def test_optional_correlation_ids_reject_non_string_values(
+    factory,
+    kwargs,
+    error_type,
+    message_fragment: str,
+) -> None:
+    with pytest.raises(error_type, match=message_fragment):
+        factory(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("factory", "kwargs", "expected_field", "expected_key"),
+    [
+        (
+            GuardianReconcileCancelRequest.from_orphan_record,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "tp-1",
+                "order_type": "TAKE_PROFIT_MARKET",
+                "rid": " ",
+            },
+            "rid",
+            "guardian-reconcile:BTCUSDT:guardian_reconcile_cancel:TAKE_PROFIT_MARKET:tp-1",
+        ),
+        (
+            TrackedCloseTeardownCancelRequest.from_runtime,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "sl-1",
+                "bracket_type": "SL",
+                "close_rid": None,
+            },
+            "close_rid",
+            "manual-close:tracked_close_teardown:SL:sl-1",
+        ),
+        (
+            ReconcileCloseCancelRequest.from_open_order,
+            {
+                "symbol": "BTCUSDT",
+                "order_id": "ord-1",
+                "order_type": "LIMIT",
+                "close_rid": "",
+            },
+            "close_rid",
+            "manual-close:reconcile_close_cancel:LIMIT:ord-1",
+        ),
+    ],
+)
+def test_optional_correlation_ids_blank_or_none_are_absent(
+    factory,
+    kwargs,
+    expected_field: str,
+    expected_key: str,
+) -> None:
+    request = factory(**kwargs)
+    assert getattr(request, expected_field) is None
+    assert request.idempotent_key() == expected_key
 
 
 @pytest.mark.parametrize(

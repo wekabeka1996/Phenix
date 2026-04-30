@@ -15,7 +15,8 @@
     {"event_name": "EVT:EXECUTION_CLOSE_RECONCILED", "source_domain": "self"},
     {"event_name": "EVT:SYMBOL_TIDY", "source_domain": "self"},
     {"event_name": "CMD:CLOSE", "source_domain": "decision_making"},
-    {"event_name": "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST", "source_domain": "self"}
+    {"event_name": "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST", "source_domain": "self"},
+    {"event_name": "CMD:EXTERNAL_OPEN_REQUEST_V1", "source_domain": "shadow_telemetry"}
   ],
   "exports": [
     {"event_name": "CMD:OPEN", "target_domains": ["self"]},

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Alpha Search Runtime Contracts
 ==============================
 
@@ -50,6 +50,9 @@ class AlphaInputV1(BaseModel):
         default="DEFAULT",
         description="Current regime: HIGH_VOLATILITY|LOW_VOLATILITY|MEAN_REVERSION|TREND_UP|TREND_DOWN|UNCERTAIN|DEFAULT",
     )
+    regime_confidence: Optional[float] = Field(default=None)
+    regime_ts_ms: Optional[int] = Field(default=None)
+    regime_source: Optional[str] = Field(default=None)
     warmup_status: Dict[str, bool] = Field(
         default_factory=dict,
         description="Per-feature warmup readiness flags",

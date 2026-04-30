@@ -11,7 +11,7 @@ import logging
 import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Iterable, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal  # WAL module for disaster recovery
@@ -75,6 +75,31 @@ def _ds(value: decimal.Decimal) -> str:
     if '.' in fixed:
         fixed = fixed.rstrip('0').rstrip('.')
     return fixed
+
+
+def _first_present_value(payload: Dict[str, Any], aliases: Iterable[str]) -> Any:
+    for alias in aliases:
+        if alias in payload and payload.get(alias) not in (None, "", "None"):
+            return payload.get(alias)
+    return None
+
+
+def _optional_decimal(value: Any) -> Optional[decimal.Decimal]:
+    if value in (None, "", "None"):
+        return None
+    try:
+        if isinstance(value, decimal.Decimal):
+            return value
+        return decimal.Decimal(str(value))
+    except (ValueError, TypeError, decimal.InvalidOperation):
+        return None
+
+
+def _optional_positive_decimal(value: Any) -> Optional[decimal.Decimal]:
+    decimal_value = _optional_decimal(value)
+    if decimal_value is None or decimal_value <= decimal.Decimal("0"):
+        return None
+    return decimal_value
 
 
 class PositionTracking:
@@ -479,10 +504,31 @@ class PositionTracking:
                 }
                 old_qty = prev["quantity"] if "quantity" in prev else decimal.Decimal(
                     "0")
+                source_mark_price = _optional_positive_decimal(
+                    _first_present_value(pos, ("markPrice", "mark_price"))
+                )
+                source_unrealized_pnl = _optional_decimal(
+                    _first_present_value(
+                        pos,
+                        (
+                            "unRealizedProfit",
+                            "unrealizedProfit",
+                            "unrealizedPnl",
+                            "unrealized_pnl",
+                        ),
+                    )
+                )
+                source_unrealized_pnl_pct = _optional_decimal(
+                    _first_present_value(
+                        pos, ("unrealizedPnlPct", "unrealized_pnl_pct"))
+                )
                 self._positions[symbol] = {
                     "quantity": quantity,
                     "avg_price": _d(pos.get("entryPrice")),
                     "venues": ["binance"],  # Assume Binance venue
+                    "mark_price": source_mark_price,
+                    "unrealized_pnl": source_unrealized_pnl,
+                    "unrealized_pnl_pct": source_unrealized_pnl_pct,
                 }
                 if old_qty != quantity:
                     self.logger.info(
@@ -586,7 +632,7 @@ class PositionTracking:
                 self._realized_pnl
             ),  # Preserve Decimal precision as string
             "unrealized_pnl": _ds(
-                _d(payload.get("totalUnrealizedProfit"))
+                self._calculate_unrealized_pnl(account_positions)
             ),  # Preserve Decimal precision as string
             "available_balance": _ds(
                 _d(payload["maxWithdrawAmount"]
@@ -794,6 +840,9 @@ class PositionTracking:
             if symbol in self._positions
             else {"quantity": decimal.Decimal("0"), "avg_price": decimal.Decimal("0"), "venues": []}
         )
+        existing_mark_price = existing.get("mark_price")
+        existing_unrealized_pnl = existing.get("unrealized_pnl")
+        existing_unrealized_pnl_pct = existing.get("unrealized_pnl_pct")
 
         pos_qty = existing["quantity"]
         avg_px = existing["avg_price"]
@@ -854,6 +903,9 @@ class PositionTracking:
             "quantity": new_qty,
             "avg_price": new_avg,
             "venues": venues,
+            "mark_price": existing_mark_price,
+            "unrealized_pnl": existing_unrealized_pnl,
+            "unrealized_pnl_pct": existing_unrealized_pnl_pct,
         }
 
     def _calculate_unrealized_pnl(self, positions: Optional[List[Dict[str, Any]]] = None) -> decimal.Decimal:
@@ -886,11 +938,29 @@ class PositionTracking:
                 symbol = p.get("symbol")
                 if symbol is None:
                     symbol = "unknown"
-                position_amt = _d(p.get("positionAmt"))
-                entry_price = _d(p.get("entryPrice"))
-                mark_price = _d(p.get("markPrice"))
+                position_amt = _d(_first_present_value(
+                    p, ("positionAmt", "position_amount", "net_position")))
+                entry_price = _d(_first_present_value(
+                    p, ("entryPrice", "entry_price", "avg_entry_price")))
+                mark_price = _optional_positive_decimal(
+                    _first_present_value(p, ("markPrice", "mark_price")))
+                unrealized_pnl = _optional_decimal(
+                    _first_present_value(
+                        p,
+                        (
+                            "unrealizedPnl",
+                            "unRealizedProfit",
+                            "unrealizedProfit",
+                            "unrealized_pnl",
+                        ),
+                    )
+                )
 
-                if abs(position_amt) > self.quantity_min_threshold and mark_price > decimal.Decimal("0"):
+                if (
+                    abs(position_amt) > self.quantity_min_threshold
+                    and mark_price is not None
+                    and entry_price > decimal.Decimal("0")
+                ):
                     position_pnl = self._calculate_position_unrealized_pnl(
                         position_amt,
                         entry_price,
@@ -902,13 +972,48 @@ class PositionTracking:
                         f"Unrealized PnL for {symbol}: mark={mark_price}, entry={entry_price}, "
                         f"qty={position_amt}, pnl={position_pnl}"
                     )
+                elif abs(position_amt) > self.quantity_min_threshold and unrealized_pnl is not None:
+                    total_unrealized_pnl += unrealized_pnl.quantize(
+                        decimal.Decimal("0.01"))
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: using sourced pnl={unrealized_pnl}, "
+                        f"qty={position_amt}"
+                    )
         else:
             # Fallback to internal positions with cached mark prices
             for symbol, position in self._positions.items():
                 quantity = position["quantity"]
                 entry_price = position["avg_price"]
+                stored_mark_price = _optional_positive_decimal(
+                    position.get("mark_price"))
+                stored_unrealized_pnl = _optional_decimal(
+                    position.get("unrealized_pnl"))
 
                 if abs(quantity) <= self.quantity_min_threshold:
+                    continue
+
+                if stored_mark_price is not None and entry_price > decimal.Decimal("0"):
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        quantity,
+                        entry_price,
+                        stored_mark_price,
+                    )
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={stored_mark_price}, entry={entry_price}, "
+                        f"qty={quantity}, pnl={position_pnl} (from state)"
+                    )
+                    continue
+
+                if stored_unrealized_pnl is not None:
+                    total_unrealized_pnl += stored_unrealized_pnl.quantize(
+                        decimal.Decimal("0.01"))
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: using stored pnl={stored_unrealized_pnl} (from state)"
+                    )
                     continue
 
                 # Try to get mark price from cache
@@ -1276,9 +1381,16 @@ class PositionTracking:
             if abs(position["quantity"]) > decimal.Decimal(
                 str(self.quantity_min_threshold)
             ):  # Only include non-zero positions
-                mark_price = self._fresh_mark_price(symbol, now_ms=now_ms)
-                unrealized_pnl = None
-                unrealized_pnl_pct = None
+                mark_price = _optional_positive_decimal(
+                    position.get("mark_price"))
+                if mark_price is None:
+                    mark_price = self._fresh_mark_price(symbol, now_ms=now_ms)
+
+                unrealized_pnl = _optional_decimal(
+                    position.get("unrealized_pnl"))
+                unrealized_pnl_pct = _optional_decimal(
+                    position.get("unrealized_pnl_pct"))
+
                 if mark_price is not None and position["avg_price"] > decimal.Decimal("0"):
                     unrealized_pnl = self._calculate_position_unrealized_pnl(
                         position["quantity"],
@@ -1290,6 +1402,13 @@ class PositionTracking:
                         position["avg_price"],
                         unrealized_pnl,
                     )
+                elif unrealized_pnl is not None and position["avg_price"] > decimal.Decimal("0"):
+                    if unrealized_pnl_pct is None:
+                        unrealized_pnl_pct = self._calculate_position_unrealized_pnl_pct(
+                            position["quantity"],
+                            position["avg_price"],
+                            unrealized_pnl,
+                        )
                 positions.append(
                     {
                         "symbol": symbol,

@@ -58,11 +58,28 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 def _make_execpos_config(path: Path):
     cfg = MagicMock()
+    cfg.execution = None
+    cfg.trading = MagicMock()
+    cfg.trading.execution = MagicMock()
+    cfg.domains = MagicMock()
+    cfg.domains.execution_position = MagicMock()
+    cfg.binance_api = MagicMock()
+    cfg.strategies = MagicMock()
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
+    cfg.trading.execution.watchdog.check_interval_ms = 1000
+    cfg.trading.execution.watchdog.rps_limit = 10
     cfg.trading.execution.anti_race_close_ms = 800
     cfg.trading.execution.cooldown_after_close_ms = 10_000
+    cfg.trading.execution.fsm_periodic_cleanup_enabled = False
     cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
+    guardian = cfg.domains.execution_position.guardian
+    guardian.unified = True
+    guardian.emit_tidy_event = True
+    guardian.emit_tidy_monitoring_event = True
+    guardian.poll_interval_ms = 500
+    guardian.cleanup_ttl_ms = 6000
+    guardian.symbol_cooldown_ms = 4000
 
     event_dedup = MagicMock()
     event_dedup.max_size = 100000

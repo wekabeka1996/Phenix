@@ -40,20 +40,18 @@ def _build_cfg(*, check_interval_ms: int = 1000, rps_limit: int = 10,
     Build a MagicMock config with explicit canonical watchdog values.
     Delegates common fields to conftest.fsm_config() then overrides.
 
-    ExecPosFSM._get_config_value tries ["execution", "watchdog"] first, then
-    ["trading", "execution", "watchdog"].  With MagicMock, cfg.execution and
-    cfg.trading.execution are distinct objects — we set values on BOTH so the
-    fixture works regardless of which path resolves first.
+    The shared harness keeps cfg.execution=None, so the canonical path for these
+    tests is trading.execution.watchdog. The helper should populate the explicit
+    watchdog contract there rather than inventing a root execution block.
     """
     from tests.domains.execution_position.conftest import fsm_config
     cfg = fsm_config.__wrapped__() if hasattr(
         fsm_config, "__wrapped__") else fsm_config()
-    # Set on both candidate paths to guarantee resolution
-    for watchdog_mock in (cfg.trading.execution.watchdog, cfg.execution.watchdog):
-        watchdog_mock.ack_ttl_ms = ack_ttl_ms
-        watchdog_mock.fill_ttl_ms = fill_ttl_ms
-        watchdog_mock.check_interval_ms = check_interval_ms
-        watchdog_mock.rps_limit = rps_limit
+    watchdog_mock = cfg.trading.execution.watchdog
+    watchdog_mock.ack_ttl_ms = ack_ttl_ms
+    watchdog_mock.fill_ttl_ms = fill_ttl_ms
+    watchdog_mock.check_interval_ms = check_interval_ms
+    watchdog_mock.rps_limit = rps_limit
     return cfg
 
 

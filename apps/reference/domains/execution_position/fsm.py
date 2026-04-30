@@ -65,6 +65,7 @@ from vfoundation.obs.domain_bridge import DomainBridge
 
 # PHASE4: Pending brackets WAL persistence
 from apps.reference.domains.execution_position.pending_brackets_wal import (
+    CriticalStartupError,
     write_pending_brackets_cleared,
     read_pending_brackets_from_wal,
 )
@@ -428,6 +429,8 @@ class ExecPosFSM(
                     self._pending_brackets = restored
                     LOG.info(
                         f" [PHASE4] Restored {len(restored)} pending brackets from WAL")
+            except CriticalStartupError:
+                raise
             except Exception as e:
                 LOG.warning(
                     f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
@@ -1630,10 +1633,27 @@ class ExecPosFSM(
             if loop:
                 self._submit_async(self._execute_decision(result), loop)
             else:
+                # DEF-E11: No async loop means the WAL has committed a DEC record
+                # but no exchange action will be scheduled. This is a split-brain:
+                # the system BELIEVES an action was taken but no order was sent.
+                # Emit a critical observability event so operators can detect and
+                # manually intervene (do NOT silently discard the decision).
+                rid = getattr(result, "rid", None) or getattr(
+                    result, "pld", {}).get("rid")
+                symbol = getattr(result, "pld", {}).get(
+                    "symbol") if hasattr(result, "pld") else None
                 LOG.error(
-                    " ExecPosFSM: No async loop available for DEC:%s! Order will NOT be executed!",
-                    result.verb,
+                    "DEF-E11: No async loop available for DEC:%s rid=%s symbol=%s — "
+                    "WAL has DEC truth but NO exchange action was scheduled. "
+                    "This is a split-brain state. Manual intervention required.",
+                    result.verb, rid, symbol,
                 )
+                self._emit_observability_event("DEC_NO_LOOP_TERMINAL_FAILURE", {
+                    "verb": result.verb,
+                    "rid": rid,
+                    "symbol": symbol,
+                    "why": "DEF-E11:no_async_loop_decision_unscheduled",
+                })
         else:
             LOG.info(
                 " ExecPosFSM: Skipping execution for DEC:%s (shadow_mode=%s, adapter=%s)",
@@ -2745,7 +2765,11 @@ class ExecPosFSM(
                 await self.order_guardian.cleanup_orphans()
                 self._orphan_metrics["loops"] += 1
             except asyncio.CancelledError:
-                self._orphan_metrics["errors"] += 1
+                # DEF-E12: CancelledError MUST be re-raised. Swallowing it prevents
+                # the task from being cancelled (e.g., on shutdown), causing immortal
+                # cleanup loops that block graceful process exit.
+                LOG.debug("cleanup_orphans loop cancelled — exiting")
+                raise
             except Exception as e:
                 LOG.debug(f"cleanup loop error: {e}")
                 self._orphan_metrics["errors"] += 1

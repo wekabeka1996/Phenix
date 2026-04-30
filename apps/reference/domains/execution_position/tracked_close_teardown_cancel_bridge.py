@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.reference.domains.execution_position.cancel_bridge_utils import (
     build_trace_ref,
     clean_required_str,
+    clean_optional_str,
 )
 from vfoundation.core.protocol import Message, truncate_why
 
@@ -78,10 +79,12 @@ class TrackedCloseTeardownCancelRequest(BaseModel):
                 message_prefix="tracked close teardown",
                 error_type=TrackedCloseTeardownCancelBridgeError,
             ).upper()
-            close_rid_clean = str(close_rid).strip(
-            ) if close_rid is not None else None
-            if close_rid_clean == "":
-                close_rid_clean = None
+            close_rid_clean = clean_optional_str(
+                close_rid,
+                field_name="close_rid",
+                message_prefix="tracked close teardown",
+                error_type=TrackedCloseTeardownCancelBridgeError,
+            )
             return cls(
                 symbol=normalized_symbol,
                 order_id=normalized_order_id,

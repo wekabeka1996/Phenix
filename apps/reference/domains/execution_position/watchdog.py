@@ -94,6 +94,10 @@ class OrderTimeoutWatchdog:
         self._rest_polls_total = 0
         self._rest_detected_fills_total = 0
         self._rest_detected_cancels_total = 0
+        # DEF-E02: Track last seen cumulative_qty per order to emit TRADE_EXECUTED
+        # only when new fill delta > 0. Without this, repeated REST polls on a
+        # PARTIALLY_FILLED order each emit a new TRADE_EXECUTED even if qty is unchanged.
+        self._last_cumulative_qty: Dict[str, float] = {}
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
         # P1_EXECUTION_TIMEOUT_TRUTH_RESTORATION: rps_limit is now a named param,
@@ -475,6 +479,19 @@ class OrderTimeoutWatchdog:
                                 LOG.debug(
                                     f"🔧 POLLING SKIP: {order_id} already processed (terminal=True)")
                                 continue
+
+                            # DEF-E02: Only emit TRADE_EXECUTED if qty delta is positive.
+                            # Repeated polls on a PARTIALLY_FILLED order with unchanged
+                            # cumulative qty must NOT emit duplicate TRADE_EXECUTED events.
+                            last_qty = self._last_cumulative_qty.get(
+                                order_id, 0.0)
+                            if executed_qty <= last_qty:
+                                LOG.debug(
+                                    "DEF-E02 PARTIAL_FILL_NO_DELTA: %s qty=%s last=%s — skip emit",
+                                    order_id, executed_qty, last_qty,
+                                )
+                                continue
+                            self._last_cumulative_qty[order_id] = executed_qty
 
                             # Order was filled! Notify via event emission
                             LOG.info(

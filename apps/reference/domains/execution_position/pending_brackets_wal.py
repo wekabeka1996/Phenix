@@ -25,6 +25,10 @@ VERB_STORED = "PENDING_BRACKETS_STORED"
 VERB_CLEARED = "PENDING_BRACKETS_CLEARED"
 
 
+class CriticalStartupError(RuntimeError):
+    """Fail-closed startup error for unrecoverable execution_position restore state."""
+
+
 def write_pending_brackets_stored(
     *,
     entry_order_id: str,
@@ -203,8 +207,20 @@ def read_pending_brackets_from_wal() -> Dict[str, Dict[str, Any]]:
                             if entry_order_id and entry_order_id in pending:
                                 del pending[entry_order_id]
 
-                    except json.JSONDecodeError:
-                        continue
+                    except json.JSONDecodeError as jde:
+                        # DEF-E08: Corrupt WAL lines must NOT be silently skipped.
+                        # Fail startup explicitly so runtime truth is never hydrated from a
+                        # known-corrupt pending bracket WAL.
+                        LOG.critical(
+                            "[WAL] DEF-E08: JSONDecodeError in WAL file %s — aborting startup restore. "
+                            "Manual WAL inspection required. error=%s",
+                            wal_file, jde,
+                        )
+                        raise CriticalStartupError(
+                            f"pending brackets WAL corruption in {wal_file}: {jde}"
+                        ) from jde
+        except CriticalStartupError:
+            raise
         except Exception as e:
             LOG.warning(f"Error reading WAL file {wal_file}: {e}")
             continue

@@ -7,6 +7,7 @@ small set of glue paths that preserve legacy imports and method names.
 
 import decimal
 import logging
+from collections.abc import Mapping
 from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
@@ -274,6 +275,182 @@ class DecisionMaking:
             return default
         return d if d.is_finite() else default
 
+    def _build_prior_gate_low_vol_cost_floor_details(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        price: Any,
+        target_price: Any,
+        stop_price: Any,
+        strategy_id: str,
+        sg: Any,
+    ) -> dict[str, Any] | None:
+        if getattr(sg, "low_vol_cost_floor_details", None) is not None:
+            return None
+        if str(getattr(sg, "regime", "") or "") != "LOW_VOLATILITY":
+            return None
+
+        entry_decimal = self._safe_decimal(price)
+        target_decimal = self._safe_decimal(target_price)
+        stop_decimal = self._safe_decimal(stop_price)
+        side_u = str(side).upper()
+
+        actual_tp_bps: Decimal | None = None
+        actual_sl_bps: Decimal | None = None
+        geometry_available = (
+            entry_decimal is not None
+            and target_decimal is not None
+            and stop_decimal is not None
+            and entry_decimal > 0
+        )
+        if geometry_available:
+            scale = Decimal("10000")
+            if side_u == "BUY":
+                actual_tp_bps = (target_decimal - entry_decimal) / \
+                    entry_decimal * scale
+                actual_sl_bps = (entry_decimal - stop_decimal) / \
+                    entry_decimal * scale
+            elif side_u == "SELL":
+                actual_tp_bps = (entry_decimal - target_decimal) / \
+                    entry_decimal * scale
+                actual_sl_bps = (stop_decimal - entry_decimal) / \
+                    entry_decimal * scale
+            else:
+                geometry_available = False
+
+        return {
+            "evaluation_stage": "prior_safety_gate",
+            "evaluated": False,
+            "geometry_available": geometry_available,
+            "geometry_source": "facade_inputs",
+            "entry_price": self._to_float(entry_decimal),
+            "target_price": self._to_float(target_decimal),
+            "stop_price": self._to_float(stop_decimal),
+            "actual_tp_bps": self._to_float(actual_tp_bps),
+            "actual_sl_bps": self._to_float(actual_sl_bps),
+            "side": side_u if side_u in ("BUY", "SELL") else None,
+            "regime": getattr(sg, "regime", None),
+            "regime_confidence": getattr(sg, "regime_confidence", None),
+            "strategy_id": str(strategy_id) if strategy_id is not None else None,
+            "symbol": str(symbol).upper() if symbol is not None else None,
+        }
+
+    def _enrich_low_vol_cost_floor_details(
+        self,
+        *,
+        details: Mapping[str, Any],
+        sg: Any,
+        rid: str,
+        decision_ts_ms: Any,
+        decision_outcome: str,
+    ) -> dict[str, Any]:
+        enriched = dict(details)
+
+        trace_ts_ms: int | None = None
+        for candidate in (decision_ts_ms, getattr(sg, "trace_ts_ms", None)):
+            if candidate is None:
+                continue
+            try:
+                trace_ts_ms = int(candidate)
+            except (TypeError, ValueError):
+                trace_ts_ms = None
+            else:
+                break
+
+        order_logger_event = (
+            "ORDER_INTENT" if decision_outcome == "ALLOW" else "DECISION_INTENT_REJECTED"
+        )
+        persistence_context = enriched.get("persistence_context")
+        if not isinstance(persistence_context, dict):
+            persistence_context = {}
+        persistence_context = dict(persistence_context)
+        persistence_context.update(
+            {
+                "rid": str(rid),
+                "decision_ts_ms": trace_ts_ms,
+                "trace_ts_ms": trace_ts_ms,
+                "decision_outcome": decision_outcome,
+                "decision_trace_event": "EVT:DECISION_TRACE_EMITTED",
+                "order_logger_event": order_logger_event,
+                "persisted_in": ["EVT:DECISION_TRACE_EMITTED", order_logger_event],
+            }
+        )
+        enriched["persistence_context"] = persistence_context
+
+        score_context = enriched.get("score_context")
+        if isinstance(score_context, dict):
+            score_context = dict(score_context)
+            score_missing = score_context.get("missing")
+            if not isinstance(score_missing, dict):
+                score_missing = {}
+            else:
+                score_missing = dict(score_missing)
+            if score_context.get("signal_score") is None and getattr(sg, "signal_score", None) is not None:
+                score_context["signal_score"] = getattr(
+                    sg, "signal_score", None)
+            score_missing["signal_score"] = score_context.get(
+                "signal_score") is None
+            score_context["missing"] = score_missing
+            enriched["score_context"] = score_context
+
+        price_motion_context = enriched.get("price_motion_context")
+        if not isinstance(price_motion_context, dict):
+            price_motion_context = {}
+        else:
+            price_motion_context = dict(price_motion_context)
+        price_motion_missing = price_motion_context.get("missing")
+        if not isinstance(price_motion_missing, dict):
+            price_motion_missing = {}
+        else:
+            price_motion_missing = dict(price_motion_missing)
+        for key in (
+            "pm_norm_10s",
+            "pm_norm_60s",
+            "pm_norm_300s",
+            "vol_pct_10s",
+            "vol_pct_60s",
+            "vol_pct_300s",
+        ):
+            if price_motion_context.get(key) is None and getattr(sg, key, None) is not None:
+                price_motion_context[key] = getattr(sg, key, None)
+            price_motion_missing[key] = price_motion_context.get(key) is None
+        if price_motion_context or price_motion_missing:
+            price_motion_context["missing"] = price_motion_missing
+            enriched["price_motion_context"] = price_motion_context
+
+        missing_inputs = enriched.get("missing_inputs")
+        if not isinstance(missing_inputs, dict):
+            missing_inputs = {}
+        else:
+            missing_inputs = dict(missing_inputs)
+        for key in (
+            "pm_norm_10s",
+            "pm_norm_60s",
+            "pm_norm_300s",
+            "vol_pct_10s",
+            "vol_pct_60s",
+            "vol_pct_300s",
+        ):
+            if isinstance(enriched.get("price_motion_context"), dict):
+                missing_inputs[key] = enriched["price_motion_context"].get(
+                    key) is None
+        if isinstance(enriched.get("score_context"), dict):
+            missing_inputs["signal_score"] = enriched["score_context"].get(
+                "signal_score") is None
+        enriched["missing_inputs"] = missing_inputs
+
+        return enriched
+
+    @staticmethod
+    def _to_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _emit_shadow_neocortex_decision_logged(
         self,
         event_name: str,
@@ -468,6 +645,23 @@ class DecisionMaking:
             self._record_blocked_intent(symbol)
             return
         if sg.outcome == "DENY":
+            prior_gate_low_vol_details = self._build_prior_gate_low_vol_cost_floor_details(
+                symbol=symbol,
+                side=side,
+                price=price,
+                target_price=target_price,
+                stop_price=stop_price,
+                strategy_id=strategy_id,
+                sg=sg,
+            )
+            if prior_gate_low_vol_details is not None:
+                sg.low_vol_cost_floor_details = self._enrich_low_vol_cost_floor_details(
+                    details=prior_gate_low_vol_details,
+                    sg=sg,
+                    rid=str(rid),
+                    decision_ts_ms=decision_ts_ms,
+                    decision_outcome="DENY",
+                )
             self._handle_safety_deny(
                 symbol,
                 side,
@@ -528,12 +722,18 @@ class DecisionMaking:
                 reduce_only=reduce_only,
             )
             if low_vol_evaluation.active:
-                sg.low_vol_cost_floor_details = dict(
-                    low_vol_evaluation.details)
+                enriched_low_vol_details = self._enrich_low_vol_cost_floor_details(
+                    details=low_vol_evaluation.details,
+                    sg=sg,
+                    rid=str(rid),
+                    decision_ts_ms=decision_ts_ms,
+                    decision_outcome="DENY" if low_vol_evaluation.block else "ALLOW",
+                )
+                sg.low_vol_cost_floor_details = enriched_low_vol_details
                 merged_strategy_trace = dict(strategy_trace) if isinstance(
                     strategy_trace, dict) else {}
                 merged_strategy_trace["low_vol_cost_floor"] = dict(
-                    low_vol_evaluation.details)
+                    enriched_low_vol_details)
                 strategy_trace = merged_strategy_trace
                 if low_vol_evaluation.block:
                     sg.outcome = "DENY"
@@ -549,7 +749,7 @@ class DecisionMaking:
                         reason="DECISION",
                         context="LOW_VOL_COST_FLOOR_BLOCKED",
                         why_chain=why_chain,
-                        details=dict(low_vol_evaluation.details),
+                        details=dict(enriched_low_vol_details),
                     )
                     self._handle_safety_deny(
                         symbol,

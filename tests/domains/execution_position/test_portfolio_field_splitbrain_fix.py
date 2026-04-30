@@ -29,6 +29,7 @@ from apps.reference.domains.execution_position.position_policy_sidecar import (
 from apps.reference.domains.execution_position.truth_hardening import (
     build_position_signature,
 )
+from tests.domains.execution_position.test_position_policy_sidecar import DummyManageFlow
 
 
 # ---------------------------------------------------------------------------
@@ -548,3 +549,47 @@ def test_bounded_action_laws_unchanged_after_fix(fsm_config, tmp_path):
     assert req["allowed_action_scope"]["bracket_mutation"] is False
     assert req["allowed_action_scope"]["exact_targeting"] is False
     assert req.get("requested_qty") is None
+
+
+def test_producer_style_economics_survive_into_sidecar_without_action(tmp_path: Path) -> None:
+    """Producer-style portfolio fields must remain evaluable without creating a close command."""
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow(side="BUY", qty="1.0", entry_price="100.0")
+
+    cfg = _sidecar_config(tmp_path, mode="enable")
+    cfg.peak_giveback_close.enabled = True
+    cfg.peak_giveback_close.edge_arm_usd = 25.0
+    cfg.peak_giveback_close.giveback_trigger_pct = 50.0
+    cfg.profitability_guard.enabled = False
+
+    sidecar = PositionPolicySidecar(
+        config=cfg,
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"ETHUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(_event(positions=[
+        {
+            "symbol": "ETHUSDT",
+            "net_position": "1.0",
+            "avg_entry_price": "100.0",
+            "markPrice": "120.0",
+            "unrealizedPnl": "20.0",
+            "unrealizedPnlPct": "20.0",
+            "venues": ["binance"],
+        }
+    ]))
+    sidecar.on_features_calculated(_event(symbol="ETHUSDT", signal_score=0.0))
+    sidecar.on_regime_detected(
+        _event(symbol="ETHUSDT", regime="MEAN_REVERSION", confidence=1.0)
+    )
+
+    evaluated = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_EVALUATED")[-1]
+    snapshot = evaluated["peak_giveback_snapshot"]
+
+    assert snapshot["mark_price"] == 120.0
+    assert snapshot["unrealized_pnl_usdt"] == 20.0
+    assert snapshot["unrealized_pnl_pct"] == 20.0
+    assert snapshot["peak_giveback_state"] == "peak_giveback_not_armed_below_edge"
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)

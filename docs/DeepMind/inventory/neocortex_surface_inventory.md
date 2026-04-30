@@ -35,6 +35,11 @@
 | `logic/ingest/state_aggregator_v2.py` | `hot_path` |
 | `logic/brain/__init__.py` | `hot_path` |
 | `logic/brain/baseline_inference.py` | `hot_path` |
+| `logic/evidence_collection/__init__.py` | `offline_research` |
+| `logic/evidence_collection/collector.py` | `offline_research` |
+| `logic/evidence_collection/contracts.py` | `offline_research` |
+| `logic/evidence_collection/summary.py` | `offline_research` |
+| `logic/evidence_collection/writer.py` | `offline_research` |
 | `logic/evaluation/__init__.py` | `offline_research` |
 | `logic/evaluation/contracts.py` | `offline_research` |
 | `logic/evaluation/evaluator.py` | `offline_research` |
@@ -108,6 +113,6 @@
 |---|---|
 | `hot_path` | 31 |
 | `legacy_runtime` | 34 |
-| `offline_research` | 18 |
+| `offline_research` | 23 |
 | `tests_only` | 10 |
-| **Total** | **93** |
+| **Total** | **98** |

@@ -5,12 +5,17 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
+from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.open_submission_adapter import (
     OPEN_SUBMISSION_CONTRACT,
     OpenSubmissionAdapterError,
     OpenSubmissionPayload,
+)
+from apps.reference.domains.execution_position.trade_intent_open_intake import (
+    parse_trade_intent_open_intake,
 )
 from vfoundation.core.protocol import Message
 
@@ -141,6 +146,65 @@ def test_open_submission_payload_rejects_inconsistent_limit_surface() -> None:
         )
 
 
+@pytest.mark.parametrize("bad_qty", ["", "NaN", "Infinity", "-0.01"])
+def test_cmd_open_payload_rejects_invalid_qty_strings(bad_qty: str) -> None:
+    with pytest.raises(ValidationError):
+        CmdOpenPayload(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=bad_qty,
+            order_type="MARKET",
+        )
+
+
+@pytest.mark.parametrize("bad_value", ["", "NaN", "Infinity", "-1"])
+def test_open_submission_payload_rejects_invalid_numeric_strings(bad_value: str) -> None:
+    with pytest.raises(OpenSubmissionAdapterError):
+        OpenSubmissionPayload.from_dec_open(
+            payload={
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "order_type": "LIMIT",
+                "price": bad_value,
+                "tif": "GTC",
+            },
+            normalized_qty=bad_value,
+            client_order_id="ENTRY-1",
+        )
+
+
+def test_scientific_notation_survives_intake_to_open_submission_boundary() -> None:
+    intake = parse_trade_intent_open_intake(
+        {
+            "rid": "RID-E04-E2E",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "idempotent_key": "KEY-E04-E2E",
+            "valid_for_ms": 60_000,
+            "order": {
+                "qty": "1E-7",
+                "order_type": "LIMIT",
+                "price": "5E+4",
+                "tif": "GTC",
+            },
+            "stop_price": "4.5E+4",
+            "target_price": "5.5E+4",
+        }
+    )
+
+    cmd_payload = CmdOpenPayload.model_validate(intake.to_cmd_open_payload())
+    submission = OpenSubmissionPayload.from_dec_open_with_key(
+        payload=cmd_payload.model_dump(),
+        normalized_qty=cmd_payload.qty,
+        idempotent_key=cmd_payload.idempotent_key,
+    )
+
+    assert cmd_payload.qty == "1E-7"
+    assert cmd_payload.price == "5E+4"
+    assert submission.quantity == "1E-7"
+    assert submission.price == "5E+4"
+
+
 @pytest.mark.asyncio
 async def test_market_dec_open_routes_through_typed_submission_and_emits_trace() -> None:
     fsm = _build_open_executor_fsm()
@@ -216,6 +280,31 @@ async def test_open_submission_rejection_emits_internal_order_rejected_with_trac
         and "status=reject" in ref
         for ref in (reject_msg.data_ref or [])
     )
+
+
+@pytest.mark.asyncio
+async def test_execute_open_rejects_missing_explicit_idempotent_key_before_adapter_call() -> None:
+    fsm = _build_open_executor_fsm()
+    executor = OpenExecutor(fsm)
+    decision = _dec_open_message(order_type="MARKET", idempotent_key=None)
+
+    with patch(
+        "vfoundation.core.fsm_emit_compat.emit_compat",
+        new_callable=AsyncMock,
+    ) as mock_emit_compat:
+        await executor.execute_open(decision)
+
+    fsm.adapter.place_market_entry.assert_not_awaited()
+    mock_emit_compat.assert_awaited_once()
+    reject_msg = mock_emit_compat.await_args.args[1]
+    assert reject_msg.verb == "ORDER_REJECTED"
+    assert reject_msg.why == "OPEN_SUBMISSION_FAIL"
+    assert any(
+        ref.startswith("obs://execution_position/open_submission?")
+        and "status=reject" in ref
+        for ref in (reject_msg.data_ref or [])
+    )
+    assert "idempotent_key is required" in str(reject_msg.pld)
 
 
 @pytest.mark.asyncio

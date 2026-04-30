@@ -124,6 +124,10 @@ def test_execution_position_extraction_preserves_enum_contract(
 
 def test_current_aurora_config_loads_execution_position_contract() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
+    domains = yaml.safe_load(
+        (CONFIG_DIR / "domains.yaml").read_text(encoding="utf-8"))
+    expected_portfolio_max_age_ms = domains["execution_position"][
+        "position_policy_sidecar"]["freshness"]["portfolio_max_age_ms"]
 
     ep = cfg.domains.execution_position
     assert type(ep) is cm.ExecutionPositionDomainConfig
@@ -226,7 +230,7 @@ def test_current_aurora_config_loads_execution_position_contract() -> None:
 
     assert type(ep.position_policy_sidecar) is cm.PositionPolicySidecarConfig
     assert ep.position_policy_sidecar.mode is cm.PositionPolicySidecarMode.ENABLE
-    assert ep.position_policy_sidecar.freshness.portfolio_max_age_ms == 15000
+    assert ep.position_policy_sidecar.freshness.portfolio_max_age_ms == expected_portfolio_max_age_ms
     assert ep.position_policy_sidecar.freshness.features_max_age_ms == 15000
     assert ep.position_policy_sidecar.freshness.regime_max_age_ms == 30000
     assert ep.position_policy_sidecar.freshness.order_state_max_age_ms == 15000

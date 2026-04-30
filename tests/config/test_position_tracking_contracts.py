@@ -55,7 +55,7 @@ def test_current_aurora_config_loads_position_tracking_contract() -> None:
 
     pt = cfg.domains.position_tracking
     assert pt.positions_stale_ttl_sec == 15
-    assert pt.enable_market_tick_subscription is False
+    assert pt.enable_market_tick_subscription is True
     assert pt.precision.quantity_min_threshold == pytest.approx(1e-9)
     assert pt.precision.flat_position_threshold == pytest.approx(1e-12)
     assert pt.precision.decimal_places == 2

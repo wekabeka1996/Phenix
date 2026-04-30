@@ -1,4 +1,4 @@
-﻿"""
+"""
 Scenario Worker
 ===============
 
@@ -120,6 +120,18 @@ class ScenarioWorker:
         self._result_buffer.clear()
 
         try:
+            # --- Normalize regime for backend (J6-S11 compliant) ---
+            regime_str = snapshot.regime
+            if regime_str and regime_str not in ("PENDING", "DEFAULT", ""):
+                regime_dict = {
+                    "regime": regime_str,
+                    "confidence": getattr(snapshot, "regime_confidence", None),
+                    "ts_ms": getattr(snapshot, "regime_ts_ms", None) or snapshot.ts_ms,
+                    "source_model": getattr(snapshot, "regime_source", None) or "alpha_input_v1",
+                }
+            else:
+                regime_dict = None
+
             # --- Phase 1: cache features ---
             feature_event_name = self._plugin.config.triggers.feature_event
             feature_payload = {
@@ -130,7 +142,7 @@ class ScenarioWorker:
                 "ts": snapshot.ts_ms,
                 "bar": {"close_ts": snapshot.bar_close_ts},
                 # Inject regime context for aurora scoring
-                "regime": snapshot.regime,
+                "regime": regime_dict,
                 "warmup_readiness": snapshot.warmup_status,
             }
 
@@ -173,7 +185,7 @@ class ScenarioWorker:
                 "tf_sec": snapshot.tf_sec,
                 "bar_close_ts": snapshot.bar_close_ts,
                 # Pass regime through decision payload too
-                "regime": snapshot.regime,
+                "regime": regime_dict,
             }
 
             self._bus.emit(

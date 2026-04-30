@@ -100,7 +100,8 @@ class OpenExecutor:
     ) -> None:
         entry_resp = dict(entry_resp or {})
         owner_context = dict(owner_context or {})
-        handler = getattr(self._fsm, "_handle_bracket_protection_missing", None)
+        handler = getattr(
+            self._fsm, "_handle_bracket_protection_missing", None)
         if callable(handler):
             await handler(
                 symbol=symbol,
@@ -550,8 +551,11 @@ class OpenExecutor:
             return  # Already rejected
 
         # Generate entry ID and place order
+        # DEF-E10: explicit idempotent_key is required before the exchange boundary.
+        # decision.rid is correlation only and must not be silently upgraded into
+        # an exchange-facing idempotency contract.
         idem_key = (decision.pld or {}).get("idempotent_key") or getattr(
-            decision, "idempotent_key", None) or decision.rid
+            decision, "idempotent_key", None)
         submission_payload = dict(decision.pld or {})
         if order_type == "MARKET":
             submission_payload["price"] = None
