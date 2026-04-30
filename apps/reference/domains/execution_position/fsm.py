@@ -1181,6 +1181,19 @@ class ExecPosFSM(
         symbol: str,
     ) -> Dict[str, Any]:
         symbol_key = str(symbol or "").strip().upper()
+        manage_flow = self.manage_flows.get(symbol_key)
+        entry_order_id = str(
+            getattr(manage_flow, "entry_order_id", None) or ""
+        ).strip() or None
+        entry_client_order_id = str(
+            getattr(manage_flow, "entry_client_order_id", None) or ""
+        ).strip() or None
+        sl_client_order_id = str(
+            getattr(manage_flow, "sl_algo_client_id", None) or ""
+        ).strip() or None
+        tp_client_order_id = str(
+            getattr(manage_flow, "tp_algo_client_id", None) or ""
+        ).strip() or None
         pending_order_ids: List[str] = []
         for entry_order_id, pending in dict(self._pending_brackets).items():
             if not isinstance(pending, dict):
@@ -1194,6 +1207,12 @@ class ExecPosFSM(
                 "bracket_state": BRACKET_STATE_DEFERRED_PENDING_WAL,
                 "bracket_truth_source": TRUTH_SOURCE_RESTORED_PENDING_WAL,
                 "deferred_entry_order_id": pending_order_ids[0],
+                "entry_order_id": entry_order_id,
+                "entry_client_order_id": entry_client_order_id,
+                "sl_order_id": None,
+                "tp_order_id": None,
+                "sl_client_order_id": sl_client_order_id,
+                "tp_client_order_id": tp_client_order_id,
                 "restore_relevant": True,
             }
         if len(pending_order_ids) > 1:
@@ -1201,12 +1220,22 @@ class ExecPosFSM(
                 "bracket_state": BRACKET_STATE_UNKNOWN,
                 "bracket_truth_source": TRUTH_SOURCE_UNKNOWN,
                 "deferred_entry_order_id": None,
+                "entry_order_id": entry_order_id,
+                "entry_client_order_id": entry_client_order_id,
+                "sl_order_id": None,
+                "tp_order_id": None,
+                "sl_client_order_id": sl_client_order_id,
+                "tp_client_order_id": tp_client_order_id,
                 "restore_relevant": True,
             }
 
         bracket_links = dict(self._symbol_brackets.get(symbol_key) or {})
-        has_sl = bool(str(bracket_links.get("sl_order_id") or "").strip())
-        has_tp = bool(str(bracket_links.get("tp_order_id") or "").strip())
+        sl_order_id = str(bracket_links.get(
+            "sl_order_id") or "").strip() or None
+        tp_order_id = str(bracket_links.get(
+            "tp_order_id") or "").strip() or None
+        has_sl = bool(sl_order_id)
+        has_tp = bool(tp_order_id)
         if has_sl and has_tp:
             return {
                 "bracket_state": BRACKET_STATE_LINKED_ACTIVE,
@@ -1214,6 +1243,12 @@ class ExecPosFSM(
                     symbol_key
                 ),
                 "deferred_entry_order_id": None,
+                "entry_order_id": entry_order_id,
+                "entry_client_order_id": entry_client_order_id,
+                "sl_order_id": sl_order_id,
+                "tp_order_id": tp_order_id,
+                "sl_client_order_id": sl_client_order_id,
+                "tp_client_order_id": tp_client_order_id,
                 "restore_relevant": True,
             }
         if has_sl or has_tp:
@@ -1223,12 +1258,24 @@ class ExecPosFSM(
                     symbol_key
                 ),
                 "deferred_entry_order_id": None,
+                "entry_order_id": entry_order_id,
+                "entry_client_order_id": entry_client_order_id,
+                "sl_order_id": sl_order_id,
+                "tp_order_id": tp_order_id,
+                "sl_client_order_id": sl_client_order_id,
+                "tp_client_order_id": tp_client_order_id,
                 "restore_relevant": True,
             }
         return {
             "bracket_state": BRACKET_STATE_UNKNOWN,
             "bracket_truth_source": TRUTH_SOURCE_UNKNOWN,
             "deferred_entry_order_id": None,
+            "entry_order_id": entry_order_id,
+            "entry_client_order_id": entry_client_order_id,
+            "sl_order_id": None,
+            "tp_order_id": None,
+            "sl_client_order_id": sl_client_order_id,
+            "tp_client_order_id": tp_client_order_id,
             "restore_relevant": False,
         }
 

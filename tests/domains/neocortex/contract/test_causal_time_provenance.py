@@ -11,6 +11,7 @@ Proves invariant I3:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -39,12 +40,31 @@ from apps.reference.domains.neocortex.logic.ingest.parsers.order_parser import (
 from apps.reference.domains.neocortex.logic.ingest.parsers.core_parser import (
     parse_core_log_line,
 )
+from apps.reference.telemetry.metrics import generate_latest
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _metric_value(metric_name: str, **labels: str) -> float:
+    exposition = generate_latest().decode("utf-8")
+    label_fragments = [f'{key}="{value}"' for key, value in labels.items()]
+    pattern = re.compile(r" (-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)$")
+    for line in exposition.splitlines():
+        if labels:
+            if not line.startswith(f"{metric_name}{{"):
+                continue
+            if not all(fragment in line for fragment in label_fragments):
+                continue
+        elif not line.startswith(f"{metric_name} "):
+            continue
+        match = pattern.search(line)
+        if match is not None:
+            return float(match.group(1))
+    return 0.0
 
 
 def _runtime_smoke_import(target_module: str, forbidden_prefixes: tuple[str, ...]) -> list[str]:
@@ -554,9 +574,17 @@ class TestNonCausalTimeCounter:
 
     def test_counter_increments_on_wallclock_decision(self):
         before = get_non_causal_counter()
+        metric_before = _metric_value(
+            "neocortex_dataset_invalid_total",
+            reason_code="NON_CAUSAL_TIME",
+        )
         make_causal_decision(
             1_700_000_000_000, CausalTimeProvenance.CAPTURED_WALLCLOCK)
         assert get_non_causal_counter() == before + 1
+        assert _metric_value(
+            "neocortex_dataset_invalid_total",
+            reason_code="NON_CAUSAL_TIME",
+        ) == metric_before + 1.0
 
     def test_counter_increments_on_file_offset_decision(self):
         before = get_non_causal_counter()

@@ -556,6 +556,46 @@ def test_position_policy_sidecar_normalizes_position_tracking_snapshot_for_nonze
     assert evaluated["portfolio_correlation"]["portfolio_position_amt"] == "0.10"
 
 
+def test_peak_giveback_snapshot_consumes_canonical_unrealized_pnl_fields(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow(side="BUY", qty="1.0", entry_price="100.0")
+
+    cfg = _sidecar_config(tmp_path, mode="enable")
+    cfg.peak_giveback_close.enabled = True
+    cfg.profitability_guard.enabled = False
+
+    sidecar = PositionPolicySidecar(
+        config=cfg,
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(_event(positions=[
+        {
+            "symbol": "BTCUSDT",
+            "net_position": "1.0",
+            "avg_entry_price": "100.0",
+            "markPrice": "110.0",
+            "unrealizedPnl": "10.0",
+            "unrealizedPnlPct": "10.0",
+            "venues": ["binance"],
+        }
+    ]))
+    sidecar.on_features_calculated(_event(symbol="BTCUSDT", signal_score=0.0))
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", regime="MEAN_REVERSION", confidence=1.0))
+
+    evaluated = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_EVALUATED")[-1]
+    snapshot = evaluated["peak_giveback_snapshot"]
+
+    assert snapshot["mark_price"] == 110.0
+    assert snapshot["unrealized_pnl_usdt"] == 10.0
+    assert snapshot["unrealized_pnl_pct"] == 10.0
+    assert snapshot["current_edge_usd"] == 10.0
+    assert snapshot["null_reasons"] == {}
+
+
 def test_position_policy_sidecar_retains_positions_last_ts_ms_for_symbol_snapshot(tmp_path: Path) -> None:
     bus = RecordingBus()
     manage_flow = DummyManageFlow()

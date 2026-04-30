@@ -693,12 +693,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Get open orders.
         Implements AbstractExchangeAdapter.get_open_orders()
         """
-        path = "/fapi/v1/openOrders"
-        params = {}
-        if symbol:
-            params["symbol"] = symbol
-
-        result = await self._request("GET", path, params)
+        result = await self.get_open_orders_raw(symbol)
         orders = []
         for order in result:
             orders.append(ExchangeOrderResponse(
@@ -713,6 +708,18 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 timestamp_ms=int(order.get("time", 0) or 0),
             ))
         return orders
+
+    async def get_open_orders_raw(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Return raw open-order payloads with exchange-specific fields intact.
+        """
+        path = "/fapi/v1/openOrders"
+        params: Dict[str, Any] = {}
+        if symbol:
+            params["symbol"] = symbol
+
+        result = await self._request("GET", path, params)
+        return result if isinstance(result, list) else []
 
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[ExchangePosition]:
         """

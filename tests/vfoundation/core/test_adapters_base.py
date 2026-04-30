@@ -77,8 +77,8 @@ class TestExchangePosition:
     def test_to_dict_keys(self) -> None:
         d = self._make().to_dict()
         for key in ("symbol", "positionSide", "positionAmt",
-                     "position_amount", "entryPrice", "markPrice",
-                     "leverage", "marginType"):
+                    "position_amount", "entryPrice", "markPrice",
+                    "leverage", "marginType"):
             assert key in d
 
     def test_to_dict_dual_amount_keys(self) -> None:
@@ -98,8 +98,11 @@ class TestAbstractAdapterEnforcement:
     def test_concrete_subclass_works(self) -> None:
         class StubAdapter(AbstractExchangeAdapter):
             async def create_order(self, params): return None
-            async def cancel_order(self, symbol, order_id=None, client_order_id=None): return None
+            async def cancel_order(
+                self, symbol, order_id=None, client_order_id=None): return None
+
             async def get_open_orders(self, symbol=None): return []
+            async def get_open_orders_raw(self, symbol=None): return []
             async def get_open_positions(self, symbol=None): return []
             async def get_mark_price(self, symbol, ttl_ms=250): return 0.0
             async def get_last_price(self, symbol): return 0.0

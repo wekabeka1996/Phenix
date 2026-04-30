@@ -56,15 +56,18 @@ g_exposure_positions_margin_usd = Gauge(
 g_exposure_pending_usd = Gauge(
     "exposure_pending_usd", "Pending (reserved) notional in USD")
 g_exposure_pending_margin_usd = Gauge(
-    "exposure_pending_margin_usd", "Pending (reserved) margin in USD")  # EXP-LEVERAGE-001
+    # EXP-LEVERAGE-001
+    "exposure_pending_margin_usd", "Pending (reserved) margin in USD")
 g_exposure_limit_usd = Gauge(
     "exposure_limit_usd", "Exposure limit in USD (equity * fraction)")
 g_exposure_margin_limit_usd = Gauge(
-    "exposure_margin_limit_usd", "Margin exposure limit in USD (equity * utilization_pct)")  # EXP-LEVERAGE-001
+    # EXP-LEVERAGE-001
+    "exposure_margin_limit_usd", "Margin exposure limit in USD (equity * utilization_pct)")
 
 # Gauges with labels
 g_reservation_margin_usd = Gauge(
-    "reservation_margin_usd", "Margin reserved for pending orders", ["symbol"])  # EXP-LEVERAGE-001
+    # EXP-LEVERAGE-001
+    "reservation_margin_usd", "Margin reserved for pending orders", ["symbol"])
 
 # Counters (події)
 c_guard_rejects_total = Counter(
@@ -280,11 +283,14 @@ def inc_decision_failure() -> None:
 def inc_decision_why_covered() -> None:
     c_decision_why_covered_total.inc()
 
+
 def inc_warmup_block(domain: str, reason: str) -> None:
     c_warmup_block_total.labels(domain=domain, reason=reason).inc()
 
+
 def inc_data_quality_drop(domain: str, reason: str) -> None:
     c_data_quality_drop_total.labels(domain=domain, reason=reason).inc()
+
 
 def inc_data_quality_bad_dt(domain: str) -> None:
     c_data_quality_bad_dt_total.labels(domain=domain).inc()
@@ -301,6 +307,7 @@ def inc_macro_sync_ooo_reordered(key: str) -> None:
 def set_macro_sync_last_bin_ts_ms(key: str, last_bin_ts_ms: int) -> None:
     g_macro_sync_last_bin_ts_ms.labels(key=str(key)).set(float(last_bin_ts_ms))
 
+
 def inc_retry_scheduler_no_loop() -> None:
     c_retry_scheduler_no_loop_total.inc()
 
@@ -315,14 +322,16 @@ def observe_order_lifecycle(duration_seconds: float) -> None:
 
 # Task 17: Config Contract Violation Metric
 c_config_contract_violation_total = Counter(
-    "config_contract_violation_total", 
-    "Total configuration contract violations (blocking)", 
+    "config_contract_violation_total",
+    "Total configuration contract violations (blocking)",
     ["path", "symbol"]
 )
+
 
 def inc_config_contract_violation(path: str, symbol: str = "unknown") -> None:
     """Increment the config contract violation counter."""
     c_config_contract_violation_total.labels(path=path, symbol=symbol).inc()
+
 
 # Task CFG-REJECT-INTEGRATE-01: Decision Blocked Metric
 c_decision_blocked_total = Counter(
@@ -330,6 +339,7 @@ c_decision_blocked_total = Counter(
     "Decision blocked triggers (pipeline halted)",
     ["stage", "reason_code"]
 )
+
 
 def inc_decision_blocked(stage: str, reason_code: str) -> None:
     c_decision_blocked_total.labels(stage=stage, reason_code=reason_code).inc()
@@ -342,5 +352,193 @@ c_alpha_model_errors_total = Counter(
     ["model"]
 )
 
+
 def inc_alpha_model_error(model: str) -> None:
     c_alpha_model_errors_total.labels(model=model).inc()
+
+
+def _metric_label(value: Any, *, default: str) -> str:
+    text = str(value).strip() if value is not None else ""
+    return text or default
+
+
+c_neocortex_dataset_invalid_total = Counter(
+    "neocortex_dataset_invalid_total",
+    "Neocortex dataset invalidations by reason code",
+    ["reason_code"],
+)
+c_neocortex_dataset_cutover_blocked_total = Counter(
+    "neocortex_dataset_cutover_blocked_total",
+    "Dataset cutover evaluations blocked by reason code",
+    ["reason_code"],
+)
+c_neocortex_dataset_cutover_allowed_total = Counter(
+    "neocortex_dataset_cutover_allowed_total",
+    "Dataset cutover evaluations that passed admission",
+)
+c_neocortex_failure_outcomes_total = Counter(
+    "neocortex_failure_outcomes_total",
+    "Canonical Neocortex failure outcomes by taxonomy and reason code",
+    ["taxonomy", "reason_code"],
+)
+c_neocortex_authority_requests_total = Counter(
+    "neocortex_authority_requests_total",
+    "Canonical Neocortex authority evaluations by mode, symbol, and apply result",
+    ["mode", "symbol", "apply_result"],
+)
+c_neocortex_authority_deadline_misses_total = Counter(
+    "neocortex_authority_deadline_misses_total",
+    "Authority responses observed after the caller deadline",
+)
+c_neocortex_authority_late_responses_total = Counter(
+    "neocortex_authority_late_responses_total",
+    "Authority responses ignored because they arrived after deadline",
+)
+c_neocortex_authority_fallback_total = Counter(
+    "neocortex_authority_fallback_total",
+    "Canonical Neocortex authority fallback outcomes",
+    ["policy", "reason_code"],
+)
+c_neocortex_authority_kill_switch_active_total = Counter(
+    "neocortex_authority_kill_switch_active_total",
+    "Authority evaluations short-circuited because trust is disabled",
+)
+c_neocortex_journal_write_failed_total = Counter(
+    "neocortex_journal_write_failed_total",
+    "Canonical Neocortex journal append failures",
+    ["journal", "reason_code"],
+)
+c_neocortex_ledger_write_failed_total = Counter(
+    "neocortex_ledger_write_failed_total",
+    "Canonical Neocortex ledger writer failures",
+    ["reason_code"],
+)
+c_neocortex_ledger_queue_dropped_total = Counter(
+    "neocortex_ledger_queue_dropped_total",
+    "Canonical Neocortex decision ledger queue overflows",
+    ["policy", "reason_code"],
+)
+c_neocortex_async_forced_stop_total = Counter(
+    "neocortex_async_forced_stop_total",
+    "Forced async or thread shutdown incidents across Neocortex and shadow telemetry",
+    ["component", "reason_code"],
+)
+c_neocortex_ledger_shutdown_undrained_total = Counter(
+    "neocortex_ledger_shutdown_undrained_total",
+    "Accepted decision ledger rows left unfinished at shutdown",
+    ["reason_code"],
+)
+g_neocortex_ledger_queue_depth = Gauge(
+    "neocortex_ledger_queue_depth",
+    "Approximate in-process Neocortex decision ledger queue depth",
+)
+g_neocortex_dataset_trainable_rows = Gauge(
+    "neocortex_dataset_trainable_rows",
+    "Latest aggregate count of trainable dataset rows considered for cutover",
+)
+g_neocortex_dataset_diagnostics_only_rows = Gauge(
+    "neocortex_dataset_diagnostics_only_rows",
+    "Latest aggregate count of diagnostics-only dataset rows considered for cutover",
+)
+
+
+def inc_neocortex_dataset_invalid(reason_code: str) -> None:
+    c_neocortex_dataset_invalid_total.labels(
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper()
+    ).inc()
+
+
+def inc_neocortex_dataset_cutover_blocked(reason_code: str) -> None:
+    c_neocortex_dataset_cutover_blocked_total.labels(
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper()
+    ).inc()
+
+
+def inc_neocortex_dataset_cutover_allowed() -> None:
+    c_neocortex_dataset_cutover_allowed_total.inc()
+
+
+def inc_neocortex_failure_outcome(taxonomy: str, reason_code: str) -> None:
+    c_neocortex_failure_outcomes_total.labels(
+        taxonomy=_metric_label(taxonomy, default="UNKNOWN").upper(),
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_authority_request(
+    *,
+    mode: str,
+    symbol: str,
+    apply_result: str,
+) -> None:
+    c_neocortex_authority_requests_total.labels(
+        mode=_metric_label(mode, default="unknown").lower(),
+        symbol=_metric_label(symbol, default="UNKNOWN").upper(),
+        apply_result=_metric_label(apply_result, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_authority_deadline_miss() -> None:
+    c_neocortex_authority_deadline_misses_total.inc()
+
+
+def inc_neocortex_authority_late_response() -> None:
+    c_neocortex_authority_late_responses_total.inc()
+
+
+def inc_neocortex_authority_fallback(*, policy: str, reason_code: str) -> None:
+    c_neocortex_authority_fallback_total.labels(
+        policy=_metric_label(policy, default="unknown").lower(),
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_authority_kill_switch_active() -> None:
+    c_neocortex_authority_kill_switch_active_total.inc()
+
+
+def inc_neocortex_journal_write_failed(*, journal: str, reason_code: str) -> None:
+    c_neocortex_journal_write_failed_total.labels(
+        journal=_metric_label(journal, default="unknown"),
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_ledger_write_failed(*, reason_code: str) -> None:
+    c_neocortex_ledger_write_failed_total.labels(
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper()
+    ).inc()
+
+
+def inc_neocortex_ledger_queue_dropped(*, policy: str, reason_code: str) -> None:
+    c_neocortex_ledger_queue_dropped_total.labels(
+        policy=_metric_label(policy, default="unknown").lower(),
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_async_forced_stop(*, component: str, reason_code: str) -> None:
+    c_neocortex_async_forced_stop_total.labels(
+        component=_metric_label(component, default="unknown"),
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc()
+
+
+def inc_neocortex_ledger_shutdown_undrained(*, reason_code: str, count: int) -> None:
+    if count <= 0:
+        return
+    c_neocortex_ledger_shutdown_undrained_total.labels(
+        reason_code=_metric_label(reason_code, default="UNKNOWN").upper(),
+    ).inc(float(count))
+
+
+def set_neocortex_ledger_queue_depth(depth: int) -> None:
+    g_neocortex_ledger_queue_depth.set(max(0.0, float(depth)))
+
+
+def set_neocortex_dataset_trainable_rows(count: int) -> None:
+    g_neocortex_dataset_trainable_rows.set(max(0.0, float(count)))
+
+
+def set_neocortex_dataset_diagnostics_only_rows(count: int) -> None:
+    g_neocortex_dataset_diagnostics_only_rows.set(max(0.0, float(count)))

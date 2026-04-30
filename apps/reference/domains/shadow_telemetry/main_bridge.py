@@ -39,27 +39,32 @@ class ShadowEventTapPublisher:
 
         ingest_cfg = cfg.ingest
         self._enabled = bool(getattr(cfg, "enabled", False))
-        self._allowlist = set(str(x) for x in getattr(ingest_cfg, "allowlist_events", []) or [])
+        self._allowlist = set(str(x) for x in getattr(
+            ingest_cfg, "allowlist_events", []) or [])
         self._required = bool(getattr(cfg, "required_for_mode", False))
-        self._client = JsonlTcpQueueClient(
-            endpoint=str(ingest_cfg.ipc_endpoint),
-            queue_maxsize=int(getattr(ingest_cfg, "queue_maxsize", 50000)),
-            overflow_policy=str(getattr(ingest_cfg, "overflow_policy", "fail_closed")),
-            logger=self.logger.getChild("event_tap"),
-            name="shadow_event_tap_client",
-        )
+        self._client: JsonlTcpQueueClient | None = None
+        if self._enabled:
+            self._client = JsonlTcpQueueClient(
+                endpoint=str(ingest_cfg.ipc_endpoint),
+                queue_maxsize=int(ingest_cfg.queue_maxsize),
+                overflow_policy=str(ingest_cfg.overflow_policy),
+                stop_timeout_ms=int(cfg.lifecycle.stop_timeout_ms),
+                logger=self.logger.getChild("event_tap"),
+                name="shadow_event_tap_client",
+            )
 
     def start(self) -> None:
-        if not self._enabled:
+        if not self._enabled or self._client is None:
             return
         self._client.start()
         self.logger.info("Shadow event tap publisher started")
 
     def stop(self) -> None:
-        self._client.stop()
+        if self._client is not None:
+            self._client.stop()
 
     def publish(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
-        if not self._enabled:
+        if not self._enabled or self._client is None:
             return
         if self._allowlist and event_name not in self._allowlist:
             return
@@ -86,37 +91,42 @@ class LLMIntentIngressBridge:
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
 
-        shadow_cfg = getattr(getattr(config, "domains", None), "shadow_telemetry", None)
+        shadow_cfg = getattr(
+            getattr(config, "domains", None), "shadow_telemetry", None)
         self._enabled = bool(
             shadow_cfg
             and shadow_cfg.enabled
             and shadow_cfg.api.enabled
             and shadow_cfg.api.write.enabled
         )
+        self._server: JsonlTcpServer | None = None
         if shadow_cfg is None:
             self._endpoint = "tcp://127.0.0.1:7102"
         else:
-            self._endpoint = str(shadow_cfg.egress_to_main.ipc_commands_endpoint)
-
-        self._server = JsonlTcpServer(
-            endpoint=self._endpoint,
-            handler=self._on_command,
-            logger=self.logger.getChild("ingress"),
-            name="llm_intent_ingress_server",
-        )
+            self._endpoint = str(
+                shadow_cfg.egress_to_main.ipc_commands_endpoint)
+            self._server = JsonlTcpServer(
+                endpoint=self._endpoint,
+                handler=self._on_command,
+                stop_timeout_ms=int(shadow_cfg.lifecycle.stop_timeout_ms),
+                logger=self.logger.getChild("ingress"),
+                name="llm_intent_ingress_server",
+            )
 
     def start(self) -> None:
-        if not self._enabled:
+        if not self._enabled or self._server is None:
             return
         self._server.start()
         self.logger.info("LLM ingress bridge started on %s", self._endpoint)
 
     def stop(self) -> None:
-        self._server.stop()
+        if self._server is not None:
+            self._server.stop()
 
     def _on_command(self, payload: Dict[str, Any]) -> None:
         request_id = str(payload.get("request_id") or "")
-        rid = str(payload.get("intent_id") or payload.get("rid") or request_id or f"llm-{int(time.time() * 1000)}")
+        rid = str(payload.get("intent_id") or payload.get("rid")
+                  or request_id or f"llm-{int(time.time() * 1000)}")
 
         try:
             cmd = CmdLlmIntentSubmitV1.model_validate(payload)
@@ -130,14 +140,19 @@ class LLMIntentIngressBridge:
                 "symbol": payload.get("symbol"),
                 "idempotency_key": payload.get("idempotency_key"),
             }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1", reject_payload, "llm_intent_schema_invalid")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", rid, reject_payload, "llm_intent_schema_invalid")
+            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
+                          reject_payload, "llm_intent_schema_invalid")
+            _append_wal_event("LLM_INTENT_REJECTED_V1", rid,
+                              reject_payload, "llm_intent_schema_invalid")
             return
 
-        llm_cfg = getattr(getattr(self.config, "trading", None), "llm_orchestration", None)
+        llm_cfg = getattr(getattr(self.config, "trading",
+                          None), "llm_orchestration", None)
         mode = str(getattr(llm_cfg, "mode", "baseline"))
-        symbols_llm = [str(s).upper() for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
-        allow = [str(s).upper() for s in (getattr(llm_cfg, "allowlist_symbols", []) or [])]
+        symbols_llm = [str(s).upper()
+                       for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
+        allow = [str(s).upper()
+                 for s in (getattr(llm_cfg, "allowlist_symbols", []) or [])]
 
         if mode == "baseline":
             reject_payload = {
@@ -149,8 +164,10 @@ class LLMIntentIngressBridge:
                 "symbol": cmd.symbol,
                 "idempotency_key": cmd.idempotency_key,
             }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1", reject_payload, "llm_mode_disabled")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id, reject_payload, "llm_mode_disabled")
+            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
+                          reject_payload, "llm_mode_disabled")
+            _append_wal_event("LLM_INTENT_REJECTED_V1",
+                              cmd.intent_id, reject_payload, "llm_mode_disabled")
             return
 
         sym_u = str(cmd.symbol).upper()
@@ -164,8 +181,10 @@ class LLMIntentIngressBridge:
                 "symbol": cmd.symbol,
                 "idempotency_key": cmd.idempotency_key,
             }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1", reject_payload, "llm_symbol_not_owned")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id, reject_payload, "llm_symbol_not_owned")
+            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
+                          reject_payload, "llm_symbol_not_owned")
+            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id,
+                              reject_payload, "llm_symbol_not_owned")
             return
 
         if allow and sym_u not in allow:
@@ -178,8 +197,10 @@ class LLMIntentIngressBridge:
                 "symbol": cmd.symbol,
                 "idempotency_key": cmd.idempotency_key,
             }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1", reject_payload, "llm_symbol_not_allowed")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id, reject_payload, "llm_symbol_not_allowed")
+            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
+                          reject_payload, "llm_symbol_not_allowed")
+            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id,
+                              reject_payload, "llm_symbol_not_allowed")
             return
 
         accepted_payload = {
@@ -189,8 +210,10 @@ class LLMIntentIngressBridge:
             "ipc_endpoint": self._endpoint,
             "queue_depth": 0,
         }
-        self.fsm.emit("EVT:LLM_INTENT_ACCEPTED_V1", accepted_payload, "llm_intent_ipc_accepted")
-        _append_wal_event("LLM_INTENT_ACCEPTED_V1", cmd.intent_id, accepted_payload, "llm_intent_ipc_accepted")
+        self.fsm.emit("EVT:LLM_INTENT_ACCEPTED_V1",
+                      accepted_payload, "llm_intent_ipc_accepted")
+        _append_wal_event("LLM_INTENT_ACCEPTED_V1", cmd.intent_id,
+                          accepted_payload, "llm_intent_ipc_accepted")
 
         self.fsm.emit(
             "CMD:LLM_INTENT_SUBMIT_V1",
@@ -239,4 +262,3 @@ def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = Non
 
     fsm.listen("CMD:LLM_INTENT_SUBMIT_V1", _handler)
     lg.info("Registered LLM command mapper: CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1")
-

@@ -156,6 +156,20 @@ class AbstractExchangeAdapter(ABC):
         pass
 
     @abstractmethod
+    async def get_open_orders_raw(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieve raw open-order payloads (optionally filtered by symbol).
+
+        Args:
+            symbol: Optional symbol filter
+
+        Returns:
+            Raw exchange payloads preserving exchange-specific fields such as type,
+            reduceOnly, and closePosition.
+        """
+        pass
+
+    @abstractmethod
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[ExchangePosition]:
         """
         Retrieve open positions (optionally filtered by symbol).

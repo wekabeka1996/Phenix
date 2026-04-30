@@ -170,18 +170,20 @@ def _freshness_payload(snapshot: NeocortexStateSnapshot) -> dict[str, object]:
         "feature_age_ms": int(snapshot.tick_ts_ms) - int(snapshot.feature_event_ts_ms),
     }
     if snapshot.regime_event_ts_ms is not None:
-        freshness["regime_age_ms"] = int(snapshot.tick_ts_ms) - int(snapshot.regime_event_ts_ms)
+        freshness["regime_age_ms"] = int(
+            snapshot.tick_ts_ms) - int(snapshot.regime_event_ts_ms)
     else:
         freshness["regime_age_ms"] = None
     if snapshot.portfolio_event_ts_ms is not None:
-        freshness["portfolio_age_ms"] = int(snapshot.tick_ts_ms) - int(snapshot.portfolio_event_ts_ms)
+        freshness["portfolio_age_ms"] = int(
+            snapshot.tick_ts_ms) - int(snapshot.portfolio_event_ts_ms)
     else:
         freshness["portfolio_age_ms"] = None
     return freshness
 
 
 class ObservationEnvelope(BaseModel):
-    """Causal-only envelope for the pre-authority Neocortex state."""
+    """Time-contract envelope for the pre-authority Neocortex state."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -213,13 +215,24 @@ class ObservationEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_causal_only(self) -> "ObservationEnvelope":
-        if not self.event_time_is_causal:
-            raise ValueError("ObservationEnvelope requires causal state")
-        if not self.trainable:
-            raise ValueError("ObservationEnvelope requires trainable state")
-        if self.dataset_visibility != "trainable":
+        if self.trainable:
+            if not self.event_time_is_causal:
+                raise ValueError(
+                    "Trainable ObservationEnvelope requires causal state"
+                )
+            if self.dataset_visibility != "trainable":
+                raise ValueError(
+                    "Trainable ObservationEnvelope requires dataset_visibility='trainable'"
+                )
+            return self
+
+        if self.event_time_is_causal:
             raise ValueError(
-                "ObservationEnvelope requires dataset_visibility='trainable'"
+                "ObservationEnvelope requires trainable state consistency"
+            )
+        if self.dataset_visibility != "diagnostics_only":
+            raise ValueError(
+                "Non-trainable ObservationEnvelope requires dataset_visibility='diagnostics_only'"
             )
         return self
 

@@ -29,11 +29,11 @@ def _thresholds_payload(**overrides):
         "min_rr": 1.2,
         "min_regime_confidence_by_regime": {
             "DEFAULT": 0.45,
-            "LOW_VOLATILITY": 0.65,
+            "LOW_VOLATILITY": 0.39,
         },
         "min_direction_confidence_by_regime": {
             "DEFAULT": 0.55,
-            "LOW_VOLATILITY": 0.62,
+            "LOW_VOLATILITY": 0.51,
         },
     }
     payload.update(overrides)
@@ -110,7 +110,7 @@ def _allow_sg(*, regime: str = "LOW_VOLATILITY", regime_confidence: float = 0.8)
 def test_valid_low_vol_cost_floor_config_accepted() -> None:
     cfg = _gate_config()
 
-    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.65
+    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.39
     assert cfg.thresholds.min_direction_confidence_by_regime["DEFAULT"] == 0.55
     assert cfg.observe_only_in_modes == ["live", "production"]
     assert cfg.direction_confidence.required is True
@@ -238,7 +238,7 @@ def test_regime_confidence_threshold_resolved_by_regime_map() -> None:
         gate_cfg=_gate_config(),
         trading_mode="testnet",
         regime="LOW_VOLATILITY",
-        regime_confidence=0.6,
+        regime_confidence=0.38,
         side="BUY",
         entry_price=100.0,
         target_price=100.30,
@@ -249,7 +249,7 @@ def test_regime_confidence_threshold_resolved_by_regime_map() -> None:
     )
 
     assert evaluation.block is True
-    assert evaluation.details["resolved_min_regime_confidence"] == 0.65
+    assert evaluation.details["resolved_min_regime_confidence"] == 0.39
     assert "regime_confidence_below_threshold" in evaluation.details["violations"]
 
 
@@ -264,13 +264,13 @@ def test_direction_confidence_threshold_resolved_by_regime_map() -> None:
         target_price=100.30,
         stop_price=99.75,
         strategy_trace=None,
-        signal_score=0.61,
+        signal_score=0.50,
         reduce_only=False,
     )
 
     assert evaluation.block is True
     assert evaluation.details["direction_confidence_source"] == "signal_score"
-    assert evaluation.details["resolved_min_direction_confidence"] == 0.62
+    assert evaluation.details["resolved_min_direction_confidence"] == 0.51
     assert "direction_confidence_below_threshold" in evaluation.details["violations"]
 
 
@@ -381,12 +381,12 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         thresholds=_thresholds_payload(
             min_regime_confidence_overrides_by_strategy_symbol={
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                    "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
                 },
             },
             min_direction_confidence_overrides_by_strategy_symbol={
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
                 },
             },
         )
@@ -396,7 +396,7 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         gate_cfg=cfg,
         trading_mode="testnet",
         regime="LOW_VOLATILITY",
-        regime_confidence=0.70,
+        regime_confidence=0.44,
         strategy_id="aurora",
         symbol="XRPUSDT",
         side="BUY",
@@ -404,14 +404,14 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         target_price=100.30,
         stop_price=99.75,
         strategy_trace=None,
-        signal_score=0.67,
+        signal_score=0.58,
         reduce_only=False,
     )
     btc_evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=cfg,
         trading_mode="testnet",
         regime="LOW_VOLATILITY",
-        regime_confidence=0.70,
+        regime_confidence=0.44,
         strategy_id="aurora",
         symbol="BTCUSDT",
         side="BUY",
@@ -419,27 +419,27 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         target_price=100.30,
         stop_price=99.75,
         strategy_trace=None,
-        signal_score=0.67,
+        signal_score=0.58,
         reduce_only=False,
     )
 
     assert xrp_evaluation.block is True
-    assert xrp_evaluation.details["resolved_min_regime_confidence"] == 0.72
+    assert xrp_evaluation.details["resolved_min_regime_confidence"] == 0.45
     assert xrp_evaluation.details["resolved_min_regime_confidence_source"] == "strategy_symbol_override"
-    assert xrp_evaluation.details["resolved_min_direction_confidence"] == 0.68
+    assert xrp_evaluation.details["resolved_min_direction_confidence"] == 0.59
     assert xrp_evaluation.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
     assert xrp_evaluation.details["resolved_min_direction_confidence_symbol"] == "XRPUSDT"
     assert btc_evaluation.block is False
-    assert btc_evaluation.details["resolved_min_regime_confidence"] == 0.65
+    assert btc_evaluation.details["resolved_min_regime_confidence"] == 0.39
     assert btc_evaluation.details["resolved_min_regime_confidence_source"] == "global_regime"
-    assert btc_evaluation.details["resolved_min_direction_confidence"] == 0.62
+    assert btc_evaluation.details["resolved_min_direction_confidence"] == 0.51
     assert btc_evaluation.details["resolved_min_direction_confidence_source"] == "global_regime"
 
 
 @pytest.mark.parametrize(
     ("strategy_id", "expected_direction_threshold", "expected_regime_threshold"),
     [
-        ("aurora", 0.68, 0.72),
+        ("aurora", 0.59, 0.45),
         ("md_amr", 0.88, 0.90),
         ("mean_reversion", 0.79, 0.82),
         ("llm_microstructure", 0.74, 0.78),
@@ -454,7 +454,7 @@ def test_strategy_symbol_threshold_override_supports_each_strategy(
         thresholds=_thresholds_payload(
             min_regime_confidence_overrides_by_strategy_symbol={
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                    "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
                 },
                 "md_amr": {
                     "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.90},
@@ -468,7 +468,7 @@ def test_strategy_symbol_threshold_override_supports_each_strategy(
             },
             min_direction_confidence_overrides_by_strategy_symbol={
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
                 },
                 "md_amr": {
                     "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.88},
@@ -508,12 +508,12 @@ def test_strategy_symbol_threshold_override_supports_each_strategy(
     assert evaluation.details["resolved_min_direction_confidence_symbol"] == "XRPUSDT"
 
 
-def test_strategy_symbol_override_default_does_not_tighten_non_low_vol_thresholds() -> None:
+def test_strategy_symbol_override_uses_default_map_without_leaking_low_vol_thresholds() -> None:
     regime_resolution = _resolve_low_vol_threshold(
-        mapping={"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
+        mapping={"DEFAULT": 0.45, "LOW_VOLATILITY": 0.39},
         overrides_by_strategy_symbol={
             "aurora": {
-                "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
             },
         },
         strategy_id="aurora",
@@ -521,10 +521,10 @@ def test_strategy_symbol_override_default_does_not_tighten_non_low_vol_threshold
         regime="TREND_UP",
     )
     direction_resolution = _resolve_low_vol_threshold(
-        mapping={"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+        mapping={"DEFAULT": 0.55, "LOW_VOLATILITY": 0.51},
         overrides_by_strategy_symbol={
             "aurora": {
-                "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
             },
         },
         strategy_id="aurora",
@@ -532,7 +532,7 @@ def test_strategy_symbol_override_default_does_not_tighten_non_low_vol_threshold
         regime="TREND_UP",
     )
 
-    assert regime_resolution.value == 0.45
+    assert regime_resolution.value == 0.46
     assert regime_resolution.source == "strategy_symbol_override"
     assert regime_resolution.regime_key == "DEFAULT"
     assert direction_resolution.value == 0.55
@@ -591,16 +591,16 @@ def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_a
     )
 
     assert aurora_xrp.block is False
-    assert aurora_xrp.details["resolved_min_regime_confidence"] == 0.72
-    assert aurora_xrp.details["resolved_min_direction_confidence"] == 0.68
+    assert aurora_xrp.details["resolved_min_regime_confidence"] == 0.45
+    assert aurora_xrp.details["resolved_min_direction_confidence"] == 0.59
     assert aurora_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
     assert md_amr_xrp.block is False
-    assert md_amr_xrp.details["resolved_min_regime_confidence"] == 0.72
-    assert md_amr_xrp.details["resolved_min_direction_confidence"] == 0.68
+    assert md_amr_xrp.details["resolved_min_regime_confidence"] == 0.45
+    assert md_amr_xrp.details["resolved_min_direction_confidence"] == 0.59
     assert md_amr_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
     assert aurora_btc.block is False
-    assert aurora_btc.details["resolved_min_regime_confidence"] == 0.65
-    assert aurora_btc.details["resolved_min_direction_confidence"] == 0.62
+    assert aurora_btc.details["resolved_min_regime_confidence"] == 0.39
+    assert aurora_btc.details["resolved_min_direction_confidence"] == 0.51
 
 
 def test_missing_direction_confidence_blocks_fail_closed_even_with_high_regime_confidence() -> None:

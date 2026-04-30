@@ -94,6 +94,9 @@
       "EVT:TRADE_INTENT_REJECTED": "EP co-emits (intent_router.py) when intent fails at execution boundary; owner=decision_making",
       "EVT:TRADE_EXECUTED": "EP watchdog co-emits (watchdog.py) as REST polling fallback; owner=position_tracking",
       "EVT:EXPOSURE_SUMMARY_UPDATED": "EP is sole emitter + schema owner; owner=execution_position (moved from risk_management 2026-03-14)"
+    },
+    "deprecation_notes": {
+      "EVT:LIMIT_ORDER_TIMEOUT": "DEPRECATED 2026-04-30 (J4). No live emitter after LimitOrderMonitor retirement (J2). Active timeout semantics covered by EVT:ORDER_TIMEOUT. Export retained for staged retirement."
     }
   }
 }

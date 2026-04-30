@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Callable, Mapping
 
 from apps.reference.domains.neocortex.config_models import NeocortexConfig
 from apps.reference.domains.neocortex.contracts.control_decision import (
@@ -26,6 +26,25 @@ from apps.reference.domains.neocortex.logic.brain.baseline_inference import (
     BaselinePredictionError,
     DEFAULT_BASELINE_MODEL_PATH,
 )
+from apps.reference.telemetry.metrics import inc_neocortex_authority_fallback
+
+
+def _fallback_policy(reason_code: str) -> str:
+    normalized = str(reason_code).strip().upper()
+    if normalized in {
+        FailureReasonCode.BASELINE_UNAVAILABLE.value,
+        FailureReasonCode.MISSING_REQUIRED_STATE.value,
+    }:
+        return "baseline_controller"
+    if normalized == FailureReasonCode.HANDLER_FAILURE.value:
+        return "authority_handler"
+    if normalized in {
+        FailureReasonCode.BRIDGE_UNAVAILABLE.value,
+        FailureReasonCode.CONFIG_MISSING.value,
+        FailureReasonCode.CONFIG_INVALID.value,
+    }:
+        return "authority_guard"
+    return "unknown"
 
 
 class NeocortexAuthorityBridge:
@@ -36,11 +55,11 @@ class NeocortexAuthorityBridge:
         *,
         config: NeocortexConfig | None,
         authority_fn: Callable[[ControlDecisionRequest],
-                               ControlDecisionResponse | Mapping[str, Any]] | None = None,
+                               ControlDecisionResponse | Mapping[str, object]] | None = None,
         baseline_controller: BaselineController | None = None,
         model_path: str | Path = DEFAULT_BASELINE_MODEL_PATH,
         shadow_emit_fn: Callable[[
-            str, dict[str, Any], str], None] | None = None,
+            str, dict[str, object], str], None] | None = None,
         config_error: Exception | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -113,7 +132,7 @@ class NeocortexAuthorityBridge:
             )
 
         try:
-            raw_response: ControlDecisionResponse | Mapping[str, Any]
+            raw_response: ControlDecisionResponse | Mapping[str, object]
             if self._authority_fn is not None:
                 raw_response = self._authority_fn(request)
             else:
@@ -123,7 +142,11 @@ class NeocortexAuthorityBridge:
                 raise ValueError("decision_id mismatch")
             if response.idempotent_key != request.idempotent_key:
                 raise ValueError("idempotent_key mismatch")
-            self._emit_shadow_response(request, response)
+            self._emit_shadow_response(
+                request,
+                response,
+                request_ts_ms=returned_at_ms,
+            )
             return response
         except BaselineArtifactError:
             return self._fallback_response(
@@ -184,7 +207,7 @@ class NeocortexAuthorityBridge:
 
     def _coerce_response(
         self,
-        response: ControlDecisionResponse | Mapping[str, Any],
+        response: ControlDecisionResponse | Mapping[str, object],
     ) -> ControlDecisionResponse:
         if isinstance(response, ControlDecisionResponse):
             return response
@@ -215,6 +238,10 @@ class NeocortexAuthorityBridge:
                 detail=request.symbol,
                 message=reason_text,
             )
+        inc_neocortex_authority_fallback(
+            policy=_fallback_policy(reason_code),
+            reason_code=reason_code,
+        )
         return ControlDecisionResponse(
             decision_id=request.decision_id,
             action=ControlDecisionAction.FALLBACK,
@@ -230,6 +257,8 @@ class NeocortexAuthorityBridge:
         self,
         request: ControlDecisionRequest,
         response: ControlDecisionResponse,
+        *,
+        request_ts_ms: int,
     ) -> None:
         if self._shadow_emit is None:
             return
@@ -238,7 +267,11 @@ class NeocortexAuthorityBridge:
             "rid": request.rid,
             "symbol": request.symbol,
             "decision_ts_ms": int(response.returned_at_ms),
+            "request_ts_ms": int(request_ts_ms),
+            "response_ts_ms": int(response.returned_at_ms),
             "decision_basis_ts": int(request.decision_basis_ts_ms),
+            "authority_mode": request.authority_mode.value,
+            "apply_result": response.apply_result,
             "action": response.action.value,
             "causal_state_snapshot": request.observation.model_dump(),
             "fallback_reason": (

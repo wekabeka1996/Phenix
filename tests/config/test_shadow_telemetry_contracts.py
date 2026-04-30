@@ -13,6 +13,8 @@ from apps.reference.config.domains.shadow_telemetry import (
     ShadowTelemetryDomainConfig as DomainShadowTelemetryDomainConfig,
     ShadowTelemetryEgressToMainConfig as DomainShadowTelemetryEgressToMainConfig,
     ShadowTelemetryIngestConfig as DomainShadowTelemetryIngestConfig,
+    ShadowTelemetryLedgerConfig as DomainShadowTelemetryLedgerConfig,
+    ShadowTelemetryLifecycleConfig as DomainShadowTelemetryLifecycleConfig,
     ShadowTelemetrySnapshotConfig as DomainShadowTelemetrySnapshotConfig,
     ShadowTelemetryTfPolicyConfig as DomainShadowTelemetryTfPolicyConfig,
 )
@@ -22,6 +24,8 @@ from apps.reference.config_models import (
     ShadowTelemetryDomainConfig,
     ShadowTelemetryEgressToMainConfig,
     ShadowTelemetryIngestConfig,
+    ShadowTelemetryLedgerConfig,
+    ShadowTelemetryLifecycleConfig,
     ShadowTelemetrySnapshotConfig,
     ShadowTelemetryTfPolicyConfig,
 )
@@ -101,6 +105,11 @@ def test_current_aurora_config_loads_shadow_telemetry_contract() -> None:
     assert st.api.write.require_snapshot_ref is True
     assert st.egress_to_main.mode == "ipc"
     assert st.egress_to_main.ipc_commands_endpoint == "tcp://127.0.0.1:7102"
+    assert st.ledger.queue_maxsize == 50000
+    assert st.ledger.overflow_policy == "fail_closed"
+    assert st.ledger.enqueue_timeout_ms == 5
+    assert st.ledger.shutdown_timeout_ms == 2000
+    assert st.lifecycle.stop_timeout_ms == 2000
     assert st.snapshot.trigger_event == "EVT:FEATURES_CALCULATED"
     assert st.snapshot.tf_policy.tick_snapshots_mode == "sampled"
     assert st.snapshot.tf_policy.tick_sample_every_n == 20
@@ -114,6 +123,8 @@ def test_shadow_telemetry_facade_reexports_are_exact_identity() -> None:
     assert ShadowTelemetryApiConfig is DomainShadowTelemetryApiConfig
     assert ShadowTelemetryEgressToMainConfig is DomainShadowTelemetryEgressToMainConfig
     assert ShadowTelemetryTfPolicyConfig is DomainShadowTelemetryTfPolicyConfig
+    assert ShadowTelemetryLedgerConfig is DomainShadowTelemetryLedgerConfig
+    assert ShadowTelemetryLifecycleConfig is DomainShadowTelemetryLifecycleConfig
     assert ShadowTelemetrySnapshotConfig is DomainShadowTelemetrySnapshotConfig
     assert ShadowTelemetryDomainConfig is DomainShadowTelemetryDomainConfig
 
@@ -167,6 +178,21 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
         dynamic_factories={},
     )
     _assert_field_contract(
+        ShadowTelemetryLedgerConfig,
+        required={"queue_maxsize", "overflow_policy",
+                  "enqueue_timeout_ms", "shutdown_timeout_ms"},
+        defaults={},
+        class_factories={},
+        dynamic_factories={},
+    )
+    _assert_field_contract(
+        ShadowTelemetryLifecycleConfig,
+        required={"stop_timeout_ms"},
+        defaults={},
+        class_factories={},
+        dynamic_factories={},
+    )
+    _assert_field_contract(
         ShadowTelemetrySnapshotConfig,
         required={"trigger_event", "tf_policy", "output_dir"},
         defaults={},
@@ -176,7 +202,7 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         ShadowTelemetryDomainConfig,
         required={"enabled", "required_for_mode",
-                  "ingest", "api", "egress_to_main", "snapshot"},
+                  "ingest", "api", "egress_to_main", "ledger", "lifecycle", "snapshot"},
         defaults={},
         class_factories={},
         dynamic_factories={},
@@ -204,4 +230,92 @@ def test_shadow_telemetry_yaml_contract_fails_closed_on_invalid_tick_sampling(
 
     message = str(exc_info.value)
     assert "tick_sample_every_n" in message
+    assert "shadow_telemetry" in message
+
+
+def test_shadow_telemetry_yaml_contract_fails_closed_on_invalid_ledger_queue_maxsize(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["shadow_telemetry"]["ledger"]["queue_maxsize"] = 0
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "queue_maxsize" in message
+    assert "shadow_telemetry" in message
+
+
+def test_shadow_telemetry_yaml_contract_fails_closed_on_invalid_ledger_overflow_policy(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["shadow_telemetry"]["ledger"]["overflow_policy"] = "drop_oldest"
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "overflow_policy" in message
+    assert "shadow_telemetry" in message
+
+
+def test_shadow_telemetry_yaml_contract_rejects_unknown_ledger_field(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["shadow_telemetry"]["ledger"]["unexpected"] = True
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "unexpected" in message
+    assert "shadow_telemetry" in message
+
+
+def test_shadow_telemetry_yaml_contract_fails_closed_on_invalid_lifecycle_stop_timeout(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = tmp_path / "aurora"
+    shutil.copytree(CONFIG_DIR, cfg_dir)
+
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["shadow_telemetry"]["lifecycle"]["stop_timeout_ms"] = 0
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "stop_timeout_ms" in message
     assert "shadow_telemetry" in message

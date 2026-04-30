@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -48,6 +49,7 @@ from apps.reference.domains.neocortex.main import (
     build_shadow_baseline_runtime,
     evaluate_startup_shadow_gates,
 )
+from apps.reference.telemetry.metrics import generate_latest
 from tests.domains.neocortex.architecture.test_import_boundaries import (
     HOT_PATH_FILES,
     NEOCORTEX_ROOT,
@@ -56,6 +58,24 @@ from tests.domains.neocortex.architecture.test_import_boundaries import (
 
 
 CONFIG_DIR = REPO_ROOT / "apps" / "reference" / "domains" / "neocortex" / "config"
+
+
+def _metric_value(metric_name: str, **labels: str) -> float:
+    exposition = generate_latest().decode("utf-8")
+    label_fragments = [f'{key}="{value}"' for key, value in labels.items()]
+    pattern = re.compile(r" (-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)$")
+    for line in exposition.splitlines():
+        if labels:
+            if not line.startswith(f"{metric_name}{{"):
+                continue
+            if not all(fragment in line for fragment in label_fragments):
+                continue
+        elif not line.startswith(f"{metric_name} "):
+            continue
+        match = pattern.search(line)
+        if match is not None:
+            return float(match.group(1))
+    return 0.0
 
 
 def _load_config():
@@ -153,12 +173,18 @@ def test_required_failure_reason_codes_exist() -> None:
         "MISSING_REQUIRED_STATE",
         "UNJOINABLE_LIFECYCLE",
         "LOW_SUPPORT",
+        "INSUFFICIENT_REAL_EXECUTED_ROWS",
+        "SYNTHETIC_FALLBACK_PRESENT",
+        "REWARD_INVALID",
+        "REWARD_METHODOLOGY_MISSING",
+        "TERMINAL_OUTCOME_INCOMPLETE",
         "BASELINE_UNAVAILABLE",
         "MALFORMED_JSON",
         "HANDLER_FAILURE",
         "BRIDGE_UNAVAILABLE",
         "MODEL_ARTIFACT_MISMATCH",
         "TELEMETRY_FLUSH_FAILED",
+        "UNCLEAN_SHUTDOWN",
     }
     available = {member.value for member in FailureReasonCode}
     assert required.issubset(available)
@@ -181,6 +207,11 @@ def test_failure_outcome_is_frozen_and_typed() -> None:
 
 
 def test_failure_ledger_increments_counter() -> None:
+    metric_before = _metric_value(
+        "neocortex_failure_outcomes_total",
+        taxonomy="FALLBACK",
+        reason_code="BRIDGE_TIMEOUT",
+    )
     record_failure_outcome(
         FailureOutcomeTaxonomy.FALLBACK,
         FailureReasonCode.BRIDGE_TIMEOUT,
@@ -190,6 +221,11 @@ def test_failure_ledger_increments_counter() -> None:
         taxonomy=FailureOutcomeTaxonomy.FALLBACK,
         reason_code=FailureReasonCode.BRIDGE_TIMEOUT,
     ) == 1
+    assert _metric_value(
+        "neocortex_failure_outcomes_total",
+        taxonomy="FALLBACK",
+        reason_code="BRIDGE_TIMEOUT",
+    ) == metric_before + 1.0
 
 
 def test_failure_taxonomy_string_inputs_are_coerced() -> None:
@@ -324,7 +360,8 @@ def test_invalid_baseline_vector_maps_to_missing_required_state(tmp_path: Path) 
 
     response = asyncio.run(
         bridge.request_authority(
-            _make_request(state_vector=[1.0], decision_id="decision-invalid-vector"),
+            _make_request(state_vector=[1.0],
+                          decision_id="decision-invalid-vector"),
             timeout_ms=10,
         )
     )
@@ -344,7 +381,8 @@ def test_baseline_unavailable_does_not_return_synthetic_flat(tmp_path: Path) -> 
     )
 
     response = asyncio.run(
-        bridge.request_authority(_make_request(decision_id="decision-missing-baseline"), timeout_ms=10)
+        bridge.request_authority(_make_request(
+            decision_id="decision-missing-baseline"), timeout_ms=10)
     )
 
     assert response.action == ControlDecisionAction.FALLBACK
@@ -406,7 +444,8 @@ def test_non_causal_snapshot_does_not_enter_inference_as_trainable_zero_vector(
         logger=logging.getLogger("tests.neocortex.failure_taxonomy"),
     )
     runtime.authority_bridge.request_authority = AsyncMock(
-        side_effect=AssertionError("bridge should not be invoked for non-trainable snapshots")
+        side_effect=AssertionError(
+            "bridge should not be invoked for non-trainable snapshots")
     )
 
     feature_event = {
@@ -446,13 +485,15 @@ def test_non_causal_snapshot_does_not_enter_inference_as_trainable_zero_vector(
 def test_live_shadow_with_legacy_timestamp_remains_fatal() -> None:
     config = _live_shadow_legacy_config()
     with pytest.raises(ShadowGateViolationError):
-        evaluate_startup_shadow_gates(config, logger=logging.getLogger("tests.neocortex.failure_taxonomy"))
+        evaluate_startup_shadow_gates(
+            config, logger=logging.getLogger("tests.neocortex.failure_taxonomy"))
 
 
 def test_missing_runtime_config_remains_fatal(tmp_path: Path) -> None:
     reset_failure_outcomes()
     with pytest.raises(FatalStartupError) as excinfo:
-        build_shadow_baseline_runtime(neocortex_config_dir=tmp_path / "missing-config")
+        build_shadow_baseline_runtime(
+            neocortex_config_dir=tmp_path / "missing-config")
     assert excinfo.value.reason_code == "CONFIG_MISSING"
     assert get_failure_outcome_total(
         taxonomy=FailureOutcomeTaxonomy.FATAL_STARTUP,

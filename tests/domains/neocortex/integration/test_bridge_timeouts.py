@@ -31,6 +31,12 @@ def neuro_config():
                 "val_ratio": 0.15,
                 "test_ratio": 0.15,
             },
+            "cutover": {
+                "min_real_executed_rows": 1,
+                "allow_synthetic_fallback": False,
+                "max_non_causal_rows": 0,
+                "require_reward_methodology": True,
+            },
         },
         evaluation={
             "report_version": 1,

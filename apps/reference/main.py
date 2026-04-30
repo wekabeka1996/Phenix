@@ -181,7 +181,7 @@ def build_emit_with_monitoring(
                 )
         return result
 
-    emit_with_monitoring._emit_compat_mode = "message"
+    setattr(emit_with_monitoring, "_emit_compat_mode", "message")
     return emit_with_monitoring
 
 
@@ -520,6 +520,7 @@ def main() -> None:
     shadow_event_tap_publisher: Optional[ShadowEventTapPublisher] = None
     llm_intent_ingress_bridge: Optional[LLMIntentIngressBridge] = None
     shadow_telemetry_sink: Optional[ShadowTelemetrySink] = None
+    shadow_shutdown_timeout_sec = 2.0
 
     fsm.emit = build_emit_with_monitoring(
         original_emit=fsm.emit,
@@ -824,12 +825,18 @@ def main() -> None:
         shadow_cfg = getattr(
             getattr(config, "domains", None), "shadow_telemetry", None)
         if shadow_cfg is not None and bool(getattr(shadow_cfg, "enabled", False)):
+            shadow_shutdown_timeout_sec = float(
+                shadow_cfg.lifecycle.stop_timeout_ms) / 1000.0
             shadow_event_tap_publisher = ShadowEventTapPublisher(
                 shadow_cfg, logger=LOG.getChild("shadow_telemetry"))
             shadow_event_tap_publisher.start()
             shadow_telemetry_sink = ShadowTelemetrySink(
                 path=Path("logs") / "shadow_telemetry" /
                 "decision_ledger_v1.jsonl",
+                queue_maxsize=shadow_cfg.ledger.queue_maxsize,
+                overflow_policy=shadow_cfg.ledger.overflow_policy,
+                enqueue_timeout_ms=shadow_cfg.ledger.enqueue_timeout_ms,
+                shutdown_timeout_ms=shadow_cfg.ledger.shutdown_timeout_ms,
                 logger=LOG.getChild("shadow_telemetry.ledger"),
             )
             shadow_telemetry_sink.start()
@@ -1495,11 +1502,11 @@ def main() -> None:
             ShutdownStage("retry_scheduler",    _safe_stop(
                 locals().get("retry_scheduler")),                               timeout_sec=2.0),
             ShutdownStage("shadow_event_tap",   _safe_stop(
-                shadow_event_tap_publisher), timeout_sec=2.0),
+                shadow_event_tap_publisher), timeout_sec=shadow_shutdown_timeout_sec),
             ShutdownStage("shadow_telemetry_sink", _safe_stop(
-                shadow_telemetry_sink), timeout_sec=2.0),
+                shadow_telemetry_sink), timeout_sec=shadow_shutdown_timeout_sec),
             ShutdownStage("llm_ingress_bridge", _safe_stop(
-                llm_intent_ingress_bridge), timeout_sec=2.0),
+                llm_intent_ingress_bridge), timeout_sec=shadow_shutdown_timeout_sec),
         ).add_stage(
             # Stage 4: Market data  after execution, Guardian may still query prices
             ShutdownStage("market_data",        _safe_stop(

@@ -304,6 +304,78 @@ def test_loaded_runtime_config_retains_regime_detected_in_shadow_journal():
     config = ConfigLoader().load_config()
 
     assert "EVT:REGIME_DETECTED" in config.observability.shadow_journal.critical_events
+    assert "EVT:QUADRATIC_DECISION_TRACE" in config.observability.shadow_journal.critical_events
+    assert "EVT:STRATEGY_SIGNAL_PRODUCED" in config.observability.shadow_journal.critical_events
+    assert "EVT:GATE_CHAIN_TRACE" in config.observability.shadow_journal.critical_events
+    assert "EVT:DECISION_TRACE_EMITTED" in config.observability.shadow_journal.critical_events
+
+
+def test_shadow_journal_captures_low_vol_trace_events_with_decision_source_context(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, _shadow_cfg(path))
+
+    fsm.emit(
+        "EVT:QUADRATIC_DECISION_TRACE",
+        payload={
+            "schema_version": 1,
+            "rid": "rid-low-vol-chain-1",
+            "strategy_id": "aurora",
+            "symbol": "ETHUSDT",
+            "tf_sec": 300,
+            "score": 0.0,
+            "raw_score": 0.0,
+            "decision_score": 0.0,
+            "sizing_score": 0.0,
+            "side": "",
+            "deferred": False,
+            "defer_reason": None,
+            "regime": "LOW_VOLATILITY",
+            "regime_confidence": 0.41,
+            "shield_multiplier": 1.0,
+            "admission_shield_multiplier": 1.0,
+            "thr_buy": "0.1",
+            "thr_sell": "0.1",
+            "admission_mode": "quadratic",
+            "sizing_mode": "quadratic",
+            "quadratic_path_reached": True,
+            "compact_trace": {"regime": "LOW_VOLATILITY", "admission_result": "neutral"},
+            "ts_ms": 1775106000000,
+        },
+        why="quadratic_trace",
+        rid="rid-low-vol-chain-1",
+    )
+    fsm.emit(
+        "EVT:GATE_CHAIN_TRACE",
+        payload={
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "rid": "rid-low-vol-chain-1",
+            "ts_ms": 1775106000001,
+            "final_outcome": "PASS",
+            "total_elapsed_ms": 1.5,
+            "gates": [{"gate_name": "safety_gate", "outcome": "PASS", "elapsed_ms": 0.5}],
+        },
+        why="gate_chain_evaluated",
+        rid="rid-low-vol-chain-1",
+    )
+
+    records = _read_jsonl(path)
+    quadratic_record = next(
+        record for record in records if record["event_name"] == "EVT:QUADRATIC_DECISION_TRACE"
+    )
+    gate_record = next(
+        record for record in records if record["event_name"] == "EVT:GATE_CHAIN_TRACE"
+    )
+
+    assert quadratic_record["rid"] == "rid-low-vol-chain-1"
+    assert quadratic_record["source_component"] == "decision_making.aurora"
+    assert quadratic_record["source_path"] == "decision:quadratic_trace"
+    assert quadratic_record["payload_fragment"]["regime"] == "LOW_VOLATILITY"
+    assert quadratic_record["payload_fragment"]["regime_confidence"] == 0.41
+    assert gate_record["rid"] == "rid-low-vol-chain-1"
+    assert gate_record["source_component"] == "decision_making.strategy_gateway"
+    assert gate_record["source_path"] == "decision:gate_chain_trace"
 
 
 def test_loaded_runtime_shadow_journal_links_business_rid_to_retained_detector_artifact(tmp_path):

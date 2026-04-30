@@ -24,6 +24,32 @@ from apps.reference.domains.alpha_search.judge.contracts import (
 
 LOG = logging.getLogger(__name__)
 
+"""
+LLM Judge Phase 4 — Evidence Envelope Assembler
+
+Stateless function that assembles a JudgeEvidenceEnvelope from a
+ChamberAggregate and contextual metadata. Pure data packaging — no
+decision logic.
+
+Authority: docs/LLM_JUDGE/LLM_JUDGE_PHASE4_IMPLEMENTATION_BLUEPRINT.md §13
+"""
+
+import logging
+from typing import Optional
+
+from apps.reference.domains.alpha_search.judge.config_models import (
+    ChamberConfig,
+    VerdictConfig,
+)
+from apps.reference.domains.alpha_search.judge.contracts import (
+    ChamberAggregate,
+    EnvelopeProvenance,
+    JudgeEvidenceEnvelope,
+    PositionContextSnapshot,
+)
+
+LOG = logging.getLogger(__name__)
+
 
 def assemble_evidence_envelope(
     chamber_aggregate: ChamberAggregate,
@@ -33,6 +59,9 @@ def assemble_evidence_envelope(
     features_ref: Optional[str] = None,
     regime: Optional[str] = None,
     regime_confidence: Optional[float] = None,
+    regime_ts_ms: Optional[int] = None,
+    regime_source: Optional[str] = None,
+    regime_missing_reason: Optional[str] = None,
     position_context: Optional[PositionContextSnapshot] = None,
 ) -> JudgeEvidenceEnvelope:
     """Assemble a JudgeEvidenceEnvelope from a ChamberAggregate.
@@ -45,6 +74,9 @@ def assemble_evidence_envelope(
             ``"bar:{symbol}:{tf_sec}:{bar_close_ts}"``. Optional.
         regime: Regime label from feature cache, if available.
         regime_confidence: Regime confidence from feature cache, if available.
+        regime_ts_ms: Regime detection timestamp, if available.
+        regime_source: Regime source model, if available.
+        regime_missing_reason: Explicit reason if regime context is missing.
         position_context: Position snapshot for LIFECYCLE scope. Required
             for LIFECYCLE, None for ENTRY.
 
@@ -83,6 +115,9 @@ def assemble_evidence_envelope(
         strategy_id=verdict_config.strategy_id,
         regime=regime,
         regime_confidence=regime_confidence,
+        regime_ts_ms=regime_ts_ms,
+        regime_source=regime_source,
+        regime_missing_reason=regime_missing_reason,
         features_ref=features_ref,
         position_context=position_context,
         freshness_deadline_ms=freshness_deadline_ms,

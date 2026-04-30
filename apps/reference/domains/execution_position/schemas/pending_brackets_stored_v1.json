@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/pending_brackets_stored_v1.json",
+  "title": "EVT:PENDING_BRACKETS_STORED payload schema",
+  "description": "Canonical deferred bracket seed written to WAL when a limit entry defers protective brackets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "entry_order_id",
+    "symbol",
+    "side",
+    "sl",
+    "tp",
+    "qty",
+    "rid",
+    "idem_key",
+    "tick_size"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "entry_order_id": { "type": "string", "minLength": 1 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "side": { "type": "string", "minLength": 1 },
+    "sl": { "type": "number" },
+    "tp": { "type": "number" },
+    "qty": { "type": "number" },
+    "rid": { "type": "string", "minLength": 1 },
+    "idem_key": { "type": "string", "minLength": 1 },
+    "tick_size": { "type": "number", "exclusiveMinimum": 0 },
+    "corr_id": { "type": "string", "minLength": 1 },
+    "oco_group_id": { "type": "string", "minLength": 1 },
+    "entry_client_order_id": { "type": "string", "minLength": 1 },
+    "strategy_id": { "type": "string", "minLength": 1 },
+    "strategy_source": { "type": "string", "minLength": 1 },
+    "owner_status": { "type": "string", "minLength": 1 },
+    "owner_detail": { "type": "string", "minLength": 1 },
+    "assigned_strategies": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "placement_path": { "type": "string", "minLength": 1 }
+  }
+}

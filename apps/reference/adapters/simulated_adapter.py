@@ -32,8 +32,10 @@ class SimulatedAdapter(AbstractExchangeAdapter):
         self.config = config or {}
         self._positions: List[ExchangePosition] = []
         self._orders: Dict[str, ExchangeOrderResponse] = {}
-        self._latency_ms = self.config.get("latency_ms", 10) # Default 10ms latency
-        logger.info(f"SimulatedAdapter initialized (latency={self._latency_ms}ms)")
+        self._latency_ms = self.config.get(
+            "latency_ms", 10)  # Default 10ms latency
+        logger.info(
+            f"SimulatedAdapter initialized (latency={self._latency_ms}ms)")
 
     async def create_order(self, params: ExchangeOrderParams) -> ExchangeOrderResponse:
         """
@@ -55,15 +57,16 @@ class SimulatedAdapter(AbstractExchangeAdapter):
 
         timestamp_ms = int(time.time() * 1000)
         order_id = f"sim_{timestamp_ms}_{params.client_order_id or 'noid'}"
-        
+
         # Determine status
         # For simulation fidelity, we default to FILLED for market orders in simple mode,
         # but keep NEW for limits unless we implement a matching engine.
         # Given the "Optimistic Execution" audit finding, we should support explicit NEW state.
         # However, to preserve backward compatibility with the current training loop, we auto-fill by default
         # unless configured otherwise.
-        
-        status = "FILLED" # Optimistic default for now, but delayed by latency_ms above.
+
+        # Optimistic default for now, but delayed by latency_ms above.
+        status = "FILLED"
 
         response = ExchangeOrderResponse(
             order_id=order_id,
@@ -71,12 +74,12 @@ class SimulatedAdapter(AbstractExchangeAdapter):
             symbol=symbol,
             side=side,
             quantity=str(qty),
-            filled_qty=str(qty) if status == "FILLED" else "0.0", 
+            filled_qty=str(qty) if status == "FILLED" else "0.0",
             price=price,
             status=status,
             timestamp_ms=timestamp_ms,
         )
-        
+
         self._orders[order_id] = response
         return response
 
@@ -86,16 +89,17 @@ class SimulatedAdapter(AbstractExchangeAdapter):
         """
         Simulate order cancellation.
         """
-        logger.info(f"[SIMULATED] cancel_order: {symbol} ID:{order_id} ClID:{client_order_id}")
-        
+        logger.info(
+            f"[SIMULATED] cancel_order: {symbol} ID:{order_id} ClID:{client_order_id}")
+
         timestamp_ms = int(time.time() * 1000)
-        
+
         # Echo back what we know
         return ExchangeOrderResponse(
             order_id=order_id or "unknown_sim_id",
             client_order_id=client_order_id,
             symbol=symbol,
-            side="UNKNOWN", # We don't track state deeply here yet
+            side="UNKNOWN",  # We don't track state deeply here yet
             quantity="0.0",
             filled_qty="0.0",
             price="0.0",
@@ -106,6 +110,12 @@ class SimulatedAdapter(AbstractExchangeAdapter):
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[ExchangeOrderResponse]:
         """
         Return empty list of open orders (or tracked ones if we implemented state).
+        """
+        return []
+
+    async def get_open_orders_raw(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Return raw open-order payloads for simulation.
         """
         return []
 

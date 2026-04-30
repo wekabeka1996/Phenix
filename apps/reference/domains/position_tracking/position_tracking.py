@@ -296,7 +296,8 @@ class PositionTracking:
         journal = get_shadow_journal(self)
         initial_payload = event.pld or {}
         initial_symbol = initial_payload.get("symbol")
-        before = snapshot_position_tracking_state(self, initial_symbol) if journal is not None else None
+        before = snapshot_position_tracking_state(
+            self, initial_symbol) if journal is not None else None
         self.logger.info("Handling EVT:TRADE_EXECUTED...")
 
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
@@ -391,7 +392,8 @@ class PositionTracking:
                 event_origin_type="portfolio",
                 truth_owner="PositionTracking",
                 payload=payload,
-                rid=str(payload.get("rid")) if payload.get("rid") is not None else getattr(event, "rid", None),
+                rid=str(payload.get("rid")) if payload.get(
+                    "rid") is not None else getattr(event, "rid", None),
                 before=before,
                 after=snapshot_position_tracking_state(self, symbol),
             )
@@ -861,7 +863,7 @@ class PositionTracking:
         Uses mark prices from:
         1. positionRisk API data (if provided) - contains markPrice per position
         2. Cached mark prices from EVT:MARKET_TICK_RECEIVED (if subscribed)
-        3. Falls back to entry price if no mark price available (returns 0 PnL)
+        3. If no fresh mark price is available, the position contributes 0 PnL.
 
         Formula: unrealized_pnl = Σ((mark_price - entry_price) * quantity)
         - For LONG (qty > 0): profit when mark_price > entry_price
@@ -889,8 +891,11 @@ class PositionTracking:
                 mark_price = _d(p.get("markPrice"))
 
                 if abs(position_amt) > self.quantity_min_threshold and mark_price > decimal.Decimal("0"):
-                    # unrealized_pnl = (mark_price - entry_price) * position_amt
-                    position_pnl = (mark_price - entry_price) * position_amt
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        position_amt,
+                        entry_price,
+                        mark_price,
+                    )
                     total_unrealized_pnl += position_pnl
 
                     self.logger.debug(
@@ -914,7 +919,11 @@ class PositionTracking:
 
                 # Check if mark price is fresh enough
                 if mark_price > decimal.Decimal("0") and (now_ms - mark_ts) < self._mark_price_stale_ms:
-                    position_pnl = (mark_price - entry_price) * quantity
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        quantity,
+                        entry_price,
+                        mark_price,
+                    )
                     total_unrealized_pnl += position_pnl
 
                     self.logger.debug(
@@ -928,6 +937,53 @@ class PositionTracking:
                     )
 
         return total_unrealized_pnl.quantize(decimal.Decimal("0.01"))
+
+    def _calculate_position_unrealized_pnl(
+        self,
+        quantity: decimal.Decimal,
+        entry_price: decimal.Decimal,
+        mark_price: decimal.Decimal,
+    ) -> decimal.Decimal:
+        """Calculate per-position unrealized PnL using a fresh mark price."""
+        return ((mark_price - entry_price) * quantity).quantize(decimal.Decimal("0.01"))
+
+    def _calculate_position_unrealized_pnl_pct(
+        self,
+        quantity: decimal.Decimal,
+        entry_price: decimal.Decimal,
+        unrealized_pnl: decimal.Decimal,
+    ) -> Optional[decimal.Decimal]:
+        notional = abs(quantity) * entry_price
+        if notional <= decimal.Decimal("0"):
+            return None
+        return ((unrealized_pnl / notional) * decimal.Decimal("100")).quantize(decimal.Decimal("0.01"))
+
+    def _fresh_mark_price(
+        self,
+        symbol: str,
+        *,
+        now_ms: Optional[int] = None,
+    ) -> Optional[decimal.Decimal]:
+        mark_price_data = self._mark_prices.get(symbol)
+        if not mark_price_data:
+            return None
+
+        mark_price = _d(mark_price_data.get("mark_price"))
+        if mark_price <= decimal.Decimal("0"):
+            return None
+
+        mark_ts_raw = mark_price_data.get("ts_ms")
+        try:
+            mark_ts = int(mark_ts_raw)
+        except (TypeError, ValueError):
+            return None
+
+        if now_ms is None:
+            now_ms = get_clock().now_ms()
+        if (now_ms - mark_ts) >= self._mark_price_stale_ms:
+            return None
+
+        return mark_price
 
     def update_mark_price(self, symbol: str, mark_price: decimal.Decimal, ts_ms: Optional[int] = None) -> None:
         """
@@ -1210,12 +1266,30 @@ class PositionTracking:
     def _get_positions_snapshot(self) -> List[Dict[str, Any]]:
         """
         Get current positions snapshot in the format expected by portfolio_state_v1.json.
+
+        Symbol-scoped economics are exported only when the cached mark price is
+        fresh enough to be considered usable.
         """
         positions = []
+        now_ms = get_clock().now_ms()
         for symbol, position in self._positions.items():
             if abs(position["quantity"]) > decimal.Decimal(
                 str(self.quantity_min_threshold)
             ):  # Only include non-zero positions
+                mark_price = self._fresh_mark_price(symbol, now_ms=now_ms)
+                unrealized_pnl = None
+                unrealized_pnl_pct = None
+                if mark_price is not None and position["avg_price"] > decimal.Decimal("0"):
+                    unrealized_pnl = self._calculate_position_unrealized_pnl(
+                        position["quantity"],
+                        position["avg_price"],
+                        mark_price,
+                    )
+                    unrealized_pnl_pct = self._calculate_position_unrealized_pnl_pct(
+                        position["quantity"],
+                        position["avg_price"],
+                        unrealized_pnl,
+                    )
                 positions.append(
                     {
                         "symbol": symbol,
@@ -1225,6 +1299,9 @@ class PositionTracking:
                         "avg_entry_price": _ds(
                             position["avg_price"]
                         ),  # Preserve Decimal precision as string
+                        "markPrice": _ds(mark_price) if mark_price is not None else None,
+                        "unrealizedPnl": _ds(unrealized_pnl) if unrealized_pnl is not None else None,
+                        "unrealizedPnlPct": _ds(unrealized_pnl_pct) if unrealized_pnl_pct is not None else None,
                         "venues": position["venues"],
                     }
                 )
@@ -1310,7 +1387,8 @@ class PositionTracking:
             bool: True if load succeeded, False otherwise.
         """
         journal = get_shadow_journal(self)
-        before = snapshot_position_tracking_state(self, None) if journal is not None else None
+        before = snapshot_position_tracking_state(
+            self, None) if journal is not None else None
         try:
             state_to_load = snapshot_data["state"]
             state_hash_field = snapshot_data["state_hash"] if "state_hash" in snapshot_data else ""

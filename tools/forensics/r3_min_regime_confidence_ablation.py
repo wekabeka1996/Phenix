@@ -55,6 +55,106 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _breach_kind(row: dict[str, Any]) -> str | None:
+    value = row.get("regime_confidence_breach_kind")
+    if value in {"none", "missing", "below_min", "above_max"}:
+        return value
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    if isinstance(metadata, dict):
+        meta_value = metadata.get("regime_confidence_breach_kind")
+        if meta_value in {"none", "missing", "below_min", "above_max"}:
+            return meta_value
+    why = str(row.get("why") or "").lower()
+    if "above max" in why:
+        return "above_max"
+    if "missing" in why:
+        return "missing"
+    if "< min=" in why:
+        return "below_min"
+    return None
+
+
+def build_counterfactual_band_report(
+    decisions: list[dict[str, Any]],
+    *,
+    lower: float,
+    upper: float,
+) -> dict[str, Any]:
+    totals = Counter()
+    by_symbol: dict[str, Counter[str]] = defaultdict(Counter)
+    by_strategy: dict[str, Counter[str]] = defaultdict(Counter)
+    by_regime: dict[str, Counter[str]] = defaultdict(Counter)
+
+    for row in decisions:
+        conf = _safe_float(row.get("regime_confidence_used"))
+        if conf is None:
+            continue
+        symbol = str(row.get("symbol") or "")
+        strategy = str(row.get("strategy_id") or "")
+        regime = str(row.get("regime_used") or "")
+        deny_reason = str(row.get("deny_reason") or "")
+        verdict = str(row.get("threshold_verdict") or "")
+        breach_kind = _breach_kind(row)
+
+        totals["total_inspected"] += 1
+        by_symbol[symbol]["total_inspected"] += 1
+        by_strategy[strategy]["total_inspected"] += 1
+        by_regime[regime]["total_inspected"] += 1
+
+        if conf < lower:
+            totals["below_min"] += 1
+            by_symbol[symbol]["below_min"] += 1
+            by_strategy[strategy]["below_min"] += 1
+            by_regime[regime]["below_min"] += 1
+        elif conf > upper:
+            totals["above_max"] += 1
+            by_symbol[symbol]["above_max"] += 1
+            by_strategy[strategy]["above_max"] += 1
+            by_regime[regime]["above_max"] += 1
+        else:
+            totals["inside_band"] += 1
+            by_symbol[symbol]["inside_band"] += 1
+            by_strategy[strategy]["inside_band"] += 1
+            by_regime[regime]["inside_band"] += 1
+
+        if deny_reason == "NRR-026":
+            totals["currently_blocked_by_below_min"] += 1
+            by_symbol[symbol]["currently_blocked_by_below_min"] += 1
+            by_strategy[strategy]["currently_blocked_by_below_min"] += 1
+            by_regime[regime]["currently_blocked_by_below_min"] += 1
+            if lower <= conf <= upper:
+                totals["current_nrr_026_within_band"] += 1
+        elif deny_reason in {"NRR-027", "NRR-029", "NRR-030"} or (
+            verdict == "BLOCK" and breach_kind not in {"below_min", "missing"}
+        ):
+            totals["currently_blocked_by_other_gate"] += 1
+            by_symbol[symbol]["currently_blocked_by_other_gate"] += 1
+            by_strategy[strategy]["currently_blocked_by_other_gate"] += 1
+            by_regime[regime]["currently_blocked_by_other_gate"] += 1
+
+        if conf > upper:
+            if verdict == "ALLOW":
+                totals["currently_allowed_but_would_above_max"] += 1
+                by_symbol[symbol]["currently_allowed_but_would_above_max"] += 1
+                by_strategy[strategy]["currently_allowed_but_would_above_max"] += 1
+                by_regime[regime]["currently_allowed_but_would_above_max"] += 1
+            elif deny_reason in {"NRR-027", "NRR-029", "NRR-030"} or (
+                verdict == "BLOCK" and breach_kind not in {"below_min", "missing"}
+            ):
+                totals["currently_other_rejected_but_would_first_block_above_max"] += 1
+                by_symbol[symbol]["currently_other_rejected_but_would_first_block_above_max"] += 1
+                by_strategy[strategy]["currently_other_rejected_but_would_first_block_above_max"] += 1
+                by_regime[regime]["currently_other_rejected_but_would_first_block_above_max"] += 1
+
+    return {
+        "band": {"lower": lower, "upper": upper},
+        "totals": dict(totals),
+        "by_symbol": {symbol: dict(counter) for symbol, counter in by_symbol.items()},
+        "by_strategy": {strategy: dict(counter) for strategy, counter in by_strategy.items()},
+        "by_regime": {regime: dict(counter) for regime, counter in by_regime.items()},
+    }
+
+
 def _mean(values: list[float]) -> float | None:
     vals = [v for v in values if v is not None]
     return statistics.mean(vals) if vals else None
@@ -224,14 +324,30 @@ class EpochRow:
 
 def load_bar_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for row in _iter_jsonl(LOGS / "regime_confidence_audit_v1.jsonl"):
-        if row.get("record_type") != "bar_close":
+    prev_regime_by_symbol: dict[str, str] = {}
+    for row in _iter_jsonl(LOGS / "shadow_critical_event_journal_v1.jsonl"):
+        if row.get("event_name") != "EVT:REGIME_DETECTED":
             continue
-        ts = _safe_int(row.get("ts_ms"))
-        symbol = str(row.get("symbol") or "")
-        if ts is None or ts < WINDOW_START_MS or symbol not in AURORA_SYMBOLS:
+        pf = row.get("payload_fragment") if isinstance(row.get("payload_fragment"), dict) else {}
+        symbol = str(row.get("symbol") or pf.get("symbol") or "")
+        regime = str(pf.get("regime") or "")
+        ts = _safe_int(pf.get("ts_ms") or row.get("ts_ms"))
+        if ts is None or ts < WINDOW_START_MS or symbol not in AURORA_SYMBOLS or not regime:
             continue
-        rows.append(row)
+        prev_regime = prev_regime_by_symbol.get(symbol)
+        rows.append(
+            {
+                "ts_ms": ts,
+                "symbol": symbol,
+                "regime": regime,
+                "raw_regime": str(pf.get("raw_regime") or regime),
+                "raw_confidence": _safe_float(pf.get("confidence")),
+                "stable_confidence": _safe_float(pf.get("stable_confidence") or pf.get("confidence")),
+                "structural_regime_ref": str(pf.get("structural_regime_ref") or ""),
+                "changed": bool(pf.get("changed")) if pf.get("changed") is not None else prev_regime is None or prev_regime != regime,
+            }
+        )
+        prev_regime_by_symbol[symbol] = regime
     rows.sort(key=lambda row: (str(row.get("symbol") or ""), _safe_int(row.get("ts_ms")) or 0))
     return rows
 
@@ -289,7 +405,106 @@ def load_decisions() -> list[dict[str, Any]]:
         conf = _safe_float(row.get("regime_confidence_used"))
         if ts is None or ts < WINDOW_START_MS or symbol not in AURORA_SYMBOLS or conf is None:
             continue
+        row["regime_confidence_breach_kind"] = _breach_kind(row)
         rows.append(row)
+    rows.sort(key=lambda row: (str(row.get("symbol") or ""), _safe_int(row.get("ts_ms")) or 0))
+    if rows:
+        return rows
+    return load_shadow_decisions()
+
+
+def _nearest_shadow_event(rows: list[dict[str, Any]], symbol: str, ts_ms: int, *, window_ms: int = 5_000) -> dict[str, Any] | None:
+    best: dict[str, Any] | None = None
+    best_delta: int | None = None
+    for row in rows:
+        if str(row.get("symbol") or "") != symbol:
+            continue
+        row_ts = _safe_int(row.get("ts_ms"))
+        if row_ts is None:
+            continue
+        delta = abs(row_ts - ts_ms)
+        if delta > window_ms:
+            continue
+        if best is None or best_delta is None or delta < best_delta:
+            best = row
+            best_delta = delta
+    return best
+
+
+def load_shadow_decisions() -> list[dict[str, Any]]:
+    traces: list[dict[str, Any]] = []
+    blocks: list[dict[str, Any]] = []
+    for row in _iter_jsonl(LOGS / "shadow_critical_event_journal_v1.jsonl"):
+        if str(row.get("strategy_id") or "") != "aurora":
+            continue
+        en = str(row.get("event_name") or "")
+        pf = row.get("payload_fragment") if isinstance(row.get("payload_fragment"), dict) else {}
+        symbol = str(row.get("symbol") or pf.get("symbol") or "")
+        ts = _safe_int(pf.get("ts_ms") or row.get("ts_ms"))
+        if symbol not in AURORA_SYMBOLS or ts is None:
+            continue
+        if en == "EVT:QUADRATIC_DECISION_TRACE":
+            traces.append(
+                {
+                    "ts_ms": ts,
+                    "symbol": symbol,
+                    "strategy_id": str(pf.get("strategy_id") or row.get("strategy_id") or "aurora"),
+                    "intent_side": str(pf.get("side") or row.get("side") or ""),
+                    "regime_used": str(pf.get("regime") or ""),
+                    "regime_confidence_used": _safe_float(pf.get("regime_confidence")),
+                    "threshold_verdict": "ALLOW",
+                    "threshold_reason": "shadow_trace",
+                    "deny_reason": "",
+                    "why_short": "",
+                    "outcome": "ALLOW",
+                    "confidence_used_stage": "stable_confidence",
+                    "regime_confidence_breach_kind": "none",
+                }
+            )
+        elif en == "EVT:STRATEGY_DECISION_BLOCKED":
+            blocks.append(
+                {
+                    "ts_ms": ts,
+                    "symbol": symbol,
+                    "strategy_id": str(pf.get("strategy_id") or row.get("strategy_id") or "aurora"),
+                    "deny_reason": str(pf.get("reason_code") or ""),
+                    "why_short": str(pf.get("why") or pf.get("context") or ""),
+                    "context": str(pf.get("context") or ""),
+                }
+            )
+
+    blocks.sort(key=lambda row: (str(row.get("symbol") or ""), _safe_int(row.get("ts_ms")) or 0))
+    rows: list[dict[str, Any]] = []
+    for trace in traces:
+        symbol = str(trace.get("symbol") or "")
+        ts_ms = _safe_int(trace.get("ts_ms")) or 0
+        block = _nearest_shadow_event(blocks, symbol, ts_ms)
+        deny_reason = str((block or {}).get("deny_reason") or "")
+        threshold_verdict = "BLOCK" if deny_reason else "ALLOW"
+        breach_kind = "none"
+        if deny_reason == "NRR-026":
+            breach_kind = "below_min"
+        elif deny_reason == "NRR-063":
+            breach_kind = "above_max"
+
+        rows.append(
+            {
+                "record_type": "decision",
+                "ts_ms": ts_ms,
+                "symbol": symbol,
+                "strategy_id": str(trace.get("strategy_id") or "aurora"),
+                "intent_side": str(trace.get("intent_side") or ""),
+                "regime_used": str(trace.get("regime_used") or ""),
+                "regime_confidence_used": trace.get("regime_confidence_used"),
+                "threshold_verdict": threshold_verdict,
+                "threshold_reason": (block or {}).get("context") or "shadow_trace",
+                "deny_reason": deny_reason,
+                "why_short": (block or {}).get("why_short") or "",
+                "outcome": "DENY" if threshold_verdict == "BLOCK" else "ALLOW",
+                "confidence_used_stage": str(trace.get("confidence_used_stage") or "stable_confidence"),
+                "regime_confidence_breach_kind": breach_kind,
+            }
+        )
     rows.sort(key=lambda row: (str(row.get("symbol") or ""), _safe_int(row.get("ts_ms")) or 0))
     return rows
 
@@ -385,9 +600,23 @@ def _assign_epoch(epoch_rows: list[EpochRow], symbol: str, regime: str, ts_ms: i
     return None
 
 
+def _resolve_epoch_at_ts(epoch_rows: list[EpochRow], symbol: str, ts_ms: int) -> EpochRow | None:
+    for epoch in epoch_rows:
+        if epoch.symbol != symbol:
+            continue
+        if epoch.stable_regime_start_ts is None or epoch.stable_regime_end_ts is None:
+            continue
+        if epoch.stable_regime_start_ts <= ts_ms <= epoch.stable_regime_end_ts:
+            return epoch
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="R3 min_regime_confidence ablation")
     ap.add_argument("--out-dir", default=str(REPORTS))
+    ap.add_argument("--band-lower", type=float, default=0.20)
+    ap.add_argument("--band-upper", type=float, default=0.35)
+    ap.add_argument("--regime", default=None, help="Optional regime filter for the counterfactual band report")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -397,9 +626,30 @@ def main() -> int:
     bar_rows = load_bar_rows()
     epochs = build_epochs(bar_rows, prices)
     decisions = load_decisions()
+    for row in decisions:
+        if str(row.get("regime_used") or ""):
+            continue
+        ts_ms = _safe_int(row.get("ts_ms"))
+        symbol = str(row.get("symbol") or "")
+        if ts_ms is None or not symbol:
+            continue
+        epoch = _resolve_epoch_at_ts(epochs, symbol, ts_ms)
+        if epoch is not None:
+            row["regime_used"] = epoch.stable_regime
     proposals, _rejects = load_shadow()
     order_rows = load_order_rows()
     exposure_rows = load_exposure_rows()
+    regime_filter = str(args.regime).strip().upper() if args.regime is not None else ""
+    if regime_filter:
+        decisions = [
+            row for row in decisions
+            if str(row.get("regime_used") or "").strip().upper() == regime_filter
+        ]
+    band_report = build_counterfactual_band_report(
+        decisions,
+        lower=float(args.band_lower),
+        upper=float(args.band_upper),
+    )
 
     baseline_rows = [
         row for row in decisions
@@ -729,6 +979,21 @@ def main() -> int:
         md_lines.append(
             f"- `{row['tested_min_regime_confidence']:.2f}`: favorable_5m=`{row['favorable_5m_rate']}`, favorable_15m=`{row['favorable_15m_rate']}`, favorable_60m=`{row['favorable_60m_rate']}`, TREND_DOWN_concentration=`{row['concentration_in_trend_down']}`, MEAN_REVERSION_concentration=`{row['concentration_in_mean_reversion']}`"
         )
+        md_lines.extend(
+        [
+            "",
+            "## Counterfactual Band Report",
+            f"- Proposed band: `{band_report['band']['lower']:.2f}-{band_report['band']['upper']:.2f}`",
+            f"- Total inspected: `{band_report['totals'].get('total_inspected', 0)}`",
+            f"- Below min: `{band_report['totals'].get('below_min', 0)}`",
+            f"- Inside band: `{band_report['totals'].get('inside_band', 0)}`",
+            f"- Above max: `{band_report['totals'].get('above_max', 0)}`",
+            f"- Current NRR-026 rows inside band: `{band_report['totals'].get('current_nrr_026_within_band', 0)}`",
+            f"- Currently allowed but would above max: `{band_report['totals'].get('currently_allowed_but_would_above_max', 0)}`",
+            f"- Currently other-rejected but would first-block above max: `{band_report['totals'].get('currently_other_rejected_but_would_first_block_above_max', 0)}`",
+            "",
+        ]
+    )
     md_lines.extend(
         [
             "",
@@ -784,6 +1049,8 @@ def main() -> int:
                 "decisions": len(decisions),
                 "tested_thresholds": TESTED_THRESHOLDS,
                 "best_threshold": None if best_row is None else best_row["tested_min_regime_confidence"],
+                "counterfactual_band_report": band_report,
+                "regime_filter": regime_filter or None,
                 "out_dir": str(out_dir),
             },
             indent=2,

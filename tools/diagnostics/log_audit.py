@@ -38,9 +38,16 @@ NRR_DIRECTIONAL_BLOCKED = "NRR-027"  # directional_sanity blocked
 NRR_PM_INSUFFICIENT = "NRR-028"  # price_motion insufficient
 NRR_PM_FLASH_BLOCKED = "NRR-029"  # price_motion flash blocked
 NRR_PM_BLEED_BLOCKED = "NRR-030"  # price_motion bleed blocked
+NRR_REGIME_CONFIDENCE_ABOVE_MAX = "NRR-063"  # regime_confidence above max
 
-GATE_NRR_CODES = {NRR_DIRECTIONAL, NRR_DIRECTIONAL_BLOCKED, NRR_PM_INSUFFICIENT, 
-                  NRR_PM_FLASH_BLOCKED, NRR_PM_BLEED_BLOCKED}
+GATE_NRR_CODES = {
+    NRR_DIRECTIONAL,
+    NRR_DIRECTIONAL_BLOCKED,
+    NRR_PM_INSUFFICIENT,
+    NRR_PM_FLASH_BLOCKED,
+    NRR_PM_BLEED_BLOCKED,
+    NRR_REGIME_CONFIDENCE_ABOVE_MAX,
+}
 
 # Violation severity
 CRITICAL = "CRITICAL"
@@ -282,10 +289,15 @@ class LogAuditor:
                     stats.opens_long += 1
                 elif side == 'SELL':
                     stats.opens_short += 1
-            elif event_type == 'ORDER_REJECTED':
+            elif event_type in {'ORDER_REJECTED', 'DECISION_INTENT_REJECTED'}:
                 self._order_rejects[rid] = event
                 stats.orders_rejected += 1
-                nrr = event.get('nrr_code', 'UNKNOWN')
+                metadata = event.get('metadata') if isinstance(event.get('metadata'), dict) else {}
+                nrr = event.get('nrr_code')
+                if not nrr and isinstance(metadata, dict):
+                    if metadata.get('regime_confidence_breach_kind') == 'above_max':
+                        nrr = NRR_REGIME_CONFIDENCE_ABOVE_MAX
+                nrr = nrr or 'UNKNOWN'
                 stats.denies_by_reason[nrr] = stats.denies_by_reason.get(nrr, 0) + 1
         
         # Index event_chain

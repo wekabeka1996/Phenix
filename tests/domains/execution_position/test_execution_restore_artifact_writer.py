@@ -286,6 +286,50 @@ def test_guardian_reconstructed_bracket_truth_source_is_emitted(
     assert record["bracket_truth_source"] == TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN
 
 
+def test_restore_artifact_emits_linked_bracket_lineage_when_available(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_writer(fsm, tmp_path)
+    symbol = "BTCUSDT"
+    _set_runtime_state(
+        fsm,
+        symbol=symbol,
+        manage_state=ManageState.OPENED,
+        close_state=CloseState.OPENED,
+    )
+    manage_flow = fsm.manage_flows[symbol]
+    manage_flow.entry_order_id = "entry-1"
+    manage_flow.entry_client_order_id = "ENTRY-CLIENT-1"
+    manage_flow.sl_order_id = "sl-1"
+    manage_flow.tp_order_id = "tp-1"
+    manage_flow.sl_algo_client_id = "SL-CLIENT-1"
+    manage_flow.tp_algo_client_id = "TP-CLIENT-1"
+    fsm._set_symbol_brackets_snapshot(
+        symbol,
+        sl_order_id="sl-1",
+        tp_order_id="tp-1",
+        truth_source=TRUTH_SOURCE_RUNTIME_LOCAL,
+    )
+
+    fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
+        trigger="linked_bracket_lineage:test",
+        allow_empty=True,
+    )
+
+    record = _load_json(path)["active_lifecycles"][0]
+    assert record["bracket_state"] == "LINKED_ACTIVE"
+    assert record["linked_bracket_ref"] == {
+        "entry_order_id": "entry-1",
+        "entry_client_order_id": "ENTRY-CLIENT-1",
+        "sl_order_id": "sl-1",
+        "tp_order_id": "tp-1",
+        "sl_client_order_id": "SL-CLIENT-1",
+        "tp_client_order_id": "TP-CLIENT-1",
+    }
+
+
 def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
     fsm_harness,
     tmp_path: Path,

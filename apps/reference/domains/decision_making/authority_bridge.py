@@ -215,16 +215,24 @@ class NeocortexAuthorityBridge:
         if self._shadow_emit is None:
             return False
 
+        response_ts_ms = int(time.time() * 1000)
+        authority_mode = "shadow" if self._enforcement_mode == "shadow" else "gated"
+        apply_result = f"{self._enforcement_mode.upper()}_MODEL_{model_action.value}"
+
         payload = {
             "decision_id": req.decision_id,
             "rid": req.rid,
             "symbol": req.symbol,
-            "decision_ts_ms": int(time.time() * 1000),
+            "decision_ts_ms": response_ts_ms,
+            "response_ts_ms": response_ts_ms,
             "decision_basis_ts": int(req.decision_basis_ts),
+            "authority_mode": authority_mode,
+            "apply_result": apply_result,
             "action": model_action.value,
             "causal_state_snapshot": snapshot,
             "fallback_reason": None,
             "data_quality_flags": {
+                "authority_mode": authority_mode,
                 "neocortex_enforcement_mode": self._enforcement_mode,
                 "model_action": model_action.value,
                 "returned_action": returned_action.value,

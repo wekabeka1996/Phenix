@@ -20,6 +20,7 @@ from apps.reference.domains.execution_position.restore_artifact import (
     BRACKET_STATE_UNKNOWN,
     ExecutionPositionRestoreEnvelope,
     ExecutionPositionRestoreLifecycleRecord,
+    LinkedBracketRef,
     TRUTH_SOURCE_RESTORE_ARTIFACT,
     TRUTH_SOURCE_RUNTIME_LOCAL,
     TRUTH_SOURCE_UNKNOWN,
@@ -112,7 +113,8 @@ def _write_terminal_identity_cache(
 
 def _write_envelope(path: Path, envelope: ExecutionPositionRestoreEnvelope) -> None:
     path.write_text(
-        json.dumps(envelope.model_dump(mode="json", exclude_none=True), sort_keys=True),
+        json.dumps(envelope.model_dump(
+            mode="json", exclude_none=True), sort_keys=True),
         encoding="utf-8",
     )
 
@@ -124,6 +126,7 @@ def _record(
     close_phase: str = "OPENED",
     bracket_state: str = BRACKET_STATE_UNKNOWN,
     deferred_entry_order_id: str | None = None,
+    linked_bracket_ref: dict | None = None,
 ) -> ExecutionPositionRestoreLifecycleRecord:
     kwargs = {
         "symbol": symbol,
@@ -135,7 +138,10 @@ def _record(
         "live_reconcile_required": True,
     }
     if deferred_entry_order_id:
-        kwargs["deferred_bracket_ref"] = {"entry_order_id": deferred_entry_order_id}
+        kwargs["deferred_bracket_ref"] = {
+            "entry_order_id": deferred_entry_order_id}
+    if linked_bracket_ref:
+        kwargs["linked_bracket_ref"] = linked_bracket_ref
     return ExecutionPositionRestoreLifecycleRecord.model_validate(kwargs)
 
 
@@ -165,7 +171,8 @@ def test_authoritative_read_restores_exact_manage_and_close_fields_from_envelope
         ),
     )
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.parse_success is True
@@ -175,7 +182,8 @@ def test_authoritative_read_restores_exact_manage_and_close_fields_from_envelope
     assert result.restored_unknown_field_count == 1
     assert fsm.manage_flows["BTCUSDT"].state == ManageState.TRACKING
     assert fsm.close_flows["BTCUSDT"].state == CloseState.OPENED
-    assert fsm._manage_truth_source_for("BTCUSDT") == TRUTH_SOURCE_RESTORE_ARTIFACT
+    assert fsm._manage_truth_source_for(
+        "BTCUSDT") == TRUTH_SOURCE_RESTORE_ARTIFACT
     assert "BTCUSDT" not in fsm._symbol_brackets
     assert result.symbol_statuses[0].manage_phase_restore_status == "exact"
     assert result.symbol_statuses[0].close_phase_restore_status == "exact"
@@ -206,15 +214,73 @@ def test_authoritative_read_keeps_linked_bracket_state_unknown_without_lineage(
         ),
     )
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000)
 
     assert result.artifact_state == "valid"
     symbol_status = result.symbol_statuses[0]
     assert symbol_status.bracket_state_value == BRACKET_STATE_UNKNOWN
     assert symbol_status.bracket_state_restore_status == "unknown"
     assert "bracket_lineage_not_restorable_from_envelope" in symbol_status.unresolved_reasons
-    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[
+        0]
     assert current.bracket_state == BRACKET_STATE_UNKNOWN
+
+
+def test_authoritative_read_restores_linked_bracket_state_exact_with_lineage(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_authoritative(fsm, tmp_path)
+    _write_envelope(
+        path,
+        ExecutionPositionRestoreEnvelope(
+            schema_version="1.0.0",
+            artifact_type="execution_position_restore_envelope_v1",
+            generated_at_ms=1_775_000_000_000,
+            writer_component="execution_position",
+            requires_live_reconcile=True,
+            active_lifecycles=[
+                _record(
+                    manage_phase="OPENED",
+                    close_phase="OPENED",
+                    bracket_state=BRACKET_STATE_LINKED_ACTIVE,
+                    linked_bracket_ref={
+                        "entry_order_id": "entry-1",
+                        "entry_client_order_id": "ENTRY-CLIENT-1",
+                        "sl_order_id": "sl-1",
+                        "tp_order_id": "tp-1",
+                        "sl_client_order_id": "SL-CLIENT-1",
+                        "tp_client_order_id": "TP-CLIENT-1",
+                    },
+                )
+            ],
+        ),
+    )
+
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000)
+
+    symbol_status = result.symbol_statuses[0]
+    assert symbol_status.bracket_state_value == BRACKET_STATE_LINKED_ACTIVE
+    assert symbol_status.bracket_state_restore_status == "exact"
+    assert "bracket_lineage_not_restorable_from_envelope" not in symbol_status.unresolved_reasons
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[
+        0]
+    assert current.bracket_state == BRACKET_STATE_LINKED_ACTIVE
+    assert current.linked_bracket_ref == LinkedBracketRef(
+        entry_order_id="entry-1",
+        entry_client_order_id="ENTRY-CLIENT-1",
+        sl_order_id="sl-1",
+        tp_order_id="tp-1",
+        sl_client_order_id="SL-CLIENT-1",
+        tp_client_order_id="TP-CLIENT-1",
+    )
+    assert fsm.manage_flows["BTCUSDT"].entry_order_id == "entry-1"
+    assert fsm.manage_flows["BTCUSDT"].entry_client_order_id == "ENTRY-CLIENT-1"
+    assert fsm.manage_flows["BTCUSDT"].sl_order_id == "sl-1"
+    assert fsm.manage_flows["BTCUSDT"].tp_order_id == "tp-1"
 
 
 def test_authoritative_read_restores_deferred_pending_only_when_pending_wal_matches(
@@ -243,12 +309,14 @@ def test_authoritative_read_restores_deferred_pending_only_when_pending_wal_matc
         ),
     )
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000)
 
     symbol_status = result.symbol_statuses[0]
     assert symbol_status.bracket_state_value == BRACKET_STATE_DEFERRED_PENDING_WAL
     assert symbol_status.bracket_state_restore_status == "exact"
-    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[
+        0]
     assert current.bracket_state == BRACKET_STATE_DEFERRED_PENDING_WAL
     assert current.deferred_bracket_ref.entry_order_id == "8631999001"
 
@@ -321,7 +389,8 @@ def test_authoritative_read_handles_stale_artifact_without_applying_truth(
         ),
     )
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_010_500)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_010_500)
 
     assert result.parse_success is True
     assert result.artifact_state == "stale"
@@ -354,7 +423,8 @@ def test_authoritative_read_handles_mixed_certainty_without_promoting_unknown_fi
         ),
     )
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000)
 
     assert result.parse_success is True
     assert result.artifact_state == "valid"
@@ -362,7 +432,8 @@ def test_authoritative_read_handles_mixed_certainty_without_promoting_unknown_fi
     assert result.mixed_certainty_symbols == ["BTCUSDT"]
     assert fsm.manage_flows["BTCUSDT"].state == ManageState.TRACKING
     assert "BTCUSDT" not in fsm.close_flows
-    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
+    current = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[
+        0]
     assert current.manage_phase == "TRACKING"
     assert current.close_phase == "UNKNOWN"
     assert current.bracket_state == "UNKNOWN"
@@ -674,7 +745,8 @@ async def test_startup_reconcile_preserves_restored_exact_phase_when_portfolio_a
 
     assert fsm.manage_flows["BTCUSDT"].state == ManageState.TRACKING
     assert fsm.close_flows["BTCUSDT"].state == CloseState.OPENED
-    assert fsm._manage_truth_source_for("BTCUSDT") == TRUTH_SOURCE_RESTORE_ARTIFACT
+    assert fsm._manage_truth_source_for(
+        "BTCUSDT") == TRUTH_SOURCE_RESTORE_ARTIFACT
 
     rows = _load_startup_truth_rows(startup_truth_path)
     assert len(rows) == 1
@@ -697,7 +769,8 @@ async def test_startup_reconcile_surfaces_positive_runtime_override_after_author
     symbol = "BTCUSDT"
     path = _configure_authoritative(fsm, tmp_path, age_ms=None)
     startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
-    fsm._trade_lifecycle_log_path = lambda: str(tmp_path / "trade_lifecycle.jsonl")
+    fsm._trade_lifecycle_log_path = lambda: str(
+        tmp_path / "trade_lifecycle.jsonl")
     fsm.fsm.order_index = OrderIndex(ttl_sec=600)
     fsm._pending_brackets["8631999001"] = {"symbol": symbol}
     _write_envelope(
@@ -724,7 +797,8 @@ async def test_startup_reconcile_surfaces_positive_runtime_override_after_author
         fsm._pending_brackets.pop("8631999001", None)
         return None
 
-    fsm.order_guardian.cleanup_orphans = AsyncMock(side_effect=_cleanup_orphans)
+    fsm.order_guardian.cleanup_orphans = AsyncMock(
+        side_effect=_cleanup_orphans)
     fsm.order_guardian.link_existing_from_rest = AsyncMock(return_value=None)
 
     def _resolve_context(*, client_order_id, exchange_order_id, symbol=None):
@@ -775,7 +849,8 @@ async def test_startup_reconcile_surfaces_positive_runtime_override_after_author
             "type": "TAKE_PROFIT_MARKET",
         },
     ]
-    fsm.adapter.get_open_orders = AsyncMock(side_effect=[open_orders, open_orders])
+    fsm.adapter.get_open_orders = AsyncMock(
+        side_effect=[open_orders, open_orders])
 
     await fsm._startup_order_guardian_reconcile()
 
@@ -907,7 +982,8 @@ async def test_degraded_authoritative_startup_does_not_emit_unknown_row_when_run
     symbol = "ETHUSDT"
     path = _configure_authoritative(fsm, tmp_path, age_ms=1000)
     startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
-    fsm._trade_lifecycle_log_path = lambda: str(tmp_path / "trade_lifecycle.jsonl")
+    fsm._trade_lifecycle_log_path = lambda: str(
+        tmp_path / "trade_lifecycle.jsonl")
     fsm.fsm.order_index = OrderIndex(ttl_sec=600)
     _write_envelope(
         path,
@@ -971,7 +1047,8 @@ async def test_degraded_authoritative_startup_does_not_emit_unknown_row_when_run
             "type": "TAKE_PROFIT_MARKET",
         },
     ]
-    fsm.adapter.get_open_orders = AsyncMock(side_effect=[open_orders, open_orders])
+    fsm.adapter.get_open_orders = AsyncMock(
+        side_effect=[open_orders, open_orders])
 
     await fsm._startup_order_guardian_reconcile()
 
@@ -992,7 +1069,8 @@ async def test_degraded_startup_truth_surface_makes_unknown_reconstructed_and_ca
     cache_path = _configure_terminal_identity_cache(fsm, tmp_path)
     _write_terminal_identity_cache(cache_path)
     fsm._execution_truth_hardening.load_warm_state()
-    fsm._trade_lifecycle_log_path = lambda: str(tmp_path / "trade_lifecycle.jsonl")
+    fsm._trade_lifecycle_log_path = lambda: str(
+        tmp_path / "trade_lifecycle.jsonl")
     fsm.fsm.order_index = OrderIndex(ttl_sec=600)
     _write_envelope(
         restore_path,
@@ -1059,7 +1137,8 @@ async def test_degraded_startup_truth_surface_makes_unknown_reconstructed_and_ca
             "type": "TAKE_PROFIT_MARKET",
         },
     ]
-    fsm.adapter.get_open_orders = AsyncMock(side_effect=[open_orders, open_orders])
+    fsm.adapter.get_open_orders = AsyncMock(
+        side_effect=[open_orders, open_orders])
 
     await fsm._startup_order_guardian_reconcile()
 

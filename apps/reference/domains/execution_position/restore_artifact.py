@@ -43,6 +43,25 @@ class DeferredBracketRef(BaseModel):
     entry_order_id: str = Field(min_length=1)
 
 
+class LinkedBracketRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_order_id: Optional[str] = Field(default=None, min_length=1)
+    entry_client_order_id: Optional[str] = Field(default=None, min_length=1)
+    sl_order_id: Optional[str] = Field(default=None, min_length=1)
+    tp_order_id: Optional[str] = Field(default=None, min_length=1)
+    sl_client_order_id: Optional[str] = Field(default=None, min_length=1)
+    tp_client_order_id: Optional[str] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_lineage(self) -> "LinkedBracketRef":
+        if not (self.sl_order_id or self.tp_order_id):
+            raise ValueError(
+                "linked_bracket_ref requires at least one child order id"
+            )
+        return self
+
+
 class ExecutionPositionRestoreLifecycleRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -56,6 +75,7 @@ class ExecutionPositionRestoreLifecycleRecord(BaseModel):
         min_length=1, default=TRUTH_SOURCE_UNKNOWN)
     live_reconcile_required: bool = Field(default=True)
     deferred_bracket_ref: Optional[DeferredBracketRef] = Field(default=None)
+    linked_bracket_ref: Optional[LinkedBracketRef] = Field(default=None)
 
     @model_validator(mode="after")
     def _validate_deferred_ref(self) -> "ExecutionPositionRestoreLifecycleRecord":
@@ -64,9 +84,32 @@ class ExecutionPositionRestoreLifecycleRecord(BaseModel):
                 raise ValueError(
                     "deferred_bracket_ref is required when bracket_state=DEFERRED_PENDING_WAL"
                 )
+            if self.linked_bracket_ref is not None:
+                raise ValueError(
+                    "linked_bracket_ref is not allowed when bracket_state=DEFERRED_PENDING_WAL"
+                )
         elif self.deferred_bracket_ref is not None:
             raise ValueError(
                 "deferred_bracket_ref is only allowed when bracket_state=DEFERRED_PENDING_WAL"
+            )
+        if self.bracket_state in {
+            BRACKET_STATE_LINKED_ACTIVE,
+            BRACKET_STATE_PARTIAL_LINKAGE,
+        }:
+            if (
+                self.bracket_state == BRACKET_STATE_LINKED_ACTIVE
+                and self.linked_bracket_ref is not None
+                and not (
+                    self.linked_bracket_ref.sl_order_id
+                    and self.linked_bracket_ref.tp_order_id
+                )
+            ):
+                raise ValueError(
+                    "linked_bracket_ref requires both child order ids when bracket_state=LINKED_ACTIVE"
+                )
+        elif self.linked_bracket_ref is not None:
+            raise ValueError(
+                "linked_bracket_ref is only allowed when bracket_state is LINKED_ACTIVE or PARTIAL_LINKAGE"
             )
         return self
 
@@ -149,11 +192,13 @@ class ExecutionPositionRestoreAuthoritativeSymbolStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str = Field(min_length=1)
-    manage_phase_value: str = Field(min_length=1, default=RESTORE_PHASE_UNKNOWN)
+    manage_phase_value: str = Field(
+        min_length=1, default=RESTORE_PHASE_UNKNOWN)
     manage_phase_restore_status: Literal["exact", "unknown"] = "unknown"
     close_phase_value: str = Field(min_length=1, default=RESTORE_PHASE_UNKNOWN)
     close_phase_restore_status: Literal["exact", "unknown"] = "unknown"
-    bracket_state_value: str = Field(min_length=1, default=BRACKET_STATE_UNKNOWN)
+    bracket_state_value: str = Field(
+        min_length=1, default=BRACKET_STATE_UNKNOWN)
     bracket_state_restore_status: Literal["exact", "unknown"] = "unknown"
     live_reconcile_required: bool = True
     deferred_entry_order_id: Optional[str] = Field(default=None, min_length=1)
@@ -256,7 +301,8 @@ class ExecutionPositionStartupTruthRestoreArtifactStatus(BaseModel):
 class ExecutionPositionStartupTruthCacheStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    legacy_config_key: str = Field(min_length=1, default="event_dedup.warm_state")
+    legacy_config_key: str = Field(
+        min_length=1, default="event_dedup.warm_state")
     truth_class: Literal["cache_only"] = "cache_only"
     authoritative: bool = False
     cache_kind: Literal["exact_terminal_fill_identity_dedupe_seed"] = (
@@ -463,6 +509,12 @@ class ExecutionPositionRestoreArtifactDarkReader:
         "bracket_truth_source",
         "live_reconcile_required",
         "deferred_bracket_ref.entry_order_id",
+        "linked_bracket_ref.entry_order_id",
+        "linked_bracket_ref.entry_client_order_id",
+        "linked_bracket_ref.sl_order_id",
+        "linked_bracket_ref.tp_order_id",
+        "linked_bracket_ref.sl_client_order_id",
+        "linked_bracket_ref.tp_client_order_id",
     )
 
     def __init__(
@@ -526,7 +578,8 @@ class ExecutionPositionRestoreArtifactDarkReader:
         status.parse_success = True
         status.artifact_generated_at_ms = envelope.generated_at_ms
         status.artifact_record_count = len(envelope.active_lifecycles)
-        effective_now_ms = int(now_ms if now_ms is not None else get_clock().now_ms())
+        effective_now_ms = int(
+            now_ms if now_ms is not None else get_clock().now_ms())
         if envelope.generated_at_ms <= effective_now_ms:
             status.artifact_age_ms = effective_now_ms - envelope.generated_at_ms
         stale_after_ms = self._config.dark_read_max_artifact_age_ms
@@ -579,14 +632,16 @@ class ExecutionPositionRestoreArtifactDarkReader:
         heuristic_by_symbol = {
             str(record.symbol).strip().upper(): record for record in heuristic_records
         }
-        all_symbols = sorted(set(artifact_by_symbol.keys()) | set(heuristic_by_symbol.keys()))
+        all_symbols = sorted(set(artifact_by_symbol.keys())
+                             | set(heuristic_by_symbol.keys()))
 
         for symbol in all_symbols:
             artifact_record = artifact_by_symbol.get(symbol)
             heuristic_record = heuristic_by_symbol.get(symbol)
             for field_name in self._COMPARE_FIELDS:
                 artifact_value = self._field_value(artifact_record, field_name)
-                heuristic_value = self._field_value(heuristic_record, field_name)
+                heuristic_value = self._field_value(
+                    heuristic_record, field_name)
                 mismatch_class = self._classify_field_mismatch(
                     artifact_value,
                     heuristic_value,
@@ -606,8 +661,10 @@ class ExecutionPositionRestoreArtifactDarkReader:
                             symbol=symbol,
                             field=field_name,
                             mismatch_class=mismatch_class,
-                            artifact_value=self._stringify_value(artifact_value),
-                            heuristic_value=self._stringify_value(heuristic_value),
+                            artifact_value=self._stringify_value(
+                                artifact_value),
+                            heuristic_value=self._stringify_value(
+                                heuristic_value),
                         )
                     )
 
@@ -625,6 +682,13 @@ class ExecutionPositionRestoreArtifactDarkReader:
             if record.deferred_bracket_ref is None:
                 return None
             return record.deferred_bracket_ref.entry_order_id
+        if field_name.startswith("linked_bracket_ref."):
+            if record.linked_bracket_ref is None:
+                return None
+            return getattr(
+                record.linked_bracket_ref,
+                field_name.split(".", 1)[1],
+            )
         return getattr(record, field_name)
 
     @classmethod
@@ -658,7 +722,8 @@ class ExecutionPositionRestoreArtifactDarkReader:
             str(record.close_phase).strip().upper(),
             str(record.bracket_state).strip().upper(),
         ]
-        unknown_count = sum(1 for value in key_values if value == RESTORE_PHASE_UNKNOWN)
+        unknown_count = sum(
+            1 for value in key_values if value == RESTORE_PHASE_UNKNOWN)
         return 0 < unknown_count < len(key_values)
 
 

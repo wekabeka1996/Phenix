@@ -13,6 +13,7 @@
 | `contracts/__init__.py` | `hot_path` |
 | `contracts/causal_time.py` | `hot_path` |
 | `contracts/control_decision.py` | `hot_path` |
+| `contracts/decision_outcome_ledger.py` | `hot_path` |
 | `contracts/failure_taxonomy.py` | `hot_path` |
 | `contracts/observation_envelope.py` | `hot_path` |
 | `main.py` | `hot_path` |
@@ -24,6 +25,8 @@
 | `logic/datasets/time_provenance.py` | `hot_path` |
 | `logic/gates/__init__.py` | `hot_path` |
 | `logic/gates/shadow.py` | `hot_path` |
+| `logic/ledger/__init__.py` | `hot_path` |
+| `logic/ledger/decision_outcome_ledger.py` | `hot_path` |
 | `logic/failure_ledger.py` | `hot_path` |
 | `logic/ingest/__init__.py` | `hot_path` |
 | `logic/ingest/normalizer.py` | `hot_path` |
@@ -103,8 +106,8 @@
 
 | Classification | Count |
 |---|---|
-| `hot_path` | 28 |
+| `hot_path` | 31 |
 | `legacy_runtime` | 34 |
 | `offline_research` | 18 |
 | `tests_only` | 10 |
-| **Total** | **90** |
+| **Total** | **93** |

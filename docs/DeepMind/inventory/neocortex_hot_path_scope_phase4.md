@@ -24,6 +24,10 @@ hot_path_scope:
       reason: "Canonical Phase 5 authority request/response contract."
       mypy_included: true
       coverage_included: true
+    - path: "contracts/decision_outcome_ledger.py"
+      reason: "Canonical Phase 6 terminal ledger contract keyed by decision_id."
+      mypy_included: true
+      coverage_included: true
     - path: "contracts/failure_taxonomy.py"
       reason: "Typed failure taxonomy and reason-code contract."
       mypy_included: true
@@ -58,6 +62,14 @@ hot_path_scope:
       coverage_included: false
     - path: "logic/gates/shadow.py"
       reason: "Production-shadow startup gate evaluator."
+      mypy_included: true
+      coverage_included: true
+    - path: "logic/ledger/__init__.py"
+      reason: "Package marker only; no executable domain logic."
+      mypy_included: false
+      coverage_included: false
+    - path: "logic/ledger/decision_outcome_ledger.py"
+      reason: "Neocortex-owned runtime join and terminalization sink for Phase 6 decision outcomes."
       mypy_included: true
       coverage_included: true
     - path: "logic/failure_ledger.py"
@@ -120,6 +132,9 @@ hot_path_scope:
     - path: "logic/evaluation/*.py"
       classification: "offline_research"
       reason: "Offline evaluation/reporting surface used for advisory evidence, not active runtime."
+    - path: "logic/datasets/cutover.py"
+      classification: "offline_research"
+      reason: "Offline dataset cutover admission surface used for promotion/export gating, not active runtime hot path."
     - path: "logic/datasets/hygiene.py"
       classification: "offline_research"
       reason: "Offline dataset hygiene/reporting surface, not the active runtime decision path."
@@ -182,11 +197,13 @@ hot_path_scope:
     - "apps/reference/domains/neocortex/config_models.py"
     - "apps/reference/domains/neocortex/contracts/causal_time.py"
     - "apps/reference/domains/neocortex/contracts/control_decision.py"
+    - "apps/reference/domains/neocortex/contracts/decision_outcome_ledger.py"
     - "apps/reference/domains/neocortex/contracts/failure_taxonomy.py"
     - "apps/reference/domains/neocortex/contracts/observation_envelope.py"
     - "apps/reference/domains/neocortex/logic/datasets/time_provenance.py"
     - "apps/reference/domains/neocortex/logic/failure_ledger.py"
     - "apps/reference/domains/neocortex/logic/gates/shadow.py"
+    - "apps/reference/domains/neocortex/logic/ledger/decision_outcome_ledger.py"
     - "apps/reference/domains/neocortex/logic/ingest/normalizer.py"
     - "apps/reference/domains/neocortex/logic/ingest/observation.py"
     - "apps/reference/domains/neocortex/logic/ingest/parser.py"
@@ -200,6 +217,7 @@ hot_path_scope:
     - "apps.reference.domains.neocortex.config_models"
     - "apps.reference.domains.neocortex.contracts.causal_time"
     - "apps.reference.domains.neocortex.contracts.control_decision"
+    - "apps.reference.domains.neocortex.contracts.decision_outcome_ledger"
     - "apps.reference.domains.neocortex.contracts.failure_taxonomy"
     - "apps.reference.domains.neocortex.contracts.observation_envelope"
     - "apps.reference.domains.neocortex.main"
@@ -207,6 +225,7 @@ hot_path_scope:
     - "apps.reference.domains.neocortex.logic.datasets.time_provenance"
     - "apps.reference.domains.neocortex.logic.gates.shadow"
     - "apps.reference.domains.neocortex.logic.failure_ledger"
+    - "apps.reference.domains.neocortex.logic.ledger.decision_outcome_ledger"
     - "apps.reference.domains.neocortex.logic.ingest.normalizer"
     - "apps.reference.domains.neocortex.logic.ingest.observation"
     - "apps.reference.domains.neocortex.logic.ingest.parser"

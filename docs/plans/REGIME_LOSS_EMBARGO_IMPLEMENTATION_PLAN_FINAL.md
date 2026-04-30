@@ -104,6 +104,7 @@ Contract-invalid close events should fail at the contract boundary and not be tr
 5. `decision_making.on_position_closed()` forwards terminal close facts into the policy core.
 6. The policy core latches embargo only when all of the following are true:
    - the close is terminal because it came from `EVT:POSITION_CLOSED`
+   - if `fee_only_close_policy == ignore`, the close is not a provable fee-only scratch (`realized_pnl == 0` and `fees > 0`)
    - `realized_pnl_net < -min_loss_threshold_net`
    - `entry_regime_epoch_ref == current stable_regime_epoch_ref`
 7. If the feature is enabled and the policy core cannot prove required causal context for the symbol, it puts that symbol into a fail-closed blocked state until the next stable regime epoch reset.
@@ -262,18 +263,21 @@ Additional docs after implementation lands:
 
 ## 7. Config surface
 
-The first-package config is a hard kill switch plus one explicit numeric threshold.
+The first-package config is a hard kill switch plus one explicit numeric threshold and one explicit fee-only policy.
 
 Expected config:
 
 - `enabled: bool`
 - `min_loss_threshold_net: float`
+- `fee_only_close_policy: Literal["ignore", "latch"]`
 
 Meaning:
 
 - `enabled=false` means the feature is fully disabled and no embargo behavior runs
 - `enabled=true` means production blocking behavior is active
 - `min_loss_threshold_net` is the explicit net-PnL epsilon in quote currency used to ignore dust and rounding noise
+- `fee_only_close_policy=ignore` means a provable fee-only close (`realized_pnl == 0` and `fees > 0`) does not latch embargo
+- `fee_only_close_policy=latch` preserves the original net-only latch semantics for fee-only closes
 
 When `enabled=false`, the policy core must not latch, must not enter unresolved-context blocked state, and must always report `not blocked`.
 
@@ -524,7 +528,7 @@ This plan is ready for implementation when all of the following are true:
 - the contract surface is agreed: additive `regime_epoch_ref` on trade intent and promoted `EVT:POSITION_CLOSED`
 - the ownership split is fixed: `decision_making` owns epoch semantics and policy, `execution_position` owns terminal close truth, `StrategyGateway` owns enforcement
 - the dedicated policy module boundary is accepted
-- the config surface is reduced to `enabled` and `min_loss_threshold_net`
+- the config surface is reduced to `enabled`, `min_loss_threshold_net`, and explicit `fee_only_close_policy`
 - fail-closed symbol-level behavior is explicit and accepted
 - test coverage is defined for contracts, unit behavior, integration, and boundary ordering
 - production admission criteria are defined before enablement

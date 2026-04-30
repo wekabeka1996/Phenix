@@ -17,6 +17,7 @@ from apps.reference.domains.neocortex.logic.datasets.time_provenance import (  #
     coerce_causal_time_provenance,
     is_causal_time_provenance,
 )
+from apps.reference.telemetry.metrics import inc_neocortex_dataset_invalid
 
 # ---------------------------------------------------------------------------
 # Dataset visibility literals
@@ -37,6 +38,7 @@ def increment_non_causal_counter() -> None:
     """Increment the dataset.invalid_total{reason_code=NON_CAUSAL_TIME} counter."""
     global _non_causal_time_counter
     _non_causal_time_counter += 1
+    inc_neocortex_dataset_invalid(NON_CAUSAL_REASON_CODE)
 
 
 def get_non_causal_counter() -> int:

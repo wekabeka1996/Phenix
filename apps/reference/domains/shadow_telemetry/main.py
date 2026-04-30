@@ -21,6 +21,11 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from apps.reference.config_loader import ConfigLoader
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    FailureReasonCode,
+    record_failure_outcome,
+)
 from apps.reference.domains.shadow_telemetry.contracts import (
     CmdLlmIntentSubmitV1,
     IntentAcceptedResponseV1,
@@ -89,7 +94,8 @@ def _emit_audit_event(app: FastAPI, event_name: str, payload: Dict[str, Any], wh
     if not event_full.startswith("EVT:"):
         event_full = f"EVT:{event_full}"
     verb = event_full.split(":", 1)[1]
-    rid = str(payload.get("intent_id") or payload.get("request_id") or f"req-{_now_ms()}")
+    rid = str(payload.get("intent_id") or payload.get(
+        "request_id") or f"req-{_now_ms()}")
     _append_wal_event(verb=verb, rid=rid, payload=payload, why=why)
 
     store: SnapshotStore = app.state.snapshot_store
@@ -126,7 +132,8 @@ def _reject_with_event(
         "symbol": symbol,
         "idempotency_key": idempotency_key,
     }
-    _emit_audit_event(app, "EVT:LLM_INTENT_REJECTED_V1", payload, f"reject:{reason_code}")
+    _emit_audit_event(app, "EVT:LLM_INTENT_REJECTED_V1",
+                      payload, f"reject:{reason_code}")
     raise HTTPException(
         status_code=http_status,
         detail={
@@ -193,7 +200,8 @@ def _authorize_or_reject(
 
 def _cleanup_runtime_state(app: FastAPI, now_ms: int) -> None:
     ttl_ms = int(app.state.idempotency_ttl_sec * 1000)
-    open_ttl_ms = max(ttl_ms, int(app.state.intent_policy_cooldown_sec * 1000), 60_000)
+    open_ttl_ms = max(ttl_ms, int(
+        app.state.intent_policy_cooldown_sec * 1000), 60_000)
 
     with app.state.state_lock:
         stale_idem = [
@@ -221,9 +229,12 @@ def _probe_ipc_endpoint(endpoint: str, timeout_sec: float = 0.25) -> bool:
 
 
 def _effective_symbol_allowlist(app: FastAPI) -> set[str]:
-    write_allow = set(str(s).upper() for s in (app.state.write_symbol_allowlist or []) if str(s).strip())
-    llm_owned = set(str(s).upper() for s in (app.state.symbols_llm or []) if str(s).strip())
-    trading_allow = set(str(s).upper() for s in (app.state.trading_symbol_allowlist or []) if str(s).strip())
+    write_allow = set(str(s).upper() for s in (
+        app.state.write_symbol_allowlist or []) if str(s).strip())
+    llm_owned = set(str(s).upper()
+                    for s in (app.state.symbols_llm or []) if str(s).strip())
+    trading_allow = set(str(s).upper() for s in (
+        app.state.trading_symbol_allowlist or []) if str(s).strip())
 
     effective = write_allow or trading_allow or llm_owned
     if write_allow and trading_allow:
@@ -280,20 +291,29 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     app.state.intent_status = {}  # intent_id -> status payload
     app.state.rate_buckets = defaultdict(deque)  # subject -> deque[float(sec)]
     app.state.last_accept_ts_ms = {}  # symbol -> ts_ms
-    app.state.active_intents = defaultdict(deque)  # symbol -> deque[(ts_ms, intent_id)]
+    # symbol -> deque[(ts_ms, intent_id)]
+    app.state.active_intents = defaultdict(deque)
     app.state.idempotency_ttl_sec = int(write_cfg.idempotency_ttl_sec)
     app.state.intent_policy_max_open = int(intent_policy.max_open_intents)
     app.state.intent_policy_cooldown_sec = int(intent_policy.cooldown_sec)
-    app.state.intent_policy_allow_limit_only = bool(intent_policy.allow_limit_only)
+    app.state.intent_policy_allow_limit_only = bool(
+        intent_policy.allow_limit_only)
     app.state.intent_policy_require_tp_sl = bool(intent_policy.require_tp_sl)
-    app.state.intent_policy_max_notional_usd = getattr(intent_policy, "max_notional_usd", None)
+    app.state.intent_policy_max_notional_usd = getattr(
+        intent_policy, "max_notional_usd", None)
     app.state.intent_policy_max_qty = getattr(intent_policy, "max_qty", None)
-    app.state.intent_policy_max_price_deviation_bps = getattr(intent_policy, "max_price_deviation_bps", None)
-    app.state.intent_policy_allowed_tif = [str(x).upper() for x in (getattr(intent_policy, "allowed_tif", []) or [])]
-    app.state.symbols_llm = [str(s).upper() for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
-    app.state.require_telemetry = bool(getattr(llm_cfg, "require_telemetry", False))
-    app.state.write_symbol_allowlist = [str(s).upper() for s in (write_cfg.symbol_allowlist or [])]
-    app.state.trading_symbol_allowlist = [str(s).upper() for s in (llm_cfg.allowlist_symbols or [])]
+    app.state.intent_policy_max_price_deviation_bps = getattr(
+        intent_policy, "max_price_deviation_bps", None)
+    app.state.intent_policy_allowed_tif = [str(x).upper() for x in (
+        getattr(intent_policy, "allowed_tif", []) or [])]
+    app.state.symbols_llm = [str(s).upper() for s in (
+        getattr(llm_cfg, "symbols_llm", []) or [])]
+    app.state.require_telemetry = bool(
+        getattr(llm_cfg, "require_telemetry", False))
+    app.state.write_symbol_allowlist = [
+        str(s).upper() for s in (write_cfg.symbol_allowlist or [])]
+    app.state.trading_symbol_allowlist = [
+        str(s).upper() for s in (llm_cfg.allowlist_symbols or [])]
     app.state.rate_limit_per_min = int(write_cfg.rate_limit_per_min)
     app.state.require_snapshot_ref = bool(write_cfg.require_snapshot_ref)
     app.state.max_body_kb = int(write_cfg.max_body_kb)
@@ -304,10 +324,14 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         store = SnapshotStore(
             output_dir=str(shadow_cfg.snapshot.output_dir),
             trigger_event=str(shadow_cfg.snapshot.trigger_event),
-            bar_snapshots_enabled=bool(shadow_cfg.snapshot.tf_policy.bar_snapshots_enabled),
-            tick_snapshots_mode=str(shadow_cfg.snapshot.tf_policy.tick_snapshots_mode),
-            tick_sample_every_n=int(shadow_cfg.snapshot.tf_policy.tick_sample_every_n),
-            min_tf_sec_for_full=int(shadow_cfg.snapshot.tf_policy.min_tf_sec_for_full),
+            bar_snapshots_enabled=bool(
+                shadow_cfg.snapshot.tf_policy.bar_snapshots_enabled),
+            tick_snapshots_mode=str(
+                shadow_cfg.snapshot.tf_policy.tick_snapshots_mode),
+            tick_sample_every_n=int(
+                shadow_cfg.snapshot.tf_policy.tick_sample_every_n),
+            min_tf_sec_for_full=int(
+                shadow_cfg.snapshot.tf_policy.min_tf_sec_for_full),
             logger=LOG.getChild("snapshot_store"),
         )
         app.state.snapshot_store = store
@@ -315,6 +339,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         app.state.ingress_server = JsonlTcpServer(
             endpoint=str(shadow_cfg.ingest.ipc_endpoint),
             handler=store.ingest_event,
+            stop_timeout_ms=int(shadow_cfg.lifecycle.stop_timeout_ms),
             logger=LOG.getChild("ingress"),
             name="shadow_telemetry_ingress_server",
         )
@@ -324,6 +349,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             endpoint=str(shadow_cfg.egress_to_main.ipc_commands_endpoint),
             queue_maxsize=int(shadow_cfg.egress_to_main.queue_maxsize),
             overflow_policy=str(shadow_cfg.egress_to_main.overflow_policy),
+            stop_timeout_ms=int(shadow_cfg.lifecycle.stop_timeout_ms),
             logger=LOG.getChild("egress"),
             name="shadow_telemetry_command_client",
         )
@@ -346,22 +372,41 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     async def _shutdown() -> None:
         try:
             app.state.ingress_server.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.UNCLEAN_SHUTDOWN,
+                location="domains/shadow_telemetry/main.py:_shutdown",
+                message="Shadow telemetry ingress server stop failed",
+                detail=type(exc).__name__,
+            )
+            LOG.warning(
+                "Shadow telemetry ingress server stop failed", exc_info=True)
         try:
             app.state.command_client.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.UNCLEAN_SHUTDOWN,
+                location="domains/shadow_telemetry/main.py:_shutdown",
+                message="Shadow telemetry command client stop failed",
+                detail=type(exc).__name__,
+            )
+            LOG.warning(
+                "Shadow telemetry command client stop failed", exc_info=True)
         LOG.info("ShadowTelemetry shutdown complete")
 
     @app.exception_handler(RequestValidationError)
     async def _request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         if request.method.upper() == "POST" and request.url.path == app.state.write_endpoint:
-            request_id = str(request.headers.get("x-request-id") or f"req-{_now_ms()}")
+            request_id = str(request.headers.get(
+                "x-request-id") or f"req-{_now_ms()}")
             body = exc.body if isinstance(exc.body, dict) else {}
-            intent_id = body.get("intent_id") if isinstance(body, dict) else None
+            intent_id = body.get("intent_id") if isinstance(
+                body, dict) else None
             symbol = body.get("symbol") if isinstance(body, dict) else None
-            idem = body.get("idempotency_key") if isinstance(body, dict) else None
+            idem = body.get("idempotency_key") if isinstance(
+                body, dict) else None
             _emit_audit_event(
                 app,
                 "EVT:LLM_INTENT_REJECTED_V1",
@@ -410,7 +455,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         store: SnapshotStore = app.state.snapshot_store
         row = store.latest(symbol=symbol, tf_sec=tf_sec)
         if row is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="snapshot not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="snapshot not found")
         return row
 
     @app.get("/snapshots/tail")
@@ -436,10 +482,12 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         if not bool(write_cfg.enabled):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={"reason_code": "WRITE_DISABLED", "reason": "write-path disabled by config"},
+                detail={"reason_code": "WRITE_DISABLED",
+                        "reason": "write-path disabled by config"},
             )
 
-        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        request_id = str(request.headers.get(
+            "x-request-id") or f"req-{uuid.uuid4()}")
         auth_subject = _authorize_or_reject(app, request_id, credentials)
         now_ms = _now_ms()
 
@@ -463,11 +511,15 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
 
         _cleanup_runtime_state(app, now_ms)
 
-        idempotency_hdr = str(request.headers.get("idempotency-key") or "").strip()
-        idempotency_key = str(intent.idempotency_key or idempotency_hdr or compute_idempotency_key(intent))
-        normalized_intent = intent.model_copy(update={"idempotency_key": idempotency_key})
+        idempotency_hdr = str(request.headers.get(
+            "idempotency-key") or "").strip()
+        idempotency_key = str(
+            intent.idempotency_key or idempotency_hdr or compute_idempotency_key(intent))
+        normalized_intent = intent.model_copy(
+            update={"idempotency_key": idempotency_key})
         payload_hash = canonical_payload_hash(
-            normalized_intent.model_dump(mode="json", exclude={"idempotency_key"})
+            normalized_intent.model_dump(
+                mode="json", exclude={"idempotency_key"})
         )
 
         with app.state.state_lock:
@@ -487,7 +539,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 )
 
         symbol = str(normalized_intent.symbol).upper()
-        llm_symbols = set(str(s).upper() for s in (app.state.symbols_llm or []) if str(s).strip())
+        llm_symbols = set(str(s).upper() for s in (
+            app.state.symbols_llm or []) if str(s).strip())
         if llm_symbols and symbol not in llm_symbols:
             _reject_with_event(
                 app,
@@ -513,7 +566,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 idempotency_key=idempotency_key,
             )
 
-        allowed_tif = set(str(x).upper() for x in (app.state.intent_policy_allowed_tif or []))
+        allowed_tif = set(str(x).upper()
+                          for x in (app.state.intent_policy_allowed_tif or []))
         requested_tif = str(normalized_intent.order.time_in_force).upper()
         if allowed_tif and requested_tif not in allowed_tif:
             _reject_with_event(
@@ -560,11 +614,12 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                     reason_code="TP_SL_REQUIRED",
                     reason="both tp_price and sl_price are required",
                     intent_id=normalized_intent.intent_id,
-                symbol=symbol,
-                idempotency_key=idempotency_key,
-            )
+                    symbol=symbol,
+                    idempotency_key=idempotency_key,
+                )
 
-        latest_snapshot = app.state.snapshot_store.latest(symbol=symbol, tf_sec=None)
+        latest_snapshot = app.state.snapshot_store.latest(
+            symbol=symbol, tf_sec=None)
         if app.state.require_telemetry and latest_snapshot is None:
             _reject_with_event(
                 app,
@@ -592,7 +647,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                     symbol=symbol,
                     idempotency_key=idempotency_key,
                 )
-            deviation_bps = abs(limit_price - reference_price) / reference_price * Decimal("10000")
+            deviation_bps = abs(limit_price - reference_price) / \
+                reference_price * Decimal("10000")
             if deviation_bps > Decimal(str(max_dev_bps)):
                 _reject_with_event(
                     app,
@@ -613,7 +669,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             cap_qty = Decimal(str(max_qty))
         if max_notional_usd is not None and limit_price > 0:
             cap_from_notional = Decimal(str(max_notional_usd)) / limit_price
-            cap_qty = cap_from_notional if cap_qty is None else min(cap_qty, cap_from_notional)
+            cap_qty = cap_from_notional if cap_qty is None else min(
+                cap_qty, cap_from_notional)
 
         effective_qty = requested_qty
         if cap_qty is not None and requested_qty > cap_qty:
@@ -629,7 +686,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                     idempotency_key=idempotency_key,
                 )
             # Critical overshoot guard: reject if request is >3x effective cap.
-            overshoot = requested_qty / cap_qty if cap_qty > 0 else Decimal("999")
+            overshoot = requested_qty / \
+                cap_qty if cap_qty > 0 else Decimal("999")
             if overshoot > Decimal("3"):
                 _reject_with_event(
                     app,
@@ -678,7 +736,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 )
 
             # Approximate max open intents per symbol (local bounded horizon).
-            active_for_symbol: Deque[Tuple[int, str]] = app.state.active_intents[symbol]
+            active_for_symbol: Deque[Tuple[int, str]
+                                     ] = app.state.active_intents[symbol]
             if len(active_for_symbol) >= int(app.state.intent_policy_max_open):
                 _reject_with_event(
                     app,
@@ -717,7 +776,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             "idempotency_key": cmd.idempotency_key,
             "why_short": truncate_why(str(cmd.why_short), 80),
         }
-        _emit_audit_event(app, "EVT:LLM_INTENT_RECEIVED_V1", received_payload, "llm_intent_received")
+        _emit_audit_event(app, "EVT:LLM_INTENT_RECEIVED_V1",
+                          received_payload, "llm_intent_received")
 
         app.state.snapshot_store.record_external_intent(
             {
@@ -737,7 +797,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             }
         )
 
-        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        ipc_endpoint = str(
+            app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
         if not _probe_ipc_endpoint(ipc_endpoint):
             _reject_with_event(
                 app,
@@ -750,7 +811,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 idempotency_key=cmd.idempotency_key,
             )
 
-        ok = bool(app.state.command_client.enqueue(cmd.model_dump(mode="json")))
+        ok = bool(app.state.command_client.enqueue(
+            cmd.model_dump(mode="json")))
         if not ok:
             _reject_with_event(
                 app,
@@ -777,7 +839,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 "ts_ms": now_ms,
             }
             app.state.last_accept_ts_ms[symbol] = now_ms
-            app.state.active_intents[symbol].append((now_ms, str(cmd.intent_id)))
+            app.state.active_intents[symbol].append(
+                (now_ms, str(cmd.intent_id)))
             app.state.intent_status[str(cmd.intent_id)] = {
                 "intent_id": str(cmd.intent_id),
                 "request_id": request_id,
@@ -795,7 +858,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         methods=["POST"],
         response_model=IntentAcceptedResponseV1,
         status_code=status.HTTP_202_ACCEPTED,
-        openapi_extra={"x-openai-isConsequential": bool(write_cfg.consequential)},
+        openapi_extra={
+            "x-openai-isConsequential": bool(write_cfg.consequential)},
         responses={
             202: {"description": "Accepted (queued for async processing)"},
             400: {"description": "Schema or policy violation"},
@@ -818,7 +882,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             routes=app.routes,
         )
         # Contract policy: expose 400 for schema violations (not FastAPI 422).
-        post_schema = schema.get("paths", {}).get(write_endpoint, {}).get("post", {})
+        post_schema = schema.get("paths", {}).get(
+            write_endpoint, {}).get("post", {})
         responses = post_schema.get("responses", {})
         responses.pop("422", None)
         app.openapi_schema = schema
@@ -831,7 +896,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         with app.state.state_lock:
             status_row = app.state.intent_status.get(str(intent_id))
             if status_row is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="intent_id not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="intent_id not found")
             return dict(status_row)
 
     return app
@@ -842,14 +908,16 @@ def _resolve_project_root() -> Path:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Shadow Telemetry domain service")
+    parser = argparse.ArgumentParser(
+        description="Shadow Telemetry domain service")
     parser.add_argument(
         "--config-dir",
         default="config/aurora",
         help="Path to Aurora config directory (default: config/aurora)",
     )
     parser.add_argument("--host", default=None, help="Override API host")
-    parser.add_argument("--port", type=int, default=None, help="Override API port")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Override API port")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
     return parser.parse_args()
 
@@ -876,8 +944,10 @@ def main() -> None:
     ssl_certfile = None
     ssl_keyfile = None
     if bool(shadow_cfg.api.tls):
-        ssl_certfile = os.getenv("SHADOW_TELEMETRY_TLS_CERT") or os.getenv("AURORA_TLS_CERT")
-        ssl_keyfile = os.getenv("SHADOW_TELEMETRY_TLS_KEY") or os.getenv("AURORA_TLS_KEY")
+        ssl_certfile = os.getenv(
+            "SHADOW_TELEMETRY_TLS_CERT") or os.getenv("AURORA_TLS_CERT")
+        ssl_keyfile = os.getenv(
+            "SHADOW_TELEMETRY_TLS_KEY") or os.getenv("AURORA_TLS_KEY")
         if not ssl_certfile or not ssl_keyfile:
             raise RuntimeError(
                 "TLS enabled but cert/key are missing. Set SHADOW_TELEMETRY_TLS_CERT and SHADOW_TELEMETRY_TLS_KEY."

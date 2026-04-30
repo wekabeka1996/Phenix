@@ -289,6 +289,7 @@ class NormalizedRejectReasons:
     PRICE_MOTION_INSUFFICIENT = "NRR-028"
     PRICE_MOTION_FLASH_BLOCKED = "NRR-029"
     PRICE_MOTION_BLEED_BLOCKED = "NRR-030"
+    REGIME_CONFIDENCE_ABOVE_MAX = "NRR-063"
     # Phase 4: Net-Zero Score Readiness & Liquidity Codes
     FEATURES_NOT_READY = "NRR-031"
     FEATURES_MISSING = "NRR-032"
@@ -433,6 +434,11 @@ class NormalizedRejectReasons:
             r"trend.*contradict",
             r"contra.*trend",
         ],
+        REGIME_CONFIDENCE_ABOVE_MAX: [
+            r"regime.*confidence.*above.*max",
+            r"confidence.*above.*max",
+            r"above.*max.*regime.*confidence",
+        ],
         PRICE_MOTION_INSUFFICIENT: [
             r"price_motion.*insufficient",
             r"price motion.*insufficient",
@@ -543,6 +549,8 @@ class NormalizedRejectReasons:
             "DIRECTIONAL_SANITY_BLOCKED": cls.DIRECTIONAL_SANITY_BLOCKED,
             "NRR-INSUFFICIENT-TREND-CONFIRMATION": cls.INSUFFICIENT_TREND_CONFIRMATION,
             "NRR-DIRECTIONAL-SANITY-BLOCKED": cls.DIRECTIONAL_SANITY_BLOCKED,
+            "REGIME_CONFIDENCE_ABOVE_MAX": cls.REGIME_CONFIDENCE_ABOVE_MAX,
+            "NRR-REGIME-CONFIDENCE-ABOVE-MAX": cls.REGIME_CONFIDENCE_ABOVE_MAX,
             # PRICE-MOTION-V1
             "PRICE_MOTION_INSUFFICIENT": cls.PRICE_MOTION_INSUFFICIENT,
             "PRICE_MOTION_FLASH_BLOCKED": cls.PRICE_MOTION_FLASH_BLOCKED,
@@ -629,6 +637,7 @@ class NormalizedRejectReasons:
             cls.PRICE_MOTION_INSUFFICIENT: "Price motion features are missing/not warmed up (fail-closed)",
             cls.PRICE_MOTION_FLASH_BLOCKED: "Flash price motion gate blocked opening against fast move",
             cls.PRICE_MOTION_BLEED_BLOCKED: "Bleed price motion gate blocked opening against sustained move",
+            cls.REGIME_CONFIDENCE_ABOVE_MAX: "Regime confidence is too strong for this strategy/regime band",
             cls.FEATURES_NOT_READY: "Essential features are not yet ready (warmup)",
             cls.FEATURES_MISSING: "Essential features are missing from payload",
             cls.LIQUIDITY_LOW: "Liquidity is too low (kappa gate)",

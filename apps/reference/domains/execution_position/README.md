@@ -147,13 +147,12 @@ See `domain_dict.json` for the full export list. Key events:
 | `bootstrapping/leverage_bootstrapper.py` | Leverage bootstrap at startup |
 | `adapter_init.py` | Adapter initialization mixin |
 
-### Other (2 files)
+### Other (3 files)
 | File | Role |
 |------|------|
 | `async_scheduling.py` | Async scheduling mixin |
 | `utils_event_bus.py` | Local event bus utility |
 | `event_handlers.py` | Event handler dispatch (727 LOC) |
-| `limit_order_monitor.py` | Limit order fill monitoring |
 
 ## 7. Fail-Closed Rules
 
@@ -208,8 +207,16 @@ pytest tests/integration/ -k "execpos or ep01" -v   # Integration tests
 
 ### Owned contracts (registry owner = execution_position)
 All `DEC:*`, `EVT:EXECUTION_*`, `EVT:EXIT_MATCH_*`, `EVT:EXPOSURE_*`, `EVT:ORDER_*`,
-`EVT:LIMIT_ORDER_TIMEOUT`, `EVT:MANAGE_SKIPPED`, `EVT:PENDING_BRACKETS_*`, `EVT:SYMBOL_TIDY`,
+`EVT:LIMIT_ORDER_TIMEOUT` *(deprecated — no live emitter since J2; see note below)*,
+`EVT:MANAGE_SKIPPED`, `EVT:PENDING_BRACKETS_*`, `EVT:SYMBOL_TIDY`,
 `ERR:OPEN`, `ERR:EXECUTION_FAILED`, `ERR:FATAL_CONFIG_MISMATCH`.
+
+> **Deprecation (J4, 2026-04-30):** `EVT:LIMIT_ORDER_TIMEOUT` has no live runtime emitter
+> after `LimitOrderMonitor` was retired in J2. The active timeout event is
+> **`EVT:ORDER_TIMEOUT`**, emitted by `EntryManager.handle_order_timeout()` via
+> `OrderTimeoutWatchdog` callback. `EVT:ORDER_TIMEOUT` carries `timeout_type`
+> (ACK_TIMEOUT / FILL_TIMEOUT) as payload discriminator. The export is retained in
+> `domain_dict.json` for staged retirement.
 
 ### Sanctioned co-emission (EP emits, another domain owns)
 | Contract | Owner | EP emitter | Why EP co-emits |

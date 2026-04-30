@@ -17,6 +17,7 @@ from apps.reference.domains.decision_making.schemas.control_decision import (
 from apps.reference.domains.neocortex.config_models import load_config as load_neocortex_config
 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
     FailureOutcomeTaxonomy,
+    FailureReasonCode,
     get_failure_outcome_total,
     reset_failure_outcomes,
 )
@@ -138,6 +139,7 @@ def test_shadow_gate_and_aurora_loader_paths() -> None:
                         source=source,
                         ipc_endpoint="tcp://127.0.0.1:7101",
                     ),
+                    lifecycle=SimpleNamespace(stop_timeout_ms=2000),
                 ),
             )
         )
@@ -151,6 +153,7 @@ def test_shadow_gate_and_aurora_loader_paths() -> None:
         )
     assert runtime_config.enforcement_mode == "shadow"
     assert runtime_config.event_tap_endpoint == "tcp://127.0.0.1:7101"
+    assert runtime_config.stop_timeout_ms == 2000
 
     for fake_config, match_text in [
         (_aurora_config(mode="live"), "shadow"),
@@ -430,6 +433,7 @@ async def test_event_tap_server_start_stop_and_on_frame(runtime_bundle) -> None:
     server = neocortex_main.NeocortexEventTapServer(
         runtime=runtime,
         endpoint="tcp://127.0.0.1:7101",
+        stop_timeout_ms=2000,
         logger=logging.getLogger("neocortex.test.tap.start_stop"),
     )
     server._server.start = MagicMock()
@@ -450,11 +454,51 @@ async def test_event_tap_server_start_stop_and_on_frame(runtime_bundle) -> None:
     server._loop = _LoopProbe()
     server._on_frame({"frame_id": "frame-1", "payload": {}})
     await asyncio.sleep(0)
-    server.stop()
+    await server.aclose()
 
     server._server.start.assert_called_once()
     server._server.stop.assert_called_once()
     assert loop_calls and loop_calls[0][0] == "_schedule_frame"
+
+
+@pytest.mark.asyncio
+async def test_event_tap_server_aclose_records_unclean_shutdown_for_pending_tasks(
+    runtime_bundle,
+    monkeypatch,
+) -> None:
+    runtime, _shadow_events = runtime_bundle
+    reset_failure_outcomes()
+    server = neocortex_main.NeocortexEventTapServer(
+        runtime=runtime,
+        endpoint="tcp://127.0.0.1:7101",
+        stop_timeout_ms=1,
+        logger=logging.getLogger("neocortex.test.tap.pending"),
+    )
+    server._server.stop = MagicMock()
+    pending_task = asyncio.create_task(asyncio.sleep(10))
+    gather_future = asyncio.get_running_loop().create_future()
+    server._tasks.add(pending_task)
+
+    async def _raise_timeout(_awaitable, timeout: float):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(neocortex_main.asyncio, "gather",
+                        lambda *args, **kwargs: gather_future)
+    monkeypatch.setattr(neocortex_main.asyncio, "wait_for", _raise_timeout)
+
+    try:
+        await server.aclose()
+    finally:
+        gather_future.cancel()
+        pending_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending_task
+
+    server._server.stop.assert_called_once()
+    assert get_failure_outcome_total(
+        taxonomy=FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+        reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN,
+    ) == 1
 
 
 @pytest.mark.asyncio
@@ -465,15 +509,16 @@ async def test_main_reactor_heartbeat_and_success_path(runtime_bundle, monkeypat
     stopped: list[str] = []
 
     class _FakeServer:
-        def __init__(self, *, runtime, endpoint, logger):
+        def __init__(self, *, runtime, endpoint, stop_timeout_ms, logger):
             self.runtime = runtime
             self.endpoint = endpoint
+            self.stop_timeout_ms = stop_timeout_ms
             self.logger = logger
 
         def start(self) -> None:
             started.append(self.endpoint)
 
-        def stop(self) -> None:
+        async def aclose(self) -> None:
             stopped.append(self.endpoint)
 
     sleep_calls = {"count": 0}
@@ -491,6 +536,7 @@ async def test_main_reactor_heartbeat_and_success_path(runtime_bundle, monkeypat
         await neocortex_main.main_reactor(
             runtime,
             event_tap_endpoint="tcp://127.0.0.1:7101",
+            stop_timeout_ms=2000,
             logger=logging.getLogger("neocortex.test.reactor.heartbeat"),
         )
 
@@ -501,6 +547,7 @@ async def test_main_reactor_heartbeat_and_success_path(runtime_bundle, monkeypat
     fake_aurora = SimpleNamespace(
         enforcement_mode="shadow",
         event_tap_endpoint="tcp://127.0.0.1:7101",
+        stop_timeout_ms=2000,
     )
     monkeypatch.setattr(
         neocortex_main,
@@ -545,6 +592,7 @@ async def test_shadow_event_tap_reactor_entrypoint_and_run_paths(runtime_bundle,
     server = neocortex_main.NeocortexEventTapServer(
         runtime=runtime,
         endpoint="tcp://127.0.0.1:7101",
+        stop_timeout_ms=2000,
         logger=logging.getLogger("neocortex.test.tap"),
     )
     server._on_frame({"payload": {}})
@@ -575,15 +623,16 @@ async def test_shadow_event_tap_reactor_entrypoint_and_run_paths(runtime_bundle,
     stopped: list[str] = []
 
     class _FakeServer:
-        def __init__(self, *, runtime, endpoint, logger):
+        def __init__(self, *, runtime, endpoint, stop_timeout_ms, logger):
             self.runtime = runtime
             self.endpoint = endpoint
+            self.stop_timeout_ms = stop_timeout_ms
             self.logger = logger
 
         def start(self) -> None:
             started.append(self.endpoint)
 
-        def stop(self) -> None:
+        async def aclose(self) -> None:
             stopped.append(self.endpoint)
 
     async def _raise_cancelled(_seconds: float) -> None:
@@ -595,6 +644,7 @@ async def test_shadow_event_tap_reactor_entrypoint_and_run_paths(runtime_bundle,
         await neocortex_main.main_reactor(
             runtime,
             event_tap_endpoint="tcp://127.0.0.1:7101",
+            stop_timeout_ms=2000,
             logger=logging.getLogger("neocortex.test.reactor"),
         )
     assert started == ["tcp://127.0.0.1:7101"]

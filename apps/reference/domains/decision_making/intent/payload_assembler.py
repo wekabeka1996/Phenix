@@ -102,16 +102,19 @@ def build_trade_intent_payload(
 
 def build_decision_trace_payload(
     *,
+    rid: str,
     symbol: str,
     strategy_id: str,
     trace_ts_ms: int,
     intent_side: str,
+    lifecycle_id: Optional[str],
     sg: Any,
     regime_provenance: Optional[dict],
     tpsl_owner_ctx: Optional[dict],
 ) -> dict[str, Any]:
     """Build the side-channel decision trace payload emitted before the trade intent."""
     trace_payload = {
+        "rid": rid,
         "symbol": symbol,
         "strategy_id": strategy_id,
         "ts": trace_ts_ms,
@@ -119,11 +122,20 @@ def build_decision_trace_payload(
         "signal_score": sg.signal_score,
         "regime": sg.regime,
         "regime_confidence": sg.regime_confidence,
+        "resolved_regime_confidence_strategy_id": getattr(sg, "resolved_regime_confidence_strategy_id", None),
+        "resolved_regime_confidence_symbol": getattr(sg, "resolved_regime_confidence_symbol", None),
+        "resolved_regime_confidence_regime_key": getattr(sg, "resolved_regime_confidence_regime_key", None),
         "min_regime_confidence": getattr(sg, "min_regime_confidence", None),
         "resolved_min_regime_confidence": getattr(sg, "resolved_min_regime_confidence", None),
         "resolved_min_regime_confidence_source": getattr(sg, "resolved_min_regime_confidence_source", None),
         "resolved_min_regime_confidence_strategy_id": getattr(sg, "resolved_min_regime_confidence_strategy_id", None),
         "resolved_min_regime_confidence_regime_key": getattr(sg, "resolved_min_regime_confidence_regime_key", None),
+        "resolved_max_regime_confidence": getattr(sg, "resolved_max_regime_confidence", None),
+        "resolved_max_regime_confidence_source": getattr(sg, "resolved_max_regime_confidence_source", None),
+        "resolved_max_regime_confidence_strategy_id": getattr(sg, "resolved_max_regime_confidence_strategy_id", None),
+        "resolved_max_regime_confidence_regime_key": getattr(sg, "resolved_max_regime_confidence_regime_key", None),
+        "resolved_regime_confidence_band_active": getattr(sg, "resolved_regime_confidence_band_active", None),
+        "regime_confidence_breach_kind": getattr(sg, "regime_confidence_breach_kind", None),
         "regime_confidence_gate_verdict": getattr(sg, "regime_confidence_gate_verdict", None),
         "trend_dir": sg.trend_dir,
         "trend_run_length": sg.trend_run_length,
@@ -138,6 +150,8 @@ def build_decision_trace_payload(
         "deny_reason": None,
         "why": (str(sg.why_short)[:80] if sg.why_short else ""),
     }
+    if lifecycle_id is not None:
+        trace_payload["lifecycle_id"] = lifecycle_id
     if isinstance(regime_provenance, dict) and regime_provenance:
         trace_payload["regime_provenance"] = regime_provenance
     if tpsl_owner_ctx is not None:
@@ -166,11 +180,20 @@ def build_order_intent_log_entry(
         "intent_proposed": True,
         "idempotent_key": lifecycle_id,
         "normalize_mode_effective": normalize_mode,
+        "resolved_regime_confidence_strategy_id": getattr(sg, "resolved_regime_confidence_strategy_id", None),
+        "resolved_regime_confidence_symbol": getattr(sg, "resolved_regime_confidence_symbol", None),
+        "resolved_regime_confidence_regime_key": getattr(sg, "resolved_regime_confidence_regime_key", None),
         "min_regime_confidence": getattr(sg, "min_regime_confidence", None),
         "resolved_min_regime_confidence": getattr(sg, "resolved_min_regime_confidence", None),
         "resolved_min_regime_confidence_source": getattr(sg, "resolved_min_regime_confidence_source", None),
         "resolved_min_regime_confidence_strategy_id": getattr(sg, "resolved_min_regime_confidence_strategy_id", None),
         "resolved_min_regime_confidence_regime_key": getattr(sg, "resolved_min_regime_confidence_regime_key", None),
+        "resolved_max_regime_confidence": getattr(sg, "resolved_max_regime_confidence", None),
+        "resolved_max_regime_confidence_source": getattr(sg, "resolved_max_regime_confidence_source", None),
+        "resolved_max_regime_confidence_strategy_id": getattr(sg, "resolved_max_regime_confidence_strategy_id", None),
+        "resolved_max_regime_confidence_regime_key": getattr(sg, "resolved_max_regime_confidence_regime_key", None),
+        "resolved_regime_confidence_band_active": getattr(sg, "resolved_regime_confidence_band_active", None),
+        "regime_confidence_breach_kind": getattr(sg, "regime_confidence_breach_kind", None),
         "regime_confidence_gate_verdict": getattr(sg, "regime_confidence_gate_verdict", None),
         "threshold_applied": getattr(sg, "threshold_applied", None),
         "threshold_verdict": getattr(sg, "threshold_verdict", None),

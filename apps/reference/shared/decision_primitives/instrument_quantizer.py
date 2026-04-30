@@ -13,7 +13,7 @@ from __future__ import annotations
 import decimal
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Literal, Optional
 
 
 @dataclass
@@ -43,6 +43,8 @@ class QuantizedPosition:
         margin_required: Estimated margin (notional / leverage)
         reject_reason: If set, the caller must treat the position as unusable.
             qty/notional may still carry the post-floor values for diagnostics.
+        min_notional_floor_applied: True when an accepted non-zero exposure was
+            raised to the smallest exchange-valid order size.
     """
     side: str
     qty: Decimal
@@ -50,6 +52,7 @@ class QuantizedPosition:
     exposure_abs: float
     margin_required: Decimal
     reject_reason: Optional[str] = None
+    min_notional_floor_applied: bool = False
 
 
 def _d(v) -> Decimal:
@@ -69,6 +72,15 @@ def floor_to_step(qty: Decimal, step_size: Decimal) -> Decimal:
     ) * step_size
 
 
+def ceil_to_step(qty: Decimal, step_size: Decimal) -> Decimal:
+    """Ceil quantity to step size for explicit min-executable sizing floors."""
+    if step_size <= 0 or qty <= 0:
+        return Decimal("0")
+    return (qty / step_size).to_integral_value(
+        rounding=decimal.ROUND_UP
+    ) * step_size
+
+
 def quantize_exposure(
     *,
     exposure: float,
@@ -78,6 +90,7 @@ def quantize_exposure(
     spec: InstrumentSpec,
     fee_buffer: Decimal = Decimal("0.001"),
     exposure_cap: float = 1.0,
+    min_notional_policy: Literal["reject", "floor"] = "reject",
 ) -> QuantizedPosition:
     """
     Convert abstract exposure into an exchange-valid position candidate.
@@ -91,6 +104,11 @@ def quantize_exposure(
         spec: Instrument specifications (step_size, min_qty, etc.).
         fee_buffer: Buffer to prevent insufficient balance (default 0.1%).
         exposure_cap: Maximum |exposure| to use (from ScoringEngineConfig).
+        min_notional_policy:
+            - "reject": preserve strict exposure-proportional sizing;
+            - "floor": for accepted non-zero exposure, lift qty to the smallest
+              exchange-valid min_qty/min_notional size when the proportional
+              target is too small.
 
     Returns:
         QuantizedPosition with exchange-valid qty, or reject_reason.
@@ -131,7 +149,40 @@ def quantize_exposure(
     raw_qty = notional / price
     qty = floor_to_step(raw_qty, spec.step_size)
 
+    def _min_executable_qty() -> Decimal:
+        required_qty = spec.min_qty
+        if spec.min_notional > 0:
+            required_qty = max(required_qty, spec.min_notional / price)
+        return ceil_to_step(required_qty, spec.step_size)
+
     actual_notional = qty * price
+
+    if min_notional_policy == "floor" and (
+        qty <= 0
+        or qty < spec.min_qty
+        or (spec.min_notional > 0 and actual_notional < spec.min_notional)
+    ):
+        floored_qty = _min_executable_qty()
+        floored_notional = floored_qty * price
+        if floored_qty <= 0:
+            return QuantizedPosition(
+                side=side, qty=Decimal("0"), notional=Decimal("0"),
+                exposure_abs=exposure_abs, margin_required=Decimal("0"),
+                reject_reason="ZERO_QUANTITY",
+            )
+        if max_notional > 0 and floored_notional > max_notional:
+            return QuantizedPosition(
+                side=side, qty=floored_qty, notional=floored_notional,
+                exposure_abs=exposure_abs,
+                margin_required=floored_notional / _d(leverage) if leverage > 0 else floored_notional,
+                reject_reason=f"MIN_NOTIONAL_FLOOR_EXCEEDS_CAP:{floored_notional}>{max_notional}",
+            )
+        qty = floored_qty
+        actual_notional = floored_notional
+        min_notional_floor_applied = True
+    else:
+        min_notional_floor_applied = False
+
     # leverage only affects the estimated margin requirement here; it does not
     # change the requested notional or qty.
     margin_required = actual_notional / \
@@ -164,6 +215,7 @@ def quantize_exposure(
         notional=actual_notional,
         exposure_abs=exposure_abs,
         margin_required=margin_required,
+        min_notional_floor_applied=min_notional_floor_applied,
     )
 
 

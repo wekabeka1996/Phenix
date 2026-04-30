@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/pending_brackets_cleared_v1.json",
+  "title": "EVT:PENDING_BRACKETS_CLEARED payload schema",
+  "description": "Canonical deferred bracket clear event written to WAL when a pending bracket seed is resolved or invalidated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "entry_order_id",
+    "symbol",
+    "reason"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "entry_order_id": { "type": "string", "minLength": 1 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

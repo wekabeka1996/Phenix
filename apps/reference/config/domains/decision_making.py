@@ -66,9 +66,16 @@ def _validate_regime_confidence_threshold_mapping_shape(value, *, field_name: st
     return value
 
 
-def _normalize_regime_confidence_threshold_mapping(mapping, *, field_name: str) -> Dict[str, float]:
+def _normalize_regime_confidence_threshold_mapping(
+    mapping,
+    *,
+    field_name: str,
+    require_default: bool = True,
+) -> Dict[str, float]:
     if not mapping:
-        raise ValueError(f'{field_name} requires DEFAULT when provided')
+        if require_default:
+            raise ValueError(f'{field_name} requires DEFAULT when provided')
+        raise ValueError(f'{field_name} must not be empty when provided')
     normalized: Dict[str, float] = {}
     for raw_key, threshold in mapping.items():
         key = str(raw_key)
@@ -82,7 +89,7 @@ def _normalize_regime_confidence_threshold_mapping(mapping, *, field_name: str) 
                 f"unsupported {field_name} key '{raw_key}'; allowed: {allowed}"
             )
         normalized[canonical] = float(threshold)
-    if 'DEFAULT' not in normalized:
+    if require_default and 'DEFAULT' not in normalized:
         raise ValueError(f'{field_name} requires DEFAULT when provided')
     return normalized
 
@@ -106,7 +113,12 @@ def _validate_symbol_regime_confidence_threshold_mapping_shape(value, *, field_n
     return value
 
 
-def _normalize_symbol_regime_confidence_threshold_mapping(mapping, *, field_name: str) -> Dict[str, Dict[str, float]]:
+def _normalize_symbol_regime_confidence_threshold_mapping(
+    mapping,
+    *,
+    field_name: str,
+    require_default: bool = True,
+) -> Dict[str, Dict[str, float]]:
     if not mapping:
         raise ValueError(f'{field_name} must not be empty when provided')
     normalized: Dict[str, Dict[str, float]] = {}
@@ -119,8 +131,57 @@ def _normalize_symbol_regime_confidence_threshold_mapping(mapping, *, field_name
         normalized[canonical] = _normalize_regime_confidence_threshold_mapping(
             raw_mapping,
             field_name=f'{field_name}.{canonical}',
+            require_default=require_default,
         )
     return normalized
+
+
+def _validate_regime_confidence_band_contract(
+    *,
+    min_value: Optional[float],
+    max_value: Optional[float],
+    field_name: str,
+) -> None:
+    if min_value is None or max_value is None:
+        return
+    if float(max_value) < float(min_value):
+        raise ValueError(
+            f'{field_name} max threshold must be >= min threshold'
+        )
+
+
+def _validate_regime_confidence_band_mapping_contract(
+    *,
+    min_mapping: Optional[Dict[str, float]],
+    max_mapping: Optional[Dict[str, float]],
+    field_name: str,
+) -> None:
+    if not min_mapping or not max_mapping:
+        return
+    common_keys = set(min_mapping).intersection(max_mapping)
+    for key in common_keys:
+        _validate_regime_confidence_band_contract(
+            min_value=min_mapping.get(key),
+            max_value=max_mapping.get(key),
+            field_name=f'{field_name}.{key}',
+        )
+
+
+def _validate_regime_confidence_band_symbol_contract(
+    *,
+    min_mapping: Optional[Dict[str, Dict[str, float]]],
+    max_mapping: Optional[Dict[str, Dict[str, float]]],
+    field_name: str,
+) -> None:
+    if not min_mapping or not max_mapping:
+        return
+    common_symbols = set(min_mapping).intersection(max_mapping)
+    for symbol in common_symbols:
+        _validate_regime_confidence_band_mapping_contract(
+            min_mapping=min_mapping.get(symbol),
+            max_mapping=max_mapping.get(symbol),
+            field_name=f'{field_name}.{symbol}',
+        )
 
 
 def _normalize_low_vol_gate_threshold_mapping(mapping, *, field_name: str) -> Dict[str, float]:
@@ -262,6 +323,20 @@ class RegimeConfidenceGateConfig(BaseModel):
             'When provided, each symbol mapping requires DEFAULT and overrides strategy/domain defaults for that symbol.'
         ),
     )
+    max_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-regime regime_confidence upper bounds. '
+            'When provided, explicit regime-specific keys apply; DEFAULT may be omitted.'
+        ),
+    )
+    max_by_symbol: Optional[Dict[str, Dict[str, float]]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-symbol regime_confidence upper bounds. '
+            'When provided, each symbol mapping may be partial and overrides strategy/domain defaults for the listed keys.'
+        ),
+    )
 
     @field_validator('min_by_regime', mode='before')
     @classmethod
@@ -279,26 +354,58 @@ class RegimeConfidenceGateConfig(BaseModel):
             field_name='safety_gates.regime_confidence.min_by_symbol',
         )
 
+    @field_validator('max_by_regime', mode='before')
+    @classmethod
+    def validate_max_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.max_by_regime',
+        )
+
+    @field_validator('max_by_symbol', mode='before')
+    @classmethod
+    def validate_max_by_symbol_shape(cls, value):
+        return _validate_symbol_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.max_by_symbol',
+        )
+
     @model_validator(mode='after')
     def validate_threshold_contract(self) -> 'RegimeConfidenceGateConfig':
-        mapping = self.min_by_regime
-        if mapping is None:
-            normalized_mapping = None
-        else:
-            normalized_mapping = _normalize_regime_confidence_threshold_mapping(
-                mapping,
-                field_name='safety_gates.regime_confidence.min_by_regime',
-            )
-        symbol_mapping = self.min_by_symbol
-        if symbol_mapping is None:
-            normalized_symbol_mapping = None
-        else:
-            normalized_symbol_mapping = _normalize_symbol_regime_confidence_threshold_mapping(
-                symbol_mapping,
-                field_name='safety_gates.regime_confidence.min_by_symbol',
-            )
-        self.min_by_regime = normalized_mapping
-        self.min_by_symbol = normalized_symbol_mapping
+        min_by_regime = _normalize_regime_confidence_threshold_mapping(
+            self.min_by_regime,
+            field_name='safety_gates.regime_confidence.min_by_regime',
+        ) if self.min_by_regime is not None else None
+        min_by_symbol = _normalize_symbol_regime_confidence_threshold_mapping(
+            self.min_by_symbol,
+            field_name='safety_gates.regime_confidence.min_by_symbol',
+        ) if self.min_by_symbol is not None else None
+        max_by_regime = _normalize_regime_confidence_threshold_mapping(
+            self.max_by_regime,
+            field_name='safety_gates.regime_confidence.max_by_regime',
+            require_default=False,
+        ) if self.max_by_regime is not None else None
+        max_by_symbol = _normalize_symbol_regime_confidence_threshold_mapping(
+            self.max_by_symbol,
+            field_name='safety_gates.regime_confidence.max_by_symbol',
+            require_default=False,
+        ) if self.max_by_symbol is not None else None
+
+        _validate_regime_confidence_band_mapping_contract(
+            min_mapping=min_by_regime,
+            max_mapping=max_by_regime,
+            field_name='safety_gates.regime_confidence',
+        )
+        _validate_regime_confidence_band_symbol_contract(
+            min_mapping=min_by_symbol,
+            max_mapping=max_by_symbol,
+            field_name='safety_gates.regime_confidence',
+        )
+
+        self.min_by_regime = min_by_regime
+        self.min_by_symbol = min_by_symbol
+        self.max_by_regime = max_by_regime
+        self.max_by_symbol = max_by_symbol
         return self
 
 
@@ -764,6 +871,13 @@ class DirectionalSanityConfig(BaseModel):
             'When provided, DEFAULT is required and runtime regime-specific keys override it.'
         ),
     )
+    max_regime_confidence_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description=(
+            'Optional per-regime regime_confidence upper bounds. '
+            'When provided, explicit regime-specific keys apply; DEFAULT may be omitted.'
+        ),
+    )
     hard_veto_consecutive_bars: int = Field(
         ..., ge=1,
         le=3,
@@ -784,15 +898,46 @@ class DirectionalSanityConfig(BaseModel):
             field_name='min_regime_confidence_by_regime',
         )
 
+    @field_validator('max_regime_confidence_by_regime', mode='before')
+    @classmethod
+    def validate_max_regime_confidence_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='max_regime_confidence_by_regime',
+        )
+
     @model_validator(mode='after')
     def validate_min_regime_confidence_by_regime_contract(self) -> 'DirectionalSanityConfig':
-        mapping = self.min_regime_confidence_by_regime
-        if mapping is None:
-            return self
-        self.min_regime_confidence_by_regime = _normalize_regime_confidence_threshold_mapping(
-            mapping,
-            field_name='min_regime_confidence_by_regime',
+        min_mapping = self.min_regime_confidence_by_regime
+        if min_mapping is None:
+            normalized_min = None
+        else:
+            normalized_min = _normalize_regime_confidence_threshold_mapping(
+                min_mapping,
+                field_name='min_regime_confidence_by_regime',
+            )
+        max_mapping = self.max_regime_confidence_by_regime
+        if max_mapping is None:
+            normalized_max = None
+        else:
+            normalized_max = _normalize_regime_confidence_threshold_mapping(
+                max_mapping,
+                field_name='max_regime_confidence_by_regime',
+                require_default=False,
+            )
+        _validate_regime_confidence_band_contract(
+            min_value=self.min_regime_confidence,
+            max_value=normalized_max.get(
+                'DEFAULT') if normalized_max else None,
+            field_name='directional_sanity',
         )
+        _validate_regime_confidence_band_mapping_contract(
+            min_mapping=normalized_min,
+            max_mapping=normalized_max,
+            field_name='directional_sanity',
+        )
+        self.min_regime_confidence_by_regime = normalized_min
+        self.max_regime_confidence_by_regime = normalized_max
         return self
 
 
@@ -1053,6 +1198,14 @@ class RegimeLossEmbargoConfig(BaseModel):
     min_loss_threshold_net: float = Field(
         ..., ge=0.0,
         description="Net-PnL epsilon in quote currency. Loss latch requires realized_pnl_net < -threshold.",
+    )
+    fee_only_close_policy: Literal["ignore", "latch"] = Field(
+        ...,
+        description=(
+            "How provable fee-only terminal closes are handled. "
+            "ignore = do not latch when realized_pnl == 0 and net loss is fees-only; "
+            "latch = preserve net-only latch semantics."
+        ),
     )
 
 

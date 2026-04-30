@@ -177,13 +177,28 @@ def main() -> int:
     model = build_model_pipeline(X_train)
     model.fit(X_train, y_train)
 
+    threshold_provenance = (
+        "training.tail_holdout"
+        if threshold_tuning_mode == "train_tail_holdout"
+        else "training.calibration_search"
+    )
+    sentinel_policy = "fail_closed_no_synthetic_flat"
+
     model_artifact = {
         "artifact_version": "baseline_logreg_v1",
         "model_kind": "sklearn_logistic_regression_pipeline",
         "model": model,
         "feature_columns": list(split.feature_columns),
+        "feature_names": list(split.feature_columns),
         "threshold": float(tuned_train_simulation.threshold),
+        "threshold_provenance": threshold_provenance,
         "toxic_label": 1,
+        "sentinel_policy": sentinel_policy,
+        "schema_passport": {
+            "passport_id": "neocortex.baseline_model_artifact_schema.v1",
+            "threshold_provenance": threshold_provenance,
+            "sentinel_policy": sentinel_policy,
+        },
         "decision": {
             "allow": "ALLOW",
             "block": "BLOCK",

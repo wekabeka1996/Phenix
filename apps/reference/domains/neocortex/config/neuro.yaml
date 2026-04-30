@@ -62,6 +62,11 @@ dataset:
     train_ratio: 0.70
     val_ratio: 0.15
     test_ratio: 0.15
+  cutover:
+    min_real_executed_rows: 1
+    allow_synthetic_fallback: false
+    max_non_causal_rows: 0
+    require_reward_methodology: true
 
 # ============================================================================
 # Evaluator / Calibration / Disagreement (P9)

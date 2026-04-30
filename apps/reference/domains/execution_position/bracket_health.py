@@ -183,12 +183,7 @@ class BracketHealth:
     async def _check_brackets_on_exchange(self, symbol: str) -> Tuple[bool, bool]:
         """Inspect exchange open orders and detect existing SL/TP brackets."""
         try:
-            if hasattr(self._fsm.adapter, "_request"):
-                raw_orders = await self._fsm.adapter._request(
-                    "GET", "/fapi/v1/openOrders", {"symbol": symbol}
-                )
-            else:
-                raw_orders = await self._fsm.adapter.get_open_orders(symbol)
+            raw_orders = await self._fsm.adapter.get_open_orders_raw(symbol)
         except Exception as e:
             LOG.warning(
                 f"[BRACKET-HEALTH] failed to inspect open orders for {symbol}: {e}")
@@ -302,7 +297,8 @@ class BracketHealth:
                             tp_rr_eff = min(
                                 float(regime_tpsl.max_tp_rr), tp_rr_eff)
             elif strategy_id == "aurora" and getattr(self._fsm.config.strategies, "aurora", None) is not None:
-                strategy_cfg = getattr(self._fsm.config.strategies, "aurora", None)
+                strategy_cfg = getattr(
+                    self._fsm.config.strategies, "aurora", None)
                 asset_cfg = strategy_cfg.assets.get(
                     symbol) if strategy_cfg is not None else None
                 exit_cfg = getattr(asset_cfg, "exit",
@@ -476,7 +472,8 @@ class BracketHealth:
                     f"[BRACKET-HEALTH] TP recovery failed for {symbol}: {e}")
 
         if placed:
-            lifecycle_active = self._fsm._has_active_lifecycle_for_symbol(symbol)
+            lifecycle_active = self._fsm._has_active_lifecycle_for_symbol(
+                symbol)
             owner_snapshot = self._fsm._bracket_ownership.remember_bracket_owner(
                 symbol=symbol,
                 strategy_id=owner_context.get("strategy_id"),
@@ -530,4 +527,3 @@ class BracketHealth:
 
     # Phase 14.2: _initialize_adapter
     #  extracted to AdapterInitMixin (adapter_init.py)
-

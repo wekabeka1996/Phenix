@@ -57,6 +57,25 @@ class ShadowTelemetryEgressToMainConfig(BaseModel):
                              "drop_oldest"] = Field(...)
 
 
+class ShadowTelemetryLedgerConfig(BaseModel):
+    """Active decision outcome ledger queue controls."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    queue_maxsize: int = Field(..., ge=1)
+    overflow_policy: Literal["fail_closed"] = Field(...)
+    enqueue_timeout_ms: int = Field(..., ge=0)
+    shutdown_timeout_ms: int = Field(..., ge=1)
+
+
+class ShadowTelemetryLifecycleConfig(BaseModel):
+    """Shared bounded shutdown controls for active shadow telemetry surfaces."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    stop_timeout_ms: int = Field(..., ge=1)
+
+
 class ShadowTelemetryTfPolicyConfig(BaseModel):
     """TF policy for snapshot generation."""
     model_config = ConfigDict(extra='forbid')
@@ -89,6 +108,10 @@ class ShadowTelemetryDomainConfig(BaseModel):
     api: ShadowTelemetryApiConfig = Field(
         ...)
     egress_to_main: ShadowTelemetryEgressToMainConfig = Field(
+        ...)
+    ledger: ShadowTelemetryLedgerConfig = Field(
+        ...)
+    lifecycle: ShadowTelemetryLifecycleConfig = Field(
         ...)
     snapshot: ShadowTelemetrySnapshotConfig = Field(
         ...)

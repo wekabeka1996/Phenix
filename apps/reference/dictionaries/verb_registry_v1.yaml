@@ -539,9 +539,11 @@ registry:
 - op: EVT
   verb: LIMIT_ORDER_TIMEOUT
   owner: execution_position
-  status: active
+  status: deprecated
   schema: null
   since: '2026-03-14'
+  deprecated_since: '2026-04-30'
+  note: "No live emitter after LimitOrderMonitor retirement (J2). Active timeout semantics covered by EVT:ORDER_TIMEOUT with timeout_type discriminator in payload. Staged deprecation per J4."
 - op: EVT
   verb: FALLBACK_MODE_ENTERED
   owner: execution_position
@@ -576,13 +578,13 @@ registry:
   verb: PENDING_BRACKETS_STORED
   owner: execution_position
   status: experimental
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/pending_brackets_stored_v1.json
   since: '2026-03-14'
 - op: EVT
   verb: PENDING_BRACKETS_CLEARED
   owner: execution_position
   status: experimental
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/pending_brackets_cleared_v1.json
   since: '2026-03-14'
 - op: EVT
   verb: BRACKET_PLACEMENT_FAILED

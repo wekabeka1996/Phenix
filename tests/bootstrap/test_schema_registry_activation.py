@@ -288,6 +288,58 @@ def test_fsm_emit_validates_trade_intent_proposed_with_trace() -> None:
     assert observed[0]["trace"]["kelly_provenance"]["source_path"] == "config.strategies.aurora.decision.kelly"
 
 
+def test_fsm_emit_validates_trade_intent_proposed_with_authority_context() -> None:
+    """Current runtime contract must accept IntentBuilder authority provenance."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
+
+    payload = _trade_intent_payload()
+    payload["authority_context"] = {
+        "decision_id": "decision-001",
+        "authority_mode": "shadow",
+        "action": "allow",
+        "apply_result": "FAST_ALLOW",
+        "fallback_reason": None,
+        "idempotent_key": "decision-001",
+    }
+
+    fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+             payload=payload, why="authority_context_contract")
+
+    assert observed
+    assert observed[0]["authority_context"]["decision_id"] == "decision-001"
+    assert observed[0]["authority_context"]["apply_result"] == "FAST_ALLOW"
+
+
+def test_fsm_emit_validates_trade_intent_proposed_with_trust_disabled_authority_context() -> None:
+    """Strategy gateway trust-disabled fallback context is additive provenance."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
+
+    payload = _trade_intent_payload()
+    payload["authority_context"] = {
+        "decision_id": None,
+        "authority_mode": "shadow",
+        "action": "fallback",
+        "apply_result": "TRUST_DISABLED_FASTPATH",
+        "reason_code": "TRUST_DISABLED",
+        "reason_text": "Neocortex trust_enabled=false",
+    }
+
+    fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+             payload=payload, why="trust_disabled_authority_context_contract")
+
+    assert observed
+    assert observed[0]["authority_context"]["decision_id"] is None
+    assert observed[0]["authority_context"]["reason_code"] == "TRUST_DISABLED"
+
+
 def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_top_level_field() -> None:
     """Strict root additionalProperties must still reject unknown top-level fields."""
     init_global_registry(project_root=".")

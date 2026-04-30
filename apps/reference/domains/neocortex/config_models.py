@@ -535,6 +535,31 @@ class DatasetSplitConfig(BaseModel):
         return self
 
 
+class DatasetCutoverConfig(BaseModel):
+    """Aggregate admission gate for promoting or exporting trainable datasets."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    min_real_executed_rows: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        ge=1,
+        description="Minimum canonical EXECUTED_AND_CLOSED rows required before cutover is allowed."
+    )
+    allow_synthetic_fallback: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Whether synthetic fallback rows may participate in a cutover-eligible dataset."
+    )
+    max_non_causal_rows: int = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        ge=0,
+        description="Maximum INVALID_FOR_DATASET rows attributed to NON_CAUSAL_TIME before cutover is blocked."
+    )
+    require_reward_methodology: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Require explicit reward validity proof and reward methodology before dataset cutover."
+    )
+
+
 class DatasetConfig(BaseModel):
     """Canonical dataset hygiene / provenance settings."""
 
@@ -548,6 +573,10 @@ class DatasetConfig(BaseModel):
     split: DatasetSplitConfig = Field(
         json_schema_extra={"default_class": "runtime_behavior"},
         description="Deterministic split-by-time configuration."
+    )
+    cutover: DatasetCutoverConfig = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Aggregate trainable dataset admission thresholds for promotion/export."
     )
 
 

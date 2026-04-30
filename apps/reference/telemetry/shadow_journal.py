@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field
 LOG = logging.getLogger(__name__)
 
 DEFAULT_CRITICAL_EVENTS = (
+    "EVT:QUADRATIC_DECISION_TRACE",
+    "EVT:STRATEGY_SIGNAL_PRODUCED",
+    "EVT:GATE_CHAIN_TRACE",
+    "EVT:DECISION_TRACE_EMITTED",
     "EVT:TRADE_INTENT_PROPOSED",
     "EVT:TRADE_INTENT_REJECTED",
     "EVT:INTENT_DEFERRED",
@@ -637,6 +641,14 @@ def infer_emit_source(
         return ("decision_making", "decision:intent_deferred", "decision")
     if event_name in ("EVT:DECISION_BLOCKED", "EVT:STRATEGY_DECISION_BLOCKED"):
         return ("decision_making", "decision:blocked_truth", "decision")
+    if event_name == "EVT:QUADRATIC_DECISION_TRACE":
+        return ("decision_making.aurora", "decision:quadratic_trace", "decision")
+    if event_name == "EVT:STRATEGY_SIGNAL_PRODUCED":
+        return ("decision_making.aurora", "decision:strategy_signal", "decision")
+    if event_name == "EVT:GATE_CHAIN_TRACE":
+        return ("decision_making.strategy_gateway", "decision:gate_chain_trace", "decision")
+    if event_name == "EVT:DECISION_TRACE_EMITTED":
+        return ("decision_making.intent_builder", "decision:decision_trace", "decision")
     if event_name in ("EVT:PORTFOLIO_STATE_UPDATED", "EVT:EXPOSURE_SUMMARY_UPDATED"):
         return ("position_tracking", "portfolio:state_update", "portfolio")
     if event_name.startswith("CMD:"):

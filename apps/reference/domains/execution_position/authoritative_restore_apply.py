@@ -92,7 +92,8 @@ class AuthoritativeRestoreApply:
         )
 
         # --- Manage phase apply ---
-        manage_phase = str(record.manage_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        manage_phase = str(record.manage_phase or "").strip(
+        ).upper() or RESTORE_PHASE_UNKNOWN
         if manage_phase == RESTORE_PHASE_UNKNOWN:
             symbol_status.manage_phase_value = RESTORE_PHASE_UNKNOWN
             symbol_status.manage_phase_restore_status = "unknown"
@@ -114,7 +115,8 @@ class AuthoritativeRestoreApply:
                 symbol_status.manage_phase_restore_status = "exact"
 
         # --- Close phase apply ---
-        close_phase = str(record.close_phase or "").strip().upper() or RESTORE_PHASE_UNKNOWN
+        close_phase = str(record.close_phase or "").strip(
+        ).upper() or RESTORE_PHASE_UNKNOWN
         if close_phase == RESTORE_PHASE_UNKNOWN:
             symbol_status.close_phase_value = RESTORE_PHASE_UNKNOWN
             symbol_status.close_phase_restore_status = "unknown"
@@ -139,7 +141,8 @@ class AuthoritativeRestoreApply:
         # Always clear existing bracket state before adopting authoritative truth.
         # 6C (_startup_reconstruct_runtime_bracket_truth) will overwrite with fresher
         # guardian-proven bracket state. This clear must precede 6C reconstruction.
-        bracket_state = str(record.bracket_state or "").strip().upper() or BRACKET_STATE_UNKNOWN
+        bracket_state = str(record.bracket_state or "").strip(
+        ).upper() or BRACKET_STATE_UNKNOWN
         self._fsm._clear_symbol_brackets(symbol_key)
 
         if bracket_state == BRACKET_STATE_DEFERRED_PENDING_WAL:
@@ -169,13 +172,62 @@ class AuthoritativeRestoreApply:
             symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
             symbol_status.bracket_state_restore_status = "unknown"
         elif bracket_state in {BRACKET_STATE_LINKED_ACTIVE, BRACKET_STATE_PARTIAL_LINKAGE}:
-            # Linked/partial bracket lineage is not restorable from the envelope alone;
-            # 6C reconstruction will establish bracket truth from live guardian proof.
-            symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
-            symbol_status.bracket_state_restore_status = "unknown"
-            symbol_status.unresolved_reasons.append(
-                "bracket_lineage_not_restorable_from_envelope"
+            linked_ref = record.linked_bracket_ref
+            sl_order_id = (
+                str(linked_ref.sl_order_id).strip()
+                if linked_ref is not None and linked_ref.sl_order_id is not None
+                else ""
             )
+            tp_order_id = (
+                str(linked_ref.tp_order_id).strip()
+                if linked_ref is not None and linked_ref.tp_order_id is not None
+                else ""
+            )
+            if sl_order_id or tp_order_id:
+                self._fsm._set_symbol_brackets_snapshot(
+                    symbol_key,
+                    sl_order_id=sl_order_id or None,
+                    tp_order_id=tp_order_id or None,
+                    truth_source=TRUTH_SOURCE_RESTORE_ARTIFACT,
+                )
+                manage_flow = self._fsm.manage_flows.get(symbol_key)
+                if manage_flow is not None:
+                    entry_order_id = (
+                        str(linked_ref.entry_order_id).strip()
+                        if linked_ref is not None and linked_ref.entry_order_id is not None
+                        else ""
+                    )
+                    entry_client_order_id = (
+                        str(linked_ref.entry_client_order_id).strip()
+                        if linked_ref is not None and linked_ref.entry_client_order_id is not None
+                        else ""
+                    )
+                    if entry_order_id:
+                        manage_flow.entry_order_id = entry_order_id
+                    if entry_client_order_id:
+                        manage_flow.entry_client_order_id = entry_client_order_id
+                    manage_flow.set_bracket_ids(
+                        sl_order_id or None,
+                        tp_order_id or None,
+                        sl_algo_client_id=(
+                            str(linked_ref.sl_client_order_id).strip()
+                            if linked_ref is not None and linked_ref.sl_client_order_id is not None
+                            else None
+                        ),
+                        tp_algo_client_id=(
+                            str(linked_ref.tp_client_order_id).strip()
+                            if linked_ref is not None and linked_ref.tp_client_order_id is not None
+                            else None
+                        ),
+                    )
+                symbol_status.bracket_state_value = bracket_state
+                symbol_status.bracket_state_restore_status = "exact"
+            else:
+                symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
+                symbol_status.bracket_state_restore_status = "unknown"
+                symbol_status.unresolved_reasons.append(
+                    "bracket_lineage_not_restorable_from_envelope"
+                )
         else:
             symbol_status.bracket_state_value = BRACKET_STATE_UNKNOWN
             symbol_status.bracket_state_restore_status = "unknown"

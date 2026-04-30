@@ -10,7 +10,14 @@ from typing import Any, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.utils.accessors import aget
-from apps.reference.telemetry.metrics import inc_config_contract_violation
+from apps.reference.telemetry.metrics import (
+    inc_config_contract_violation,
+    inc_neocortex_authority_deadline_miss,
+    inc_neocortex_authority_kill_switch_active,
+    inc_neocortex_authority_late_response,
+    inc_neocortex_authority_request,
+    inc_neocortex_journal_write_failed,
+)
 from apps.reference.contracts.reject_reasons import normalize_config_error
 from vfoundation.core.protocol import Message
 
@@ -34,11 +41,42 @@ from apps.reference.domains.neocortex.contracts.control_decision import (
     ControlDecisionRequest,
     ControlDecisionRequestKind,
 )
+from apps.reference.domains.neocortex.contracts.causal_time import DatasetVisibility
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureReasonCode,
+)
 from apps.reference.domains.neocortex.contracts.observation_envelope import ObservationEnvelope
 from apps.reference.domains.neocortex.logic.datasets.time_provenance import CausalTimeProvenance
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    coerce_causal_time_provenance,
+    is_causal_time_provenance,
+)
 
 if TYPE_CHECKING:
     from apps.reference.domains.decision_making.core.facade import DecisionMaking
+
+
+def _coerce_optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
+
+
+def _has_finite_numeric_values(values: list[Any]) -> bool:
+    for value in values:
+        if isinstance(value, bool):
+            return True
+        if isinstance(value, (int, float)):
+            numeric = float(value)
+            if math.isfinite(numeric):
+                return True
+    return False
 
 
 class StrategyGateway:
@@ -167,10 +205,13 @@ class StrategyGateway:
                 handle.write(json.dumps(payload, sort_keys=True,
                              ensure_ascii=True) + "\n")
         except Exception as exc:
+            inc_neocortex_journal_write_failed(
+                journal=name,
+                reason_code=FailureReasonCode.TELEMETRY_FLUSH_FAILED.value,
+            )
             try:
                 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
                     FailureOutcomeTaxonomy,
-                    FailureReasonCode,
                     record_failure_outcome,
                 )
 
@@ -231,6 +272,99 @@ class StrategyGateway:
             normalized.append(float(fallback))
         return tuple(normalized)
 
+    def _resolve_authority_time_truth(
+        self,
+        projection: dict[str, Any],
+    ) -> tuple[
+        CausalTimeProvenance,
+        bool,
+        bool,
+        DatasetVisibility,
+        str | None,
+        dict[str, bool],
+        dict[str, Any],
+    ]:
+        provenance_raw: Any = None
+        for key in (
+            "event_time_source",
+            "event_time_provenance",
+            "time_provenance",
+            "feature_time_provenance",
+        ):
+            if key not in projection:
+                continue
+            candidate = projection.get(key)
+            if candidate is None:
+                continue
+            provenance_raw = candidate
+            break
+
+        provenance = coerce_causal_time_provenance(provenance_raw)
+        has_provenance = provenance_raw is not None
+        provenance_is_causal = has_provenance and is_causal_time_provenance(
+            provenance)
+
+        explicit_event_time_is_causal = _coerce_optional_bool(
+            projection.get("event_time_is_causal")
+        )
+        explicit_trainable = _coerce_optional_bool(projection.get("trainable"))
+
+        raw_dataset_visibility = projection.get("dataset_visibility")
+        explicit_dataset_visibility = None
+        if isinstance(raw_dataset_visibility, str):
+            text = raw_dataset_visibility.strip()
+            if text:
+                explicit_dataset_visibility = text
+
+        explicit_reason_code = None
+        for key in ("reason_code", "truth_reason_code"):
+            value = projection.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                explicit_reason_code = text
+                break
+
+        conflicting_demote = (
+            explicit_event_time_is_causal is False
+            or explicit_trainable is False
+            or explicit_dataset_visibility == "diagnostics_only"
+        )
+        if provenance_is_causal and not conflicting_demote:
+            return provenance, True, True, "trainable", None, {}, {}
+
+        reason_code = explicit_reason_code
+        if reason_code is None:
+            reason_code = (
+                FailureReasonCode.NON_CAUSAL_TIME.value
+                if has_provenance and not provenance_is_causal
+                else FailureReasonCode.MISSING_REQUIRED_STATE.value
+            )
+
+        missingness = {
+            "causal_proof_missing": not has_provenance,
+            "causal_proof_non_causal": bool(has_provenance and not provenance_is_causal),
+        }
+        if conflicting_demote:
+            missingness["causal_proof_conflicted"] = True
+
+        system_stress_state: dict[str, Any] = {
+            "truth_reason_code": reason_code,
+        }
+        if conflicting_demote:
+            system_stress_state["truth_demoted_from_projection"] = True
+
+        return (
+            provenance,
+            False,
+            False,
+            "diagnostics_only",
+            reason_code,
+            missingness,
+            system_stress_state,
+        )
+
     def _build_authority_observation(
         self,
         *,
@@ -266,12 +400,20 @@ class StrategyGateway:
             if isinstance(raw_projection, dict):
                 projection = dict(raw_projection)
 
-        observation_block = projection.get("observation") if isinstance(
-            projection.get("observation"), dict) else {}
-        market_features = observation_block.get("features") if isinstance(
-            observation_block.get("features"), dict) else {}
-        candidate_intent_summary = projection.get("intent") if isinstance(
-            projection.get("intent"), dict) else {}
+        observation_block: dict[str, Any] = {}
+        raw_observation_block = projection.get("observation")
+        if isinstance(raw_observation_block, dict):
+            observation_block = dict(raw_observation_block)
+
+        market_features: dict[str, Any] = {}
+        raw_market_features = observation_block.get("features")
+        if isinstance(raw_market_features, dict):
+            market_features = dict(raw_market_features)
+
+        candidate_intent_summary: dict[str, Any] = {}
+        raw_candidate_intent_summary = projection.get("intent")
+        if isinstance(raw_candidate_intent_summary, dict):
+            candidate_intent_summary = dict(raw_candidate_intent_summary)
         if not candidate_intent_summary:
             candidate_intent_summary = {
                 "rid": str(rid),
@@ -282,10 +424,15 @@ class StrategyGateway:
                 "proposed_action": "OPEN_LONG" if str(side).upper() == "BUY" else "OPEN_SHORT",
             }
 
-        regime_state = projection.get("regime_state") if isinstance(
-            projection.get("regime_state"), dict) else {}
-        portfolio_state = projection.get("portfolio_position") if isinstance(
-            projection.get("portfolio_position"), dict) else {}
+        regime_state: dict[str, Any] = {}
+        raw_regime_state = projection.get("regime_state")
+        if isinstance(raw_regime_state, dict):
+            regime_state = dict(raw_regime_state)
+
+        portfolio_state: dict[str, Any] = {}
+        raw_portfolio_state = projection.get("portfolio_position")
+        if isinstance(raw_portfolio_state, dict):
+            portfolio_state = dict(raw_portfolio_state)
         gate_trace_summary = {
             "final_outcome": chain_result.final_outcome.value if hasattr(chain_result.final_outcome, "value") else str(chain_result.final_outcome),
             "total_elapsed_ms": float(chain_result.total_elapsed_ms),
@@ -308,32 +455,51 @@ class StrategyGateway:
             decision_basis_ts_ms) - int(portfolio_ts_ms)
         risk_score = float(
             (latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
+        ordered_market_values = [
+            value for _key, value in sorted(market_features.items())
+        ]
+        state_vector_fallback_used = not _has_finite_numeric_values(
+            ordered_market_values
+        )
+        context_values = [
+            1.0 if str(side).upper() == "BUY" else -1.0,
+            float(qty_dec),
+            float(entry_price_dec),
+            risk_score,
+            float(chain_result.total_elapsed_ms),
+            float(len(chain_result.trace)),
+            gate_ctx.accumulated.get("_qos_enabled", False),
+        ]
+        context_vector_fallback_used = not _has_finite_numeric_values(
+            context_values
+        )
         state_vector = self._coerce_numeric_vector(
-            [value for _key, value in sorted(market_features.items())],
+            ordered_market_values,
             fallback=float(entry_price_dec),
         )
         context_vector = self._coerce_numeric_vector(
-            [
-                1.0 if str(side).upper() == "BUY" else -1.0,
-                float(qty_dec),
-                float(entry_price_dec),
-                risk_score,
-                float(chain_result.total_elapsed_ms),
-                float(len(chain_result.trace)),
-                gate_ctx.accumulated.get("_qos_enabled", False),
-            ],
+            context_values,
             fallback=0.0,
         )
+        (
+            event_time_source,
+            event_time_is_causal,
+            trainable,
+            dataset_visibility,
+            _truth_reason_code,
+            truth_missingness,
+            truth_system_state,
+        ) = self._resolve_authority_time_truth(projection)
         return ObservationEnvelope(
             observation_id=decision_id,
             symbol=str(symbol),
             decision_basis_ts_ms=int(decision_basis_ts_ms),
             source_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
             source_event_id=str(rid),
-            event_time_source=CausalTimeProvenance.AURORA_EVENT,
-            event_time_is_causal=True,
-            trainable=True,
-            dataset_visibility="trainable",
+            event_time_source=event_time_source,
+            event_time_is_causal=event_time_is_causal,
+            trainable=trainable,
+            dataset_visibility=dataset_visibility,
             freshness={
                 "snapshot_age_ms": max(0, int(decision_basis_ts_ms) - int(tick_ts_ms)),
                 "feature_age_ms": feature_age_ms,
@@ -343,6 +509,9 @@ class StrategyGateway:
                 "market_features_missing": not bool(market_features),
                 "regime_state_missing": not bool(regime_state),
                 "portfolio_state_missing": not bool(portfolio_state),
+                "state_vector_fallback_used": state_vector_fallback_used,
+                "context_vector_fallback_used": context_vector_fallback_used,
+                **truth_missingness,
             },
             market_features=dict(market_features),
             regime_state=dict(regime_state),
@@ -351,6 +520,9 @@ class StrategyGateway:
             system_stress_state={
                 "trigger_event_type": projection.get("trigger_event_type") or "EVT:AUTHORITY_DECISION",
                 "chain_total_elapsed_ms": float(chain_result.total_elapsed_ms),
+                "state_vector_fallback_used": state_vector_fallback_used,
+                "context_vector_fallback_used": context_vector_fallback_used,
+                **truth_system_state,
             },
             candidate_intent_summary=dict(candidate_intent_summary),
             gate_trace_summary=gate_trace_summary,
@@ -379,9 +551,17 @@ class StrategyGateway:
 
         short_circuit_reason = getattr(bridge, "short_circuit_reason", None)
         if short_circuit_reason == "TRUST_DISABLED":
+            authority_mode = getattr(
+                bridge, "authority_mode", AuthorityMode.SHADOW)
+            inc_neocortex_authority_kill_switch_active()
+            inc_neocortex_authority_request(
+                mode=authority_mode.value,
+                symbol=str(symbol),
+                apply_result=ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value,
+            )
             return ({
                 "decision_id": None,
-                "authority_mode": getattr(bridge, "authority_mode", AuthorityMode.SHADOW).value,
+                "authority_mode": authority_mode.value,
                 "action": ControlDecisionAction.FALLBACK.value,
                 "apply_result": ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value,
                 "reason_code": "TRUST_DISABLED",
@@ -427,6 +607,8 @@ class StrategyGateway:
 
         if int(response.returned_at_ms) > int(request.expires_at_ms):
             apply_result = ControlDecisionApplyResult.LATE_IGNORED
+            inc_neocortex_authority_deadline_miss()
+            inc_neocortex_authority_late_response()
         elif response.action == ControlDecisionAction.FALLBACK:
             apply_result = ControlDecisionApplyResult.FALLBACK_BASELINE
         elif authority_mode == AuthorityMode.GATED and response.action == ControlDecisionAction.DENY:
@@ -439,6 +621,12 @@ class StrategyGateway:
             apply_result = ControlDecisionApplyResult.ADVISORY_RECORDED
         else:
             apply_result = ControlDecisionApplyResult.SHADOW_RECORDED
+
+        inc_neocortex_authority_request(
+            mode=request.authority_mode.value,
+            symbol=str(symbol),
+            apply_result=apply_result.value,
+        )
 
         authority_context: dict[str, Any] = {
             "decision_id": request.decision_id,
@@ -986,6 +1174,7 @@ class StrategyGateway:
             max_lat = int(tca.get("max_latency_ms", 0)) or None
             risk_val = float(
                 (latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
+            authority_decision_ts_ms = int(self._clock.now_ms())
 
             authority_context, authority_blocked = self._evaluate_neocortex_authority(
                 symbol=symbol,
@@ -994,7 +1183,7 @@ class StrategyGateway:
                 strategy_id=str(strategy_id_s),
                 qty_dec=decimal.Decimal(str(qty_dec)),
                 entry_price_dec=entry_price_dec,
-                decision_basis_ts_ms=int(timestamp_ms),
+                decision_basis_ts_ms=authority_decision_ts_ms,
                 latest_risk=latest_risk,
                 gate_ctx=gate_ctx,
                 chain_result=chain_result,

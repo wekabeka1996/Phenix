@@ -148,6 +148,19 @@ class DecisionAuditRecord(BaseModel):
         default=None)
     resolved_min_regime_confidence_regime_key: Optional[str] = Field(
         default=None)
+    resolved_max_regime_confidence: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0
+    )
+    resolved_max_regime_confidence_source: Optional[str] = Field(default=None)
+    resolved_max_regime_confidence_strategy_id: Optional[str] = Field(
+        default=None)
+    resolved_max_regime_confidence_regime_key: Optional[str] = Field(
+        default=None)
+    resolved_regime_confidence_strategy_id: Optional[str] = Field(default=None)
+    resolved_regime_confidence_symbol: Optional[str] = Field(default=None)
+    resolved_regime_confidence_regime_key: Optional[str] = Field(default=None)
+    resolved_regime_confidence_band_active: Optional[bool] = Field(default=None)
+    regime_confidence_breach_kind: Optional[Literal["none", "missing", "below_min", "above_max"]] = Field(default=None)
     regime_confidence_gate_verdict: Literal["ALLOW",
                                             "DENY", "BYPASS"] = "BYPASS"
     threshold_applied: bool = False
@@ -400,6 +413,33 @@ def emit_regime_decision_audit(
         resolved_min_regime_confidence_regime_key=getattr(
             sg, "resolved_min_regime_confidence_regime_key", None
         ),
+        resolved_max_regime_confidence=_coerce_float(
+            getattr(sg, "resolved_max_regime_confidence", None)
+        ),
+        resolved_max_regime_confidence_source=getattr(
+            sg, "resolved_max_regime_confidence_source", None
+        ),
+        resolved_max_regime_confidence_strategy_id=getattr(
+            sg, "resolved_max_regime_confidence_strategy_id", None
+        ),
+        resolved_max_regime_confidence_regime_key=getattr(
+            sg, "resolved_max_regime_confidence_regime_key", None
+        ),
+        resolved_regime_confidence_strategy_id=getattr(
+            sg, "resolved_regime_confidence_strategy_id", None
+        ),
+        resolved_regime_confidence_symbol=getattr(
+            sg, "resolved_regime_confidence_symbol", None
+        ),
+        resolved_regime_confidence_regime_key=getattr(
+            sg, "resolved_regime_confidence_regime_key", None
+        ),
+        resolved_regime_confidence_band_active=bool(
+            getattr(sg, "resolved_regime_confidence_band_active", False)
+        ),
+        regime_confidence_breach_kind=str(
+            getattr(sg, "regime_confidence_breach_kind", "none") or "none"
+        ),
         regime_confidence_gate_verdict=str(
             getattr(sg, "regime_confidence_gate_verdict", "BYPASS") or "BYPASS"
         ),
@@ -419,8 +459,9 @@ def emit_regime_decision_audit(
     sink = logger or LOG
     sink.info(
         "[%s] REGIME_AUDIT decision rid=%s strategy=%s outcome=%s regime=%s conf=%s "
-        "raw_conf=%s stable_conf=%s threshold=%s resolved_threshold=%s source=%s strategy_source=%s key=%s "
-        "gate_verdict=%s verdict=%s applied=%s reason=%s "
+        "raw_conf=%s stable_conf=%s threshold=%s resolved_threshold=%s resolved_max=%s "
+        "source=%s strategy_source=%s key=%s max_source=%s max_strategy=%s max_key=%s "
+        "gate_verdict=%s verdict=%s applied=%s breach=%s reason=%s "
         "bar_ts=%s ref=%s mismatch=%s mismatch_reason=%s",
         symbol,
         payload["rid"],
@@ -432,12 +473,17 @@ def emit_regime_decision_audit(
         _fmt_float(payload.get("stable_confidence")),
         _fmt_float(payload.get("min_regime_confidence")),
         _fmt_float(payload.get("resolved_min_regime_confidence")),
+        _fmt_float(payload.get("resolved_max_regime_confidence")),
         payload.get("resolved_min_regime_confidence_source"),
         payload.get("resolved_min_regime_confidence_strategy_id"),
         payload.get("resolved_min_regime_confidence_regime_key"),
+        payload.get("resolved_max_regime_confidence_source"),
+        payload.get("resolved_max_regime_confidence_strategy_id"),
+        payload.get("resolved_max_regime_confidence_regime_key"),
         payload.get("regime_confidence_gate_verdict"),
         payload["threshold_verdict"],
         _fmt_bool(payload.get("threshold_applied")),
+        payload.get("regime_confidence_breach_kind"),
         payload["threshold_reason"],
         payload.get("bar_close_ts_ms"),
         payload.get("structural_regime_ref"),

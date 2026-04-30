@@ -43,6 +43,15 @@ class RegimeLossEmbargo:
         except Exception:
             return False
 
+    @staticmethod
+    def _optional_float(value: Any) -> Optional[float]:
+        try:
+            if value in (None, ""):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _new_state(self) -> Dict[str, Any]:
         return {
             "stable_regime_epoch_ref": None,
@@ -87,7 +96,8 @@ class RegimeLossEmbargo:
         state["latched"] = True
         state["block_reason"] = self.CAUSAL_CONTEXT_UNPROVEN
         state["epoch_ref"] = epoch_ref
-        state["latched_ts_ms"] = int(ts_ms) if ts_ms is not None else self._clock.now_ms()
+        state["latched_ts_ms"] = int(
+            ts_ms) if ts_ms is not None else self._clock.now_ms()
         state["trigger_pnl_net"] = None
         state["trigger_close_reason"] = None
 
@@ -103,9 +113,25 @@ class RegimeLossEmbargo:
         state["latched"] = True
         state["block_reason"] = self.LOSS_LATCHED
         state["epoch_ref"] = epoch_ref
-        state["latched_ts_ms"] = int(ts_ms) if ts_ms is not None else self._clock.now_ms()
+        state["latched_ts_ms"] = int(
+            ts_ms) if ts_ms is not None else self._clock.now_ms()
         state["trigger_pnl_net"] = float(realized_pnl_net)
-        state["trigger_close_reason"] = str(close_reason) if close_reason is not None else None
+        state["trigger_close_reason"] = str(
+            close_reason) if close_reason is not None else None
+
+    def _is_fee_only_close(
+        self,
+        *,
+        realized_pnl_net: float,
+        realized_pnl: Optional[float],
+        fees: Optional[float],
+    ) -> bool:
+        return (
+            realized_pnl == 0.0
+            and fees is not None
+            and fees > 0.0
+            and realized_pnl_net < 0.0
+        )
 
     def get_current_epoch_ref(self, symbol: str) -> Optional[str]:
         if not self.enabled():
@@ -152,20 +178,20 @@ class RegimeLossEmbargo:
         entry_regime_epoch_ref: Optional[str],
         close_ts_ms: Optional[int],
         realized_pnl_net: Any,
+        realized_pnl: Any = None,
+        fees: Any = None,
         close_reason: Optional[str],
     ) -> None:
         if not self.enabled():
             return
         state = self._ensure_state(symbol)
         current_epoch_ref = state.get("stable_regime_epoch_ref")
-        try:
-            pnl_net = float(realized_pnl_net)
-        except (TypeError, ValueError):
-            pnl_net = None
+        pnl_net = self._optional_float(realized_pnl_net)
         if current_epoch_ref in (None, "") or entry_regime_epoch_ref in (None, "") or pnl_net is None:
             self._set_unproven(
                 state,
-                epoch_ref=str(current_epoch_ref) if current_epoch_ref else None,
+                epoch_ref=str(
+                    current_epoch_ref) if current_epoch_ref else None,
                 ts_ms=close_ts_ms,
             )
             self._logger.warning(
@@ -174,6 +200,26 @@ class RegimeLossEmbargo:
                 current_epoch_ref,
                 entry_regime_epoch_ref,
                 realized_pnl_net,
+            )
+            return
+
+        gross_pnl = self._optional_float(realized_pnl)
+        fees_paid = self._optional_float(fees)
+        if (
+            str(self._cfg().fee_only_close_policy) == "ignore"
+            and self._is_fee_only_close(
+                realized_pnl_net=pnl_net,
+                realized_pnl=gross_pnl,
+                fees=fees_paid,
+            )
+        ):
+            self._logger.info(
+                "[%s] REGIME_LOSS_EMBARGO fee_only_ignored pnl_net=%s realized_pnl=%s fees=%s close_reason=%s",
+                symbol,
+                pnl_net,
+                gross_pnl,
+                fees_paid,
+                close_reason,
             )
             return
 

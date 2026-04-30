@@ -89,3 +89,29 @@ class DatasetManifest(BaseModel):
     reward_complete_stats: Dict[str, int]
     sequence_contract_modes: List[str]
     splits: List[DatasetSplitManifest]
+
+
+class DatasetCutoverSummary(BaseModel):
+    """Aggregate facts used to decide whether a dataset is eligible for cutover."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    total_rows: int
+    trainable_rows: int
+    diagnostics_only_rows: int
+    invalid_rows_by_reason: Dict[str, int]
+    real_executed_rows: int
+    synthetic_rows: int
+    used_synthetic_fallback: bool
+    reward_valid: bool
+    reward_methodology: Optional[str] = None
+    terminal_complete_rows: int
+    terminal_incomplete_rows: int
+    cutover_allowed: bool = False
+    blocking_reasons: List[str] = Field(default_factory=list)
+
+
+class DatasetCutoverDecision(DatasetCutoverSummary):
+    """Final dataset cutover verdict with blocking reasons."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)

@@ -57,6 +57,16 @@
             "minimum": 0.0,
             "maximum": 1.0
         },
+        "regime_ts_ms": {
+            "type": ["integer", "null"],
+            "minimum": 0
+        },
+        "regime_source": {
+            "type": ["string", "null"]
+        },
+        "regime_missing_reason": {
+            "type": ["string", "null"]
+        },
         "features_ref": {
             "type": ["string", "null"]
         },

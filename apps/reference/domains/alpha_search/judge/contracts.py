@@ -296,6 +296,9 @@ class JudgeEvidenceEnvelope(BaseModel):
     strategy_id: str = Field(..., min_length=1)
     regime: Optional[str] = None
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    regime_ts_ms: Optional[int] = None
+    regime_source: Optional[str] = None
+    regime_missing_reason: Optional[str] = None
     features_ref: Optional[str] = None
     position_context: Optional[PositionContextSnapshot] = None
     freshness_deadline_ms: int = Field(..., gt=0)

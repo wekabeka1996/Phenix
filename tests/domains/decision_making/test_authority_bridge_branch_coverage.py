@@ -79,7 +79,10 @@ def _req(
     )
 
 
-def setup_function() -> None:
+@pytest.fixture(autouse=True)
+def _reset_failure_outcomes_fixture():
+    reset_failure_outcomes()
+    yield
     reset_failure_outcomes()
 
 
@@ -115,7 +118,8 @@ class TestBaselineControllerUnavailableError:
 class TestEnforcementModeValidation:
     def test_invalid_enforcement_mode_raises_value_error(self):
         with pytest.raises(ValueError, match="enforcement_mode"):
-            NeocortexAuthorityBridge(enforcement_mode="live")  # type: ignore[arg-type]
+            # type: ignore[arg-type]
+            NeocortexAuthorityBridge(enforcement_mode="live")
 
     def test_shadow_mode_is_accepted(self):
         bridge = NeocortexAuthorityBridge(enforcement_mode="shadow")
@@ -148,7 +152,8 @@ class TestDecisionIdMismatch:
 
         bridge = NeocortexAuthorityBridge(authority_fn=_wrong_id)
         response = asyncio.run(
-            bridge.request_authority(_req(decision_id="req-correct"), timeout_ms=100)
+            bridge.request_authority(
+                _req(decision_id="req-correct"), timeout_ms=100)
         )
         assert response.action == ControlDecisionAction.FALLBACK
         assert response.fallback_reason == "HANDLER_FAILURE"
@@ -215,7 +220,8 @@ class TestBaselinePredictionError:
         _write_artifact(path)
         # Inject wrong-length state_vector to trigger BaselinePredictionError
         bridge = NeocortexAuthorityBridge(model_path=path)
-        req = _req(causal_state_snapshot={"state_vector": [1.0]})  # length 1, model expects 3
+        # length 1, model expects 3
+        req = _req(causal_state_snapshot={"state_vector": [1.0]})
 
         response = asyncio.run(
             bridge.request_authority(req, timeout_ms=500)
@@ -255,8 +261,10 @@ class TestBaselineArtifactErrorDuringPredict:
 class TestEnforceMode:
     def test_enforce_mode_block_model_returns_block_action(self, tmp_path):
         path = tmp_path / "m.pkl"
-        _write_artifact(path, toxic_prob=0.95, threshold=0.5)  # model will predict BLOCK
-        bridge = NeocortexAuthorityBridge(model_path=path, enforcement_mode="enforce")
+        # model will predict BLOCK
+        _write_artifact(path, toxic_prob=0.95, threshold=0.5)
+        bridge = NeocortexAuthorityBridge(
+            model_path=path, enforcement_mode="enforce")
 
         response = asyncio.run(
             bridge.request_authority(_req(), timeout_ms=500)
@@ -268,8 +276,10 @@ class TestEnforceMode:
 
     def test_enforce_mode_allow_model_returns_allow_action(self, tmp_path):
         path = tmp_path / "m.pkl"
-        _write_artifact(path, toxic_prob=0.1, threshold=0.5)  # model will predict ALLOW
-        bridge = NeocortexAuthorityBridge(model_path=path, enforcement_mode="enforce")
+        # model will predict ALLOW
+        _write_artifact(path, toxic_prob=0.1, threshold=0.5)
+        bridge = NeocortexAuthorityBridge(
+            model_path=path, enforcement_mode="enforce")
 
         response = asyncio.run(
             bridge.request_authority(_req(), timeout_ms=500)
@@ -282,7 +292,8 @@ class TestEnforceMode:
         """Shadow mode: model says BLOCK → runtime returns ALLOW (shadow-only)."""
         path = tmp_path / "m.pkl"
         _write_artifact(path, toxic_prob=0.95, threshold=0.5)
-        bridge = NeocortexAuthorityBridge(model_path=path, enforcement_mode="shadow")
+        bridge = NeocortexAuthorityBridge(
+            model_path=path, enforcement_mode="shadow")
 
         response = asyncio.run(
             bridge.request_authority(_req(), timeout_ms=500)

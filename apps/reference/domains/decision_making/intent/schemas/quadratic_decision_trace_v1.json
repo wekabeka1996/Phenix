@@ -10,6 +10,9 @@
       "type": "integer",
       "const": 1
     },
+    "rid": {
+      "type": "string"
+    },
     "strategy_id": {
       "type": "string"
     },
@@ -46,6 +49,14 @@
     },
     "regime": {
       "type": "string"
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
     },
     "shield_multiplier": {
       "type": "number"

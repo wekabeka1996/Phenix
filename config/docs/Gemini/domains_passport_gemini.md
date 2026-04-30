@@ -50,7 +50,7 @@
 ### Санітарні гейти (Sanity Gates)
 - **`directional_sanity`:** `min_regime_confidence: 0.42` — мінімальна впевненість у режимі для дозволу на вхід.
 - **`price_motion_sanity`:** Захист від "флеш-крешів". `flash_threshold_norm: 1.0`, `bleed_threshold_norm: 0.5`.
-- **`regime_loss_embargo`:** Ембарго на торгівлю після збитків у певному режимі (`enabled: true`, `min_loss_threshold_net: 0.0`).
+- **`regime_loss_embargo`:** Ембарго на торгівлю після збитків у певному режимі (`enabled: true`, `min_loss_threshold_net: 0.0`, `fee_only_close_policy: ignore` для provable fee-only scratches).
 
 ### Контекстні гейти (Degraded Context)
 - **`fail_closed_on_degraded_context`:** `bool` (`false`).

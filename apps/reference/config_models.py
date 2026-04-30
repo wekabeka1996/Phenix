@@ -60,6 +60,8 @@ from apps.reference.config.domains.shadow_telemetry import (
     ShadowTelemetryDomainConfig,
     ShadowTelemetryEgressToMainConfig,
     ShadowTelemetryIngestConfig,
+    ShadowTelemetryLedgerConfig,
+    ShadowTelemetryLifecycleConfig,
     ShadowTelemetrySnapshotConfig,
     ShadowTelemetryTfPolicyConfig,
 )
@@ -747,7 +749,13 @@ ExecutionPositionDomainConfig.model_rebuild(
 class LimitOrdersConfig(BaseModel):
     """Limit orders configuration.
 
-    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Typed (limit_order_monitor.py:93).
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: legacy typed placeholder for the null
+    compatibility surface under trading.execution.limit_orders.
+
+    J3/J4 audit (2026-04-30): Reserved null compatibility surface only.
+    Zero runtime consumers — no EP/watchdog/FSM code reads this config.
+    Active timeout SSOT: OrderTimeoutWatchdog + domains.execution_position.pending_entry_ttl.
+    Staged retirement pending external compatibility audit (J5).
     """
     model_config = ConfigDict(extra='forbid')
 

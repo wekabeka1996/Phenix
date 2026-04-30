@@ -23,11 +23,16 @@ class PositionData(BaseModel):
     positionAmt: Decimal
     entryPrice: Decimal
     unRealizedProfit: Decimal
+    markPrice: Optional[Decimal] = None
+    unrealizedPnl: Optional[Decimal] = None
+    unrealizedPnlPct: Optional[Decimal] = None
     leverage: Decimal = Field(default=Decimal("1"))
 
-    @field_validator('positionAmt', 'entryPrice', 'unRealizedProfit', 'leverage', mode='before')
+    @field_validator('positionAmt', 'entryPrice', 'unRealizedProfit', 'markPrice', 'unrealizedPnl', 'unrealizedPnlPct', 'leverage', mode='before')
     def parse_decimal(cls, v: Any) -> Any:
         """Accept stringy numeric inputs while rejecting non-decimal values."""
+        if v is None:
+            return None
         try:
             if isinstance(v, (str, int, float)):
                 return Decimal(str(v))

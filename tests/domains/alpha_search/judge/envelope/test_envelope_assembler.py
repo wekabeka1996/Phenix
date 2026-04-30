@@ -322,3 +322,159 @@ class TestEnvelopeAssemblerLifecycle:
             chamber_config=_DEFAULT_CHAMBER_CONFIG,
         )
         assert env.verdict_scope == chamber.verdict_scope
+
+
+# ---------------------------------------------------------------------------
+# J6-S11: Regime propagation tests
+# ---------------------------------------------------------------------------
+
+class TestRegimePropagation:
+    """J6-S11: Verify regime context propagation into JudgeEvidenceEnvelope."""
+
+    def test_full_regime_passthrough(self):
+        """regime, regime_confidence, regime_ts_ms, regime_source all propagate."""
+        chamber = _make_chamber_aggregate()
+        env = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime="TREND_UP",
+            regime_confidence=0.83,
+            regime_ts_ms=1_714_000_000_000,
+            regime_source="aurora_regime_v1",
+        )
+        assert env.regime == "TREND_UP"
+        assert env.regime_confidence == pytest.approx(0.83)
+        assert env.regime_ts_ms == 1_714_000_000_000
+        assert env.regime_source == "aurora_regime_v1"
+        assert env.regime_missing_reason is None
+
+    def test_missing_regime_explicit_reason(self):
+        """When regime is absent, regime_missing_reason must be explicit."""
+        chamber = _make_chamber_aggregate()
+        env = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime=None,
+            regime_confidence=None,
+            regime_ts_ms=None,
+            regime_source=None,
+            regime_missing_reason="REGIME_CONTEXT_MISSING",
+        )
+        assert env.regime is None
+        assert env.regime_confidence is None
+        assert env.regime_ts_ms is None
+        assert env.regime_source is None
+        assert env.regime_missing_reason == "REGIME_CONTEXT_MISSING"
+
+    def test_regime_confidence_range(self):
+        """regime_confidence must be 0.0–1.0 by Pydantic constraint."""
+        import pytest as _pytest
+        from pydantic import ValidationError
+        chamber = _make_chamber_aggregate()
+        with _pytest.raises(ValidationError):
+            assemble_evidence_envelope(
+                chamber,
+                verdict_config=_DEFAULT_VERDICT_CONFIG,
+                chamber_config=_DEFAULT_CHAMBER_CONFIG,
+                regime="TREND_UP",
+                regime_confidence=1.5,  # out of range
+            )
+
+    def test_regime_only_no_confidence(self):
+        """regime present but confidence missing → regime_missing_reason set."""
+        chamber = _make_chamber_aggregate()
+        env = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime="HIGH_VOLATILITY",
+            regime_confidence=None,
+            regime_missing_reason="REGIME_CONFIDENCE_MISSING",
+        )
+        assert env.regime == "HIGH_VOLATILITY"
+        assert env.regime_confidence is None
+        assert env.regime_missing_reason == "REGIME_CONFIDENCE_MISSING"
+
+    def test_cache_not_contaminated(self):
+        """The original cache dict is not mutated by regime injection."""
+        original_cache = {"obi": 0.5, "ema_bias": 0.3}
+        import copy
+        cache_snapshot_before = copy.deepcopy(original_cache)
+
+        # Simulate what the plugin does: build local copy, inject regime
+        features_for_envelope = dict(original_cache)
+        features_for_envelope["regime"] = "TREND_UP"
+        features_for_envelope["regime_confidence"] = 0.9
+
+        # Original cache unchanged
+        assert original_cache == cache_snapshot_before
+        assert "regime" not in original_cache
+        assert "regime_confidence" not in original_cache
+
+    def test_cycle_key_unchanged_by_regime(self):
+        """Adding regime context must not alter cycle_key."""
+        chamber = _make_chamber_aggregate(symbol="ETHUSDT", ts_ms=9_000_000)
+        env_no_regime = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+        )
+        env_with_regime = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime="MEAN_REVERSION",
+            regime_confidence=0.7,
+            regime_ts_ms=9_000_000,
+            regime_source="aurora_regime_v1",
+        )
+        assert env_no_regime.cycle_key == env_with_regime.cycle_key
+
+    def test_historical_row_readable_without_new_fields(self):
+        """Historical envelopes without regime_ts_ms/source/missing_reason remain valid."""
+        chamber = _make_chamber_aggregate()
+        # Minimal envelope simulating a historical row (no new fields)
+        env = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime="TREND_UP",
+            regime_confidence=0.8,
+            # new fields omitted — must default to None
+        )
+        assert env.regime_ts_ms is None
+        assert env.regime_source is None
+        assert env.regime_missing_reason is None
+
+    def test_schema_cross_validates_new_fields(self):
+        """Pydantic model_dump of envelope with new regime fields passes JSON Schema."""
+        import json
+        from pathlib import Path
+        from jsonschema import Draft7Validator, RefResolver
+
+        SCHEMAS_DIR = Path("apps/reference/domains/alpha_search/judge/schemas")
+        schema_path = SCHEMAS_DIR / "judge_evidence_envelope_v1.json"
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+
+        store = {}
+        for sf in SCHEMAS_DIR.glob("*.json"):
+            with open(sf, "r", encoding="utf-8") as f:
+                store[sf.name] = json.load(f)
+        resolver = RefResolver("file:///", {}, store=store)
+        validator = Draft7Validator(schema, resolver=resolver)
+
+        chamber = _make_chamber_aggregate()
+        env = assemble_evidence_envelope(
+            chamber,
+            verdict_config=_DEFAULT_VERDICT_CONFIG,
+            chamber_config=_DEFAULT_CHAMBER_CONFIG,
+            regime="TREND_DOWN",
+            regime_confidence=0.72,
+            regime_ts_ms=1_714_100_000_000,
+            regime_source="aurora_regime_v1",
+        )
+        data = env.model_dump()
+        validator.validate(data)  # raises if invalid

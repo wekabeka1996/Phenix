@@ -135,6 +135,45 @@ class TestQuantizeExposure:
         assert r.reject_reason is not None
         assert "MIN_NOTIONAL" in r.reject_reason
 
+    def test_floor_policy_lifts_min_notional_to_smallest_executable_qty(self):
+        """Accepted tiny exposure can be lifted to the exchange-valid floor."""
+        spec = InstrumentSpec(
+            step_size=D("0.001"),
+            min_qty=D("0.001"),
+            min_notional=D("100"),
+            tick_size=D("0.01"),
+        )
+        r = quantize_exposure(
+            exposure=0.00005,
+            price=D("76279.429857142857"),
+            max_notional=D("1000000"),
+            leverage=35,
+            spec=spec,
+            min_notional_policy="floor",
+        )
+        assert r.reject_reason is None
+        assert r.qty == D("0.002")
+        assert r.notional >= D("100")
+        assert r.min_notional_floor_applied is True
+
+    def test_floor_policy_rejects_when_min_executable_size_exceeds_cap(self):
+        spec = InstrumentSpec(
+            step_size=D("0.001"),
+            min_qty=D("0.001"),
+            min_notional=D("100"),
+            tick_size=D("0.01"),
+        )
+        r = quantize_exposure(
+            exposure=0.00005,
+            price=D("76279.429857142857"),
+            max_notional=D("120"),
+            leverage=35,
+            spec=spec,
+            min_notional_policy="floor",
+        )
+        assert r.reject_reason is not None
+        assert "MIN_NOTIONAL_FLOOR_EXCEEDS_CAP" in r.reject_reason
+
     def test_zero_price(self):
         r = quantize_exposure(
             exposure=0.5,

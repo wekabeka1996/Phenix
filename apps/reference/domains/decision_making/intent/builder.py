@@ -218,6 +218,40 @@ class IntentBuilder:
             ttl_ms=0,
         )
 
+    def _build_runtime_authority_context(
+        self,
+        *,
+        request: ControlDecisionRequest,
+        response: ControlDecisionResponse,
+    ) -> dict[str, Any]:
+        authority_mode = getattr(response, "enforcement_mode", None)
+        if authority_mode is None:
+            bridge_mode = getattr(self._authority_bridge,
+                                  "authority_mode", None)
+            if bridge_mode is not None:
+                authority_mode = getattr(bridge_mode, "value", bridge_mode)
+        if authority_mode is None:
+            authority_mode = getattr(
+                self._authority_bridge, "_enforcement_mode", None)
+
+        authority_mode_text = str(authority_mode or "unknown").strip().lower()
+        if authority_mode_text == "enforce":
+            authority_mode_text = "gated"
+
+        apply_result = response.apply_result
+        if apply_result is None and response.action == ControlDecisionAction.FALLBACK:
+            apply_result = "FALLBACK_BASELINE"
+
+        action = response.model_action or response.action
+        return {
+            "decision_id": request.decision_id,
+            "authority_mode": authority_mode_text or "unknown",
+            "action": action.value.lower(),
+            "apply_result": apply_result,
+            "fallback_reason": response.fallback_reason,
+            "idempotent_key": request.decision_id,
+        }
+
     def _snapshot_has_nan(self, value: Any) -> bool:
         if isinstance(value, float):
             return value != value
@@ -315,6 +349,7 @@ class IntentBuilder:
         proposed_action: str,
         decision_basis_ts: int,
         sg: "SafetyGateResult",
+        authority_context: Optional[dict[str, Any]] = None,
         causal_state_snapshot: Optional[dict[str, Any]] = None,
         data_quality_flags: Optional[dict[str, Any]] = None,
     ) -> None:
@@ -340,12 +375,30 @@ class IntentBuilder:
             snapshot = dict(causal_state_snapshot)
             flags = dict(data_quality_flags)
         action = response.model_action or response.action
+        response_ts_ms = int(
+            getattr(response, "returned_at_ms", decision_ts_ms))
+        authority_mode = None
+        apply_result = getattr(response, "apply_result", None)
+        if authority_context is not None:
+            authority_mode = authority_context.get("authority_mode")
+            apply_result = authority_context.get("apply_result", apply_result)
+        if authority_mode is None:
+            authority_mode = getattr(response, "enforcement_mode", None)
+        if authority_mode is None:
+            authority_mode = getattr(
+                self._authority_bridge, "_enforcement_mode", None)
+        if authority_mode is not None:
+            flags.setdefault("authority_mode", str(authority_mode).lower())
         payload = {
             "decision_id": request.decision_id,
             "rid": request.rid,
             "symbol": symbol,
-            "decision_ts_ms": int(decision_ts_ms),
+            "decision_ts_ms": response_ts_ms,
+            "request_ts_ms": int(decision_ts_ms),
+            "response_ts_ms": response_ts_ms,
             "decision_basis_ts": int(decision_basis_ts),
+            "authority_mode": authority_mode,
+            "apply_result": apply_result,
             "action": action.value,
             "causal_state_snapshot": snapshot,
             "fallback_reason": response.fallback_reason,
@@ -736,6 +789,10 @@ class IntentBuilder:
                 decision_basis_ts=decision_basis_ts_value,
                 causal_state_snapshot=causal_snapshot,
             )
+            authority_context = self._build_runtime_authority_context(
+                request=decision_request,
+                response=authority_response,
+            )
             self._emit_shadow_neocortex_decision_logged(
                 request=decision_request,
                 decision_ts_ms=authority_decision_ts_ms,
@@ -749,6 +806,7 @@ class IntentBuilder:
                 proposed_action=proposed_action,
                 decision_basis_ts=decision_basis_ts_value,
                 sg=sg,
+                authority_context=authority_context,
                 causal_state_snapshot=causal_snapshot,
                 data_quality_flags=causal_flags,
             )
@@ -770,6 +828,7 @@ class IntentBuilder:
                     rid,
                     authority_response.fallback_reason,
                 )
+            trade_intent["authority_context"] = authority_context
         try:
             emit_regime_decision_audit(
                 logger=self.logger,
@@ -788,10 +847,12 @@ class IntentBuilder:
 
         # ── Forensic trace ─────────────────────────────────────
         trace_payload = build_decision_trace_payload(
+            rid=str(rid),
             symbol=symbol,
             strategy_id=str(strategy_id),
             trace_ts_ms=trace_ts_ms,
             intent_side=intent_side,
+            lifecycle_id=str(trade_intent["idempotent_key"]),
             sg=sg,
             regime_provenance=regime_provenance,
             tpsl_owner_ctx=tpsl_payload.owner_ctx,

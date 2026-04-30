@@ -17,6 +17,7 @@ from apps.reference.domains.execution_position.restore_artifact import (
     BRACKET_STATE_LINKED_ACTIVE,
     BRACKET_STATE_PARTIAL_LINKAGE,
     BRACKET_STATE_UNKNOWN,
+    LinkedBracketRef,
     RESTORE_PHASE_UNKNOWN,
     DeferredBracketRef,
     ExecutionPositionRestoreLifecycleRecord,
@@ -38,11 +39,13 @@ def _make_fsm_stub(*, pending_brackets=None):
     manage_flow = MagicMock()
     manage_flow.state = None
     manage_flow.symbol = None
+    fsm.manage_flows = {"BTCUSDT": manage_flow}
     fsm._get_or_create_manage_flow.return_value = manage_flow
 
     close_flow = MagicMock()
     close_flow.state = None
     close_flow.position_active = None
+    fsm.close_flows = {"BTCUSDT": close_flow}
     fsm._get_or_create_close_flow.return_value = close_flow
 
     return fsm, manage_flow, close_flow
@@ -80,7 +83,8 @@ def test_apply_record_sets_manage_flow_state_exact():
 
     assert manage_flow.state == ManageState.TRACKING
     assert manage_flow.symbol == "BTCUSDT"
-    fsm._set_manage_truth_source.assert_called_once_with("BTCUSDT", TRUTH_SOURCE_RESTORE_ARTIFACT)
+    fsm._set_manage_truth_source.assert_called_once_with(
+        "BTCUSDT", TRUTH_SOURCE_RESTORE_ARTIFACT)
     assert result.manage_phase_restore_status == "exact"
     assert result.manage_phase_value == ManageState.TRACKING.value
 
@@ -264,6 +268,42 @@ def test_apply_record_linked_active_bracket_gives_unknown_with_reason():
 
     assert result.bracket_state_restore_status == "unknown"
     assert "bracket_lineage_not_restorable_from_envelope" in result.unresolved_reasons
+
+
+def test_apply_record_linked_active_restores_exact_when_lineage_present():
+    fsm, manage_flow, _ = _make_fsm_stub()
+    applier = AuthoritativeRestoreApply(fsm)
+    record = _make_record(
+        manage_phase="OPENED",
+        bracket_state=BRACKET_STATE_LINKED_ACTIVE,
+        linked_bracket_ref=LinkedBracketRef(
+            entry_order_id="entry-1",
+            entry_client_order_id="ENTRY-CLIENT-1",
+            sl_order_id="sl-1",
+            tp_order_id="tp-1",
+            sl_client_order_id="SL-CLIENT-1",
+            tp_client_order_id="TP-CLIENT-1",
+        ),
+    )
+
+    result = applier.apply_record(record)
+
+    assert result.bracket_state_restore_status == "exact"
+    assert result.bracket_state_value == BRACKET_STATE_LINKED_ACTIVE
+    fsm._set_symbol_brackets_snapshot.assert_called_once_with(
+        "BTCUSDT",
+        sl_order_id="sl-1",
+        tp_order_id="tp-1",
+        truth_source=TRUTH_SOURCE_RESTORE_ARTIFACT,
+    )
+    assert manage_flow.entry_order_id == "entry-1"
+    assert manage_flow.entry_client_order_id == "ENTRY-CLIENT-1"
+    manage_flow.set_bracket_ids.assert_called_once_with(
+        "sl-1",
+        "tp-1",
+        sl_algo_client_id="SL-CLIENT-1",
+        tp_algo_client_id="TP-CLIENT-1",
+    )
 
 
 def test_apply_record_partial_linkage_bracket_gives_unknown_with_reason():

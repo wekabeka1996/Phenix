@@ -636,6 +636,8 @@ class DMEventHandlers:
             entry_regime_epoch_ref=payload.get("entry_regime_epoch_ref"),
             close_ts_ms=_optional_int(payload.get("close_ts_ms")),
             realized_pnl_net=payload.get("realized_pnl_net"),
+            realized_pnl=payload.get("realized_pnl"),
+            fees=payload.get("fees"),
             close_reason=payload.get("close_reason"),
         )
 

@@ -547,6 +547,11 @@
         "default_factory": null,
         "required": false
       },
+      "max_regime_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
       "hard_veto_consecutive_bars": {
         "default": "'<required>'",
         "default_factory": null,
@@ -1071,6 +1076,16 @@
         "default": "None",
         "default_factory": null,
         "required": false
+      },
+      "max_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   },
@@ -1083,6 +1098,11 @@
         "required": true
       },
       "min_loss_threshold_net": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee_only_close_policy": {
         "default": "'<required>'",
         "default_factory": null,
         "required": true

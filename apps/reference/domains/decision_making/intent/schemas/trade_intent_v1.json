@@ -476,6 +476,99 @@
       "additionalProperties": true,
       "$comment": "Canonical optional execution-boundary field. Producer/schema co-evolution tests must keep this additive contract aligned.",
       "description": "Strategy audit/debug trace produced by the objective engine or md_amr tracer. Optional top-level field for execution-boundary diagnostics; present only when strategy_trace is non-null in IntentBuilder."
+    },
+    "authority_context": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decision_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Neocortex authority decision id used to correlate shadow/advisory control decisions."
+            },
+            "authority_mode": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Authority operating mode normalized by DecisionMaking, for example shadow or gated."
+            },
+            "action": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Applied authority action, normalized to lowercase by the producer."
+            },
+            "apply_result": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Authority apply result, or FALLBACK_BASELINE when a fallback path was used."
+            },
+            "fallback_reason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Fallback reason when authority could not provide an enforcing decision."
+            },
+            "reason_code": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Authority fallback or policy reason code emitted by the strategy gateway."
+            },
+            "reason_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Human-readable authority fallback or policy reason text emitted by the strategy gateway."
+            },
+            "idempotent_key": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Authority-context idempotency key, currently aligned to decision_id."
+            },
+            "overlay_patch": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional advisory authority overlay patch emitted by the strategy gateway."
+            }
+          },
+          "required": [
+            "authority_mode",
+            "action",
+            "apply_result"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional Neocortex authority provenance attached by IntentBuilder or StrategySignalGateway after advisory/shadow authority evaluation. This is contractually additive and must not be used as an execution hard gate."
     }
   },
   "allOf": [

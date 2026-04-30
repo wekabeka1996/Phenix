@@ -608,7 +608,20 @@ class AlphaSearchBacktestPlugin:
 
         # Cache hit!
         self._cache_hits += 1
-        features = cache_entry.features
+        # Create a local copy to avoid contaminating the canonical feature cache
+        features = dict(cache_entry.features) if cache_entry.features else {}
+        
+        # J6-S11 Envelope Regime Propagation Repair: Option A
+        # Extract regime context from trigger payload and safely pass through
+        regime_snapshot = payload.get("regime")
+        if isinstance(regime_snapshot, dict):
+            features["regime"] = regime_snapshot.get("regime")
+            features["regime_confidence"] = regime_snapshot.get("confidence")
+            features["regime_ts_ms"] = regime_snapshot.get("ts_ms") or regime_snapshot.get("ts")
+            features["regime_source"] = regime_snapshot.get("source_model")
+        else:
+            features["regime_missing_reason"] = "REGIME_CONTEXT_MISSING"
+
         current_price = cache_entry.price or self._get_price_from_features(
             features
         )
@@ -726,7 +739,7 @@ class AlphaSearchBacktestPlugin:
                 bar_close_ts=bar_close_ts,
                 solicited_expert_ids=solicited_expert_ids,
                 judge_expert_outputs=judge_expert_outputs,
-                features=cache_entry.features if cache_entry else {},
+                features=features,
                 current_price=current_price,
             )
 
@@ -1225,6 +1238,10 @@ class AlphaSearchBacktestPlugin:
             # Extract regime metadata (optional enrichment, §13.2.1)
             regime = None
             regime_confidence = None
+            regime_ts_ms = None
+            regime_source = None
+            regime_missing_reason = None
+            
             if features:
                 regime = features.get("regime")
                 raw_rc = features.get("regime_confidence")
@@ -1233,6 +1250,16 @@ class AlphaSearchBacktestPlugin:
                         regime_confidence = float(raw_rc)
                     except (TypeError, ValueError):
                         regime_confidence = None
+                
+                raw_ts = features.get("regime_ts_ms")
+                if raw_ts is not None:
+                    try:
+                        regime_ts_ms = int(raw_ts)
+                    except (TypeError, ValueError):
+                        regime_ts_ms = None
+                
+                regime_source = features.get("regime_source")
+                regime_missing_reason = features.get("regime_missing_reason")
 
             # Build features_ref
             features_ref = f"bar:{symbol}:{chamber_result.tf_sec}:{bar_close_ts}"
@@ -1245,6 +1272,9 @@ class AlphaSearchBacktestPlugin:
                 features_ref=features_ref,
                 regime=regime,
                 regime_confidence=regime_confidence,
+                regime_ts_ms=regime_ts_ms,
+                regime_source=regime_source,
+                regime_missing_reason=regime_missing_reason,
             )
 
             # Emit envelope event

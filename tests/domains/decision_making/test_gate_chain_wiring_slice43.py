@@ -10,6 +10,12 @@ from types import SimpleNamespace
 
 from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
+from apps.reference.domains.neocortex.contracts.control_decision import (
+    AuthorityMode,
+    ControlDecisionAction,
+    ControlDecisionApplyResult,
+    ControlDecisionResponse,
+)
 
 
 def _make_dm(*, symbol="BTCUSDT", risk_score=0.3, risk_allowed=True,
@@ -104,6 +110,73 @@ class TestGateChainWiring:
         assert call_kw["symbol"] == "BTCUSDT"
         assert call_kw["side"] == "BUY"
         assert call_kw["reduce_only"] is False
+        assert call_kw["authority_context"] is None
+
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
+    def test_gate_blocked_decision_does_not_call_neocortex_bridge(self, mock_asg):
+        """A gate-blocked signal must not invoke the Phase 5 authority bridge."""
+        mock_asg.return_value = SafetyGateResult(outcome="ALLOW")
+        dm = _make_dm(risk_score=0.95)
+        dm._neocortex_authority_bridge = MagicMock()
+        gw = StrategyGateway(dm)
+
+        gw.process_signal(_make_event())
+
+        dm._emit_trade_intent_rejected.assert_called_once()
+        dm._neocortex_authority_bridge.decide.assert_not_called()
+
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
+    def test_gate_pass_calls_bridge_and_preserves_dispatch_fields(self, mock_asg):
+        """Authority runs only after gate-chain success and must not mutate core intent fields."""
+        mock_asg.return_value = SafetyGateResult(outcome="ALLOW")
+        dm = _make_dm()
+
+        def _allow(request):
+            return ControlDecisionResponse(
+                decision_id=request.decision_id,
+                action=ControlDecisionAction.ALLOW,
+                reason_code="MODEL_ALLOW",
+                reason_text="allowed",
+                returned_at_ms=request.decision_basis_ts_ms + 1,
+                model_ref="baseline_controller",
+                policy_ref="baseline_controller",
+                idempotent_key=request.idempotent_key,
+            )
+
+        dm._neocortex_authority_bridge = SimpleNamespace(
+            short_circuit_reason=None,
+            authority_mode=AuthorityMode.ADVISORY,
+            deadline_ms=10,
+            data_dir=None,
+            decide=MagicMock(side_effect=_allow),
+        )
+        gw = StrategyGateway(dm)
+
+        gw.process_signal(_make_event())
+
+        dm._neocortex_authority_bridge.decide.assert_called_once()
+        dm._propose_trade_intent.assert_called_once()
+        call_kw = dm._propose_trade_intent.call_args.kwargs
+        assert call_kw["symbol"] == "BTCUSDT"
+        assert call_kw["side"] == "BUY"
+        assert call_kw["qty"] == decimal.Decimal("0.5")
+        assert call_kw["strategy_id"] == "aurora"
+        assert call_kw["authority_context"]["apply_result"] == ControlDecisionApplyResult.ADVISORY_RECORDED.value
+
+    @patch("apps.reference.domains.decision_making.gates.safety_gates.apply_safety_gates")
+    def test_authority_deadline_basis_uses_gateway_clock(self, mock_asg):
+        """Authority deadline must use gateway runtime time, not signal ts_ms."""
+        mock_asg.return_value = SafetyGateResult(outcome="ALLOW")
+        dm = _make_dm()
+        gw = StrategyGateway(dm)
+        stale_signal_ts = 900_000
+
+        with patch.object(gw, "_evaluate_neocortex_authority", return_value=(None, False)) as mock_authority:
+            gw.process_signal(_make_event(ts_ms=stale_signal_ts))
+
+        authority_kwargs = mock_authority.call_args.kwargs
+        assert authority_kwargs["decision_basis_ts_ms"] == dm._clock.now_ms.return_value
+        assert authority_kwargs["decision_basis_ts_ms"] != stale_signal_ts
 
     @patch("apps.reference.domains.decision_making.gates.safety_gate.apply_safety_gates")
     def test_risk_gate_reject_calls_reject(self, mock_asg):
@@ -255,7 +328,8 @@ class TestGateChainWiring:
         gw = StrategyGateway(dm)
         gw.process_signal(_make_event())
 
-        emit_calls = [call for call in dm.fsm.emit.call_args_list if call[0][0] == "EVT:GATE_CHAIN_TRACE"]
+        emit_calls = [
+            call for call in dm.fsm.emit.call_args_list if call[0][0] == "EVT:GATE_CHAIN_TRACE"]
         assert len(emit_calls) == 1
         payload = emit_calls[0][0][1]
         assert payload["symbol"] == "BTCUSDT"
@@ -271,9 +345,10 @@ class TestGateChainWiring:
         gw = StrategyGateway(dm)
         gw.process_signal(_make_event())
 
-        emit_calls = [call for call in dm.fsm.emit.call_args_list if call[0][0] == "EVT:GATE_CHAIN_TRACE"]
+        emit_calls = [
+            call for call in dm.fsm.emit.call_args_list if call[0][0] == "EVT:GATE_CHAIN_TRACE"]
         assert len(emit_calls) == 1
         payload = emit_calls[0][0][1]
         assert payload["final_outcome"] == "REJECT"
-        assert any(g["reason_code"] == "exception:ValueError" for g in payload["gates"] if "reason_code" in g)
-
+        assert any(g["reason_code"] ==
+                   "exception:ValueError" for g in payload["gates"] if "reason_code" in g)

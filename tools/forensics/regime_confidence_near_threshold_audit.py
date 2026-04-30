@@ -126,6 +126,25 @@ def extract_conf_from_why(why: str):
     return None
 
 
+def extract_breach_kind(record: dict) -> str | None:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    breach_kind = record.get("regime_confidence_breach_kind")
+    if breach_kind in {"none", "missing", "below_min", "above_max"}:
+        return breach_kind
+    if isinstance(metadata, dict):
+        meta_breach = metadata.get("regime_confidence_breach_kind")
+        if meta_breach in {"none", "missing", "below_min", "above_max"}:
+            return meta_breach
+    why = str(record.get("why", "") or "")
+    if "above max" in why.lower():
+        return "above_max"
+    if "missing" in why.lower():
+        return "missing"
+    if "< min=" in why.lower():
+        return "below_min"
+    return None
+
+
 # ─── Load all cases ──────────────────────────────────────────
 def load_all_cases():
     """
@@ -143,8 +162,15 @@ def load_all_cases():
             r = json.loads(line)
 
             # Blocked by regime confidence gate
-            if r.get("event_type") == "ORDER_REJECTED" and "FIX-CONF-GATE-01" in r.get("why", ""):
-                conf = extract_conf_from_why(r["why"])
+            if r.get("event_type") in {"ORDER_REJECTED", "DECISION_INTENT_REJECTED"}:
+                breach_kind = extract_breach_kind(r)
+                why_text = str(r.get("why", "") or "")
+                if breach_kind not in {"below_min", "missing", "above_max"} and "FIX-CONF-GATE-01" not in why_text:
+                    continue
+                conf = extract_conf_from_why(why_text)
+                metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
+                if conf is None and isinstance(metadata, dict):
+                    conf = extract_conf_from_why(str(metadata.get("threshold_reason", "")))
                 blocked.append({
                     "ts_ms": r.get("timestamp", 0),
                     "symbol": r.get("symbol", ""),
@@ -154,7 +180,8 @@ def load_all_cases():
                     "nrr_code": r.get("nrr_code", "NRR-026"),
                     "regime_confidence": conf,
                     "bucket": classify_bucket(conf),
-                    "why": r["why"],
+                    "why": why_text,
+                    "breach_kind": breach_kind,
                     "source": "order_log",
                 })
 

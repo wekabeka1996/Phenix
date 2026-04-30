@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -13,6 +14,28 @@ from apps.reference.domains.neocortex.contracts.control_decision import (
     ControlDecisionApplyResult,
     ControlDecisionResponse,
 )
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+)
+from apps.reference.telemetry.metrics import generate_latest
+
+
+def _metric_value(metric_name: str, **labels: str) -> float:
+    exposition = generate_latest().decode("utf-8")
+    label_fragments = [f'{key}="{value}"' for key, value in labels.items()]
+    pattern = re.compile(r" (-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)$")
+    for line in exposition.splitlines():
+        if labels:
+            if not line.startswith(f"{metric_name}{{"):
+                continue
+            if not all(fragment in line for fragment in label_fragments):
+                continue
+        elif not line.startswith(f"{metric_name} "):
+            continue
+        match = pattern.search(line)
+        if match is not None:
+            return float(match.group(1))
+    return 0.0
 
 
 class _BridgeStub:
@@ -43,8 +66,8 @@ class _DMStub:
         self.blocked_symbols.append(symbol)
 
 
-def _projection() -> dict:
-    return {
+def _projection(**overrides) -> dict:
+    projection = {
         "symbol": "BTCUSDT",
         "tick_ts_ms": 1_700_000_000_000,
         "feature_event_ts_ms": 1_700_000_000_000,
@@ -62,6 +85,8 @@ def _projection() -> dict:
         "regime_state": {"label": "TREND_UP", "confidence": 0.85},
         "portfolio_position": {"side": "FLAT"},
     }
+    projection.update(overrides)
+    return projection
 
 
 def _gate_ctx():
@@ -79,6 +104,22 @@ def _chain_result():
 
 def _latest_risk() -> dict:
     return {"risk_parameters": {"risk_score": 0.2}}
+
+
+def _build_observation(gateway: StrategyGateway):
+    return gateway._build_authority_observation(
+        decision_id="decision-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        rid="rid-1",
+        strategy_id="aurora",
+        qty_dec=0.5,
+        entry_price_dec=50000.0,
+        decision_basis_ts_ms=1_700_000_000_000,
+        latest_risk=_latest_risk(),
+        gate_ctx=_gate_ctx(),
+        chain_result=_chain_result(),
+    )
 
 
 def test_trust_disabled_fast_path_skips_journals(tmp_path: Path) -> None:
@@ -125,6 +166,12 @@ def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:
         tmp_path, authority_mode=AuthorityMode.GATED, responder=_deny)
     dm = _DMStub(bridge, _projection())
     gateway = StrategyGateway(dm)
+    metric_before = _metric_value(
+        "neocortex_authority_requests_total",
+        mode="gated",
+        symbol="BTCUSDT",
+        apply_result="GATED_DENY",
+    )
 
     authority_context, blocked = gateway._evaluate_neocortex_authority(
         symbol="BTCUSDT",
@@ -148,7 +195,16 @@ def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:
     assert len(request_rows) == 1
     assert len(response_rows) == 1
     assert response_rows[0]["apply_result"] == ControlDecisionApplyResult.GATED_DENY.value
+    assert _metric_value(
+        "neocortex_authority_requests_total",
+        mode="gated",
+        symbol="BTCUSDT",
+        apply_result="GATED_DENY",
+    ) == metric_before + 1.0
     dm.fsm.emit.assert_called_once()
+    assert dm.fsm.emit.call_args.args[0] == "EVT:DECISION_BLOCKED"
+    assert all(not str(call.args[0]).startswith("CMD:")
+               for call in dm.fsm.emit.call_args_list)
 
 
 def test_late_response_is_recorded_but_ignored(tmp_path: Path) -> None:
@@ -168,6 +224,14 @@ def test_late_response_is_recorded_but_ignored(tmp_path: Path) -> None:
         tmp_path, authority_mode=AuthorityMode.GATED, responder=_late)
     dm = _DMStub(bridge, _projection())
     gateway = StrategyGateway(dm)
+    late_before = _metric_value("neocortex_authority_late_responses_total")
+    miss_before = _metric_value("neocortex_authority_deadline_misses_total")
+    request_before = _metric_value(
+        "neocortex_authority_requests_total",
+        mode="gated",
+        symbol="BTCUSDT",
+        apply_result="LATE_IGNORED",
+    )
 
     authority_context, blocked = gateway._evaluate_neocortex_authority(
         symbol="BTCUSDT",
@@ -184,3 +248,157 @@ def test_late_response_is_recorded_but_ignored(tmp_path: Path) -> None:
 
     assert blocked is False
     assert authority_context["apply_result"] == ControlDecisionApplyResult.LATE_IGNORED.value
+    assert _metric_value(
+        "neocortex_authority_requests_total",
+        mode="gated",
+        symbol="BTCUSDT",
+        apply_result="LATE_IGNORED",
+    ) == request_before + 1.0
+    assert _metric_value(
+        "neocortex_authority_late_responses_total") == late_before + 1.0
+    assert _metric_value(
+        "neocortex_authority_deadline_misses_total") == miss_before + 1.0
+
+
+def test_authority_journal_write_failure_increments_canonical_metric(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def _allow(request):
+        return ControlDecisionResponse(
+            decision_id=request.decision_id,
+            action=ControlDecisionAction.ALLOW,
+            reason_code="MODEL_ALLOW",
+            reason_text="allowed",
+            returned_at_ms=request.decision_basis_ts_ms + 1,
+            model_ref="baseline_controller",
+            policy_ref="baseline_controller",
+            idempotent_key=request.idempotent_key,
+        )
+
+    original_open = Path.open
+
+    def _failing_open(self, *args, **kwargs):
+        if self.name in {
+            "authority_request_journal_v1.jsonl",
+            "authority_response_journal_v1.jsonl",
+        }:
+            raise OSError("disk full")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _failing_open)
+
+    bridge = _BridgeStub(
+        tmp_path, authority_mode=AuthorityMode.GATED, responder=_allow)
+    dm = _DMStub(bridge, _projection())
+    gateway = StrategyGateway(dm)
+    request_before = _metric_value(
+        "neocortex_journal_write_failed_total",
+        journal="authority_request_journal_v1.jsonl",
+        reason_code="TELEMETRY_FLUSH_FAILED",
+    )
+    response_before = _metric_value(
+        "neocortex_journal_write_failed_total",
+        journal="authority_response_journal_v1.jsonl",
+        reason_code="TELEMETRY_FLUSH_FAILED",
+    )
+
+    authority_context, blocked = gateway._evaluate_neocortex_authority(
+        symbol="BTCUSDT",
+        side="BUY",
+        rid="rid-1",
+        strategy_id="aurora",
+        qty_dec=0.5,
+        entry_price_dec=50000.0,
+        decision_basis_ts_ms=1_700_000_000_000,
+        latest_risk=_latest_risk(),
+        gate_ctx=_gate_ctx(),
+        chain_result=_chain_result(),
+    )
+
+    assert blocked is False
+    assert authority_context is not None
+    assert _metric_value(
+        "neocortex_journal_write_failed_total",
+        journal="authority_request_journal_v1.jsonl",
+        reason_code="TELEMETRY_FLUSH_FAILED",
+    ) == request_before + 1.0
+    assert _metric_value(
+        "neocortex_journal_write_failed_total",
+        journal="authority_response_journal_v1.jsonl",
+        reason_code="TELEMETRY_FLUSH_FAILED",
+    ) == response_before + 1.0
+
+
+def test_missing_upstream_causal_proof_builds_diagnostics_only_observation(tmp_path: Path) -> None:
+    bridge = _BridgeStub(
+        tmp_path, authority_mode=AuthorityMode.SHADOW, responder=lambda request: None)
+    dm = _DMStub(bridge, _projection())
+    gateway = StrategyGateway(dm)
+
+    observation = _build_observation(gateway)
+
+    assert observation.event_time_source == CausalTimeProvenance.UNKNOWN
+    assert observation.event_time_is_causal is False
+    assert observation.trainable is False
+    assert observation.dataset_visibility == "diagnostics_only"
+    assert observation.missingness["causal_proof_missing"] is True
+    assert observation.system_stress_state["truth_reason_code"] == "MISSING_REQUIRED_STATE"
+
+
+def test_explicit_causal_upstream_proof_preserves_trainable_observation(tmp_path: Path) -> None:
+    bridge = _BridgeStub(
+        tmp_path, authority_mode=AuthorityMode.SHADOW, responder=lambda request: None)
+    dm = _DMStub(
+        bridge,
+        _projection(
+            feature_time_provenance=CausalTimeProvenance.AURORA_EVENT.value),
+    )
+    gateway = StrategyGateway(dm)
+
+    observation = _build_observation(gateway)
+
+    assert observation.event_time_source == CausalTimeProvenance.AURORA_EVENT
+    assert observation.event_time_is_causal is True
+    assert observation.trainable is True
+    assert observation.dataset_visibility == "trainable"
+    assert "truth_reason_code" not in observation.system_stress_state
+
+
+def test_non_causal_upstream_proof_cannot_be_upgraded_to_trainable(tmp_path: Path) -> None:
+    bridge = _BridgeStub(
+        tmp_path, authority_mode=AuthorityMode.SHADOW, responder=lambda request: None)
+    dm = _DMStub(
+        bridge,
+        _projection(
+            feature_time_provenance=CausalTimeProvenance.CAPTURED_WALLCLOCK.value,
+            event_time_is_causal=True,
+            trainable=True,
+            dataset_visibility="trainable",
+        ),
+    )
+    gateway = StrategyGateway(dm)
+
+    observation = _build_observation(gateway)
+
+    assert observation.event_time_source == CausalTimeProvenance.CAPTURED_WALLCLOCK
+    assert observation.event_time_is_causal is False
+    assert observation.trainable is False
+    assert observation.dataset_visibility == "diagnostics_only"
+    assert observation.missingness["causal_proof_non_causal"] is True
+    assert observation.system_stress_state["truth_reason_code"] == "NON_CAUSAL_TIME"
+
+
+def test_empty_state_vector_fallback_does_not_imply_trainable_truth(tmp_path: Path) -> None:
+    bridge = _BridgeStub(
+        tmp_path, authority_mode=AuthorityMode.SHADOW, responder=lambda request: None)
+    projection = _projection()
+    projection["observation"] = {"features": {}}
+    dm = _DMStub(bridge, projection)
+    gateway = StrategyGateway(dm)
+
+    observation = _build_observation(gateway)
+
+    assert observation.missingness["state_vector_fallback_used"] is True
+    assert observation.trainable is False
+    assert observation.dataset_visibility == "diagnostics_only"

@@ -5,10 +5,21 @@ from typing import Any, Dict
 import yaml
 
 from apps.reference.config_loader import ConfigLoader
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    FailureReasonCode,
+    get_failure_outcome_total,
+    reset_failure_outcomes,
+)
+from apps.reference.domains.shadow_telemetry.ipc import (
+    JsonlTcpQueueClient,
+    JsonlTcpServer,
+)
 from apps.reference.domains.shadow_telemetry.main_bridge import (
     LLMIntentIngressBridge,
     register_llm_command_mapper,
 )
+from apps.reference.telemetry.metrics import generate_latest
 
 
 class _StubEvent:
@@ -25,10 +36,26 @@ class _StubFSM:
         self.listeners.setdefault(event_name, []).append(handler)
 
     def emit(self, event_name: str, payload: Dict[str, Any] | None = None, why: str = "", **kwargs) -> None:
-        event_payload = payload if payload is not None else kwargs.get("payload") or {}
-        self.emitted.append({"event": event_name, "payload": event_payload, "why": why})
+        event_payload = payload if payload is not None else kwargs.get("payload") or {
+        }
+        self.emitted.append(
+            {"event": event_name, "payload": event_payload, "why": why})
         for handler in self.listeners.get(event_name, []):
             handler(_StubEvent(event_payload))
+
+
+def _metric_value(metric_name: str, **labels: str) -> float:
+    exposition = generate_latest().decode("utf-8")
+    for line in exposition.splitlines():
+        if labels:
+            if not line.startswith(f"{metric_name}{{"):
+                continue
+            if not all(f'{key}="{value}"' in line for key, value in labels.items()):
+                continue
+        elif not line.startswith(f"{metric_name} "):
+            continue
+        return float(line.rsplit(" ", 1)[1])
+    return 0.0
 
 
 def _copy_config_to_tmp(tmp_path: Path) -> Path:
@@ -99,6 +126,15 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
             "queue_maxsize": 100,
             "overflow_policy": "fail_closed",
         },
+        "ledger": {
+            "queue_maxsize": 100,
+            "overflow_policy": "fail_closed",
+            "enqueue_timeout_ms": 5,
+            "shutdown_timeout_ms": 2000,
+        },
+        "lifecycle": {
+            "stop_timeout_ms": 2000,
+        },
         "snapshot": {
             "trigger_event": "EVT:FEATURES_CALCULATED",
             "tf_policy": {
@@ -113,7 +149,8 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
     _write_yaml(domains_path, domains_data)
 
     strategies_path = cfg_dir / "strategies.yaml"
-    strategies_data = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
+    strategies_data = yaml.safe_load(
+        strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["BNBUSDT"] = ["llm_microstructure"]
     _write_yaml(strategies_path, strategies_data)
 
@@ -174,7 +211,8 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_external_open_request(tmp_path:
     assert "CMD:OPEN" not in event_names
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" not in event_names
 
-    ext_event = next(event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+    ext_event = next(
+        event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
     payload = ext_event["payload"]
     assert payload["source"] == "external_llm"
     assert payload["intent_id"] == "intent-1"
@@ -188,6 +226,7 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_external_open_request(tmp_path:
     assert payload["stop_price"] == "99.0"
     assert payload["target_price"] == "101.0"
 
+
 def test_llm_direct_external_open_carries_idempotency_key(tmp_path: Path) -> None:
     fsm = _StubFSM()
     register_llm_command_mapper(fsm)
@@ -198,5 +237,84 @@ def test_llm_direct_external_open_carries_idempotency_key(tmp_path: Path) -> Non
         payload=_llm_cmd_payload()
     )
 
-    ext_event = next(event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+    ext_event = next(
+        event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
     assert ext_event["payload"]["idempotent_key"] == "idem-key-1234"
+
+
+def test_queue_client_stop_accounts_for_undrained_payloads() -> None:
+    reset_failure_outcomes()
+    metric_before = _metric_value(
+        "neocortex_async_forced_stop_total",
+        component="shadow_bridge_test_client",
+        reason_code="UNCLEAN_SHUTDOWN",
+    )
+    client = JsonlTcpQueueClient(
+        endpoint="tcp://127.0.0.1:7999",
+        queue_maxsize=2,
+        overflow_policy="fail_closed",
+        stop_timeout_ms=1,
+        name="shadow_bridge_test_client",
+    )
+
+    assert client.enqueue({"event": "shadow"}) is True
+
+    client.stop()
+
+    assert client.enqueue({"event": "after-stop"}) is False
+    assert get_failure_outcome_total(
+        taxonomy=FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+        reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN,
+    ) == 1
+    assert _metric_value(
+        "neocortex_async_forced_stop_total",
+        component="shadow_bridge_test_client",
+        reason_code="UNCLEAN_SHUTDOWN",
+    ) == metric_before + 1.0
+
+
+def test_server_stop_accounts_for_owned_threads_that_survive() -> None:
+    class _AliveThread:
+        def join(self, timeout: float | None = None) -> None:
+            return None
+
+        def is_alive(self) -> bool:
+            return True
+
+    reset_failure_outcomes()
+    metric_before = _metric_value(
+        "neocortex_async_forced_stop_total",
+        component="shadow_bridge_test_server",
+        reason_code="UNCLEAN_SHUTDOWN",
+    )
+    server = JsonlTcpServer(
+        endpoint="tcp://127.0.0.1:7998",
+        handler=lambda payload: None,
+        stop_timeout_ms=1,
+        name="shadow_bridge_test_server",
+    )
+    server._thread = _AliveThread()  # type: ignore[assignment]
+    with server._state_lock:
+        server._handler_threads.add(_AliveThread())
+
+    server.stop()
+
+    assert get_failure_outcome_total(
+        taxonomy=FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+        reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN,
+    ) == 1
+    assert _metric_value(
+        "neocortex_async_forced_stop_total",
+        component="shadow_bridge_test_server",
+        reason_code="UNCLEAN_SHUTDOWN",
+    ) == metric_before + 1.0
+
+
+def test_active_runtime_shutdown_stages_keep_shadow_ordering() -> None:
+    source = Path("apps/reference/main.py").read_text(encoding="utf-8")
+
+    tap_index = source.index('ShutdownStage("shadow_event_tap"')
+    sink_index = source.index('ShutdownStage("shadow_telemetry_sink"')
+    ingress_index = source.index('ShutdownStage("llm_ingress_bridge"')
+
+    assert tap_index < sink_index < ingress_index

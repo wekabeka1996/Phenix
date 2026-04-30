@@ -52,10 +52,19 @@ class _FakeSG:
         self.resolved_min_regime_confidence_source = "scalar_legacy"
         self.resolved_min_regime_confidence_strategy_id = None
         self.resolved_min_regime_confidence_regime_key = None
+        self.resolved_regime_confidence_strategy_id = "aurora"
+        self.resolved_regime_confidence_symbol = "BTCUSDT"
+        self.resolved_regime_confidence_regime_key = None
+        self.resolved_max_regime_confidence = None
+        self.resolved_max_regime_confidence_source = None
+        self.resolved_max_regime_confidence_strategy_id = None
+        self.resolved_max_regime_confidence_regime_key = None
+        self.resolved_regime_confidence_band_active = True
+        self.regime_confidence_breach_kind = "none"
         self.regime_confidence_gate_verdict = "ALLOW"
         self.threshold_applied = True
         self.threshold_verdict = "PASS"
-        self.threshold_reason = "regime_confidence=0.82 >= min=0.45"
+        self.threshold_reason = "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None"
 
 
 def _safe_decimal(value, default=None):
@@ -290,20 +299,34 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
         if call.args[0] == "EVT:DECISION_TRACE_EMITTED"
     ]
 
-    assert decision_trace_calls == [
+    normalized_trace = dict(decision_trace_calls[0])
+    normalized_trace["lifecycle_id"] = "<uuid>"
+
+    assert [normalized_trace] == [
         {
+            "rid": "rid-payload-001",
             "symbol": "BTCUSDT",
             "strategy_id": "aurora",
             "ts": 1700000001234,
             "intent_side": "LONG",
+            "lifecycle_id": "<uuid>",
             "signal_score": 0.91,
             "regime": "TREND_UP",
             "regime_confidence": 0.82,
+            "resolved_regime_confidence_strategy_id": "aurora",
+            "resolved_regime_confidence_symbol": "BTCUSDT",
+            "resolved_regime_confidence_regime_key": None,
             "min_regime_confidence": 0.45,
             "resolved_min_regime_confidence": 0.45,
             "resolved_min_regime_confidence_source": "scalar_legacy",
             "resolved_min_regime_confidence_strategy_id": None,
             "resolved_min_regime_confidence_regime_key": None,
+            "resolved_max_regime_confidence": None,
+            "resolved_max_regime_confidence_source": None,
+            "resolved_max_regime_confidence_strategy_id": None,
+            "resolved_max_regime_confidence_regime_key": None,
+            "resolved_regime_confidence_band_active": True,
+            "regime_confidence_breach_kind": "none",
             "regime_confidence_gate_verdict": "ALLOW",
             "trend_dir": 1,
             "trend_run_length": 7,

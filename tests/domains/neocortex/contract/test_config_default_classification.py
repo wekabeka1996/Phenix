@@ -18,6 +18,7 @@ from pydantic.fields import PydanticUndefined
 from apps.reference.domains.neocortex.config_models import (
     AuthorityConfig,
     DatasetConfig,
+    DatasetCutoverConfig,
     DatasetSplitConfig,
     EvaluationConfig,
     IngestConfig,
@@ -35,7 +36,8 @@ from apps.reference.domains.neocortex.config_models import (
     WorldModelConfig,
 )
 
-VALID_CLASSES = frozenset({"structural_safe", "runtime_behavior", "legacy_compat"})
+VALID_CLASSES = frozenset(
+    {"structural_safe", "runtime_behavior", "legacy_compat"})
 
 # Models that carry structural-only defaults (schema versions, optional containers)
 ALLOWED_DEFAULTS: dict[type, set[str]] = {
@@ -68,6 +70,7 @@ ALL_MODELS: list[type] = [
     PPOConfig,
     SequenceConfig,
     DatasetSplitConfig,
+    DatasetCutoverConfig,
     DatasetConfig,
     PerformanceConfig,
     EvaluationConfig,
@@ -255,27 +258,32 @@ def test_authority_valid_config_loads():
 
 def test_signal_bias_bounds_inverted_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(signal_threshold_bias_bounds=[0.1, -0.1]))
+        AuthorityConfig.model_validate(_valid_authority(
+            signal_threshold_bias_bounds=[0.1, -0.1]))
 
 
 def test_cooldown_bounds_zero_min_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(cooldown_mult_bounds=[0.0, 3.0]))
+        AuthorityConfig.model_validate(
+            _valid_authority(cooldown_mult_bounds=[0.0, 3.0]))
 
 
 def test_cooldown_bounds_inverted_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(cooldown_mult_bounds=[3.0, 1.0]))
+        AuthorityConfig.model_validate(
+            _valid_authority(cooldown_mult_bounds=[3.0, 1.0]))
 
 
 def test_signal_bias_bounds_wrong_length_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(signal_threshold_bias_bounds=[-0.1]))
+        AuthorityConfig.model_validate(
+            _valid_authority(signal_threshold_bias_bounds=[-0.1]))
 
 
 def test_cooldown_bounds_wrong_length_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(cooldown_mult_bounds=[1.0]))
+        AuthorityConfig.model_validate(
+            _valid_authority(cooldown_mult_bounds=[1.0]))
 
 
 def test_invalid_authority_mode_raises():
@@ -285,4 +293,5 @@ def test_invalid_authority_mode_raises():
 
 def test_modulation_allowlist_empty_raises():
     with pytest.raises(ValidationError):
-        AuthorityConfig.model_validate(_valid_authority(modulation_allowlist=[]))
+        AuthorityConfig.model_validate(
+            _valid_authority(modulation_allowlist=[]))

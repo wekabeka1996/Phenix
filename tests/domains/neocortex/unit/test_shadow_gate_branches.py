@@ -93,7 +93,11 @@ class TestEnforceStartup:
         cfg = cfg.model_copy(update={"neuro": neuro})
         evaluator = ShadowGateEvaluator()
         # Patch the evaluate result to return not-ready
-        fake_report = SimpleNamespace(overall_status="not_ready", model_dump_json=lambda: "{}")
+        fake_report = SimpleNamespace(
+            overall_status="not_ready",
+            blocking_gate_ids=["shadow_gate_test"],
+            model_dump_json=lambda: "{}",
+        )
         with patch.object(evaluator, "evaluate", return_value=fake_report):
             with pytest.raises(ShadowGateViolationError):
                 evaluator.enforce_startup(cfg)
@@ -109,7 +113,11 @@ class TestEnforceStartup:
         )
         cfg = cfg.model_copy(update={"neuro": neuro})
         evaluator = ShadowGateEvaluator()
-        fake_report = SimpleNamespace(overall_status="not_ready", model_dump_json=lambda: "{}")
+        fake_report = SimpleNamespace(
+            overall_status="not_ready",
+            blocking_gate_ids=["shadow_gate_test"],
+            model_dump_json=lambda: "{}",
+        )
         with patch.object(evaluator, "evaluate", return_value=fake_report):
             report = evaluator.enforce_startup(cfg)
         assert report.overall_status == "not_ready"
@@ -129,7 +137,8 @@ class TestManifestContracts:
             update={"require_domain_manifest_contracts": False}
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"shadow_gates": shadow_gates})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"shadow_gates": shadow_gates})}
         )
         result = self._eval(cfg)
         assert result.status == "pass"
@@ -146,7 +155,8 @@ class TestManifestContracts:
     def test_manifest_contracts_missing_required_sections(self, tmp_path):
         import yaml
 
-        manifest = {"domain": {"contracts": {"time": {}, "episode_lifecycle": {}}}}
+        manifest = {"domain": {"contracts": {
+            "time": {}, "episode_lifecycle": {}}}}
         path = tmp_path / "domain.yaml"
         path.write_text(yaml.dump(manifest), encoding="utf-8")
         cfg = _base_config()
@@ -171,7 +181,8 @@ class TestPolicyTrainingDisabled:
             update={"allow_policy_training_reenable": True}
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"shadow_gates": shadow_gates})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"shadow_gates": shadow_gates})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -179,7 +190,8 @@ class TestPolicyTrainingDisabled:
 
     def test_policy_training_mode_enabled_fails(self):
         cfg = _base_config()
-        ppo = cfg.neuro.ppo.model_copy(update={"policy_training_mode": "online"})
+        ppo = cfg.neuro.ppo.model_copy(
+            update={"policy_training_mode": "online"})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"ppo": ppo})}
         )
@@ -202,7 +214,8 @@ class TestForbiddenAuthorityFlags:
             update={"allow_advisory_influence": True}
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"shadow_gates": shadow_gates})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"shadow_gates": shadow_gates})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -214,7 +227,8 @@ class TestForbiddenAuthorityFlags:
             update={"allow_live_authority": True}
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"shadow_gates": shadow_gates})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"shadow_gates": shadow_gates})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -228,7 +242,8 @@ class TestForbiddenAuthorityFlags:
 class TestObjectiveSplit:
     def test_objective_split_not_enforced_fails(self):
         cfg = _base_config()
-        ppo = cfg.neuro.ppo.model_copy(update={"objective_split_enforced": False})
+        ppo = cfg.neuro.ppo.model_copy(
+            update={"objective_split_enforced": False})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"ppo": ppo})}
         )
@@ -247,7 +262,8 @@ class TestSequenceContract:
 
     def test_bad_inference_mode_fails(self):
         cfg = _base_config()
-        seq = cfg.neuro.sequence.model_copy(update={"inference_mode": "stateful"})
+        seq = cfg.neuro.sequence.model_copy(
+            update={"inference_mode": "stateful"})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"sequence": seq})}
         )
@@ -269,7 +285,8 @@ class TestSequenceContract:
 
     def test_reset_flag_disabled_fails(self):
         cfg = _base_config()
-        seq = cfg.neuro.sequence.model_copy(update={"reset_on_replay_start": False})
+        seq = cfg.neuro.sequence.model_copy(
+            update={"reset_on_replay_start": False})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"sequence": seq})}
         )
@@ -320,9 +337,11 @@ class TestPerformanceContract:
 
     def test_bad_operating_mode_fails(self):
         cfg = _base_config()
-        perf = cfg.neuro.performance.model_copy(update={"operating_mode": "live_enforce"})
+        perf = cfg.neuro.performance.model_copy(
+            update={"operating_mode": "live_enforce"})
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -334,7 +353,8 @@ class TestPerformanceContract:
             update={"shadow_intent_emit_policy": "decimate_observational"}
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -349,7 +369,8 @@ class TestPerformanceContract:
             }
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -364,7 +385,8 @@ class TestPerformanceContract:
             }
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -382,7 +404,8 @@ class TestTimeContractMode:
     def test_live_shadow_non_fail_closed_policy_fails(self):
         cfg = _live_shadow_config()
         replay = cfg.replay.model_copy(
-            update={"feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
+            update={
+                "feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
         )
         cfg = cfg.model_copy(update={"replay": replay})
         result = self._eval(cfg)
@@ -391,9 +414,11 @@ class TestTimeContractMode:
 
     def test_offline_replay_legacy_policy_warns(self):
         cfg = _base_config()
-        perf = cfg.neuro.performance.model_copy(update={"operating_mode": "offline_replay"})
+        perf = cfg.neuro.performance.model_copy(
+            update={"operating_mode": "offline_replay"})
         replay = cfg.replay.model_copy(
-            update={"feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
+            update={
+                "feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
         )
         cfg = cfg.model_copy(
             update={
@@ -422,7 +447,8 @@ class TestDatasetAdmissionSelftest:
     def test_selftest_policy_eval_path_exercised(self):
         """Config with policy_training_mode=disabled triggers policy_eval branch."""
         cfg = _base_config()
-        ppo = cfg.neuro.ppo.model_copy(update={"policy_training_mode": "disabled"})
+        ppo = cfg.neuro.ppo.model_copy(
+            update={"policy_training_mode": "disabled"})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"ppo": ppo})}
         )
@@ -433,8 +459,10 @@ class TestDatasetAdmissionSelftest:
     def test_selftest_fails_if_policy_sample_becomes_trainable(self):
         cfg = _base_config()
         # Patch engine so policy_eval.is_trainable = True
-        fake_trainable = SimpleNamespace(is_trainable=True, eligibility_status="trainable")
-        fake_blocked = SimpleNamespace(is_trainable=False, eligibility_status="diagnostics_only")
+        fake_trainable = SimpleNamespace(
+            is_trainable=True, eligibility_status="trainable")
+        fake_blocked = SimpleNamespace(
+            is_trainable=False, eligibility_status="diagnostics_only")
         from apps.reference.domains.neocortex.logic.datasets.hygiene import DatasetPolicyEngine
         with patch.object(
             DatasetPolicyEngine, "evaluate_sample",
@@ -446,12 +474,15 @@ class TestDatasetAdmissionSelftest:
 
     def test_selftest_fails_if_unresolved_sample_becomes_trainable(self):
         cfg = _base_config()
-        ppo = cfg.neuro.ppo.model_copy(update={"policy_training_mode": "disabled"})
+        ppo = cfg.neuro.ppo.model_copy(
+            update={"policy_training_mode": "disabled"})
         cfg = cfg.model_copy(
             update={"neuro": cfg.neuro.model_copy(update={"ppo": ppo})}
         )
-        fake_blocked = SimpleNamespace(is_trainable=False, eligibility_status="diagnostics_only")
-        fake_trainable = SimpleNamespace(is_trainable=True, eligibility_status="trainable")
+        fake_blocked = SimpleNamespace(
+            is_trainable=False, eligibility_status="diagnostics_only")
+        fake_trainable = SimpleNamespace(
+            is_trainable=True, eligibility_status="trainable")
         from apps.reference.domains.neocortex.logic.datasets.hygiene import DatasetPolicyEngine
         with patch.object(
             DatasetPolicyEngine, "evaluate_sample",
@@ -479,7 +510,8 @@ class TestOperationalBudgetContract:
             }
         )
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -487,9 +519,11 @@ class TestOperationalBudgetContract:
 
     def test_flush_interval_zero_fails(self):
         cfg = _base_config()
-        perf = cfg.neuro.performance.model_copy(update={"flush_interval_ms": 0})
+        perf = cfg.neuro.performance.model_copy(
+            update={"flush_interval_ms": 0})
         cfg = cfg.model_copy(
-            update={"neuro": cfg.neuro.model_copy(update={"performance": perf})}
+            update={"neuro": cfg.neuro.model_copy(
+                update={"performance": perf})}
         )
         result = self._eval(cfg)
         assert result.status == "fail"
@@ -507,7 +541,8 @@ class TestCausalTimeHardGate:
     def test_live_shadow_non_fail_closed_is_hard_fail(self):
         cfg = _live_shadow_config()
         replay = cfg.replay.model_copy(
-            update={"feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
+            update={
+                "feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
         )
         cfg = cfg.model_copy(update={"replay": replay})
         result = self._eval(cfg)
@@ -523,9 +558,11 @@ class TestCausalTimeHardGate:
 
     def test_offline_replay_legacy_policy_warns_hard_gate(self):
         cfg = _base_config()
-        perf = cfg.neuro.performance.model_copy(update={"operating_mode": "offline_replay"})
+        perf = cfg.neuro.performance.model_copy(
+            update={"operating_mode": "offline_replay"})
         replay = cfg.replay.model_copy(
-            update={"feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
+            update={
+                "feature_missing_timestamp_policy": "legacy_non_causal_file_offset"}
         )
         cfg = cfg.model_copy(
             update={
@@ -540,7 +577,8 @@ class TestCausalTimeHardGate:
 
     def test_offline_replay_strict_policy_passes_hard_gate(self):
         cfg = _base_config()
-        perf = cfg.neuro.performance.model_copy(update={"operating_mode": "offline_replay"})
+        perf = cfg.neuro.performance.model_copy(
+            update={"operating_mode": "offline_replay"})
         replay = cfg.replay.model_copy(
             update={"feature_missing_timestamp_policy": "fail_closed"}
         )

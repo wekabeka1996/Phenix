@@ -14,6 +14,7 @@ from apps.reference.domains.execution_position.truth_hardening import get_execut
 from apps.reference.telemetry.trade_lifecycle_logger import append_trade_lifecycle_record
 from apps.reference.domains.execution_position.restore_artifact import (
     DeferredBracketRef,
+    LinkedBracketRef,
     STARTUP_TRUTH_ARTIFACT_SCHEMA_VERSION,
     STARTUP_TRUTH_ARTIFACT_TYPE,
     TRUTH_SOURCE_UNKNOWN,
@@ -116,8 +117,10 @@ class StartupTruthOrchestrator:
 
     def _restore_artifact_symbol_candidates(self) -> List[str]:
         symbols: Set[str] = set()
-        symbols.update(str(sym).upper() for sym in self._fsm.manage_flows.keys())
-        symbols.update(str(sym).upper() for sym in self._fsm.close_flows.keys())
+        symbols.update(str(sym).upper()
+                       for sym in self._fsm.manage_flows.keys())
+        symbols.update(str(sym).upper()
+                       for sym in self._fsm.close_flows.keys())
         symbols.update(str(sym).upper()
                        for sym in self._fsm._symbol_brackets.keys())
         for pending in dict(self._fsm._pending_brackets).values():
@@ -155,7 +158,8 @@ class StartupTruthOrchestrator:
         bracket_snapshot = self._fsm._resolve_restore_artifact_bracket_snapshot(
             symbol_key)
 
-        has_active_manage = self._fsm._has_active_lifecycle_for_symbol(symbol_key)
+        has_active_manage = self._fsm._has_active_lifecycle_for_symbol(
+            symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
         if not (has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]):
             return None
@@ -177,12 +181,26 @@ class StartupTruthOrchestrator:
                 entry_order_id=str(
                     bracket_snapshot["deferred_entry_order_id"]),
             )
+        if bracket_snapshot["bracket_state"] in {
+            "LINKED_ACTIVE",
+            "PARTIAL_LINKAGE",
+        } and (
+            bracket_snapshot["sl_order_id"] or bracket_snapshot["tp_order_id"]
+        ):
+            record_kwargs["linked_bracket_ref"] = LinkedBracketRef(
+                entry_order_id=bracket_snapshot["entry_order_id"],
+                entry_client_order_id=bracket_snapshot["entry_client_order_id"],
+                sl_order_id=bracket_snapshot["sl_order_id"],
+                tp_order_id=bracket_snapshot["tp_order_id"],
+                sl_client_order_id=bracket_snapshot["sl_client_order_id"],
+                tp_client_order_id=bracket_snapshot["tp_client_order_id"],
+            )
         return ExecutionPositionRestoreLifecycleRecord(**record_kwargs)
 
     def _restore_semantics_signature(
         self,
         symbol: str,
-    ) -> Tuple[str, str, str, Optional[str], bool]:
+    ) -> Tuple[Any, ...]:
         symbol_key = str(symbol or "").strip().upper()
         manage_phase = self._fsm._manage_state_value(
             self._fsm.manage_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
@@ -190,7 +208,8 @@ class StartupTruthOrchestrator:
             self._fsm.close_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
         bracket_snapshot = self._fsm._resolve_restore_artifact_bracket_snapshot(
             symbol_key)
-        has_active_manage = self._fsm._has_active_lifecycle_for_symbol(symbol_key)
+        has_active_manage = self._fsm._has_active_lifecycle_for_symbol(
+            symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
         return (
             manage_phase,
@@ -199,6 +218,36 @@ class StartupTruthOrchestrator:
             (
                 str(bracket_snapshot["deferred_entry_order_id"])
                 if bracket_snapshot["deferred_entry_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["entry_order_id"])
+                if bracket_snapshot["entry_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["entry_client_order_id"])
+                if bracket_snapshot["entry_client_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["sl_order_id"])
+                if bracket_snapshot["sl_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["tp_order_id"])
+                if bracket_snapshot["tp_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["sl_client_order_id"])
+                if bracket_snapshot["sl_client_order_id"]
+                else None
+            ),
+            (
+                str(bracket_snapshot["tp_client_order_id"])
+                if bracket_snapshot["tp_client_order_id"]
                 else None
             ),
             bool(
@@ -714,7 +763,8 @@ class StartupTruthOrchestrator:
             # retained in ExecPosFSM (not extracted into 6A) because it writes ManageFlow/CloseFlow
             # runtime state. This cross-call is the temporary seam; Package 6B will own this
             # invocation and no longer require 6A to drive it.
-            symbol_status = self._fsm._apply_authoritative_restore_record(record)
+            symbol_status = self._fsm._apply_authoritative_restore_record(
+                record)
             status.symbol_statuses.append(symbol_status)
             status.applied_record_count += 1
             for field_name in (
@@ -827,4 +877,3 @@ class StartupTruthOrchestrator:
             for trace_id in self._fsm._portfolio_event_stage_trace_order
             if trace_id in self._fsm._portfolio_event_stage_traces
         ]
-

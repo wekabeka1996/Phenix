@@ -23,9 +23,9 @@ def _read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def _regime_cache_snapshot(*, confidence: str) -> dict:
+def _regime_cache_snapshot(*, confidence: str, regime: str = "TREND_UP") -> dict:
     return {
-        "regime": "TREND_UP",
+        "regime": regime,
         "confidence": confidence,
         "cache_write_ts_ms": 1_700_000_000_456,
         "basis_tf_sec": 300,
@@ -36,14 +36,14 @@ def _regime_cache_snapshot(*, confidence: str) -> dict:
         "pre_cutoff_source_model": "sma_trend_v1",
         "confidence_min": "0.15",
         "confidence_max": "0.85",
-        "pre_cutoff_regime": "TREND_UP",
+        "pre_cutoff_regime": regime,
         "pre_cutoff_confidence": confidence,
         "pre_cutoff_clamped_to_min": False,
         "pre_cutoff_clamped_to_max": False,
         "pre_cutoff_boundary_reason": None,
         "uncertain_cutoff": "0.22",
         "demoted_to_uncertain": False,
-        "raw_regime": "TREND_UP",
+        "raw_regime": regime,
         "raw_confidence": confidence,
         "raw_boundary_reason": None,
         "hysteresis_bars": 3,
@@ -62,21 +62,21 @@ def _regime_cache_snapshot(*, confidence: str) -> dict:
                 "basis_tf_sec": 300,
                 "bar_close_ts_ms": 1_700_000_000_000,
                 "changed": False,
-                "regime": "TREND_UP",
+                "regime": regime,
                 "confidence": confidence,
                 "stable_confidence": confidence,
                 "source_model": "sma_trend_v1",
                 "pre_cutoff_source_model": "sma_trend_v1",
                 "confidence_min": "0.15",
                 "confidence_max": "0.85",
-                "pre_cutoff_regime": "TREND_UP",
+                "pre_cutoff_regime": regime,
                 "pre_cutoff_confidence": confidence,
                 "pre_cutoff_clamped_to_min": False,
                 "pre_cutoff_clamped_to_max": False,
                 "pre_cutoff_boundary_reason": None,
                 "uncertain_cutoff": "0.22",
                 "demoted_to_uncertain": False,
-                "raw_regime": "TREND_UP",
+                "raw_regime": regime,
                 "raw_confidence": confidence,
                 "raw_boundary_reason": None,
                 "hysteresis_bars": 3,
@@ -87,7 +87,7 @@ def _regime_cache_snapshot(*, confidence: str) -> dict:
             },
             "cache_snapshot": {
                 "cache_write_ts_ms": 1_700_000_000_456,
-                "regime": "TREND_UP",
+                "regime": regime,
                 "confidence": float(confidence),
             },
         },
@@ -126,11 +126,20 @@ def _audit_sg(
         regime_confidence=confidence,
         regime_provenance=_regime_cache_snapshot(confidence=str(confidence))[
             "regime_provenance"],
+        resolved_regime_confidence_strategy_id=source_strategy_id,
+        resolved_regime_confidence_symbol="BTCUSDT",
+        resolved_regime_confidence_regime_key=regime_key,
         min_regime_confidence=0.45,
         resolved_min_regime_confidence=threshold,
         resolved_min_regime_confidence_source=source,
         resolved_min_regime_confidence_strategy_id=source_strategy_id,
         resolved_min_regime_confidence_regime_key=regime_key,
+        resolved_max_regime_confidence=None,
+        resolved_max_regime_confidence_source=None,
+        resolved_max_regime_confidence_strategy_id=None,
+        resolved_max_regime_confidence_regime_key=None,
+        resolved_regime_confidence_band_active=True,
+        regime_confidence_breach_kind="none",
         regime_confidence_gate_verdict=gate_verdict,
         threshold_applied=True,
         threshold_verdict="BLOCK" if gate_verdict == "DENY" else "PASS",
@@ -151,7 +160,7 @@ def test_allow_path_writes_regime_decision_audit_and_threshold_metadata(
     dm.symbol_states["BTCUSDT"] = {
         "_delta_price_hist": deque([1.0], maxlen=20)}
     dm._per_symbol_regimes["BTCUSDT"] = _regime_cache_snapshot(
-        confidence="0.87")
+        confidence="0.25")
     dm._builder._warmup_gate = lambda **_kw: False
     dm._builder._tca_prefs = {
         "max_slippage_bps": 10,
@@ -198,15 +207,17 @@ def test_allow_path_writes_regime_decision_audit_and_threshold_metadata(
     assert decision["outcome"] == "ALLOW"
     assert decision["threshold_verdict"] == "PASS"
     assert decision["threshold_applied"] is True
-    assert decision["min_regime_confidence"] == 0.45
-    assert decision["resolved_min_regime_confidence"] == 0.45
-    assert decision["resolved_min_regime_confidence_source"] == "scalar_legacy"
+    assert decision["min_regime_confidence"] == 0.35
+    assert decision["resolved_min_regime_confidence"] == 0.20
+    assert decision["resolved_min_regime_confidence_source"] == "domain_regime_specific"
     assert decision["resolved_min_regime_confidence_strategy_id"] is None
-    assert decision["resolved_min_regime_confidence_regime_key"] is None
+    assert decision["resolved_min_regime_confidence_regime_key"] == "TREND_UP"
+    assert decision["resolved_max_regime_confidence"] == 0.32
+    assert decision["resolved_max_regime_confidence_source"] == "domain_regime_specific"
     assert decision["regime_confidence_gate_verdict"] == "ALLOW"
-    assert decision["regime_confidence_used"] == 0.87
-    assert decision["raw_confidence"] == 0.87
-    assert decision["stable_confidence"] == 0.87
+    assert decision["regime_confidence_used"] == 0.25
+    assert decision["raw_confidence"] == 0.25
+    assert decision["stable_confidence"] == 0.25
     assert decision["bar_close_ts_ms"] == 1_700_000_000_000
     assert decision["operator_visible_mismatch"] is False
     assert decision["lifecycle_id"] is not None
@@ -214,11 +225,13 @@ def test_allow_path_writes_regime_decision_audit_and_threshold_metadata(
     metadata = mock_order_write.call_args[0][0]["metadata"]
     assert metadata["threshold_verdict"] == "PASS"
     assert metadata["threshold_applied"] is True
-    assert metadata["min_regime_confidence"] == 0.45
-    assert metadata["resolved_min_regime_confidence"] == 0.45
-    assert metadata["resolved_min_regime_confidence_source"] == "scalar_legacy"
+    assert metadata["min_regime_confidence"] == 0.35
+    assert metadata["resolved_min_regime_confidence"] == 0.20
+    assert metadata["resolved_min_regime_confidence_source"] == "domain_regime_specific"
     assert metadata["resolved_min_regime_confidence_strategy_id"] is None
-    assert metadata["resolved_min_regime_confidence_regime_key"] is None
+    assert metadata["resolved_min_regime_confidence_regime_key"] == "TREND_UP"
+    assert metadata["resolved_max_regime_confidence"] == 0.32
+    assert metadata["resolved_max_regime_confidence_source"] == "domain_regime_specific"
     assert metadata["regime_confidence_gate_verdict"] == "ALLOW"
 
 
@@ -231,7 +244,7 @@ def test_deny_path_writes_regime_decision_audit_for_threshold_block(
 
     dm = _configured_dm()
     dm._per_symbol_regimes["BTCUSDT"] = _regime_cache_snapshot(
-        confidence="0.29")
+        confidence="0.19")
 
     with patch(
         "apps.reference.domains.decision_making.core.facade.order_logger.write"
@@ -257,14 +270,16 @@ def test_deny_path_writes_regime_decision_audit_for_threshold_block(
     assert decision["outcome"] == "DENY"
     assert decision["threshold_verdict"] == "BLOCK"
     assert decision["threshold_applied"] is True
-    assert decision["min_regime_confidence"] == 0.45
-    assert decision["resolved_min_regime_confidence"] == 0.45
-    assert decision["resolved_min_regime_confidence_source"] == "scalar_legacy"
+    assert decision["min_regime_confidence"] == 0.35
+    assert decision["resolved_min_regime_confidence"] == 0.20
+    assert decision["resolved_min_regime_confidence_source"] == "domain_regime_specific"
     assert decision["resolved_min_regime_confidence_strategy_id"] is None
-    assert decision["resolved_min_regime_confidence_regime_key"] is None
+    assert decision["resolved_min_regime_confidence_regime_key"] == "TREND_UP"
+    assert decision["resolved_max_regime_confidence"] == 0.32
+    assert decision["resolved_max_regime_confidence_source"] == "domain_regime_specific"
     assert decision["regime_confidence_gate_verdict"] == "DENY"
-    assert decision["regime_confidence_used"] == 0.29
-    assert "0.29 < min=0.45" in decision["threshold_reason"]
+    assert decision["regime_confidence_used"] == 0.19
+    assert "0.19 < min=0.2" in decision["threshold_reason"]
     assert decision["bar_close_ts_ms"] == 1_700_000_000_000
 
 
@@ -298,11 +313,13 @@ def test_apply_safety_gates_marks_threshold_bypass_when_strategy_gate_disabled()
     assert result.threshold_verdict == "BYPASS"
     assert result.regime_confidence_gate_verdict == "BYPASS"
     assert result.threshold_reason == "safety_gates_disabled"
-    assert result.min_regime_confidence == 0.45
-    assert result.resolved_min_regime_confidence == 0.45
-    assert result.resolved_min_regime_confidence_source == "scalar_legacy"
+    assert result.min_regime_confidence == 0.35
+    assert result.resolved_min_regime_confidence == 0.20
+    assert result.resolved_min_regime_confidence_source == "domain_regime_specific"
     assert result.resolved_min_regime_confidence_strategy_id is None
-    assert result.resolved_min_regime_confidence_regime_key is None
+    assert result.resolved_min_regime_confidence_regime_key == "TREND_UP"
+    assert result.resolved_max_regime_confidence == 0.32
+    assert result.resolved_max_regime_confidence_source == "domain_regime_specific"
 
 
 @pytest.mark.parametrize(
@@ -377,6 +394,7 @@ def test_apply_safety_gates_uses_regime_specific_confidence_threshold() -> None:
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -421,6 +439,7 @@ def test_apply_safety_gates_strategy_regime_confidence_override_denies_below_thr
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -462,6 +481,7 @@ def test_apply_safety_gates_strategy_regime_confidence_override_allows_above_thr
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -514,6 +534,7 @@ def test_apply_safety_gates_each_strategy_can_use_symbol_specific_thresholds(
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -559,6 +580,7 @@ def test_apply_safety_gates_strategy_symbol_thresholds_are_isolated_per_coin() -
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -633,6 +655,7 @@ def test_apply_safety_gates_domain_threshold_applies_without_strategy_override()
         "DEFAULT": 0.45,
         "TREND_UP": 0.60,
     }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -657,3 +680,197 @@ def test_apply_safety_gates_domain_threshold_applies_without_strategy_override()
     assert result.resolved_min_regime_confidence_source == "domain_regime_specific"
     assert result.resolved_min_regime_confidence_strategy_id is None
     assert result.regime_confidence_gate_verdict == "DENY"
+
+
+@pytest.mark.parametrize(
+    ("regime", "confidence", "expected_outcome", "expected_reason", "expected_breach", "expected_min", "expected_max"),
+    [
+        ("TREND_UP", 0.19, "DENY", "NRR-026", "below_min", 0.20, 0.32),
+        ("TREND_UP", 0.25, "ALLOW", None, "none", 0.20, 0.32),
+        ("TREND_UP", 0.33, "DENY", "NRR-063", "above_max", 0.20, 0.32),
+        ("TREND_DOWN", 0.19, "DENY", "NRR-026", "below_min", 0.20, 0.32),
+        ("TREND_DOWN", 0.25, "ALLOW", None, "none", 0.20, 0.32),
+        ("TREND_DOWN", 0.33, "DENY", "NRR-063", "above_max", 0.20, 0.32),
+        ("MEAN_REVERSION", 0.34, "DENY", "NRR-026", "below_min", 0.35, None),
+        ("MEAN_REVERSION", 0.36, "ALLOW", None, "none", 0.35, None),
+        ("MEAN_REVERSION", 0.90, "ALLOW", None, "none", 0.35, None),
+    ],
+)
+def test_apply_safety_gates_regime_confidence_band_activation(
+    regime: str,
+    confidence: float,
+    expected_outcome: str,
+    expected_reason: str | None,
+    expected_breach: str,
+    expected_min: float,
+    expected_max: float | None,
+) -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = None
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.35
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.35,
+        "TREND_UP": 0.20,
+        "TREND_DOWN": 0.20,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_UP": 0.32,
+        "TREND_DOWN": 0.32,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    result = apply_safety_gates(
+        symbol="BTCUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"BTCUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "BTCUSDT": _regime_cache_snapshot(confidence=f"{confidence}", regime=regime)
+        },
+        system_stress_states={},
+    )
+
+    assert result.outcome == expected_outcome
+    assert result.regime_confidence_breach_kind == expected_breach
+    assert result.deny_reason == expected_reason
+    assert result.threshold_verdict == ("BLOCK" if expected_outcome == "DENY" else "PASS")
+    assert result.resolved_min_regime_confidence == expected_min
+    assert result.resolved_max_regime_confidence == expected_max
+    assert result.resolved_regime_confidence_band_active is True
+
+
+def test_apply_safety_gates_rejects_above_max_regime_confidence() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = SimpleNamespace(
+        min_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.52},
+        max_by_regime={"TREND_UP": 0.70},
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_UP": 0.70,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    result = apply_safety_gates(
+        symbol="BTCUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"BTCUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={"BTCUSDT": _regime_cache_snapshot(confidence="0.74")},
+        system_stress_states={},
+    )
+
+    assert result.outcome == "DENY"
+    assert result.deny_reason == "NRR-063"
+    assert result.regime_confidence_breach_kind == "above_max"
+    assert result.threshold_verdict == "BLOCK"
+    assert result.resolved_max_regime_confidence == 0.70
+    assert result.resolved_max_regime_confidence_source == "strategy_regime_specific"
+    assert result.resolved_regime_confidence_band_active is True
+
+
+def test_apply_safety_gates_allows_confidence_inside_band() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = SimpleNamespace(
+        min_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.52},
+        max_by_regime={"TREND_UP": 0.70},
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_UP": 0.70,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    result = apply_safety_gates(
+        symbol="BTCUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"BTCUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={"BTCUSDT": _regime_cache_snapshot(confidence="0.64")},
+        system_stress_states={},
+    )
+
+    assert result.outcome == "ALLOW"
+    assert result.regime_confidence_breach_kind == "none"
+    assert result.threshold_verdict == "PASS"
+    assert result.resolved_max_regime_confidence == 0.70
+    assert result.regime_confidence_gate_verdict == "ALLOW"
+
+
+def test_apply_safety_gates_missing_confidence_with_active_band_denies() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = SimpleNamespace(
+        min_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.52},
+        max_by_regime={"TREND_UP": 0.70},
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_UP": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_UP": 0.70,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    result = apply_safety_gates(
+        symbol="BTCUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"BTCUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={"BTCUSDT": {"regime": "TREND_UP", "confidence": None}},
+        system_stress_states={},
+    )
+
+    assert result.outcome == "DENY"
+    assert result.regime_confidence_breach_kind == "missing"
+    assert result.deny_reason == "NRR-026"
+    assert result.threshold_verdict == "BLOCK"

@@ -15,24 +15,6 @@ aurora:
     enabled: true
     system_stress_policy: attenuate
     stress_attenuation_factor: 0.5
-    regime_confidence:
-      min_by_regime:
-        DEFAULT: 0.45
-        LOW_VOLATILITY: 0.45
-        HIGH_VOLATILITY: 0.45
-        MEAN_REVERSION: 0.45
-        UNCERTAIN: 0.45
-        TREND_UP: 0.65
-        TREND_DOWN: 0.65
-      min_by_symbol:
-        XRPUSDT:
-          DEFAULT: 0.675
-          LOW_VOLATILITY: 0.675
-          HIGH_VOLATILITY: 0.675
-          MEAN_REVERSION: 0.675
-          UNCERTAIN: 0.675
-          TREND_UP: 0.975
-          TREND_DOWN: 0.975
   shadow_mode_enabled: false
   objective:
     enabled: true
@@ -442,6 +424,7 @@ aurora:
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -544,6 +527,7 @@ aurora:
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       - MEAN_REVERSION
       - HIGH_VOLATILITY
       scoring_version: null
@@ -649,6 +633,7 @@ aurora:
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       - HIGH_VOLATILITY
       - MEAN_REVERSION
       scoring_version: null

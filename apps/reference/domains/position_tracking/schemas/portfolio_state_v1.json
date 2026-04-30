@@ -98,6 +98,21 @@
             "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
             "description": "Average entry price for the position (string-encoded Decimal for precision)"
           },
+          "markPrice": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Current mark price for the position when a fresh symbol mark is available"
+          },
+          "unrealizedPnl": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Symbol-scoped unrealized profit and loss in USD when markPrice is available"
+          },
+          "unrealizedPnlPct": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Symbol-scoped unrealized profit and loss percentage when markPrice is available"
+          },
           "venues": {
             "type": "array",
             "description": "List of venues where this position has exposure",

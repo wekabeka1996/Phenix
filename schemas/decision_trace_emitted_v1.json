@@ -6,6 +6,14 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "rid": {
+      "type": "string",
+      "description": "Causal request id shared with signal, gateway, and downstream artifacts"
+    },
+    "lifecycle_id": {
+      "type": "string",
+      "description": "Lifecycle/idempotent key for allowed intents when available"
+    },
     "symbol": {
       "type": "string",
       "description": "Trading symbol (e.g., SOLUSDT)"
@@ -44,6 +52,90 @@
       "minimum": 0,
       "maximum": 1,
       "description": "Regime confidence if available"
+    },
+    "resolved_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_symbol": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "min_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_band_active": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "regime_confidence_breach_kind": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "trend_dir": {
       "type": "string",

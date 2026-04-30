@@ -19,26 +19,6 @@ ARTIFACT = (
     / "decision_making_contract.generated.json"
 )
 
-EXPECTED_REGIME_CONFIDENCE_POLICY = {
-    "DEFAULT": 0.45,
-    "LOW_VOLATILITY": 0.45,
-    "HIGH_VOLATILITY": 0.45,
-    "MEAN_REVERSION": 0.45,
-    "UNCERTAIN": 0.45,
-    "TREND_UP": 0.65,
-    "TREND_DOWN": 0.65,
-}
-
-EXPECTED_XRP_REGIME_CONFIDENCE_POLICY = {
-    "DEFAULT": 0.675,
-    "LOW_VOLATILITY": 0.675,
-    "HIGH_VOLATILITY": 0.675,
-    "MEAN_REVERSION": 0.675,
-    "UNCERTAIN": 0.675,
-    "TREND_UP": 0.975,
-    "TREND_DOWN": 0.975,
-}
-
 
 @pytest.fixture(scope="module")
 def frozen_manifest() -> dict[str, Any]:
@@ -116,8 +96,16 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert dm_domain.flip.enabled is False
     assert dm_domain.risk_skew.max_skew_sec == 5
     assert dm_domain.arming.require_regime_warmup is True
-    assert dm_domain.directional_sanity.min_regime_confidence == 0.45
-    assert dm_domain.directional_sanity.min_regime_confidence_by_regime is None
+    assert dm_domain.directional_sanity.min_regime_confidence == 0.35
+    assert dm_domain.directional_sanity.min_regime_confidence_by_regime == {
+        "DEFAULT": 0.35,
+        "TREND_UP": 0.20,
+        "TREND_DOWN": 0.20,
+    }
+    assert dm_domain.directional_sanity.max_regime_confidence_by_regime == {
+        "TREND_UP": 0.32,
+        "TREND_DOWN": 0.32,
+    }
     assert dm_domain.low_vol_cost_floor_gate.enabled is True
     assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
         "testnet",
@@ -129,26 +117,26 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     ]
     assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime == {
         "DEFAULT": 0.45,
-        "LOW_VOLATILITY": 0.65,
+        "LOW_VOLATILITY": 0.39,
     }
     assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol == {
         "aurora": {
-            "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+            "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
         },
         "md_amr": {
-            "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+            "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
         },
     }
     assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime == {
         "DEFAULT": 0.55,
-        "LOW_VOLATILITY": 0.62,
+        "LOW_VOLATILITY": 0.51,
     }
     assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
         "aurora": {
-            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
         },
         "md_amr": {
-            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
         },
     }
     assert dm_domain.low_vol_cost_floor_gate.direction_confidence.required is True
@@ -178,22 +166,10 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert aurora.safety_gates.enabled is True
     assert aurora.safety_gates.system_stress_policy == "attenuate"
     assert aurora.safety_gates.stress_attenuation_factor == 0.5
-    assert aurora.safety_gates.regime_confidence is not None
-    assert aurora.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
-    assert aurora.safety_gates.regime_confidence.min_by_symbol == {
-        "XRPUSDT": EXPECTED_XRP_REGIME_CONFIDENCE_POLICY,
-    }
-    assert cfg.strategies.md_amr.safety_gates.regime_confidence is not None
-    assert cfg.strategies.md_amr.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
-    assert cfg.strategies.md_amr.safety_gates.regime_confidence.min_by_symbol == {
-        "XRPUSDT": EXPECTED_XRP_REGIME_CONFIDENCE_POLICY,
-    }
-    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence is not None
-    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
-    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence.min_by_symbol is None
-    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence is not None
-    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence.min_by_regime == EXPECTED_REGIME_CONFIDENCE_POLICY
-    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence.min_by_symbol is None
+    assert aurora.safety_gates.regime_confidence is None
+    assert cfg.strategies.md_amr.safety_gates.regime_confidence is None
+    assert cfg.strategies.mean_reversion.safety_gates.regime_confidence is None
+    assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence is None
 
     decision = aurora.decision
     assert decision.testnet is not None
@@ -242,6 +218,24 @@ def test_directional_sanity_accepts_optional_per_regime_confidence_thresholds() 
     assert cfg.min_regime_confidence_by_regime == {
         "DEFAULT": 0.45,
         "TREND_UP": 0.52,
+    }
+
+
+def test_directional_sanity_accepts_optional_max_per_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.DirectionalSanityConfig(
+        enabled=True,
+        min_abs_delta_price=0.0,
+        min_confidence=0.0,
+        min_regime_confidence=0.45,
+        min_regime_confidence_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.52},
+        max_regime_confidence_by_regime={"TREND_UP": 0.70, "TREND_DOWN": 0.65},
+        hard_veto_consecutive_bars=2,
+        consecutive_bars=1,
+    )
+
+    assert cfg.max_regime_confidence_by_regime == {
+        "TREND_UP": 0.70,
+        "TREND_DOWN": 0.65,
     }
 
 
@@ -303,6 +297,53 @@ def test_safety_gates_accepts_optional_strategy_symbol_regime_confidence_thresho
     }
 
 
+def test_safety_gates_accepts_optional_strategy_max_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "max_by_regime": {"TREND_UP": 0.70, "TREND_DOWN": 0.65}
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.max_by_regime == {
+        "TREND_UP": 0.70,
+        "TREND_DOWN": 0.65,
+    }
+
+
+def test_safety_gates_accepts_optional_strategy_symbol_max_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "max_by_symbol": {
+                "XRPUSDT": {
+                    "TREND_UP": 0.35,
+                    "TREND_DOWN": 0.34,
+                },
+                "BTCUSDT": {
+                    "TREND_UP": 0.70,
+                },
+            },
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.max_by_symbol == {
+        "XRPUSDT": {
+            "TREND_UP": 0.35,
+            "TREND_DOWN": 0.34,
+        },
+        "BTCUSDT": {
+            "TREND_UP": 0.70,
+        },
+    }
+
+
 def test_safety_gates_rejects_symbol_thresholds_without_default() -> None:
     with pytest.raises(ValidationError, match="DEFAULT"):
         domain_dm.SafetyGatesConfig(
@@ -319,6 +360,40 @@ def test_safety_gates_rejects_symbol_thresholds_without_default() -> None:
         )
 
 
+def test_safety_gates_accepts_partial_max_thresholds_without_default() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "max_by_regime": {
+                "TREND_UP": 0.975,
+                "TREND_DOWN": 0.88,
+            }
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.max_by_regime == {
+        "TREND_UP": 0.975,
+        "TREND_DOWN": 0.88,
+    }
+
+
+def test_directional_sanity_rejects_invalid_band_configuration() -> None:
+    with pytest.raises(ValidationError, match="must be >= min threshold"):
+        domain_dm.DirectionalSanityConfig(
+            enabled=True,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            min_regime_confidence=0.60,
+            min_regime_confidence_by_regime={"DEFAULT": 0.60, "TREND_UP": 0.75},
+            max_regime_confidence_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.70},
+            hard_veto_consecutive_bars=2,
+            consecutive_bars=1,
+        )
+
+
 def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
     cfg = domain_dm.LowVolCostFloorGateConfig(
         enabled=True,
@@ -332,16 +407,16 @@ def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
             "target_net_fee_multiple": 2.0,
             "min_tp_fee_coverage": 3.0,
             "min_rr": 1.2,
-            "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
-            "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+            "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.39},
+            "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.51},
             "min_regime_confidence_overrides_by_strategy_symbol": {
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.72},
+                    "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
                 },
             },
             "min_direction_confidence_overrides_by_strategy_symbol": {
                 "aurora": {
-                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+                    "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
                 },
             },
         },
@@ -354,10 +429,10 @@ def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
     )
 
     assert cfg.regimes == ["LOW_VOLATILITY"]
-    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.65
+    assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.39
     assert cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
         "aurora": {
-            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.68},
+            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
         },
     }
 
@@ -402,8 +477,8 @@ def test_low_vol_cost_floor_gate_rejects_invalid_direction_confidence_missing_po
                 "target_net_fee_multiple": 2.0,
                 "min_tp_fee_coverage": 3.0,
                 "min_rr": 1.2,
-                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
-                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.39},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.51},
             },
             direction_confidence={
                 "required": True,
@@ -428,8 +503,8 @@ def test_low_vol_cost_floor_gate_rejects_noncanonical_strategy_symbol_threshold_
                 "target_net_fee_multiple": 2.0,
                 "min_tp_fee_coverage": 3.0,
                 "min_rr": 1.2,
-                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.65},
-                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.62},
+                "min_regime_confidence_by_regime": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.39},
+                "min_direction_confidence_by_regime": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.51},
                 "min_direction_confidence_overrides_by_strategy_symbol": {
                     "aurora": {
                         "xrpusdt": {"DEFAULT": 0.825, "LOW_VOLATILITY": 0.93},
@@ -450,9 +525,10 @@ def test_low_vol_cost_floor_gate_rejects_noncanonical_strategy_symbol_threshold_
     [
         ({"TREND_UP": 0.65}, "DEFAULT"),
         ({"DEFAULT": 0.45, "trend_up": 0.65}, "canonical uppercase"),
+        ({"DEFAULT": 0.45, "TRAND_UP": 0.65}, "unsupported"),
         ({"DEFAULT": 0.45, "SIDEWAYS": 0.65}, "unsupported"),
-        ({"DEFAULT": -0.01}, "\[0.0, 1.0\]"),
-        ({"DEFAULT": 1.01}, "\[0.0, 1.0\]"),
+        ({"DEFAULT": -0.01}, r"\[0.0, 1.0\]"),
+        ({"DEFAULT": 1.01}, r"\[0.0, 1.0\]"),
     ],
 )
 def test_safety_gates_rejects_invalid_strategy_regime_confidence_thresholds(

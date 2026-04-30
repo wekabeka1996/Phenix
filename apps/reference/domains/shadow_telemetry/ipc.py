@@ -5,8 +5,16 @@ import logging
 import queue
 import socket
 import threading
+import time
 from typing import Any, Callable, Optional, Tuple
 from urllib.parse import urlparse
+
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    FailureReasonCode,
+    record_failure_outcome,
+)
+from apps.reference.telemetry.metrics import inc_neocortex_async_forced_stop
 
 
 def parse_tcp_endpoint(endpoint: str) -> Tuple[str, int]:
@@ -28,6 +36,7 @@ class JsonlTcpServer:
         endpoint: str,
         handler: Callable[[dict[str, Any]], None],
         *,
+        stop_timeout_ms: int,
         logger: Optional[logging.Logger] = None,
         name: str = "jsonl_tcp_server",
     ) -> None:
@@ -35,40 +44,110 @@ class JsonlTcpServer:
         self.handler = handler
         self.logger = logger or logging.getLogger(name)
         self.name = name
+        self._stop_timeout_ms = int(stop_timeout_ms)
+        if self._stop_timeout_ms < 1:
+            raise ValueError("stop_timeout_ms must be >= 1")
 
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._socket: Optional[socket.socket] = None
+        self._state_lock = threading.Lock()
+        self._handler_threads: set[threading.Thread] = set()
+        self._active_connections: set[socket.socket] = set()
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._serve_loop, name=self.name, daemon=True)
+        self._thread = threading.Thread(
+            target=self._serve_loop, name=self.name, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
+        self._close_listening_socket()
+        self._close_active_connections()
+
+        deadline = time.monotonic() + (self._stop_timeout_ms / 1000.0)
+        server_alive = self._join_thread_until_deadline(self._thread, deadline)
+        if self._thread is not None and not self._thread.is_alive():
+            self._thread = None
+
+        handler_alive_count = 0
+        for thread in self._snapshot_handler_threads():
+            if self._join_thread_until_deadline(thread, deadline):
+                handler_alive_count += 1
+            else:
+                with self._state_lock:
+                    self._handler_threads.discard(thread)
+
+        if server_alive or handler_alive_count > 0:
+            self._record_unclean_shutdown(
+                message="JSONL TCP server shutdown left owned threads alive",
+                detail={
+                    "server_thread_alive": server_alive,
+                    "handler_threads_alive": handler_alive_count,
+                },
+            )
+
+    def _record_unclean_shutdown(self, *, message: str, detail: object) -> None:
+        inc_neocortex_async_forced_stop(
+            component=self.name,
+            reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN.value,
+        )
+        record_failure_outcome(
+            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+            FailureReasonCode.UNCLEAN_SHUTDOWN,
+            location="domains/shadow_telemetry/ipc.py:JsonlTcpServer.stop",
+            message=message,
+            detail=detail,
+        )
+        self.logger.warning("%s: %s", self.name, message)
+
+    def _join_thread_until_deadline(
+        self,
+        thread: threading.Thread | None,
+        deadline: float,
+    ) -> bool:
+        if thread is None or not thread.is_alive():
+            return False
+        remaining = max(0.0, deadline - time.monotonic())
+        thread.join(timeout=remaining)
+        return thread.is_alive()
+
+    def _snapshot_handler_threads(self) -> list[threading.Thread]:
+        with self._state_lock:
+            return list(self._handler_threads)
+
+    def _close_listening_socket(self) -> None:
         if self._socket is not None:
             try:
                 self._socket.close()
-            except Exception:
+            except OSError:
                 pass
             self._socket = None
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+
+    def _close_active_connections(self) -> None:
+        with self._state_lock:
+            connections = list(self._active_connections)
+        for conn in connections:
+            try:
+                conn.close()
+            except OSError:
+                pass
 
     def _serve_loop(self) -> None:
-        host, port = parse_tcp_endpoint(self.endpoint)
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind((host, port))
-        srv.listen(64)
-        srv.settimeout(1.0)
-        self._socket = srv
-        self.logger.info("%s listening on %s", self.name, self.endpoint)
-
+        srv: socket.socket | None = None
         try:
+            host, port = parse_tcp_endpoint(self.endpoint)
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind((host, port))
+            srv.listen(64)
+            srv.settimeout(1.0)
+            self._socket = srv
+            self.logger.info("%s listening on %s", self.name, self.endpoint)
+
             while not self._stop_event.is_set():
                 try:
                     conn, _addr = srv.accept()
@@ -78,12 +157,58 @@ class JsonlTcpServer:
                     if self._stop_event.is_set():
                         break
                     continue
-                t = threading.Thread(target=self._handle_conn, args=(conn,), daemon=True)
-                t.start()
+
+                thread = threading.Thread(
+                    target=self._handle_conn_thread,
+                    args=(conn,),
+                    name=f"{self.name}-handler",
+                    daemon=True,
+                )
+                with self._state_lock:
+                    self._handler_threads.add(thread)
+                thread.start()
+        except Exception as exc:
+            if not self._stop_event.is_set():
+                record_failure_outcome(
+                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                    FailureReasonCode.HANDLER_FAILURE,
+                    location="domains/shadow_telemetry/ipc.py:JsonlTcpServer._serve_loop",
+                    message="JSONL TCP server loop failed",
+                    detail=type(exc).__name__,
+                )
+                self.logger.exception(
+                    "%s serve loop failed", self.name, exc_info=exc)
         finally:
+            if srv is not None:
+                try:
+                    srv.close()
+                except Exception:
+                    pass
+            self._socket = None
+
+    def _handle_conn_thread(self, conn: socket.socket) -> None:
+        current_thread = threading.current_thread()
+        with self._state_lock:
+            self._active_connections.add(conn)
+        try:
+            self._handle_conn(conn)
+        except Exception as exc:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.HANDLER_FAILURE,
+                location="domains/shadow_telemetry/ipc.py:JsonlTcpServer._handle_conn_thread",
+                message="JSONL TCP connection handler failed",
+                detail=type(exc).__name__,
+            )
+            self.logger.exception(
+                "%s connection handler failed", self.name, exc_info=exc)
+        finally:
+            with self._state_lock:
+                self._active_connections.discard(conn)
+                self._handler_threads.discard(current_thread)
             try:
-                srv.close()
-            except Exception:
+                conn.close()
+            except OSError:
                 pass
 
     def _handle_conn(self, conn: socket.socket) -> None:
@@ -99,10 +224,26 @@ class JsonlTcpServer:
                         continue
                     try:
                         payload = json.loads(line)
-                        if isinstance(payload, dict):
-                            self.handler(payload)
-                    except Exception as e:
-                        self.logger.warning("%s failed to parse line: %s", self.name, e)
+                    except (TypeError, ValueError) as exc:
+                        self.logger.warning(
+                            "%s failed to parse line: %s", self.name, exc)
+                        continue
+
+                    if not isinstance(payload, dict):
+                        continue
+
+                    try:
+                        self.handler(payload)
+                    except Exception as exc:
+                        record_failure_outcome(
+                            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                            FailureReasonCode.HANDLER_FAILURE,
+                            location="domains/shadow_telemetry/ipc.py:JsonlTcpServer._handle_conn",
+                            message="JSONL TCP server handler raised",
+                            detail=type(exc).__name__,
+                        )
+                        self.logger.exception(
+                            "%s handler raised", self.name, exc_info=exc)
 
 
 class JsonlTcpQueueClient:
@@ -114,16 +255,21 @@ class JsonlTcpQueueClient:
         *,
         queue_maxsize: int,
         overflow_policy: str,
+        stop_timeout_ms: int,
         logger: Optional[logging.Logger] = None,
         name: str = "jsonl_tcp_client",
     ) -> None:
         self.endpoint = endpoint
         self.queue_maxsize = max(1, int(queue_maxsize))
         self.overflow_policy = str(overflow_policy)
+        self._stop_timeout_ms = int(stop_timeout_ms)
+        if self._stop_timeout_ms < 1:
+            raise ValueError("stop_timeout_ms must be >= 1")
         self.logger = logger or logging.getLogger(name)
         self.name = name
 
-        self._queue: "queue.Queue[dict[str, Any]]" = queue.Queue(maxsize=self.queue_maxsize)
+        self._queue: "queue.Queue[dict[str, Any]]" = queue.Queue(
+            maxsize=self.queue_maxsize)
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._sock: Optional[socket.socket] = None
@@ -133,19 +279,72 @@ class JsonlTcpQueueClient:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._worker, name=self.name, daemon=True)
+        self._thread = threading.Thread(
+            target=self._worker, name=self.name, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
+        deadline = time.monotonic() + (self._stop_timeout_ms / 1000.0)
+        self.wait_until_idle(timeout_sec=self._stop_timeout_ms / 1000.0)
         self._close_socket()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+
+        worker_alive = self._join_thread_until_deadline(self._thread, deadline)
+        if self._thread is not None and not self._thread.is_alive():
+            self._thread = None
+
+        unfinished = self._unfinished_queue_items()
+        if worker_alive or unfinished > 0:
+            self._record_unclean_shutdown(
+                detail={
+                    "worker_thread_alive": worker_alive,
+                    "unfinished_queue_items": unfinished,
+                    "queue_depth": self.queue_depth(),
+                }
+            )
 
     def queue_depth(self) -> int:
         return int(self._queue.qsize())
 
+    def wait_until_idle(self, timeout_sec: float) -> bool:
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        while time.monotonic() < deadline:
+            if self._unfinished_queue_items() == 0:
+                return True
+            time.sleep(0.01)
+        return self._unfinished_queue_items() == 0
+
+    def _unfinished_queue_items(self) -> int:
+        return int(getattr(self._queue, "unfinished_tasks", 0))
+
+    def _join_thread_until_deadline(
+        self,
+        thread: threading.Thread | None,
+        deadline: float,
+    ) -> bool:
+        if thread is None or not thread.is_alive():
+            return False
+        remaining = max(0.0, deadline - time.monotonic())
+        thread.join(timeout=remaining)
+        return thread.is_alive()
+
+    def _record_unclean_shutdown(self, *, detail: object) -> None:
+        inc_neocortex_async_forced_stop(
+            component=self.name,
+            reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN.value,
+        )
+        record_failure_outcome(
+            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+            FailureReasonCode.UNCLEAN_SHUTDOWN,
+            location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient.stop",
+            message="JSONL TCP queue client shutdown incomplete",
+            detail=detail,
+        )
+        self.logger.warning("%s shutdown incomplete: %s", self.name, detail)
+
     def enqueue(self, payload: dict[str, Any]) -> bool:
+        if self._stop_event.is_set():
+            return False
         try:
             self._queue.put_nowait(payload)
             return True
@@ -163,16 +362,43 @@ class JsonlTcpQueueClient:
             return False
 
     def _worker(self) -> None:
-        while not self._stop_event.is_set():
+        while True:
             try:
-                payload = self._queue.get(timeout=0.5)
+                payload = self._queue.get(timeout=0.1)
             except queue.Empty:
+                if self._stop_event.is_set():
+                    return
                 continue
 
-            line = json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n"
-            ok = self._send_line(line.encode("utf-8"))
-            if not ok:
-                self.logger.warning("%s failed to deliver payload to %s", self.name, self.endpoint)
+            try:
+                line = json.dumps(payload, separators=(
+                    ",", ":"), ensure_ascii=True) + "\n"
+                ok = self._send_line(line.encode("utf-8"))
+                if not ok:
+                    record_failure_outcome(
+                        FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                        FailureReasonCode.BRIDGE_UNAVAILABLE,
+                        location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient._worker",
+                        message="JSONL TCP queue client failed to deliver payload",
+                        detail=self.endpoint,
+                    )
+                    self.logger.warning(
+                        "%s failed to deliver payload to %s",
+                        self.name,
+                        self.endpoint,
+                    )
+            except Exception as exc:
+                record_failure_outcome(
+                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                    FailureReasonCode.HANDLER_FAILURE,
+                    location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient._worker",
+                    message="JSONL TCP queue client worker failed",
+                    detail=type(exc).__name__,
+                )
+                self.logger.exception("%s worker failed",
+                                      self.name, exc_info=exc)
+            finally:
+                self._queue.task_done()
 
     def _send_line(self, data: bytes) -> bool:
         for _attempt in (1, 2):

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.reference.domains.neocortex.contracts.observation_envelope import ObservationEnvelope
@@ -74,7 +72,7 @@ class ControlDecisionResponse(BaseModel):
     model_ref: str = Field(min_length=1)
     policy_ref: str = Field(min_length=1)
     idempotent_key: str = Field(min_length=1)
-    overlay_patch: dict[str, Any] | None = None
+    overlay_patch: dict[str, object] | None = None
     apply_result: ControlDecisionApplyResult | None = None
 
     @field_validator("action", mode="before")

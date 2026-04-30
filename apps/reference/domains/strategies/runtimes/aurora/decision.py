@@ -579,6 +579,7 @@ class AuroraDecisionMixin:
         # Emit a compact trace both to logs and as an event so blocked/deferred
         # investigations can correlate the same scoring snapshot.
         compact_trace = self._compact_quadratic_decision_trace(decision_trace)
+        decision_rid = f"aurora_{symbol}_{int(self.wall_time_fn() * 1000)}"
         shield_multiplier = float(
             getattr(result, "shield_multiplier", 1.0) or 1.0
         )
@@ -599,6 +600,7 @@ class AuroraDecisionMixin:
         try:
             self.emit_fn("EVT:QUADRATIC_DECISION_TRACE", {
                 "schema_version": 1,
+                "rid": decision_rid,
                 "strategy_id": self.strategy_id,
                 "symbol": symbol,
                 "tf_sec": int(cmd.tf_sec or self.timeframe_sec or 0),
@@ -610,6 +612,11 @@ class AuroraDecisionMixin:
                 "deferred": bool(result.deferred),
                 "defer_reason": str(result.defer_reason) if result.defer_reason else None,
                 "regime": str(state.regime),
+                "regime_confidence": (
+                    float(state.regime_confidence)
+                    if state.regime_confidence is not None
+                    else None
+                ),
                 "shield_multiplier": shield_multiplier,
                 "admission_shield_multiplier": admission_shield_multiplier,
                 "thr_buy": str(result.thr_buy) if result.thr_buy is not None else None,
@@ -1199,6 +1206,7 @@ class AuroraDecisionMixin:
                 entry_plan=entry_plan_res,
                 stop_loss_override=stop_loss_override,
                 micro_fraction=micro_fraction,
+                event_rid=decision_rid,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
         else:
@@ -1209,6 +1217,7 @@ class AuroraDecisionMixin:
                 cmd.raw,
                 effective_side=canonical_side,
                 micro_fraction=micro_fraction,
+                event_rid=decision_rid,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
 
@@ -1226,6 +1235,7 @@ class AuroraDecisionMixin:
         entry_plan: Optional[EntryPlanResult] = None,
         stop_loss_override: Optional[decimal.Decimal] = None,
         micro_fraction: float = 1.0,
+        event_rid: str | None = None,
         quadratic_shadow_evaluation: Any | None = None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with runtime readiness metadata.
@@ -1515,7 +1525,7 @@ class AuroraDecisionMixin:
             "symbol": symbol,
             "side": side.upper(),
             "ts_ms": now_ms,
-            "rid": f"aurora_{symbol}_{now_ms}",
+            "rid": str(event_rid or f"aurora_{symbol}_{now_ms}"),
             "bar_close_ts": (
                 int(bar_identity.bar_end_ts_ms)
                 if bar_identity is not None
@@ -1614,6 +1624,7 @@ class AuroraDecisionMixin:
                     max_notional=max_notional_cap,
                     leverage=target_leverage,
                     spec=spec,
+                    min_notional_policy="floor",
                 )
 
                 if q_pos.reject_reason:
@@ -1624,8 +1635,13 @@ class AuroraDecisionMixin:
                         reason_code="QUANTIZER_REJECT",
                         reason=q_pos.reject_reason,
                         context="aurora_handler:quantizer",
-                        details={"exposure": float(result.score),
-                                 "price": str(entry_price)},
+                        details={
+                            "decision_score": float(result.score),
+                            "sizing_score": float(getattr(result, "sizing_score", result.score)),
+                            "price": str(entry_price),
+                            "max_notional_cap": str(max_notional_cap),
+                            "min_notional_policy": "floor",
+                        },
                         why_chain=result.why_chain +
                         [f"QUANTIZER:{q_pos.reject_reason}"],
                     )
@@ -1635,6 +1651,7 @@ class AuroraDecisionMixin:
                     "qty": str(q_pos.qty),
                     "notional": str(q_pos.notional),
                     "margin_required": str(q_pos.margin_required),
+                    "min_notional_floor_applied": q_pos.min_notional_floor_applied,
                 }
 
             except Exception as e:

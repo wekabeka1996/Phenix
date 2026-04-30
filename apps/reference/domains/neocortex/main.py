@@ -27,6 +27,7 @@ from apps.reference.domains.decision_making.schemas.control_decision import (
 )
 from apps.reference.domains.neocortex.config_models import NeocortexConfig, load_config
 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureReasonCode,
     FailureOutcomeTaxonomy,
     record_failure_outcome,
 )
@@ -51,6 +52,7 @@ from apps.reference.domains.neocortex.logic.ingest.state_aggregator_v2 import (
     NeocortexStateSnapshot,
 )
 from apps.reference.domains.shadow_telemetry.ipc import JsonlTcpServer
+from apps.reference.telemetry.metrics import inc_neocortex_async_forced_stop
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
@@ -67,6 +69,7 @@ ShadowEmitFn = Callable[[str, dict[str, object], str], None]
 class AuroraShadowRuntimeConfig:
     enforcement_mode: Literal["shadow"]
     event_tap_endpoint: str
+    stop_timeout_ms: int
 
 
 class FatalStartupError(RuntimeError):
@@ -189,6 +192,7 @@ def load_aurora_shadow_runtime_config(
     return AuroraShadowRuntimeConfig(
         enforcement_mode="shadow",
         event_tap_endpoint=str(shadow_cfg.ingest.ipc_endpoint),
+        stop_timeout_ms=int(shadow_cfg.lifecycle.stop_timeout_ms),
     )
 
 
@@ -515,16 +519,19 @@ class NeocortexEventTapServer:
         *,
         runtime: NeocortexShadowRuntime,
         endpoint: str,
+        stop_timeout_ms: int,
         logger: logging.Logger,
     ) -> None:
         self.runtime = runtime
         self.endpoint = endpoint
+        self._stop_timeout_ms = int(stop_timeout_ms)
         self.logger = logger
         self._loop: asyncio.AbstractEventLoop | None = None
         self._tasks: set[asyncio.Task[ControlDecisionResponse | None]] = set()
         self._server = JsonlTcpServer(
             endpoint=endpoint,
             handler=self._on_frame,
+            stop_timeout_ms=self._stop_timeout_ms,
             logger=logger.getChild("ipc"),
             name="neocortex_shadow_event_tap_server",
         )
@@ -539,6 +546,39 @@ class NeocortexEventTapServer:
         self._server.stop()
         for task in list(self._tasks):
             task.cancel()
+
+    async def aclose(self) -> None:
+        self.stop()
+        tasks = list(self._tasks)
+        if not tasks:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=self._stop_timeout_ms / 1000.0,
+            )
+        except asyncio.TimeoutError:
+            pending = [task for task in tasks if not task.done()]
+            if pending:
+                inc_neocortex_async_forced_stop(
+                    component="neocortex_shadow_event_tap_server",
+                    reason_code=FailureReasonCode.UNCLEAN_SHUTDOWN.value,
+                )
+                record_failure_outcome(
+                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                    FailureReasonCode.UNCLEAN_SHUTDOWN,
+                    location="neocortex.main.NeocortexEventTapServer.aclose",
+                    message="Neocortex event tap shutdown left pending tasks",
+                    detail={"pending_tasks": len(pending)},
+                )
+                self.logger.warning(
+                    "Neocortex event tap shutdown left %s pending tasks",
+                    len(pending),
+                )
+        finally:
+            for task in tasks:
+                if task.done():
+                    self._tasks.discard(task)
 
     def _on_frame(self, frame: dict[str, Any]) -> None:
         loop = self._loop
@@ -573,6 +613,7 @@ async def main_reactor(
     runtime: NeocortexShadowRuntime,
     *,
     event_tap_endpoint: str,
+    stop_timeout_ms: int,
     logger: logging.Logger,
 ) -> None:
     """Run the standalone Stage 0.3 shadow-baseline process."""
@@ -580,6 +621,7 @@ async def main_reactor(
     server = NeocortexEventTapServer(
         runtime=runtime,
         endpoint=event_tap_endpoint,
+        stop_timeout_ms=stop_timeout_ms,
         logger=logger.getChild("tap"),
     )
     try:
@@ -602,7 +644,7 @@ async def main_reactor(
         logger.info("Neocortex shadow reactor received cancellation")
         raise
     finally:
-        server.stop()
+        await server.aclose()
         logger.info("Neocortex shadow reactor shutdown complete")
 
 
@@ -632,7 +674,12 @@ async def main(argv: Optional[list[str]] = None) -> None:
         )
         logger = setup_logging(runtime.config)
         endpoint = args.event_tap_endpoint or aurora_shadow_config.event_tap_endpoint
-        await main_reactor(runtime, event_tap_endpoint=endpoint, logger=logger)
+        await main_reactor(
+            runtime,
+            event_tap_endpoint=endpoint,
+            stop_timeout_ms=aurora_shadow_config.stop_timeout_ms,
+            logger=logger,
+        )
     except ShadowGateViolationError as error:
         record_failure_outcome(
             FailureOutcomeTaxonomy.FATAL_STARTUP,

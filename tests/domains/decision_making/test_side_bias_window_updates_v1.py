@@ -26,12 +26,16 @@ def _dm_cfg():
         symbol_cooldown_sec=0,
         enforce=False,
     )
-    position_sizing = SimpleNamespace(min_position_size_usd=10, liquidity_based_cap_usd=10_000)
-    arming = SimpleNamespace(require_regime_warmup=False, retry_backoff_ms=0, max_attempts=1)
+    position_sizing = SimpleNamespace(
+        min_position_size_usd=10, liquidity_based_cap_usd=10_000)
+    arming = SimpleNamespace(require_regime_warmup=False,
+                             retry_backoff_ms=0, max_attempts=1)
     features = SimpleNamespace(ttl_sec=60)
     bar_gating = SimpleNamespace(enable=False, bar_ms=60_000)
-    behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
-    directional_sanity = SimpleNamespace(enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2)
+    behavior_fsm = SimpleNamespace(
+        enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
+    directional_sanity = SimpleNamespace(
+        enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2)
     price_motion_sanity = SimpleNamespace(
         enabled=False,
         k_vol=2.0,
@@ -64,6 +68,7 @@ def _dm_cfg():
             min_intents_for_check=10,
         ),
         flip=SimpleNamespace(enabled=True),
+        neocortex_enforcement_mode="shadow",
         fail_closed_on_degraded_context=False,
         degraded_context_critical_keys=[],
         degraded_context_critical_keys_by_strategy={},
@@ -72,7 +77,8 @@ def _dm_cfg():
 
 def _mk_cfg(*, symbol: str):
     domains_decision_making = SimpleNamespace(
-        directional_sanity=SimpleNamespace(enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2),
+        directional_sanity=SimpleNamespace(
+            enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2),
         price_motion_sanity=SimpleNamespace(
             enabled=False,
             k_vol=2.0,
@@ -85,8 +91,10 @@ def _mk_cfg(*, symbol: str):
     )
     return SimpleNamespace(
         trading=SimpleNamespace(
-            tca_prefs={"max_slippage_bps": 10, "max_latency_ms": 100, "maker_preference": "neutral"},
-            risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 200},
+            tca_prefs={"max_slippage_bps": 10,
+                       "max_latency_ms": 100, "maker_preference": "neutral"},
+            risk_budgets={"trade_cvar95_max_bps": 100,
+                          "session_cvar95_max_bps": 200},
             mode="testnet",
         ),
         domains=SimpleNamespace(
@@ -136,9 +144,18 @@ def _mk_cfg(*, symbol: str):
                         strength_alpha=0.5,
                         strength_cap=1.0,
                     ),
-                    kelly=None,
+                    kelly=SimpleNamespace(
+                        base_probability="0.5",
+                        kelly_cap="0.25",
+                        kelly_alpha="0.8",
+                        payoff_ratio_r="1.5",
+                        p_min="0.45",
+                        p_max="0.65",
+                        uplift_factor="0.2",
+                    ),
                 ),
-                assets={symbol: SimpleNamespace(enabled=True, position_mode="STRICT")},
+                assets={symbol: SimpleNamespace(
+                    enabled=True, position_mode="STRICT")},
             )
         ),
         strategies_registry=None,
@@ -158,7 +175,8 @@ def test_side_bias_window_updates_on_emitted_open_intents():
     # Warmup prerequisites for _warmup_gate_before_trade_intent()
     now_sec = 1000.0
     now_ms = int(now_sec * 1000)
-    dm.latest_portfolio = {"positions": [], "equity": "1000", "positions_last_ts_ms": now_ms}
+    dm.latest_portfolio = {"positions": [],
+                           "equity": "1000", "positions_last_ts_ms": now_ms}
     dm.symbol_states[symbol]["features"] = {
         "ts": now_ms,
         "price": "100",
@@ -167,7 +185,8 @@ def test_side_bias_window_updates_on_emitted_open_intents():
         "warmup": {"full_ready": True, "ready": {"obi": True, "delta_price": True}},
     }
     dm.symbol_states[symbol]["risk"] = {"ok": True}
-    dm._per_symbol_regimes[symbol] = {"warmup": {"full_ready": True, "ticks_seen": 999}}
+    dm._per_symbol_regimes[symbol] = {
+        "warmup": {"full_ready": True, "ticks_seen": 999}}
 
     with patch("apps.reference.domains.decision_making.intent.builder.wal.append", lambda *_args, **_kwargs: "success-id"):
         with patch("time.time", return_value=now_sec):

@@ -54,6 +54,9 @@ class SafetyGateResult:
 
     # Computed context carried downstream for builder payloads and forensic trace.
     strategy_id: Optional[str] = None
+    resolved_regime_confidence_strategy_id: Optional[str] = None
+    resolved_regime_confidence_symbol: Optional[str] = None
+    resolved_regime_confidence_regime_key: Optional[str] = None
     intent_side: str = "LONG"
     trace_ts_ms: int = 0
     signal_score: Optional[float] = None
@@ -62,10 +65,16 @@ class SafetyGateResult:
     regime_provenance: Optional[Dict[str, Any]] = None
     min_regime_confidence: Optional[float] = None
     resolved_min_regime_confidence: Optional[float] = None
-    resolved_min_regime_confidence_source: str = "scalar_legacy"
+    resolved_min_regime_confidence_source: Optional[str] = "scalar_legacy"
     resolved_min_regime_confidence_strategy_id: Optional[str] = None
     resolved_min_regime_confidence_regime_key: Optional[str] = None
+    resolved_max_regime_confidence: Optional[float] = None
+    resolved_max_regime_confidence_source: Optional[str] = None
+    resolved_max_regime_confidence_strategy_id: Optional[str] = None
+    resolved_max_regime_confidence_regime_key: Optional[str] = None
+    resolved_regime_confidence_band_active: bool = False
     regime_confidence_gate_verdict: str = "BYPASS"
+    regime_confidence_breach_kind: str = "none"
     threshold_applied: bool = False
     threshold_verdict: str = "BYPASS"
     threshold_reason: str = "threshold_not_evaluated"
@@ -87,8 +96,8 @@ class SafetyGateResult:
 
 @dataclass(frozen=True)
 class ResolvedRegimeConfidenceThreshold:
-    threshold: float
-    source: str
+    threshold: Optional[float]
+    source: Optional[str]
     regime_key: Optional[str]
     mapping_present: bool
     strategy_id: Optional[str] = None
@@ -182,7 +191,12 @@ def _coerce_runtime_threshold(value: Any, *, path: str) -> float:
     return threshold
 
 
-def _runtime_threshold_mapping_or_none(value: Any, *, path: str) -> Mapping[str, Any] | None:
+def _runtime_threshold_mapping_or_none(
+    value: Any,
+    *,
+    path: str,
+    require_default: bool = True,
+) -> Mapping[str, Any] | None:
     if value is None or type(value).__name__ == "MagicMock":
         return None
     if not isinstance(value, Mapping):
@@ -190,7 +204,7 @@ def _runtime_threshold_mapping_or_none(value: Any, *, path: str) -> Mapping[str,
             path=path,
             why="Expected mapping with DEFAULT threshold",
         )
-    if "DEFAULT" not in value:
+    if require_default and "DEFAULT" not in value:
         raise ConfigContractError(
             path=path,
             why="DEFAULT threshold is required when per-regime mapping is provided",
@@ -210,9 +224,11 @@ def _runtime_threshold_mapping_or_none(value: Any, *, path: str) -> Mapping[str,
     return value
 
 
-def _strategy_regime_confidence_min_by_regime(
+def _strategy_regime_confidence_threshold_by_regime(
     config: "AuroraConfig",
     strategy_id: Optional[str],
+    *,
+    threshold_attr: str,
 ) -> Mapping[str, Any] | None:
     if strategy_id is None:
         return None
@@ -229,13 +245,15 @@ def _strategy_regime_confidence_min_by_regime(
         safety_gates_cfg, "regime_confidence", None)
     if regime_confidence_cfg is None or type(regime_confidence_cfg).__name__ == "MagicMock":
         return None
-    return getattr(regime_confidence_cfg, "min_by_regime", None)
+    return getattr(regime_confidence_cfg, threshold_attr, None)
 
 
-def _strategy_symbol_regime_confidence_min_by_regime(
+def _strategy_symbol_regime_confidence_threshold_by_regime(
     config: "AuroraConfig",
     strategy_id: Optional[str],
     symbol: Optional[str],
+    *,
+    threshold_attr: str,
 ) -> Mapping[str, Any] | None:
     if strategy_id is None or symbol is None:
         return None
@@ -253,12 +271,191 @@ def _strategy_symbol_regime_confidence_min_by_regime(
         safety_gates_cfg, "regime_confidence", None)
     if regime_confidence_cfg is None or type(regime_confidence_cfg).__name__ == "MagicMock":
         return None
-    by_symbol = getattr(regime_confidence_cfg, "min_by_symbol", None)
+    by_symbol = getattr(regime_confidence_cfg, threshold_attr, None)
     if by_symbol is None or type(by_symbol).__name__ == "MagicMock":
         return None
     if not isinstance(by_symbol, Mapping):
         return None
     return by_symbol.get(normalized_symbol)
+
+
+def _resolve_regime_confidence_threshold(
+    regime: Optional[str],
+    scalar_threshold: Optional[float],
+    by_regime: Mapping[str, Any] | None,
+    *,
+    threshold_kind: str,
+    strategy_id: Optional[str] = None,
+    symbol: Optional[str] = None,
+    strategy_by_regime: Mapping[str, Any] | None = None,
+    strategy_symbol_by_regime: Mapping[str, Any] | None = None,
+) -> ResolvedRegimeConfidenceThreshold:
+    require_default = threshold_kind != "max"
+    normalized_strategy_id = str(
+        strategy_id).strip() if strategy_id is not None else ""
+    normalized_symbol = str(symbol).strip(
+    ).upper() if symbol is not None else ""
+    regime_key = normalize_structural_regime_label(regime)
+
+    if normalized_strategy_id:
+        strategy_symbol_mapping = _runtime_threshold_mapping_or_none(
+            strategy_symbol_by_regime,
+            path=(
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_symbol.{normalized_symbol}"
+            ),
+            require_default=require_default,
+        ) if normalized_symbol else None
+        if strategy_symbol_mapping is not None:
+            if regime_key and regime_key in strategy_symbol_mapping:
+                return ResolvedRegimeConfidenceThreshold(
+                    threshold=_coerce_runtime_threshold(
+                        strategy_symbol_mapping[regime_key],
+                        path=(
+                            f"strategies.{normalized_strategy_id}.safety_gates."
+                            f"regime_confidence.{threshold_kind}_by_symbol.{normalized_symbol}.{regime_key}"
+                        ),
+                    ),
+                    source="strategy_symbol_regime_specific",
+                    regime_key=regime_key,
+                    mapping_present=True,
+                    strategy_id=normalized_strategy_id,
+                )
+            if "DEFAULT" in strategy_symbol_mapping:
+                return ResolvedRegimeConfidenceThreshold(
+                    threshold=_coerce_runtime_threshold(
+                        strategy_symbol_mapping["DEFAULT"],
+                        path=(
+                            f"strategies.{normalized_strategy_id}.safety_gates."
+                            f"regime_confidence.{threshold_kind}_by_symbol.{normalized_symbol}.DEFAULT"
+                        ),
+                    ),
+                    source="strategy_symbol_default",
+                    regime_key="DEFAULT",
+                    mapping_present=True,
+                    strategy_id=normalized_strategy_id,
+                )
+            if require_default:
+                raise ConfigContractError(
+                    path=(
+                        f"strategies.{normalized_strategy_id}.safety_gates."
+                        f"regime_confidence.{threshold_kind}_by_symbol.{normalized_symbol}"
+                    ),
+                    why="DEFAULT threshold is required when per-regime mapping is provided",
+                )
+
+        strategy_mapping = _runtime_threshold_mapping_or_none(
+            strategy_by_regime,
+            path=(
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_regime"
+            ),
+            require_default=require_default,
+        )
+        if strategy_mapping is not None:
+            if regime_key and regime_key in strategy_mapping:
+                return ResolvedRegimeConfidenceThreshold(
+                    threshold=_coerce_runtime_threshold(
+                        strategy_mapping[regime_key],
+                        path=(
+                            f"strategies.{normalized_strategy_id}.safety_gates."
+                            f"regime_confidence.{threshold_kind}_by_regime.{regime_key}"
+                        ),
+                    ),
+                    source="strategy_regime_specific",
+                    regime_key=regime_key,
+                    mapping_present=True,
+                    strategy_id=normalized_strategy_id,
+                )
+            if "DEFAULT" in strategy_mapping:
+                return ResolvedRegimeConfidenceThreshold(
+                    threshold=_coerce_runtime_threshold(
+                        strategy_mapping["DEFAULT"],
+                        path=(
+                            f"strategies.{normalized_strategy_id}.safety_gates."
+                            f"regime_confidence.{threshold_kind}_by_regime.DEFAULT"
+                        ),
+                    ),
+                    source="strategy_default",
+                    regime_key="DEFAULT",
+                    mapping_present=True,
+                    strategy_id=normalized_strategy_id,
+                )
+            if require_default:
+                raise ConfigContractError(
+                    path=(
+                        f"strategies.{normalized_strategy_id}.safety_gates."
+                        f"regime_confidence.{threshold_kind}_by_regime"
+                    ),
+                    why="DEFAULT threshold is required when per-regime mapping is provided",
+                )
+
+    domain_mapping = _runtime_threshold_mapping_or_none(
+        by_regime,
+        path=(
+            "domains.decision_making.directional_sanity."
+            f"{threshold_kind}_regime_confidence_by_regime"
+        ),
+        require_default=require_default,
+    )
+    if domain_mapping is None:
+        if threshold_kind == "max":
+            return ResolvedRegimeConfidenceThreshold(
+                threshold=None,
+                source=None,
+                regime_key=None,
+                mapping_present=False,
+            )
+        return ResolvedRegimeConfidenceThreshold(
+            threshold=scalar_threshold,
+            source="scalar_legacy",
+            regime_key=None,
+            mapping_present=False,
+        )
+
+    if regime_key and regime_key in domain_mapping:
+        return ResolvedRegimeConfidenceThreshold(
+            threshold=_coerce_runtime_threshold(
+                domain_mapping[regime_key],
+                path=(
+                    "domains.decision_making.directional_sanity."
+                    f"{threshold_kind}_regime_confidence_by_regime.{regime_key}"
+                ),
+            ),
+            source="domain_regime_specific",
+            regime_key=regime_key,
+            mapping_present=True,
+        )
+
+    if "DEFAULT" in domain_mapping:
+        return ResolvedRegimeConfidenceThreshold(
+            threshold=_coerce_runtime_threshold(
+                domain_mapping["DEFAULT"],
+                path=(
+                    "domains.decision_making.directional_sanity."
+                    f"{threshold_kind}_regime_confidence_by_regime.DEFAULT"
+                ),
+            ),
+            source="domain_default",
+            regime_key="DEFAULT",
+            mapping_present=True,
+        )
+
+    if not require_default:
+        return ResolvedRegimeConfidenceThreshold(
+            threshold=None,
+            source=None,
+            regime_key=None,
+            mapping_present=True,
+        )
+
+    raise ConfigContractError(
+        path=(
+            "domains.decision_making.directional_sanity."
+            f"{threshold_kind}_regime_confidence_by_regime"
+        ),
+        why="DEFAULT threshold is required when per-regime mapping is provided",
+    )
 
 
 def resolve_min_regime_confidence(
@@ -271,122 +468,36 @@ def resolve_min_regime_confidence(
     strategy_by_regime: Mapping[str, Any] | None = None,
     strategy_symbol_by_regime: Mapping[str, Any] | None = None,
 ) -> ResolvedRegimeConfidenceThreshold:
-    normalized_strategy_id = str(
-        strategy_id).strip() if strategy_id is not None else ""
-    normalized_symbol = str(symbol).strip(
-    ).upper() if symbol is not None else ""
-    regime_key = normalize_structural_regime_label(regime)
-
-    if normalized_strategy_id:
-        strategy_symbol_mapping = _runtime_threshold_mapping_or_none(
-            strategy_symbol_by_regime,
-            path=(
-                f"strategies.{normalized_strategy_id}.safety_gates."
-                f"regime_confidence.min_by_symbol.{normalized_symbol}"
-            ),
-        ) if normalized_symbol else None
-        if strategy_symbol_mapping is not None:
-            if regime_key and regime_key in strategy_symbol_mapping:
-                return ResolvedRegimeConfidenceThreshold(
-                    threshold=_coerce_runtime_threshold(
-                        strategy_symbol_mapping[regime_key],
-                        path=(
-                            f"strategies.{normalized_strategy_id}.safety_gates."
-                            f"regime_confidence.min_by_symbol.{normalized_symbol}.{regime_key}"
-                        ),
-                    ),
-                    source="strategy_symbol_regime_specific",
-                    regime_key=regime_key,
-                    mapping_present=True,
-                    strategy_id=normalized_strategy_id,
-                )
-            return ResolvedRegimeConfidenceThreshold(
-                threshold=_coerce_runtime_threshold(
-                    strategy_symbol_mapping["DEFAULT"],
-                    path=(
-                        f"strategies.{normalized_strategy_id}.safety_gates."
-                        f"regime_confidence.min_by_symbol.{normalized_symbol}.DEFAULT"
-                    ),
-                ),
-                source="strategy_symbol_default",
-                regime_key="DEFAULT",
-                mapping_present=True,
-                strategy_id=normalized_strategy_id,
-            )
-
-        strategy_mapping = _runtime_threshold_mapping_or_none(
-            strategy_by_regime,
-            path=(
-                f"strategies.{normalized_strategy_id}.safety_gates."
-                "regime_confidence.min_by_regime"
-            ),
-        )
-        if strategy_mapping is not None:
-            if regime_key and regime_key in strategy_mapping:
-                return ResolvedRegimeConfidenceThreshold(
-                    threshold=_coerce_runtime_threshold(
-                        strategy_mapping[regime_key],
-                        path=(
-                            f"strategies.{normalized_strategy_id}.safety_gates."
-                            f"regime_confidence.min_by_regime.{regime_key}"
-                        ),
-                    ),
-                    source="strategy_regime_specific",
-                    regime_key=regime_key,
-                    mapping_present=True,
-                    strategy_id=normalized_strategy_id,
-                )
-            return ResolvedRegimeConfidenceThreshold(
-                threshold=_coerce_runtime_threshold(
-                    strategy_mapping["DEFAULT"],
-                    path=(
-                        f"strategies.{normalized_strategy_id}.safety_gates."
-                        "regime_confidence.min_by_regime.DEFAULT"
-                    ),
-                ),
-                source="strategy_default",
-                regime_key="DEFAULT",
-                mapping_present=True,
-                strategy_id=normalized_strategy_id,
-            )
-
-    domain_mapping = _runtime_threshold_mapping_or_none(
+    return _resolve_regime_confidence_threshold(
+        regime,
+        scalar_min,
         by_regime,
-        path="domains.decision_making.directional_sanity.min_regime_confidence_by_regime",
+        threshold_kind="min",
+        strategy_id=strategy_id,
+        symbol=symbol,
+        strategy_by_regime=strategy_by_regime,
+        strategy_symbol_by_regime=strategy_symbol_by_regime,
     )
-    if domain_mapping is None:
-        return ResolvedRegimeConfidenceThreshold(
-            threshold=scalar_min,
-            source="scalar_legacy",
-            regime_key=None,
-            mapping_present=False,
-        )
 
-    if regime_key and regime_key in domain_mapping:
-        return ResolvedRegimeConfidenceThreshold(
-            threshold=_coerce_runtime_threshold(
-                domain_mapping[regime_key],
-                path=(
-                    "domains.decision_making.directional_sanity."
-                    f"min_regime_confidence_by_regime.{regime_key}"
-                ),
-            ),
-            source="domain_regime_specific",
-            regime_key=regime_key,
-            mapping_present=True,
-        )
 
-    return ResolvedRegimeConfidenceThreshold(
-        threshold=_coerce_runtime_threshold(
-            domain_mapping["DEFAULT"],
-            path=(
-                "domains.decision_making.directional_sanity."
-                "min_regime_confidence_by_regime.DEFAULT"
-            ),
-        ),
-        source="domain_default",
-        regime_key="DEFAULT",
-        mapping_present=True,
+def resolve_max_regime_confidence(
+    regime: Optional[str],
+    by_regime: Mapping[str, Any] | None,
+    *,
+    strategy_id: Optional[str] = None,
+    symbol: Optional[str] = None,
+    strategy_by_regime: Mapping[str, Any] | None = None,
+    strategy_symbol_by_regime: Mapping[str, Any] | None = None,
+) -> ResolvedRegimeConfidenceThreshold:
+    return _resolve_regime_confidence_threshold(
+        regime,
+        None,
+        by_regime,
+        threshold_kind="max",
+        strategy_id=strategy_id,
+        symbol=symbol,
+        strategy_by_regime=strategy_by_regime,
+        strategy_symbol_by_regime=strategy_symbol_by_regime,
     )
 
 
@@ -826,14 +937,16 @@ def apply_safety_gates(
         raw_by_regime,
         strategy_id=strategy_id,
         symbol=symbol,
-        strategy_by_regime=_strategy_regime_confidence_min_by_regime(
+        strategy_by_regime=_strategy_regime_confidence_threshold_by_regime(
             config,
             strategy_id,
+            threshold_attr="min_by_regime",
         ),
-        strategy_symbol_by_regime=_strategy_symbol_regime_confidence_min_by_regime(
+        strategy_symbol_by_regime=_strategy_symbol_regime_confidence_threshold_by_regime(
             config,
             strategy_id,
             symbol,
+            threshold_attr="min_by_symbol",
         ),
     )
     resolved_min_regime_conf = threshold_resolution.threshold
@@ -841,6 +954,38 @@ def apply_safety_gates(
     result.resolved_min_regime_confidence_source = threshold_resolution.source
     result.resolved_min_regime_confidence_strategy_id = threshold_resolution.strategy_id
     result.resolved_min_regime_confidence_regime_key = threshold_resolution.regime_key
+    raw_max_by_regime = getattr(ds_cfg, 'max_regime_confidence_by_regime', None)
+    max_threshold_resolution = resolve_max_regime_confidence(
+        result.regime,
+        raw_max_by_regime,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        strategy_by_regime=_strategy_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            threshold_attr="max_by_regime",
+        ),
+        strategy_symbol_by_regime=_strategy_symbol_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            symbol,
+            threshold_attr="max_by_symbol",
+        ),
+    )
+    result.resolved_max_regime_confidence = max_threshold_resolution.threshold
+    result.resolved_max_regime_confidence_source = max_threshold_resolution.source
+    result.resolved_max_regime_confidence_strategy_id = max_threshold_resolution.strategy_id
+    result.resolved_max_regime_confidence_regime_key = max_threshold_resolution.regime_key
+    result.resolved_regime_confidence_strategy_id = strategy_id
+    result.resolved_regime_confidence_symbol = symbol
+    result.resolved_regime_confidence_regime_key = (
+        result.resolved_min_regime_confidence_regime_key
+        or result.resolved_max_regime_confidence_regime_key
+    )
+    result.resolved_regime_confidence_band_active = bool(
+        (resolved_min_regime_conf is not None and resolved_min_regime_conf > 0.0)
+        or result.resolved_max_regime_confidence is not None
+    )
     consecutive = int(ds_cfg.consecutive_bars)
     raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)
     try:
@@ -868,7 +1013,29 @@ def apply_safety_gates(
         result.threshold_verdict = "BYPASS"
         result.regime_confidence_gate_verdict = "BYPASS"
         result.threshold_reason = "directional_sanity_disabled"
-    elif resolved_min_regime_conf <= 0.0:
+    elif (
+        result.resolved_max_regime_confidence is not None
+        and resolved_min_regime_conf is not None
+        and result.resolved_max_regime_confidence < resolved_min_regime_conf
+    ):
+        result.threshold_applied = True
+        result.threshold_verdict = "BLOCK"
+        result.regime_confidence_gate_verdict = "DENY"
+        result.regime_confidence_breach_kind = "none"
+        result.outcome = "CONFIG_ERROR"
+        result.config_error_context = (
+            "regime_confidence band invalid: max threshold is lower than min threshold"
+        )
+        result.deny_reason = NormalizedRejectReasons.CONFIG_CONTRACT_INVALID
+        result.threshold_reason = (
+            f"invalid regime confidence band: min={resolved_min_regime_conf} "
+            f"max={result.resolved_max_regime_confidence} "
+            f"min_source={threshold_resolution.source} "
+            f"max_source={max_threshold_resolution.source}"
+        )
+        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+        return result
+    elif not result.resolved_regime_confidence_band_active:
         result.threshold_applied = False
         result.threshold_verdict = "BYPASS"
         result.regime_confidence_gate_verdict = "BYPASS"
@@ -877,9 +1044,11 @@ def apply_safety_gates(
         result.threshold_applied = True
         result.threshold_verdict = "BLOCK"
         result.regime_confidence_gate_verdict = "DENY"
+        result.regime_confidence_breach_kind = "missing"
         result.threshold_reason = (
-            f"regime_confidence missing < min={resolved_min_regime_conf} "
-            f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
+            f"regime_confidence missing for active band "
+            f"min={resolved_min_regime_conf} min_source={threshold_resolution.source} "
+            f"max={result.resolved_max_regime_confidence} max_source={max_threshold_resolution.source}"
         )
         result.outcome = "DENY"
         result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
@@ -889,6 +1058,7 @@ def apply_safety_gates(
         result.threshold_applied = True
         result.threshold_verdict = "BLOCK"
         result.regime_confidence_gate_verdict = "DENY"
+        result.regime_confidence_breach_kind = "below_min"
         result.threshold_reason = (
             f"regime_confidence={result.regime_confidence} < min={resolved_min_regime_conf} "
             f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
@@ -897,13 +1067,31 @@ def apply_safety_gates(
         result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
         result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
         return result
+    elif (
+        result.resolved_max_regime_confidence is not None
+        and result.regime_confidence > result.resolved_max_regime_confidence
+    ):
+        result.threshold_applied = True
+        result.threshold_verdict = "BLOCK"
+        result.regime_confidence_gate_verdict = "DENY"
+        result.regime_confidence_breach_kind = "above_max"
+        result.threshold_reason = (
+            f"regime_confidence={result.regime_confidence} > max={result.resolved_max_regime_confidence} "
+            f"source={max_threshold_resolution.source} key={max_threshold_resolution.regime_key}"
+        )
+        result.outcome = "DENY"
+        result.deny_reason = NormalizedRejectReasons.REGIME_CONFIDENCE_ABOVE_MAX
+        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+        return result
     else:
         result.threshold_applied = True
         result.threshold_verdict = "PASS"
         result.regime_confidence_gate_verdict = "ALLOW"
+        result.regime_confidence_breach_kind = "none"
         result.threshold_reason = (
-            f"regime_confidence={result.regime_confidence} >= min={resolved_min_regime_conf} "
-            f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
+            f"regime_confidence={result.regime_confidence} within band "
+            f"min={resolved_min_regime_conf} min_source={threshold_resolution.source} "
+            f"max={result.resolved_max_regime_confidence} max_source={max_threshold_resolution.source}"
         )
 
     # ── Compute trend ──────────────────────────────────────────

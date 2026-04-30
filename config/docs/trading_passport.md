@@ -1084,15 +1084,19 @@
 
 ### `trading.execution.limit_orders`
 - **Type:** `object|null`
-- **Logic Owner:** `limit_order_monitor` *(service exists; wiring not found in main path)*
-- **Code Reference:** `apps/reference/services/limit_order_monitor.py:93` (func: `__init__`)
+- **Logic Owner:** reserved compatibility surface only; no active runtime owner in the current execution path
+- **Code Reference:** `apps/reference/domains/execution_position/fsm.py:573` (watchdog wiring); `apps/reference/config/domains/execution_position.py:797` (active pending-entry TTL schema)
 - **Mathematical/Architectural Role:**
-    > Зарезервована секція для LimitOrderMonitor (timeout/auto-cancel LIMIT).
-    > **У поточному runtime wiring цього сервісу не знайдено**, тож ключ не впливає на роботу, доки monitor не інстанціюють/не запустять.
+    > Зарезервована null-секція сумісності для legacy `limit_orders` surface.
+    > Поточний runtime timeout path належить `OrderTimeoutWatchdog` + `domains.execution_position.pending_entry_ttl`; `limit_orders` не керує активною timeout-поведінкою.
+- **J4 Audit (2026-04-30):**
+    > Zero runtime consumers confirmed (J3 forensic search). No Python file reads `config.execution.limit_orders`.
+    > `LimitOrdersConfig` is an empty Pydantic model (`extra='forbid'`, zero fields).
+    > Staged retirement pending J5 external compatibility audit.
 - **Tuning Sensitivity:**
-    - 🔼 **Too High:** *(N/A без wiring)*.
-    - 🔽 **Too Low:** *(N/A без wiring)*.
-- **Invariant/Constraints:** У typed схемі `LimitOrdersConfig` зараз не має полів (`extra='forbid'`), тому додавання підключів у YAML може зламати валідацію.
+    - 🔼 **Too High:** *(N/A поки surface лишається null і unwired)*.
+    - 🔽 **Too Low:** *(N/A поки surface лишається null і unwired)*.
+- **Invariant/Constraints:** Не трактувати як timeout SSOT. До окремого retirement package ключ варто тримати як explicit `null`; активна typed timeout-конфігурація живе в `pending_entry_ttl` та `watchdog`.
 
 ---
 

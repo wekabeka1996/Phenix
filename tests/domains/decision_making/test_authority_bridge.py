@@ -3,6 +3,8 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from apps.reference.domains.decision_making.authority_bridge import NeocortexAuthorityBridge
 from apps.reference.domains.decision_making.intent.builder import IntentBuilder
 from apps.reference.domains.decision_making.schemas.control_decision import (
@@ -58,7 +60,7 @@ def _make_config():
     return SimpleNamespace(strategies=SimpleNamespace(aurora=strategy_cfg))
 
 
-def _make_builder(*, authority_bridge: NeocortexAuthorityBridge) -> IntentBuilder:
+def _make_builder(*, authority_bridge: NeocortexAuthorityBridge, shadow_emit_fn=None) -> IntentBuilder:
     clock = MagicMock()
     clock.now_ms.return_value = 1_700_000_000_000
     clock.now_sec.return_value = 1_700_000_000
@@ -92,6 +94,7 @@ def _make_builder(*, authority_bridge: NeocortexAuthorityBridge) -> IntentBuilde
         get_regime_epoch_ref_fn=lambda symbol: f"epoch:{symbol}:123",
         authority_bridge=authority_bridge,
         authority_deadline_budget_ms=20,
+        shadow_emit_fn=shadow_emit_fn,
     )
 
 
@@ -131,7 +134,10 @@ def _make_request(symbol: str) -> ControlDecisionRequest:
     )
 
 
-def setup_function() -> None:
+@pytest.fixture(autouse=True)
+def _reset_failure_outcomes_fixture():
+    reset_failure_outcomes()
+    yield
     reset_failure_outcomes()
 
 
@@ -164,9 +170,15 @@ def test_fast_ai_allow_passes_intent(
         bridge.request_authority(_make_request("BTCUSDT"), timeout_ms=5))
     assert direct.action == ControlDecisionAction.ALLOW
 
+    shadow_events: list[tuple[str, dict, str]] = []
     mock_policy.return_value = ("LIMIT", "GTC", 10_000)
     mock_wal.return_value = "wal-ok"
-    builder = _make_builder(authority_bridge=bridge)
+    builder = _make_builder(
+        authority_bridge=bridge,
+        shadow_emit_fn=lambda event_name, payload, why: shadow_events.append(
+            (event_name, payload, why)
+        ),
+    )
     builder.build_and_emit(
         **_build_kwargs(symbol="BTCUSDT", rid="RID-FAST-AI"))
 
@@ -175,6 +187,17 @@ def test_fast_ai_allow_passes_intent(
         if call.args and call.args[0] == "EVT:TRADE_INTENT_PROPOSED"
     ]
     assert len(emitted) == 1
+    trade_intent = emitted[0].kwargs["payload"]
+    assert trade_intent["authority_context"]["decision_id"]
+    assert trade_intent["authority_context"]["apply_result"] == "FAST_ALLOW"
+    assert trade_intent["authority_context"]["authority_mode"] == "shadow"
+    assert shadow_events
+    event_name, payload, _why = shadow_events[0]
+    assert event_name == "SHADOW:NEOCORTEX_DECISION_LOGGED"
+    assert payload["request_ts_ms"] == 1_700_000_000_000
+    assert payload["response_ts_ms"] == payload["decision_ts_ms"]
+    assert payload["apply_result"] == "FAST_ALLOW"
+    assert payload["authority_mode"] == "shadow"
 
 
 @patch("apps.reference.domains.decision_making.intent.builder.order_logger.write")
@@ -220,6 +243,9 @@ def test_slow_ai_timeout_falls_back_and_intent_still_passes(
         if call.args and call.args[0] == "EVT:TRADE_INTENT_PROPOSED"
     ]
     assert len(emitted) == 1
+    trade_intent = emitted[0].kwargs["payload"]
+    assert trade_intent["authority_context"]["fallback_reason"] == "BRIDGE_TIMEOUT"
+    assert trade_intent["authority_context"]["apply_result"] == "FALLBACK_BASELINE"
 
 
 @patch("apps.reference.domains.decision_making.intent.builder.order_logger.write")

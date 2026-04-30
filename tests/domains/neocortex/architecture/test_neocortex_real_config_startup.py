@@ -5,9 +5,11 @@ from pydantic import ValidationError
 
 from apps.reference.domains.neocortex.config_models import load_config, NeocortexConfig
 
+
 def write_yaml(path: Path, filename: str, content: dict):
     with open(path / filename, "w", encoding="utf-8") as f:
         yaml.dump(content, f)
+
 
 @pytest.fixture
 def valid_config_dir(tmp_path: Path):
@@ -31,7 +33,7 @@ def valid_config_dir(tmp_path: Path):
         "run_mode": "backtest",
         "rng_seed": 42
     }
-    
+
     ingest = {
         "feature_list": ["price"],
         "normalization_method": "zscore",
@@ -44,7 +46,7 @@ def valid_config_dir(tmp_path: Path):
         "min_samples_before_ready": 10,
         "nan_strategy": "zero"
     }
-    
+
     neuro = {
         "vae": {
             "input_dim": 1,
@@ -109,6 +111,12 @@ def valid_config_dir(tmp_path: Path):
                 "train_ratio": 0.7,
                 "val_ratio": 0.15,
                 "test_ratio": 0.15
+            },
+            "cutover": {
+                "min_real_executed_rows": 1,
+                "allow_synthetic_fallback": False,
+                "max_non_causal_rows": 0,
+                "require_reward_methodology": True
             }
         },
         "evaluation": {
@@ -142,7 +150,7 @@ def valid_config_dir(tmp_path: Path):
         "keep_last_n_checkpoints": 5,
         "dream_episode_threshold": 1
     }
-    
+
     replay = {
         "enabled": False,
         "wal_dir": "/tmp/wal",
@@ -168,6 +176,7 @@ def valid_config_dir(tmp_path: Path):
     write_yaml(tmp_path, "replay.yaml", replay)
     return tmp_path
 
+
 def test_load_config_success(valid_config_dir):
     config = load_config(str(valid_config_dir))
     assert isinstance(config, NeocortexConfig)
@@ -175,6 +184,7 @@ def test_load_config_success(valid_config_dir):
     assert config.authority.mode == "shadow"
     assert config.replay.enabled is False
     assert config.neuro.vae.regime_aux.enabled is False
+
 
 def test_load_config_missing_trust_enabled(valid_config_dir):
     with open(valid_config_dir / "system.yaml") as f:
@@ -185,6 +195,7 @@ def test_load_config_missing_trust_enabled(valid_config_dir):
     with pytest.raises(ValueError, match="Missing required key 'trust_enabled' in system.yaml"):
         load_config(str(valid_config_dir))
 
+
 def test_load_config_missing_authority(valid_config_dir):
     with open(valid_config_dir / "system.yaml") as f:
         data = yaml.safe_load(f)
@@ -194,20 +205,23 @@ def test_load_config_missing_authority(valid_config_dir):
     with pytest.raises(ValueError, match="Missing required key 'authority' in system.yaml"):
         load_config(str(valid_config_dir))
 
+
 def test_load_config_missing_replay(valid_config_dir):
     (valid_config_dir / "replay.yaml").unlink()
-    
+
     with pytest.raises(FileNotFoundError, match="Missing required replay config"):
         load_config(str(valid_config_dir))
+
 
 def test_load_config_invalid_authority_bounds(valid_config_dir):
     with open(valid_config_dir / "system.yaml") as f:
         data = yaml.safe_load(f)
-    data["authority"]["cooldown_mult_bounds"] = [-1.0, 2.0] # min <= 0 is invalid
+    data["authority"]["cooldown_mult_bounds"] = [-1.0, 2.0]  # min <= 0 is invalid
     write_yaml(valid_config_dir, "system.yaml", data)
 
     with pytest.raises(ValidationError):
         load_config(str(valid_config_dir))
+
 
 def test_load_config_missing_neuro_field(valid_config_dir):
     with open(valid_config_dir / "neuro.yaml") as f:
